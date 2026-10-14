@@ -19,19 +19,64 @@ INVENTORY_MODE = "SOURCE_ONLY"
 SCHEMA_PATH = Path("contracts/recovery/recovery-surface-inventory-v1.schema.json")
 GENERATOR_PATH = Path("tools/generate_recovery_surface_inventory.py")
 BACKEND_ROOT = Path("src/backend")
+REPOSITORY_BUILD_CONTROL_PATHS = (
+    ".editorconfig",
+    ".globalconfig",
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "Directory.Build.rsp",
+    "Directory.Packages.props",
+    "Directory.Packages.targets",
+    "Directory.Solution.props",
+    "Directory.Solution.targets",
+    "MSBuild.rsp",
+    "NuGet.Config",
+    "global.json",
+    "src/.editorconfig",
+    "src/.globalconfig",
+    "src/Directory.Build.props",
+    "src/Directory.Build.targets",
+    "src/Directory.Packages.props",
+    "src/Directory.Packages.targets",
+    "src/Directory.Solution.props",
+    "src/Directory.Solution.targets",
+    "src/MSBuild.rsp",
+    "src/NuGet.Config",
+    "src/global.json",
+)
 
 EXPECTED_DB_CONTEXT_COUNT = 18
-EXPECTED_DB_CONTEXT_PATH_FINGERPRINT = (
-    "5fb71e920f1d038f7403a0e232717c2204bdeaabe204298c0dbadd603f22d56e"
+EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
+    "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
 EXPECTED_MIGRATION_COUNT = 91
-EXPECTED_MIGRATION_PATH_FINGERPRINT = (
-    "97073d908c46c8ba30de730a1a39c231512bfbf2f666fe1a9c484f6bada2bea3"
+EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
+    "88bb129fdcd3e96263d50724c8d832617da25e9ffd55a963fbb7b548ee7814aa"
 )
 EXPECTED_DURABLE_STORE_COUNT = 20
+# The source-only inventory is reviewed for one frozen backend compilation surface.  A
+# project/build edit or any compiled source byte change must be deliberately re-inventoried;
+# otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
+# lexical inventory while leaving its visible declaration counts unchanged.
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1055
+EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
+    "7e32fc24fd974a4aa4b19b809c08f75f9870a05405bc04593172cfb98347f968"
+)
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 MIGRATION_NAME_PATTERN = re.compile(r"^[0-9]{14}_[A-Za-z0-9]+\.cs$")
+CSHARP_IDENTIFIER_PATTERN = r"@?[^\W\d]\w*"
+CSHARP_QUALIFIED_IDENTIFIER_PATTERN = (
+    rf"(?:global::)?{CSHARP_IDENTIFIER_PATTERN}"
+    rf"(?:\.{CSHARP_IDENTIFIER_PATTERN})*"
+)
+CSHARP_TARGET_TYPE_NAMES = {
+    "DbContext": "Microsoft.EntityFrameworkCore.DbContext",
+    "Migration": "Microsoft.EntityFrameworkCore.Migrations.Migration",
+    "IDocumentObjectStoreV1": (
+        "GoymenERP.Modules.Documents.Application.Contracts.IDocumentObjectStoreV1"
+    ),
+}
 
 DOCUMENT_CONFIGURATION_KEYS = (
     "Documents:MaximumUploadBytes",
@@ -59,6 +104,10 @@ DOCUMENT_SOURCE_PATHS = (
     DOCUMENT_README_PATH,
 )
 DOCUMENTS_SOURCE_ROOT = "src/backend/Modules/Documents/"
+DOCUMENT_OBJECT_STORE_INTERFACE_PATH = (
+    "src/backend/Modules/Documents/"
+    "GoymenERP.Modules.Documents.Application/Contracts/DocumentStoragePortsV1.cs"
+)
 DOCUMENT_OBJECT_KEY_PATTERN = "^companies/[0-9a-f]{32}/sha256/[0-9a-f]{64}$"
 MESSAGE_ENTITY_NAME_PATTERN = re.compile(
     r"(?:outbox|inbox|deliver|message|dedup)",
@@ -119,6 +168,7 @@ DOCUMENT_PATH_CLASSIFICATIONS = (
 )
 INVENTORY_INPUT_PATHS = (
     BACKEND_ROOT.as_posix(),
+    *REPOSITORY_BUILD_CONTROL_PATHS,
     SCHEMA_PATH.as_posix(),
     GENERATOR_PATH.as_posix(),
 )
@@ -145,6 +195,14 @@ class ModelTableMapping(NamedTuple):
     schema: str
     table: str
     property_names: tuple[str, ...]
+    primary_key: tuple[str, ...]
+    unique_indexes: tuple[tuple[str, ...], ...]
+
+
+class CSharpTypeDeclaration(NamedTuple):
+    name: str
+    path: str
+    base_types: tuple[str, ...]
 
 
 class DurableStoreSpec(NamedTuple):
@@ -435,6 +493,233 @@ DURABLE_STORE_SPECS = (
 )
 
 
+# A lexical write token is evidence only inside the operative method named here.  The
+# binding is intentionally explicit: moving a write into an unused helper or a deferred
+# lambda must invalidate the inventory instead of silently preserving its source hash.
+WRITER_METHOD_SCOPES = {
+    ("accounting.command-replay", ACCOUNTING_STORE): "AddCommand",
+    ("accounting.delivery-inbox", ACCOUNTING_STORE): "AddDelivery",
+    ("documents.document-attempts", DOCUMENTS_STORE): "StoreUploadAsync",
+    (
+        "finance.command-replay",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs",
+    ): "DraftSaveAsync",
+    (
+        "finance.official-invoice-import-commands",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs",
+    ): "AddCommand",
+    (
+        "finance.official-invoice-import-work-deliveries",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs",
+    ): "UploadAsync",
+    (
+        "finance.open-item-source-batches",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs",
+    ): "AdmitAsync",
+    (
+        "idempotency.group-shared-command-terminals",
+        "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs",
+    ): "FlushAsync",
+    (
+        "idempotency.command-executions",
+        "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs",
+    ): "CompleteCommandAsync",
+    (
+        "inventory.command-replay",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs",
+    ): "RecordAsync",
+    (
+        "inventory.outbox",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs",
+    ): "StageAsync",
+    (
+        "inventory.outbox",
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs",
+    ): "StageAsync",
+    (
+        "logistics.customer-return-attempts",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs",
+    ): "RecordRefusalAsync",
+    (
+        "logistics.loading-attempts",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs",
+    ): "StoreInstructionAsync",
+    (
+        "manufacturing.command-replay",
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs",
+    ): "AddCommand",
+    (
+        "product.price-list-attempts",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs",
+    ): "RecordRefusalAsync",
+    (
+        "purchasing.purchase-acceptance-shares",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs",
+    ): "StageAsync",
+    (
+        "purchasing.purchase-attempts",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs",
+    ): "StoreRequestAsync",
+    (
+        "sales.draft-attempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs",
+    ): "StoreDraftAsync",
+    (
+        "work.observation-inbox",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
+    ): "ReconcileAsync",
+    (
+        "work.outbox",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
+    ): "ReconcileAsync",
+}
+
+
+# These declaration-and-body fingerprints bind recovery evidence to the reviewed live
+# methods.  Any semantic or execution-shape change must be deliberately re-inventoried.
+REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
+    (ACCOUNTING_STORE, "AddCommand"): "db718449f8e13e277eb0aa197b20d7210130ab1c0d2091dd6011e43e781e47a1",
+    (ACCOUNTING_STORE, "AddDelivery"): "b24889ce6551605bb62723f3bce1a2baa59c3680894167c71b3fd51ce0be1cb0",
+    (DOCUMENT_MODULE_PATH, "AddDocumentsModule"): "178f03a58d3a9ef775bb91f777db991fd935e3d776d7d91112cb5179e4f9f57e",
+    (DOCUMENT_MODULE_PATH, "RegisterProductionStorageAndScanner"): "bfea0db0f27c66dcdab7d411b5e5e6d2b986a25d157d0693fc70cbd3d5d0b19b",
+    (DOCUMENTS_STORE, "StoreUploadAsync"): "c39dd3771fb6c7eae12d913f53e16e124860fccbf134e0acb3a1776b000fe95a",
+    (DOCUMENT_SCANNER_PATH, "ScanAsync"): "2d21059fce81195b63a8fd1f7a64787a787c0146283254b41676564a586fa60f",
+    (DOCUMENT_SCANNER_PATH, "TryDelete"): "50e4d401a2f79fc83b981e1edd48e77af65a84732e0024156ea10f366a18e31e",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs",
+        "FileSystemDocumentObjectStore",
+    ): "be0aa7ce2a4ee8014f432dd5f489a75a490d8d9d8567feb5887196adc68b94b4",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs",
+        "PutAsync",
+    ): "a530211788962fb851e8b9287f757967faf22e8c7c74065d928ebd898d8079dc",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs",
+        "ReadAsync",
+    ): "ffba8afad399b8b8d2b0a7e8dac359d271232a72fcdae934cda95960e80c3ab1",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs",
+        "Resolve",
+    ): "623ef7bd31856f426f705a971309c53ff1bef89c07f4ef24a803a58ae0bab863",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs",
+        "Open",
+    ): "a7b249638756cbf65df81a59124a0655c1ef765130344aad4cad41742c229bb4",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs",
+        "PutAsync",
+    ): "2fc38d66c026faf6bce8e0812178d111437e121d53f9a3d37553fc2396c9fe08",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs",
+        "ReadAsync",
+    ): "5857008b7adc3e7259e36c987071d94c8928ca6b64d9835b6152f0b6783b095c",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs",
+        "Resolve",
+    ): "876d414f61c56be7216a1c034243d43e144c6660d809156fcc913279ce515d10",
+    (
+        "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs",
+        "ServerDirectoryDocumentObjectStore",
+    ): "0a1caad7c78f7f3963a2c24ad5a74f31b7fef7268ab3ce609e823b6097792656",
+    (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs",
+        "AddCommand",
+    ): "e3f6861c99214dff75b488a5484ebef19042d5f5814d2095c05a6719f5e2e333",
+    (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs",
+        "UploadAsync",
+    ): "f401c2b93e88f45b8146402ac33cf7b96ca81790e01db1c635320fc2f02a5fa1",
+    (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs",
+        "AdmitAsync",
+    ): "e6434a2096ab345532fbfc7869f76c9f4338bf0718dc7984a7a7f673f939ade2",
+    (
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs",
+        "DraftSaveAsync",
+    ): "311c64245720060345c07e28e212ed66443c9b8517722e75e45b495e232e3f9a",
+    (
+        "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs",
+        "FlushAsync",
+    ): "2f9de9abb7ba734d27f5e396fe13d21527d5f7917744151497ffe68fbafb2c70",
+    (
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs",
+        "RecordAsync",
+    ): "74827fe2fdcc02391bc5571323f07031d9fb4b2de37cd71eea746fd884c32b61",
+    (
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs",
+        "StageAsync",
+    ): "779af299ec8352d1ab17e8eb0df4598d85754af076eaf947e812e3031f7b10b4",
+    (
+        "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs",
+        "StageAsync",
+    ): "e330a9c77a13f6ed44c5d5dc4c7b848f798cfec725f6292202ec4c138e1bfa22",
+    (
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs",
+        "RecordRefusalAsync",
+    ): "502fcbf1b14fca92c1e4d34bad0e96121a27a120c963499ceb2b9b1b83093d4e",
+    (
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs",
+        "StoreInstructionAsync",
+    ): "b20047f6fd00f51dade9e63d521876ae53e58786c428f2634e631be438f64c5b",
+    (
+        "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs",
+        "AddCommand",
+    ): "a916e16fe247ded30e0b038e9489e897bfa54e2eeebb26a8a524f13a2e5e4683",
+    (
+        "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs",
+        "CompleteCommandAsync",
+    ): "3f1923b73f92016d3776500605a0414c117dda2fbfc0113f58a9c3005cab7fa9",
+    (
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs",
+        "RecordRefusalAsync",
+    ): "e7244c5871505ce3c02b5b4d0cfec9a476dadcdcd94e0870e408b741b5b3b117",
+    (
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs",
+        "StageAsync",
+    ): "8fee79232dec4e0ddbb84f3693d11bcad7d8e79538a3d023ebe9f4429b377f6b",
+    (
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs",
+        "StoreRequestAsync",
+    ): "4633eed9c0696cfaad609f2e4b7f043d33831078ca3593c536ce234bbddc37b8",
+    (
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs",
+        "StoreDraftAsync",
+    ): "6706dc3ddcb2dd03fbfd7ac47fa64b3a8db2964451e7741bf8ef722a4c769a68",
+    (
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
+        "ReconcileAsync",
+    ): "0c760ebfe36fce642faa069b72637e699f16e1d14a04f0d154f43357be542657",
+}
+
+
+# The full blobs retain reachability evidence around the pinned methods (for example,
+# private writer call sites) and bind every emitted source record to reviewed bytes.
+REVIEWED_LIVE_SOURCE_SHA256 = {
+    ACCOUNTING_STORE: "9b6e088b496de1fc3c9e912e2d83397ef341e9eed6f54b79dfa1eb1c6deb8041",
+    DOCUMENT_MODULE_PATH: "8e6108de29ca7aae5133131abf8deb981d097bc33ea7964403652f04f0ebc610",
+    DOCUMENTS_STORE: "076a0c5b55a961716d99f2d407bf0ae7f1d48c835de7b82b9cf64ce3a3c822ea",
+    DOCUMENT_SCANNER_PATH: "39686c28f47ddb2f65085e7587241141426641b069ab8079ac1a93542d144189",
+    "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/FileSystemDocumentObjectStore.cs": "8c7a2eed1888d36d0b61c60b1296d904adaf0338c34f361236befc8e1c1d6274",
+    "src/backend/Modules/Documents/GoymenERP.Modules.Documents.Infrastructure/Storage/ServerDirectoryDocumentObjectStore.cs": "0f79216993cdbbc20d7c92d830ad1c08f3ff2ab5b0ab9084aaae03f765784c1a",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOfficialInvoiceImportApprovalServiceV1.cs": "573d1b13dafb963b6521a099600130a759711d016f22c62529c3da0b2227a1af",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceOpenItemSourceAdmissionService.cs": "6811c3396e99bf54f0a686c11b1f6436df8df46bf004eacdc4e29e421b7b5250",
+    "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ReceiptDraftService.cs": "589f03fddc02ed44c23149eac8358f69805e00a7a28cd867c98eecc9e469c88e",
+    "src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs": "5ecf927a5505ff79b5d2f3d79e436dc674d1b98aa05db28c8ae6e6669ac9b301",
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/InventoryOpeningCommandService.cs": "fd384d4cdc34ec642db71049b1dbd0180f2d317f38acfd3a6758d943d571bebb",
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryCustomerReturnParticipant.cs": "241e1e850db26e13c0b480d3c1ebb42f7b7ac031041c342ee00968065c1b085d",
+    "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": "9aec0b823987c573ffd9d94e55192d5c80d49e29ef6ac713c02e07583ee00df7",
+    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
+    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "2e19c8adc7f83d82a3685adb47572f00681c4e2434e00567c6aa379c46df64b9",
+    "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "641e3e50b5f9a6e6bbbe83fb1b1a973dbccdc8ec4379e5f535ef77f8a67068d8",
+    "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
+    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "ea3481d674648b893796c93b15dab32e0a7a49b7c9ba0a1ef686f2d8a6afac2d",
+    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
+    "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "dcd91635cea0a3eaf85e19590b5168e6b0da20a647576ba3ce98b130803a9d69",
+    "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
+}
+
+
 SUPPORTED_SCHEMA_KEYWORDS = {
     "$schema",
     "$id",
@@ -496,6 +781,86 @@ def _source_file_record(snapshot: SourceSnapshot, relative_path: str) -> dict[st
     return {"path": relative_path, "sha256": hashlib.sha256(content).hexdigest()}
 
 
+def _require_reviewed_live_source(snapshot: SourceSnapshot, relative_path: str) -> None:
+    expected = REVIEWED_LIVE_SOURCE_SHA256.get(relative_path)
+    if expected is None:
+        raise InventoryError(f"Live recovery evidence has no reviewed blob hash: {relative_path}.")
+    record = _source_file_record(snapshot, relative_path)
+    if record["sha256"] != expected:
+        raise InventoryError(f"Live recovery evidence blob drifted: {relative_path}.")
+
+
+def _csharp_string_end(content: str, quote_index: int) -> int:
+    """Return the first index after a C# string, including interpolated expressions."""
+
+    quote_count = 1
+    while quote_index + quote_count < len(content) and content[quote_index + quote_count] == '"':
+        quote_count += 1
+    if quote_count >= 3:
+        delimiter = '"' * quote_count
+        end = content.find(delimiter, quote_index + quote_count)
+        if end < 0:
+            raise InventoryError("C# source contains an unterminated raw string.")
+        return end + quote_count
+
+    prefix = content[max(0, quote_index - 2) : quote_index]
+    interpolated = prefix.endswith("$") or prefix in {"$@", "@$"}
+    verbatim = prefix.endswith("@") or prefix == "@$"
+    index = quote_index + 1
+    interpolation_depth = 0
+    while index < len(content):
+        if interpolation_depth == 0:
+            if verbatim and content.startswith('""', index):
+                index += 2
+                continue
+            if content[index] == '"':
+                return index + 1
+            if not verbatim and content[index] == "\\" and index + 1 < len(content):
+                index += 2
+                continue
+            if interpolated and content[index] == "{":
+                if content.startswith("{{", index):
+                    index += 2
+                    continue
+                interpolation_depth = 1
+            elif interpolated and content.startswith("}}", index):
+                index += 2
+                continue
+            index += 1
+            continue
+
+        if content.startswith("//", index):
+            newline = content.find("\n", index + 2)
+            index = len(content) if newline < 0 else newline
+            continue
+        if content.startswith("/*", index):
+            end = content.find("*/", index + 2)
+            if end < 0:
+                raise InventoryError("C# source contains an unterminated block comment.")
+            index = end + 2
+            continue
+        if content[index] == '"':
+            index = _csharp_string_end(content, index)
+            continue
+        if content[index] == "'":
+            index += 1
+            while index < len(content):
+                if content[index] == "\\" and index + 1 < len(content):
+                    index += 2
+                    continue
+                if content[index] == "'":
+                    index += 1
+                    break
+                index += 1
+            continue
+        if content[index] == "{":
+            interpolation_depth += 1
+        elif content[index] == "}":
+            interpolation_depth -= 1
+        index += 1
+    raise InventoryError("C# source contains an unterminated interpolated string.")
+
+
 def _strip_csharp_comments(content: str) -> str:
     """Remove C# comments while preserving strings and line structure."""
 
@@ -522,34 +887,9 @@ def _strip_csharp_comments(content: str) -> str:
 
         character = content[index]
         if character == '"':
-            quote_count = 1
-            while index + quote_count < length and content[index + quote_count] == '"':
-                quote_count += 1
-            if quote_count >= 3:
-                delimiter = '"' * quote_count
-                end = content.find(delimiter, index + quote_count)
-                if end < 0:
-                    raise InventoryError("C# source contains an unterminated raw string.")
-                end += quote_count
-                result.append(content[index:end])
-                index = end
-                continue
-
-            verbatim = index > 0 and content[index - 1] == "@"
-            start = index
-            index += 1
-            while index < length:
-                if verbatim and content.startswith('""', index):
-                    index += 2
-                    continue
-                if content[index] == '"':
-                    index += 1
-                    break
-                if not verbatim and content[index] == "\\" and index + 1 < length:
-                    index += 2
-                else:
-                    index += 1
-            result.append(content[start:index])
+            end = _csharp_string_end(content, index)
+            result.append(content[index:end])
+            index = end
             continue
         if character == "'":
             start = index
@@ -590,20 +930,12 @@ def _mask_csharp_strings(content: str) -> str:
 
         start = index
         delimiter = character
-        verbatim = delimiter == '"' and index > 0 and content[index - 1] == "@"
-        quote_count = 1
         if delimiter == '"':
-            while index + quote_count < len(content) and content[index + quote_count] == '"':
-                quote_count += 1
-        if delimiter == '"' and quote_count >= 3:
-            raw_delimiter = '"' * quote_count
-            end = content.find(raw_delimiter, index + quote_count)
-            if end < 0:
-                raise InventoryError("C# source contains an unterminated raw string.")
-            index = end + quote_count
+            index = _csharp_string_end(content, index)
             result.append(_blank_csharp_region(content[start:index]))
             continue
 
+        verbatim = False
         index += 1
         while index < len(content):
             if verbatim and content.startswith('""', index):
@@ -623,28 +955,62 @@ def _mask_csharp_strings(content: str) -> str:
 
 
 def _mask_conditional_preprocessor_regions(content: str) -> str:
-    """Mask every conditional branch whose active symbols are unavailable here."""
+    """Keep literal-active branches and reject build-dependent source evidence."""
 
-    depth = 0
+    stack: list[dict[str, bool]] = []
+    active = True
     result: list[str] = []
     directive_pattern = re.compile(r"^\s*#\s*(if|elif|else|endif)\b(.*)$", re.IGNORECASE)
     for line in content.splitlines(keepends=True):
         directive = directive_pattern.match(line)
         if directive is not None:
             command = directive.group(1).casefold()
+            expression = directive.group(2).strip().casefold()
             if command == "if":
-                depth += 1
-            elif depth == 0:
+                value = {"true": True, "false": False}.get(expression)
+                if value is None:
+                    raise InventoryError(
+                        "C# source contains a non-literal conditional compilation branch."
+                    )
+                frame = {
+                    "parent": active,
+                    "known": value is not None,
+                    "taken": value is True,
+                    "active": active and value is True,
+                }
+                stack.append(frame)
+                active = frame["active"]
+            elif not stack:
                 raise InventoryError("C# source contains an unmatched conditional directive.")
+            elif command == "elif":
+                frame = stack[-1]
+                if not frame["known"] or frame["taken"]:
+                    frame["active"] = False
+                else:
+                    value = {"true": True, "false": False}.get(expression)
+                    if value is None:
+                        raise InventoryError(
+                            "C# source contains a non-literal conditional compilation branch."
+                        )
+                    else:
+                        frame["taken"] = value
+                        frame["active"] = frame["parent"] and value
+                active = frame["active"]
+            elif command == "else":
+                frame = stack[-1]
+                frame["active"] = frame["parent"] and frame["known"] and not frame["taken"]
+                frame["taken"] = True
+                active = frame["active"]
             elif command == "endif":
-                depth -= 1
+                frame = stack.pop()
+                active = frame["parent"]
             result.append(_blank_csharp_region(line))
             continue
-        if depth:
+        if not active:
             result.append(_blank_csharp_region(line))
         else:
             result.append(line)
-    if depth:
+    if stack:
         raise InventoryError("C# source contains an unterminated conditional directive.")
     return "".join(result)
 
@@ -682,8 +1048,278 @@ def _live_csharp_code(content: str) -> str:
     """Mask literals and statically disabled regions before live-code anchor checks."""
 
     without_literals = _mask_csharp_strings(content)
+    if without_literals.startswith("\ufeff"):
+        without_literals = " " + without_literals[1:]
+    if re.search(r"\\(?:u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})", without_literals) is not None:
+        raise InventoryError("C# source contains an escaped identifier or code token.")
+    identifier_code = without_literals
+    if any(ord(character) > 127 for character in identifier_code):
+        raise InventoryError("C# source contains a non-ASCII identifier or code token.")
+    if re.search(r"\bextern\s+alias\b", identifier_code) is not None:
+        raise InventoryError("C# source contains an unsupported extern alias.")
+    alias_qualifiers = re.findall(r"(?<![A-Za-z0-9_@])(@?[A-Za-z_][A-Za-z0-9_]*)::", identifier_code)
+    if any(qualifier != "global" for qualifier in alias_qualifiers):
+        raise InventoryError("C# source contains an unsupported alias qualifier.")
     without_disabled_directives = _mask_conditional_preprocessor_regions(without_literals)
     return _mask_literal_false_if_blocks(without_disabled_directives)
+
+
+def _mask_nested_callable_bodies(
+    content: str,
+    relative_path: str,
+    method_name: str,
+) -> str:
+    """Remove deferred callables and reject local-function ambiguity."""
+
+    local_function = re.compile(
+        r"(?m)(?:^|(?<=[;{}]))\s*"
+        r"(?:\[[^\]]+\]\s*)*"
+        r"(?!(?:if|else|for|foreach|while|switch|using|lock|catch|finally|try|do|"
+        r"return|throw|await|yield|checked|unchecked|fixed)\b)"
+        r"(?:(?:static|async|unsafe|extern)\s+)*"
+        r"(?:ref\s+(?:readonly\s+)?)?"
+        r"(?:(?:global::)?@?[^\W\d][\w@.:*<>,?\[\] \t]*|\([^;{}=\r\n]+\))\s+"
+        r"(?P<name>@?[^\W\d]\w*)\s*"
+        r"(?:<[^;{}=]+>)?\s*\([^;{}]*\)\s*"
+        r"(?:where\s+[^;{}=]+\s*)?(?:\{|=>)",
+        re.DOTALL,
+    )
+    match = local_function.search(content)
+    if match is not None:
+        raise InventoryError(
+            "Nested local function makes operative-method evidence ambiguous: "
+            f"{relative_path}:{method_name}:{match.group('name')}."
+        )
+
+    block_pattern = re.compile(r"=>\s*\{")
+    while (match := block_pattern.search(content)) is not None:
+        opening = content.find("{", match.start(), match.end())
+        closing = _matching_brace(content, opening)
+        content = (
+            content[: match.start()]
+            + _blank_csharp_region(content[match.start() : closing + 1])
+            + content[closing + 1 :]
+        )
+    expression_pattern = re.compile(r"=>")
+    while (match := expression_pattern.search(content)) is not None:
+        cursor = match.end()
+        while cursor < len(content) and content[cursor].isspace():
+            cursor += 1
+        if cursor < len(content) and content[cursor] == "{":
+            raise InventoryError("Nested callable masking left an unexpected block lambda.")
+        depth = 0
+        while cursor < len(content):
+            character = content[cursor]
+            if character in "([{":
+                depth += 1
+            elif character in ")]}":
+                if depth > 0:
+                    depth -= 1
+            elif character == ";" and depth == 0:
+                content = (
+                    content[: match.start()]
+                    + _blank_csharp_region(content[match.start() : cursor + 1])
+                    + content[cursor + 1 :]
+                )
+                break
+            cursor += 1
+        else:
+            raise InventoryError("C# source contains an unterminated expression lambda.")
+
+    delegate_pattern = re.compile(r"\bdelegate\s*(?:\([^;{}]*\))?\s*\{")
+    while (match := delegate_pattern.search(content)) is not None:
+        opening = content.find("{", match.start(), match.end())
+        closing = _matching_brace(content, opening)
+        content = (
+            content[: match.start()]
+            + _blank_csharp_region(content[match.start() : closing + 1])
+            + content[closing + 1 :]
+        )
+    return content
+
+
+def _csharp_method_body(
+    content: str,
+    method_name: str,
+    relative_path: str,
+    *,
+    mask_nested: bool = True,
+) -> str:
+    """Return one live operative method body, rejecting missing or overloaded declarations."""
+
+    live = _live_csharp_code(content)
+    declaration = re.compile(
+        rf"(?m)^[ \t]*(?:public|private|protected|internal)\b[^;{{}}=]*?"
+        rf"\b{re.escape(method_name)}\s*(?:<[^;{{}}]+>)?\s*\([^;{{}}]*\)\s*"
+        rf"(?:where\s+[^{{}}=]+\s*)?(?P<body>\{{|=>)",
+        re.DOTALL,
+    )
+    matches = list(declaration.finditer(live))
+    if len(matches) != 1:
+        raise InventoryError(
+            f"Required C# method is missing or ambiguous: {relative_path}:{method_name}."
+        )
+    match = matches[0]
+    marker = match.group("body")
+    marker_start = match.start("body")
+    if marker == "{":
+        closing = _matching_brace(live, marker_start)
+        body = live[marker_start + 1 : closing]
+    else:
+        semicolon = live.find(";", match.end("body"))
+        if semicolon < 0:
+            raise InventoryError(f"Required C# method is unterminated: {relative_path}:{method_name}.")
+        body = live[match.end("body") : semicolon]
+    if not mask_nested:
+        return body
+    return _mask_nested_callable_bodies(body, relative_path, method_name)
+
+
+def _csharp_method_fingerprint(content: str, method_name: str, relative_path: str) -> str:
+    """Fingerprint the exact operative declaration and body from live source."""
+
+    live = _live_csharp_code(content)
+    declaration = re.compile(
+        rf"(?m)^[ \t]*(?:public|private|protected|internal)\b[^;{{}}=]*?"
+        rf"\b{re.escape(method_name)}\s*(?:<[^;{{}}]+>)?\s*\([^;{{}}]*\)\s*"
+        rf"(?:where\s+[^{{}}=]+\s*)?(?P<body>\{{|=>)",
+        re.DOTALL,
+    )
+    matches = list(declaration.finditer(live))
+    if len(matches) != 1:
+        raise InventoryError(
+            f"Required C# method is missing or ambiguous: {relative_path}:{method_name}."
+        )
+    match = matches[0]
+    prefix = live[: match.start()].rstrip()
+    if prefix.endswith("]"):
+        raise InventoryError(
+            f"Operative C# method attributes are not part of the reviewed shape: "
+            f"{relative_path}:{method_name}."
+        )
+    marker = match.group("body")
+    marker_start = match.start("body")
+    if marker == "{":
+        end = _matching_brace(live, marker_start) + 1
+    else:
+        semicolon = live.find(";", match.end("body"))
+        if semicolon < 0:
+            raise InventoryError(
+                f"Required C# method is unterminated: {relative_path}:{method_name}."
+            )
+        end = semicolon + 1
+    reviewed_region = content[match.start() : end].encode("utf-8")
+    return hashlib.sha256(reviewed_region).hexdigest()
+
+
+def _require_reviewed_method_fingerprint(
+    content: str,
+    relative_path: str,
+    method_name: str,
+) -> None:
+    expected = REVIEWED_OPERATIVE_METHOD_FINGERPRINTS.get((relative_path, method_name))
+    if expected is None:
+        raise InventoryError(
+            f"Operative C# method has no reviewed fingerprint: {relative_path}:{method_name}."
+        )
+    actual = _csharp_method_fingerprint(content, method_name, relative_path)
+    if actual != expected:
+        raise InventoryError(
+            f"Operative C# method fingerprint drifted: {relative_path}:{method_name}."
+        )
+
+
+def _require_direct_statement_anchor(
+    body: str,
+    relative_path: str,
+    method_name: str,
+    token: str,
+) -> None:
+    """Require the writer call to be a directly executed statement in the method."""
+
+    positions: list[int] = []
+    start = 0
+    while (index := body.find(token, start)) >= 0:
+        positions.append(index)
+        start = index + 1
+    if not positions:
+        raise InventoryError(
+            f"Required operative writer anchor is missing: "
+            f"{relative_path}:{method_name}."
+        )
+
+    for position in positions:
+        cursor = position - 1
+        while cursor >= 0 and body[cursor].isspace():
+            cursor -= 1
+        word_end = cursor + 1
+        while cursor >= 0 and (body[cursor].isalnum() or body[cursor] == "_"):
+            cursor -= 1
+        if body[cursor + 1 : word_end] == "await":
+            while cursor >= 0 and body[cursor].isspace():
+                cursor -= 1
+        if cursor >= 0 and body[cursor] not in ";{}":
+            raise InventoryError(
+                f"Required operative writer is not a direct statement: "
+                f"{relative_path}:{method_name}."
+            )
+
+
+def _require_method_tokens(
+    content: str,
+    relative_path: str,
+    method_name: str,
+    tokens: Sequence[str],
+) -> None:
+    raw_body = _csharp_method_body(
+        content,
+        method_name,
+        relative_path,
+        mask_nested=False,
+    )
+    body = _mask_nested_callable_bodies(raw_body, relative_path, method_name)
+    for index, token in enumerate(tokens):
+        if token not in body:
+            raise InventoryError(
+                f"Required operative-method anchor drifted: {relative_path}:{method_name}."
+            )
+        if index == 0:
+            _require_direct_statement_anchor(raw_body, relative_path, method_name, token)
+
+
+def _csharp_assignment_count(content: str, identifier: str) -> int:
+    identifier_pattern = rf"(?<![A-Za-z0-9_])@?{re.escape(identifier)}(?![A-Za-z0-9_])"
+    assignments = 0
+    for index, character in enumerate(content):
+        if character != "=":
+            continue
+        previous = content[index - 1] if index > 0 else ""
+        following = content[index + 1] if index + 1 < len(content) else ""
+        if previous in "=!<>" or following in "=>":
+            continue
+        boundary = max(
+            content.rfind(";", 0, index),
+            content.rfind("{", 0, index),
+            content.rfind("}", 0, index),
+        )
+        left_hand_side = content[boundary + 1 : index]
+        if re.search(identifier_pattern, left_hand_side) is not None:
+            assignments += 1
+    by_reference = re.compile(
+        rf"\b(?:ref|out)\s+"
+        rf"(?:(?:var|{CSHARP_QUALIFIED_IDENTIFIER_PATTERN})\s+)?"
+        rf"@?{re.escape(identifier)}(?![\w])"
+    )
+    return assignments + len(by_reference.findall(content))
+
+
+def _csharp_identifier_count(content: str, identifier: str) -> int:
+    return len(
+        re.findall(
+            rf"(?<![A-Za-z0-9_])@?{re.escape(identifier)}(?![A-Za-z0-9_])",
+            content,
+        )
+    )
 
 
 def _csharp_braced_body(content: str, declaration_pattern: str, relative_path: str) -> str:
@@ -735,79 +1371,277 @@ def _csharp_braced_body(content: str, declaration_pattern: str, relative_path: s
     raise InventoryError(f"Required C# block is unterminated: {relative_path}.")
 
 
-def _path_set_fingerprint(paths: Sequence[str]) -> str:
-    canonical = "".join(f"{path}\n" for path in sorted(paths)).encode("utf-8")
+def _declaration_set_fingerprint(declarations: Sequence[CSharpTypeDeclaration]) -> str:
+    canonical = "".join(
+        f"{declaration.path}\t{declaration.name}\n"
+        for declaration in sorted(declarations, key=lambda item: (item.path, item.name))
+    ).encode("utf-8")
     return hashlib.sha256(canonical).hexdigest()
 
 
-def _require_path_set(
-    label: str,
+_CSHARP_USING_ALIAS_PATTERN = re.compile(
+    r"(?m)(?:^|(?<=[;{]))\s*(?P<global>global\s+)?using\s+(?:unsafe\s+)?"
+    rf"(?P<alias>{CSHARP_IDENTIFIER_PATTERN})\s*=\s*"
+    rf"(?P<target>{CSHARP_QUALIFIED_IDENTIFIER_PATTERN})\s*;"
+)
+
+
+def _normalize_csharp_identifier(name: str) -> str:
+    return name[1:] if name.startswith("@") else name
+
+
+def _alias_target_name(target: str) -> str:
+    return _normalize_csharp_identifier(target.replace("global::", "").rsplit(".", 1)[-1])
+
+
+def _normalize_csharp_qualified_identifier(name: str) -> str:
+    normalized = name.removeprefix("global::")
+    return ".".join(_normalize_csharp_identifier(part) for part in normalized.split("."))
+
+
+def _merge_csharp_alias(
+    aliases: dict[str, str],
+    alias: str,
+    target: str,
+    relative_path: str,
+) -> None:
+    alias = _normalize_csharp_identifier(alias)
+    target_name = _normalize_csharp_qualified_identifier(target)
+    previous = aliases.get(alias)
+    if previous is not None and previous != target_name:
+        raise InventoryError(f"C# using alias is ambiguous: {relative_path}:{alias}.")
+    aliases[alias] = target_name
+
+
+def _global_csharp_aliases(
+    snapshot: SourceSnapshot,
     paths: Sequence[str],
+) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    for relative_path in paths:
+        live = _live_csharp_code(_read_csharp(snapshot, relative_path))
+        for match in _CSHARP_USING_ALIAS_PATTERN.finditer(live):
+            if live[: match.start()].count("{") != live[: match.start()].count("}"):
+                raise InventoryError(f"C# namespace-local using alias is unsupported: {relative_path}.")
+            if match.group("global") is not None:
+                _merge_csharp_alias(
+                    aliases,
+                    match.group("alias"),
+                    match.group("target"),
+                    relative_path,
+                )
+    return aliases
+
+
+def _file_csharp_aliases(
+    live_content: str,
+    global_aliases: dict[str, str],
+    relative_path: str,
+) -> dict[str, str]:
+    aliases = dict(global_aliases)
+    for match in _CSHARP_USING_ALIAS_PATTERN.finditer(live_content):
+        if live_content[: match.start()].count("{") != live_content[: match.start()].count("}"):
+            raise InventoryError(f"C# namespace-local using alias is unsupported: {relative_path}.")
+        _merge_csharp_alias(
+            aliases,
+            match.group("alias"),
+            match.group("target"),
+            relative_path,
+        )
+    return aliases
+
+
+def _resolve_csharp_alias(name: str, aliases: dict[str, str], relative_path: str) -> str:
+    name = _normalize_csharp_identifier(name)
+    seen: set[str] = set()
+    while name in aliases:
+        if name in seen:
+            raise InventoryError(f"C# using alias cycle detected: {relative_path}:{name}.")
+        seen.add(name)
+        name = aliases[name]
+        if "." in name:
+            return name
+    return name
+
+
+def _csharp_base_type_names(
+    base_list: str,
+    aliases: dict[str, str],
+    relative_path: str,
+) -> tuple[str, ...]:
+    parts: list[str] = []
+    start = 0
+    depth = 0
+    for index, character in enumerate(base_list):
+        if character in "<([":
+            depth += 1
+        elif character in ">)]":
+            depth -= 1
+            if depth < 0:
+                raise InventoryError(f"C# base type list is unbalanced: {relative_path}.")
+        elif character == "," and depth == 0:
+            parts.append(base_list[start:index])
+            start = index + 1
+    if depth != 0:
+        raise InventoryError(f"C# base type list is unbalanced: {relative_path}.")
+    parts.append(base_list[start:])
+
+    names: list[str] = []
+    qualified_name = re.compile(
+        rf"\s*(?P<name>{CSHARP_QUALIFIED_IDENTIFIER_PATTERN})"
+    )
+    for part in parts:
+        token = qualified_name.match(part)
+        if token is None:
+            raise InventoryError(f"C# base type list drifted: {relative_path}.")
+        qualified = token.group("name")
+        simple = _alias_target_name(qualified)
+        if qualified.startswith("global::") or "." in qualified:
+            names.append(_normalize_csharp_qualified_identifier(qualified))
+        else:
+            names.append(_resolve_csharp_alias(simple, aliases, relative_path))
+    return tuple(names)
+
+
+def _require_target_declaration_surface(
+    snapshot: SourceSnapshot,
+    paths: Sequence[str],
+    base_type: str,
+) -> None:
+    declaration = re.compile(
+        rf"\b(?P<kind>class|struct|interface|record(?:\s+(?:class|struct))?)\s+"
+        rf"@?{re.escape(base_type)}(?![A-Za-z0-9_])"
+    )
+    matches: list[tuple[str, str]] = []
+    for relative_path in paths:
+        live = _live_csharp_code(_read_csharp(snapshot, relative_path))
+        matches.extend(
+            (relative_path, match.group("kind")) for match in declaration.finditer(live)
+        )
+    if base_type == "IDocumentObjectStoreV1":
+        expected = [(DOCUMENT_OBJECT_STORE_INTERFACE_PATH, "interface")]
+        if matches == expected:
+            return
+    elif not matches:
+        return
+    raise InventoryError(f"C# target type declaration surface drifted: {base_type}.")
+
+
+def _discover_csharp_subclasses(
+    snapshot: SourceSnapshot,
+    base_type: str,
+) -> tuple[CSharpTypeDeclaration, ...]:
+    declaration_pattern = re.compile(
+        rf"\bclass\s+(?P<name>{CSHARP_IDENTIFIER_PATTERN})"
+        r"(?:\s*<[^;{}]+>)?\s*(?:\([^;{}]*\))?\s*:\s*(?P<bases>[^;{}]+)(?:\{|;)",
+        re.DOTALL,
+    )
+    declarations: list[CSharpTypeDeclaration] = []
+    paths = tuple(sorted(
+        path
+        for path in snapshot.files
+        if path.startswith(f"{BACKEND_ROOT.as_posix()}/") and path.casefold().endswith(".cs")
+    ))
+    _require_target_declaration_surface(snapshot, paths, base_type)
+    global_aliases = _global_csharp_aliases(snapshot, paths)
+    for relative_path in paths:
+        _require_repo_relative_path(relative_path)
+        live_content = _live_csharp_code(_read_csharp(snapshot, relative_path))
+        aliases = _file_csharp_aliases(live_content, global_aliases, relative_path)
+        for match in declaration_pattern.finditer(live_content):
+            base_names = _csharp_base_type_names(match.group("bases"), aliases, relative_path)
+            declarations.append(
+                CSharpTypeDeclaration(
+                    _normalize_csharp_identifier(match.group("name")),
+                    relative_path,
+                    base_names,
+                )
+            )
+
+    declarations_by_name: dict[str, list[CSharpTypeDeclaration]] = {}
+    for declaration in declarations:
+        declarations_by_name.setdefault(declaration.name, []).append(declaration)
+
+    def derives_from_target(
+        declaration: CSharpTypeDeclaration,
+        seen: frozenset[str] = frozenset(),
+    ) -> bool:
+        for parent in declaration.base_types:
+            if parent in {base_type, CSHARP_TARGET_TYPE_NAMES[base_type]}:
+                return True
+            if _alias_target_name(parent) == base_type:
+                raise InventoryError(
+                    f"C# target base type is bound to an unexpected namespace: "
+                    f"{declaration.path}:{parent}."
+                )
+            if parent in seen:
+                raise InventoryError(f"C# inheritance cycle detected while discovering {base_type}.")
+            parent_name = _alias_target_name(parent)
+            for parent_declaration in declarations_by_name.get(parent_name, ()):
+                if derives_from_target(parent_declaration, seen | {parent}):
+                    return True
+        return False
+
+    result = [declaration for declaration in declarations if derives_from_target(declaration)]
+    return tuple(sorted(result, key=lambda item: (item.path, item.name)))
+
+
+def _require_declaration_set(
+    label: str,
+    declarations: Sequence[CSharpTypeDeclaration],
     expected_count: int,
     expected_fingerprint: str,
 ) -> None:
-    actual_count = len(paths)
-    actual_fingerprint = _path_set_fingerprint(paths)
+    actual_count = len(declarations)
+    actual_fingerprint = _declaration_set_fingerprint(declarations)
     if actual_count != expected_count or actual_fingerprint != expected_fingerprint:
         raise InventoryError(
-            f"{label} surface drifted: expected count={expected_count} "
+            f"{label} declaration surface drifted: expected count={expected_count} "
             f"fingerprint={expected_fingerprint}; actual count={actual_count} "
             f"fingerprint={actual_fingerprint}."
         )
 
 
 def _db_context_inventory(snapshot: SourceSnapshot) -> list[dict[str, str]]:
-    paths = sorted(
-        path
-        for path in snapshot.files
-        if path.startswith(f"{BACKEND_ROOT.as_posix()}/") and path.endswith("DbContext.cs")
-    )
-    _require_path_set(
+    declarations = _discover_csharp_subclasses(snapshot, "DbContext")
+    _require_declaration_set(
         "DbContext",
-        paths,
+        declarations,
         EXPECTED_DB_CONTEXT_COUNT,
-        EXPECTED_DB_CONTEXT_PATH_FINGERPRINT,
+        EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT,
     )
-
+    paths = [declaration.path for declaration in declarations]
+    if len(paths) != len(set(paths)):
+        raise InventoryError("A source file declares more than one DbContext.")
     result: list[dict[str, str]] = []
-    for relative_path in paths:
-        context_name = Path(relative_path).stem
-        _require_repo_relative_path(relative_path)
-        content = _read_csharp(snapshot, relative_path)
-        declaration = re.compile(
-            rf"\bclass\s+{re.escape(context_name)}\s*\([^)]*\)\s*:\s*DbContext\s*\(",
-            re.DOTALL,
-        )
-        if declaration.search(content) is None:
-            raise InventoryError(f"DbContext declaration drifted: {relative_path}.")
+    for declaration in declarations:
+        relative_path = declaration.path
         record = _source_file_record(snapshot, relative_path)
         result.append(
-            {"name": context_name, "path": record["path"], "sha256": record["sha256"]}
+            {"name": declaration.name, "path": record["path"], "sha256": record["sha256"]}
         )
     return result
 
 
 def _migration_inventory(snapshot: SourceSnapshot) -> list[dict[str, str]]:
-    paths = sorted(
-        path
-        for path in snapshot.files
-        if path.startswith(f"{BACKEND_ROOT.as_posix()}/")
-        and path.endswith(".cs")
-        and "Migrations" in PurePosixPath(path).parts
-        and not path.endswith(".Designer.cs")
-        and not path.endswith("ModelSnapshot.cs")
-    )
-    _require_path_set(
+    declarations = _discover_csharp_subclasses(snapshot, "Migration")
+    _require_declaration_set(
         "Migration",
-        paths,
+        declarations,
         EXPECTED_MIGRATION_COUNT,
-        EXPECTED_MIGRATION_PATH_FINGERPRINT,
+        EXPECTED_MIGRATION_DECLARATION_FINGERPRINT,
     )
-    for path in paths:
+    paths = [declaration.path for declaration in declarations]
+    if len(paths) != len(set(paths)):
+        raise InventoryError("A source file declares more than one Migration.")
+    for declaration in declarations:
+        path = declaration.path
         _require_repo_relative_path(path)
         name = PurePosixPath(path).name
         if MIGRATION_NAME_PATTERN.fullmatch(name) is None:
             raise InventoryError(f"Migration filename is not canonical: {name}.")
+        if declaration.name != PurePosixPath(path).stem.split("_", 1)[-1]:
+            raise InventoryError(f"Migration declaration does not match its canonical file: {path}.")
     return [_source_file_record(snapshot, path) for path in paths]
 
 
@@ -843,31 +1677,96 @@ def _require_live_csharp_tokens(
             raise InventoryError(f"Required source anchor drifted: {relative_path}.")
 
 
-def _discover_document_object_store_adapters(
-    snapshot: SourceSnapshot,
-) -> tuple[tuple[str, str], ...]:
+def _csharp_type_body(
+    content: str,
+    declaration_kind: str,
+    type_name: str,
+    relative_path: str,
+) -> str:
+    live = _live_csharp_code(content)
     declaration = re.compile(
-        r"\bclass\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\b[^;{}]*"
-        r":\s*[^;{}]*\bIDocumentObjectStoreV1\b",
+        rf"\b{re.escape(declaration_kind)}\s+{re.escape(type_name)}\b[^;{{}}]*\{{",
         re.DOTALL,
     )
-    adapters: list[tuple[str, str]] = []
-    for relative_path in sorted(
+    matches = list(declaration.finditer(live))
+    if len(matches) != 1:
+        raise InventoryError(f"Required C# type is missing or ambiguous: {relative_path}:{type_name}.")
+    opening = live.find("{", matches[0].start(), matches[0].end())
+    closing = _matching_brace(live, opening)
+    return content[opening + 1 : closing]
+
+
+def _document_type_declarations(
+    snapshot: SourceSnapshot,
+) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
+    declaration = re.compile(
+        rf"\b(?P<kind>class|struct|interface|record(?:\s+(?:class|struct))?)\s+"
+        rf"(?P<name>{CSHARP_IDENTIFIER_PATTERN})"
+        r"(?:\s*<[^;{}]+>)?\s*(?:\([^;{}]*\))?\s*:\s*(?P<bases>[^;{}]+)(?:\{|;)",
+        re.DOTALL,
+    )
+    result: list[tuple[str, str, str, tuple[str, ...]]] = []
+    paths = tuple(sorted(
         path
         for path in snapshot.files
-        if path.startswith(DOCUMENTS_SOURCE_ROOT) and path.endswith(".cs")
-    ):
+        if path.startswith(DOCUMENTS_SOURCE_ROOT) and path.casefold().endswith(".cs")
+    ))
+    _require_target_declaration_surface(snapshot, paths, "IDocumentObjectStoreV1")
+    global_aliases = _global_csharp_aliases(snapshot, paths)
+    for relative_path in paths:
         _require_repo_relative_path(relative_path)
-        live_content = _live_csharp_code(_read_csharp(snapshot, relative_path))
-        for match in declaration.finditer(live_content):
-            adapters.append((match.group("name"), relative_path))
+        live = _live_csharp_code(_read_csharp(snapshot, relative_path))
+        aliases = _file_csharp_aliases(live, global_aliases, relative_path)
+        for match in declaration.finditer(live):
+            bases = _csharp_base_type_names(match.group("bases"), aliases, relative_path)
+            result.append(
+                (
+                    match.group("kind"),
+                    _normalize_csharp_identifier(match.group("name")),
+                    relative_path,
+                    bases,
+                )
+            )
+    return tuple(result)
+
+
+def _discover_document_object_store_adapters(
+    snapshot: SourceSnapshot,
+) -> tuple[tuple[str, str, str], ...]:
+    declarations = _document_type_declarations(snapshot)
+    type_bases: dict[str, set[str]] = {}
+    for kind, name, _, bases in declarations:
+        type_bases.setdefault(name, set()).update(bases)
+
+    def is_object_store_type(name: str, seen: frozenset[str] = frozenset()) -> bool:
+        if name in {
+            "IDocumentObjectStoreV1",
+            CSHARP_TARGET_TYPE_NAMES["IDocumentObjectStoreV1"],
+        }:
+            return True
+        if _alias_target_name(name) == "IDocumentObjectStoreV1":
+            raise InventoryError(
+                f"Documents object-store interface is bound to an unexpected namespace: {name}."
+            )
+        if name in seen:
+            raise InventoryError("Documents object-store type inheritance contains a cycle.")
+        return any(
+            is_object_store_type(base, seen | {name})
+            for base in type_bases.get(name, ())
+        )
+
+    adapters = [
+        (kind, name, relative_path)
+        for kind, name, relative_path, bases in declarations
+        if kind != "interface" and any(is_object_store_type(base) for base in bases)
+    ]
 
     if len(adapters) < 2:
         raise InventoryError("Documents object-store adapter surface drifted.")
-    folded_names = [name.casefold() for name, _ in adapters]
+    folded_names = [name.casefold() for _, name, _ in adapters]
     if len(folded_names) != len(set(folded_names)):
         raise InventoryError("Documents object-store adapters duplicate a class name.")
-    return tuple(sorted(adapters, key=lambda item: (item[0].casefold(), item[1])))
+    return tuple(sorted(adapters, key=lambda item: (item[1].casefold(), item[2])))
 
 
 def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
@@ -891,24 +1790,73 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
 
     discovered_adapters = _discover_document_object_store_adapters(snapshot)
     adapter_records: list[dict[str, str]] = []
-    for adapter_name, relative_path in discovered_adapters:
+    for adapter_kind, adapter_name, relative_path in discovered_adapters:
         content = _read_csharp(snapshot, relative_path)
-        _require_live_csharp_tokens(
-            content,
-            relative_path,
-            (
-                "DocumentContentHash.Compute",
-            ),
-        )
-        live_content = _live_csharp_code(content)
+        adapter_body = _csharp_type_body(content, adapter_kind, adapter_name, relative_path)
+        live_adapter_body = _live_csharp_code(adapter_body)
+        if "DocumentContentHash.Compute" not in live_adapter_body:
+            raise InventoryError(f"Documents object-store hash contract drifted: {relative_path}.")
         key_pattern = re.compile(
             rf"\bGeneratedRegex\s*\(\s*{re.escape(json.dumps(DOCUMENT_OBJECT_KEY_PATTERN))}"
         )
         if not any(
-            _is_live_csharp_span(content, live_content, match.start(), match.end())
-            for match in key_pattern.finditer(content)
+            _is_live_csharp_span(
+                adapter_body,
+                live_adapter_body,
+                match.start(),
+                match.end(),
+            )
+            for match in key_pattern.finditer(adapter_body)
         ):
             raise InventoryError(f"Documents object-key contract drifted: {relative_path}.")
+        if adapter_name in {"FileSystemDocumentObjectStore", "ServerDirectoryDocumentObjectStore"}:
+            resolve_body = _csharp_method_body(content, "Resolve", relative_path)
+            resolved_path = re.compile(
+                r"\bvar\s+path\s*=\s*Path\.GetFullPath\s*\(\s*"
+                r"Path\.Combine\s*\(\s*root\s*,\s*key\.Replace\s*\("
+            )
+            if (
+                resolved_path.search(resolve_body) is None
+                or _csharp_assignment_count(resolve_body, "path") != 1
+                or len(re.findall(r"\breturn\s+path\s*;", resolve_body)) != 1
+                or _csharp_assignment_count(resolve_body, "root") != 0
+            ):
+                raise InventoryError(f"Documents configured-root use drifted: {relative_path}.")
+            for operation in ("PutAsync", "ReadAsync"):
+                operation_body = _csharp_method_body(content, operation, relative_path)
+                if (
+                    "var path = Resolve(key);" not in operation_body
+                    or _csharp_assignment_count(operation_body, "path") != 1
+                    or _csharp_identifier_count(operation_body, "Resolve") != 1
+                ):
+                    raise InventoryError(
+                        f"Documents operative object path drifted: {relative_path}:{operation}."
+                    )
+            for method_name in ("Resolve", "PutAsync", "ReadAsync"):
+                _require_reviewed_method_fingerprint(content, relative_path, method_name)
+
+        if adapter_name == "FileSystemDocumentObjectStore":
+            constructor_body = _csharp_method_body(content, adapter_name, relative_path)
+            if (
+                "root = Path.GetFullPath(rootPath);" not in constructor_body
+                or _csharp_assignment_count(constructor_body, "root") != 1
+            ):
+                raise InventoryError(f"Documents configured-root constructor drifted: {relative_path}.")
+            _require_reviewed_method_fingerprint(content, relative_path, adapter_name)
+        elif adapter_name == "ServerDirectoryDocumentObjectStore":
+            open_body = _csharp_method_body(content, "Open", relative_path)
+            constructor_body = _csharp_method_body(content, adapter_name, relative_path)
+            if (
+                "var fullRoot = Path.GetFullPath(rootPath);" not in open_body
+                or "return new ServerDirectoryDocumentObjectStore(fullRoot);" not in open_body
+                or _csharp_assignment_count(open_body, "fullRoot") != 1
+                or open_body.count("new ServerDirectoryDocumentObjectStore") != 1
+                or "root = fullRoot;" not in constructor_body
+                or _csharp_assignment_count(constructor_body, "root") != 1
+            ):
+                raise InventoryError(f"Documents configured-root constructor drifted: {relative_path}.")
+            _require_reviewed_method_fingerprint(content, relative_path, "Open")
+            _require_reviewed_method_fingerprint(content, relative_path, adapter_name)
         adapter_records.append({"name": adapter_name, "path": relative_path})
 
     runtime_content = _read_csharp(snapshot, DOCUMENT_RUNTIME_PATH)
@@ -921,32 +1869,72 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
             "services.AddDocumentsModule(",
         ),
     )
-    _require_live_csharp_tokens(
+    _require_method_tokens(
         module_content,
         module_path,
+        "AddDocumentsModule",
         (
-            "ServerDirectoryDocumentObjectStore.Open",
-            "new FileSystemDocumentObjectStore",
-            "DefenderQuarantinePathKey",
+            "var root = configuration[ObjectStoreRootPathKey]",
+            "new FileSystemDocumentObjectStore(string.IsNullOrWhiteSpace(root)",
         ),
+    )
+    development_registration = _csharp_method_body(
+        module_content, "AddDocumentsModule", module_path
+    )
+    if (
+        _csharp_assignment_count(development_registration, "root") != 1
+        or _csharp_assignment_count(development_registration, "store") != 1
+        or "services.TryAddSingleton<IDocumentObjectStoreV1>(store);"
+        not in development_registration
+    ):
+        raise InventoryError("Documents development root registration drifted.")
+    _require_reviewed_method_fingerprint(module_content, module_path, "AddDocumentsModule")
+    _require_method_tokens(
+        module_content,
+        module_path,
+        "RegisterProductionStorageAndScanner",
+        (
+            "var root = configuration[ObjectStoreRootPathKey]",
+            "ServerDirectoryDocumentObjectStore.Open(root!)",
+        ),
+    )
+    production_registration = _csharp_method_body(
+        module_content, "RegisterProductionStorageAndScanner", module_path
+    )
+    if (
+        _csharp_assignment_count(production_registration, "root") != 1
+        or _csharp_assignment_count(production_registration, "store") != 1
+        or "services.TryAddSingleton<IDocumentObjectStoreV1>(store);"
+        not in production_registration
+    ):
+        raise InventoryError("Documents production root registration drifted.")
+    _require_reviewed_method_fingerprint(
+        module_content,
+        module_path,
+        "RegisterProductionStorageAndScanner",
     )
 
     readme_path = DOCUMENT_README_PATH
     scanner_path = DOCUMENT_SCANNER_PATH
     scanner = _read_csharp(snapshot, scanner_path)
-    live_scanner = _live_csharp_code(scanner)
-    _require_tokens(
-        live_scanner,
+    _require_live_csharp_tokens(
+        scanner,
         scanner_path,
         (
+            "WindowsDefenderDocumentScanner : IDocumentContentScannerV1",
             "private static void TryDelete(string path)",
         ),
     )
-    scan_body = _csharp_braced_body(
-        live_scanner,
-        r"\bpublic\s+async\s+Task<DocumentScanVerdictV1>\s+ScanAsync\s*\(",
-        scanner_path,
+    scan_body = _csharp_method_body(scanner, "ScanAsync", scanner_path)
+    if _csharp_identifier_count(scan_body, "TryDelete") != 1:
+        raise InventoryError(f"Documents transient cleanup binding drifted: {scanner_path}.")
+    exact_scan_signature = re.compile(
+        r"\bpublic\s+async\s+Task<DocumentScanVerdictV1>\s+ScanAsync\s*\(\s*"
+        r"ReadOnlyMemory<byte>\s+content\s*,\s*DocumentFileKind\s+kind\s*,\s*"
+        r"CancellationToken\s+cancellationToken\s*=\s*default\s*\)"
     )
+    if len(exact_scan_signature.findall(_live_csharp_code(scanner))) != 1:
+        raise InventoryError(f"Documents scanner interface implementation drifted: {scanner_path}.")
     if "var copy = Path.Combine(options.QuarantineDirectory" not in scan_body:
         raise InventoryError(f"Documents quarantine-copy lifecycle drifted: {scanner_path}.")
     cleanup = re.compile(
@@ -955,17 +1943,24 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
     )
     if cleanup.search(scan_body) is None:
         raise InventoryError(f"Documents transient cleanup lifecycle drifted: {scanner_path}.")
-    try_delete_body = _csharp_braced_body(
-        live_scanner,
-        r"\bprivate\s+static\s+void\s+TryDelete\s*\(\s*string\s+path\s*\)",
-        scanner_path,
-    )
+    try_delete_body = _csharp_method_body(scanner, "TryDelete", scanner_path)
     delete_sequence = re.compile(
         r"\bif\s*\(\s*File\.Exists\(path\)\s*\)\s*\{\s*File\.Delete\(path\);\s*\}",
         re.DOTALL,
     )
     if delete_sequence.search(try_delete_body) is None:
         raise InventoryError(f"Documents transient deletion implementation drifted: {scanner_path}.")
+    _require_reviewed_method_fingerprint(scanner, scanner_path, "ScanAsync")
+    _require_reviewed_method_fingerprint(scanner, scanner_path, "TryDelete")
+
+    reviewed_document_paths = {module_path, scanner_path}
+    reviewed_document_paths.update(
+        relative_path
+        for _, adapter_name, relative_path in discovered_adapters
+        if adapter_name in {"FileSystemDocumentObjectStore", "ServerDirectoryDocumentObjectStore"}
+    )
+    for relative_path in sorted(reviewed_document_paths):
+        _require_reviewed_live_source(snapshot, relative_path)
 
     readme = " ".join(_read_source(snapshot, readme_path).split())
     _require_tokens(
@@ -989,7 +1984,7 @@ def _documents_inventory(snapshot: SourceSnapshot) -> dict[str, Any]:
             _source_file_record(snapshot, path)
             for path in (
                 *DOCUMENT_SOURCE_PATHS,
-                *sorted({path for _, path in discovered_adapters}),
+                *sorted({path for _, _, path in discovered_adapters}),
             )
         ],
     }
@@ -1060,14 +2055,35 @@ def _context_schema_constant(content: str, live_content: str, relative_path: str
 def _is_message_or_dedup_mapping(
     entity_type: str,
     table: str,
-    model_region: str,
+    property_names: Sequence[str],
+    primary_key: Sequence[str] = (),
+    unique_indexes: Sequence[Sequence[str]] = (),
+    model_region: str = "",
 ) -> bool:
     if (
         MESSAGE_ENTITY_NAME_PATTERN.search(entity_type) is not None
         or MESSAGE_TABLE_NAME_PATTERN.search(table) is not None
     ):
         return True
-    return sum(anchor in model_region for anchor in MESSAGE_MODEL_ANCHORS) >= 2
+    properties = set(property_names)
+    if sum(anchor in properties or anchor in model_region for anchor in MESSAGE_MODEL_ANCHORS) >= 2:
+        return True
+    identity_sets = [set(primary_key), *(set(index) for index in unique_indexes)]
+    if any({"Consumer", "MessageId"}.issubset(identity) for identity in identity_sets):
+        return True
+    has_payload = any(
+        re.fullmatch(
+            r"(?:Payload(?:Json|Utf8|Body|Content)?|Envelope(?:Body|Json|Payload)?|MessageBody|Body|Content)",
+            property_name,
+            re.IGNORECASE,
+        )
+        for property_name in properties
+    )
+    has_terminal_time = any(
+        re.search(r"(?:Handled|Processed|Consumed|Dispatched).*(?:At|Utc)$", property_name, re.IGNORECASE)
+        for property_name in properties
+    )
+    return has_payload and has_terminal_time
 
 
 def _resolve_table_mapping(
@@ -1110,6 +2126,12 @@ def _discover_snapshot_table_mappings(snapshot: SourceSnapshot) -> tuple[ModelTa
         r'\bb\.ToTable\(\s*"(?P<table>[A-Za-z][A-Za-z0-9_]*)"\s*,'
         r'\s*"(?P<schema>[a-z][a-z0-9_]*)"'
     )
+    key_pattern = re.compile(r"\bb\.HasKey\((?P<arguments>[^)]*)\)\s*;")
+    index_pattern = re.compile(
+        r"\bb\.HasIndex\((?P<arguments>[^)]*)\)(?P<chain>.*?)\s*;",
+        re.DOTALL,
+    )
+    quoted_property_pattern = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
     mappings: list[ModelTableMapping] = []
     snapshot_paths = sorted(path for path in snapshot.files if path.endswith("ModelSnapshot.cs"))
     for relative_path in snapshot_paths:
@@ -1152,30 +2174,72 @@ def _discover_snapshot_table_mappings(snapshot: SourceSnapshot) -> tuple[ModelTa
                 )
             )
             table_match = live_tables[0]
+            live_body = live_content[body_start : body_start + len(body)]
+            keys = [
+                tuple(quoted_property_pattern.findall(match.group("arguments")))
+                for match in key_pattern.finditer(body)
+                if _is_live_csharp_span(
+                    content,
+                    live_content,
+                    body_start + match.start(),
+                    body_start + match.end(),
+                )
+            ]
+            if len(keys) != 1 or not keys[0]:
+                raise InventoryError(f"Model snapshot primary-key mapping drifted: {relative_path}.")
+            unique_indexes = tuple(
+                sorted(
+                    tuple(quoted_property_pattern.findall(match.group("arguments")))
+                    for match in index_pattern.finditer(body)
+                    if _is_live_csharp_span(
+                        content,
+                        live_content,
+                        body_start + match.start(),
+                        body_start + match.end(),
+                    )
+                    if ".IsUnique()" in match.group("chain")
+                )
+            )
             mappings.append(
                 ModelTableMapping(
                     entity_match.group("entity").rsplit(".", 1)[-1],
                     table_match.group("schema"),
                     table_match.group("table"),
                     properties,
+                    keys[0],
+                    unique_indexes,
                 )
             )
     return tuple(
         sorted(
             mappings,
-            key=lambda item: (item.schema, item.table, item.entity_type, item.property_names),
+            key=lambda item: (
+                item.schema,
+                item.table,
+                item.entity_type,
+                item.property_names,
+                item.primary_key,
+                item.unique_indexes,
+            ),
         )
     )
 
 
-def _discover_message_delivery_tables(snapshot: SourceSnapshot) -> tuple[tuple[str, str], ...]:
+def _discover_message_delivery_tables(
+    snapshot: SourceSnapshot,
+    snapshot_mappings: Sequence[ModelTableMapping] | None = None,
+) -> tuple[tuple[str, str], ...]:
+    if snapshot_mappings is None:
+        snapshot_mappings = _discover_snapshot_table_mappings(snapshot)
     tables: set[tuple[str, str]] = {
         (mapping.schema, mapping.table)
-        for mapping in _discover_snapshot_table_mappings(snapshot)
+        for mapping in snapshot_mappings
         if _is_message_or_dedup_mapping(
             mapping.entity_type,
             mapping.table,
-            "\n".join(mapping.property_names),
+            mapping.property_names,
+            mapping.primary_key,
+            mapping.unique_indexes,
         )
     }
     context_paths = sorted(path for path in snapshot.files if path.endswith("DbContext.cs"))
@@ -1206,7 +2270,7 @@ def _discover_message_delivery_tables(snapshot: SourceSnapshot) -> tuple[tuple[s
                 content, live_content, opening, schema_constant, relative_path
             )
             if mapping is not None and _is_message_or_dedup_mapping(
-                entity_type, mapping[1], ""
+                entity_type, mapping[1], (), model_region=""
             ):
                 tables.add(mapping)
 
@@ -1238,32 +2302,85 @@ def _discover_message_delivery_tables(snapshot: SourceSnapshot) -> tuple[tuple[s
                 content, live_content, opening, schema_constant, relative_path
             )
             if mapping is not None and _is_message_or_dedup_mapping(
-                entity_type, mapping[1], model_region
+                entity_type, mapping[1], (), model_region=model_region
             ):
                 tables.add(mapping)
     return tuple(sorted(tables))
 
 
-def _discover_idempotency_key_tables(snapshot: SourceSnapshot) -> tuple[tuple[str, str], ...]:
+def _discover_idempotency_key_tables(
+    snapshot: SourceSnapshot,
+    snapshot_mappings: Sequence[ModelTableMapping] | None = None,
+) -> tuple[tuple[str, str], ...]:
+    if snapshot_mappings is None:
+        snapshot_mappings = _discover_snapshot_table_mappings(snapshot)
     return tuple(
         sorted(
             {
                 (mapping.schema, mapping.table)
-                for mapping in _discover_snapshot_table_mappings(snapshot)
+                for mapping in snapshot_mappings
                 if "IdempotencyKeyHash" in mapping.property_names
             }
         )
     )
 
 
+def _discover_replay_enforcement_tables(
+    snapshot: SourceSnapshot,
+    snapshot_mappings: Sequence[ModelTableMapping] | None = None,
+) -> tuple[tuple[str, str], ...]:
+    if snapshot_mappings is None:
+        snapshot_mappings = _discover_snapshot_table_mappings(snapshot)
+    return tuple(
+        sorted(
+            {
+                (mapping.schema, mapping.table)
+                for mapping in snapshot_mappings
+                if "IdempotencyKeyHash" in mapping.property_names
+                and (
+                    "IdempotencyKeyHash" in mapping.primary_key
+                    or any(
+                        "IdempotencyKeyHash" in index
+                        for index in mapping.unique_indexes
+                    )
+                )
+            }
+        )
+    )
+
+
+def _has_live_replay_lookup(snapshot: SourceSnapshot, table: str) -> bool:
+    query_tokens = (".Any(", ".AnyAsync(", ".First(", ".FirstOrDefault(",
+                    ".FirstOrDefaultAsync(", ".Single(", ".SingleOrDefault(",
+                    ".SingleOrDefaultAsync(", ".Where(")
+    for relative_path in sorted(snapshot.files):
+        if not relative_path.casefold().endswith(".cs") or "Migrations" in PurePosixPath(relative_path).parts:
+            continue
+        live = _live_csharp_code(_read_csharp(snapshot, relative_path))
+        for statement in live.split(";"):
+            if table in statement and "IdempotencyKeyHash" in statement and any(
+                token in statement for token in query_tokens
+            ):
+                return True
+    return False
+
+
 def _require_discovered_durable_surfaces(snapshot: SourceSnapshot) -> None:
-    discovered_idempotency = _discover_idempotency_key_tables(snapshot)
+    snapshot_mappings = _discover_snapshot_table_mappings(snapshot)
+    discovered_idempotency = _discover_idempotency_key_tables(snapshot, snapshot_mappings)
     if discovered_idempotency != EXPECTED_IDEMPOTENCY_KEY_TABLES:
         raise InventoryError("Durable idempotency-key table surface drifted.")
 
     metadata_only = set(METADATA_ONLY_IDEMPOTENCY_KEY_TABLES)
     if not metadata_only.issubset(discovered_idempotency):
         raise InventoryError("Metadata-only idempotency-key classification drifted.")
+    discovered_replay_tables = set(
+        _discover_replay_enforcement_tables(snapshot, snapshot_mappings)
+    )
+    if set(discovered_idempotency) - discovered_replay_tables != metadata_only:
+        raise InventoryError("Metadata-only idempotency-key classification drifted.")
+    if any(_has_live_replay_lookup(snapshot, table) for _, table in metadata_only):
+        raise InventoryError("Metadata-only idempotency-key table gained replay lookup semantics.")
     expected_replay_tables = set(discovered_idempotency) - metadata_only
     specified_replay_tables = {
         (spec.schema, spec.table)
@@ -1283,10 +2400,17 @@ def _require_discovered_durable_surfaces(snapshot: SourceSnapshot) -> None:
     if specified_message_tables != EXPECTED_MESSAGE_DELIVERY_TABLES:
         raise InventoryError("Durable message/delivery specification drifted.")
 
-    discovered_message_tables = set(_discover_message_delivery_tables(snapshot))
+    discovered_message_tables = set(
+        _discover_message_delivery_tables(snapshot, snapshot_mappings)
+    )
     excluded_business_tables = set(NON_MESSAGE_DELIVERY_TABLES)
     if not excluded_business_tables.issubset(discovered_message_tables):
         raise InventoryError("Non-message delivery classification drifted.")
+    for mapping in snapshot_mappings:
+        if (mapping.schema, mapping.table) in excluded_business_tables and _is_message_or_dedup_mapping(
+            "", "", mapping.property_names, mapping.primary_key, mapping.unique_indexes
+        ):
+            raise InventoryError("Non-message delivery table gained durable message semantics.")
     if discovered_message_tables - excluded_business_tables != set(EXPECTED_MESSAGE_DELIVERY_TABLES):
         raise InventoryError("Durable message/delivery source surface drifted.")
 
@@ -1304,6 +2428,15 @@ def _durable_store_inventory(snapshot: SourceSnapshot) -> list[dict[str, Any]]:
 
     _require_discovered_durable_surfaces(snapshot)
 
+    scoped_writers = {
+        (spec.identifier, evidence.path)
+        for spec in DURABLE_STORE_SPECS
+        for evidence in spec.evidence
+        if evidence.live_code
+    }
+    if set(WRITER_METHOD_SCOPES) != scoped_writers:
+        raise InventoryError("Durable writer method-scope registry drifted.")
+
     physical_keys = [(spec.schema, spec.table) for spec in DURABLE_STORE_SPECS]
     if len(physical_keys) != len(set(physical_keys)):
         raise InventoryError("Durable-store specifications duplicate a physical table.")
@@ -1313,7 +2446,26 @@ def _durable_store_inventory(snapshot: SourceSnapshot) -> list[dict[str, Any]]:
         source_files: list[dict[str, str]] = []
         for evidence in sorted(spec.evidence, key=lambda item: item.path):
             content = _read_csharp(snapshot, evidence.path)
-            _require_live_csharp_tokens(content, evidence.path, evidence.required_tokens)
+            if evidence.live_code:
+                method_name = WRITER_METHOD_SCOPES.get((spec.identifier, evidence.path))
+                if method_name is None:
+                    raise InventoryError(
+                        f"Durable writer method scope is missing: {spec.identifier}:{evidence.path}."
+                    )
+                _require_reviewed_live_source(snapshot, evidence.path)
+                _require_reviewed_method_fingerprint(
+                    content,
+                    evidence.path,
+                    method_name,
+                )
+                _require_method_tokens(
+                    content,
+                    evidence.path,
+                    method_name,
+                    evidence.required_tokens,
+                )
+            else:
+                _require_live_csharp_tokens(content, evidence.path, evidence.required_tokens)
             source_files.append(_source_file_record(snapshot, evidence.path))
         records.append(
             {
@@ -1593,7 +2745,49 @@ def _validate_inventory_semantics(snapshot: SourceSnapshot, inventory: dict[str,
         raise InventoryError("Inventory counts do not match the exact source surface.")
 
 
+def _source_surface_paths(snapshot: SourceSnapshot) -> tuple[str, ...]:
+    backend_prefix = f"{BACKEND_ROOT.as_posix()}/"
+    backend_prefix_folded = backend_prefix.casefold()
+    build_controls = {path.casefold() for path in REPOSITORY_BUILD_CONTROL_PATHS}
+    return tuple(
+        sorted(
+            path
+            for path in snapshot.files
+            if path.casefold() in build_controls
+            or path.casefold().startswith(backend_prefix_folded)
+        )
+    )
+
+
+def _source_surface_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
+    paths = _source_surface_paths(snapshot)
+    digest = hashlib.sha256()
+    for path in paths:
+        encoded_path = path.encode("utf-8")
+        content = snapshot.files[path]
+        digest.update(len(encoded_path).to_bytes(8, "big"))
+        digest.update(encoded_path)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return len(paths), digest.hexdigest()
+
+
+def _require_reviewed_source_surface(snapshot: SourceSnapshot) -> None:
+    actual_count, actual_fingerprint = _source_surface_fingerprint(snapshot)
+    if (
+        actual_count != EXPECTED_SOURCE_SURFACE_FILE_COUNT
+        or actual_fingerprint != EXPECTED_SOURCE_SURFACE_FINGERPRINT
+    ):
+        raise InventoryError(
+            "Reviewed C# compilation source surface drifted: "
+            f"expected count={EXPECTED_SOURCE_SURFACE_FILE_COUNT} "
+            f"fingerprint={EXPECTED_SOURCE_SURFACE_FINGERPRINT}; "
+            f"actual count={actual_count} fingerprint={actual_fingerprint}."
+        )
+
+
 def _validate_inventory_for_snapshot(snapshot: SourceSnapshot, inventory: dict[str, Any]) -> None:
+    _require_reviewed_source_surface(snapshot)
     _validate_against_schema(inventory, _load_schema(snapshot))
     _validate_inventory_semantics(snapshot, inventory)
 
@@ -1609,6 +2803,7 @@ def validate_inventory(repository_root: Path, inventory: dict[str, Any]) -> None
 
 
 def _build_inventory_from_snapshot(snapshot: SourceSnapshot) -> dict[str, Any]:
+    _require_reviewed_source_surface(snapshot)
     db_contexts = _db_context_inventory(snapshot)
     migrations = _migration_inventory(snapshot)
     documents = _documents_inventory(snapshot)
@@ -1660,6 +2855,12 @@ def canonical_bytes(inventory: dict[str, Any]) -> bytes:
     return canonical_json(inventory).encode("utf-8")
 
 
+def _git_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["GIT_NO_REPLACE_OBJECTS"] = "1"
+    return environment
+
+
 def _run_git_text(
     repository_root: Path,
     arguments: Sequence[str],
@@ -1672,6 +2873,7 @@ def _run_git_text(
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=_git_environment(),
         )
     except OSError as exc:
         raise InventoryError("Git is unavailable for exact source identification.") from exc
@@ -1689,6 +2891,7 @@ def _run_git_bytes(
             check=False,
             capture_output=True,
             input=input_bytes,
+            env=_git_environment(),
         )
     except OSError as exc:
         raise InventoryError("Git is unavailable for exact source identification.") from exc
@@ -1732,14 +2935,63 @@ def _require_inventory_inputs_clean(repository_root: Path) -> None:
             "-z",
             "--untracked-files=all",
             "--ignore-submodules=none",
-            "--",
-            *INVENTORY_INPUT_PATHS,
         ),
     )
     if result.returncode != 0:
         raise InventoryError("Recovery inventory inputs cannot be verified as clean.")
     if result.stdout:
-        raise InventoryError("Recovery inventory inputs contain tracked or untracked worktree changes.")
+        raise InventoryError("Recovery inventory worktree contains tracked or untracked changes.")
+
+
+def _is_inventory_input_path(relative_path: str) -> bool:
+    folded = relative_path.casefold()
+    backend = BACKEND_ROOT.as_posix().casefold()
+    exact_inputs = {
+        *(path.casefold() for path in REPOSITORY_BUILD_CONTROL_PATHS),
+        SCHEMA_PATH.as_posix().casefold(),
+        GENERATOR_PATH.as_posix().casefold(),
+    }
+    return folded == backend or folded.startswith(f"{backend}/") or folded in exact_inputs
+
+
+def _require_no_worktree_source_shadows(
+    repository_root: Path,
+    committed_files: dict[str, bytes],
+) -> None:
+    committed = {path.casefold() for path in committed_files}
+    backend_root = repository_root / BACKEND_ROOT
+    if not backend_root.is_dir():
+        raise InventoryError("Recovery inventory backend worktree root is missing.")
+    for directory, directory_names, file_names in os.walk(backend_root, followlinks=False):
+        directory_names[:] = [
+            name for name in directory_names if name.casefold() not in {"bin", "obj"}
+        ]
+        for name in file_names:
+            path = Path(directory, name)
+            try:
+                relative_path = path.relative_to(repository_root).as_posix()
+            except ValueError as exc:
+                raise InventoryError("Recovery inventory worktree source path escaped the repository.") from exc
+            if relative_path.casefold() not in committed:
+                raise InventoryError(
+                    f"Recovery inventory worktree contains an uncommitted source shadow: "
+                    f"{relative_path}."
+                )
+
+    build_controls = {path.casefold() for path in REPOSITORY_BUILD_CONTROL_PATHS}
+    for relative_directory in (Path(), Path("src")):
+        directory = repository_root / relative_directory
+        if not directory.is_dir():
+            continue
+        for path in directory.iterdir():
+            if not path.is_file():
+                continue
+            relative_path = path.relative_to(repository_root).as_posix()
+            if relative_path.casefold() in build_controls and relative_path.casefold() not in committed:
+                raise InventoryError(
+                    f"Recovery inventory worktree contains an uncommitted build-control shadow: "
+                    f"{relative_path}."
+                )
 
 
 def _read_commit_blobs(
@@ -1748,7 +3000,7 @@ def _read_commit_blobs(
 ) -> dict[str, bytes]:
     tree = _run_git_bytes(
         repository_root,
-        ("ls-tree", "-r", "-z", "--full-tree", source_commit, "--", *INVENTORY_INPUT_PATHS),
+        ("ls-tree", "-r", "-z", "--full-tree", source_commit),
     )
     if tree.returncode != 0:
         raise InventoryError("Exact commit tree cannot be enumerated.")
@@ -1765,6 +3017,8 @@ def _read_commit_blobs(
         except (ValueError, UnicodeError) as exc:
             raise InventoryError("Exact commit tree contains an unsupported path record.") from exc
         _require_repo_relative_path(relative_path, backend_only=False)
+        if not _is_inventory_input_path(relative_path):
+            continue
         if object_type != "blob" or mode not in {"100644", "100755"}:
             raise InventoryError(f"Inventory input is not a regular Git blob: {relative_path}.")
         folded_path = relative_path.casefold()
@@ -1814,9 +3068,11 @@ def _load_source_snapshot(repository_root: Path, source_commit: str) -> SourceSn
         raise InventoryError("Source commit must resolve exactly to the current Git HEAD.")
     _require_inventory_inputs_clean(root)
     files = _read_commit_blobs(root, source_commit)
+    _require_no_worktree_source_shadows(root, files)
     _require_inventory_inputs_clean(root)
     if _git_source_commit(root) != source_commit:
         raise InventoryError("Git HEAD changed while exact commit blobs were read.")
+    _require_no_worktree_source_shadows(root, files)
     for required_path in (SCHEMA_PATH.as_posix(), GENERATOR_PATH.as_posix()):
         if required_path not in files:
             raise InventoryError(f"Exact commit is missing required inventory input: {required_path}.")
