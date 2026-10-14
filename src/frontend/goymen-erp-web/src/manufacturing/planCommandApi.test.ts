@@ -110,6 +110,46 @@ describe('savePlan', () => {
     expect(await savePlan(request, CONTEXT)).toEqual({ type: 'unknown', reason: 'undecodable' })
   })
 
+  it('M01.3: sends the authored cut lines and trusts a 201 only for the exact ordered definition', async () => {
+    const lines = [
+      { lineId: 'c0000000-0000-4000-8000-0000000000bb', sequence: 40, lengthMm: '6000.000', count: 3 },
+      { lineId: 'c0000000-0000-4000-8000-0000000000aa', sequence: -7, lengthMm: '2500.5', count: 2 },
+    ]
+    const request: SavePlanRequest = { ...REQUEST, cutToLengthSpec: { lines } }
+    const stored = lines.map((line) => ({ ...line, lengthMm: line.lengthMm === '6000.000' ? '6000' : line.lengthMm }))
+    const committed = (answered: unknown) => json(
+      plan({ process: 'CutToLength', target: REQUEST.target, cutToLengthSpec: answered }),
+      201,
+      { Location: `/api/v1/manufacturing/plans/${PLAN}` },
+    )
+
+    const fetchMock = answer(committed({ lines: stored }))
+    expect(await savePlan(request, CONTEXT)).toMatchObject({ type: 'applied' })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string).cutToLengthSpec).toEqual({ lines })
+
+    // The server's GUID text may differ in case only.
+    answer(committed({ lines: stored.map((line) => ({ ...line, lineId: line.lineId.toUpperCase() })) }))
+    expect(await savePlan(request, CONTEXT)).toMatchObject({ type: 'applied' })
+
+    for (const answered of [
+      null,
+      { lines: [...stored].reverse() },
+      { lines: [stored[0]] },
+      { lines: stored.map((line, index) => ({ ...line, sequence: index + 1 })) },
+      { lines: [stored[0], { ...stored[1], lineId: 'c0000000-0000-4000-8000-0000000000cc' }] },
+      { lines: [stored[0], { ...stored[1], lengthMm: '2500.6' }] },
+      { lines: [stored[0], { ...stored[1], count: 1 }] },
+    ]) {
+      answer(committed(answered))
+      expect(await savePlan(request, CONTEXT), JSON.stringify(answered)).toEqual({ type: 'unknown', reason: 'undecodable' })
+    }
+
+    // A request without cut lines is never confirmed by an answer that carries some.
+    answer(committed({ lines: stored }))
+    expect(await savePlan(REQUEST, CONTEXT)).toEqual({ type: 'unknown', reason: 'undecodable' })
+  })
+
   it.each([
     ['another company', plan({ companyId: 'bbbbbbbb-0000-0000-0000-000000000002', target: REQUEST.target })],
     ['another plan', plan({ planId: 'd0000000-0000-4000-8000-000000000099', target: REQUEST.target })],

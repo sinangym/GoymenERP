@@ -27,7 +27,9 @@ import {
   type PendingPlanCreate,
 } from './pendingPlanStore'
 import { PlanPreviewPanel } from './PlanPreviewPanel'
-import { planPreviewInput, usePlanPreview } from './usePlanPreview'
+import { cutToLengthDraftInput, planPreviewInput, usePlanPreview, type CutToLengthLineDraft } from './usePlanPreview'
+import { CutToLengthLinesEditor } from './CutToLengthLinesEditor'
+import { CUT_LINE_TEXT } from './planEditText'
 import styles from './PlanPage.module.css'
 
 type ReadState<T> =
@@ -146,6 +148,8 @@ function PlanCreate({ namespace, preselect }: {
   const [slittingEnabled, setSlittingEnabled] = useState(false)
   const [slitLines, setSlitLines] = useState<readonly SlitLineForm[]>([])
   const [windingTargetKg, setWindingTargetKg] = useState('')
+  // M01.3: no row by default — a CutToLength plan without authored rows sends no cut definition.
+  const [cutLines, setCutLines] = useState<readonly CutToLengthLineDraft[]>([])
   const [formError, setFormError] = useState<string | null>(null)
   const candidateGeneration = useRef(0)
   const commandGeneration = useRef(0)
@@ -292,6 +296,7 @@ function PlanCreate({ namespace, preselect }: {
     ? workCenters.data.find((workCenter) => workCenter.id === workCenterId)
     : undefined
   const slittingActive = selectedWorkCenter?.kind === 'Slitting' && slittingEnabled
+  const cutToLengthLine = selectedWorkCenter?.kind === 'CutToLength'
   const previewInput = planPreviewInput(
     workCenterId,
     inputs.map(({ candidate, plannedKg }) => ({
@@ -307,6 +312,8 @@ function PlanCreate({ namespace, preselect }: {
       lines: slitLines.map((line, index) => ({ ...line, label: `Bant ${index + 1}` })),
       windingTargetKg,
     },
+    // Authored rows are validated before preview AND save; only a CutToLength line sends them.
+    cutToLengthLine && cutLines.length > 0 ? cutToLengthDraftInput(cutLines) : null,
   )
   const preview = usePlanPreview(companyId, previewInput, authBoundary)
 
@@ -358,6 +365,8 @@ function PlanCreate({ namespace, preselect }: {
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       slittingSpec: previewInput.request.slittingSpec ?? null,
+      // The same validated ordered definition the preview sent; omitted when no row was authored.
+      ...(previewInput.request.cutToLengthSpec === undefined ? {} : { cutToLengthSpec: previewInput.request.cutToLengthSpec }),
     }
     void send({ actorId, companyId, idempotencyKey: newId(), request })
   }
@@ -577,6 +586,12 @@ function PlanCreate({ namespace, preselect }: {
                 </div>
               </>
             ) : null}
+          </fieldset>
+        ) : null}
+        {cutToLengthLine ? (
+          <fieldset disabled={frozen}>
+            <legend>{CUT_LINE_TEXT.legend}</legend>
+            <CutToLengthLinesEditor idPrefix="plan-create-cut" lines={cutLines} onChange={setCutLines} keepOne={false} />
           </fieldset>
         ) : null}
         <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />

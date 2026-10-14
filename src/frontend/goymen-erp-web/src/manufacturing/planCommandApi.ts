@@ -20,7 +20,10 @@ export interface SlittingSpecRequest {
   readonly windingTargetKg: string | null
 }
 
-/** `CutToLengthSpecRequestV1`: the stored lines sent back exactly as read, in order. */
+/**
+ * `CutToLengthSpecRequestV1`: the ordered cut lines — stored ones sent back exactly as read, authored ones exactly as
+ * validated (M01.3) — in list order, never re-sorted by sequence.
+ */
 export interface CutToLengthSpecRequest {
   readonly lines: readonly {
     readonly lineId: string
@@ -41,6 +44,8 @@ export interface SavePlanRequest {
   readonly target: { readonly basis: PlanTargetBasis; readonly kg: string } | null
   /** Omitted by legacy callers; explicit null means this plan has no slitting draft content. */
   readonly slittingSpec?: SlittingSpecRequest | null
+  /** M01.3: the authored ordered cut lines; omitted when the plan has none (never an empty or implicit clear). */
+  readonly cutToLengthSpec?: CutToLengthSpecRequest
 }
 
 export interface SavePlanContext {
@@ -167,8 +172,8 @@ function describesAttempt(plan: ProductionPlanView, request: SavePlanRequest, co
     sameInputs(plan, request) &&
     sameTarget(plan, request) &&
     sameSlittingSpec(plan, request) &&
-    // The create form never sends cut lines, so an answer carrying some does not describe this attempt.
-    plan.cutToLengthSpec === null
+    // Exactly the sent cut lines (or none when none were sent): order, ids, sequences, canonical lengths and counts.
+    sameCutToLengthSpec(plan, request)
   )
 }
 

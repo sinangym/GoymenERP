@@ -12,12 +12,17 @@
  * - The preview writes nothing and never blocks the save: the save sends its own content and the server decides.
  * - M01.2: a plan's stored cut lines are part of the content — in the request body and so in its key — exactly as
  *   given (order, ids, signed sequences, canonical lengths, counts). Without lines the member is not sent at all.
+ * - M01.3: authored cut lines are validated here before any request: an explicit signed int32 `Sıra no` (no default,
+ *   no renumbering, no positivity/contiguity/uniqueness rule), a positive length with at most three decimals sent as
+ *   typed (no rounding) and a positive int32 count. An invalid row, or an authored definition with no row, makes the
+ *   content incomplete — it never becomes an omitted or cleared definition.
  */
 
 import { useEffect, useRef, useState } from 'react'
 import type { SecuritySnapshot } from '../shell/authBoundary'
 import type { AuthBoundary } from '../shell/useAuthBoundary'
-import { isKilogramText } from './contract'
+import { isKilogramText, type CutToLengthSpecView } from './contract'
+import { CUT_LINE_TEXT } from './planEditText'
 import { previewPlan, type PlanPreview, type PlanPreviewRequest } from './planPreview'
 import type { CutToLengthSpecRequest, PlanTargetBasis, SlittingSpecRequest } from './planCommandApi'
 import type { CapturedPlanCommercialContext } from './planRevisionContract'
@@ -38,6 +43,57 @@ export interface SlittingSpecFormInput {
   readonly enabled: boolean
   readonly lines: readonly { readonly label: string; readonly bandWidthMm: string; readonly count: string }[]
   readonly windingTargetKg: string
+}
+
+/** One authored cut line as typed, with the place-in-list name its refusals use. */
+export interface CutToLengthLineFormInput {
+  readonly lineId: string
+  readonly label: string
+  readonly sequence: string
+  readonly lengthMm: string
+  readonly count: string
+}
+
+/** Authored (typed) cut lines, as opposed to an already accepted `CutToLengthSpecRequest` carried as stored. */
+export interface CutToLengthDraftInput {
+  readonly authored: readonly CutToLengthLineFormInput[]
+}
+
+// M01.3: the shared cut-line editor's row model (CutToLengthLinesEditor) and its conversions.
+
+/** One authored row exactly as typed; numbers are parsed only by the request builder. */
+export interface CutToLengthLineDraft {
+  readonly lineId: string
+  readonly sequence: string
+  readonly lengthMm: string
+  readonly count: string
+}
+
+/** A random RFC 4122 v4 id, the same identity semantics as the plan and command ids of these forms. */
+export function newCutLineId(): string {
+  const bytes = new Uint8Array(16)
+  globalThis.crypto.getRandomValues(bytes)
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+/** The stored lines as editable rows: the same ids, order and values (the server's canonical text). */
+export function cutToLengthDrafts(spec: CutToLengthSpecView | null): CutToLengthLineDraft[] {
+  return spec === null
+    ? []
+    : spec.lines.map((line) => ({
+        lineId: line.lineId,
+        sequence: String(line.sequence),
+        lengthMm: line.lengthMm,
+        count: String(line.count),
+      }))
+}
+
+/** The rows as the preview/request builder's authored input, each named by its place in the list. */
+export function cutToLengthDraftInput(lines: readonly CutToLengthLineDraft[]): CutToLengthDraftInput {
+  return { authored: lines.map((line, index) => ({ ...line, label: CUT_LINE_TEXT.row(index + 1) })) }
 }
 
 export type PlanPreviewInput =
@@ -74,11 +130,53 @@ function positiveKilograms(value: string): boolean {
 const POSITIVE_MILLIMETRES = /^(?=.*[1-9])(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/
 const POSITIVE_COUNT = /^[1-9][0-9]*$/
 const INT32_MAX = 2_147_483_647
+const INT32_MIN = -2_147_483_648
+/** An explicit signed integer: no sign on zero, no leading zero, no fraction. */
+const SIGNED_INTEGER = /^(?:0|-?[1-9][0-9]*)$/
 
 function positiveInt32(value: string): boolean {
   if (!POSITIVE_COUNT.test(value)) return false
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) && parsed <= INT32_MAX
+}
+
+function signedInt32(value: string): boolean {
+  if (!SIGNED_INTEGER.test(value)) return false
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed >= INT32_MIN && parsed <= INT32_MAX
+}
+
+/**
+ * The authored cut lines as the request member both the preview and the save send, in list order; or null after
+ * pushing every reason the form can already see. Nothing is defaulted, sorted, renumbered or rounded.
+ */
+export function cutToLengthSpecRequest(
+  input: CutToLengthDraftInput,
+  reasons: string[],
+): CutToLengthSpecRequest | null {
+  const before = reasons.length
+  if (input.authored.length === 0) reasons.push('Boy kesme tanımı için en az bir kesim satırı gereklidir.')
+  for (const line of input.authored) {
+    if (!signedInt32(line.sequence)) {
+      reasons.push(`${line.label}: Sıra no girilmeli; ${INT32_MIN} ile ${INT32_MAX} arasında tam sayı olmalıdır.`)
+    }
+    if (!POSITIVE_MILLIMETRES.test(line.lengthMm)) {
+      reasons.push(`${line.label}: uzunluk sıfırdan büyük ve en fazla üç ondalıklı mm olmalıdır.`)
+    }
+    if (!positiveInt32(line.count)) {
+      reasons.push(`${line.label}: adet 1 ile ${INT32_MAX} arasında tam sayı olmalıdır.`)
+    }
+  }
+  if (reasons.length > before) return null
+  return {
+    // `signedInt32` / `positiveInt32` above prove these conversions lossless and inside the backend's int contract.
+    lines: input.authored.map((line) => ({
+      lineId: line.lineId,
+      sequence: Number(line.sequence),
+      lengthMm: line.lengthMm,
+      count: Number(line.count),
+    })),
+  }
 }
 
 function slittingSpecRequest(input: SlittingSpecFormInput | undefined, reasons: string[]): SlittingSpecRequest | null {
@@ -110,7 +208,7 @@ export function planPreviewInput(
   targetBasis: '' | PlanTargetBasis,
   targetKg: string,
   slitting?: SlittingSpecFormInput,
-  cutToLengthSpec?: CutToLengthSpecRequest | null,
+  cutToLengthSpec?: CutToLengthSpecRequest | CutToLengthDraftInput | null,
 ): PlanPreviewInput {
   const reasons: string[] = []
   if (workCenterId === '') reasons.push('İş merkezi seçilmedi.')
@@ -123,6 +221,11 @@ export function planPreviewInput(
     reasons.push('Hedef kullanılacaksa türü ve sıfırdan büyük kg değeri birlikte girilmelidir.')
   }
   const slittingSpec = slittingSpecRequest(slitting, reasons)
+  const cutSpec = cutToLengthSpec === undefined || cutToLengthSpec === null
+    ? null
+    : 'authored' in cutToLengthSpec
+      ? cutToLengthSpecRequest(cutToLengthSpec, reasons)
+      : cutToLengthSpec
   if (reasons.length > 0) return { type: 'incomplete', reasons }
   return {
     type: 'ready',
@@ -137,11 +240,11 @@ export function planPreviewInput(
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       ...(slitting === undefined ? {} : { slittingSpec }),
       // Carried, never validated, sorted or renumbered here: these are the stored lines the server already accepted.
-      ...(cutToLengthSpec === undefined || cutToLengthSpec === null
+      ...(cutSpec === null
         ? {}
         : {
             cutToLengthSpec: {
-              lines: cutToLengthSpec.lines.map((line) => ({
+              lines: cutSpec.lines.map((line) => ({
                 lineId: line.lineId,
                 sequence: line.sequence,
                 lengthMm: line.lengthMm,

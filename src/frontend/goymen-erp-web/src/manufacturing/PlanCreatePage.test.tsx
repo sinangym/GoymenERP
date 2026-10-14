@@ -18,6 +18,7 @@ import {
 const PRODUCT = '10000000-0000-4000-8000-000000000001'
 const LOT = '20000000-0000-4000-8000-000000000001'
 const LOCATION = '40000000-0000-4000-8000-000000000001'
+const CUT_WORK_CENTER = 'd0000000-0000-4000-8000-000000000007'
 
 function workCenter() {
   return {
@@ -29,6 +30,10 @@ function workCenter() {
     isActive: true,
     canOpenLocationDetail: false,
   }
+}
+
+function cutWorkCenter() {
+  return { ...workCenter(), id: CUT_WORK_CENTER, code: 'CTL-01', name: 'Boy Kesme Hattı', kind: 'CutToLength' }
 }
 
 function candidate(labelId = ROLL_1, overrides: Record<string, unknown> = {}) {
@@ -81,7 +86,7 @@ function installPlanApi(options: {
   const recorded = installFetch({
     capabilities: options.capabilities ?? [MANUFACTURING_CAPABILITY.planCreate, MANUFACTURING_CAPABILITY.planDetail],
     respond: (url, init) => {
-      if (url.includes('/organization/work-centers')) return json([workCenter()])
+      if (url.includes('/organization/work-centers')) return json([workCenter(), cutWorkCenter()])
       if (url.includes('/inventory/references/parent-rolls')) {
         if (options.candidates !== undefined) return json(options.candidates())
         return json({
@@ -114,8 +119,15 @@ function installPlanApi(options: {
             lines: Array<{ bandWidthMm: string; count: number }>
             windingTargetKg: string | null
           } | null
+          cutToLengthSpec?: {
+            lines: Array<{ lineId: string; sequence: number; lengthMm: string; count: number }>
+          }
         }
         stored = plan({
+          process: request.workCenterId === CUT_WORK_CENTER ? 'CutToLength' : 'Slitting',
+          cutToLengthSpec: request.cutToLengthSpec === undefined
+            ? null
+            : { lines: request.cutToLengthSpec.lines.map((line) => ({ ...line, lengthMm: canonicalDecimal(line.lengthMm) })) },
           planId: request.planId,
           workCenterId: request.workCenterId,
           inputs: request.inputs.map(({ parentRollId, plannedKg }) => ({
@@ -369,6 +381,155 @@ function previewAnswer(body: Record<string, unknown>) {
     hasRefusal: false,
   }
 }
+
+describe('M01.3: authoring ordered cut lines on create', () => {
+  type CutBody = { cutToLengthSpec?: { lines: Array<{ lineId: string; sequence: number; lengthMm: string; count: number }> } }
+  const previewBodies = (recorded: ReturnType<typeof installFetch>) =>
+    requestsFor(recorded, '/manufacturing/plans/preview', 'POST').map((request) => request.body as CutBody)
+
+  async function fillCutPlan(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole('option', { name: 'CTL-01 — Boy Kesme Hattı' })
+    await user.selectOptions(screen.getByLabelText('İş merkezi'), CUT_WORK_CENTER)
+    await user.click(screen.getByRole('button', { name: 'Ara' }))
+    await user.click(within(await screen.findByRole('row', { name: /LBL-0007/ })).getByRole('button', { name: 'Ekle' }))
+    await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '1000')
+  }
+
+  async function authorTwoRows(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    await user.type(screen.getByLabelText('Kesim satırı 1 Sıra no'), '40')
+    await user.type(screen.getByLabelText('Kesim satırı 1 Uzunluk (mm)'), '6000.000')
+    await user.type(screen.getByLabelText('Kesim satırı 1 Adet'), '3')
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    await user.type(screen.getByLabelText('Kesim satırı 2 Sıra no'), '-7')
+    await user.type(screen.getByLabelText('Kesim satırı 2 Uzunluk (mm)'), '2500.5')
+    await user.type(screen.getByLabelText('Kesim satırı 2 Adet'), '2')
+  }
+
+  it('offers no row by default and a new row has an empty Sıra no: nothing is numbered for the user', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ preview: (body) => json(previewAnswer(body)) })
+    renderAt('/uretim/plan/yeni')
+    await fillCutPlan(user)
+    expect(screen.queryAllByLabelText(/Sıra no$/)).toHaveLength(0)
+    await waitFor(() => expect(previewBodies(recorded).length).toBeGreaterThan(0))
+    expect(previewBodies(recorded).every((body) => !Object.hasOwn(body, 'cutToLengthSpec'))).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    expect((screen.getByLabelText('Kesim satırı 1 Sıra no') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Kesim satırı 1 Uzunluk (mm)') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Kesim satırı 1 Adet') as HTMLInputElement).value).toBe('')
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    expect((screen.getByLabelText('Kesim satırı 2 Sıra no') as HTMLInputElement).value).toBe('')
+
+    // The editor is the CutToLength work center's: a slitting line shows none.
+    await user.selectOptions(screen.getByLabelText('İş merkezi'), WORK_CENTER)
+    expect(screen.queryByRole('button', { name: 'Kesim satırı ekle' })).toBeNull()
+  })
+
+  it('an incomplete or invalid row sends no preview and no save, and says why', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ preview: (body) => json(previewAnswer(body)) })
+    renderAt('/uretim/plan/yeni')
+    await fillCutPlan(user)
+    await waitFor(() => expect(previewBodies(recorded).length).toBeGreaterThan(0))
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    await user.type(screen.getByLabelText('Kesim satırı 1 Sıra no'), '40')
+    await user.type(screen.getByLabelText('Kesim satırı 1 Uzunluk (mm)'), '6000.0000')
+    await user.type(screen.getByLabelText('Kesim satırı 1 Adet'), '0')
+    const panel = screen.getByTestId('plan-preview')
+    expect(await within(panel).findByText(/Kesim satırı 1: uzunluk/)).toBeTruthy()
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(previewBodies(recorded).some((body) => Object.hasOwn(body, 'cutToLengthSpec'))).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    const alert = await screen.findByText(/Kesim satırı 1: adet/, { selector: '[role="alert"]' })
+    expect(alert).toBeTruthy()
+    expect(saveRequests(recorded)).toHaveLength(0)
+  })
+
+  it('moves a row by keyboard without changing its line id or Sıra no; preview, unknown save, retry and reopen carry one definition', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({
+      preview: (body) => json(previewAnswer(body)),
+      commitThenLoseFirstSave: true,
+    })
+    renderAt('/uretim/plan/yeni')
+    await fillCutPlan(user)
+    await authorTwoRows(user)
+
+    await waitFor(() => expect(previewBodies(recorded).at(-1)?.cutToLengthSpec?.lines.map((line) => line.sequence))
+      .toEqual([40, -7]))
+    const beforeMove = previewBodies(recorded).at(-1)!.cutToLengthSpec!.lines
+    expect(beforeMove.map((line) => line.lineId).every((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)))
+      .toBe(true)
+    expect(new Set(beforeMove.map((line) => line.lineId)).size).toBe(2)
+
+    // The first row cannot move up, but its button stays focusable (aria-disabled).
+    const firstUp = screen.getByRole('button', { name: 'Kesim satırı 1 yukarı taşı' })
+    expect(firstUp.getAttribute('aria-disabled')).toBe('true')
+    const secondUp = screen.getByRole('button', { name: 'Kesim satırı 2 yukarı taşı' })
+    secondUp.focus()
+    await user.keyboard('{Enter}')
+    // The moved row keeps focus on its own control, now first.
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Kesim satırı 1 yukarı taşı')
+    expect((screen.getByLabelText('Kesim satırı 1 Sıra no') as HTMLInputElement).value).toBe('-7')
+    expect((screen.getByLabelText('Kesim satırı 2 Sıra no') as HTMLInputElement).value).toBe('40')
+
+    await waitFor(() => expect(previewBodies(recorded).at(-1)?.cutToLengthSpec?.lines.map((line) => line.sequence))
+      .toEqual([-7, 40]))
+    const authored = previewBodies(recorded).at(-1)!.cutToLengthSpec!
+    expect(authored).toEqual({ lines: [beforeMove[1], beforeMove[0]] })
+
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    expect(await screen.findByText(/Sonuç bilinmiyor\./)).toBeTruthy()
+    const [first] = saveRequests(recorded)
+    expect((first.body as CutBody).cutToLengthSpec).toEqual(authored)
+    // While unknown the whole draft is frozen: nothing typed or moved can reach the frozen attempt.
+    for (const field of [
+      screen.getByLabelText('Kesim satırı 1 Sıra no'),
+      screen.getByLabelText('Kesim satırı 2 Uzunluk (mm)'),
+      screen.getByLabelText('Kesim satırı 2 Adet'),
+      screen.getByRole('button', { name: 'Kesim satırı ekle' }),
+      screen.getByRole('button', { name: 'Kesim satırı 2 yukarı taşı' }),
+      screen.getByRole('button', { name: 'Kesim satırı 1 kaldır' }),
+    ]) {
+      expect((field as HTMLInputElement | HTMLButtonElement).matches(':disabled'), field.getAttribute('aria-label') ?? '').toBe(true)
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    const reopen = await screen.findByRole('link', { name: 'Formu kapat ve planı yeniden aç' })
+    const [, second] = saveRequests(recorded)
+    expect(JSON.stringify(second.body)).toBe(JSON.stringify(first.body))
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+
+    await user.click(reopen)
+    const section = await screen.findByRole('region', { name: 'Boy kesme ayrıntısı' })
+    expect(within(section).getAllByRole('rowheader').map((cell) => cell.textContent)).toEqual(['-7', '40'])
+    expect(within(section).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['2500.5 mm', '2', '6000 mm', '3'])
+  })
+
+  it('a remounted form replays the frozen pending cut definition, not a new one', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ failFirstSave: true })
+    const { view } = renderAt('/uretim/plan/yeni')
+    await fillCutPlan(user)
+    await authorTwoRows(user)
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+    view.unmount()
+
+    renderAt('/uretim/plan/yeni')
+    expect(await screen.findByText('Önceki gönderimin sonucu bilinmiyor.')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    const [first, second] = saveRequests(recorded)
+    expect(JSON.stringify(second.body)).toBe(JSON.stringify(first.body))
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    expect((second.body as CutBody).cutToLengthSpec?.lines.map((line) => [line.sequence, line.lengthMm, line.count]))
+      .toEqual([[40, '6000.000', 3], [-7, '2500.5', 2]])
+  })
+})
 
 describe('AT-061 / AT-062: the live plan preview', () => {
   it('shows the server preview of the typed content without a button, with every missing parameter named', async () => {
