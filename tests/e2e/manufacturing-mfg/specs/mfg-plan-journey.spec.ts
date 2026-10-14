@@ -1516,6 +1516,147 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
+  test('M01.3: a foreign persisted revision after a committed response loss stays fail-closed on the newer plan', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const api = await apiAs(env, env.seed.recorderActor)
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      const cutToLength = workCenters.get('CutToLength')!
+      const candidate = await readParentRollCandidate(env, env.seed.rolls.planRefusal)
+      const planId = randomUUID()
+      const initialSpec: CutToLengthSpecAnswer = {
+        lines: [{ lineId: randomUUID(), sequence: 40, lengthMm: '6000.000', count: 3 }],
+      }
+      const created = await api.post('/api/v1/manufacturing/plans', {
+        headers: { 'Idempotency-Key': randomUUID() },
+        data: {
+          planId,
+          workCenterId: cutToLength.id,
+          inputs: [{
+            parentRollId: candidate.labelId,
+            plannedKg: '1000',
+            expectedLabelVersion: candidate.labelVersion,
+          }],
+          target: null,
+          cutToLengthSpec: initialSpec,
+        },
+      })
+      expect(created.status()).toBe(201)
+
+      await page.goto(`/uretim/plan/${planId}`)
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+      await page.getByLabel(/Adet$/).fill('4')
+      await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+        .fill('Tarayıcı kabulü: yanıt kaybından sonra bozuk bekleyen kayıt')
+      await expect(page.getByTestId('plan-preview').getByText(/Önizleme güncel/)).toBeVisible()
+
+      const revisionAttempts: Array<{ readonly key: string | undefined; readonly body: string | null }> = []
+      let committedStatus: number | null = null
+      await page.route(PLAN_REVISION_RE, async (route) => {
+        const request = route.request()
+        revisionAttempts.push({
+          key: request.headers()['idempotency-key'],
+          body: request.postData(),
+        })
+        if (revisionAttempts.length > 1) {
+          // The acceptance failure is the second command attempt itself; never let it create another real revision.
+          await route.abort('blockedbyclient')
+          return
+        }
+        const response = await route.fetch({
+          headers: { ...request.headers(), 'x-development-user': env.seed.recorderActor },
+        })
+        committedStatus = response.status()
+        await route.abort('failed')
+      })
+
+      await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      await expect(page.getByText(
+        'Düzenlemenin sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.',
+        { exact: true },
+      )).toBeVisible()
+      expect(committedStatus).toBe(200)
+      expect(revisionAttempts).toHaveLength(1)
+      const firstAttempt = revisionAttempts[0]
+      expect(firstAttempt.key).toMatch(/^[0-9a-f-]{36}$/i)
+      expect(firstAttempt.body).not.toBeNull()
+
+      const stored = await page.evaluate((currentPlanId) => {
+        for (const name of Object.keys(sessionStorage)) {
+          const value = sessionStorage.getItem(name)
+          if (name.startsWith('goymen.manufacturing.plan-revise.v1:') && value?.includes(currentPlanId)) {
+            return { name, value }
+          }
+        }
+        return null
+      }, planId)
+      expect(stored).not.toBeNull()
+      const pending = JSON.parse(stored!.value) as {
+        companyId: string
+        snapshot: { idempotencyKey: string; request: Record<string, unknown> }
+      }
+      expect(pending.snapshot.idempotencyKey).toBe(firstAttempt.key)
+      expect(JSON.stringify(pending.snapshot.request)).toBe(firstAttempt.body)
+
+      const foreignPending = JSON.stringify({ ...pending, companyId: OTHER_COMPANY })
+      await page.evaluate(({ name, value }) => sessionStorage.setItem(name, value), {
+        name: stored!.name,
+        value: foreignPending,
+      })
+
+      // The first command really moved the server to version 2. The next page load therefore reads newer state while
+      // the persisted evidence is unreadable in this company context; neither fact may authorize a fresh command.
+      const committed = await readPlan(api, planId)
+      expect(committed.response.status()).toBe(200)
+      expect(committed.body).toMatchObject({
+        planId,
+        version: 2,
+        cutToLengthSpec: { lines: [{ sequence: 40, count: 4 }] },
+      })
+      const freshRead = page.waitForResponse((response) =>
+        PLAN_GET_RE.test(response.url())
+          && response.url().endsWith(planId)
+          && response.request().method() === 'GET')
+      await page.reload()
+      const fresh = await freshRead
+      expect(fresh.status()).toBe(200)
+      expect((await fresh.json()) as Record<string, unknown>).toMatchObject({ planId, version: 2 })
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder', exact: true }))
+        .toHaveCount(0)
+      expect(await page.evaluate((name) => sessionStorage.getItem(name), stored!.name)).toBe(foreignPending)
+
+      // Exercise any mistakenly exposed edit path. A correct fail-closed implementation can hide or disable it; if it
+      // is actionable, this deliberately valid change must still produce no second/new-key revision request.
+      const edit = page.getByRole('button', { name: 'Planı düzenle', exact: true })
+      if (await edit.count() > 0 && await edit.isEnabled()) {
+        await edit.click()
+        await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+        await page.getByLabel(/Adet$/).fill('5')
+        await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+          .fill('Bozuk bekleyen kayıt varken yeni komut engellenmeli')
+        await expect(page.getByTestId('plan-preview').getByText(/Önizleme güncel/)).toBeVisible()
+        await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      }
+      await page.waitForTimeout(400)
+      expect(revisionAttempts, 'corrupt or foreign pending evidence must not mint a new revision key').toEqual([
+        firstAttempt,
+      ])
+
+      const history = await api.get(`/api/v1/manufacturing/plans/${planId}/revisions`)
+      expect(history.status()).toBe(200)
+      expect(((await history.json()) as { revisions: Array<{ revision: number }> }).revisions
+        .map((entry) => entry.revision)).toEqual([0, 1])
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('a draft plan is edited, closed and reopened with its history, and the approval and order read the edit', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
