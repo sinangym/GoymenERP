@@ -8,6 +8,7 @@ import {
   CLASS_FLAT,
   COMPANY_A,
   COMPANY_B,
+  FAMILY_FLAT,
   GROUP_SAC,
   installFetch,
   json,
@@ -1240,5 +1241,53 @@ describe('unsaved guard', () => {
     // The Draft may exist and nothing confirmed it; walking away silently is how an
     // unresolved write is forgotten.
     expect(screen.getByRole('alertdialog')).toBeTruthy()
+  })
+})
+
+describe('technical card: fixed family facts and the three open unit roles (P03.1 r2)', () => {
+  const TEMPLATE = '81000000-0000-4000-8000-000000000001'
+  const KG = '81000000-0000-4000-8000-000000000002'
+  const technicalOptions = () => referenceOptions({
+    templates: [{ id: TEMPLATE, version: '1', displayName: 'Sentetik sac şablonu', fields: [{ key: 'thickness',
+      kind: 'measureMillimetre', role: null, required: true, dictionary: null, allowsCandidate: false,
+      appliesWhenField: null, appliesWhenCode: null, parentField: null }] }],
+    familyFacts: [{ id: FAMILY_FLAT, code: 'TEST', displayName: 'Sentetik aile', cins: 'Metal', tur: 'Sac', tip: 'Düz',
+      templateId: TEMPLATE, templateVersion: '1' }],
+    dictionaries: [],
+    units: [{ id: KG, displayName: 'Kilogram', symbol: 'kg', isKilogram: true }],
+  })
+  const factOf = (term: string) => screen.queryByText(term, { selector: 'dt' })?.nextElementSibling?.textContent
+
+  it('shows the chosen family’s server Cins/Tür/Tip and sends only the open unit roles', async () => {
+    const { calls } = installFetch({ capabilities: [PRODUCT_CAPABILITY.productsCreate],
+      onOptions: () => json(technicalOptions()) })
+    renderProductApp('/urun/yeni')
+    await screen.findByRole('heading', { name: 'Yeni ürün' })
+    await userEvent.type(screen.getByLabelText(/Ürün adı/), 'Sentetik teknik ürün')
+    await screen.findByRole('option', { name: /Sac \(SAC\)/ })
+    await userEvent.selectOptions(screen.getByLabelText(/Kod grubu/), GROUP_SAC)
+    await screen.findByRole('option', { name: 'Soğuk hadde' })
+    expect(factOf('Cins')).toBeUndefined()
+    await userEvent.selectOptions(screen.getByLabelText('Ürün ailesi', { exact: false }), FAMILY_FLAT)
+    expect([factOf('Cins'), factOf('Tür'), factOf('Tip')]).toEqual(['Metal', 'Sac', 'Düz'])
+    for (const label of ['Fiyat birimi', 'Üretim birimi', 'Paket birimi'])
+      expect(screen.queryByRole('combobox', { name: label })).toBeNull()
+    expect(screen.queryByText(/henüz yazmaya açık olmayan/)).toBeNull()
+    await userEvent.type(screen.getByLabelText(/thickness/), '1.25')
+    await userEvent.selectOptions(screen.getByLabelText('Stok birimi (kg)'), KG)
+    await userEvent.click(screen.getByRole('button', { name: 'Taslak olarak kaydet' }))
+    await screen.findByRole('heading', { name: 'Taslak kaydedildi' })
+    const post = JSON.parse(calls.find(c => c.method === 'POST')!.body!)
+    expect(post.references.units).toEqual({ stock: KG })
+  })
+
+  it('shows no family facts while the family catalogue is unavailable', async () => {
+    installFetch({ capabilities: [PRODUCT_CAPABILITY.productsCreate],
+      onOptions: () => json({ ...technicalOptions(), unavailableCatalogs: ['families'] }) })
+    renderProductApp('/urun/yeni')
+    await screen.findByRole('heading', { name: 'Yeni ürün' })
+    await screen.findByRole('option', { name: /Sac \(SAC\)/ })
+    await userEvent.selectOptions(screen.getByLabelText(/Kod grubu/), GROUP_SAC)
+    expect(factOf('Cins')).toBeUndefined()
   })
 })
