@@ -20,6 +20,16 @@ export interface SlittingSpecRequest {
   readonly windingTargetKg: string | null
 }
 
+/** `CutToLengthSpecRequestV1`: the stored lines sent back exactly as read, in order. */
+export interface CutToLengthSpecRequest {
+  readonly lines: readonly {
+    readonly lineId: string
+    readonly sequence: number
+    readonly lengthMm: string
+    readonly count: number
+  }[]
+}
+
 export interface SavePlanRequest {
   readonly planId: string
   readonly workCenterId: string
@@ -127,6 +137,25 @@ function sameSlittingSpec(plan: ProductionPlanView, request: Pick<SavePlanReques
   })
 }
 
+/** Exact: the same lines in the same order, the same ids, signed sequences, canonical lengths and counts. */
+function sameCutToLengthSpec(
+  plan: ProductionPlanView,
+  request: Pick<RevisePlanRequest, 'cutToLengthSpec'>,
+): boolean {
+  const sent = request.cutToLengthSpec ?? null
+  if (sent === null) return plan.cutToLengthSpec === null
+  if (plan.cutToLengthSpec === null || plan.cutToLengthSpec.lines.length !== sent.lines.length) return false
+  return plan.cutToLengthSpec.lines.every((line, index) => {
+    const requested = sent.lines[index]
+    return (
+      line.lineId.toLowerCase() === requested.lineId.toLowerCase() &&
+      line.sequence === requested.sequence &&
+      line.lengthMm === canonicalKilograms(requested.lengthMm) &&
+      line.count === requested.count
+    )
+  })
+}
+
 function describesAttempt(plan: ProductionPlanView, request: SavePlanRequest, companyId: string): boolean {
   return (
     plan.planId === request.planId &&
@@ -137,7 +166,9 @@ function describesAttempt(plan: ProductionPlanView, request: SavePlanRequest, co
     plan.approvedAtUtc === null &&
     sameInputs(plan, request) &&
     sameTarget(plan, request) &&
-    sameSlittingSpec(plan, request)
+    sameSlittingSpec(plan, request) &&
+    // The create form never sends cut lines, so an answer carrying some does not describe this attempt.
+    plan.cutToLengthSpec === null
   )
 }
 
@@ -230,6 +261,12 @@ export interface RevisePlanRequest {
   }[]
   readonly target: { readonly basis: PlanTargetBasis; readonly kg: string } | null
   readonly reason: string
+  /**
+   * M01.2: the plan's stored cut lines, carried unchanged by an edit of other fields. Omitted when the plan has none —
+   * the legacy request shape. The server reads an omitted member as null and would clear stored lines, so a plan that
+   * has them always sends them.
+   */
+  readonly cutToLengthSpec?: CutToLengthSpecRequest
 }
 
 export type PlanLifecycleSnapshot =
@@ -455,7 +492,7 @@ export async function createOrder(
 /**
  * MFG-PLAN-EDIT: revises the Draft at exactly the version the detail read (`POST /plans/{planId}/revision`). A 200 is
  * trusted only when it describes THIS attempt — the plan, the company, a Draft one version on, the sent work center,
- * inputs and target — otherwise the outcome stays unknown and the same frozen attempt may be sent again. The transport
+ * inputs, target and exact cut lines — otherwise the outcome stays unknown and the same frozen attempt may be sent again. The transport
  * never rotates the key or retries itself.
  */
 export async function revisePlan(
@@ -486,7 +523,8 @@ export async function revisePlan(
     plan.version !== request.expectedVersion + 1 ||
     plan.workCenterId !== request.workCenterId ||
     !sameInputs(plan, request) ||
-    !sameTarget(plan, request)
+    !sameTarget(plan, request) ||
+    !sameCutToLengthSpec(plan, request)
   ) {
     return { type: 'unknown', reason: 'undecodable' }
   }

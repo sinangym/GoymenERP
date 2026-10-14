@@ -141,6 +141,25 @@ export function plan(overrides: Record<string, unknown> = {}) {
     approvedAtUtc: null,
     calculation: null,
     slittingSpec: null,
+    // M01.2: the current server always emits the member, explicit null when the plan carries no cut lines.
+    cutToLengthSpec: null,
+    ...overrides,
+  }
+}
+
+export const CUT_LINE_1 = 'c0000000-0000-4000-8000-000000000001'
+export const CUT_LINE_2 = 'c0000000-0000-4000-8000-000000000002'
+
+/**
+ * A synthetic stored `CutToLengthSpecViewV1`: ordered as the client sent it, the sequence explicit, signed and not
+ * contiguous, so a client that renumbers or re-sorts it shows up.
+ */
+export function cutToLengthSpec(overrides: Record<string, unknown> = {}) {
+  return {
+    lines: [
+      { lineId: CUT_LINE_2, sequence: 20, lengthMm: '1250.5', count: 3 },
+      { lineId: CUT_LINE_1, sequence: -1, lengthMm: '0.001', count: 2147483647 },
+    ],
     ...overrides,
   }
 }
@@ -173,6 +192,7 @@ export function planRevision(overrides: Record<string, unknown> = {}) {
     reason: null,
     revisedBy: null,
     recordedAtUtc: '2026-09-27T08:00:00Z',
+    cutToLengthSpec: null,
     ...overrides,
   }
 }

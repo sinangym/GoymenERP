@@ -7,6 +7,10 @@
  * every rule again (`ProductionPlan.Revise`) and revalidates each roll's exact label version; this form only refuses
  * what it can already see (missing fields, a roll with no label version, a change of nothing) so nothing is sent for
  * it. Reads follow the create form's pattern: the auth boundary hears a 401/403 and a superseded read is dropped.
+ *
+ * M01.2: this form has no cut-line editor. A plan's stored cut lines (the current revision's) travel unchanged in every
+ * revision it sends — same order, ids, sequences, lengths and counts — because the server would read an omitted
+ * member as "no cut lines" and clear them.
  */
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
@@ -239,6 +243,18 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       reason: trimmed,
+      ...(current.cutToLengthSpec === null
+        ? {}
+        : {
+            cutToLengthSpec: {
+              lines: current.cutToLengthSpec.lines.map((line) => ({
+                lineId: line.lineId,
+                sequence: line.sequence,
+                lengthMm: line.lengthMm,
+                count: line.count,
+              })),
+            },
+          }),
     }
     if (sameContent(current, request)) {
       setFormError(PLAN_EDIT_TEXT.noChange)
