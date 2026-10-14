@@ -1429,6 +1429,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 1
                         }),
+                // PRODUCT-TECH-FAMILY-02 technical length is immutable plan/revision provenance; Down uses
+                // one reviewed statement to refuse downgrade while either snapshot table retains a value.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261015123000_AddManufacturingPlanTechnicalLengthSnapshots.cs"] =
+                    new(
+                        "c64289e7907573faa848ce95f382245f90ca60845f952e0432ba543050b20db0",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // Sales pricing snapshots are durable; Down refuses destructive rollback while any
                 // draft line keeps accepted pricing JSON.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/"
