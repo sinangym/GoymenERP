@@ -215,7 +215,7 @@ public interface IManufacturingPlanListStore
 /// </summary>
 public sealed record ManufacturingPlanRevision(
     int Revision, long PlanVersion, Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target,
-    string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc);
+    string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc, CutToLengthSpec? CutToLengthSpec = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: the Draft edit of a stored plan and its history. A port of its own, beside
@@ -233,6 +233,14 @@ public interface IManufacturingPlanRevisionStore
     Task<ProductionPlan> RevisePlanAsync(Guid planId, long expectedVersion, Guid workCenterId,
         ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
         string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    Task<ProductionPlan> RevisePlanWithCutLinesAsync(Guid planId, long expectedVersion, Guid workCenterId,
+        ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
+        CutToLengthSpec? cutToLengthSpec, string reason, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) => cutToLengthSpec is null
+            ? RevisePlanAsync(planId, expectedVersion, workCenterId, workCenterProcess, inputs, target, reason, metadata,
+                cancellationToken)
+            : throw new NotSupportedException("Bu plan deposu boy kesme satırlı revizyonu desteklemiyor.");
 
     /// <summary>
     /// The plan's history, oldest first (revision 0 = as created), or null when the company has no such plan

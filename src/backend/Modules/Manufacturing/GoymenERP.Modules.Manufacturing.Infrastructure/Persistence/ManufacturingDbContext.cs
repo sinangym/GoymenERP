@@ -75,11 +75,15 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
     internal DbSet<PlanSlitLineRow> PlanSlitLines => Set<PlanSlitLineRow>();
 
+    internal DbSet<PlanCutLineRow> PlanCutLines => Set<PlanCutLineRow>();
+
     /// <summary>MFG-PLAN-EDIT: the recorded Draft revisions of plans (append-only).</summary>
     internal DbSet<PlanRevisionRow> PlanRevisions => Set<PlanRevisionRow>();
 
     /// <summary>MFG-PLAN-EDIT: the complete planned inputs of each recorded revision (append-only).</summary>
     internal DbSet<PlanRevisionInputRow> PlanRevisionInputs => Set<PlanRevisionInputRow>();
+
+    internal DbSet<PlanRevisionCutLineRow> PlanRevisionCutLines => Set<PlanRevisionCutLineRow>();
 
     internal DbSet<OrderRow> Orders => Set<OrderRow>();
 
@@ -102,6 +106,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlans(modelBuilder);
         ConfigurePlanInputs(modelBuilder);
         ConfigurePlanSlitLines(modelBuilder);
+        ConfigurePlanCutLines(modelBuilder);
         ConfigurePlanRevisions(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
@@ -211,6 +216,26 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigurePlanCutLines(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<PlanCutLineRow>();
+        entity.ToTable("PlanCutLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanCutLines_Identity",
+                "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [Ordinal] >= 1");
+            table.HasCheckConstraint("CK_PlanCutLines_Length", "[LengthMm] > 0");
+            table.HasCheckConstraint("CK_PlanCutLines_Count", "[Count] >= 1");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.PlanId, x.LineId });
+        entity.HasIndex(x => new { x.CompanyId, x.PlanId, x.Ordinal }).IsUnique();
+        entity.Property(x => x.LengthMm).HasPrecision(18, 3);
+        entity.HasOne<PlanRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     /// <summary>
     /// MFG-PLAN-EDIT: a plan's recorded Draft revisions and their complete inputs, bound by (company, plan) like the
     /// plan's own inputs; the revision's work center by (company, work center) to Organization's alternate key, as the
@@ -260,6 +285,23 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
             .HasPrincipalKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo })
             .OnDelete(DeleteBehavior.Restrict);
         input.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var cutLine = modelBuilder.Entity<PlanRevisionCutLineRow>();
+        cutLine.ToTable("PlanRevisionCutLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanRevisionCutLines_Identity",
+                "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [Ordinal] >= 1");
+            table.HasCheckConstraint("CK_PlanRevisionCutLines_Length", "[LengthMm] > 0");
+            table.HasCheckConstraint("CK_PlanRevisionCutLines_Count", "[Count] >= 1");
+        });
+        cutLine.HasKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo, x.LineId });
+        cutLine.HasIndex(x => new { x.CompanyId, x.PlanId, x.RevisionNo, x.Ordinal }).IsUnique();
+        cutLine.Property(x => x.LengthMm).HasPrecision(18, 3);
+        cutLine.HasOne<PlanRevisionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo })
+            .HasPrincipalKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo })
+            .OnDelete(DeleteBehavior.Restrict);
+        cutLine.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private static void ConfigureTechnicalSnapshot<TRow>(EntityTypeBuilder<TRow> entity)
@@ -484,6 +526,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                     // update time (admitted above). Nothing of a recorded revision may change afterwards.
                     PlanRevisionRow => [],
                     PlanRevisionInputRow => [],
+                    PlanCutLineRow => [],
+                    PlanRevisionCutLineRow => [],
                     _ => [],
                 };
                 var changed = entry.Properties
