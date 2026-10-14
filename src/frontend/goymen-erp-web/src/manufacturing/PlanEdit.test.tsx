@@ -13,10 +13,13 @@ import {
   APPROVER,
   COMPANY_A,
   COMPANY_B,
+  CUT_LINE_1,
+  CUT_LINE_2,
   PLAN,
   ROLL_1,
   ROLL_2,
   WORK_CENTER,
+  cutToLengthSpec,
   installFetch,
   json,
   plan,
@@ -46,8 +49,9 @@ afterEach(() => {
 function server(
   answer?: (body: RevisePlanRequest, count: number) => Response | 'throw' | undefined,
   initialHistory: readonly unknown[] = [planRevision()],
+  initialPlan: Record<string, unknown> = plan(),
 ) {
-  let storedPlan = plan()
+  let storedPlan: Record<string, unknown> = initialPlan
   let history: readonly unknown[] = initialHistory
   let revisions = 0
   const respond = (url: string, init: RequestInit | undefined) => {
@@ -65,11 +69,14 @@ function server(
       const custom = answer?.(body, revisions)
       if (custom === 'throw') throw new TypeError('connection lost')
       if (custom !== undefined) return custom
+      // The server reads an omitted cut spec as null (ManufacturingApiV1 revise): that is the destructive path.
       storedPlan = plan({
+        process: storedPlan.process,
         version: body.expectedVersion + 1,
         workCenterId: body.workCenterId,
         inputs: body.inputs.map((input) => plannedInput(input.parentRollId, input.plannedKg)),
         target: body.target,
+        cutToLengthSpec: body.cutToLengthSpec ?? null,
       })
       history = [...history, planRevision({
         revision: history.length,
@@ -85,6 +92,7 @@ function server(
         reason: body.reason,
         revisedBy: ACTOR,
         recordedAtUtc: '2026-09-27T09:30:00Z',
+        cutToLengthSpec: body.cutToLengthSpec ?? null,
       })]
       return json(storedPlan, 200, revisions > 1 ? {
         'Idempotency-Replayed': 'true',
@@ -93,7 +101,30 @@ function server(
     }
     return undefined
   }
-  return { respond, setPlan: (value: ReturnType<typeof plan>) => { storedPlan = value } }
+  return {
+    respond,
+    setPlan: (value: ReturnType<typeof plan>) => { storedPlan = value },
+    stored: () => ({ plan: storedPlan, history }),
+  }
+}
+
+/** A legacy stored plan and history: written before the additive cut spec member existed, so it is absent. */
+function withoutCutSpec<T extends { readonly cutToLengthSpec?: unknown }>(value: T): Omit<T, 'cutToLengthSpec'> {
+  const { cutToLengthSpec: _omitted, ...legacy } = value
+  return legacy
+}
+
+const STORED_CUT_LINES = [
+  { lineId: CUT_LINE_2, sequence: 20, lengthMm: '1250.5', count: 3 },
+  { lineId: CUT_LINE_1, sequence: -1, lengthMm: '0.001', count: 2147483647 },
+]
+
+async function changeFirstRollKg(user: ReturnType<typeof userEvent.setup>, kg: string, reason: string) {
+  const field = screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` })
+  await user.clear(field)
+  await user.type(field, kg)
+  await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), reason)
+  await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
 }
 
 async function openEditForm(user: ReturnType<typeof userEvent.setup>) {
@@ -211,6 +242,112 @@ describe('plan edit on the detail screen', () => {
     expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
     const [first, second] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
     expect(second.body).toEqual(first.body)
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+  })
+
+  it('a legacy plan without the cut spec member reads, revises and reopens without sending one', async () => {
+    const user = userEvent.setup()
+    const fake = server(undefined, [withoutCutSpec(planRevision())], withoutCutSpec(plan()))
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await openEditForm(user)
+    await changeFirstRollKg(user, '900', 'Eski plan kg düzeltmesi')
+
+    expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const [sent] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
+    // The legacy request shape is kept: no cut spec member at all, not an explicit null.
+    expect(sent.body).not.toHaveProperty('cutToLengthSpec')
+    // Reopen: the re-read current history (now with an explicit null member) decodes and starts the next edit.
+    await openEditForm(user)
+    expect((screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` }) as HTMLInputElement).value).toBe('900')
+  })
+
+  it('keeps stored cut lines unchanged through GET history → edit/revise → reopen when another field changes', async () => {
+    const user = userEvent.setup()
+    const fake = server(
+      undefined,
+      [planRevision({ cutToLengthSpec: cutToLengthSpec() })],
+      plan({ process: 'CutToLength', cutToLengthSpec: cutToLengthSpec() }),
+    )
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await openEditForm(user)
+    await changeFirstRollKg(user, '900', 'Kg değişti, kesim aynı')
+
+    expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const [sent] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
+    expect((sent.body as RevisePlanRequest).cutToLengthSpec).toEqual({ lines: STORED_CUT_LINES })
+    expect(fake.stored().plan.cutToLengthSpec).toEqual({ lines: STORED_CUT_LINES })
+
+    // Reopen from the re-read history and change another field again: the lines still travel as stored.
+    await openEditForm(user)
+    await user.selectOptions(screen.getByRole('combobox', { name: 'İş merkezi' }), OTHER_LINE)
+    await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), 'Hat değişti')
+    await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
+
+    expect(await screen.findByText('Plan güncellendi (sürüm 3); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const second = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')[1]
+    expect(second.body).toMatchObject({ expectedVersion: 2, workCenterId: OTHER_LINE, cutToLengthSpec: { lines: STORED_CUT_LINES } })
+    expect(fake.stored().history.at(-1)).toMatchObject({ cutToLengthSpec: { lines: STORED_CUT_LINES } })
+  })
+
+  it.each([
+    ['dropped', null],
+    ['re-sorted', cutToLengthSpec({ lines: [...STORED_CUT_LINES].reverse() })],
+    ['renumbered', cutToLengthSpec({ lines: STORED_CUT_LINES.map((line, index) => ({ ...line, sequence: index + 1 })) })],
+  ])('a 200 whose cut lines come back %s stays unknown and re-sends the same key and body', async (_case, answered) => {
+    const user = userEvent.setup()
+    const fake = server(
+      (body, count) => count === 1
+        ? json(plan({
+          process: 'CutToLength',
+          version: body.expectedVersion + 1,
+          inputs: body.inputs.map((input) => plannedInput(input.parentRollId, input.plannedKg)),
+          cutToLengthSpec: answered,
+        }))
+        : undefined,
+      [planRevision({ cutToLengthSpec: cutToLengthSpec() })],
+      plan({ process: 'CutToLength', cutToLengthSpec: cutToLengthSpec() }),
+    )
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await openEditForm(user)
+    await changeFirstRollKg(user, '900', 'Kg değişti')
+
+    expect(await screen.findByText('Düzenlemenin sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.')).toBeTruthy()
+    expect(screen.queryByText(/Plan güncellendi/)).toBeNull()
+    // While unresolved the form is closed: nothing typed afterwards can reach the frozen attempt.
+    expect(screen.queryByRole('heading', { name: 'Taslak planı düzenle' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' }))
+
+    expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const [first, second] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
+    expect((first.body as RevisePlanRequest).cutToLengthSpec).toEqual({ lines: STORED_CUT_LINES })
+    expect(second.body).toEqual(first.body)
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+  })
+
+  it('re-sends an unknown cut-line edit with the same key and the same frozen cut spec', async () => {
+    const user = userEvent.setup()
+    const fake = server(
+      (_, count) => (count === 1 ? 'throw' : undefined),
+      [planRevision({ cutToLengthSpec: cutToLengthSpec() })],
+      plan({ process: 'CutToLength', cutToLengthSpec: cutToLengthSpec() }),
+    )
+    const recorded = installFetch({ capabilities: EDITOR_CAPABILITIES, respond: fake.respond })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await openEditForm(user)
+    await changeFirstRollKg(user, '950', 'Bağlantı koptu')
+    await user.click(await screen.findByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' }))
+
+    expect(await screen.findByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.')).toBeTruthy()
+    const [first, second] = requestsFor(recorded, `/manufacturing/plans/${PLAN}/revision`, 'POST')
+    expect(second.body).toEqual(first.body)
+    expect((second.body as RevisePlanRequest).cutToLengthSpec).toEqual({ lines: STORED_CUT_LINES })
     expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
   })
 
@@ -371,7 +508,25 @@ describe('plan revision contract and transport', () => {
       ROLL_1, '1000.125', '7', null, capturedTechnicalSnapshot,
     )
 
+    expect(decoded?.revisions.every((revision) => revision.cutToLengthSpec === null)).toBe(true)
+    expect(decodePlanRevisions(planRevisions([withoutCutSpec(planRevision()), withoutCutSpec(edit)]))
+      ?.revisions.map((revision) => revision.cutToLengthSpec)).toEqual([null, null])
+    expect(decodePlanRevisions(planRevisions([planRevision(), { ...edit, cutToLengthSpec: cutToLengthSpec() }]))
+      ?.revisions[1].cutToLengthSpec).toEqual({ lines: STORED_CUT_LINES })
+
     const refused: unknown[] = [
+      planRevisions([planRevision({ cutToLengthSpec: { lines: [] } })]),
+      planRevisions([planRevision({ cutToLengthSpec: { ...cutToLengthSpec(), extra: 1 } })]),
+      planRevisions([planRevision({ cutToLengthSpec: cutToLengthSpec({
+        lines: [STORED_CUT_LINES[0], { ...STORED_CUT_LINES[1], lineId: CUT_LINE_2 }],
+      }) })]),
+      planRevisions([planRevision({ cutToLengthSpec: cutToLengthSpec({
+        lines: [{ ...STORED_CUT_LINES[0], lengthMm: '0' }],
+      }) })]),
+      planRevisions([planRevision({ cutToLengthSpec: cutToLengthSpec({
+        lines: [{ ...STORED_CUT_LINES[0], count: 0 }],
+      }) })]),
+      planRevisions([planRevision({ cutToLengthSpec: 'none' })]),
       planRevisions([]),
       planRevisions([edit]),
       planRevisions([planRevision(), { ...edit, revision: 2 }]),
@@ -435,6 +590,35 @@ describe('plan revision contract and transport', () => {
       outcomes.push(outcome.type)
     }
     expect(outcomes).toEqual(['applied', 'unknown', 'unknown', 'unknown'])
+
+    const cutRequest: RevisePlanRequest = { ...request, cutToLengthSpec: { lines: STORED_CUT_LINES } }
+    const cutAnswer = (spec: unknown) => plan({
+      process: 'CutToLength',
+      version: 2,
+      inputs: [plannedInput(ROLL_1, '800.5')],
+      cutToLengthSpec: spec,
+    })
+    const cutAnswers = [
+      cutAnswer(cutToLengthSpec()),
+      cutAnswer(cutToLengthSpec({ lines: STORED_CUT_LINES.map((line) => ({ ...line, lineId: line.lineId.toUpperCase() })) })),
+      cutAnswer(null),
+      cutAnswer(cutToLengthSpec({ lines: [...STORED_CUT_LINES].reverse() })),
+      cutAnswer(cutToLengthSpec({ lines: [STORED_CUT_LINES[0]] })),
+      cutAnswer(cutToLengthSpec({ lines: [STORED_CUT_LINES[0], { ...STORED_CUT_LINES[1], sequence: 1 }] })),
+      cutAnswer(cutToLengthSpec({ lines: [STORED_CUT_LINES[0], { ...STORED_CUT_LINES[1], lineId: 'c0000000-0000-4000-8000-000000000003' }] })),
+      cutAnswer(cutToLengthSpec({ lines: [STORED_CUT_LINES[0], { ...STORED_CUT_LINES[1], lengthMm: '0.002' }] })),
+      cutAnswer(cutToLengthSpec({ lines: [STORED_CUT_LINES[0], { ...STORED_CUT_LINES[1], count: 1 }] })),
+    ]
+    const cutOutcomes: string[] = []
+    for (const answer of cutAnswers) {
+      vi.stubGlobal('fetch', vi.fn(async () => json(answer)))
+      const outcome = await revisePlan(COMPANY_A, PLAN, { kind: 'revise', idempotencyKey: 'key-3', request: cutRequest })
+      cutOutcomes.push(outcome.type)
+    }
+    expect(cutOutcomes).toEqual(['applied', 'applied', ...Array<string>(7).fill('unknown')])
+    // A request without cut lines is not described by an answer that carries some.
+    vi.stubGlobal('fetch', vi.fn(async () => json(cutAnswer(cutToLengthSpec()))))
+    expect((await revisePlan(COMPANY_A, PLAN, { kind: 'revise', idempotencyKey: 'key-4', request })).type).toBe('unknown')
 
     vi.stubGlobal('fetch', vi.fn(async () => problem(422, { code: 'manufacturing_plan_revision_no_change' })))
     const refused = await revisePlan(COMPANY_A, PLAN, { kind: 'revise', idempotencyKey: 'key-2', request })
