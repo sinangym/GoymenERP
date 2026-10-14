@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MANUFACTURING_CAPABILITY, orderDetailPath } from './capabilities'
-import { pendingPlanLifecycleKey, reservePendingPlanLifecycle } from './planCommandApi'
+import { pendingPlanLifecycleKey, reservePendingPlanLifecycle, type RevisePlanRequest } from './planCommandApi'
 import {
   APPROVER,
   COMPANY_A,
@@ -11,6 +11,8 @@ import {
   CUT_LINE_2,
   PLAN,
   ROLL_1,
+  ROLL_2,
+  WORK_CENTER,
   cutToLengthSpec,
   installFetch,
   json,
@@ -18,6 +20,8 @@ import {
   order,
   plan,
   planCalculation,
+  planRevision,
+  planRevisions,
   problem,
   renderAt,
   requestsFor,
@@ -423,5 +427,190 @@ describe('stored plan technical projection', () => {
     expect(screen.getByText(/COIL · family-r1/)).toBeTruthy()
     expect(screen.getByText('2 mm × 1500 mm')).toBeTruthy()
     expect(screen.getByText('GDC-PLAN-CALC/1')).toBeTruthy()
+  })
+})
+
+/**
+ * M01.3 K2 #727/6178721152: the first revise (v1 → v2) was processed and only its answer was lost. After the reload the
+ * module memory is empty, the fresh GET already shows version 2 and the expected-version fence would accept a NEW,
+ * newly keyed v2 → v3 revise. So the stored slot decides: unreadable keeps every command of this context closed. The
+ * reload is the seeded state here (empty memory, stored slot, server at N+1); the real F5 is #726's browser journey.
+ */
+describe('reload safety of the pending plan command slot', () => {
+  const STORED_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v1:'
+  const OTHER_PLAN = 'd0000000-0000-4000-8000-000000000098'
+  const OTHER_LINE = 'd0000000-0000-4000-8000-000000000009'
+  const FIRST_KEY = '40000000-0000-4000-8000-000000000001'
+  const BLOCKED = /bekleyen bir komut kaydı okunamadı/
+  const EDITOR_CAPABILITIES = [
+    MANUFACTURING_CAPABILITY.planDetail,
+    MANUFACTURING_CAPABILITY.planEdit,
+    MANUFACTURING_CAPABILITY.planApprove,
+    MANUFACTURING_CAPABILITY.planOrderCreate,
+  ]
+  /** The request the processed first revise carried: v1 → v2. */
+  const FIRST_REQUEST: RevisePlanRequest = {
+    expectedVersion: 1,
+    workCenterId: WORK_CENTER,
+    inputs: [
+      { parentRollId: ROLL_1, plannedKg: '800', expectedLabelVersion: '7', commercialContext: null },
+      { parentRollId: ROLL_2, plannedKg: '500.5', expectedLabelVersion: '3', commercialContext: null },
+    ],
+    target: null,
+    reason: 'İlk düzenleme işlendi',
+  }
+
+  function storedAttempt(overrides: Record<string, unknown> = {}) {
+    return {
+      actorId: APPROVER,
+      companyId: COMPANY_A,
+      planId: PLAN,
+      snapshot: { kind: 'revise', idempotencyKey: FIRST_KEY, request: FIRST_REQUEST },
+      ...overrides,
+    }
+  }
+
+  function slot(planId = PLAN) {
+    return STORED_REVISE_PREFIX + pendingPlanLifecycleKey(0, APPROVER, COMPANY_A, planId)
+  }
+
+  /** The server after the processed first revise: the plan at version 2 and its history [0, 1]. */
+  function movedServer(revise?: () => Response) {
+    const moved = (planId: string) => plan({ planId, version: 2, inputs: [plan().inputs[0], plan().inputs[1]] })
+    const history = (planId: string) => planRevisions([
+      planRevision(),
+      planRevision({ revision: 1, planVersion: 2, reason: 'İlk düzenleme işlendi', revisedBy: APPROVER }),
+    ], planId)
+    return installFetch({
+      capabilities: EDITOR_CAPABILITIES,
+      respond: (url, init) => {
+        for (const planId of [PLAN, OTHER_PLAN]) {
+          if (url.endsWith(`/manufacturing/plans/${planId}`) && init?.method !== 'POST') return json(moved(planId))
+          if (url.endsWith(`/manufacturing/plans/${planId}/revisions`)) return json(history(planId))
+        }
+        if (url.endsWith('/organization/work-centers')) {
+          return json([
+            { id: WORK_CENTER, locationId: WORK_CENTER, code: 'DL-1', name: 'Dilme 1', kind: 'Slitting', isActive: true, canOpenLocationDetail: false },
+            { id: OTHER_LINE, locationId: WORK_CENTER, code: 'DL-2', name: 'Dilme 2', kind: 'Slitting', isActive: true, canOpenLocationDetail: false },
+          ])
+        }
+        if (url.endsWith('/manufacturing/plans/preview') && init?.method === 'POST') {
+          const body = JSON.parse(init.body as string) as { workCenterId: string; inputs: { parentRollId: string; plannedKg: string }[] }
+          return json(planCalculation({
+            workCenterId: body.workCenterId,
+            plannedRollCount: body.inputs.length,
+            rolls: body.inputs.map((input) => ({ parentRollId: input.parentRollId, plannedKg: input.plannedKg, answers: [] })),
+          }))
+        }
+        if (url.includes('/revision') && init?.method === 'POST') return revise?.()
+        return undefined
+      },
+    })
+  }
+
+  function commandPosts(recorded: readonly RecordedRequest[]) {
+    return recorded.filter((request) => request.method === 'POST' && !request.url.endsWith('/plans/preview'))
+  }
+
+  /** The fresh GET and history are on screen: the plan at version 2 with its processed first revision. */
+  async function readBack() {
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    await screen.findAllByText(/İlk düzenleme işlendi/)
+    expect(within(screen.getByText('Sürüm').parentElement!).getByText('2')).toBeTruthy()
+  }
+
+  it.each([
+    ['malformed', () => '{not json'],
+    ['foreign to this company', () => JSON.stringify(storedAttempt({ companyId: COMPANY_B }))],
+    ['contract-violating', () => JSON.stringify(storedAttempt({ snapshot: { kind: 'revise', idempotencyKey: FIRST_KEY, request: { ...FIRST_REQUEST, expectedVersion: 0 } } }))],
+  ])('a %s pending record keeps edit, approval and order closed even though the fresh GET shows N+1', async (_case, value) => {
+    const recorded = movedServer()
+    const raw = value()
+    sessionStorage.setItem(slot(), raw)
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await readBack()
+    expect(screen.getByRole('alert').textContent).toMatch(BLOCKED)
+    // No new lifecycle can be started — not even a "current" v2 → v3 revise — and nothing is retried.
+    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Taslak planı düzenle' })).toBeNull()
+    expect(commandPosts(recorded)).toHaveLength(0)
+    // Read and back navigation stay; the evidence is neither replayed nor deleted.
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+    expect(sessionStorage.getItem(slot())).toBe(raw)
+  })
+
+  it('an unavailable store is unreadable, not empty: the plan reads and nothing can be sent', async () => {
+    const recorded = movedServer()
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      renderAt(`/uretim/plan/${PLAN}`)
+      await readBack()
+      expect(screen.getByRole('alert').textContent).toMatch(BLOCKED)
+      expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+      expect(commandPosts(recorded)).toHaveLength(0)
+    } finally {
+      getItem.mockRestore()
+    }
+  })
+
+  it('a valid stored pending revise offers only its exact retry: same key, same frozen body', async () => {
+    const user = userEvent.setup()
+    const recorded = movedServer(() => { throw new TypeError('still offline') })
+    const raw = JSON.stringify(storedAttempt())
+    sessionStorage.setItem(slot(), raw)
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await readBack()
+    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' }))
+    await waitFor(() => expect(commandPosts(recorded)).toHaveLength(1))
+
+    const [sent] = commandPosts(recorded)
+    expect(sent.url).toMatch(new RegExp(`/manufacturing/plans/${PLAN}/revision$`))
+    expect(sent.headers['Idempotency-Key']).toBe(FIRST_KEY)
+    // The stored v1 body, not one rebuilt from the v2 just read.
+    expect(sent.body).toEqual(FIRST_REQUEST)
+    expect(await screen.findByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeTruthy()
+    expect(sessionStorage.getItem(slot())).toBe(raw)
+  })
+
+  it('an unrelated plan of the same actor and company stays usable', async () => {
+    movedServer()
+    sessionStorage.setItem(slot(), '{not json')
+    renderAt(`/uretim/plan/${OTHER_PLAN}`)
+
+    await readBack()
+    expect(screen.queryByText(BLOCKED)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Planı düzenle' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Planı onayla' })).toBeTruthy()
+  })
+
+  it('a revise whose attempt cannot be stored for a reload is not sent', async () => {
+    const user = userEvent.setup()
+    const recorded = movedServer(() => json(plan({ version: 3 })))
+    renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await user.click(screen.getByRole('button', { name: 'Planı düzenle' }))
+    await screen.findByRole('heading', { name: 'Taslak planı düzenle' })
+    await screen.findByRole('option', { name: /DL-2/ })
+    const kg = screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` })
+    await user.clear(kg)
+    await user.type(kg, '700')
+    await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), 'İkinci düzenleme')
+
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    try {
+      await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
+      expect(await screen.findByText(/saklanamadı; istek gönderilmedi/)).toBeTruthy()
+    } finally {
+      setItem.mockRestore()
+    }
+    expect(commandPosts(recorded)).toHaveLength(0)
+    expect(sessionStorage.getItem(slot())).toBeNull()
   })
 })

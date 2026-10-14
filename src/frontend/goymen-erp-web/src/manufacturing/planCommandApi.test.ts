@@ -265,6 +265,24 @@ describe('pending revise across a module re-creation (reload boundary)', () => {
 
   afterEach(() => sessionStorage.clear())
 
+  function slotName(key: string): string {
+    // The exact slot the store itself writes, found by its unique context suffix.
+    const name = Object.keys(sessionStorage).find((candidate) => candidate.endsWith(key))
+    if (name === undefined) throw new Error('no stored slot')
+    return name
+  }
+
+  function approve(idempotencyKey = '30000000-0000-4000-8000-000000000003'): Pending {
+    return {
+      actorId: ACTOR, companyId: COMPANY_A, planId: PLAN,
+      snapshot: { kind: 'approve', idempotencyKey, expectedVersion: 3 },
+    }
+  }
+
+  function withKey(pending: Pending, idempotencyKey: string): Pending {
+    return { ...pending, snapshot: { ...pending.snapshot, idempotencyKey } } as Pending
+  }
+
   it.each([
     ['ordered cut lines', { lines: CUT_LINES }],
     ['the legacy request without cut lines', undefined],
@@ -272,14 +290,16 @@ describe('pending revise across a module re-creation (reload boundary)', () => {
     const before = await reloaded()
     const key = before.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
     const pending = revise({}, cut ?? 'omit')
-    before.reservePendingPlanLifecycle(key, pending)
+    expect(before.reservePendingPlanLifecycle(key, pending)).toEqual({ type: 'reserved' })
     const lost = vi.fn(async () => { throw new TypeError('connection lost') })
     vi.stubGlobal('fetch', lost)
     const first = await before.revisePlan(COMPANY_A, PLAN, pending.snapshot as Extract<Pending['snapshot'], { kind: 'revise' }>)
     expect(first.type).toBe('unknown')
 
     const after = await reloaded()
-    const recalled = after.recallPendingPlanLifecycle(after.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN))
+    const slot = after.readPendingPlanLifecycle(after.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN))
+    expect(slot.state).toBe('pending')
+    const recalled = slot.state === 'pending' ? slot.pending : null
     expect(recalled).toEqual(pending)
     expect(JSON.stringify(recalled)).toBe(JSON.stringify(pending))
     // Deep-frozen: nothing typed after the reload can reach the frozen attempt.
@@ -288,6 +308,8 @@ describe('pending revise across a module re-creation (reload boundary)', () => {
     expect(Object.isFrozen(request.inputs[0])).toBe(true)
     if (cut !== undefined) expect(Object.isFrozen(request.cutToLengthSpec?.lines[1])).toBe(true)
     else expect(request).not.toHaveProperty('cutToLengthSpec')
+    // The exact retry re-reserves the very same attempt.
+    expect(after.reservePendingPlanLifecycle(key, recalled!)).toEqual({ type: 'reserved' })
 
     const replay = vi.fn(async () => { throw new TypeError('still offline') })
     vi.stubGlobal('fetch', replay)
@@ -296,7 +318,7 @@ describe('pending revise across a module re-creation (reload boundary)', () => {
     expect(sentBodies(replay)[0].key).toBe(REVISE_KEY)
   })
 
-  it('never restores the attempt in another session, actor, company or plan context', async () => {
+  it('reads another session, actor, company or plan context as proven absent, independent of this slot', async () => {
     const before = await reloaded()
     before.reservePendingPlanLifecycle(before.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN), revise())
     const after = await reloaded()
@@ -306,18 +328,20 @@ describe('pending revise across a module re-creation (reload boundary)', () => {
       after.pendingPlanLifecycleKey(4, ACTOR, 'bbbbbbbb-0000-0000-0000-000000000002', PLAN),
       after.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, 'd0000000-0000-4000-8000-000000000099'),
     ]) {
-      expect(after.recallPendingPlanLifecycle(key), key ?? 'null').toBeNull()
+      expect(after.readPendingPlanLifecycle(key), key ?? 'null').toEqual({ state: 'absent' })
+      // An unrelated slot stays usable.
+      expect(after.reservePendingPlanLifecycle(key, approve()), key ?? 'null').toEqual({ type: 'reserved' })
     }
-    expect(after.recallPendingPlanLifecycle(after.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN))).not.toBeNull()
+    expect(after.readPendingPlanLifecycle(after.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)).state).toBe('pending')
   })
 
-  it('refuses a stored record whose content is foreign, malformed or out of contract, and keeps it as evidence', async () => {
+  it('reads a foreign, malformed or out-of-contract record as unreadable, keeps it and lets nothing in', async () => {
     const api = await reloaded()
     const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)!
     const stored = (value: unknown) => {
-      // The exact slot the store itself writes, found by its unique context suffix.
+      api.clearPendingPlanLifecycles()
       api.reservePendingPlanLifecycle(key, revise())
-      const slot = Object.keys(sessionStorage).find((name) => name.endsWith(key))!
+      const slot = slotName(key)
       sessionStorage.setItem(slot, typeof value === 'string' ? value : JSON.stringify(value))
       return slot
     }
@@ -350,53 +374,124 @@ describe('pending revise across a module re-creation (reload boundary)', () => {
     ]
     for (const value of bad) {
       const slot = stored(value)
+      const raw = sessionStorage.getItem(slot)
       const fresh = await reloaded()
-      expect(fresh.recallPendingPlanLifecycle(key), JSON.stringify(value)).toBeNull()
-      // Not silently discarded: the unreadable record stays where it was.
-      expect(sessionStorage.getItem(slot)).toBe(typeof value === 'string' ? value : JSON.stringify(value))
+      const label = JSON.stringify(value)
+      // Never collapsed into "no pending".
+      expect(fresh.readPendingPlanLifecycle(key), label).toEqual({ state: 'unreadable' })
+      // No new command of any kind, and no new key, takes the slot; nothing is replaced or deleted.
+      expect(fresh.reservePendingPlanLifecycle(key, withKey(revise(), '30000000-0000-4000-8000-0000000000ff')), label)
+        .toEqual({ type: 'unreadable' })
+      expect(fresh.reservePendingPlanLifecycle(key, approve()), label).toEqual({ type: 'unreadable' })
+      fresh.releasePendingPlanLifecycle(key, REVISE_KEY)
+      expect(sessionStorage.getItem(slot), label).toBe(raw)
+      expect(fresh.readPendingPlanLifecycle(key), label).toEqual({ state: 'unreadable' })
     }
   })
 
-  it('releases only the exact settled attempt; an older answer cannot remove a newer pending attempt', async () => {
+  it('reads an unavailable store as unreadable, never as absent, and sends nothing into it', async () => {
+    const api = await reloaded()
+    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'unreadable' })
+      expect(api.reservePendingPlanLifecycle(key, revise())).toEqual({ type: 'unreadable' })
+      expect(api.reservePendingPlanLifecycle(key, approve())).toEqual({ type: 'unreadable' })
+    } finally {
+      getItem.mockRestore()
+    }
+    expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+  })
+
+  it('a revise that cannot be stored durably is neither reserved nor held, so it is never sent', async () => {
+    const api = await reloaded()
+    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    try {
+      expect(api.reservePendingPlanLifecycle(key, revise())).toEqual({ type: 'not-durable' })
+      expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+    } finally {
+      setItem.mockRestore()
+    }
+    expect((await reloaded()).readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+
+    // A write the store cannot read back is not durable either.
+    const fresh = await reloaded()
+    const lying = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => undefined)
+    try {
+      expect(fresh.reservePendingPlanLifecycle(key, revise())).toEqual({ type: 'not-durable' })
+      expect(fresh.readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+    } finally {
+      lying.mockRestore()
+    }
+  })
+
+  it('an unresolved revise is never displaced by another command of the same slot', async () => {
+    const api = await reloaded()
+    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
+    const held = revise()
+    api.reservePendingPlanLifecycle(key, held)
+    const raw = sessionStorage.getItem(slotName(key!))
+    for (const other of [
+      approve(),
+      { ...approve(), snapshot: { kind: 'create-order', idempotencyKey: '30000000-0000-4000-8000-000000000004', orderId: '30000000-0000-4000-8000-000000000005' } } as Pending,
+      withKey(held, '30000000-0000-4000-8000-000000000002'),
+      revise({ reason: 'Aynı anahtar, başka gövde' }),
+    ]) {
+      expect(api.reservePendingPlanLifecycle(key, other)).toEqual({ type: 'occupied', pending: held })
+    }
+    expect(sessionStorage.getItem(slotName(key!))).toBe(raw)
+    const after = await reloaded()
+    const recalled = after.readPendingPlanLifecycle(key)
+    expect(recalled.state === 'pending' && recalled.pending.snapshot.idempotencyKey).toBe(REVISE_KEY)
+    // The same refusal after the reload, from the stored side alone.
+    expect(after.reservePendingPlanLifecycle(key, approve()).type).toBe('occupied')
+  })
+
+  it('releases only the exact settled attempt; a stale answer cannot remove a newer pending attempt', async () => {
     const api = await reloaded()
     const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
     const older = revise()
-    const newer = { ...older, snapshot: { ...older.snapshot, idempotencyKey: '30000000-0000-4000-8000-000000000002' } }
+    const newer = withKey(older, '30000000-0000-4000-8000-000000000002')
     api.reservePendingPlanLifecycle(key, older)
-    api.reservePendingPlanLifecycle(key, newer)
     api.releasePendingPlanLifecycle(key, REVISE_KEY)
-    expect((await reloaded()).recallPendingPlanLifecycle(key)?.snapshot.idempotencyKey)
-      .toBe('30000000-0000-4000-8000-000000000002')
-
+    expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+    expect(api.reservePendingPlanLifecycle(key, newer)).toEqual({ type: 'reserved' })
+    // A late answer of the older attempt arrives: the newer one stays, in memory and across the reload.
+    api.releasePendingPlanLifecycle(key, REVISE_KEY)
+    expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'pending', pending: newer })
     const current = await reloaded()
-    expect(current.recallPendingPlanLifecycle(key)).not.toBeNull()
+    expect(current.readPendingPlanLifecycle(key)).toEqual({ state: 'pending', pending: newer })
     current.releasePendingPlanLifecycle(key, '30000000-0000-4000-8000-000000000002')
-    expect(current.recallPendingPlanLifecycle(key)).toBeNull()
-    expect((await reloaded()).recallPendingPlanLifecycle(key)).toBeNull()
+    expect(current.readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+    expect((await reloaded()).readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+  })
+
+  it('a release whose stored removal fails keeps the same attempt held, never a different one', async () => {
+    const api = await reloaded()
+    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
+    api.reservePendingPlanLifecycle(key, revise())
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      api.releasePendingPlanLifecycle(key, REVISE_KEY)
+    } finally {
+      removeItem.mockRestore()
+    }
+    expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'pending', pending: revise() })
+    expect((await reloaded()).readPendingPlanLifecycle(key)).toEqual({ state: 'pending', pending: revise() })
   })
 
   it('keeps the other lifecycle commands in-memory only, as before', async () => {
     const api = await reloaded()
     const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
-    api.reservePendingPlanLifecycle(key, revise())
-    // A newer command in the same slot replaces the stored revise, exactly as it replaces it in memory.
-    api.reservePendingPlanLifecycle(key, {
-      actorId: ACTOR, companyId: COMPANY_A, planId: PLAN,
-      snapshot: { kind: 'approve', idempotencyKey: '30000000-0000-4000-8000-000000000003', expectedVersion: 3 },
-    })
-    expect(api.recallPendingPlanLifecycle(key)?.snapshot.kind).toBe('approve')
-    expect((await reloaded()).recallPendingPlanLifecycle(key)).toBeNull()
-  })
-
-  it('a storage failure keeps the in-memory attempt for this module life', async () => {
-    const api = await reloaded()
-    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
-    try {
-      api.reservePendingPlanLifecycle(key, revise())
-      expect(api.recallPendingPlanLifecycle(key)?.snapshot.idempotencyKey).toBe(REVISE_KEY)
-    } finally {
-      setItem.mockRestore()
-    }
+    expect(api.reservePendingPlanLifecycle(key, approve())).toEqual({ type: 'reserved' })
+    expect(Object.keys(sessionStorage).some((name) => name.endsWith(key!))).toBe(false)
+    expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'pending', pending: approve() })
+    // A newer approval may still replace an in-memory approval, exactly as before.
+    expect(api.reservePendingPlanLifecycle(key, approve('30000000-0000-4000-8000-000000000006'))).toEqual({ type: 'reserved' })
+    api.releasePendingPlanLifecycle(key, '30000000-0000-4000-8000-000000000006')
+    expect(api.readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
+    api.reservePendingPlanLifecycle(key, approve())
+    expect((await reloaded()).readPendingPlanLifecycle(key)).toEqual({ state: 'absent' })
   })
 })
