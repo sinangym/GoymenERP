@@ -81,6 +81,23 @@ function names(name: string): string[] {
   return Object.keys(schema(name).properties ?? {}).sort()
 }
 
+/**
+ * M01.2 cut-to-length: an additive property the fixtures and the edit request deliberately omit. It must be declared,
+ * nullable to the given component schema and outside the required set, so a body or view without it stays valid.
+ */
+const CUT_TO_LENGTH = 'cutToLengthSpec'
+
+function withoutCutToLength(name: string): string[] {
+  return names(name).filter((property) => property !== CUT_TO_LENGTH)
+}
+
+function expectOptionalCutToLength(name: string, component: string): void {
+  expect(schema(name).properties?.[CUT_TO_LENGTH], name).toEqual({
+    oneOf: [{ type: 'null' }, { $ref: `#/components/schemas/${component}` }],
+  })
+  expect(schema(name).required ?? [], name).not.toContain(CUT_TO_LENGTH)
+}
+
 function requestSchemaName(pathName: string): string {
   const operation = document.paths[pathName]?.post as {
     readonly requestBody?: {
@@ -116,11 +133,14 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
 
   it('reads exactly the current PlanViewV1 properties and keeps additive legacy projections optional', () => {
     const inputView = { ...plannedInput(ROLL_1), commercialContext: null }
-    expect(Object.keys(plan()).sort()).toEqual(names('PlanViewV1'))
+    expect(Object.keys(plan()).sort()).toEqual(withoutCutToLength('PlanViewV1'))
     expect(Object.keys(inputView).sort()).toEqual(names('PlannedInputViewV1'))
     expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
-      names('PlanViewV1').filter((name) => name !== 'calculation' && name !== 'slittingSpec'),
+      names('PlanViewV1').filter(
+        (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH,
+      ),
     )
+    expectOptionalCutToLength('PlanViewV1', 'CutToLengthSpecViewV1')
     expect([...(schema('PlannedInputViewV1').required ?? [])].sort()).toEqual(
       names('PlannedInputViewV1').filter(
         (name) => name !== 'technicalSnapshot' && name !== 'commercialContext',
@@ -303,7 +323,9 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     }
     const plans = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/plans`
     expect(requestSchemaName(`${plans}/{planId}/revision`)).toBe('RevisePlanRequestV1')
-    expect(Object.keys(request).sort()).toEqual(names('RevisePlanRequestV1'))
+    expect(Object.keys(request).sort()).toEqual(withoutCutToLength('RevisePlanRequestV1'))
+    expect([...(schema('RevisePlanRequestV1').required ?? [])].sort()).toEqual(withoutCutToLength('RevisePlanRequestV1'))
+    expectOptionalCutToLength('RevisePlanRequestV1', 'CutToLengthSpecRequestV1')
     expect(Object.keys(request.inputs[0]).sort()).toEqual(names('PlannedInputRequestV1'))
     expect(Object.keys(request.target ?? {}).sort()).toEqual(names('TargetRequestV1'))
   })
@@ -320,11 +342,11 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
       }),
     ])
     expect(Object.keys(history).sort()).toEqual(names('PlanRevisionListViewV1'))
-    expect(Object.keys(history.revisions[0] as object).sort()).toEqual(names('PlanRevisionViewV1'))
+    expect(Object.keys(history.revisions[0] as object).sort()).toEqual(withoutCutToLength('PlanRevisionViewV1'))
     expect(Object.keys(revisionInput(ROLL_1)).sort()).toEqual(names('PlanRevisionInputViewV1'))
-    for (const name of ['PlanRevisionListViewV1', 'PlanRevisionViewV1']) {
-      expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
-    }
+    expect([...(schema('PlanRevisionListViewV1').required ?? [])].sort()).toEqual(names('PlanRevisionListViewV1'))
+    expect([...(schema('PlanRevisionViewV1').required ?? [])].sort()).toEqual(withoutCutToLength('PlanRevisionViewV1'))
+    expectOptionalCutToLength('PlanRevisionViewV1', 'CutToLengthSpecViewV1')
     expect([...(schema('PlanRevisionInputViewV1').required ?? [])].sort()).toEqual(
       ['parentRollId', 'plannedKg', 'expectedLabelVersion'].sort(),
     )
