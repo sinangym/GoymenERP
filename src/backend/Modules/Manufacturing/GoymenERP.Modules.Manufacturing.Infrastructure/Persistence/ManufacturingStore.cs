@@ -1275,6 +1275,7 @@ public sealed class ManufacturingStore(
         row.TechnicalEffectiveOn = snapshot.EffectiveOn;
         row.TechnicalThicknessMm = snapshot.ThicknessMm;
         row.TechnicalWidthMm = snapshot.WidthMm;
+        row.TechnicalLengthMm = snapshot.LengthMm;
     }
 
     private static PlanTechnicalParameterSnapshotV1? RestoreTechnicalSnapshot(IPlanTechnicalSnapshotRow row)
@@ -1288,7 +1289,7 @@ public sealed class ManufacturingStore(
             row.TechnicalKilogramProfileVersion, row.TechnicalEffectiveOn, row.TechnicalThicknessMm,
             row.TechnicalWidthMm,
         };
-        if (values.All(value => value is null))
+        if (values.All(value => value is null) && row.TechnicalLengthMm is null)
         {
             return null;
         }
@@ -1318,7 +1319,8 @@ public sealed class ManufacturingStore(
                 row.TechnicalKilogramProfileVersion!,
                 row.TechnicalEffectiveOn!.Value,
                 row.TechnicalThicknessMm!.Value,
-                row.TechnicalWidthMm!.Value);
+                row.TechnicalWidthMm!.Value,
+                row.TechnicalLengthMm);
         }
         catch (ArgumentException exception)
         {

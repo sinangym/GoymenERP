@@ -683,26 +683,27 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         });
 
     [SqlServerFact]
-    public Task Genuine_sac_card_is_created_replayed_reopened_activated_and_read_as_one_technical_snapshot() =>
+    public Task Genuine_cut_sheet_plate_card_reopens_one_exact_length_through_Product_plan_and_revision_history() =>
         WithDatabaseAsync(async (factory, _) =>
         {
             const string createKey = "product-genuine-sac-card-once";
             const string activateKey = "product-genuine-sac-activate-once";
             var effectiveOn = new DateOnly(2026, 10, 5);
             var references = new ProductReferences(
-                ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1",
                 new Dictionary<string, JsonElement>(StringComparer.Ordinal)
                 {
                     ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
                     ["width-mm"] = JsonSerializer.SerializeToElement(248m),
+                    ["length-mm"] = JsonSerializer.SerializeToElement(2500.125m),
                     ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
                     ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
                 },
                 new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram,
                     Sales: SettingsUnitIdentitiesV1.Kilogram));
-            var draft = new CreateProductDraftRequest("S235JR 3 mm × 248 mm kaplamasız sac",
+            var draft = new CreateProductDraftRequest("S235JR 3 mm × 248 mm × 2500,125 mm kesilmiş sac",
                 ProductInitialCodeGroupV1.SacGroupId,
-                FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
                 References: references);
 
             using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
@@ -719,7 +720,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             var first = (await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
             Assert.False(first.IsReplay);
             Assert.Equal(("SAC-1", "Draft", "1", ProductInitialCodeGroupV1.SacGroupId,
-                ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId),
+                ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId),
                 (first.Card.Product.Code, first.Card.Product.Lifecycle, first.Card.Product.Version,
                     first.Card.Product.GroupId, first.Card.Product.FamilyId));
             var afterCreate = await SnapshotAsync(factory.DatabaseConnectionString);
@@ -737,12 +738,14 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             {
                 Assert.Equal(HttpStatusCode.OK, reopenedDraft.StatusCode);
                 var card = (await reopenedDraft.Content.ReadFromJsonAsync<ProductCardView>())!;
-                Assert.Equal((first.Card.Product.Id, "1", ProductInitialTechnicalDefinitionV1.TemplateId, "1"),
+                Assert.Equal((first.Card.Product.Id, "1",
+                        ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1"),
                     (card.Product.Id, card.Product.Version, card.References.TemplateId, card.References.TemplateVersion));
                 Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units!.Stock);
                 Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units.Sales);
                 Assert.Equal(3m, card.References.Attributes!["thickness-mm"].GetDecimal());
                 Assert.Equal(248m, card.References.Attributes["width-mm"].GetDecimal());
+                Assert.Equal(2500.125m, card.References.Attributes["length-mm"].GetDecimal());
                 Assert.Equal("S235JR", card.References.Attributes["steel-grade"].GetString());
                 Assert.Equal("uncoated", card.References.Attributes["coating"].GetString());
                 Assert.False(card.References.Attributes.ContainsKey("producer-grade"));
@@ -950,15 +953,14 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     .ReadAsync(new(stocked.ProductId, stocked.ProductVersion, effectiveOn), default);
                 Assert.Empty(result.Errors);
                 var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
-                Assert.Equal((first.Card.Product.Id, "2", 3m, 248m, effectiveOn),
+                Assert.Equal((first.Card.Product.Id, "2", 3m, 248m, 2500.125m, effectiveOn),
                     (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm,
-                        snapshot.WidthMm, snapshot.EffectiveOn));
-                Assert.Null(snapshot.LengthMm);
-                Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
-                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                        snapshot.WidthMm, snapshot.LengthMm, snapshot.EffectiveOn));
+                Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                    ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                     (snapshot.Family.FamilyId, snapshot.Family.SourceRevision));
-                Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
-                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1",
+                    ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                     (snapshot.Template.TemplateId, snapshot.Template.TemplateVersion,
                         snapshot.Template.SourceRevision));
                 Assert.Equal((CompanyA, SettingsUnitIdentitiesV1.Kilogram, "kg",
@@ -1007,11 +1009,11 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     plannedInput.ParentRollId, plannedInput.PlannedKg));
             Assert.Equal((stocked.ProductId, stocked.ProductVersion, "3", "248"),
                 (captured.ProductId, captured.ProductVersion, captured.ThicknessMm, captured.WidthMm));
-            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
-                ProductInitialTechnicalDefinitionV1.SourceRef),
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                 (captured.Family.FamilyId, captured.Family.SourceRevision));
-            Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
-                ProductInitialTechnicalDefinitionV1.SourceRef),
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1",
+                ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                 (captured.Template.TemplateId, captured.Template.TemplateVersion,
                     captured.Template.SourceRevision));
             Assert.Equal((CompanyA, SettingsUnitIdentitiesV1.Kilogram, "kg",
@@ -1080,6 +1082,17 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             Assert.Equal(revisedSnapshot, Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(
                 recordedRevisionInput.TechnicalSnapshot));
 
+            await using (var storedScope = factory.Services.CreateAsyncScope())
+            {
+                storedScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+                var storedHistory = Assert.IsAssignableFrom<IReadOnlyList<ManufacturingPlanRevision>>(
+                    await storedScope.ServiceProvider.GetRequiredService<IManufacturingPlanRevisionStore>()
+                        .ListPlanRevisionsAsync(planId, default));
+                Assert.Equal([0, 1], storedHistory.Select(revision => revision.Revision));
+                Assert.All(storedHistory, revision => Assert.Equal(2500.125m,
+                    Assert.Single(revision.Inputs).TechnicalSnapshot!.LengthMm));
+            }
+
             await using (var sql = new SqlConnection(factory.DatabaseConnectionString))
             {
                 await sql.OpenAsync();
@@ -1090,7 +1103,9 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                         [TechnicalTemplateId], [TechnicalTemplateVersion], [TechnicalTemplateSourceRevision],
                         [TechnicalKilogramUnitCompanyId], [TechnicalKilogramUnitId],
                         [TechnicalKilogramProfileId], [TechnicalKilogramProfileVersion],
-                        [TechnicalThicknessMm], [TechnicalWidthMm],
+                        [TechnicalThicknessMm], [TechnicalWidthMm], [TechnicalLengthMm],
+                        (SELECT [TechnicalLengthMm] FROM [manufacturing].[PlanRevisionInputs]
+                            WHERE [CompanyId] = @company AND [PlanId] = @plan AND [RevisionNo] = 1),
                         (SELECT COUNT(*) FROM [manufacturing].[Plans]
                             WHERE [CompanyId] = @company AND [Id] = @plan),
                         (SELECT COUNT(*) FROM [manufacturing].[Commands]
@@ -1112,8 +1127,9 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 Assert.Equal((captured.UnitKg.CompanyId, captured.UnitKg.UnitId, captured.UnitKg.ProfileId,
                     captured.UnitKg.ProfileVersion),
                     (row.GetGuid(9), row.GetGuid(10), row.GetGuid(11), row.GetString(12)));
-                Assert.Equal((3m, 248m), (row.GetDecimal(13), row.GetDecimal(14)));
-                Assert.Equal((1, 1), (row.GetInt32(15), row.GetInt32(16)));
+                Assert.Equal((3m, 248m, 2500.125m, 2500.125m),
+                    (row.GetDecimal(13), row.GetDecimal(14), row.GetDecimal(15), row.GetDecimal(16)));
+                Assert.Equal((1, 1), (row.GetInt32(17), row.GetInt32(18)));
                 Assert.False(await row.ReadAsync());
             }
         });

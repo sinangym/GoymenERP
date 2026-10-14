@@ -117,6 +117,8 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingCommercialContexts", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingPlanCutLines", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -208,11 +210,16 @@ public sealed class ManufacturingPersistenceModelTests
                 entity.FindProperty(nameof(PlanInputRow.TechnicalFamilyCode))!.GetMaxLength());
             Assert.Equal(18, entity.FindProperty(nameof(PlanInputRow.TechnicalThicknessMm))!.GetPrecision());
             Assert.Equal(3, entity.FindProperty(nameof(PlanInputRow.TechnicalThicknessMm))!.GetScale());
+            Assert.Equal(18, entity.FindProperty(nameof(PlanInputRow.TechnicalLengthMm))!.GetPrecision());
+            Assert.Equal(3, entity.FindProperty(nameof(PlanInputRow.TechnicalLengthMm))!.GetScale());
+            Assert.True(entity.FindProperty(nameof(PlanInputRow.TechnicalLengthMm))!.IsNullable);
             Assert.True(entity.FindProperty(nameof(PlanInputRow.TechnicalProductId))!.IsNullable);
             var sql = entity.GetCheckConstraints().Single(check => check.Name == constraintName).Sql;
             Assert.Contains("[TechnicalKilogramUnitCompanyId] = [CompanyId]", sql, StringComparison.Ordinal);
             Assert.Contains("[TechnicalThicknessMm] > 0", sql, StringComparison.Ordinal);
             Assert.Contains("[TechnicalWidthMm] > 0", sql, StringComparison.Ordinal);
+            Assert.Contains("[TechnicalLengthMm] IS NULL OR [TechnicalLengthMm] > 0", sql,
+                StringComparison.Ordinal);
         }
     }
 

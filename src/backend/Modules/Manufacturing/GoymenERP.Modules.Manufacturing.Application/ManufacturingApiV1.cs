@@ -2340,7 +2340,8 @@ public sealed partial class ManufacturingCommandService(
                 snapshot.UnitKg.ProfileVersion,
                 snapshot.EffectiveOn,
                 snapshot.ThicknessMm,
-                snapshot.WidthMm), null);
+                snapshot.WidthMm,
+                snapshot.LengthMm), null);
         }
         catch (OperationCanceledException)
         {
