@@ -26,6 +26,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -1131,6 +1132,73 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     (row.GetDecimal(13), row.GetDecimal(14), row.GetDecimal(15), row.GetDecimal(16)));
                 Assert.Equal((1, 1), (row.GetInt32(17), row.GetInt32(18)));
                 Assert.False(await row.ReadAsync());
+            }
+
+            // The newly captured length is immutable plan provenance. Downgrade must refuse before
+            // either table is changed when either current-plan or revision history still carries it.
+            await using (var migrationScope = factory.Services.CreateAsyncScope())
+            {
+                var manufacturing = migrationScope.ServiceProvider.GetRequiredService<ManufacturingDbContext>();
+                var applied = (await manufacturing.Database.GetAppliedMigrationsAsync()).ToArray();
+                var lengthMigration = Assert.Single(applied,
+                    migration => migration.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots",
+                        StringComparison.Ordinal));
+                var lengthMigrationIndex = Array.IndexOf(applied, lengthMigration);
+                Assert.Equal(applied.Length - 1, lengthMigrationIndex);
+                var previousMigration = applied[lengthMigrationIndex - 1];
+                var migrator = manufacturing.GetService<IMigrator>();
+
+                async Task AssertRollbackRefusedAsync(int expectedNonNullRows)
+                {
+                    var error = await Assert.ThrowsAsync<SqlException>(
+                        () => migrator.MigrateAsync(previousMigration));
+                    Assert.Equal(51047, error.Number);
+                    Assert.Equal(applied, await manufacturing.Database.GetAppliedMigrationsAsync());
+                    Assert.Equal(expectedNonNullRows, await manufacturing.Database.SqlQueryRaw<int>(
+                            """
+                            SELECT (SELECT COUNT(*) FROM [manufacturing].[PlanInputs]
+                                    WHERE [TechnicalLengthMm] IS NOT NULL)
+                                 + (SELECT COUNT(*) FROM [manufacturing].[PlanRevisionInputs]
+                                    WHERE [TechnicalLengthMm] IS NOT NULL) AS [Value]
+                            """)
+                        .SingleAsync());
+                }
+
+                await AssertRollbackRefusedAsync(expectedNonNullRows: 3);
+
+                // Each side independently retains the downgrade guard; failed attempts do not mutate schema or rows.
+                await manufacturing.Database.ExecuteSqlRawAsync(
+                    "UPDATE [manufacturing].[PlanInputs] SET [TechnicalLengthMm] = NULL WHERE [CompanyId] = {0} AND [PlanId] = {1}",
+                    CompanyA, planId);
+                await AssertRollbackRefusedAsync(expectedNonNullRows: 2);
+
+                await manufacturing.Database.ExecuteSqlRawAsync(
+                    "UPDATE [manufacturing].[PlanInputs] SET [TechnicalLengthMm] = {0} WHERE [CompanyId] = {1} AND [PlanId] = {2}; "
+                    + "UPDATE [manufacturing].[PlanRevisionInputs] SET [TechnicalLengthMm] = NULL WHERE [CompanyId] = {1} AND [PlanId] = {2};",
+                    2500.125m, CompanyA, planId);
+                await AssertRollbackRefusedAsync(expectedNonNullRows: 1);
+
+                // All-null rows carry no length provenance, so the migration is safely reversible and replayable.
+                await manufacturing.Database.ExecuteSqlRawAsync(
+                    "UPDATE [manufacturing].[PlanInputs] SET [TechnicalLengthMm] = NULL WHERE [CompanyId] = {0} AND [PlanId] = {1}",
+                    CompanyA, planId);
+                await migrator.MigrateAsync(previousMigration);
+                Assert.DoesNotContain(lengthMigration, await manufacturing.Database.GetAppliedMigrationsAsync());
+                Assert.Null(await manufacturing.Database.SqlQueryRaw<int?>(
+                        "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
+                    .SingleAsync());
+                Assert.Null(await manufacturing.Database.SqlQueryRaw<int?>(
+                        "SELECT COL_LENGTH(N'[manufacturing].[PlanRevisionInputs]', N'TechnicalLengthMm') AS [Value]")
+                    .SingleAsync());
+
+                await migrator.MigrateAsync();
+                Assert.Equal(lengthMigration, (await manufacturing.Database.GetAppliedMigrationsAsync()).Last());
+                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<int?>(
+                        "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
+                    .SingleAsync());
+                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<int?>(
+                        "SELECT COL_LENGTH(N'[manufacturing].[PlanRevisionInputs]', N'TechnicalLengthMm') AS [Value]")
+                    .SingleAsync());
             }
         });
 

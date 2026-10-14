@@ -41,6 +41,19 @@ public sealed class AddManufacturingPlanTechnicalLengthSnapshots : Migration
 
     protected override void Down(MigrationBuilder migrationBuilder)
     {
+        // A non-null length is immutable plan provenance that the previous schema cannot represent.
+        // Refuse before either constraint or column is changed; an all-null database remains safely reversible.
+        migrationBuilder.Sql(
+            """
+            IF EXISTS (
+                SELECT 1 FROM [manufacturing].[PlanInputs]
+                WHERE [TechnicalLengthMm] IS NOT NULL)
+                OR EXISTS (
+                    SELECT 1 FROM [manufacturing].[PlanRevisionInputs]
+                    WHERE [TechnicalLengthMm] IS NOT NULL)
+                THROW 51047, 'Manufacturing plan technical length snapshots must be forward-fixed before downgrade.', 1;
+            """);
+
         foreach (var table in Tables)
         {
             migrationBuilder.DropCheckConstraint(
