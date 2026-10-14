@@ -85,17 +85,31 @@ interface CutToLengthSpecAnswer {
   readonly lines: readonly CutToLengthLineAnswer[]
 }
 
-async function expectCutToLengthLines(page: Page) {
+function displayedLengthPattern(lengthMm: string): RegExp {
+  const [whole, fraction] = lengthMm.split('.')
+  if (fraction === undefined) return new RegExp(`^${whole}(?:[.,]0+)? mm$`)
+  const significant = fraction.replace(/0+$/, '')
+  if (significant.length === 0) return new RegExp(`^${whole}(?:[.,]0+)? mm$`)
+  return new RegExp(`^${whole}[.,]${significant}(?:0+)? mm$`)
+}
+
+async function expectCutToLengthRows(page: Page, expected: readonly CutToLengthLineAnswer[]) {
   const detail = page.getByRole('region', { name: 'Boy kesme ayrıntısı' })
   await expect(detail).toBeVisible()
   const rows = detail.getByRole('table').locator('tbody tr')
-  await expect(rows).toHaveCount(2)
-  await expect(rows.nth(0).getByRole('rowheader')).toHaveText('40')
-  await expect(rows.nth(0).getByRole('cell').nth(0)).toHaveText(/^6000(?:[.,]0+)? mm$/)
-  await expect(rows.nth(0).getByRole('cell').nth(1)).toHaveText('3')
-  await expect(rows.nth(1).getByRole('rowheader')).toHaveText('-7')
-  await expect(rows.nth(1).getByRole('cell').nth(0)).toHaveText(/^2500[.,]5 mm$/)
-  await expect(rows.nth(1).getByRole('cell').nth(1)).toHaveText('2')
+  await expect(rows).toHaveCount(expected.length)
+  for (const [index, line] of expected.entries()) {
+    await expect(rows.nth(index).getByRole('rowheader')).toHaveText(String(line.sequence))
+    await expect(rows.nth(index).getByRole('cell').nth(0)).toHaveText(displayedLengthPattern(line.lengthMm))
+    await expect(rows.nth(index).getByRole('cell').nth(1)).toHaveText(String(line.count))
+  }
+}
+
+async function expectCutToLengthLines(page: Page) {
+  await expectCutToLengthRows(page, [
+    { lineId: '', sequence: 40, lengthMm: '6000', count: 3 },
+    { lineId: '', sequence: -7, lengthMm: '2500.5', count: 2 },
+  ])
 }
 
 async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
@@ -1057,6 +1071,426 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       expect(reopenedHistory.revisions.map((entry) => entry.cutToLengthSpec)).toEqual([storedSpec, storedSpec])
       await expectCutToLengthLines(page)
       await expect(page.getByRole('button', { name: 'Planı onayla', exact: true })).toBeVisible()
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('M01.3: authored cut lines keep identity, source order and frozen create/revise replays through reopen', async ({ page, context }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const api = await apiAs(env, env.seed.recorderActor)
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      const cutToLength = workCenters.get('CutToLength')!
+
+      // A stored legacy/null definition stays absent through edit and an unrelated revision.
+      const legacyCandidate = await readParentRollCandidate(env, env.seed.rolls.planRefusal)
+      const legacyPlanId = randomUUID()
+      const legacyCreate = await api.post('/api/v1/manufacturing/plans', {
+        headers: { 'Idempotency-Key': randomUUID() },
+        data: {
+          planId: legacyPlanId,
+          workCenterId: cutToLength.id,
+          inputs: [{
+            parentRollId: legacyCandidate.labelId,
+            plannedKg: '1000',
+            expectedLabelVersion: legacyCandidate.labelVersion,
+          }],
+          target: null,
+        },
+      })
+      expect(legacyCreate.status()).toBe(201)
+      expect(((await legacyCreate.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toBeNull()
+      await page.goto(`/uretim/plan/${legacyPlanId}`)
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      await expect(page.getByRole('region', { name: 'Boy kesme ayrıntısı' })).toHaveCount(0)
+      await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+      await expect(page.getByLabel(/Sıra no$/)).toHaveCount(0)
+      await page.getByRole('textbox', { name: `${legacyCandidate.labelId} planlanan kg` }).fill('900')
+      await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+        .fill('Tarayıcı kabulü: eski kesim tanımı eklenmeden kg güncellendi')
+      const legacyRevisionAnswer = page.waitForResponse(
+        (response) => PLAN_REVISION_RE.test(response.url()) && response.request().method() === 'POST',
+      )
+      await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      const legacyRevision = await legacyRevisionAnswer
+      expect(legacyRevision.status()).toBe(200)
+      const legacyRevisionBody = legacyRevision.request().postDataJSON() as Record<string, unknown>
+      expect(legacyRevisionBody).not.toHaveProperty('cutToLengthSpec')
+      expect(((await legacyRevision.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toBeNull()
+      const storedLegacy = await readPlan(api, legacyPlanId)
+      expect(storedLegacy.response.status()).toBe(200)
+      expect(storedLegacy.body).toMatchObject({
+        planId: legacyPlanId,
+        version: 2,
+        cutToLengthSpec: null,
+      })
+      await expect(page.getByRole('region', { name: 'Boy kesme ayrıntısı' })).toHaveCount(0)
+
+      const legacyPreviewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const body = response.request().postDataJSON() as {
+          workCenterId?: string
+          inputs?: unknown[]
+          cutToLengthSpec?: CutToLengthSpecAnswer | null
+        }
+        return body.workCenterId === cutToLength.id
+          && body.inputs?.length === 1
+          && (body.cutToLengthSpec ?? null) === null
+      })
+      const candidate = await openPlanForm(page, env.seed.rolls.process.CutToLength, cutToLength.id)
+      const legacyPreview = await legacyPreviewAnswer
+      expect(legacyPreview.status()).toBe(200)
+      expect((legacyPreview.request().postDataJSON() as {
+        cutToLengthSpec?: CutToLengthSpecAnswer | null
+      }).cutToLengthSpec ?? null).toBeNull()
+      await expect(page.getByLabel(/Sıra no$/)).toHaveCount(0)
+
+      // An incomplete authored row is neither previewed nor saved and never becomes an implicit clear.
+      const previewCountBeforeInvalid = [...rewritten].filter(
+        (entry) => PLAN_PREVIEW_RE.test(entry.url()) && entry.method() === 'POST',
+      ).length
+      const createCountBeforeInvalid = [...rewritten].filter(
+        (entry) => PLAN_POST_RE.test(entry.url()) && entry.method() === 'POST',
+      ).length
+      await page.getByRole('button', { name: /Kesim satırı ekle/i }).click()
+      await page.getByLabel(/Sıra no$/).fill('40')
+      await page.waitForTimeout(600)
+      expect([...rewritten].filter(
+        (entry) => PLAN_PREVIEW_RE.test(entry.url()) && entry.method() === 'POST',
+      )).toHaveLength(previewCountBeforeInvalid)
+      await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+      await expect(page.getByRole('alert').last()).toBeVisible()
+      expect([...rewritten].filter(
+        (entry) => PLAN_POST_RE.test(entry.url()) && entry.method() === 'POST',
+      )).toHaveLength(createCountBeforeInvalid)
+
+      // A present but invalid row is also neither previewed nor serialized as an implicit clear.
+      await page.getByLabel(/Uzunluk \(mm\)$/).fill('6000.0000')
+      await page.getByLabel(/Adet$/).fill('0')
+      await page.waitForTimeout(600)
+      expect([...rewritten].filter(
+        (entry) => PLAN_PREVIEW_RE.test(entry.url()) && entry.method() === 'POST',
+      )).toHaveLength(previewCountBeforeInvalid)
+      await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+      await expect(page.getByRole('alert').last()).toBeVisible()
+      expect([...rewritten].filter(
+        (entry) => PLAN_POST_RE.test(entry.url()) && entry.method() === 'POST',
+      )).toHaveLength(createCountBeforeInvalid)
+
+      await page.getByLabel(/Uzunluk \(mm\)$/).fill('6000.000')
+      await page.getByLabel(/Adet$/).fill('3')
+      await page.getByRole('button', { name: /Kesim satırı ekle/i }).click()
+      await page.getByLabel(/Sıra no$/).nth(1).fill('-7')
+      await page.getByLabel(/Uzunluk \(mm\)$/).nth(1).fill('2500.5')
+
+      const beforeMovePreviewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const spec = (response.request().postDataJSON() as {
+          cutToLengthSpec?: CutToLengthSpecAnswer
+        }).cutToLengthSpec
+        return spec?.lines.map((line) => line.sequence).join(',') === '40,-7'
+          && spec.lines[1]?.count === 2
+      })
+      await page.getByLabel(/Adet$/).nth(1).fill('2')
+      const beforeMovePreview = await beforeMovePreviewAnswer
+      expect(beforeMovePreview.status()).toBe(200)
+      const beforeMoveSpec = (beforeMovePreview.request().postDataJSON() as {
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }).cutToLengthSpec
+
+      const authoredPreviewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const spec = (response.request().postDataJSON() as {
+          cutToLengthSpec?: CutToLengthSpecAnswer
+        }).cutToLengthSpec
+        return spec?.lines.map((line) => line.sequence).join(',') === '-7,40'
+      })
+      const moveSecondUp = page.getByRole('button', { name: /yukarı taşı/i }).last()
+      await moveSecondUp.focus()
+      await moveSecondUp.press('Enter')
+      await expect(page.locator(':focus')).toHaveAccessibleName(/yukarı taşı/i)
+      const authoredPreview = await authoredPreviewAnswer
+      expect(authoredPreview.status()).toBe(200)
+      const authoredSpec = (authoredPreview.request().postDataJSON() as {
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }).cutToLengthSpec
+      expect(authoredSpec.lines).toHaveLength(2)
+      expect(authoredSpec.lines[0]).toMatchObject({ sequence: -7, count: 2 })
+      expect(authoredSpec.lines[1]).toMatchObject({ sequence: 40, count: 3 })
+      expect(Number(authoredSpec.lines[0].lengthMm)).toBe(2500.5)
+      expect(Number(authoredSpec.lines[1].lengthMm)).toBe(6000)
+      for (const line of authoredSpec.lines) {
+        expect(line.lineId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+        expect(line.lineId).toBe(beforeMoveSpec.lines.find((before) => before.sequence === line.sequence)?.lineId)
+      }
+      expect(new Set(authoredSpec.lines.map((line) => line.lineId)).size).toBe(2)
+      await expect(page.getByTestId('plan-preview').getByText(/Önizleme güncel/)).toBeVisible()
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+      await page.setViewportSize({ width: 390, height: 844 })
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+      let committedCreate: Request | null = null
+      let committedCreateStatus: number | null = null
+      await page.route(PLAN_POST_RE, async (route) => {
+        if (committedCreate !== null) return route.fallback()
+        committedCreate = route.request()
+        const response = await route.fetch({
+          headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+        })
+        committedCreateStatus = response.status()
+        await route.abort('failed')
+      })
+
+      await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+      await expect(page.getByText('Sonuç bilinmiyor.', { exact: false })).toBeVisible()
+      expect(committedCreateStatus).toBe(201)
+      const firstCreate = committedCreate as Request | null
+      expect(firstCreate).not.toBeNull()
+      const firstCreateBody = firstCreate!.postDataJSON() as {
+        planId: string
+        workCenterId: string
+        inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }
+      const firstCreateKey = firstCreate!.headers()['idempotency-key']
+      expect(firstCreateBody).toMatchObject({
+        workCenterId: cutToLength.id,
+        inputs: [{
+          parentRollId: candidate.labelId,
+          plannedKg: '1000',
+          expectedLabelVersion: candidate.labelVersion,
+        }],
+      })
+      expect(firstCreateBody.cutToLengthSpec).toEqual(authoredSpec)
+      await expect(page.getByLabel(/Sıra no$/).first()).toBeDisabled()
+
+      // Reload proves that the pending-create snapshot, rather than current form state, owns the retry.
+      await page.reload()
+      await expect(page.getByText('Önceki gönderimin sonucu bilinmiyor.', { exact: true })).toBeVisible()
+      const createReplayAnswer = page.waitForResponse(
+        (response) => PLAN_POST_RE.test(response.url()) && response.request().method() === 'POST',
+      )
+      await page.getByRole('button', { name: 'Aynı anahtarla yeniden gönder', exact: true }).click()
+      const createReplay = await createReplayAnswer
+      expect(createReplay.status()).toBe(201)
+      expect(createReplay.headers()['idempotency-replayed']).toBe('true')
+      expect(createReplay.request().headers()['idempotency-key']).toBe(firstCreateKey)
+      expect(createReplay.request().postData()).toBe(firstCreate!.postData())
+      await expect(page.getByText('Önceki kayıtlı sonuç yeniden gösterildi.', { exact: true })).toBeVisible()
+
+      const storedAfterCreate: CutToLengthSpecAnswer = {
+        lines: authoredSpec.lines.map((line) => ({ ...line, lengthMm: String(Number(line.lengthMm)) })),
+      }
+      const storedCreate = await readPlan(api, firstCreateBody.planId)
+      expect(storedCreate.response.status()).toBe(200)
+      expect(storedCreate.body).toMatchObject({
+        planId: firstCreateBody.planId,
+        status: 'Draft',
+        version: 1,
+        cutToLengthSpec: storedAfterCreate,
+      })
+
+      const initialPlanRead = page.waitForResponse(
+        (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(firstCreateBody.planId)
+          && response.request().method() === 'GET',
+      )
+      const initialHistoryRead = page.waitForResponse(
+        (response) => PLAN_REVISIONS_RE.test(response.url()) && response.url().includes(firstCreateBody.planId)
+          && response.request().method() === 'GET',
+      )
+      await page.getByRole('link', { name: 'Formu kapat ve planı yeniden aç' }).click()
+      expect((await initialPlanRead).status()).toBe(200)
+      const initialHistoryResponse = await initialHistoryRead
+      expect(initialHistoryResponse.status()).toBe(200)
+      expect(((await initialHistoryResponse.json()) as {
+        revisions: Array<{ revision: number; cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }).revisions).toMatchObject([{ revision: 0, cutToLengthSpec: storedAfterCreate }])
+      await expectCutToLengthRows(page, storedAfterCreate.lines)
+
+      // At phone width the same stored definition is edited with keyboard-operable row movement.
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+      await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+      await expect(page.getByLabel(/Sıra no$/).nth(0)).toHaveValue('-7')
+      await expect(page.getByLabel(/Sıra no$/).nth(1)).toHaveValue('40')
+      await page.getByLabel(/Adet$/).nth(0).fill('5')
+      await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+        .fill('Tarayıcı kabulü: kesim satırları güncellendi')
+
+      const editedPreviewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const spec = (response.request().postDataJSON() as {
+          cutToLengthSpec?: CutToLengthSpecAnswer
+        }).cutToLengthSpec
+        return spec?.lines.map((line) => line.sequence).join(',') === '40,-7'
+          && spec.lines[1]?.count === 5
+      })
+      const editMoveSecondUp = page.getByRole('button', { name: /yukarı taşı/i }).last()
+      await editMoveSecondUp.focus()
+      await editMoveSecondUp.press('Enter')
+      await expect(page.locator(':focus')).toHaveAccessibleName(/yukarı taşı/i)
+      const editedPreview = await editedPreviewAnswer
+      expect(editedPreview.status()).toBe(200)
+      const editedSpec = (editedPreview.request().postDataJSON() as {
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }).cutToLengthSpec
+      expect(editedSpec).toEqual({
+        lines: [
+          { ...storedAfterCreate.lines[1] },
+          { ...storedAfterCreate.lines[0], count: 5 },
+        ],
+      })
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+      let committedRevision: Request | null = null
+      let committedRevisionStatus: number | null = null
+      await page.route(PLAN_REVISION_RE, async (route) => {
+        if (committedRevision !== null) return route.fallback()
+        committedRevision = route.request()
+        const response = await route.fetch({
+          headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+        })
+        committedRevisionStatus = response.status()
+        await route.abort('failed')
+      })
+
+      await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      await expect(page.getByText(
+        'Düzenlemenin sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.',
+        { exact: true },
+      )).toBeVisible()
+      expect(committedRevisionStatus).toBe(200)
+      const firstRevision = committedRevision as Request | null
+      expect(firstRevision).not.toBeNull()
+      const firstRevisionBody = firstRevision!.postDataJSON() as {
+        expectedVersion: number
+        reason: string
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }
+      const firstRevisionKey = firstRevision!.headers()['idempotency-key']
+      expect(firstRevisionBody).toMatchObject({
+        expectedVersion: 1,
+        reason: 'Tarayıcı kabulü: kesim satırları güncellendi',
+        cutToLengthSpec: editedSpec,
+      })
+      expect(firstRevisionBody.cutToLengthSpec).toEqual(editedSpec)
+      await expect(page.getByLabel(/Sıra no$/)).toHaveCount(0)
+
+      await page.reload()
+      await expect(page.getByText(
+        'Düzenlemenin sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.',
+        { exact: true },
+      )).toBeVisible()
+      const revisionReplayAnswer = page.waitForResponse(
+        (response) => PLAN_REVISION_RE.test(response.url()) && response.request().method() === 'POST',
+      )
+      await page.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder', exact: true }).click()
+      const revisionReplay = await revisionReplayAnswer
+      expect(revisionReplay.status()).toBe(200)
+      expect(revisionReplay.headers()['idempotency-replayed']).toBe('true')
+      expect(revisionReplay.request().headers()['idempotency-key']).toBe(firstRevisionKey)
+      expect(revisionReplay.request().postData()).toBe(firstRevision!.postData())
+      await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
+        .toBeVisible()
+      await expectCutToLengthRows(page, editedSpec.lines)
+
+      const historyRegion = page.getByRole('region', { name: 'Plan geçmişi' })
+      const latestRevision = historyRegion.getByRole('listitem', { name: 'Revizyon 1' })
+      await expect(latestRevision).toContainText(/Boy kesme/i)
+      await expect(latestRevision).not.toContainText('Ana rulo sırası değişti.')
+
+      const storedAfterRevision = await readPlan(api, firstCreateBody.planId)
+      expect(storedAfterRevision.response.status()).toBe(200)
+      expect(storedAfterRevision.body).toMatchObject({
+        planId: firstCreateBody.planId,
+        status: 'Draft',
+        version: 2,
+        cutToLengthSpec: editedSpec,
+      })
+      const storedHistoryResponse = await api.get('/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revisions')
+      expect(storedHistoryResponse.status()).toBe(200)
+      const storedHistory = (await storedHistoryResponse.json()) as {
+        revisions: Array<{ revision: number; cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }
+      expect(storedHistory.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+      expect(storedHistory.revisions.map((entry) => entry.cutToLengthSpec)).toEqual([
+        storedAfterCreate,
+        editedSpec,
+      ])
+
+      // The authored cut definition never broadens the existing actor/company/version fences.
+      const stale = await api.post('/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revision', {
+        data: firstRevisionBody,
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      expect(stale.status()).toBe(409)
+      expect((await stale.json()) as Record<string, unknown>).toMatchObject({ code: 'manufacturing_version_conflict' })
+
+      const reader = await apiAs(env, env.seed.readerActor)
+      try {
+        const forbidden = await reader.post('/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revision', {
+          data: { ...firstRevisionBody, expectedVersion: 2 },
+          headers: { 'Idempotency-Key': randomUUID() },
+        })
+        expect(forbidden.status()).toBe(403)
+      } finally {
+        await reader.dispose()
+      }
+
+      const otherCompany = await request.newContext({
+        baseURL: env.apiBaseUrl,
+        extraHTTPHeaders: {
+          'X-Development-User': env.seed.recorderActor,
+          'X-Company-Id': OTHER_COMPANY,
+          'X-Correlation-Id': 'mfg-ci-' + randomUUID(),
+        },
+      })
+      try {
+        const hidden = await otherCompany.post(
+          '/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revision',
+          {
+            data: { ...firstRevisionBody, expectedVersion: 2 },
+            headers: { 'Idempotency-Key': randomUUID() },
+          },
+        )
+        expect(hidden.status()).toBe(403)
+      } finally {
+        await otherCompany.dispose()
+      }
+
+      const finalHistoryResponse = await api.get(
+        '/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revisions',
+      )
+      expect(finalHistoryResponse.status()).toBe(200)
+      expect(((await finalHistoryResponse.json()) as {
+        revisions: Array<{ revision: number }>
+      }).revisions.map((entry) => entry.revision)).toEqual([0, 1])
+
+      await page.goto('/uretim/emirler')
+      const listAnswer = page.waitForResponse(
+        (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+      )
+      await page.getByRole('link', { name: 'Üretim planları', exact: true }).click()
+      expect((await listAnswer).status()).toBe(200)
+      const reference = firstCreateBody.planId.slice(-8)
+      await page.getByRole('row', { name: new RegExp(reference) })
+        .getByRole('link', { name: new RegExp(reference) }).click()
+      await expectCutToLengthRows(page, editedSpec.lines)
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
     } finally {
       await api.dispose()
     }
