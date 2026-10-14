@@ -325,6 +325,147 @@ export interface PendingPlanLifecycle {
 
 const pendingLifecycle = new Map<string, PendingPlanLifecycle>()
 
+/**
+ * M01.3 (K2 P1): an unresolved REVISE also lives in the tab's sessionStorage, the same session-scoped store the pending
+ * create uses (pendingPlanStore), so a real page reload — which recreates this module and empties the map — can still
+ * re-send the same key and the same frozen body. Approve and create-order stay in memory only, as before.
+ *
+ * The slot name is the full context key (session epoch, actor, company, plan). A recalled record is never trusted: it
+ * must be exactly this contract AND name the very context of the slot it was read from; only then is it deep-frozen and
+ * used. A malformed or foreign record is not replayed and is left in place (never silently deleted); the server's
+ * expected-version fence still refuses any second revise built on a version that the first one already moved.
+ */
+const STORED_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v1:'
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const NIL_UUID = '00000000-0000-0000-0000-000000000000'
+const LABEL_VERSION = /^[1-9][0-9]*$/
+const KG = /^(0|[1-9][0-9]{0,17})(\.[0-9]{1,20})?$/
+const MM = /^(?=.*[1-9])(?:0|[1-9][0-9]*)(?:\.[0-9]{1,3})?$/
+const INT32_MIN = -2_147_483_648
+const INT32_MAX = 2_147_483_647
+
+type Json = Record<string, unknown>
+
+function isRecord(value: unknown): value is Json {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasKeys(value: Json, required: readonly string[], optional: readonly string[] = []): boolean {
+  const own = Object.keys(value)
+  return required.every((key) => own.includes(key)) && own.every((key) => required.includes(key) || optional.includes(key))
+}
+
+function guid(value: unknown): boolean {
+  return typeof value === 'string' && UUID.test(value) && value !== NIL_UUID
+}
+
+function positiveKg(value: unknown): boolean {
+  return typeof value === 'string' && KG.test(value) && /[1-9]/.test(value)
+}
+
+function int32(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= INT32_MIN && value <= INT32_MAX
+}
+
+function validCommercialContext(value: unknown): boolean {
+  if (value === null) return true
+  return isRecord(value)
+    && hasKeys(value, ['partyId', 'companyPartyAccountId', 'partyVersion', 'accountVersion'])
+    && guid(value.partyId)
+    && guid(value.companyPartyAccountId)
+    && typeof value.partyVersion === 'string' && value.partyVersion.length > 0
+    && typeof value.accountVersion === 'string' && value.accountVersion.length > 0
+}
+
+function validCutLines(value: unknown): boolean {
+  if (!isRecord(value) || !hasKeys(value, ['lines']) || !Array.isArray(value.lines) || value.lines.length === 0) return false
+  const ids = new Set<string>()
+  return (value.lines as unknown[]).every((line) => {
+    if (!isRecord(line) || !hasKeys(line, ['lineId', 'sequence', 'lengthMm', 'count']) || !guid(line.lineId)) return false
+    const id = (line.lineId as string).toLowerCase()
+    if (ids.has(id)) return false
+    ids.add(id)
+    return int32(line.sequence)
+      && typeof line.lengthMm === 'string' && MM.test(line.lengthMm)
+      && int32(line.count) && line.count > 0
+  })
+}
+
+/** Exactly a `RevisePlanRequest` the edit form sends; a cut definition, when present, is never null or empty. */
+function validReviseRequest(value: unknown): boolean {
+  if (!isRecord(value)
+    || !hasKeys(value, ['expectedVersion', 'workCenterId', 'inputs', 'target', 'reason'], ['cutToLengthSpec'])) return false
+  const { expectedVersion, workCenterId, inputs, target, reason } = value
+  if (typeof expectedVersion !== 'number' || !Number.isSafeInteger(expectedVersion) || expectedVersion < 1) return false
+  if (!guid(workCenterId) || !Array.isArray(inputs) || inputs.length === 0) return false
+  const rolls = new Set<string>()
+  for (const input of inputs as unknown[]) {
+    if (!isRecord(input)
+      || !hasKeys(input, ['parentRollId', 'plannedKg', 'expectedLabelVersion'], ['commercialContext'])
+      || !guid(input.parentRollId)
+      || !positiveKg(input.plannedKg)
+      || typeof input.expectedLabelVersion !== 'string' || !LABEL_VERSION.test(input.expectedLabelVersion)
+      || (Object.hasOwn(input, 'commercialContext') && !validCommercialContext(input.commercialContext))) return false
+    const roll = (input.parentRollId as string).toLowerCase()
+    if (rolls.has(roll)) return false
+    rolls.add(roll)
+  }
+  if (target !== null && (!isRecord(target) || !hasKeys(target, ['basis', 'kg'])
+    || (target.basis !== 'InputMass' && target.basis !== 'GoodOutputMass') || !positiveKg(target.kg))) return false
+  if (typeof reason !== 'string' || reason.length === 0 || reason.length > 256 || reason.trim() !== reason) return false
+  return !Object.hasOwn(value, 'cutToLengthSpec') || validCutLines(value.cutToLengthSpec)
+}
+
+/** The context the slot key names: `[sessionEpoch, actorId, companyId, planId]` (see {@link pendingPlanLifecycleKey}). */
+function slotContext(key: string): { readonly actorId: string; readonly companyId: string; readonly planId: string } | null {
+  try {
+    const parsed: unknown = JSON.parse(key)
+    if (!Array.isArray(parsed) || parsed.length !== 4 || typeof parsed[0] !== 'number') return null
+    const [, actorId, companyId, planId] = parsed as unknown[]
+    if (typeof actorId !== 'string' || typeof companyId !== 'string' || typeof planId !== 'string') return null
+    return { actorId, companyId, planId }
+  } catch {
+    return null
+  }
+}
+
+function decodeStoredRevise(key: string, raw: string): PendingPlanLifecycle | null {
+  const context = slotContext(key)
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (context === null || !isRecord(value) || !hasKeys(value, ['actorId', 'companyId', 'planId', 'snapshot'])) return null
+  // The record must name the very context of the slot it was read from.
+  if (value.actorId !== context.actorId || value.companyId !== context.companyId || value.planId !== context.planId) {
+    return null
+  }
+  const snapshot = value.snapshot
+  if (!isRecord(snapshot) || !hasKeys(snapshot, ['kind', 'idempotencyKey', 'request']) || snapshot.kind !== 'revise'
+    || !guid(snapshot.idempotencyKey) || !validReviseRequest(snapshot.request)) return null
+  return deepFreeze(value as unknown as PendingPlanLifecycle)
+}
+
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const child of Object.values(value)) deepFreeze(child)
+  }
+  return value
+}
+
+function storedRevise(key: string): PendingPlanLifecycle | null {
+  try {
+    const raw = sessionStorage.getItem(STORED_REVISE_PREFIX + key)
+    return raw === null ? null : decodeStoredRevise(key, raw)
+  } catch {
+    return null
+  }
+}
+
 export function pendingPlanLifecycleKey(
   sessionEpoch: number,
   actorId: string | null,
@@ -337,23 +478,53 @@ export function pendingPlanLifecycleKey(
 }
 
 export function recallPendingPlanLifecycle(key: string | null): PendingPlanLifecycle | null {
-  return key === null ? null : (pendingLifecycle.get(key) ?? null)
+  if (key === null) return null
+  const held = pendingLifecycle.get(key)
+  if (held !== undefined) return held
+  // After a reload: only a strictly valid revise of exactly this context, frozen before use.
+  const recalled = storedRevise(key)
+  if (recalled !== null) pendingLifecycle.set(key, recalled)
+  return recalled
 }
 
-/** Reserve before sending so a route remount cannot mint a second command for an unknown first result. */
+/** Reserve before sending so a route remount — or, for a revise, a page reload — cannot mint a second command. */
 export function reservePendingPlanLifecycle(key: string | null, pending: PendingPlanLifecycle): void {
-  if (key !== null) pendingLifecycle.set(key, pending)
+  if (key === null) return
+  pendingLifecycle.set(key, pending)
+  try {
+    if (pending.snapshot.kind === 'revise') {
+      sessionStorage.setItem(STORED_REVISE_PREFIX + key, JSON.stringify(pending))
+    } else {
+      // A newer command took this slot: the stored revise is replaced here exactly as it is in memory.
+      sessionStorage.removeItem(STORED_REVISE_PREFIX + key)
+    }
+  } catch {
+    // The in-memory slot still holds the immutable attempt for this module life.
+  }
 }
 
 /** Release only the command that settled; a newer frozen command in the same slot is never removed. */
 export function releasePendingPlanLifecycle(key: string | null, idempotencyKey: string): void {
-  if (key === null || pendingLifecycle.get(key)?.snapshot.idempotencyKey !== idempotencyKey) return
-  pendingLifecycle.delete(key)
+  if (key === null) return
+  if (pendingLifecycle.get(key)?.snapshot.idempotencyKey === idempotencyKey) pendingLifecycle.delete(key)
+  if (storedRevise(key)?.snapshot.idempotencyKey !== idempotencyKey) return
+  try {
+    sessionStorage.removeItem(STORED_REVISE_PREFIX + key)
+  } catch {
+    // A stale stored attempt stays fail-closed: it can only replay the same key and body in the same context.
+  }
 }
 
 /** Test isolation only. */
 export function clearPendingPlanLifecycles(): void {
   pendingLifecycle.clear()
+  try {
+    for (const name of Object.keys(sessionStorage)) {
+      if (name.startsWith(STORED_REVISE_PREFIX)) sessionStorage.removeItem(name)
+    }
+  } catch {
+    // Nothing stored.
+  }
 }
 
 function replayMetadata(headers: Headers):

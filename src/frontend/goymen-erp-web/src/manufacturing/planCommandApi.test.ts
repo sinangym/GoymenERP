@@ -201,3 +201,202 @@ describe('savePlan', () => {
     expect(await savePlan(REQUEST, CONTEXT)).toEqual({ type: 'unknown', reason: 'unexpected-status' })
   })
 })
+
+/**
+ * M01.3 K2 P1: an unresolved revise survives a REAL page reload. A reload recreates the JavaScript module (its
+ * in-memory slot map is gone) while the tab's sessionStorage stays: `vi.resetModules()` + a fresh dynamic import is
+ * that boundary here. The real F5 is the joined MFG browser run's evidence, not this test's.
+ */
+describe('pending revise across a module re-creation (reload boundary)', () => {
+  const ACTOR = '99999999-9999-9999-9999-999999999999'
+  const REVISE_KEY = '30000000-0000-4000-8000-000000000001'
+  const CUT_LINES = [
+    { lineId: 'c0000000-0000-4000-8000-0000000000bb', sequence: 40, lengthMm: '6000.000', count: 3 },
+    { lineId: 'c0000000-0000-4000-8000-0000000000aa', sequence: -7, lengthMm: '2500.50', count: 2 },
+  ]
+  type Api = typeof import('./planCommandApi')
+  type Pending = import('./planCommandApi').PendingPlanLifecycle
+
+  function revise(overrides: Record<string, unknown> = {}, cut: unknown = { lines: CUT_LINES }): Pending {
+    return {
+      actorId: ACTOR,
+      companyId: COMPANY_A,
+      planId: PLAN,
+      snapshot: {
+        kind: 'revise',
+        idempotencyKey: REVISE_KEY,
+        request: {
+          expectedVersion: 3,
+          workCenterId: WORK_CENTER,
+          inputs: [
+            {
+              parentRollId: ROLL_1,
+              plannedKg: '900.50',
+              expectedLabelVersion: '7',
+              commercialContext: {
+                partyId: 'A1000000-0000-4000-8000-000000000001',
+                companyPartyAccountId: 'a1000000-0000-4000-8000-000000000002',
+                partyVersion: ' party:v01 ',
+                accountVersion: 'account:v02/α',
+              },
+            },
+            { parentRollId: ROLL_2, plannedKg: '500.5', expectedLabelVersion: '12', commercialContext: null },
+          ],
+          target: { basis: 'GoodOutputMass', kg: '850.0' },
+          reason: 'Kesim satırları güncellendi',
+          ...(cut === 'omit' ? {} : { cutToLengthSpec: cut }),
+          ...overrides,
+        } as Extract<Pending['snapshot'], { kind: 'revise' }>['request'],
+      },
+    }
+  }
+
+  async function reloaded(): Promise<Api> {
+    vi.resetModules()
+    return import('./planCommandApi')
+  }
+
+  function sentBodies(fetchMock: ReturnType<typeof vi.fn>) {
+    return fetchMock.mock.calls.map((call) => {
+      const init = (call as unknown as [string, RequestInit])[1]
+      return { body: init.body as string, key: (init.headers as Record<string, string>)['Idempotency-Key'] }
+    })
+  }
+
+  afterEach(() => sessionStorage.clear())
+
+  it.each([
+    ['ordered cut lines', { lines: CUT_LINES }],
+    ['the legacy request without cut lines', undefined],
+  ])('restores %s after the reload and re-sends the same key and byte-equal body', async (_case, cut) => {
+    const before = await reloaded()
+    const key = before.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
+    const pending = revise({}, cut ?? 'omit')
+    before.reservePendingPlanLifecycle(key, pending)
+    const lost = vi.fn(async () => { throw new TypeError('connection lost') })
+    vi.stubGlobal('fetch', lost)
+    const first = await before.revisePlan(COMPANY_A, PLAN, pending.snapshot as Extract<Pending['snapshot'], { kind: 'revise' }>)
+    expect(first.type).toBe('unknown')
+
+    const after = await reloaded()
+    const recalled = after.recallPendingPlanLifecycle(after.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN))
+    expect(recalled).toEqual(pending)
+    expect(JSON.stringify(recalled)).toBe(JSON.stringify(pending))
+    // Deep-frozen: nothing typed after the reload can reach the frozen attempt.
+    expect(Object.isFrozen(recalled)).toBe(true)
+    const request = (recalled!.snapshot as Extract<Pending['snapshot'], { kind: 'revise' }>).request
+    expect(Object.isFrozen(request.inputs[0])).toBe(true)
+    if (cut !== undefined) expect(Object.isFrozen(request.cutToLengthSpec?.lines[1])).toBe(true)
+    else expect(request).not.toHaveProperty('cutToLengthSpec')
+
+    const replay = vi.fn(async () => { throw new TypeError('still offline') })
+    vi.stubGlobal('fetch', replay)
+    await after.revisePlan(COMPANY_A, PLAN, recalled!.snapshot as Extract<Pending['snapshot'], { kind: 'revise' }>)
+    expect(sentBodies(replay)).toEqual(sentBodies(lost))
+    expect(sentBodies(replay)[0].key).toBe(REVISE_KEY)
+  })
+
+  it('never restores the attempt in another session, actor, company or plan context', async () => {
+    const before = await reloaded()
+    before.reservePendingPlanLifecycle(before.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN), revise())
+    const after = await reloaded()
+    for (const key of [
+      after.pendingPlanLifecycleKey(5, ACTOR, COMPANY_A, PLAN),
+      after.pendingPlanLifecycleKey(4, '88888888-8888-8888-8888-888888888888', COMPANY_A, PLAN),
+      after.pendingPlanLifecycleKey(4, ACTOR, 'bbbbbbbb-0000-0000-0000-000000000002', PLAN),
+      after.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, 'd0000000-0000-4000-8000-000000000099'),
+    ]) {
+      expect(after.recallPendingPlanLifecycle(key), key ?? 'null').toBeNull()
+    }
+    expect(after.recallPendingPlanLifecycle(after.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN))).not.toBeNull()
+  })
+
+  it('refuses a stored record whose content is foreign, malformed or out of contract, and keeps it as evidence', async () => {
+    const api = await reloaded()
+    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)!
+    const stored = (value: unknown) => {
+      // The exact slot the store itself writes, found by its unique context suffix.
+      api.reservePendingPlanLifecycle(key, revise())
+      const slot = Object.keys(sessionStorage).find((name) => name.endsWith(key))!
+      sessionStorage.setItem(slot, typeof value === 'string' ? value : JSON.stringify(value))
+      return slot
+    }
+    const base = revise()
+    const request = (base.snapshot as Extract<Pending['snapshot'], { kind: 'revise' }>).request
+    const bad: unknown[] = [
+      '{not json',
+      { ...base, actorId: '88888888-8888-8888-8888-888888888888' },
+      { ...base, companyId: 'bbbbbbbb-0000-0000-0000-000000000002' },
+      { ...base, planId: 'd0000000-0000-4000-8000-000000000099' },
+      { ...base, extra: 1 },
+      { ...base, snapshot: { ...base.snapshot, kind: 'approve' } },
+      { ...base, snapshot: { ...base.snapshot, idempotencyKey: '' } },
+      revise({ expectedVersion: 0 }),
+      revise({ expectedVersion: '3' }),
+      revise({ workCenterId: 'not-a-guid' }),
+      revise({ inputs: [] }),
+      revise({ inputs: [{ ...request.inputs[0], plannedKg: '0' }] }),
+      revise({ inputs: [{ ...request.inputs[0], extra: 1 }] }),
+      revise({ inputs: [request.inputs[0], request.inputs[0]] }),
+      revise({ target: { basis: 'Other', kg: '1' } }),
+      revise({ reason: '' }),
+      revise({ reason: ' padded ' }),
+      revise({ extra: 1 }),
+      revise({}, null),
+      revise({}, { lines: [] }),
+      revise({}, { lines: [{ ...CUT_LINES[0], sequence: 1.5 }] }),
+      revise({}, { lines: [{ ...CUT_LINES[0], lengthMm: '6000.0000' }] }),
+      revise({}, { lines: [CUT_LINES[0], { ...CUT_LINES[1], lineId: CUT_LINES[0].lineId }] }),
+    ]
+    for (const value of bad) {
+      const slot = stored(value)
+      const fresh = await reloaded()
+      expect(fresh.recallPendingPlanLifecycle(key), JSON.stringify(value)).toBeNull()
+      // Not silently discarded: the unreadable record stays where it was.
+      expect(sessionStorage.getItem(slot)).toBe(typeof value === 'string' ? value : JSON.stringify(value))
+    }
+  })
+
+  it('releases only the exact settled attempt; an older answer cannot remove a newer pending attempt', async () => {
+    const api = await reloaded()
+    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
+    const older = revise()
+    const newer = { ...older, snapshot: { ...older.snapshot, idempotencyKey: '30000000-0000-4000-8000-000000000002' } }
+    api.reservePendingPlanLifecycle(key, older)
+    api.reservePendingPlanLifecycle(key, newer)
+    api.releasePendingPlanLifecycle(key, REVISE_KEY)
+    expect((await reloaded()).recallPendingPlanLifecycle(key)?.snapshot.idempotencyKey)
+      .toBe('30000000-0000-4000-8000-000000000002')
+
+    const current = await reloaded()
+    expect(current.recallPendingPlanLifecycle(key)).not.toBeNull()
+    current.releasePendingPlanLifecycle(key, '30000000-0000-4000-8000-000000000002')
+    expect(current.recallPendingPlanLifecycle(key)).toBeNull()
+    expect((await reloaded()).recallPendingPlanLifecycle(key)).toBeNull()
+  })
+
+  it('keeps the other lifecycle commands in-memory only, as before', async () => {
+    const api = await reloaded()
+    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
+    api.reservePendingPlanLifecycle(key, revise())
+    // A newer command in the same slot replaces the stored revise, exactly as it replaces it in memory.
+    api.reservePendingPlanLifecycle(key, {
+      actorId: ACTOR, companyId: COMPANY_A, planId: PLAN,
+      snapshot: { kind: 'approve', idempotencyKey: '30000000-0000-4000-8000-000000000003', expectedVersion: 3 },
+    })
+    expect(api.recallPendingPlanLifecycle(key)?.snapshot.kind).toBe('approve')
+    expect((await reloaded()).recallPendingPlanLifecycle(key)).toBeNull()
+  })
+
+  it('a storage failure keeps the in-memory attempt for this module life', async () => {
+    const api = await reloaded()
+    const key = api.pendingPlanLifecycleKey(4, ACTOR, COMPANY_A, PLAN)
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    try {
+      api.reservePendingPlanLifecycle(key, revise())
+      expect(api.recallPendingPlanLifecycle(key)?.snapshot.idempotencyKey).toBe(REVISE_KEY)
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+})
