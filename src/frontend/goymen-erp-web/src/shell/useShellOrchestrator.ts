@@ -29,6 +29,7 @@ import {
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from './uiState'
 import { useShellDispatch, useShellState } from './shellContext'
 import { contextActorMismatch, needsBootstrap, type CompanyContext } from './shellState'
+import { establishSessionBinding } from './sessionBinding'
 
 const COMPANY_PREFERENCE_KEY = 'goymen-company-id'
 
@@ -224,7 +225,14 @@ export function useShellOrchestrator(): ShellOrchestration {
         }
         // Fenced to the epoch this request was STARTED under; the reducer drops it
         // if a SESSION_RESET landed in between (Codex #139 P1-2).
-        dispatch({ type: 'SESSION_READY', forSessionEpoch: sessionEpoch, context })
+        // The binding is established only now, for the actor whose context commits: the same actor in a reloaded
+        // document gets the same one, anyone after a boundary a new one (M01.3 K2 #728/6180459736).
+        dispatch({
+          type: 'SESSION_READY',
+          forSessionEpoch: sessionEpoch,
+          context,
+          sessionBinding: establishSessionBinding(identityId),
+        })
       })
       .catch(() => {
         if (controller.signal.aborted) return

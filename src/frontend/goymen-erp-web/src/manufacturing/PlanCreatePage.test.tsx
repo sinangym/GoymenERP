@@ -3,7 +3,9 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MANUFACTURING_CAPABILITY, planCreateFromLabelPath } from './capabilities'
 import {
+  APPROVER,
   COMPANY_A,
+  IDENTITY,
   ROLL_1,
   ROLL_2,
   WORK_CENTER,
@@ -11,8 +13,10 @@ import {
   json,
   plan,
   problem,
+  reloadDocument,
   renderAt,
   requestsFor,
+  type RecordedRequest,
 } from './testHarness'
 
 const PRODUCT = '10000000-0000-4000-8000-000000000001'
@@ -80,11 +84,14 @@ function installPlanApi(options: {
   readonly candidates?: () => unknown
   readonly preview?: (body: Record<string, unknown>) => Response | Promise<Response>
   readonly capabilities?: readonly string[]
+  readonly actor?: () => string
 } = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
+  const actor = options.actor
   const recorded = installFetch({
     capabilities: options.capabilities ?? [MANUFACTURING_CAPABILITY.planCreate, MANUFACTURING_CAPABILITY.planDetail],
+    identity: actor === undefined ? undefined : () => ({ ...IDENTITY, userId: actor() }),
     respond: (url, init) => {
       if (url.includes('/organization/work-centers')) return json([workCenter(), cutWorkCenter()])
       if (url.includes('/inventory/references/parent-rolls')) {
@@ -619,5 +626,111 @@ describe('AT-061 / AT-062: the live plan preview', () => {
     await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
     await screen.findByText('Taslak plan kaydedildi')
     expect(saveRequests(recorded)).toHaveLength(1)
+  })
+})
+
+/**
+ * M01.3 K2 #728/6180459736 — the pending create across the real session boundary. An actor change is the orchestrator's
+ * SESSION_RESET; the reload is a new module graph and a new provider over the same sessionStorage. Nothing here sets an
+ * epoch or a binding by hand.
+ */
+describe('pending plan create across the session boundary', () => {
+  const OTHER_ACTOR = '88888888-8888-4888-8888-888888888888'
+  const BLOCKED = /bekleyen bir plan kaydı okunamadı/
+
+  async function actorChange(recorded: readonly RecordedRequest[], queryClient: import('@tanstack/react-query').QueryClient) {
+    const bootstraps = requestsFor(recorded, '/shell/capabilities').length
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(requestsFor(recorded, '/shell/capabilities').length).toBe(bootstraps + 1))
+  }
+
+  function storedCreates(): Record<string, string | null> {
+    const entries: Record<string, string | null> = {}
+    for (const name of Object.keys(sessionStorage)) {
+      if (name.startsWith('goymen.manufacturing.plan-create.')) entries[name] = sessionStorage.getItem(name)
+    }
+    return entries
+  }
+
+  it('A: a create left unknown in a session reached through a real reset is restored over F5 — same key, same bytes', async () => {
+    const user = userEvent.setup()
+    let actor = OTHER_ACTOR
+    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor })
+    const first = renderAt('/uretim/plan/yeni')
+    await screen.findByRole('option', { name: 'SLT-01 — Dilme Hattı' })
+
+    actor = APPROVER
+    await actorChange(recorded, first.queryClient)
+    await fillPlan(user)
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+
+    const next = await reloadDocument(first.view)
+    const second = next.renderAt('/uretim/plan/yeni')
+    try {
+      expect(await screen.findByText('Önceki gönderimin sonucu bilinmiyor.')).toBeTruthy()
+      await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+      await screen.findByText('Taslak plan kaydedildi')
+      const [lost, replay] = saveRequests(recorded)
+      expect(saveRequests(recorded)).toHaveLength(2)
+      expect(replay.headers['Idempotency-Key']).toBe(lost.headers['Idempotency-Key'])
+      expect(JSON.stringify(replay.body)).toBe(JSON.stringify(lost.body))
+    } finally {
+      second.view.unmount()
+    }
+  })
+
+  it("B: after a real reset back to the same actor, the earlier session's create is neither replayed nor replaced", async () => {
+    const user = userEvent.setup()
+    let actor = APPROVER
+    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor })
+    const view = renderAt('/uretim/plan/yeni')
+    await fillPlan(user)
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+    const stored = storedCreates()
+    expect(Object.keys(stored)).toHaveLength(1)
+
+    actor = OTHER_ACTOR
+    await actorChange(recorded, view.queryClient)
+    actor = APPROVER
+    await actorChange(recorded, view.queryClient)
+
+    expect(await screen.findByText(BLOCKED)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeNull()
+    expect(saveRequests(recorded)).toHaveLength(1)
+    expect(storedCreates()).toEqual(stored)
+  })
+
+  it('a create whose attempt cannot be stored for a reload is not sent', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi()
+    renderAt('/uretim/plan/yeni')
+    await fillPlan(user)
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    try {
+      await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+      expect(await screen.findByText(/saklanamadı; istek gönderilmedi/)).toBeTruthy()
+    } finally {
+      setItem.mockRestore()
+    }
+    expect(saveRequests(recorded)).toHaveLength(0)
+    expect(storedCreates()).toEqual({})
+    // Nothing is frozen: the same form may be saved again once storage works.
+    expect(screen.getByRole('button', { name: 'Taslak planı kaydet' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('an unavailable store keeps the create form closed and sends nothing', async () => {
+    const recorded = installPlanApi()
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      renderAt('/uretim/plan/yeni')
+      expect(await screen.findByText(BLOCKED)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    } finally {
+      getItem.mockRestore()
+    }
+    expect(saveRequests(recorded)).toHaveLength(0)
   })
 })

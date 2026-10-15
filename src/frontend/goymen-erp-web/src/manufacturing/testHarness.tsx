@@ -341,6 +341,8 @@ export interface HarnessOptions {
   readonly capabilities?: readonly string[] | (() => readonly string[])
   /** Feature-endpoint responder. Return undefined to fall through to a 404. */
   readonly respond?: (url: string, init: RequestInit | undefined) => Response | Promise<Response> | undefined
+  /** The actor the server authenticates, read on every identity request. Defaults to {@link IDENTITY}. */
+  readonly identity?: () => typeof IDENTITY
 }
 
 export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
@@ -348,6 +350,8 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
   // Module state that deliberately outlives unmounts: never inherited across cases.
   clearPendingFacts()
   clearPendingPlanLifecycles()
+  // The tab's sessionStorage (pending create/revise slots, the shell session binding) starts empty in every case.
+  sessionStorage.clear()
   const capabilities = options.capabilities ?? RECORDER_CAPABILITIES
   const recorded: RecordedRequest[] = []
 
@@ -369,7 +373,7 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
       }
       recorded.push({ method: init?.method ?? 'GET', url, headers, body })
 
-      if (url.endsWith('/identity/me')) return json(IDENTITY)
+      if (url.endsWith('/identity/me')) return json(options.identity?.() ?? IDENTITY)
       if (url.endsWith('/organization/companies')) return json(DIRECTORY)
       if (url.endsWith('/shell/capabilities')) {
         return json({
@@ -408,6 +412,17 @@ export function renderAt(path: string, options: { readonly staleTime?: number } 
     </ShellProvider>,
   )
   return { queryClient, router, view }
+}
+
+/**
+ * An F5 of the same tab: this document's React tree and every module's memory end; only sessionStorage — and the stubbed
+ * server — carry over. The returned harness is a fresh module graph, so its `renderAt` mounts a new provider whose shell
+ * state, epoch included, starts from the beginning. Its views are not auto-cleaned: unmount them in the case.
+ */
+export async function reloadDocument(view: { readonly unmount: () => void }): Promise<typeof import('./testHarness')> {
+  view.unmount()
+  vi.resetModules()
+  return import('./testHarness')
 }
 
 export function requestsFor(recorded: readonly RecordedRequest[], fragment: string, method?: string) {

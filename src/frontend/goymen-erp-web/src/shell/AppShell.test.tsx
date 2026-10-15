@@ -8,6 +8,7 @@ import { shellRoutes } from './router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { useShellState } from './shellContext'
+import { forgetSessionBindingMemory } from './sessionBinding'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -445,5 +446,122 @@ describe('SHELL-PILOT-01 company switch', () => {
     renderShell()
     await screen.findByText(/şirket bağlamı kurulamadı/i)
     expect(screen.queryByRole('combobox')).toBeNull()
+  })
+})
+
+/**
+ * M01.3 K2 #728/6180459736: `sessionEpoch` restarts at 0 in every document, so a persisted command cannot be bound to
+ * it. The shell's session binding is what survives an ordinary reload of the same authenticated session and changes at
+ * every real session boundary. These cases drive the REAL bootstrap/reset paths — the epoch is never set by hand — and
+ * model the reload as what it is: the provider and the document's module memory end, the tab's sessionStorage stays.
+ */
+describe('M01.3 session binding across a reload', () => {
+  interface Seen {
+    readonly epoch: number
+    readonly binding: string | null
+    readonly actor: string | null
+  }
+
+  function BindingProbe({ seen }: { readonly seen: Seen[] }) {
+    const state = useShellState()
+    seen.push({ epoch: state.sessionEpoch, binding: state.sessionBinding, actor: state.activeContext?.userId ?? null })
+    return null
+  }
+
+  function mount(seen: Seen[]) {
+    const router = createMemoryRouter(shellRoutes, { initialEntries: ['/'] })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+    const view = render(
+      <ShellProvider queryClient={queryClient}>
+        <BindingProbe seen={seen} />
+        <RouterProvider router={router} />
+      </ShellProvider>,
+    )
+    return { queryClient, view }
+  }
+
+  /** F5: this document ends; only sessionStorage carries over into the next one. */
+  function reload(view: { unmount: () => void }) {
+    view.unmount()
+    forgetSessionBindingMemory()
+  }
+
+  const last = (seen: readonly Seen[]) => seen[seen.length - 1]
+
+  beforeEach(() => {
+    sessionStorage.clear()
+    forgetSessionBindingMemory()
+  })
+
+  it('a session reached through a real in-app reset keeps its binding over F5, although the epoch restarts at 0', async () => {
+    let currentUser = USER_B
+    installFetch({ identity: () => json(identity(currentUser)) })
+    const seen: Seen[] = []
+    const first = mount(seen)
+    await screen.findByText('Kullanıcı B')
+    await screen.findByText('Ortak kabuk hazır')
+    const actorB = last(seen).binding
+
+    // B leaves and A arrives in the same tab: the orchestrator's real actor-change SESSION_RESET.
+    currentUser = USER_A
+    await first.queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await screen.findByText('Kullanıcı A')
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A }))
+    const before = last(seen)
+    expect(before.epoch).toBeGreaterThan(0)
+    expect(before.binding).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(before.binding).not.toBe(actorB)
+
+    reload(first.view)
+    const after: Seen[] = []
+    mount(after)
+    await screen.findByText('Ortak kabuk hazır')
+    await waitFor(() => expect(last(after)).toMatchObject({ actor: USER_A }))
+    expect(last(after).epoch).toBe(0)
+    expect(last(after).binding).toBe(before.binding)
+  })
+
+  it('a reload after the server ended the session never brings the old binding back for the same actor', async () => {
+    let rejectSwitch = true
+    installFetch({
+      capabilities: (companyId) => companyId === B_ID && rejectSwitch
+        ? json({ title: 'unauth' }, 401)
+        : json(capability(companyId === B_ID ? 'gen-b-1' : 'gen-a-1')),
+    })
+    const seen: Seen[] = []
+    const first = mount(seen)
+    await screen.findByText('Ortak kabuk hazır')
+    const before = last(seen).binding
+    expect(before).toMatch(/^[0-9a-f-]{36}$/i)
+
+    await userEvent.selectOptions(screen.getByRole('combobox'), B_ID)
+    expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
+    expect(last(seen).binding).toBeNull()
+
+    // The same actor re-enters in a new document of the same tab.
+    rejectSwitch = false
+    reload(first.view)
+    const after: Seen[] = []
+    mount(after)
+    await screen.findByText('Ortak kabuk hazır')
+    await waitFor(() => expect(last(after)).toMatchObject({ actor: USER_A }))
+    expect(last(after).binding).toMatch(/^[0-9a-f-]{36}$/i)
+    expect(last(after).binding).not.toBe(before)
+  })
+
+  it('an ordinary reload with no session event keeps the binding', async () => {
+    installFetch({})
+    const seen: Seen[] = []
+    const first = mount(seen)
+    await screen.findByText('Ortak kabuk hazır')
+    await waitFor(() => expect(last(seen).binding).not.toBeNull())
+    const before = last(seen).binding
+
+    reload(first.view)
+    const after: Seen[] = []
+    mount(after)
+    await screen.findByText('Ortak kabuk hazır')
+    await waitFor(() => expect(last(after).binding).not.toBeNull())
+    expect(last(after).binding).toBe(before)
   })
 })

@@ -15,6 +15,7 @@ import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { initialShellState, shellReducer, type ShellState } from './shellState'
 import { ShellDispatchContext, ShellStateContext } from './shellContext'
+import { retireSessionBinding } from './sessionBinding'
 
 export function ShellProvider({
   children,
@@ -38,6 +39,7 @@ export function ShellProvider({
   return (
     <QueryClientProvider client={queryClient}>
       <SecurityEffectRunner state={state} queryClient={queryClient} />
+      <SessionBindingRetirer sessionEpoch={state.sessionEpoch} />
       <ShellStateContext.Provider value={state}>
         <ShellDispatchContext.Provider value={dispatch}>{children}</ShellDispatchContext.Provider>
       </ShellStateContext.Provider>
@@ -80,6 +82,29 @@ function SecurityEffectRunner({
       queryClient.removeQueries({ predicate: (query) => query.queryKey[0] === ns })
     }
   }, [effect, queryClient])
+
+  return null
+}
+
+/**
+ * Retires the stored session binding at every session boundary the reducer decided (M01.3 K2 #728/6180459736).
+ *
+ * The reducer already dropped the binding from state in the transition that advanced the epoch; this makes the
+ * boundary outlive the document too. Without it, an F5 after a reset or a 401 would read the old binding back and
+ * revive the ended session's persisted commands for the same actor. The first epoch a provider sees is the document's
+ * start, not a boundary, so an ordinary reload keeps its binding.
+ *
+ * Effects of children run first, but the next session's bootstrap only establishes a binding when its capability
+ * read resolves — always after this effect of the commit that advanced the epoch.
+ */
+function SessionBindingRetirer({ sessionEpoch }: { readonly sessionEpoch: number }) {
+  const seen = useRef(sessionEpoch)
+
+  useEffect(() => {
+    if (seen.current === sessionEpoch) return
+    seen.current = sessionEpoch
+    retireSessionBinding()
+  }, [sessionEpoch])
 
   return null
 }

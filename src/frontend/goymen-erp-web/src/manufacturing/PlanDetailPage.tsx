@@ -111,7 +111,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const canOpenOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
   // MFG-PLAN-LIST: back to the saved plans, only where the list itself is published to this actor.
   const canOpenPlanList = hasCapability(shell, MANUFACTURING_CAPABILITY.planList)
-  const storeKey = pendingPlanLifecycleKey(shell.sessionEpoch, actorId, companyId, planId)
+  const storeKey = pendingPlanLifecycleKey(shell.sessionBinding, actorId, companyId, planId)
   // Only a proven-empty slot opens idle; an unreadable one stays blocked for this mount, whatever the read shows.
   const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanLifecycle(storeKey)))
   const [editing, setEditing] = useState(false)
