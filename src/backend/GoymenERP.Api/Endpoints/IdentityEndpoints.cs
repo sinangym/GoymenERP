@@ -1,5 +1,6 @@
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Identity.Application.Contracts;
 
@@ -15,7 +16,9 @@ public static class IdentityEndpoints
             .WithTags("Identity");
 
         group.MapGet("/me", async (
+            HttpContext httpContext,
             IIdentityProfileService profileService,
+            IAuthenticationSessionBindingResolver sessionBindingResolver,
             CancellationToken cancellationToken) =>
         {
             var profile = await profileService.GetCurrentAsync(cancellationToken);
@@ -24,7 +27,12 @@ public static class IdentityEndpoints
                     title: "Kimlik bulunamadı.",
                     detail: "Oturum kimliği etkin bir ERP kullanıcısıyla eşleşmiyor.",
                     statusCode: StatusCodes.Status403Forbidden)
-                : Results.Ok(profile);
+                : Results.Ok(profile with
+                {
+                    AuthenticationSessionBinding = sessionBindingResolver.Resolve(
+                        httpContext.User,
+                        profile.UserId),
+                });
         })
             .WithName("GetCurrentIdentityV1")
             .Produces<IdentityProfile>(StatusCodes.Status200OK)

@@ -138,6 +138,7 @@ builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
 builder.Services.AddSingleton<ShellCapabilityRegistry>();
 builder.Services.AddScoped<IActorSessionBindingResolver, ActorSessionBindingResolver>();
+builder.Services.AddScoped<IAuthenticationSessionBindingResolver, AuthenticationSessionBindingResolver>();
 builder.Services.AddScoped<ShellCapabilityService>();
 // FIN-T04b (#320): Finance persistence (with the audit interceptor) and its services: the real
 // permission port, the persisted bank-account reader and the draft service.
