@@ -28,6 +28,7 @@ const IDENTITY_ME_RE = /\/api\/v1\/identity\/me$/
 interface CandidateAnswer {
   readonly labelId: string
   readonly labelVersion: string
+  readonly physicalKg: string
   readonly draftSelectable: boolean
 }
 
@@ -230,11 +231,14 @@ async function openPlanForm(
   const candidate = candidates.items.find((item) => item.labelId === roll.labelId)
   expect(candidate).toMatchObject({ labelId: roll.labelId, draftSelectable: true })
   expect(candidate?.labelVersion).toMatch(/^[1-9][0-9]*$/)
+  expect(candidate?.physicalKg).toMatch(/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/)
+  expect(Number(candidate?.physicalKg)).toBeGreaterThan(0)
+  const plannedKg = candidate!.physicalKg
 
   const row = page.getByRole('row', { name: new RegExp(roll.labelCode) })
-  await expect(row).toContainText('1000 kg')
+  await expect(row).toContainText(`${plannedKg} kg`)
   await row.getByRole('button', { name: 'Ekle', exact: true }).click()
-  await page.getByRole('textbox', { name: `${roll.labelCode} planlanan kg` }).fill('1000')
+  await page.getByRole('textbox', { name: `${roll.labelCode} planlanan kg` }).fill(plannedKg)
   return candidate as CandidateAnswer
 }
 
@@ -1376,7 +1380,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         workCenterId: cutToLength.id,
         inputs: [{
           parentRollId: candidate.labelId,
-          plannedKg: '1000',
+          plannedKg: candidate.physicalKg,
           expectedLabelVersion: candidate.labelVersion,
         }],
       })
