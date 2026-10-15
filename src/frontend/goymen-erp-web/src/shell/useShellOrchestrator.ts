@@ -28,7 +28,7 @@ import {
 } from './api'
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from './uiState'
 import { useShellDispatch, useShellState } from './shellContext'
-import { contextActorMismatch, needsBootstrap, type CompanyContext } from './shellState'
+import { contextActorMismatch, needsBootstrap, type CompanyContext, type ShellState } from './shellState'
 
 const COMPANY_PREFERENCE_KEY = 'goymen-company-id'
 
@@ -109,12 +109,33 @@ export interface ShellOrchestration {
   /** A 401 was seen — the session is dead. Terminal until re-login (no login flow yet). */
   readonly sessionInvalid: boolean
   /**
-   * The bound context belongs to another actor than the authenticated one. Computed
-   * during render (Codex #139 P1-1) so the caller can fail closed in the SAME frame
-   * the new identity arrives, instead of one paint later.
+   * The bound context does not belong to the session the server currently authenticates:
+   * another actor (Codex #139 P1-1), or the same actor in another server session — a
+   * different `authenticationSessionBinding` (M01.3 r6, K3-A #728/6191815033). Computed
+   * during render, on the whole pair, so the caller can fail closed in the SAME frame
+   * the new identity arrives, instead of one paint later when the reset effect runs.
    */
-  readonly actorMismatch: boolean
+  readonly sessionMismatch: boolean
   readonly retry: () => void
+}
+
+/**
+ * True when the shell's committed pair `(actor, server session binding)` is not the pair the latest ready identity
+ * answer names. The actor half is the reducer's `contextActorMismatch`; the binding half compares the binding the shell
+ * committed with SESSION_READY (from the very identity response that named the bound actor) against the binding of the
+ * current answer, while a context is bound (`activeContext`, or `verifiedFormerContext` during a switch — the binding
+ * survives a switch; only an epoch change drops it). Identity unresolved, or no context bound: false — other gates own
+ * those. A null server binding re-read as null is the same pair, not a boundary.
+ */
+function contextSessionMismatch(
+  state: ShellState,
+  authenticatedUserId: string | null,
+  authenticatedBinding: string | null,
+): boolean {
+  if (authenticatedUserId === null) return false
+  if (contextActorMismatch(state, authenticatedUserId)) return true
+  const bound = state.activeContext ?? state.verifiedFormerContext
+  return bound !== null && state.sessionBinding !== authenticatedBinding
 }
 
 export function useShellOrchestrator(): ShellOrchestration {
@@ -173,6 +194,8 @@ export function useShellOrchestrator(): ShellOrchestration {
   // (a real logout/login the server named), handled exactly like an actor change. An identity re-read that answers the
   // same actor and the same binding — an ordinary F5 cannot even reach here, a token refresh does — is no boundary.
   // A local SESSION_RESET is never evidence of a new server session; only the server's answer is.
+  // This effect is the REPAIR, one commit late by nature; the FENCE for that commit is `sessionMismatch` below, which
+  // the caller evaluates during render on the same pair (M01.3 r6): nothing context-bound renders in between.
   useEffect(() => {
     if (identityId === null) return
     if (seenSession.current === null) {
@@ -351,7 +374,7 @@ export function useShellOrchestrator(): ShellOrchestration {
     bootstrapFailure: bootstrapFailure && state.phase === 'no-active-company',
     switchFailure: switchFailure && state.phase === 'idle',
     sessionInvalid,
-    actorMismatch: contextActorMismatch(state, identityId),
+    sessionMismatch: contextSessionMismatch(state, identityId, identityBinding),
     retry,
   }
 }

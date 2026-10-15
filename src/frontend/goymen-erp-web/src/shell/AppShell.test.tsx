@@ -1,13 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Profiler, useLayoutEffect } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient } from '@tanstack/react-query'
+import { QueryClient, useQuery } from '@tanstack/react-query'
 import { RouterProvider, createMemoryRouter } from 'react-router'
 import { ShellProvider } from './ShellProvider'
 import { shellRoutes } from './router'
-import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
+import { SHELL_CAPABILITY_CONTRACT_VERSION, fetchIdentity, type IdentitySummary } from './api'
+import { classifyOutcome, type RemoteViewState } from './uiState'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { useShellState } from './shellContext'
+import type { ShellState } from './shellState'
+import { MANUFACTURING_CAPABILITY } from '../manufacturing/capabilities'
+import { clearPendingPlanLifecycles } from '../manufacturing/planCommandApi'
+import { PLAN, ROLL_1, ROLL_2, WORK_CENTER, plan, planRevision, planRevisions } from '../manufacturing/testHarness'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
@@ -34,11 +40,13 @@ const DIRECTORY = [
   { id: A_ID, code: 'GDC', legalName: 'Göymen A', isPlaceholder: true },
   { id: B_ID, code: 'GSP', legalName: 'Göymen B', isPlaceholder: true },
 ]
-function capability(gen: string) {
-  return { contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: gen, capabilities: [] }
+function capability(gen: string, capabilities: readonly string[] = []) {
+  return { contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: gen, capabilities }
 }
 
 type Responder = (companyId: string | null) => Promise<Response> | Response
+/** A feature endpoint behind the shell (a business route's own reads and commands); `undefined` = not served here. */
+type FeatureResponder = (url: string, init: RequestInit | undefined) => Response | undefined
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -51,6 +59,7 @@ function installFetch(config: {
   identity?: Responder
   directory?: Responder
   capabilities?: Responder
+  feature?: FeatureResponder
 }) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
@@ -62,6 +71,8 @@ function installFetch(config: {
     if (url.includes('/shell/capabilities'))
       return (config.capabilities ??
         (() => json(capability(companyId === B_ID ? 'gen-b-1' : 'gen-a-1'))))(companyId)
+    const served = config.feature?.(url, init)
+    if (served !== undefined) return served
     throw new Error(`unexpected fetch: ${url}`)
   })
   vi.stubGlobal('fetch', fetchMock)
@@ -84,6 +95,9 @@ function renderShell() {
 interface RenderFrame {
   readonly actor: string | null
   readonly ctxActor: string | null
+  /** The server session binding of the latest ready identity answer (M01.3 r6), next to the one the shell committed. */
+  readonly binding: string | null
+  readonly ctxBinding: string | null
   readonly mismatch: boolean
 }
 
@@ -93,12 +107,14 @@ interface RenderFrame {
  * can never observe it. Owns the orchestrator effects (it is the only caller here).
  */
 function ActorProbe({ log }: { readonly log: RenderFrame[] }) {
-  const { identity, actorMismatch } = useShellOrchestrator()
+  const { identity, sessionMismatch } = useShellOrchestrator()
   const state = useShellState()
   log.push({
     actor: identity?.userId ?? null,
     ctxActor: state.activeContext?.userId ?? null,
-    mismatch: actorMismatch,
+    binding: identity?.authenticationSessionBinding ?? null,
+    ctxBinding: state.sessionBinding,
+    mismatch: sessionMismatch,
   })
   return null
 }
@@ -632,5 +648,238 @@ describe('M01.3 server session binding', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A2 })
     expect(seen.some((frame) => frame.binding === SESSION_A1 && frame.epoch >= 1)).toBe(false)
+  })
+})
+
+/*
+ * M01.3 r6 (#66/6191827246, K3-A #728/6191815033): the shell's fence is evaluated DURING render on the whole pair the
+ * server authenticates — actor AND `authenticationSessionBinding` — against the pair the shell committed. A same-actor
+ * identity answer with a new binding closes every context-bound route and control in the very commit it arrives, before
+ * the passive SESSION_RESET effect runs; an answer with the same pair (token-refresh equivalent) changes nothing.
+ */
+describe('M01.3 r6 render-time session-pair gate', () => {
+  const RETRY = 'Aynı istek ve anahtarla yeniden gönder'
+  const BLOCKED = /bekleyen bir komut kaydı okunamadı/
+  const EDITOR = [MANUFACTURING_CAPABILITY.planDetail, MANUFACTURING_CAPABILITY.planEdit]
+  const PENDING_KEY = '40000000-0000-4000-8000-000000000001'
+  const PENDING_REQUEST = {
+    expectedVersion: 1,
+    workCenterId: WORK_CENTER,
+    inputs: [
+      { parentRollId: ROLL_1, plannedKg: '800', expectedLabelVersion: '7', commercialContext: null },
+      { parentRollId: ROLL_2, plannedKg: '500.5', expectedLabelVersion: '3', commercialContext: null },
+    ],
+    target: null,
+    reason: 'İlk düzenleme işlendi',
+  }
+  /** Where the plan page stores a revise whose answer was lost: named by actor, company and plan; bound in the record. */
+  const STORED_SLOT = `goymen.manufacturing.plan-revise.v2:${JSON.stringify([USER_A, A_ID, PLAN])}`
+  const storedRevise = (sessionBinding: string) => JSON.stringify({
+    actorId: USER_A,
+    companyId: A_ID,
+    planId: PLAN,
+    snapshot: { kind: 'revise', idempotencyKey: PENDING_KEY, request: PENDING_REQUEST },
+    sessionBinding,
+  })
+
+  /** The plan server after that revise was processed: the plan at version 2, its history [0, 1]; a retried POST fails. */
+  const planServer: FeatureResponder = (url, init) => {
+    if (url.endsWith(`/manufacturing/plans/${PLAN}`) && init?.method !== 'POST') return json(plan({ version: 2 }))
+    if (url.endsWith(`/manufacturing/plans/${PLAN}/revisions`)) {
+      return json(planRevisions([
+        planRevision(),
+        planRevision({ revision: 1, planVersion: 2, reason: 'İlk düzenleme işlendi', revisedBy: USER_A }),
+      ]))
+    }
+    if (url.endsWith(`/manufacturing/plans/${PLAN}/revision`) && init?.method === 'POST') return json({ title: 'x' }, 503)
+    return undefined
+  }
+
+  const commandPosts = (fetchMock: ReturnType<typeof installFetch>) =>
+    fetchMock.mock.calls.filter(([url, init]) => init?.method === 'POST' && String(url).includes('/manufacturing/plans/'))
+
+  /** One committed frame: what the server's latest identity answer says, what the shell is bound to, what the DOM holds. */
+  interface Frame {
+    readonly identityActor: string | null
+    readonly identityBinding: string | null
+    readonly boundActor: string | null
+    readonly boundBinding: string | null
+    readonly epoch: number
+    /** The plan page's own heading — context-bound content of the OLD binding. */
+    readonly planContent: boolean
+    /** The pending revise's retry control — the M01.3 command of the OLD binding. */
+    readonly retryControl: boolean
+    /** The company picker: the shell's own context-bound control. */
+    readonly companyPicker: boolean
+    /** The retry control was found in this frame and clicked — an attempted M01.3 action. */
+    readonly attempted: boolean
+  }
+
+  /**
+   * Records every COMMIT of the shell tree from the `Profiler`'s render callback, which React runs in the layout phase of
+   * that commit — after the DOM is written, before any passive effect of the commit (the orchestrator's SESSION_RESET is
+   * one). A `waitFor`/`act` that lets every effect finish and then reads the screen can never see this frame. The identity
+   * answer and the shell state come from a mirror that holds a second, disabled observer of the orchestrator's identity
+   * query: the cache hands both observers the same answer in the same notification, so the mirror's layout effect —
+   * earlier in tree order — has written exactly what the orchestrator was handed in that commit, never the cache ahead of
+   * it. The mirror re-renders on `dataUpdatedAt` too, so a re-read that answers byte-equal data still records frames.
+   * When `attemptWhen` says so and the old retry control is still in the DOM, it is clicked right here: a user could,
+   * and the command POST count must stay zero.
+   */
+  function mountPlanPage(frames: Frame[], attemptWhen: (frame: Frame) => boolean) {
+    const router = createMemoryRouter(shellRoutes, { initialEntries: [`/uretim/plan/${PLAN}`] })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+    const mirror: { current: { readonly state: ShellState; readonly latest: IdentitySummary | null } | null } = { current: null }
+
+    function Mirror() {
+      const state = useShellState()
+      // Disabled: it fetches nothing and changes no request.
+      const identityQuery = useQuery({
+        queryKey: ['shell', 'identity'],
+        queryFn: ({ signal }) => fetchIdentity(signal),
+        enabled: false,
+      })
+      const answer = (
+        identityQuery.data === undefined ? null : classifyOutcome(identityQuery.data)
+      ) as RemoteViewState<IdentitySummary> | null
+      const latest = answer?.kind === 'ready' ? answer.data : null
+      const tick = identityQuery.dataUpdatedAt
+      useLayoutEffect(() => {
+        mirror.current = { state, latest }
+      }, [state, latest, tick])
+      return null
+    }
+
+    const onCommit = () => {
+      const state = mirror.current?.state ?? null
+      const latest = mirror.current?.latest ?? null
+      const retry = screen.queryByRole('button', { name: RETRY })
+      const frame: Frame = {
+        identityActor: latest?.userId ?? null,
+        identityBinding: latest?.authenticationSessionBinding ?? null,
+        boundActor: state?.activeContext?.userId ?? null,
+        boundBinding: state?.sessionBinding ?? null,
+        epoch: state?.sessionEpoch ?? 0,
+        planContent: screen.queryByRole('heading', { name: 'Plan yeniden açıldı' }) !== null,
+        retryControl: retry !== null,
+        companyPicker: screen.queryByRole('combobox') !== null,
+        attempted: false,
+      }
+      if (retry !== null && attemptWhen(frame)) {
+        retry.click()
+        frames.push({ ...frame, attempted: true })
+        return
+      }
+      frames.push(frame)
+    }
+
+    render(
+      <ShellProvider queryClient={queryClient}>
+        <Profiler id="shell" onRender={onCommit}>
+          <Mirror />
+          <RouterProvider router={router} />
+        </Profiler>
+      </ShellProvider>,
+    )
+    return queryClient
+  }
+
+  const last = <T,>(items: readonly T[]) => items[items.length - 1]
+
+  beforeEach(() => {
+    sessionStorage.clear()
+    clearPendingPlanLifecycles()
+  })
+
+  it("no render pairs the same actor's new server binding with the old context unfenced", async () => {
+    let session = SESSION_A1
+    installFetch({ identity: () => json(identity(USER_A, session)) })
+    const log: RenderFrame[] = []
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+    render(
+      <ShellProvider queryClient={queryClient}>
+        <ActorProbe log={log} />
+      </ShellProvider>,
+    )
+    await waitFor(() => expect(log.some((f) => f.ctxActor === USER_A && f.ctxBinding === SESSION_A1)).toBe(true))
+
+    // A real logout/login as the same actor: the server names a new session.
+    session = SESSION_A2
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(log.some((f) => f.ctxActor === USER_A && f.ctxBinding === SESSION_A2)).toBe(true))
+
+    // The dangerous frame must actually have happened: the new answer rendered while the old binding was still bound.
+    const dangerous = log.filter(
+      (f) => f.actor === USER_A && f.ctxActor === USER_A && f.binding === SESSION_A2 && f.ctxBinding === SESSION_A1,
+    )
+    expect(dangerous.length).toBeGreaterThan(0)
+    // ...and every such frame is flagged, so the shell can fail closed inside it — not one paint later, in the effect.
+    expect(dangerous.filter((f) => !f.mismatch)).toEqual([])
+    // The same-pair frames stay open: the flag is never raised while the answer matches what is bound.
+    expect(log.filter((f) => f.mismatch && f.actor === f.ctxActor && f.binding === f.ctxBinding)).toEqual([])
+  })
+
+  it('a same-actor new binding closes the plan page and its pending retry in the commit it arrives, before the passive reset; the old command cannot POST', async () => {
+    let session = SESSION_A1
+    const fetchMock = installFetch({
+      identity: () => json(identity(USER_A, session)),
+      capabilities: () => json(capability('gen-a-1', EDITOR)),
+      feature: planServer,
+    })
+    sessionStorage.setItem(STORED_SLOT, storedRevise(SESSION_A1))
+    const frames: Frame[] = []
+    // Try the old retry in exactly the frames where the server already answered the new session for the bound actor.
+    const queryClient = mountPlanPage(
+      frames,
+      (f) => f.boundActor === USER_A && f.boundBinding === SESSION_A1 && f.identityBinding === SESSION_A2,
+    )
+    expect(await screen.findByRole('button', { name: RETRY })).toBeTruthy()
+    expect(last(frames)).toMatchObject({ boundActor: USER_A, boundBinding: SESSION_A1, epoch: 0, retryControl: true, planContent: true })
+
+    // The same actor's next server session arrives while the old context is still committed.
+    session = SESSION_A2
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(last(frames)).toMatchObject({ boundActor: USER_A, boundBinding: SESSION_A2, epoch: 1 }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toMatch(BLOCKED))
+
+    // The pre-reset frames happened: new answer rendered, old binding still bound. Otherwise this proves nothing.
+    const preReset = frames.filter((f) => f.boundActor === USER_A && f.boundBinding === SESSION_A1 && f.identityBinding === SESSION_A2)
+    expect(preReset.length).toBeGreaterThan(0)
+    // In every one of them the old binding's content and controls are already gone from the DOM...
+    expect(preReset.filter((f) => f.planContent || f.retryControl || f.companyPicker)).toEqual([])
+    // ...so the old command could not even be attempted, and no frame — before or after the effects — produced its POST.
+    expect(frames.filter((f) => f.attempted)).toEqual([])
+    expect(commandPosts(fetchMock)).toHaveLength(0)
+    // The new session finds the old record, refuses it, and leaves it: no replay, no new key, nothing deleted.
+    expect(screen.queryByRole('button', { name: RETRY })).toBeNull()
+    expect(sessionStorage.getItem(STORED_SLOT)).toBe(storedRevise(SESSION_A1))
+    expect(frames.some((f) => f.epoch === 1 && f.boundBinding === SESSION_A1)).toBe(false)
+  })
+
+  it('control: a same-actor, same-binding identity re-read on the plan page gates nothing and keeps the pending retry open', async () => {
+    const fetchMock = installFetch({
+      capabilities: () => json(capability('gen-a-1', EDITOR)),
+      feature: planServer,
+    })
+    sessionStorage.setItem(STORED_SLOT, storedRevise(SESSION_A1))
+    const frames: Frame[] = []
+    const queryClient = mountPlanPage(frames, () => false)
+    expect(await screen.findByRole('button', { name: RETRY })).toBeTruthy()
+    const opened = frames.length
+    const capabilityReads = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/shell/capabilities')).length
+    const verified = capabilityReads()
+
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/identity/me'))).toHaveLength(2))
+
+    const after = frames.slice(opened)
+    expect(after.length).toBeGreaterThan(0)
+    // Every frame since keeps the page, its retry and the picker; none is bound to anything but the same pair at epoch 0.
+    expect(after.filter((f) => !(f.planContent && f.retryControl && f.companyPicker))).toEqual([])
+    expect(after.filter((f) => f.boundActor !== USER_A || f.boundBinding !== SESSION_A1 || f.epoch !== 0)).toEqual([])
+    expect(after.filter((f) => f.identityActor !== null && (f.identityActor !== USER_A || f.identityBinding !== SESSION_A1))).toEqual([])
+    expect(capabilityReads()).toBe(verified)
+    expect(commandPosts(fetchMock)).toHaveLength(0)
+    expect(screen.getByRole('button', { name: RETRY })).toBeTruthy()
   })
 })
