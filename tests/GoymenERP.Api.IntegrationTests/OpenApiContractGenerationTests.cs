@@ -4635,11 +4635,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ("legalName", "type:string"),
                     ("isPlaceholder", "type:boolean")),
                 ["IdentityProfile"] = ObjectSchema(
-                    ["userId", "displayName", "email", "allowedCompanyIds"],
+                    ["userId", "displayName", "email", "allowedCompanyIds", "authenticationSessionBinding"],
                     ("userId", "type:string;format:uuid"),
                     ("displayName", "type:string"),
                     ("email", "type:null|string"),
-                    ("allowedCompanyIds", "type:array;items:type:string;format:uuid")),
+                    ("allowedCompanyIds", "type:array;items:type:string;format:uuid"),
+                    ("authenticationSessionBinding", "type:null|string")),
                 ["InventoryLabelViewV1"] = ObjectSchema(
                     ["labelId", "companyId", "code", "productId", "lotId", "heatNumber", "coilNumber",
                         "classification", "documentStatus", "requiredDocuments", "documents", "prints", "lot"],

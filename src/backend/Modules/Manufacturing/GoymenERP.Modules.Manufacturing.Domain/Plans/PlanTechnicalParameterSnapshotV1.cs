@@ -28,7 +28,8 @@ public sealed record PlanTechnicalParameterSnapshotV1
         string kilogramProfileVersion,
         DateOnly effectiveOn,
         decimal thicknessMm,
-        decimal widthMm)
+        decimal widthMm,
+        decimal? lengthMm = null)
     {
         ProductId = RequireId(productId, nameof(productId));
         ProductVersion = RequireText(productVersion, MaximumProductVersionLength, nameof(productVersion));
@@ -55,6 +56,7 @@ public sealed record PlanTechnicalParameterSnapshotV1
         EffectiveOn = effectiveOn;
         ThicknessMm = RequireMeasure(thicknessMm, nameof(thicknessMm));
         WidthMm = RequireMeasure(widthMm, nameof(widthMm));
+        LengthMm = lengthMm is null ? null : RequireMeasure(lengthMm.Value, nameof(lengthMm));
     }
 
     public Guid ProductId { get; }
@@ -74,6 +76,7 @@ public sealed record PlanTechnicalParameterSnapshotV1
     public DateOnly EffectiveOn { get; }
     public decimal ThicknessMm { get; }
     public decimal WidthMm { get; }
+    public decimal? LengthMm { get; }
 
     private static Guid RequireId(Guid value, string name) =>
         value == Guid.Empty ? throw new ArgumentException("Teknik snapshot kimliği boş olamaz.", name) : value;

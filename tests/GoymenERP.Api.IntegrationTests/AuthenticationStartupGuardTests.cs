@@ -95,6 +95,51 @@ public sealed class AuthenticationStartupGuardTests
             bootstrapScheme.Name);
     }
 
+    [Theory]
+    [InlineData("", "X-Development-Session", "HeaderName")]
+    [InlineData(" ", "X-Development-Session", "HeaderName")]
+    [InlineData("X-Development-User", "", "SessionHeaderName")]
+    [InlineData("X-Development-User", " ", "SessionHeaderName")]
+    public void DevelopmentBootstrap_EmptyHeaderNamesAreRejectedAtStartup(
+        string headerName,
+        string sessionHeaderName,
+        string expectedConfigurationKey)
+    {
+        var services = new ServiceCollection();
+        var configuration = CreateConfiguration(
+            mode: AuthenticationModes.DevelopmentBootstrap,
+            bootstrapHeaderName: headerName,
+            bootstrapSessionHeaderName: sessionHeaderName);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddErpAuthentication(
+                configuration,
+                new FakeHostEnvironment("Testing")));
+
+        Assert.Contains(expectedConfigurationKey, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("X-Development-User", "X-Development-User")]
+    [InlineData("X-Development-User", "x-development-user")]
+    public void DevelopmentBootstrap_CollidingHeaderNamesAreRejectedAtStartup(
+        string headerName,
+        string sessionHeaderName)
+    {
+        var services = new ServiceCollection();
+        var configuration = CreateConfiguration(
+            mode: AuthenticationModes.DevelopmentBootstrap,
+            bootstrapHeaderName: headerName,
+            bootstrapSessionHeaderName: sessionHeaderName);
+
+        var exception = Assert.Throws<InvalidOperationException>(() =>
+            services.AddErpAuthentication(
+                configuration,
+                new FakeHostEnvironment("Testing")));
+
+        Assert.Contains("farklı olmalıdır", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void ValidProductionOidc_IsRegisteredWithoutRemoteDiscovery()
     {
@@ -180,7 +225,9 @@ public sealed class AuthenticationStartupGuardTests
     private static IConfiguration CreateConfiguration(
         string? mode = null,
         string? authority = null,
-        string? audience = null)
+        string? audience = null,
+        string? bootstrapHeaderName = null,
+        string? bootstrapSessionHeaderName = null)
     {
         var values = new Dictionary<string, string?>();
 
@@ -197,6 +244,16 @@ public sealed class AuthenticationStartupGuardTests
         if (audience is not null)
         {
             values["Authentication:Oidc:Audience"] = audience;
+        }
+
+        if (bootstrapHeaderName is not null)
+        {
+            values["BootstrapIdentity:HeaderName"] = bootstrapHeaderName;
+        }
+
+        if (bootstrapSessionHeaderName is not null)
+        {
+            values["BootstrapIdentity:SessionHeaderName"] = bootstrapSessionHeaderName;
         }
 
         return new ConfigurationBuilder()
