@@ -21,10 +21,11 @@ import {
 } from './planCommandApi'
 import {
   pendingPlanCreateKey,
-  recallPendingPlanCreate,
+  readPendingPlanCreate,
   releasePendingPlanCreate,
   reservePendingPlanCreate,
   type PendingPlanCreate,
+  type PendingPlanCreateSlot,
 } from './pendingPlanStore'
 import { PlanPreviewPanel } from './PlanPreviewPanel'
 import { cutToLengthDraftInput, planPreviewInput, usePlanPreview, type CutToLengthLineDraft } from './usePlanPreview'
@@ -48,6 +49,24 @@ type Attempt =
       readonly unresolvedSince?: string
     }
   | { readonly phase: 'completed'; readonly result: Extract<SavePlanOutcome, { type: 'applied' }> }
+  /** The stored slot cannot be trusted either way: nothing is sent from this form (M01.3 K2 #728/6180459736). */
+  | { readonly phase: 'blocked'; readonly message: string }
+
+const UNKNOWN_TEXT = 'Önceki gönderimin sonucu bilinmiyor.'
+
+const BLOCKED_TEXT =
+  'Bu şirket için bu oturumda bekleyen bir plan kaydı okunamadı. Önceki gönderimin sonucu bilinmediği için bu '
+  + 'ekrandan yeni plan gönderilmez; kayıtlı planlar okunabilir.'
+
+const NOT_DURABLE_TEXT =
+  'Plan, sayfa yenilense de aynı istek ve anahtarla yeniden gönderilebilecek biçimde saklanamadı; istek gönderilmedi.'
+
+/** Only a proven-empty slot opens the form; an unreadable one keeps it closed for this mount. */
+function initialAttempt(slot: PendingPlanCreateSlot): Attempt {
+  if (slot.state === 'absent') return { phase: 'idle' }
+  if (slot.state === 'pending') return { phase: 'unknown', snapshot: slot.pending, message: UNKNOWN_TEXT }
+  return { phase: 'blocked', message: BLOCKED_TEXT }
+}
 
 /** AT-063: the roll an ST-01 row named, as far as Inventory's candidate read confirmed it. */
 type Preselection =
@@ -128,13 +147,8 @@ function PlanCreate({ namespace, preselect }: {
   const { capture: captureSecurity, report: reportSecurity } = authBoundary
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
-  const storeKey = pendingPlanCreateKey(shell.sessionEpoch, actorId, companyId)
-  const recalled = recallPendingPlanCreate(storeKey)
-  const [attempt, setAttempt] = useState<Attempt>(() =>
-    recalled === null
-      ? { phase: 'idle' }
-      : { phase: 'unknown', snapshot: recalled, message: 'Önceki gönderimin sonucu bilinmiyor.' },
-  )
+  const storeKey = pendingPlanCreateKey(shell.sessionBinding, actorId, companyId)
+  const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanCreate(storeKey)))
   const [workCenters, setWorkCenters] = useState<ReadState<readonly WorkCenterSummary[]>>({ type: 'loading' })
   const [workCenterId, setWorkCenterId] = useState('')
   const [search, setSearch] = useState(preselect?.labelCode ?? '')
@@ -249,9 +263,22 @@ function PlanCreate({ namespace, preselect }: {
       ) {
         return
       }
+      // Nothing is sent unless the exact attempt is durably stored for a reload first.
+      const reservation = reservePendingPlanCreate(storeKey, snapshot)
+      if (reservation.type === 'unreadable') {
+        setAttempt({ phase: 'blocked', message: BLOCKED_TEXT })
+        return
+      }
+      if (reservation.type === 'occupied') {
+        setAttempt({ phase: 'unknown', snapshot: reservation.pending, message: UNKNOWN_TEXT })
+        return
+      }
+      if (reservation.type === 'not-durable') {
+        setAttempt({ phase: 'failed', message: NOT_DURABLE_TEXT })
+        return
+      }
       inFlight.current = true
       const generation = ++commandGeneration.current
-      reservePendingPlanCreate(storeKey, snapshot)
       setAttempt({ phase: 'submitting', snapshot })
       const security = captureSecurity()
       const outcome = await savePlan(snapshot.request, {
@@ -338,6 +365,7 @@ function PlanCreate({ namespace, preselect }: {
       actorId === null ||
       attempt.phase === 'submitting' ||
       attempt.phase === 'unknown' ||
+      attempt.phase === 'blocked' ||
       (attempt.phase === 'failed' && attempt.unresolvedSince !== undefined)
     ) {
       return
@@ -373,6 +401,20 @@ function PlanCreate({ namespace, preselect }: {
 
   if (companyId === null || actorId === null) {
     return <main className={styles.page}><p role="alert">Yetkili tek şirket bağlamı seçilmeden plan oluşturulamaz.</p></main>
+  }
+  if (attempt.phase === 'blocked') {
+    return (
+      <main className={styles.page} aria-labelledby="manufacturing-plan-create-heading">
+        <header className={styles.header}>
+          <div>
+            <p className={styles.eyebrow}>ÜRETİM PLANI</p>
+            <h1 id="manufacturing-plan-create-heading">Yeni taslak plan</h1>
+          </div>
+          <Link to={orderListPath()}>← Üretim emirleri</Link>
+        </header>
+        <p className={styles.error} role="alert">{attempt.message}</p>
+      </main>
+    )
   }
   if (attempt.phase === 'completed') {
     const plan = attempt.result.plan

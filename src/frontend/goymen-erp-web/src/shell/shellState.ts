@@ -107,6 +107,16 @@ export interface ShellState {
   /** The sessionEpoch a context was last committed for; null = this session never bootstrapped. */
   readonly bootstrappedSessionEpoch: number | null
   /**
+   * The reload-stable identity of this authenticated session (./sessionBinding.ts), for anything PERSISTED across an
+   * F5. `sessionEpoch` restarts at 0 in every document, so a stored command keyed on it read as absent after a reload
+   * (M01.3 K2 #728/6180459736). The bootstrap establishes it and SESSION_READY carries it in; every transition that
+   * advances the epoch drops it in the same step, so no render pairs a new session with the old binding. null = no
+   * session yet, or none could be stored: persisted commands then fail closed.
+   *
+   * In-memory fences keep using `sessionEpoch`; this is only for what outlives the document.
+   */
+  readonly sessionBinding: string | null
+  /**
    * The server rejected this session (401). TERMINAL until a real re-login.
    *
    * This lives in the reducer, not in a component, because a SESSION_RESET alone
@@ -209,7 +219,13 @@ export type ShellEvent =
    * SESSION_RESET could commit the OLD actor's context into the NEW session.
    * REAUTH_OK/REAUTH_FAIL already carry `forGeneration`; this closes the last hole.
    */
-  | { type: 'SESSION_READY'; forSessionEpoch: number; context: CompanyContext }
+  | {
+      type: 'SESSION_READY'
+      forSessionEpoch: number
+      context: CompanyContext
+      /** The binding the bootstrap established for this session; absent = none. */
+      sessionBinding?: string | null
+    }
   | { type: 'REQUEST_SWITCH'; target: SwitchTarget }
   | { type: 'CONFIRM_SWITCH_DISCARD' }
   | { type: 'CONFIRM_SWITCH_STAY' }
@@ -263,6 +279,7 @@ export const initialShellState: ShellState = {
   committedContextRevision: 0,
   sessionEpoch: 0,
   bootstrappedSessionEpoch: null,
+  sessionBinding: null,
   sessionInvalid: false,
   lastSecurityEffect: null,
   pendingFormerSessionFailure: null,
@@ -317,6 +334,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         pendingTarget: null,
         verifiedFormerContext: null,
         bootstrappedSessionEpoch: state.sessionEpoch,
+        sessionBinding: event.sessionBinding ?? null,
         committedContextRevision: state.committedContextRevision + 1,
         freshCapabilityRevision: state.committedContextRevision + 1,
       }

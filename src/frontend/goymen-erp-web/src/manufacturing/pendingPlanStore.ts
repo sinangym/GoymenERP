@@ -73,19 +73,75 @@ function validSlittingSpec(value: SavePlanRequest['slittingSpec']): boolean {
     && line.count <= INT32_MAX)
 }
 
+/**
+ * M01.3 (K2 #728/6180459736): the create slot of an actor and company, bound to the shell's reload-stable session
+ * binding (shell/sessionBinding.ts) — not to `sessionEpoch`, which restarts at 0 in every document. null = no context.
+ * A null binding still names a slot, and that slot is `unreadable`: a missing binding never reads as absence.
+ */
 export function pendingPlanCreateKey(
-  sessionEpoch: number,
+  sessionBinding: string | null,
   actorId: string | null,
   companyId: string | null,
 ): string | null {
-  return actorId === null || companyId === null
-    ? null
-    : `goymen.manufacturing.plan-create.v1:${sessionEpoch}:${actorId}:${companyId}`
+  return actorId === null || companyId === null ? null : JSON.stringify([sessionBinding, actorId, companyId])
 }
 
-function decode(value: unknown): PendingPlanCreate | null {
+/** Where an actor's and company's create is stored. The binding is in the record, so a later session finds — and refuses — it. */
+const STORED_CREATE_PREFIX = 'goymen.manufacturing.plan-create.v2:'
+/** Epoch-keyed slots written before the binding: `…v1:${sessionEpoch}:${actorId}:${companyId}`. Read, never written. */
+const LEGACY_CREATE_PREFIX = 'goymen.manufacturing.plan-create.v1:'
+
+interface CreateSlotContext {
+  readonly sessionBinding: string | null
+  readonly actorId: string
+  readonly companyId: string
+}
+
+function slotContext(key: string): CreateSlotContext | null {
+  try {
+    const parsed: unknown = JSON.parse(key)
+    if (!Array.isArray(parsed) || parsed.length !== 3) return null
+    const [sessionBinding, actorId, companyId] = parsed as unknown[]
+    if (sessionBinding !== null && typeof sessionBinding !== 'string') return null
+    if (typeof actorId !== 'string' || typeof companyId !== 'string') return null
+    return { sessionBinding, actorId, companyId }
+  } catch {
+    return null
+  }
+}
+
+function storedCreateName(context: CreateSlotContext): string {
+  return STORED_CREATE_PREFIX + JSON.stringify([context.actorId, context.companyId])
+}
+
+/** Is any epoch-keyed v1 create of this actor and company still in the tab? A store that cannot be listed counts as yes. */
+function legacyCreateOf(context: CreateSlotContext): boolean {
+  const suffix = `:${context.actorId}:${context.companyId}`
+  try {
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const name = sessionStorage.key(index)
+      if (name === null || !name.startsWith(LEGACY_CREATE_PREFIX) || !name.endsWith(suffix)) continue
+      if (/^[0-9]+$/.test(name.slice(LEGACY_CREATE_PREFIX.length, name.length - suffix.length))) return true
+    }
+    return false
+  } catch {
+    return true
+  }
+}
+
+function decode(value: unknown, context: CreateSlotContext): PendingPlanCreate | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
-  const candidate = value as Partial<PendingPlanCreate>
+  if (!exactKeys(value, ['actorId', 'companyId', 'idempotencyKey', 'request', 'sessionBinding'])) return null
+  const candidate = value as Partial<PendingPlanCreate> & { readonly sessionBinding?: unknown }
+  // The record must name this very actor, company and session.
+  if (
+    candidate.actorId !== context.actorId ||
+    candidate.companyId !== context.companyId ||
+    typeof candidate.sessionBinding !== 'string' ||
+    candidate.sessionBinding !== context.sessionBinding
+  ) {
+    return null
+  }
   const request = candidate.request
   if (
     typeof candidate.actorId !== 'string' ||
@@ -126,33 +182,94 @@ function decode(value: unknown): PendingPlanCreate | null {
   }
   if (!validSlittingSpec(request.slittingSpec)) return null
   if (!validCutToLengthSpec((request as { readonly cutToLengthSpec?: unknown }).cutToLengthSpec)) return null
-  return deepFreeze(candidate as PendingPlanCreate)
-}
-
-export function recallPendingPlanCreate(key: string | null): PendingPlanCreate | null {
-  if (key === null) return null
-  try {
-    const raw = sessionStorage.getItem(key)
-    return raw === null ? null : decode(JSON.parse(raw))
-  } catch {
-    return null
+  const pending: PendingPlanCreate = {
+    actorId: candidate.actorId,
+    companyId: candidate.companyId,
+    idempotencyKey: candidate.idempotencyKey,
+    request,
   }
+  return deepFreeze(pending)
 }
 
-export function reservePendingPlanCreate(key: string | null, snapshot: PendingPlanCreate): void {
-  if (key === null) return
+/** What the create slot holds: proven nothing, one valid frozen attempt, or something that cannot be trusted either way. */
+export type PendingPlanCreateSlot =
+  | { readonly state: 'absent' }
+  | { readonly state: 'pending'; readonly pending: PendingPlanCreate }
+  | { readonly state: 'unreadable' }
+
+const ABSENT: PendingPlanCreateSlot = { state: 'absent' }
+const UNREADABLE: PendingPlanCreateSlot = { state: 'unreadable' }
+
+/**
+ * M01.3 (K2 #728/6180459736), the revise slot's discipline for the create: a read failure, a malformed or foreign
+ * record, another session's record, a missing binding and a legacy epoch-keyed record of the same actor and company are
+ * all `unreadable` — never absent, never replayed, never deleted.
+ */
+export function readPendingPlanCreate(key: string | null): PendingPlanCreateSlot {
+  if (key === null) return ABSENT
+  const context = slotContext(key)
+  if (context === null || context.sessionBinding === null) return UNREADABLE
+  let raw: string | null
   try {
-    sessionStorage.setItem(key, JSON.stringify(snapshot))
+    raw = sessionStorage.getItem(storedCreateName(context))
   } catch {
-    // Component state still keeps the immutable attempt for this mount.
+    return UNREADABLE
   }
+  if (legacyCreateOf(context)) return UNREADABLE
+  if (raw === null) return ABSENT
+  let value: unknown
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    return UNREADABLE
+  }
+  const pending = decode(value, context)
+  return pending === null ? UNREADABLE : { state: 'pending', pending }
 }
 
+export type PlanCreateReservation =
+  /** The attempt is durably stored for a reload: it may be sent. */
+  | { readonly type: 'reserved' }
+  /** Another unresolved create holds the slot; only that exact attempt may be sent. */
+  | { readonly type: 'occupied'; readonly pending: PendingPlanCreate }
+  /** The slot cannot be read or holds an untrusted record: nothing may be sent for it. */
+  | { readonly type: 'unreadable' }
+  /** The attempt could not be stored and read back: it is not sent. */
+  | { readonly type: 'not-durable' }
+
+function sameAttempt(left: PendingPlanCreate, right: PendingPlanCreate): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+/** Reserve before sending, so neither a remount nor a reload can mint a second create. Send only on `reserved`. */
+export function reservePendingPlanCreate(key: string | null, snapshot: PendingPlanCreate): PlanCreateReservation {
+  if (key === null) return { type: 'unreadable' }
+  const slot = readPendingPlanCreate(key)
+  if (slot.state === 'unreadable') return { type: 'unreadable' }
+  if (slot.state === 'pending') {
+    return sameAttempt(slot.pending, snapshot) ? { type: 'reserved' } : { type: 'occupied', pending: slot.pending }
+  }
+  const context = slotContext(key)
+  if (context === null || context.sessionBinding === null) return { type: 'unreadable' }
+  const name = storedCreateName(context)
+  const raw = JSON.stringify({ ...snapshot, sessionBinding: context.sessionBinding })
+  try {
+    sessionStorage.setItem(name, raw)
+    if (sessionStorage.getItem(name) !== raw) return { type: 'not-durable' }
+  } catch {
+    return { type: 'not-durable' }
+  }
+  return { type: 'reserved' }
+}
+
+/** Release only the attempt that settled; a newer one is never removed, and a failed removal keeps the same attempt. */
 export function releasePendingPlanCreate(key: string | null, idempotencyKey: string): void {
-  if (key === null || recallPendingPlanCreate(key)?.idempotencyKey !== idempotencyKey) return
+  const slot = readPendingPlanCreate(key)
+  const context = key === null ? null : slotContext(key)
+  if (slot.state !== 'pending' || slot.pending.idempotencyKey !== idempotencyKey || context === null) return
   try {
-    sessionStorage.removeItem(key)
+    sessionStorage.removeItem(storedCreateName(context))
   } catch {
-    // A stale stored attempt remains fail-closed and can only replay the same request.
+    // The stored attempt stays pending and can only replay the same request.
   }
 }

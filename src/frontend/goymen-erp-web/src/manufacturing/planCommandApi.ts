@@ -339,8 +339,16 @@ const pendingLifecycle = new Map<string, PendingPlanLifecycle>()
  * newly keyed revise. The slot therefore reads as `absent`, `pending` or `unreadable`; only proven absence lets a new
  * command in, a revise is sent only once its exact attempt is durably stored, and an unresolved revise is never
  * displaced by another command of the same slot.
+ *
+ * M01.3 (K2 #728/6180459736): the stored slot is named by actor, company and plan only, and the record carries the
+ * shell's reload-stable session binding (shell/sessionBinding.ts) — not `sessionEpoch`, which restarts at 0 in every
+ * document. The same session after an F5 finds its attempt; a record of another session (another binding), a missing
+ * binding, or a legacy epoch-keyed v1 record of the same context is `unreadable`, never absent. Nothing is moved,
+ * rebound or deleted to make it fit.
  */
-const STORED_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v1:'
+const STORED_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v2:'
+/** Epoch-keyed slots written before the binding: `[sessionEpoch, actorId, companyId, planId]`. Read, never written. */
+const LEGACY_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v1:'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NIL_UUID = '00000000-0000-0000-0000-000000000000'
@@ -422,36 +430,72 @@ function validReviseRequest(value: unknown): boolean {
   return !Object.hasOwn(value, 'cutToLengthSpec') || validCutLines(value.cutToLengthSpec)
 }
 
-/** The context the slot key names: `[sessionEpoch, actorId, companyId, planId]` (see {@link pendingPlanLifecycleKey}). */
-function slotContext(key: string): { readonly actorId: string; readonly companyId: string; readonly planId: string } | null {
+interface SlotContext {
+  /** The shell's session binding; null = none could be established, so nothing stored can be trusted. */
+  readonly sessionBinding: string | null
+  readonly actorId: string
+  readonly companyId: string
+  readonly planId: string
+}
+
+/** The context the slot key names: `[sessionBinding, actorId, companyId, planId]` (see {@link pendingPlanLifecycleKey}). */
+function slotContext(key: string): SlotContext | null {
   try {
     const parsed: unknown = JSON.parse(key)
-    if (!Array.isArray(parsed) || parsed.length !== 4 || typeof parsed[0] !== 'number') return null
-    const [, actorId, companyId, planId] = parsed as unknown[]
+    if (!Array.isArray(parsed) || parsed.length !== 4) return null
+    const [sessionBinding, actorId, companyId, planId] = parsed as unknown[]
+    if (sessionBinding !== null && typeof sessionBinding !== 'string') return null
     if (typeof actorId !== 'string' || typeof companyId !== 'string' || typeof planId !== 'string') return null
-    return { actorId, companyId, planId }
+    return { sessionBinding, actorId, companyId, planId }
   } catch {
     return null
   }
 }
 
-function decodeStoredRevise(key: string, raw: string): PendingPlanLifecycle | null {
-  const context = slotContext(key)
+/** Where a context's revise is stored: the binding is in the record, so a later session finds — and refuses — it. */
+function storedReviseName(context: SlotContext): string {
+  return STORED_REVISE_PREFIX + JSON.stringify([context.actorId, context.companyId, context.planId])
+}
+
+/** Is any epoch-keyed v1 record of this very context still in the tab? A store that cannot be listed counts as yes. */
+function legacyReviseOf(context: SlotContext): boolean {
+  try {
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const name = sessionStorage.key(index)
+      if (name === null || !name.startsWith(LEGACY_REVISE_PREFIX)) continue
+      let parsed: unknown
+      try {
+        parsed = JSON.parse(name.slice(LEGACY_REVISE_PREFIX.length))
+      } catch {
+        continue
+      }
+      if (Array.isArray(parsed) && parsed.length === 4 && parsed[1] === context.actorId
+        && parsed[2] === context.companyId && parsed[3] === context.planId) return true
+    }
+    return false
+  } catch {
+    return true
+  }
+}
+
+function decodeStoredRevise(context: SlotContext, raw: string): PendingPlanLifecycle | null {
   let value: unknown
   try {
     value = JSON.parse(raw)
   } catch {
     return null
   }
-  if (context === null || !isRecord(value) || !hasKeys(value, ['actorId', 'companyId', 'planId', 'snapshot'])) return null
-  // The record must name the very context of the slot it was read from.
-  if (value.actorId !== context.actorId || value.companyId !== context.companyId || value.planId !== context.planId) {
+  if (!isRecord(value) || !hasKeys(value, ['actorId', 'companyId', 'planId', 'sessionBinding', 'snapshot'])) return null
+  // The record must name the very context of the slot it was read from — and this very session.
+  if (value.actorId !== context.actorId || value.companyId !== context.companyId || value.planId !== context.planId
+    || typeof value.sessionBinding !== 'string' || value.sessionBinding !== context.sessionBinding) {
     return null
   }
   const snapshot = value.snapshot
   if (!isRecord(snapshot) || !hasKeys(snapshot, ['kind', 'idempotencyKey', 'request']) || snapshot.kind !== 'revise'
     || !guid(snapshot.idempotencyKey) || !validReviseRequest(snapshot.request)) return null
-  return deepFreeze(value as unknown as PendingPlanLifecycle)
+  const pending = { actorId: value.actorId, companyId: value.companyId, planId: value.planId, snapshot }
+  return deepFreeze(pending as unknown as PendingPlanLifecycle)
 }
 
 function deepFreeze<T>(value: T): T {
@@ -471,16 +515,22 @@ export type PendingPlanSlot =
 const ABSENT: PendingPlanSlot = { state: 'absent' }
 const UNREADABLE: PendingPlanSlot = { state: 'unreadable' }
 
-/** The stored side alone: a read failure, a malformed record and a foreign record are all `unreadable`, never absent. */
+/**
+ * The stored side alone: a read failure, a malformed record, a foreign record, another session's record, a missing
+ * binding and a legacy epoch-keyed record of the same context are all `unreadable`, never absent.
+ */
 function storedSlot(key: string): PendingPlanSlot {
+  const context = slotContext(key)
+  if (context === null || context.sessionBinding === null) return UNREADABLE
   let raw: string | null
   try {
-    raw = sessionStorage.getItem(STORED_REVISE_PREFIX + key)
+    raw = sessionStorage.getItem(storedReviseName(context))
   } catch {
     return UNREADABLE
   }
+  if (legacyReviseOf(context)) return UNREADABLE
   if (raw === null) return ABSENT
-  const pending = decodeStoredRevise(key, raw)
+  const pending = decodeStoredRevise(context, raw)
   return pending === null ? UNREADABLE : { state: 'pending', pending }
 }
 
@@ -488,20 +538,25 @@ function sameAttempt(left: PendingPlanLifecycle, right: PendingPlanLifecycle): b
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+/**
+ * The slot of a context, or null when there is no context (no actor, company or plan). A null `sessionBinding` still
+ * names a slot — one that is `unreadable`, so a missing binding never reads as absence.
+ */
 export function pendingPlanLifecycleKey(
-  sessionEpoch: number,
+  sessionBinding: string | null,
   actorId: string | null,
   companyId: string | null,
   planId: string,
 ): string | null {
   return actorId === null || companyId === null || planId.length === 0
     ? null
-    : JSON.stringify([sessionEpoch, actorId, companyId, planId])
+    : JSON.stringify([sessionBinding, actorId, companyId, planId])
 }
 
 /** The slot of a context: the in-memory attempt first, then — after a reload — the stored one, strictly decoded. */
 export function readPendingPlanLifecycle(key: string | null): PendingPlanSlot {
   if (key === null) return ABSENT
+  // Memory is keyed by the binding too: an attempt held for an earlier session in this document is not this one's.
   const held = pendingLifecycle.get(key)
   if (held !== undefined) return { state: 'pending', pending: held }
   const stored = storedSlot(key)
@@ -532,10 +587,13 @@ export function reservePendingPlanLifecycle(key: string | null, pending: Pending
     return { type: 'occupied', pending: held }
   }
   if (pending.snapshot.kind === 'revise' && !(stored.state === 'pending' && sameAttempt(stored.pending, pending))) {
-    const raw = JSON.stringify(pending)
+    const context = slotContext(key)
+    if (context === null || context.sessionBinding === null) return { type: 'unreadable' }
+    const name = storedReviseName(context)
+    const raw = JSON.stringify({ ...pending, sessionBinding: context.sessionBinding })
     try {
-      sessionStorage.setItem(STORED_REVISE_PREFIX + key, raw)
-      if (sessionStorage.getItem(STORED_REVISE_PREFIX + key) !== raw) return { type: 'not-durable' }
+      sessionStorage.setItem(name, raw)
+      if (sessionStorage.getItem(name) !== raw) return { type: 'not-durable' }
     } catch {
       return { type: 'not-durable' }
     }
@@ -554,9 +612,10 @@ export function releasePendingPlanLifecycle(key: string | null, idempotencyKey: 
   const held = pendingLifecycle.get(key)
   const stored = storedSlot(key)
   if (stored.state === 'unreadable' && held?.snapshot.kind === 'revise') return
-  if (stored.state === 'pending' && stored.pending.snapshot.idempotencyKey === idempotencyKey) {
+  const context = slotContext(key)
+  if (stored.state === 'pending' && stored.pending.snapshot.idempotencyKey === idempotencyKey && context !== null) {
     try {
-      sessionStorage.removeItem(STORED_REVISE_PREFIX + key)
+      sessionStorage.removeItem(storedReviseName(context))
     } catch {
       return
     }
@@ -569,7 +628,7 @@ export function clearPendingPlanLifecycles(): void {
   pendingLifecycle.clear()
   try {
     for (const name of Object.keys(sessionStorage)) {
-      if (name.startsWith(STORED_REVISE_PREFIX)) sessionStorage.removeItem(name)
+      if (name.startsWith(STORED_REVISE_PREFIX) || name.startsWith(LEGACY_REVISE_PREFIX)) sessionStorage.removeItem(name)
     }
   } catch {
     // Nothing stored.
