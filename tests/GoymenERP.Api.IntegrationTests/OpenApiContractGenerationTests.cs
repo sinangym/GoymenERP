@@ -4242,13 +4242,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("partyVersion", "type:string"),
                     ("accountVersion", "type:string")),
                 ["CapturedPlanTechnicalSnapshotViewV1"] = ObjectSchema(
-                    ["productId", "productVersion", "family", "template", "thicknessMm", "widthMm", "unitKg", "effectiveOn"],
+                    ["productId", "productVersion", "family", "template", "thicknessMm", "widthMm", "lengthMm", "unitKg", "effectiveOn"],
                     ("productId", "type:string;format:uuid"),
                     ("productVersion", "type:string"),
                     ("family", "ref:CapturedPlanFamilyRevisionViewV1"),
                     ("template", "ref:CapturedPlanTemplateRevisionViewV1"),
                     ("thicknessMm", "type:string"),
                     ("widthMm", "type:string"),
+                    ("lengthMm", "type:null|string"),
                     ("unitKg", "ref:CapturedPlanKilogramUnitViewV1"),
                     ("effectiveOn", "type:string;format:date")),
                 ["OrderViewV1"] = ObjectSchema(
