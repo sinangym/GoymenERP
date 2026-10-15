@@ -2504,9 +2504,12 @@ internal {{declaration}} : IDocumentObjectStoreV1
                 path.write_bytes(content)
 
             def git(*arguments: str, input_bytes: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
+                control_environment = os.environ.copy()
+                control_environment.pop("GIT_NO_REPLACE_OBJECTS", None)
                 return subprocess.run(
                     ["git", *arguments],
                     cwd=repository,
+                    env=control_environment,
                     input=input_bytes,
                     capture_output=True,
                     check=True,
