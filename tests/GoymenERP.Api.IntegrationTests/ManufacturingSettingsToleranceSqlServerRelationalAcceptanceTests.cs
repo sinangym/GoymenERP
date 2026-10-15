@@ -79,18 +79,23 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                 new DateOnly(2026, 2, 1), null,
                 "synthetic-settings-sql-approver", "duplicate version must fail");
 
-            var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var contenders = new[]
+            const int contentionRounds = 4;
+            for (var round = 0; round < contentionRounds; round++)
             {
-                ConcurrentInsertAsync(start.Task, factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(), 1,
-                    new DateOnly(2028, 1, 1), new DateOnly(2028, 12, 31)),
-                ConcurrentInsertAsync(start.Task, factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(), 2,
-                    new DateOnly(2028, 6, 1), null),
-            };
-            start.SetResult();
-            var outcomes = await Task.WhenAll(contenders);
-            Assert.Equal(1, outcomes.Count(x => x));
-            Assert.Equal(1, await CountProcessAsync(factory.DatabaseConnectionString,
+                using var ready = new Barrier(2);
+                var year = 2028 + round;
+                var contenders = new[]
+                {
+                    ConcurrentInsertAsync(ready, factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(),
+                        (round * 2) + 1, new DateOnly(year, 1, 1), new DateOnly(year, 12, 31)),
+                    ConcurrentInsertAsync(ready, factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(),
+                        (round * 2) + 2, new DateOnly(year, 6, 1), new DateOnly(year, 12, 31)),
+                };
+                var outcomes = await Task.WhenAll(contenders);
+                Assert.Equal(1, outcomes.Count(x => x is null));
+                Assert.Equal(1, outcomes.Count(x => x == 51001));
+            }
+            Assert.Equal(contentionRounds, await CountProcessAsync(factory.DatabaseConnectionString,
                 SettingsManufacturingProcessesV1.ColdRolling));
 
             await AssertCommandRejectedAsync(factory.DatabaseConnectionString,
@@ -100,11 +105,11 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                 "DELETE FROM [settings].[ManufacturingTolerancePolicies] WHERE [CompanyId] = @company AND [ProfileId] = @profile",
                 CompanyA, profileId);
 
-            Assert.Equal(5, await CountAsync(factory.DatabaseConnectionString));
+            Assert.Equal(4 + contentionRounds, await CountAsync(factory.DatabaseConnectionString));
             await using var rollback = Context(factory.DatabaseConnectionString, CompanyA);
             await Assert.ThrowsAsync<SqlException>(() =>
                 rollback.GetService<IMigrator>().MigrateAsync("0"));
-            Assert.Equal(5, await CountAsync(factory.DatabaseConnectionString));
+            Assert.Equal(4 + contentionRounds, await CountAsync(factory.DatabaseConnectionString));
         }
         finally
         {
@@ -140,7 +145,16 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
+        await using var command = InsertCommand(connection, companyId, profileId, process, version,
+            maximumFirePercent, isActive, from, through, approvedBy, reason);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static SqlCommand InsertCommand(SqlConnection connection, Guid companyId, Guid profileId,
+        string process, long version, decimal maximumFirePercent, bool isActive, DateOnly from,
+        DateOnly? through, string approvedBy, string reason)
+    {
+        var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO [settings].[ManufacturingTolerancePolicies]
                 ([CompanyId],[ProfileId],[Process],[Version],[MaximumFirePercent],[IsActive],
@@ -159,7 +173,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         command.Parameters.AddWithValue("@approvedBy", approvedBy);
         command.Parameters.AddWithValue("@approvedAt", new DateTimeOffset(2026, 10, 10, 9, 0, 0, TimeSpan.Zero));
         command.Parameters.AddWithValue("@reason", reason);
-        await command.ExecuteNonQueryAsync();
+        return command;
     }
 
     private static async Task AssertInsertRejectedAsync(string connectionString, Guid companyId, Guid profileId,
@@ -168,20 +182,27 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         await Assert.ThrowsAsync<SqlException>(() => InsertAsync(connectionString, companyId, profileId,
             process, version, maximumFirePercent, isActive, from, through, approvedBy, reason));
 
-    private static async Task<bool> ConcurrentInsertAsync(Task start, string connectionString, Guid companyId,
+    private static async Task<int?> ConcurrentInsertAsync(Barrier ready, string connectionString, Guid companyId,
         Guid profileId, long version, DateOnly from, DateOnly? through)
     {
-        await start;
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = InsertCommand(connection, companyId, profileId,
+            SettingsManufacturingProcessesV1.ColdRolling, version, 0.625000m, true, from, through,
+            "synthetic-settings-sql-approver", "concurrent overlap evidence");
+        if (!ready.SignalAndWait(TimeSpan.FromSeconds(30)))
+        {
+            throw new TimeoutException("Concurrent tolerance publication contenders did not become ready.");
+        }
+
         try
         {
-            await InsertAsync(connectionString, companyId, profileId,
-                SettingsManufacturingProcessesV1.ColdRolling, version, 0.625000m, true, from, through,
-                "synthetic-settings-sql-approver", "concurrent overlap evidence");
-            return true;
+            await command.ExecuteNonQueryAsync();
+            return null;
         }
-        catch (SqlException)
+        catch (SqlException exception)
         {
-            return false;
+            return exception.Number;
         }
     }
 

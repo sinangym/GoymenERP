@@ -1387,6 +1387,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 3
                         }),
+                // Concurrent policy publications are serialized by the database trigger. Up replaces the
+                // trigger; Down first refuses rollback with history and then restores the predecessor trigger.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261015150000_SerializeManufacturingTolerancePolicyWindows.cs"] =
+                    new(
+                        "b1322fe5e595463db25b75e6911b6ce0dfae8d50b488947bcb0638808c330e54",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 3
+                        }),
                 // PRODUCT-TECH-FAMILY-02 publishes one exact cut-sheet/plate family and template; Up and
                 // Down use two reviewed raw-SQL mutation surfaces without changing legacy technical rows.
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/"
