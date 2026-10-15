@@ -52,6 +52,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
     private const string ProductFamilyRegistryMigration = "20260919100000_AddProductFamilyRegistry";
     private const string ProductTechnicalDefinitionMigration = "20261004130000_ReleaseInitialProductTechnicalDefinition";
     private const string ProductCodeGroupMigration = "20261004213000_ReleaseInitialProductCodeGroup";
+    private const string ProductCutSheetTechnicalDefinitionMigration =
+        "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition";
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
@@ -435,18 +437,20 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(), 51043);
             var product = migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>();
             var productMigrations = (await product.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(ProductCodeGroupMigration, productMigrations[^1]);
+            Assert.Equal(ProductCutSheetTechnicalDefinitionMigration, productMigrations[^1]);
 
             // EF Core 10 commits each migration in its own transaction. First remove the unreferenced
-            // code-group release, then the technical-definition release, before exercising the schema
-            // guard as a single rollback step. Reapply both releases afterwards so this acceptance case
-            // leaves the Product runtime at its entry schema.
-            await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
-            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
-            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
-            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
-            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            // cut-sheet release, then the code-group and technical-definition releases, before exercising
+            // the schema guard as a single rollback step. Reapply all releases afterwards so this
+            // acceptance case leaves the Product runtime at its entry schema.
             await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
+            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
+            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
+            Assert.Equal(productMigrations[..^3], await product.Database.GetAppliedMigrationsAsync());
+            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            await product.GetService<IMigrator>().MigrateAsync(ProductCutSheetTechnicalDefinitionMigration);
             Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
         });
@@ -1188,19 +1192,19 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     CompanyA, planId);
                 await migrator.MigrateAsync(previousMigration);
                 Assert.DoesNotContain(lengthMigration, await manufacturing.Database.GetAppliedMigrationsAsync());
-                Assert.Null(await manufacturing.Database.SqlQueryRaw<long?>(
+                Assert.Null(await manufacturing.Database.SqlQueryRaw<short?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());
-                Assert.Null(await manufacturing.Database.SqlQueryRaw<long?>(
+                Assert.Null(await manufacturing.Database.SqlQueryRaw<short?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanRevisionInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());
 
                 await migrator.MigrateAsync();
                 Assert.Equal(lengthMigration, (await manufacturing.Database.GetAppliedMigrationsAsync()).Last());
-                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<long?>(
+                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<short?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());
-                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<long?>(
+                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<short?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanRevisionInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());
             }

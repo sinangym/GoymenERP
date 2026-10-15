@@ -79,14 +79,23 @@ internal static class ProductDraftOperation
             var product = before.RestoreProduct();
             if (product.Lifecycle != ProductLifecycle.Draft)
                 throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409);
-            product.Activate(ProductVersion.Parse(request.ExpectedVersion), clock.GetUtcNow());
-            var after = ProductStoredRecord.Capture(product, before.RestoreReferences());
-            row.ApplyActivation(after);
             var groupName = await context.CodeGroups.AsNoTracking().Where(group => group.Id == row.GroupId)
                 .Select(group => group.Name).SingleOrDefaultAsync(cancellationToken)
                 ?? throw new InvalidOperationException("The stored Product code group is missing.");
+            var beforeCard = Card(before, groupName);
+            // Existing family-less rows predate the released-family source and keep their legacy activation path.
+            // Once a card names a released family, activation must satisfy that family's accepted references.
+            if (product.FamilyId is not null)
+            {
+                var errors = await new ProductPurchaseFamilyRequirementPolicyV1(
+                    new SqlProductFamilyDefinitionSource(context)).ValidateAsync(beforeCard, cancellationToken);
+                if (errors.Count > 0) throw new ProductActivationValidationException(errors);
+            }
+            product.Activate(ProductVersion.Parse(request.ExpectedVersion), clock.GetUtcNow());
+            var after = ProductStoredRecord.Capture(product, before.RestoreReferences());
+            row.ApplyActivation(after);
             // System action label, as for creation: the approval carries no user-supplied reason.
-            return new(Card(before, groupName), Card(after, groupName), "Ürün kartı onayı", "product.card.activated.v1");
+            return new(beforeCard, Card(after, groupName), "Ürün kartı onayı", "product.card.activated.v1");
         }
         if (operation is ProductCommandIntent.DeactivateOperation or ProductCommandIntent.ReactivateOperation)
         {

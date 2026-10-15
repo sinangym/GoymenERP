@@ -180,6 +180,30 @@ public sealed class ProductHttpContractTests
         Assert.Equal(1, service.Activations);
     }
 
+    [Fact]
+    public async Task Activation_family_requirement_failure_is_a_structured_422_without_changing_ordinary_validation()
+    {
+        var service = new Service
+        {
+            ActivationFailure = new ProductActivationValidationException(
+                [new("references.attributes.length-mm", ProductFamilyPolicyCodesV1.Required)]),
+        };
+        await using var app = await StartAsync(service);
+        using var client = Client(app);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/products/{service.Card.Product.Id:D}/activation", new ActivateProductRequest("1"));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType!.MediaType);
+        var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        Assert.Equal(ProductApiV1.ValidationFailed, problem.GetProperty("code").GetString());
+        var error = Assert.Single(problem.GetProperty("errors").EnumerateArray());
+        Assert.Equal("references.attributes.length-mm", error.GetProperty("field").GetString());
+        Assert.Equal(ProductFamilyPolicyCodesV1.Required, error.GetProperty("code").GetString());
+        Assert.Equal(1, service.Activations);
+    }
+
     [Theory]
     [InlineData("deactivation", """{"expectedVersion":"2","reason":"Kalktı","lifecycle":"Inactive"}""")]
     [InlineData("deactivation", """{"expectedVersion":"2","reason":"Kalktı","companyId":"9197acdd-034f-4082-bc66-cebc5c81be53"}""")]
@@ -373,6 +397,7 @@ public sealed class ProductHttpContractTests
         public int Reads { get; private set; }
         public bool ProjectionFailure { get; init; }
         public bool Denied { get; set; }
+        public ProductActivationValidationException? ActivationFailure { get; init; }
         public Service()
         {
             var product = ProductCard.CreateDraft(Guid.NewGuid(), ProductCode.FromSequence("SAC", 1), "Sac",
@@ -412,7 +437,11 @@ public sealed class ProductHttpContractTests
             throw new ProductVersionConflictException(1, 9007199254740993L);
         public Task<ProductMutationResponse> ActivateAsync(Guid id, ActivateProductRequest request,
             string idempotencyKey, CancellationToken cancellationToken)
-        { Activations++; throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409); }
+        {
+            Activations++;
+            if (ActivationFailure is not null) throw ActivationFailure;
+            throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409);
+        }
         public int Deactivations { get; private set; }
         public int Reactivations { get; private set; }
         public ChangeProductLifecycleRequest? LastLifecycleRequest { get; private set; }

@@ -153,7 +153,7 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
             Assert.Equal(51044, refusal.Number);
             Assert.Contains("Product cards reference", refusal.Message, StringComparison.Ordinal);
             await using (var preserved = run.Factory.Services.CreateAsyncScope())
-                AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
+                AssertExactInitialRelease(await new SqlProductFamilyDefinitionSource(
                     preserved.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
 
             failurePhase = RollbackReplayPrerequisitePhase;
@@ -237,8 +237,23 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
 
     private static void AssertExactGenuine(ProductFamilyDefinitionV2 actual)
     {
-        ProductFamilyDefinitionRulesV2.RequireWellFormed(actual);
         var expected = ProductInitialTechnicalDefinitionV1.Definition();
+        AssertExact(expected, actual);
+    }
+
+    private static void AssertExactInitialRelease(ProductFamilyDefinitionV2 actual)
+    {
+        var full = ProductInitialTechnicalDefinitionV1.Definition();
+        var expected = new ProductFamilyDefinitionV2(
+            [.. full.Families.Where(row => row.Id != ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId)],
+            [.. full.Templates.Where(row => row.Id != ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId)],
+            full.Entries);
+        AssertExact(expected, actual);
+    }
+
+    private static void AssertExact(ProductFamilyDefinitionV2 expected, ProductFamilyDefinitionV2 actual)
+    {
+        ProductFamilyDefinitionRulesV2.RequireWellFormed(actual);
         Assert.Equal(expected.Families.OrderBy(row => row.Id), actual.Families.OrderBy(row => row.Id));
         Assert.Equal(expected.Entries.OrderBy(row => row.Dictionary).ThenBy(row => row.Code),
             actual.Entries.OrderBy(row => row.Dictionary).ThenBy(row => row.Code));
