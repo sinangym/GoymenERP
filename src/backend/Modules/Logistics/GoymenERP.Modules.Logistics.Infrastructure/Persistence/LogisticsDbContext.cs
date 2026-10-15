@@ -44,6 +44,12 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
 
     internal DbSet<CustomerReturnAttemptRow> CustomerReturnAttempts => Set<CustomerReturnAttemptRow>();
 
+    internal DbSet<TransferOutgoingDocumentRow> TransferOutgoingDocuments => Set<TransferOutgoingDocumentRow>();
+
+    internal DbSet<TransferOutgoingDocumentLineRow> TransferOutgoingDocumentLines => Set<TransferOutgoingDocumentLineRow>();
+
+    internal DbSet<TransferOutgoingDocumentAttemptRow> TransferOutgoingDocumentAttempts => Set<TransferOutgoingDocumentAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -59,6 +65,7 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         ConfigureWeighings(modelBuilder);
         ConfigureDispatchNotes(modelBuilder);
         ConfigureCustomerReturns(modelBuilder);
+        ConfigureTransferOutgoingDocuments(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -359,6 +366,77 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
         attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureTransferOutgoingDocuments(ModelBuilder modelBuilder)
+    {
+        var document = modelBuilder.Entity<TransferOutgoingDocumentRow>();
+        document.ToTable("TransferOutgoingDocuments", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferOutgoingDocuments_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [DocumentId] <> {EmptyGuid} AND [TransferId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_TransferOutgoingDocuments_State",
+                "([Status] = 1 AND [Version] = 1 AND [EffectiveBy] IS NULL AND [EffectiveAtUtc] IS NULL "
+                + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) OR "
+                + "([Status] = 2 AND [Version] = 2 AND [EffectiveBy] IS NOT NULL AND [EffectiveAtUtc] IS NOT NULL "
+                + "AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) OR "
+                + "([Status] = 3 AND [Version] IN (2, 3) AND [CancelledBy] IS NOT NULL AND [CancelledAtUtc] IS NOT NULL "
+                + "AND [CancellationReason] IS NOT NULL AND (([Version] = 2 AND [EffectiveBy] IS NULL AND [EffectiveAtUtc] IS NULL) "
+                + "OR ([Version] = 3 AND [EffectiveBy] IS NOT NULL AND [EffectiveAtUtc] IS NOT NULL)))");
+            table.HasCheckConstraint("CK_TransferOutgoingDocuments_Actors",
+                "LEN([CreatedBy]) > 0 AND ([EffectiveBy] IS NULL OR LEN([EffectiveBy]) > 0) "
+                + "AND ([CancelledBy] IS NULL OR LEN([CancelledBy]) > 0) "
+                + "AND ([CancellationReason] IS NULL OR LEN([CancellationReason]) > 0) "
+                + "AND ([EDispatchNumber] IS NULL OR LEN([EDispatchNumber]) > 0)");
+        });
+        document.HasKey(x => new { x.CompanyId, x.DocumentId });
+        document.Property(x => x.Version).IsConcurrencyToken();
+        document.Property(x => x.RowVersion).IsRowVersion();
+        document.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        document.Property(x => x.EffectiveBy).HasMaxLength(128);
+        document.Property(x => x.CancelledBy).HasMaxLength(128);
+        document.Property(x => x.CancellationReason).HasMaxLength(500);
+        document.Property(x => x.EDispatchNumber).HasMaxLength(64);
+        document.HasIndex(x => new { x.CompanyId, x.TransferId }).IsUnique()
+            .HasDatabaseName("UX_TransferOutgoingDocuments_TransferId");
+        document.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        document.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<TransferOutgoingDocumentLineRow>();
+        line.ToTable("TransferOutgoingDocumentLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferOutgoingDocumentLines_Identity",
+                $"[DocumentId] <> {EmptyGuid} AND [TransferLineId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_TransferOutgoingDocumentLines_Ordinal", "[Ordinal] >= 1 AND [Ordinal] <= 200");
+        });
+        line.HasKey(x => new { x.CompanyId, x.DocumentId, x.Ordinal });
+        line.HasIndex(x => new { x.CompanyId, x.DocumentId, x.TransferLineId }).IsUnique()
+            .HasDatabaseName("UX_TransferOutgoingDocumentLines_LineId");
+        line.HasOne<TransferOutgoingDocumentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DocumentId }).OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<TransferOutgoingDocumentAttemptRow>();
+        attempt.ToTable("TransferOutgoingDocumentAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_TransferOutgoingDocumentAttempts_Identity",
+                $"[DocumentId] <> {EmptyGuid} AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_TransferOutgoingDocumentAttempts_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_TransferOutgoingDocumentAttempts_Result", "ISJSON([ResultJson]) = 1");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false)
+            .UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.ResultJson).HasColumnType("nvarchar(max)").IsRequired();
+        attempt.HasOne<TransferOutgoingDocumentRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DocumentId }).OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         LogisticsAuditEventTenantGuard.Validate(this, companyContext);
@@ -404,6 +482,13 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                         nameof(CustomerReturnRow.DecidedAtUtc), nameof(CustomerReturnRow.DecisionNote),
                         nameof(CustomerReturnRow.InventoryMovementId), nameof(CustomerReturnRow.OriginalLabelId),
                         nameof(CustomerReturnRow.OriginalShipmentMovementId),
+                    ],
+                    TransferOutgoingDocumentRow =>
+                    [
+                        nameof(TransferOutgoingDocumentRow.Status), nameof(TransferOutgoingDocumentRow.Version),
+                        nameof(TransferOutgoingDocumentRow.EffectiveBy), nameof(TransferOutgoingDocumentRow.EffectiveAtUtc),
+                        nameof(TransferOutgoingDocumentRow.CancelledBy), nameof(TransferOutgoingDocumentRow.CancelledAtUtc),
+                        nameof(TransferOutgoingDocumentRow.CancellationReason),
                     ],
                     _ => [],
                 };
@@ -472,6 +557,14 @@ public sealed class LogisticsDbContext(DbContextOptions<LogisticsDbContext> opti
                     || !returnVersion.IsModified || (long)returnVersion.OriginalValue! != 1L
                     || (long)returnVersion.CurrentValue! != 2L)
                     throw new InvalidOperationException("Musteri iadesi yalniz bekliyor durumundan onayli veya reddedildi durumuna bir kez gecer.");
+                break;
+            case TransferOutgoingDocumentRow:
+                var documentStatus = entry.Property(nameof(TransferOutgoingDocumentRow.Status));
+                var documentVersion = entry.Property(nameof(TransferOutgoingDocumentRow.Version));
+                if (!documentStatus.IsModified || !documentVersion.IsModified
+                    || (int)documentVersion.CurrentValue! != (int)documentVersion.OriginalValue! + 1
+                    || (int)documentStatus.CurrentValue! <= (int)documentStatus.OriginalValue!)
+                    throw new InvalidOperationException("Transfer cikis belgesi yalniz ileri durum ve tek surum adimiyla ilerler.");
                 break;
         }
     }

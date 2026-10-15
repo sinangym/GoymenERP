@@ -23,7 +23,7 @@ public sealed class ProductStockDisplayReferenceService(
     IErpAuthorityRevalidationService authority,
     IProductStockDisplayRecordReader records,
     IProductFamilyDefinitionSourceV2 definitions)
-    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
+    : IProductStockDisplayReferencesV1, IProductStockDisplayReferencesV2, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
 {
     public async Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(
         CancellationToken cancellationToken = default)
@@ -52,6 +52,39 @@ public sealed class ProductStockDisplayReferenceService(
     public async Task<ProductStockDisplayBatchV1> ReadAsync(
         ProductStockDisplayBatchQueryV1 query,
         CancellationToken cancellationToken = default)
+    {
+        var results = await ReadCoreAsync(query, cancellationToken);
+        return new(results.Select(result => new ProductStockDisplayResultV1(
+            result.ProductId,
+            result.ExpectedProductVersion,
+            result.Identity,
+            result.Errors.Count == 0
+                ? new ProductStockNominalTechnicalV1(
+                    result.Family!, result.Template!, result.ThicknessMm!.Value, result.WidthMm!.Value)
+                : null,
+            result.Errors)).ToArray());
+    }
+
+    async Task<ProductStockDisplayBatchV2> IProductStockDisplayReferencesV2.ReadAsync(
+        ProductStockDisplayBatchQueryV1 query,
+        CancellationToken cancellationToken)
+    {
+        var results = await ReadCoreAsync(query, cancellationToken);
+        return new(results.Select(result => new ProductStockDisplayResultV2(
+            result.ProductId,
+            result.ExpectedProductVersion,
+            result.Identity,
+            result.Errors.Count == 0
+                ? new ProductStockNominalTechnicalV2(
+                    result.Family!, result.Template!, result.ThicknessMm!.Value,
+                    result.WidthMm!.Value, result.LengthMm)
+                : null,
+            result.Errors)).ToArray());
+    }
+
+    private async Task<IReadOnlyList<ProductStockDisplayReadResult>> ReadCoreAsync(
+        ProductStockDisplayBatchQueryV1 query,
+        CancellationToken cancellationToken)
     {
         var scope = await RequireScopeAsync(null, cancellationToken);
         ArgumentNullException.ThrowIfNull(query);
@@ -102,12 +135,12 @@ public sealed class ProductStockDisplayReferenceService(
             ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
         }
 
-        var items = new List<ProductStockDisplayResultV1>(query.Selections.Count);
+        var items = new List<ProductStockDisplayReadResult>(query.Selections.Count);
         foreach (var selection in query.Selections)
         {
             if (!byId.TryGetValue(selection.ProductId, out var record))
             {
-                items.Add(Rejected(selection, "productId", "invalid_reference"));
+                items.Add(RejectedCore(selection, "productId", "invalid_reference"));
                 continue;
             }
 
@@ -118,12 +151,12 @@ public sealed class ProductStockDisplayReferenceService(
             }
             catch (ArgumentException)
             {
-                items.Add(Rejected(selection, "expectedProductVersion", "invalid_version"));
+                items.Add(RejectedCore(selection, "expectedProductVersion", "invalid_version"));
                 continue;
             }
             if (expected != record.Version)
             {
-                items.Add(Rejected(selection, "expectedProductVersion", ProductApiV1.VersionConflict));
+                items.Add(RejectedCore(selection, "expectedProductVersion", ProductApiV1.VersionConflict));
                 continue;
             }
 
@@ -147,7 +180,8 @@ public sealed class ProductStockDisplayReferenceService(
                 card.References, definition!, template);
             if (errors.Count > 0)
             {
-                items.Add(new(selection.ProductId, selection.ExpectedProductVersion, identity, null, errors));
+                items.Add(new(selection.ProductId, selection.ExpectedProductVersion, identity,
+                    null, null, null, null, null, errors));
                 continue;
             }
             if (ProductManufacturingTechnicalSnapshotService.UsesSyntheticDictionaryValue(
@@ -159,19 +193,23 @@ public sealed class ProductStockDisplayReferenceService(
                 card.References, template, ProductTemplateFieldRolesV2.Thickness);
             var width = ProductManufacturingTechnicalSnapshotService.ReadMeasure(
                 card.References, template, ProductTemplateFieldRolesV2.Width);
-            errors.AddRange(new[] { thickness.Error, width.Error }.OfType<ProductFieldError>());
-            var technical = errors.Count == 0
-                ? new ProductStockNominalTechnicalV1(
-                    new(family.Id, family.Code, family.SourceRef),
-                    new(template.Id, template.Version, template.Code, template.SourceRef),
-                    thickness.Millimetres!.Value,
-                    width.Millimetres!.Value)
-                : null;
-            items.Add(new(selection.ProductId, selection.ExpectedProductVersion, identity, technical, errors));
+            var length = template.Fields.Any(field => string.Equals(
+                    field.Role, ProductTemplateFieldRolesV2.Length, StringComparison.Ordinal))
+                ? ProductManufacturingTechnicalSnapshotService.ReadMeasure(
+                    card.References, template, ProductTemplateFieldRolesV2.Length)
+                : new ProductManufacturingMeasureReadV1(null, null);
+            errors.AddRange(new[] { thickness.Error, width.Error, length.Error }.OfType<ProductFieldError>());
+            items.Add(new(selection.ProductId, selection.ExpectedProductVersion, identity,
+                errors.Count == 0 ? new(family.Id, family.Code, family.SourceRef) : null,
+                errors.Count == 0 ? new(template.Id, template.Version, template.Code, template.SourceRef) : null,
+                errors.Count == 0 ? thickness.Millimetres : null,
+                errors.Count == 0 ? width.Millimetres : null,
+                errors.Count == 0 ? length.Millimetres : null,
+                errors));
         }
 
         await RequireScopeAsync(scope, cancellationToken);
-        return new(items);
+        return items;
     }
 
     public async Task<ProductStockTechnicalMatchBatchV1> MatchAsync(
@@ -280,6 +318,23 @@ public sealed class ProductStockDisplayReferenceService(
         && (!query.WidthMinMm.HasValue || width >= query.WidthMinMm)
         && (!query.WidthMaxMm.HasValue || width <= query.WidthMaxMm);
 
+    private sealed record ProductStockDisplayReadResult(
+        Guid ProductId,
+        string ExpectedProductVersion,
+        ProductStockDisplayIdentityV1? Identity,
+        ProductManufacturingFamilyRevisionV1? Family,
+        ProductManufacturingTemplateRevisionV1? Template,
+        decimal? ThicknessMm,
+        decimal? WidthMm,
+        decimal? LengthMm,
+        IReadOnlyList<ProductFieldError> Errors);
+
+    private static ProductStockDisplayReadResult RejectedCore(
+        ProductStockDisplaySelectionV1 selection,
+        string field,
+        string code) => new(selection.ProductId, selection.ExpectedProductVersion,
+            null, null, null, null, null, null, [new ProductFieldError(field, code)]);
+
     private async Task<T> FencedAsync<T>(ProductStockDisplayReadScope scope, Func<Task<T>> read,
         CancellationToken cancellationToken)
     {
@@ -327,12 +382,6 @@ public sealed class ProductStockDisplayReferenceService(
         }
         return scope;
     }
-
-    private static ProductStockDisplayResultV1 Rejected(
-        ProductStockDisplaySelectionV1 selection,
-        string field,
-        string code) => new(selection.ProductId, selection.ExpectedProductVersion, null, null,
-        [new ProductFieldError(field, code)]);
 
     private static ProductOperationException Denied() =>
         new(ProductSalesEligibilityService.AccessDeniedCode, 403);

@@ -309,6 +309,8 @@ builder.Services.AddScoped<ILogisticsPartyAccountPortV1, CounterpartyLogisticsPa
 builder.Services.AddScoped<ILogisticsRealizationTransactionRunnerV1, LogisticsRealizationTransactionRunner>();
 builder.Services.AddScoped<ILogisticsCustomerReturnScopeV1, LogisticsCustomerReturnScope>();
 builder.Services.AddScoped<ILogisticsCustomerReturnTransactionRunnerV1, LogisticsCustomerReturnTransactionRunner>();
+builder.Services.AddScoped<ILogisticsTransferOutgoingDocumentScopeV1, LogisticsTransferOutgoingDocumentScope>();
+builder.Services.AddScoped<IInventoryTransferOutgoingDocumentProofPortV1, InventoryTransferOutgoingDocumentProofAdapter>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

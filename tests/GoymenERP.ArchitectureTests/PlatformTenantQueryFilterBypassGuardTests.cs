@@ -109,8 +109,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // adapter after both modules are registered; it adds no network, hosted-service or production-activation surface.
     // M01.3-AUTH-SESSION-CONTRACT-01 adds one scoped in-process authentication-session binding resolver;
     // it adds no OpenAPI-generation, network or hosted-service surface.
+    // I01.2 adds two scoped in-process transfer outgoing-document adapters; it adds no OpenAPI-generation,
+    // network or hosted-service surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "3e240589f44ca7975a0bcd2a14cd1f2a0566c65a87b9648fc720ce89084b4b12";
+        "961ef4535001dc72d922b4eaed00132205f482645a43601c8ccb27f083e47b17";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -244,8 +246,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-055: +4 dispatch-note draft SQL facts (e410a445… -> 010fcbd6…).
             // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
+            // I01.2: +3 transfer outgoing-document schema/idempotency/version SQL facts (459c5cf8… -> e8a7ea83…).
             ["tools/relational_inventory/logistics.txt"] =
-                "459c5cf8cc1189a3c0e3997a36a5cdcfd37a82ef9f04623767e81a62684cf253",
+                "e8a7ea8323e3d83869456e89faadde0cffe2ea03ca6c6af55111ddfb7e3e059c",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -312,10 +315,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "7b5999d3529adaccd72c13d3c3412f6f4acae56616839f8ede77732150806f76";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
         "95abaadfa075a9f6077670a2e15660629e6b1073ade36b64e45d74404fd3f4cb";
-    // Re-reviewed for the runner-only Docker Hub cache mirror: the exact workflow keeps every
-    // application gate and both image builds, and fails closed unless Docker reports the mirror active.
+    // Re-reviewed after isolating the exact-source recovery proof from inherited shell, path and redirect state:
+    // the workflow keeps every existing application gate and image build while that artifact-free job fails closed.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "e5be3e3e5e709866c4a159217c80cee909e08237932c94c2cc8f60db33e9e506";
+        "8f852a4759a1a273900929138d3c0a36ca36718572927dd7eb8aa360ce74373d";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -375,7 +378,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-leading keys; UX_DispatchNoteLines_ShipmentId over non-nullable columns (a shipment on one dispatch note).
             // Re-measured for the AT-055 lifecycle (#518): DispatchNoteSeries, company-scoped with the same CompanyId query filter
             // and a company-leading key; the single-link key filtered to unreleased lines; forward-only write guard.
-                "a9c35dbf3185a27b1aa4794b403daf12396d9ce111870ab0e7cdfbcae2913bff",
+            // Re-measured for I01.2: transfer outgoing documents and ordered line bindings carry the same CompanyId
+            // query filter and company-leading keys; the transfer link remains unique inside one company.
+                "fefc8f5585c59451908d99e31988ed27fa82ec7129fc437e177002fc12fa4db0",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
@@ -469,6 +474,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedLogisticsCustomerReturnReadPortsPath =
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
         + "Persistence/LogisticsCustomerReturnReadPorts.cs";
+    private const string ReviewedInventoryTransferOutgoingDocumentProofAdapterPath =
+        "src/backend/GoymenERP.Api/LogisticsRuntime/InventoryTransferOutgoingDocumentProofAdapter.cs";
+    private const string ReviewedLogisticsTransferOutgoingDocumentStorePath =
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+        + "Persistence/LogisticsTransferOutgoingDocumentStore.cs";
     private const string ReviewedInventoryGoodsReceiptParticipantPath =
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/"
         + "Persistence/InventoryGoodsReceiptParticipant.cs";
@@ -515,6 +525,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedLogisticsCustomerReturnRuntimePath] = ("LogisticsDbContext", 2),
                 [ReviewedLogisticsCustomerReturnStorePath] = ("LogisticsDbContext", 13),
                 [ReviewedLogisticsCustomerReturnReadPortsPath] = ("LogisticsDbContext", 2),
+                // The conservative target-typed scanner includes DTO/ReadResult construction sites in the
+                // transfer-document store; all ten exact sites remain company-filtered EF/DI operations.
+                [ReviewedLogisticsTransferOutgoingDocumentStorePath] = ("LogisticsDbContext", 10),
                 [ReviewedInventoryGoodsReceiptParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedInventoryManufacturingRealizationParticipantPath] = ("InventoryDbContext", 1),
                 [ReviewedPurchaseAcceptanceParticipantPath] = ("PurchasingDbContext", 3),
@@ -1039,8 +1052,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for DEC-SAL-005: one scoped registration of the Sales-declared loading read port;
                     // the provider branch and its token counts are unchanged. Re-fingerprinted for AT-025: the operations
                     // work list's progress reader, bindings and service registrations; token counts unchanged.
+                    // Re-fingerprinted for I01.2: transfer outgoing-document store, proof source, existing-permission
+                    // bindings and service registrations; provider branch and token counts are unchanged.
                     new(
-                        "b999fe40cd73be06a333e48058e62d3193c3bebfcdab8883250e6c710adc3e43",
+                        "5d3890457ce92e019eb6721bb98dc68e21e0d4f5afd94e2f5e576226559d4b8b",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1083,6 +1098,24 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Microsoft.Data.SqlClient"] = 1,
                             [".Local"] = 1
+                        }),
+                // I01.2 proof lookup reads through the company-filtered Inventory transfer context; FindAsync is
+                // exact-source and exact-count reviewed and performs no bypass or write.
+                [ReviewedInventoryTransferOutgoingDocumentProofAdapterPath] =
+                    new(
+                        "658c983d5a1cace101562f83ac38bbd359c35f5aab929b63ce5f1cbb762c1321",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            [".FindAsync"] = 1
+                        }),
+                // I01.2 uses SqlClient only to classify replay-safe uniqueness and serialization conflicts; it
+                // opens no direct connection or command outside the company-filtered Logistics context.
+                [ReviewedLogisticsTransferOutgoingDocumentStorePath] =
+                    new(
+                        "9dd1ad58f60b05d3213c8ca8c08f7678e91d99efde65b4412486cebc08e89cd3",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Microsoft.Data.SqlClient"] = 1
                         }),
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Application/LogisticsCustomerReturnService.cs"] =
                     new(
@@ -1661,6 +1694,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Customer returns are immutable; Down refuses while a return or attempt exists before dropping either table.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261003230000_AddCustomerReturns.cs"] =
                     new("ef3a120dcc60ae748c64139c194eda91d9aadfb3878abc6c4ef826be738df281",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // I01.2: Down's only raw SQL refuses rollback with Logistics' transfer-document code 51075 while
+                // retained document history exists; the refusal precedes both destructive table drops.
+                ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261015163000_AddTransferOutgoingDocuments.cs"] =
+                    new("038252750bb4bfc8abdda14c8a1ce5d073104cbdc82020058e0d8bd86694459a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // ERP-000G / AT-065: the Down's only raw SQL is the vault's module refusal (51058, used by no other migration

@@ -146,6 +146,110 @@ public sealed class ProductStockDisplayReferenceTests
     }
 
     [Fact]
+    public async Task V2_cut_sheet_publishes_exact_nominal_length_in_one_bounded_product_read()
+    {
+        var world = new World([
+            Record(FirstId, 7, "PL-1", "Boy kesilmiş levha", 1.25m, 1250m, length: 2500.125m),
+        ], Definition(includeLength: true));
+
+        var result = await ((IProductStockDisplayReferencesV2)world.Service()).ReadAsync(
+            new([new(FirstId, "7")]));
+
+        var item = Assert.Single(result.Items);
+        Assert.Empty(item.Errors);
+        Assert.Equal((FirstId, "7", "PL-1", "Boy kesilmiş levha"),
+            (item.Identity!.ProductId, item.Identity.ProductVersion, item.Identity.Code, item.Identity.Name));
+        Assert.Equal((1.25m, 1250m, 2500.125m),
+            (item.Technical!.ThicknessMm, item.Technical.WidthMm, item.Technical.LengthMm));
+        Assert.Equal(1, world.Records.Reads);
+        Assert.Equal(1, world.Definitions.Reads);
+    }
+
+    [Fact]
+    public async Task V2_legacy_family_publishes_explicit_null_length_without_changing_v1_shape()
+    {
+        var world = new World([Record(FirstId, 7, "COIL-1", "Eski rulo", 1.25m, 1250m)]);
+
+        var v2 = await ((IProductStockDisplayReferencesV2)world.Service()).ReadAsync(
+            new([new(FirstId, "7")]));
+        var v2Json = JsonSerializer.Serialize(Assert.Single(v2.Items).Technical,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var v1 = await world.Service().ReadAsync(new([new(FirstId, "7")]));
+        var v1Json = JsonSerializer.Serialize(Assert.Single(v1.Items).Technical,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Contains("\"lengthMm\":null", v2Json, StringComparison.Ordinal);
+        Assert.DoesNotContain("lengthMm", v1Json, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, world.Records.Reads);
+        Assert.Equal(2, world.Definitions.Reads);
+    }
+
+    [Fact]
+    public async Task V2_cut_sheet_missing_invalid_or_excess_precision_length_fails_closed_with_field_error()
+    {
+        var cases = new (decimal? Length, string Code)[]
+        {
+            (null, ProductFamilyPolicyCodesV1.Required),
+            (-1m, ProductFamilyPolicyCodesV1.InvalidValue),
+            (2500.1234m, ProductFamilyPolicyCodesV1.PrecisionExceeded),
+        };
+
+        foreach (var (length, code) in cases)
+        {
+            var world = new World([
+                Record(FirstId, 7, "PL-1", "Geçersiz boylu levha", 1.25m, 1250m, length: length),
+            ], Definition(includeLength: true));
+
+            var item = Assert.Single((await ((IProductStockDisplayReferencesV2)world.Service()).ReadAsync(
+                new([new(FirstId, "7")]))).Items);
+
+            Assert.NotNull(item.Identity);
+            Assert.Null(item.Technical);
+            Assert.Contains(new ProductFieldError("references.attributes.lengthMm", code), item.Errors);
+        }
+    }
+
+    [Fact]
+    public async Task V2_stale_version_never_relabels_or_exposes_technical_values()
+    {
+        var world = new World([
+            Record(FirstId, 7, "PL-1", "Current plate", 1.25m, 1250m, length: 2500m),
+        ], Definition(includeLength: true));
+
+        var item = Assert.Single((await ((IProductStockDisplayReferencesV2)world.Service()).ReadAsync(
+            new([new(FirstId, "6")]))).Items);
+
+        Assert.Null(item.Identity);
+        Assert.Null(item.Technical);
+        Assert.Equal(new ProductFieldError("expectedProductVersion", ProductApiV1.VersionConflict),
+            Assert.Single(item.Errors));
+        Assert.Equal(0, world.Definitions.Reads);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("company")]
+    [InlineData("actor")]
+    public async Task V2_awaited_batch_read_is_followed_by_a_fresh_authority_and_scope_fence(string change)
+    {
+        var world = new World([
+            Record(FirstId, 7, "PL-1", "Boy kesilmiş levha", 1m, 10m, length: 20m),
+        ], Definition(includeLength: true));
+        world.Records.During = () =>
+        {
+            if (change == "permission") world.Authorization.Granted = false;
+            else world.Change(change);
+        };
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            ((IProductStockDisplayReferencesV2)world.Service()).ReadAsync(new([new(FirstId, "7")])));
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode),
+            (error.StatusCode, error.Code));
+        Assert.Equal(0, world.Definitions.Reads);
+    }
+
+    [Fact]
     public async Task Technical_match_reads_many_versions_of_one_product_in_one_product_batch()
     {
         var world = new World([Record(FirstId, 100, "P-1", "Galvaniz bant", 1.25m, 1250m)]);
@@ -303,6 +407,12 @@ public sealed class ProductStockDisplayReferenceTests
         Assert.Equal((503, "product_runtime_unconfigured"), (error.StatusCode, error.Code));
         Assert.Single(provider.GetServices<IProductStockDisplayReferencesV1>());
 
+        var v2 = provider.GetRequiredService<IProductStockDisplayReferencesV2>();
+        var v2Error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            v2.ReadAsync(new([new(FirstId, "7")])));
+        Assert.Equal((503, "product_runtime_unconfigured"), (v2Error.StatusCode, v2Error.Code));
+        Assert.Single(provider.GetServices<IProductStockDisplayReferencesV2>());
+
         var matcher = provider.GetRequiredService<IProductStockTechnicalMatcherV1>();
         var matchError = await Assert.ThrowsAsync<ProductOperationException>(() =>
             matcher.MatchAsync(new([new(FirstId, "7")], FamilyId, null, null, null, null, null, null)));
@@ -335,7 +445,8 @@ public sealed class ProductStockDisplayReferenceTests
     }
 
     private static ProductStoredRecord Record(Guid id, long version, string code, string name,
-        decimal thickness, decimal? width, string quality = "DX51D", string templateVersion = "7")
+        decimal thickness, decimal? width, string quality = "DX51D", string templateVersion = "7",
+        decimal? length = null)
     {
         var attributes = new Dictionary<string, JsonElement>
         {
@@ -344,6 +455,7 @@ public sealed class ProductStockDisplayReferenceTests
             ["coating"] = JsonSerializer.SerializeToElement("none"),
         };
         if (width.HasValue) attributes["widthMm"] = JsonSerializer.SerializeToElement(width.Value);
+        if (length.HasValue) attributes["lengthMm"] = JsonSerializer.SerializeToElement(length.Value);
         var references = new ProductReferences(TemplateId, templateVersion, attributes);
         return new(id, code, name, Guid.NewGuid(), null, FamilyId,
             new(null, 0), new(true, 1), new(null, 0), new(null, 0), 1, version,
@@ -353,14 +465,24 @@ public sealed class ProductStockDisplayReferenceTests
 
     private static ProductFamilyDefinitionV2 Definition(
         bool candidateQuality = false,
-        string source = "#66/stock-display") => new(
-        [new(FamilyId, "gdc-coil", "GDC Coil", "coil", "rolling", "band",
-            ProductFamilyRuleSetsV2.GdcBandCoil, source)],
+        string source = "#66/stock-display",
+        bool includeLength = false) => new(
+        [new(FamilyId, includeLength ? "gdc-cut-sheet" : "gdc-coil",
+            includeLength ? "GDC Cut Sheet" : "GDC Coil",
+            includeLength ? "sheet" : "coil", "rolling", includeLength ? "plate" : "band",
+            includeLength ? ProductFamilyRuleSetsV2.GdcCutSheetPlate : ProductFamilyRuleSetsV2.GdcBandCoil, source)],
         [new(TemplateId, "7", "gdc-coil-v7", "GDC Coil v7", new HashSet<Guid> { FamilyId },
             [new("thicknessMm", ProductTemplateFieldKindV2.MeasureMillimetre,
                     ProductTemplateFieldRolesV2.Thickness, true, null, false, null, null, null),
                 new("widthMm", ProductTemplateFieldKindV2.MeasureMillimetre,
                     ProductTemplateFieldRolesV2.Width, true, null, false, null, null, null),
+                ..(includeLength
+                    ? new ProductTemplateFieldV2[]
+                    {
+                        new("lengthMm", ProductTemplateFieldKindV2.MeasureMillimetre,
+                            ProductTemplateFieldRolesV2.Length, true, null, false, null, null, null),
+                    }
+                    : []),
                 new("quality", ProductTemplateFieldKindV2.DictionaryReference,
                     ProductTemplateFieldRolesV2.Quality, true, "qualities", false, null, null, null),
                 new("coating", ProductTemplateFieldKindV2.DictionaryReference,
