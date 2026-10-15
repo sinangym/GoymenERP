@@ -501,15 +501,179 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
         audit_context = next(
             path for path in self.snapshot.files if path.endswith("/AuditDbContext.cs")
         )
-        replay_lookup = mutate_snapshot(
-            self.snapshot,
-            audit_context,
-            lambda text: text
-            + "\nprivate Task<AuditEvent?> Replay(string key) => "
-            + "AuditEvents.SingleOrDefaultAsync(row => row.IdempotencyKeyHash == key);\n",
+        def add_method(text: str, method: str) -> str:
+            before_close, close = text.rsplit("}", 1)
+            return before_close + method + "\n}" + close
+
+        replay_forms = (
+            (
+                "direct-set",
+                "\nprivate Task<AuditEvent?> ReplayViaSet(string key) => "
+                "Set<AuditEvent>().SingleOrDefaultAsync ("
+                "row => row.IdempotencyKeyHash == key);\n",
+                None,
+            ),
+            (
+                "typed-split-query",
+                "\nprivate Task<AuditEvent?> ReplayViaVariable(string key)\n"
+                "{\n    DbSet<AuditEvent> rows = Set<AuditEvent>();\n"
+                "    return rows.SingleOrDefaultAsync("
+                "row => row.IdempotencyKeyHash == key);\n}\n",
+                None,
+            ),
+            (
+                "namespace-alias",
+                "\nprivate Task<AuditEvent?> ReplayViaAlias(string key) => "
+                "Set<A.AuditEvent>().SingleOrDefaultAsync("
+                "row => row.IdempotencyKeyHash == key);\n",
+                (
+                    "using GoymenERP.Modules.Audit.Domain.Events;\n",
+                    "using GoymenERP.Modules.Audit.Domain.Events;\n"
+                    "using A = GoymenERP.Modules.Audit.Domain.Events;\n",
+                ),
+            ),
+            (
+                "linq-query",
+                "\nprivate IQueryable<AuditEvent> ReplayViaLinq(string key) =>\n"
+                "    from row in Set<AuditEvent>()\n"
+                "    where row.IdempotencyKeyHash == key\n"
+                "    select row;\n",
+                None,
+            ),
+            (
+                "helper-return",
+                "\nprivate IQueryable<AuditEvent> AuditRows() => Set<AuditEvent>();\n"
+                "private Task<AuditEvent?> ReplayViaHelper(string key) => "
+                "AuditRows().SingleOrDefaultAsync(row => row.IdempotencyKeyHash == key);\n",
+                None,
+            ),
+            (
+                "context-property",
+                "\nprivate Task<AuditEvent?> ReplayViaProperty(string key) => "
+                "AuditEvents.SingleOrDefaultAsync(row => row.IdempotencyKeyHash == key);\n",
+                None,
+            ),
+            (
+                "raw-sql",
+                "\nprivate IQueryable<AuditEvent> ReplayViaSql(string key) => "
+                "Database.SqlQueryRaw<AuditEvent>(\"SELECT * FROM [audit].[AuditEvents] "
+                "WHERE [IdempotencyKeyHash] = {0}\", key);\n",
+                None,
+            ),
+            (
+                "raw-sql-concatenated-member",
+                "\nprivate IQueryable<AuditEvent> ReplayViaSplitSql(string key) => "
+                "Database.SqlQueryRaw<AuditEvent>(\"SELECT * FROM [audit].[AuditEvents] "
+                "WHERE [Idempotency\" + \"KeyHash] = {0}\", key);\n",
+                None,
+            ),
+            (
+                "ef-property",
+                "\nprivate IQueryable<AuditEvent> ReplayViaEfProperty(string key) => "
+                "AuditEvents.Where(row => EF.Property<string>(row, \"IdempotencyKeyHash\") == key);\n",
+                None,
+            ),
+            (
+                "ef-property-concatenated-member",
+                "\nprivate IQueryable<AuditEvent> ReplayViaSplitEfProperty(string key) => "
+                "AuditEvents.Where(row => EF.Property<string>(row, "
+                "\"Idempotency\" + \"KeyHash\") == key);\n",
+                None,
+            ),
         )
-        with self.assertRaisesRegex(generator.InventoryError, "replay lookup semantics"):
-            generator._require_discovered_durable_surfaces(replay_lookup)
+        for label, method, using_replacement in replay_forms:
+            with self.subTest(replay_form=label):
+                changed = mutate_snapshot(
+                    self.snapshot,
+                    audit_context,
+                    lambda text, method=method, using_replacement=using_replacement: add_method(
+                        text.replace(*using_replacement, 1)
+                        if using_replacement is not None
+                        else text,
+                        method,
+                    ),
+                )
+                with self.assertRaisesRegex(generator.InventoryError, "live-source surface drifted"):
+                    generator._require_discovered_durable_surfaces(changed)
+
+        unrelated = snapshot_with_file(
+            self.snapshot,
+            "src/backend/Modules/Test/ForeignAuditLookup.cs",
+            "namespace Foreign;\n"
+            "internal sealed class AuditEvent { public string IdempotencyKeyHash => string.Empty; }\n"
+            "internal sealed class Reader { AuditEvent Read(AuditEvent value) => value; }\n",
+        )
+        generator._require_discovered_durable_surfaces(unrelated)
+
+        unrelated_audit = snapshot_with_file(
+            self.snapshot,
+            "src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/Services/Diagnostic.cs",
+            "namespace GoymenERP.Modules.Audit.Infrastructure.Services;\n"
+            "internal static class Diagnostic\n{\n"
+            "    internal const string Label = \"IdempotencyKeyHash\";\n}\n",
+        )
+        with self.assertRaisesRegex(generator.InventoryError, "live-source surface drifted"):
+            generator._require_discovered_durable_surfaces(unrelated_audit)
+
+        dead_mutations = (
+            (
+                "comment",
+                lambda text: add_method(
+                    text,
+                    "\n// AuditEvents.Where(row => row.IdempotencyKeyHash == key);\n",
+                ),
+            ),
+            (
+                "literal-false",
+                lambda text: text.replace(
+                    "ArgumentNullException.ThrowIfNull(modelBuilder);",
+                    "if (false)\n        {\n"
+                    "            _ = modelBuilder.Entity<AuditEvent>().Where("
+                    "row => row.IdempotencyKeyHash == key);\n"
+                    "        }\n        ArgumentNullException.ThrowIfNull(modelBuilder);",
+                    1,
+                ),
+            ),
+            (
+                "preprocessor-false",
+                lambda text: add_method(
+                    text,
+                    "\n#if false\nprivate Task<AuditEvent?> DeadReplay(string key) => "
+                    "AuditEvents.SingleOrDefaultAsync(row => row.IdempotencyKeyHash == key);\n"
+                    "#endif\n",
+                ),
+            ),
+        )
+        audit_model = next(
+            path for path in self.snapshot.files
+            if path.endswith("/AuditEventModelBuilderExtensions.cs")
+        )
+        for label, mutation in dead_mutations:
+            with self.subTest(dead_form=label):
+                changed = mutate_snapshot(
+                    self.snapshot,
+                    audit_model if label == "literal-false" else audit_context,
+                    mutation,
+                )
+                generator._require_discovered_durable_surfaces(changed)
+
+        self.assertEqual(
+            (
+                generator.EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT,
+                generator.EXPECTED_AUDIT_LIVE_SOURCE_FINGERPRINT,
+            ),
+            generator._audit_live_source_fingerprint(self.snapshot),
+        )
+        projection_path = next(
+            path for path in self.snapshot.files if path.endswith("/GroupSharedAuditSession.cs")
+        )
+        changed_projection = mutate_snapshot(
+            self.snapshot,
+            projection_path,
+            lambda text: text.replace("Count: > 0", "Count: >= 1", 1),
+        )
+        with self.assertRaisesRegex(generator.InventoryError, "live-source surface drifted"):
+            generator._require_discovered_durable_surfaces(changed_projection)
 
     def test_new_snapshot_replay_table_fails_closed(self) -> None:
         unexpected = tuple(
@@ -2178,6 +2342,136 @@ internal {{declaration}} : IDocumentObjectStoreV1
             with self.assertRaisesRegex(generator.InventoryError, "tracked or untracked"):
                 generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT)
 
+    def test_provenance_rejects_skip_worktree_altered_generator_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            sources = {
+                "src/backend/Proof.cs": b"internal sealed class Proof { }\n",
+                generator.SCHEMA_PATH.as_posix(): b"{}\n",
+                generator.GENERATOR_PATH.as_posix(): GENERATOR_PATH.read_bytes(),
+            }
+            for relative_path, content in sources.items():
+                path = repository / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            def git(*arguments: str) -> subprocess.CompletedProcess[bytes]:
+                return subprocess.run(
+                    ["git", *arguments],
+                    cwd=repository,
+                    capture_output=True,
+                    check=True,
+                )
+
+            git("init")
+            git("config", "user.name", "Recovery Inventory Test")
+            git("config", "user.email", "recovery-inventory@example.invalid")
+            git("add", ".")
+            git("commit", "-m", "fixture")
+            head = git("rev-parse", "HEAD").stdout.decode("ascii").strip()
+            exact_generator = git(
+                "cat-file",
+                "blob",
+                f"{head}:{generator.GENERATOR_PATH.as_posix()}",
+            ).stdout
+            git("update-index", "--skip-worktree", generator.GENERATOR_PATH.as_posix())
+            with (repository / generator.GENERATOR_PATH).open("ab") as altered:
+                altered.write(b"\n# altered executed generator\n")
+
+            self.assertEqual(b"", git("status", "--porcelain=v1").stdout)
+            with tempfile.TemporaryDirectory() as trusted_directory:
+                trusted = Path(trusted_directory) / "generate_recovery_surface_inventory.py"
+                trusted.write_bytes(exact_generator)
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-I",
+                        "-S",
+                        "-B",
+                        str(trusted),
+                        "--repository-root",
+                        str(repository),
+                        "--source-commit",
+                        head,
+                    ],
+                    cwd=repository,
+                    check=False,
+                    capture_output=True,
+                )
+            self.assertEqual(2, result.returncode)
+            self.assertEqual(b"", result.stdout)
+            self.assertRegex(
+                result.stderr.decode("utf-8"),
+                "hidden Git index flags",
+            )
+
+    def test_provenance_rejects_hidden_generator_index_flags_with_exact_bytes(self) -> None:
+        for flag, clear_flag in (
+            ("--skip-worktree", "--no-skip-worktree"),
+            ("--assume-unchanged", "--no-assume-unchanged"),
+        ):
+            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as directory:
+                repository = Path(directory)
+                sources = {
+                    "src/backend/Proof.cs": b"internal sealed class Proof { }\n",
+                    generator.SCHEMA_PATH.as_posix(): b"{}\n",
+                    generator.GENERATOR_PATH.as_posix(): GENERATOR_PATH.read_bytes(),
+                }
+                for relative_path, content in sources.items():
+                    path = repository / relative_path
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(content)
+
+                def git(*arguments: str) -> subprocess.CompletedProcess[bytes]:
+                    return subprocess.run(
+                        ["git", *arguments],
+                        cwd=repository,
+                        capture_output=True,
+                        check=True,
+                    )
+
+                git("init")
+                git("config", "user.name", "Recovery Inventory Test")
+                git("config", "user.email", "recovery-inventory@example.invalid")
+                git("add", ".")
+                git("commit", "-m", "fixture")
+                head = git("rev-parse", "HEAD").stdout.decode("ascii").strip()
+                exact_generator = git(
+                    "cat-file",
+                    "blob",
+                    f"{head}:{generator.GENERATOR_PATH.as_posix()}",
+                ).stdout
+                git("update-index", flag, generator.GENERATOR_PATH.as_posix())
+                try:
+                    self.assertEqual(b"", git("status", "--porcelain=v1").stdout)
+                    with tempfile.TemporaryDirectory() as trusted_directory:
+                        trusted = Path(trusted_directory) / "generate_recovery_surface_inventory.py"
+                        trusted.write_bytes(exact_generator)
+                        result = subprocess.run(
+                            [
+                                sys.executable,
+                                "-I",
+                                "-S",
+                                "-B",
+                                str(trusted),
+                                "--repository-root",
+                                str(repository),
+                                "--source-commit",
+                                head,
+                            ],
+                            cwd=repository,
+                            check=False,
+                            capture_output=True,
+                        )
+                    self.assertEqual(2, result.returncode)
+                    self.assertEqual(b"", result.stdout)
+                    self.assertRegex(
+                        result.stderr.decode("utf-8"),
+                        "hidden Git index flags",
+                    )
+                finally:
+                    git("update-index", clear_flag, generator.GENERATOR_PATH.as_posix())
+
     def test_provenance_ignores_git_replace_refs_at_clean_head(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repository = Path(directory)
@@ -2254,6 +2548,43 @@ internal {{declaration}} : IDocumentObjectStoreV1
         self.assertEqual(first, result.stdout)
         self.assertNotIn(b"\r\n", result.stdout)
         self.assertTrue(result.stdout.endswith(b"\n"))
+
+        exact_generator = subprocess.run(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                f"{SOURCE_COMMIT}:{generator.GENERATOR_PATH.as_posix()}",
+            ],
+            cwd=REPOSITORY_ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        with tempfile.TemporaryDirectory() as trusted_directory:
+            trusted = Path(trusted_directory) / "generate_recovery_surface_inventory.py"
+            trusted.write_bytes(exact_generator)
+            trusted_result = subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    "-S",
+                    "-B",
+                    str(trusted),
+                    "--repository-root",
+                    str(REPOSITORY_ROOT),
+                    "--source-commit",
+                    SOURCE_COMMIT,
+                ],
+                cwd=REPOSITORY_ROOT,
+                check=False,
+                capture_output=True,
+            )
+        self.assertEqual(
+            0,
+            trusted_result.returncode,
+            trusted_result.stderr.decode("utf-8", errors="replace"),
+        )
+        self.assertEqual(first, trusted_result.stdout)
         self.assertFalse(result.stdout.endswith(b"\n\n"))
         self.assertEqual(SOURCE_COMMIT, json.loads(result.stdout.decode("utf-8"))["sourceCommit"])
 

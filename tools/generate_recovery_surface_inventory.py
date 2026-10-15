@@ -150,6 +150,12 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("sales", "DraftAttempts"),
 )
 METADATA_ONLY_IDEMPOTENCY_KEY_TABLES = (("audit", "AuditEvents"),)
+AUDIT_SOURCE_ROOT = "src/backend/Modules/Audit/"
+AUDIT_LIVE_SOURCE_EXCLUDED_SUFFIXES = (".designer.cs", ".g.cs", ".generated.cs")
+EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT = 21
+EXPECTED_AUDIT_LIVE_SOURCE_FINGERPRINT = (
+    "9e9c9d3a1380426e69aa0f883b0b0292fb84ac23c6a27af6a929cb6e3b56fc6d"
+)
 EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),
     ("finance", "OfficialInvoiceImportWorkDeliveries"),
@@ -1062,6 +1068,47 @@ def _live_csharp_code(content: str) -> str:
         raise InventoryError("C# source contains an unsupported alias qualifier.")
     without_disabled_directives = _mask_conditional_preprocessor_regions(without_literals)
     return _mask_literal_false_if_blocks(without_disabled_directives)
+
+
+def _live_csharp_code_with_literals(content: str) -> str:
+    """Mask comments and statically dead code while retaining literal contents.
+
+    Recovery metadata includes SQL and EF.Property member names inside string
+    literals.  The structural scanner masks those strings, so this companion
+    representation applies the same literal-false ranges to the comment-free
+    source without losing their reviewed contents.
+    """
+
+    active = _mask_conditional_preprocessor_regions(_strip_csharp_comments(content))
+    structural = _mask_csharp_strings(active)
+    result = active
+
+    block_pattern = re.compile(r"\bif\s*\(\s*false\s*\)\s*\{", re.IGNORECASE)
+    while (match := block_pattern.search(structural)) is not None:
+        opening = structural.find("{", match.start(), match.end())
+        closing = _matching_brace(structural, opening)
+        result = (
+            result[: match.start()]
+            + _blank_csharp_region(result[match.start() : closing + 1])
+            + result[closing + 1 :]
+        )
+        structural = (
+            structural[: match.start()]
+            + _blank_csharp_region(structural[match.start() : closing + 1])
+            + structural[closing + 1 :]
+        )
+
+    statement_pattern = re.compile(
+        r"\bif\s*\(\s*false\s*\)\s*(?!\{)[^;{}]*;",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in reversed(tuple(statement_pattern.finditer(structural))):
+        result = (
+            result[: match.start()]
+            + _blank_csharp_region(result[match.start() : match.end()])
+            + result[match.end() :]
+        )
+    return result
 
 
 def _mask_nested_callable_bodies(
@@ -2349,20 +2396,38 @@ def _discover_replay_enforcement_tables(
     )
 
 
-def _has_live_replay_lookup(snapshot: SourceSnapshot, table: str) -> bool:
-    query_tokens = (".Any(", ".AnyAsync(", ".First(", ".FirstOrDefault(",
-                    ".FirstOrDefaultAsync(", ".Single(", ".SingleOrDefault(",
-                    ".SingleOrDefaultAsync(", ".Where(")
+def _audit_live_source_fingerprint(snapshot: SourceSnapshot) -> tuple[int, str]:
+    """Fingerprint the complete reviewed, non-generated Audit live source set.
+
+    Metadata-only classification must fail closed for any live Audit source
+    change. This bounded invariant is intentionally stricter than attempting to
+    recognize every valid C# query or constant-expression spelling.
+    """
+
+    records: list[str] = []
     for relative_path in sorted(snapshot.files):
-        if not relative_path.casefold().endswith(".cs") or "Migrations" in PurePosixPath(relative_path).parts:
+        folded = relative_path.casefold()
+        if not relative_path.startswith(AUDIT_SOURCE_ROOT) or not folded.endswith(".cs"):
             continue
-        live = _live_csharp_code(_read_csharp(snapshot, relative_path))
-        for statement in live.split(";"):
-            if table in statement and "IdempotencyKeyHash" in statement and any(
-                token in statement for token in query_tokens
-            ):
-                return True
-    return False
+        parts = tuple(part.casefold() for part in PurePosixPath(relative_path).parts)
+        if "migrations" in parts or folded.endswith(AUDIT_LIVE_SOURCE_EXCLUDED_SUFFIXES):
+            continue
+        live = _live_csharp_code_with_literals(_read_source(snapshot, relative_path))
+        normalized = re.sub(r"\s+", " ", live).strip()
+        records.append(f"{relative_path}\0{normalized}")
+    payload = "\n".join(records).encode("utf-8")
+    return len(records), hashlib.sha256(payload).hexdigest()
+
+
+def _require_reviewed_audit_live_source(snapshot: SourceSnapshot) -> None:
+    actual_count, actual_fingerprint = _audit_live_source_fingerprint(snapshot)
+    if (
+        actual_count != EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT
+        or actual_fingerprint != EXPECTED_AUDIT_LIVE_SOURCE_FINGERPRINT
+    ):
+        raise InventoryError(
+            "Audit metadata-only live-source surface drifted; independent review is required."
+        )
 
 
 def _require_discovered_durable_surfaces(snapshot: SourceSnapshot) -> None:
@@ -2379,8 +2444,7 @@ def _require_discovered_durable_surfaces(snapshot: SourceSnapshot) -> None:
     )
     if set(discovered_idempotency) - discovered_replay_tables != metadata_only:
         raise InventoryError("Metadata-only idempotency-key classification drifted.")
-    if any(_has_live_replay_lookup(snapshot, table) for _, table in metadata_only):
-        raise InventoryError("Metadata-only idempotency-key table gained replay lookup semantics.")
+    _require_reviewed_audit_live_source(snapshot)
     expected_replay_tables = set(discovered_idempotency) - metadata_only
     specified_replay_tables = {
         (spec.schema, spec.table)
@@ -2994,6 +3058,64 @@ def _require_no_worktree_source_shadows(
                 )
 
 
+def _require_worktree_generator_matches_commit(
+    repository_root: Path,
+    committed_files: dict[str, bytes],
+) -> None:
+    relative_path = GENERATOR_PATH.as_posix()
+    expected = committed_files.get(relative_path)
+    if expected is None:
+        raise InventoryError("Exact commit is missing the recovery inventory generator.")
+    worktree_path = repository_root / GENERATOR_PATH
+    try:
+        actual = worktree_path.read_bytes()
+    except OSError as exc:
+        raise InventoryError(
+            "Executed recovery inventory generator bytes cannot be verified."
+        ) from exc
+    if actual != expected:
+        raise InventoryError(
+            "Executed recovery inventory generator bytes do not match the exact commit."
+        )
+
+
+def _require_generator_index_flags_clean(repository_root: Path) -> None:
+    result = _run_git_text(
+        repository_root,
+        ("ls-files", "-v", "--", GENERATOR_PATH.as_posix()),
+    )
+    records = tuple(line for line in result.stdout.splitlines() if line)
+    if result.returncode != 0 or len(records) != 1 or not records[0].startswith("H "):
+        raise InventoryError(
+            "Recovery inventory generator has hidden Git index flags or is not tracked."
+        )
+
+
+def _read_exact_generator_blob(repository_root: Path, source_commit: str) -> bytes:
+    result = _run_git_bytes(
+        repository_root,
+        ("cat-file", "blob", f"{source_commit}:{GENERATOR_PATH.as_posix()}"),
+    )
+    if result.returncode != 0:
+        raise InventoryError("Exact commit recovery inventory generator cannot be read.")
+    return result.stdout
+
+
+def _require_executed_generator_matches_exact_commit(
+    repository_root: Path,
+    source_commit: str,
+) -> None:
+    try:
+        executed = Path(__file__).resolve(strict=True).read_bytes()
+    except OSError as exc:
+        raise InventoryError("Executed recovery inventory generator bytes cannot be read.") from exc
+    expected = _read_exact_generator_blob(repository_root, source_commit)
+    if executed != expected:
+        raise InventoryError(
+            "Executed recovery inventory generator bytes do not match the exact commit."
+        )
+
+
 def _read_commit_blobs(
     repository_root: Path,
     source_commit: str,
@@ -3068,6 +3190,8 @@ def _load_source_snapshot(repository_root: Path, source_commit: str) -> SourceSn
         raise InventoryError("Source commit must resolve exactly to the current Git HEAD.")
     _require_inventory_inputs_clean(root)
     files = _read_commit_blobs(root, source_commit)
+    _require_generator_index_flags_clean(root)
+    _require_worktree_generator_matches_commit(root, files)
     _require_no_worktree_source_shadows(root, files)
     _require_inventory_inputs_clean(root)
     if _git_source_commit(root) != source_commit:
@@ -3093,6 +3217,10 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path(__file__).resolve().parents[1],
         help="Repository root (default: parent of tools/).",
     )
+    parser.add_argument(
+        "--source-commit",
+        help="Exact lowercase 40-character source commit (default: current HEAD).",
+    )
     return parser
 
 
@@ -3100,7 +3228,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = _build_parser().parse_args(argv)
     try:
         repository_root = arguments.repository_root.resolve()
-        source_commit = _git_source_commit(repository_root)
+        source_commit = arguments.source_commit or _git_source_commit(repository_root)
+        if COMMIT_PATTERN.fullmatch(source_commit) is None:
+            raise InventoryError("Source commit must be a lowercase 40-character Git SHA.")
+        _require_executed_generator_matches_exact_commit(repository_root, source_commit)
         inventory = build_inventory(repository_root, source_commit)
     except InventoryError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
