@@ -17,6 +17,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
     private const string TechnicalSnapshots = "20261001200000_AddManufacturingPlanTechnicalSnapshots";
     private const string CommercialContexts = "20261004100000_AddManufacturingCommercialContexts";
     private const string PlanCutLines = "20261014120000_AddManufacturingPlanCutLines";
+    private const string TechnicalLengthSnapshots = "20261015123000_AddManufacturingPlanTechnicalLengthSnapshots";
 
     [SqlServerFact]
     public async Task The_technical_snapshot_migration_round_trips_while_only_legacy_inputs_exist()
@@ -43,12 +44,17 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
 
             await context.Database.MigrateAsync();
             var reapplied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(PlanCutLines, reapplied[^1]);
-            Assert.Equal(CommercialContexts, reapplied[^2]);
-            Assert.Equal(TechnicalSnapshots, reapplied[^3]);
-            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^4]);
+            Assert.Equal(TechnicalLengthSnapshots, reapplied[^1]);
+            Assert.Equal(PlanCutLines, reapplied[^2]);
+            Assert.Equal(CommercialContexts, reapplied[^3]);
+            Assert.Equal(TechnicalSnapshots, reapplied[^4]);
+            Assert.Equal(BeforeTechnicalSnapshots, reapplied[^5]);
         }
 
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sys.columns WHERE [name] = N'TechnicalLengthMm' "
+            + "AND [object_id] IN (OBJECT_ID(N'[manufacturing].[PlanInputs]'), "
+            + "OBJECT_ID(N'[manufacturing].[PlanRevisionInputs]'))"));
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sys.check_constraints WHERE [name] IN "
             + "(N'CK_PlanInputs_TechnicalSnapshot', N'CK_PlanRevisionInputs_TechnicalSnapshot')"));
