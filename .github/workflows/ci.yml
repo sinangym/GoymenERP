@@ -226,6 +226,85 @@ jobs:
           --build-result "${{ needs.backend-build.result }}" \
           --worker-result "${{ needs.backend-test-group.result }}"
 
+  recovery-surface-inventory:
+    name: Recovery surface inventory exact-source proof
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify recovery inventory exact event source
+        working-directory: ${{ github.workspace }}
+        shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}
+        env:
+          GIT_NO_REPLACE_OBJECTS: "1"
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          unset \
+            GIT_ALTERNATE_OBJECT_DIRECTORIES \
+            GIT_CEILING_DIRECTORIES \
+            GIT_COMMON_DIR \
+            GIT_CONFIG_COUNT \
+            GIT_CONFIG_GLOBAL \
+            GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_SYSTEM \
+            GIT_DIR \
+            GIT_DISCOVERY_ACROSS_FILESYSTEM \
+            GIT_EXEC_PATH \
+            GIT_GRAFT_FILE \
+            GIT_INDEX_FILE \
+            GIT_NAMESPACE \
+            GIT_OBJECT_DIRECTORY \
+            GIT_REPLACE_REF_BASE \
+            GIT_SHALLOW_FILE \
+            GIT_WORK_TREE \
+            PYTHONBREAKPOINT \
+            PYTHONHOME \
+            PYTHONINSPECT \
+            PYTHONPATH \
+            PYTHONPLATLIBDIR \
+            PYTHONSTARTUP \
+            PYTHONUSERBASE \
+            PYTHONWARNINGS
+          test "$SOURCE_COMMIT" = "$(printf '%s' "$SOURCE_COMMIT" | grep -E '^[0-9a-f]{40}$')"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+          generator_path="tools/generate_recovery_surface_inventory.py"
+          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"
+          generator_temp="$(mktemp --suffix=.py)"
+          inventory_temp="$(mktemp --suffix=.json)"
+
+          cleanup() {
+            rm -f "$generator_temp" "$inventory_temp"
+          }
+          trap cleanup EXIT
+
+          python3 -I -S -B -m unittest discover \
+            -s tests/recovery_surface_inventory \
+            -p "test_*.py" \
+            -v
+
+          git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"
+          test "$(git hash-object "$generator_temp")" = "$generator_blob"
+
+          python3 -I -S -B "$generator_temp" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$inventory_temp"
+          python3 -I -S -B -m json.tool "$inventory_temp" > /dev/null
+
+          printf 'source_commit=%s\n' "$SOURCE_COMMIT"
+          printf 'tested_commit=%s\n' "$(git rev-parse HEAD)"
+          printf 'generator_blob=%s\n' "$generator_blob"
+          printf 'generator_sha256=%s\n' "$(sha256sum "$generator_temp" | cut -d ' ' -f 1)"
+          printf 'inventory_sha256=%s\n' "$(sha256sum "$inventory_temp" | cut -d ' ' -f 1)"
+          printf 'inventory_bytes=%s\n' "$(wc -c < "$inventory_temp" | tr -d '[:space:]')"
+
   frontend:
     name: Frontend lint, test and build
     runs-on: ubuntu-latest
