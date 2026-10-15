@@ -24,10 +24,10 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "791bab0f9cffe9cb829c28369c1fa4b266d24c20ed714fec4c16590175a9c052"
+    "8f852a4759a1a273900929138d3c0a36ca36718572927dd7eb8aa360ce74373d"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
-    "88b674917e76a0745721b173d3b7c04a0b97b527d2901e82633ac26223592da2"
+    "cd305f39ce3483947044ca1a28bb9ce9deea69c820e5b7f7d1a00e1777e7234d"
 )
 
 
@@ -1045,6 +1045,11 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 inherited_syntax_only_shell, "recovery-surface-inventory"
             ),
         )
+        self._assert_recovery_surface_inventory_job_contract(
+            self._workflow_job_body(
+                inherited_syntax_only_shell, "recovery-surface-inventory"
+            )
+        )
         with self.assertRaises(AssertionError):
             self.assert_ci_workflow_summary_contract(inherited_syntax_only_shell)
 
@@ -1073,6 +1078,31 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 "exact checkout ref",
                 "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
                 "ref: main",
+            ),
+            (
+                "proof working directory",
+                "working-directory: ${{ github.workspace }}",
+                "working-directory: .",
+            ),
+            (
+                "proof executing shell",
+                "shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}",
+                "shell: bash -n {0}",
+            ),
+            (
+                "reviewed executable path",
+                'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"',
+                'export PATH="$PATH"',
+            ),
+            (
+                "ambient Git redirect clearing",
+                "GIT_OBJECT_DIRECTORY \\",
+                "GIT_OBJECT_DIRECTORY_DISABLED \\",
+            ),
+            (
+                "ambient Python redirect clearing",
+                "PYTHONPATH \\",
+                "PYTHONPATH_DISABLED \\",
             ),
             (
                 "replace-object defense",
@@ -1379,9 +1409,38 @@ class SafeTrxSummaryTests(unittest.TestCase):
             job, "Verify recovery inventory exact event source"
         )
         required_lines = (
+            "working-directory: ${{ github.workspace }}",
+            "shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}",
             'GIT_NO_REPLACE_OBJECTS: "1"',
             "SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}",
             "set -euo pipefail",
+            'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"',
+            "unset \\",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES \\",
+            "GIT_CEILING_DIRECTORIES \\",
+            "GIT_COMMON_DIR \\",
+            "GIT_CONFIG_COUNT \\",
+            "GIT_CONFIG_GLOBAL \\",
+            "GIT_CONFIG_PARAMETERS \\",
+            "GIT_CONFIG_SYSTEM \\",
+            "GIT_DIR \\",
+            "GIT_DISCOVERY_ACROSS_FILESYSTEM \\",
+            "GIT_EXEC_PATH \\",
+            "GIT_GRAFT_FILE \\",
+            "GIT_INDEX_FILE \\",
+            "GIT_NAMESPACE \\",
+            "GIT_OBJECT_DIRECTORY \\",
+            "GIT_REPLACE_REF_BASE \\",
+            "GIT_SHALLOW_FILE \\",
+            "GIT_WORK_TREE \\",
+            "PYTHONBREAKPOINT \\",
+            "PYTHONHOME \\",
+            "PYTHONINSPECT \\",
+            "PYTHONPATH \\",
+            "PYTHONPLATLIBDIR \\",
+            "PYTHONSTARTUP \\",
+            "PYTHONUSERBASE \\",
+            "PYTHONWARNINGS",
             'test "$SOURCE_COMMIT" = "$(printf \'%s\' "$SOURCE_COMMIT" | grep -E \'^[0-9a-f]{40}$\')"',
             'test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"',
             'generator_path="tools/generate_recovery_surface_inventory.py"',
