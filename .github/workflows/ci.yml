@@ -237,11 +237,40 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Verify recovery inventory exact event source
+        working-directory: ${{ github.workspace }}
+        shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}
         env:
           GIT_NO_REPLACE_OBJECTS: "1"
           SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          unset \
+            GIT_ALTERNATE_OBJECT_DIRECTORIES \
+            GIT_CEILING_DIRECTORIES \
+            GIT_COMMON_DIR \
+            GIT_CONFIG_COUNT \
+            GIT_CONFIG_GLOBAL \
+            GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_SYSTEM \
+            GIT_DIR \
+            GIT_DISCOVERY_ACROSS_FILESYSTEM \
+            GIT_EXEC_PATH \
+            GIT_GRAFT_FILE \
+            GIT_INDEX_FILE \
+            GIT_NAMESPACE \
+            GIT_OBJECT_DIRECTORY \
+            GIT_REPLACE_REF_BASE \
+            GIT_SHALLOW_FILE \
+            GIT_WORK_TREE \
+            PYTHONBREAKPOINT \
+            PYTHONHOME \
+            PYTHONINSPECT \
+            PYTHONPATH \
+            PYTHONPLATLIBDIR \
+            PYTHONSTARTUP \
+            PYTHONUSERBASE \
+            PYTHONWARNINGS
           test "$SOURCE_COMMIT" = "$(printf '%s' "$SOURCE_COMMIT" | grep -E '^[0-9a-f]{40}$')"
           test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
 
