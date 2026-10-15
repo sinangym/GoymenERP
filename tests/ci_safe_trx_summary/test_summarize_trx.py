@@ -1008,6 +1008,108 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
         safe_job = self._workflow_job_body(workflow, "recovery-surface-inventory")
 
+        no_op_job = (
+            "    name: Recovery surface inventory exact-source proof\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - run: echo ok\n\n"
+        )
+        with self.assertRaises(AssertionError):
+            self.assert_ci_workflow_summary_contract(
+                self._workflow_with_job_body(
+                    workflow, "recovery-surface-inventory", no_op_job
+                )
+            )
+
+        proof_mutations = (
+            ("checkout action", "actions/checkout@v7", "actions/checkout@v6"),
+            ("shallow checkout", "fetch-depth: 1", "fetch-depth: 0"),
+            (
+                "persisted credentials",
+                "persist-credentials: false",
+                "persist-credentials: true",
+            ),
+            (
+                "exact checkout ref",
+                "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+                "ref: main",
+            ),
+            (
+                "replace-object defense",
+                'GIT_NO_REPLACE_OBJECTS: "1"',
+                'GIT_NO_REPLACE_OBJECTS: "0"',
+            ),
+            (
+                "source commit binding",
+                "SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}",
+                "SOURCE_COMMIT: ${{ github.sha }}",
+            ),
+            (
+                "source commit shape",
+                "grep -E '^[0-9a-f]{40}$'",
+                "grep -E '^[0-9a-f]{39}$'",
+            ),
+            (
+                "checked out HEAD equality",
+                'test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"',
+                'test "$(git rev-parse HEAD^)" = "$SOURCE_COMMIT"',
+            ),
+            (
+                "target suite command",
+                "python3 -I -S -B -m unittest discover \\",
+                "python3 -I -S -B -m unittest \\",
+            ),
+            (
+                "target suite path",
+                "-s tests/recovery_surface_inventory \\",
+                "-s tests \\",
+            ),
+            (
+                "target suite pattern",
+                '-p "test_*.py" \\',
+                '-p "other_*.py" \\',
+            ),
+            (
+                "immutable generator extraction",
+                'git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"',
+                'git show "$SOURCE_COMMIT:$generator_path" > "$generator_temp"',
+            ),
+            (
+                "generator blob equality",
+                'test "$(git hash-object "$generator_temp")" = "$generator_blob"',
+                'test "$(git hash-object "$generator_temp")" != "$generator_blob"',
+            ),
+            (
+                "extracted generator execution",
+                'python3 -I -S -B "$generator_temp" \\',
+                'python3 -I -S -B "$generator_path" \\',
+            ),
+            (
+                "repository root argument",
+                '--repository-root "$GITHUB_WORKSPACE" \\',
+                '--repository-root "." \\',
+            ),
+            (
+                "source commit argument",
+                '--source-commit "$SOURCE_COMMIT" \\',
+                '--source-commit "$(git rev-parse HEAD)" \\',
+            ),
+            (
+                "JSON validation",
+                'python3 -I -S -B -m json.tool "$inventory_temp" > /dev/null',
+                'cat "$inventory_temp" > /dev/null',
+            ),
+        )
+        for label, original, replacement in proof_mutations:
+            with self.subTest(mutant=label):
+                changed_job = safe_job.replace(original, replacement, 1)
+                self.assertNotEqual(changed_job, safe_job)
+                changed_workflow = self._workflow_with_job_body(
+                    workflow, "recovery-surface-inventory", changed_job
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed_workflow)
+
         step_mutations = (
             (
                 "artifact upload",
@@ -1129,6 +1231,55 @@ class SafeTrxSummaryTests(unittest.TestCase):
             self.assert_ci_workflow_summary_contract(changed)
 
     def _assert_recovery_surface_inventory_job_contract(self, job: str) -> None:
+        checkout = (
+            "    steps:\n"
+            "      - uses: actions/checkout@v7\n"
+            "        with:\n"
+            "          fetch-depth: 1\n"
+            "          persist-credentials: false\n"
+            "          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n"
+        )
+        self.assertIn(checkout, job)
+        self.assertEqual(job.count("actions/checkout@v7"), 1)
+        self.assertEqual(
+            re.findall(r"^      - name: (.+)$", job, re.M),
+            ["Verify recovery inventory exact event source"],
+        )
+        proof_lines = self._workflow_step_lines(
+            job, "Verify recovery inventory exact event source"
+        )
+        required_lines = (
+            'GIT_NO_REPLACE_OBJECTS: "1"',
+            "SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}",
+            "set -euo pipefail",
+            'test "$SOURCE_COMMIT" = "$(printf \'%s\' "$SOURCE_COMMIT" | grep -E \'^[0-9a-f]{40}$\')"',
+            'test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"',
+            'generator_path="tools/generate_recovery_surface_inventory.py"',
+            'generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"',
+            'generator_temp="$(mktemp --suffix=.py)"',
+            'inventory_temp="$(mktemp --suffix=.json)"',
+            "python3 -I -S -B -m unittest discover \\",
+            "-s tests/recovery_surface_inventory \\",
+            '-p "test_*.py" \\',
+            "-v",
+            'git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"',
+            'test "$(git hash-object "$generator_temp")" = "$generator_blob"',
+            'python3 -I -S -B "$generator_temp" \\',
+            '--repository-root "$GITHUB_WORKSPACE" \\',
+            '--source-commit "$SOURCE_COMMIT" \\',
+            '> "$inventory_temp"',
+            'python3 -I -S -B -m json.tool "$inventory_temp" > /dev/null',
+        )
+        previous_index = -1
+        for line in required_lines:
+            try:
+                current_index = proof_lines.index(line, previous_index + 1)
+            except ValueError as error:
+                raise AssertionError(
+                    f"Missing ordered recovery proof line: {line}"
+                ) from error
+            previous_index = current_index
+
         self.assertNotIn("actions/upload-artifact@", job)
         self.assertNotIn("actions/download-artifact@", job)
         self.assertNotIn("tools/ci/summarize_trx.py", job)
