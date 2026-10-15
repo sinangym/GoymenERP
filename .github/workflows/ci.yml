@@ -226,6 +226,66 @@ jobs:
           --build-result "${{ needs.backend-build.result }}" \
           --worker-result "${{ needs.backend-test-group.result }}"
 
+  recovery-surface-inventory:
+    name: Recovery surface inventory exact-source proof
+    runs-on: ubuntu-latest
+    env:
+      GIT_NO_REPLACE_OBJECTS: "1"
+      SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Run recovery surface inventory target suite
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          python3 -I -S -B -m unittest discover \
+            -s tests/recovery_surface_inventory \
+            -p "test_*.py" \
+            -v
+
+      - name: Generate inventory from exact event source blob
+        run: |
+          set -euo pipefail
+          test "$SOURCE_COMMIT" = "$(printf '%s' "$SOURCE_COMMIT" | grep -E '^[0-9a-f]{40}$')"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+          generator_path="tools/generate_recovery_surface_inventory.py"
+          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"
+          generator_temp="$(mktemp "$RUNNER_TEMP/recovery-surface-inventory.XXXXXX.py")"
+          trap 'rm -f "$generator_temp"' EXIT
+
+          git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"
+          test "$(git hash-object "$generator_temp")" = "$generator_blob"
+
+          mkdir -p artifacts/recovery-surface-inventory
+          python3 -I -S -B "$generator_temp" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > artifacts/recovery-surface-inventory/inventory.json
+          python3 -I -S -B -m json.tool \
+            artifacts/recovery-surface-inventory/inventory.json \
+            > /dev/null
+
+          {
+            printf 'source_commit=%s\n' "$SOURCE_COMMIT"
+            printf 'tested_commit=%s\n' "$(git rev-parse HEAD)"
+            printf 'generator_blob=%s\n' "$generator_blob"
+            printf 'generator_sha256=%s\n' "$(sha256sum "$generator_temp" | cut -d ' ' -f 1)"
+          } > artifacts/recovery-surface-inventory/proof.txt
+
+      - name: Upload secret-free recovery inventory proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovery-surface-inventory-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/recovery-surface-inventory
+          if-no-files-found: error
+          retention-days: 7
+
   frontend:
     name: Frontend lint, test and build
     runs-on: ubuntu-latest
