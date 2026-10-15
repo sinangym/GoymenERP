@@ -2228,6 +2228,13 @@ internal {{declaration}} : IDocumentObjectStoreV1
             generator._migration_inventory(derived_migration)
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
+        source_paths = generator._source_surface_paths(self.snapshot)
+        self.assertEqual(1063, len(source_paths))
+        self.assertIn(
+            "src/backend/Modules/Inventory/"
+            "GoymenERP.Modules.Inventory.Application/InventoryTransferDocumentProofContractsV1.cs",
+            source_paths,
+        )
         self.assertEqual(
             (
                 generator.EXPECTED_SOURCE_SURFACE_FILE_COUNT,
