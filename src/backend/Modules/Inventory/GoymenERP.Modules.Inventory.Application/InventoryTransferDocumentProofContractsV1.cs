@@ -96,6 +96,44 @@ public sealed class InventoryTransferTargetAcceptanceDocumentProofQueryV1
 }
 
 /// <summary>
+/// The Logistics owner's independently read outgoing-document snapshot. It is deliberately a
+/// different type from the caller's requested binding; the proof matcher compares every field and
+/// the entire line sequence before it can return a positive proof. A corrupt owner snapshot may be
+/// represented, but can never match a valid request.
+/// </summary>
+public sealed class InventoryTransferOutgoingDocumentOwnerSnapshotV1
+{
+    public InventoryTransferOutgoingDocumentOwnerSnapshotV1(
+        Guid companyId,
+        Guid transferId,
+        Guid documentId,
+        int documentVersion,
+        IEnumerable<Guid> orderedTransferLineIds)
+    {
+        CompanyId = companyId;
+        TransferId = transferId;
+        DocumentId = documentId;
+        DocumentVersion = documentVersion;
+        ArgumentNullException.ThrowIfNull(orderedTransferLineIds);
+        OrderedTransferLineIds = Array.AsReadOnly(orderedTransferLineIds.ToArray());
+    }
+
+    public Guid CompanyId { get; }
+    public Guid TransferId { get; }
+    public Guid DocumentId { get; }
+    public int DocumentVersion { get; }
+    public IReadOnlyList<Guid> OrderedTransferLineIds { get; }
+}
+
+/// <summary>The Inventory owner's independently read target-acceptance document snapshot.</summary>
+public sealed record InventoryTransferTargetAcceptanceDocumentOwnerSnapshotV1(
+    Guid CompanyId,
+    Guid TransferId,
+    Guid TransferLineId,
+    Guid DocumentId,
+    int DocumentVersion);
+
+/// <summary>
 /// Outgoing-document proof. A non-effective answer deliberately carries no binding, so stale,
 /// foreign-company and otherwise mismatched documents cannot be reused as dispatch authority.
 /// </summary>
@@ -103,20 +141,35 @@ public sealed class InventoryTransferOutgoingDocumentProofV1
 {
     private InventoryTransferOutgoingDocumentProofV1(
         InventoryTransferDocumentProofOutcomeV1 outcome,
-        InventoryTransferOutgoingDocumentProofQueryV1? effectiveBinding)
+        InventoryTransferOutgoingDocumentOwnerSnapshotV1? effectiveBinding)
     {
         Outcome = outcome;
         EffectiveBinding = effectiveBinding;
     }
 
     public InventoryTransferDocumentProofOutcomeV1 Outcome { get; }
-    public InventoryTransferOutgoingDocumentProofQueryV1? EffectiveBinding { get; }
+    public InventoryTransferOutgoingDocumentOwnerSnapshotV1? EffectiveBinding { get; }
 
-    public static InventoryTransferOutgoingDocumentProofV1 CurrentEffective(
-        InventoryTransferOutgoingDocumentProofQueryV1 binding)
+    public static InventoryTransferOutgoingDocumentProofV1 Match(
+        InventoryTransferOutgoingDocumentProofQueryV1 requested,
+        InventoryTransferOutgoingDocumentOwnerSnapshotV1 ownerSnapshot)
     {
-        ArgumentNullException.ThrowIfNull(binding);
-        return new(InventoryTransferDocumentProofOutcomeV1.CurrentEffective, binding);
+        ArgumentNullException.ThrowIfNull(requested);
+        ArgumentNullException.ThrowIfNull(ownerSnapshot);
+
+        var exact = ownerSnapshot.CompanyId != Guid.Empty
+            && ownerSnapshot.CompanyId == requested.CompanyId
+            && ownerSnapshot.TransferId == requested.TransferId
+            && ownerSnapshot.DocumentId == requested.DocumentId
+            && ownerSnapshot.DocumentVersion == requested.ExpectedDocumentVersion
+            && ownerSnapshot.OrderedTransferLineIds.Count == requested.OrderedTransferLineIds.Count
+            && ownerSnapshot.OrderedTransferLineIds.All(lineId => lineId != Guid.Empty)
+            && ownerSnapshot.OrderedTransferLineIds.Distinct().Count() == ownerSnapshot.OrderedTransferLineIds.Count
+            && ownerSnapshot.OrderedTransferLineIds.SequenceEqual(requested.OrderedTransferLineIds);
+
+        return exact
+            ? new(InventoryTransferDocumentProofOutcomeV1.CurrentEffective, ownerSnapshot)
+            : Refused(InventoryTransferDocumentProofOutcomeV1.BindingMismatch);
     }
 
     public static InventoryTransferOutgoingDocumentProofV1 Refused(InventoryTransferDocumentProofOutcomeV1 outcome) =>
@@ -132,20 +185,32 @@ public sealed class InventoryTransferTargetAcceptanceDocumentProofV1
 {
     private InventoryTransferTargetAcceptanceDocumentProofV1(
         InventoryTransferDocumentProofOutcomeV1 outcome,
-        InventoryTransferTargetAcceptanceDocumentProofQueryV1? effectiveBinding)
+        InventoryTransferTargetAcceptanceDocumentOwnerSnapshotV1? effectiveBinding)
     {
         Outcome = outcome;
         EffectiveBinding = effectiveBinding;
     }
 
     public InventoryTransferDocumentProofOutcomeV1 Outcome { get; }
-    public InventoryTransferTargetAcceptanceDocumentProofQueryV1? EffectiveBinding { get; }
+    public InventoryTransferTargetAcceptanceDocumentOwnerSnapshotV1? EffectiveBinding { get; }
 
-    public static InventoryTransferTargetAcceptanceDocumentProofV1 CurrentEffective(
-        InventoryTransferTargetAcceptanceDocumentProofQueryV1 binding)
+    public static InventoryTransferTargetAcceptanceDocumentProofV1 Match(
+        InventoryTransferTargetAcceptanceDocumentProofQueryV1 requested,
+        InventoryTransferTargetAcceptanceDocumentOwnerSnapshotV1 ownerSnapshot)
     {
-        ArgumentNullException.ThrowIfNull(binding);
-        return new(InventoryTransferDocumentProofOutcomeV1.CurrentEffective, binding);
+        ArgumentNullException.ThrowIfNull(requested);
+        ArgumentNullException.ThrowIfNull(ownerSnapshot);
+
+        var exact = ownerSnapshot.CompanyId != Guid.Empty
+            && ownerSnapshot.CompanyId == requested.CompanyId
+            && ownerSnapshot.TransferId == requested.TransferId
+            && ownerSnapshot.TransferLineId == requested.TransferLineId
+            && ownerSnapshot.DocumentId == requested.DocumentId
+            && ownerSnapshot.DocumentVersion == requested.ExpectedDocumentVersion;
+
+        return exact
+            ? new(InventoryTransferDocumentProofOutcomeV1.CurrentEffective, ownerSnapshot)
+            : Refused(InventoryTransferDocumentProofOutcomeV1.BindingMismatch);
     }
 
     public static InventoryTransferTargetAcceptanceDocumentProofV1 Refused(

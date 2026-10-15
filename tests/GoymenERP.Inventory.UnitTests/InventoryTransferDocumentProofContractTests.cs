@@ -15,12 +15,14 @@ public sealed class InventoryTransferDocumentProofContractTests
     {
         var source = new[] { SecondLine, FirstLine };
         var query = new InventoryTransferOutgoingDocumentProofQueryV1(Company, Transfer, Document, 7, source);
+        var ownerSnapshot = new InventoryTransferOutgoingDocumentOwnerSnapshotV1(
+            Company, Transfer, Document, 7, [SecondLine, FirstLine]);
         source[0] = Guid.NewGuid();
 
-        var result = InventoryTransferOutgoingDocumentProofV1.CurrentEffective(query);
+        var result = InventoryTransferOutgoingDocumentProofV1.Match(query, ownerSnapshot);
 
         Assert.Equal(InventoryTransferDocumentProofOutcomeV1.CurrentEffective, result.Outcome);
-        Assert.Same(query, result.EffectiveBinding);
+        Assert.Same(ownerSnapshot, result.EffectiveBinding);
         Assert.Equal((Company, Transfer, Document, 7),
             (query.CompanyId, query.TransferId, query.DocumentId, query.ExpectedDocumentVersion));
         Assert.Equal([SecondLine, FirstLine], query.OrderedTransferLineIds);
@@ -31,11 +33,13 @@ public sealed class InventoryTransferDocumentProofContractTests
     {
         var query = new InventoryTransferTargetAcceptanceDocumentProofQueryV1(
             Company, Transfer, FirstLine, Document, 11);
+        var ownerSnapshot = new InventoryTransferTargetAcceptanceDocumentOwnerSnapshotV1(
+            Company, Transfer, FirstLine, Document, 11);
 
-        var result = InventoryTransferTargetAcceptanceDocumentProofV1.CurrentEffective(query);
+        var result = InventoryTransferTargetAcceptanceDocumentProofV1.Match(query, ownerSnapshot);
 
         Assert.Equal(InventoryTransferDocumentProofOutcomeV1.CurrentEffective, result.Outcome);
-        Assert.Same(query, result.EffectiveBinding);
+        Assert.Same(ownerSnapshot, result.EffectiveBinding);
         Assert.Equal((Company, Transfer, FirstLine, Document, 11),
             (query.CompanyId, query.TransferId, query.TransferLineId, query.DocumentId,
                 query.ExpectedDocumentVersion));
@@ -105,9 +109,14 @@ public sealed class InventoryTransferDocumentProofContractTests
     [Fact]
     public void Effective_and_refused_factories_do_not_allow_an_ambiguous_result()
     {
-        Assert.Throws<ArgumentNullException>(() => InventoryTransferOutgoingDocumentProofV1.CurrentEffective(null!));
         Assert.Throws<ArgumentNullException>(() =>
-            InventoryTransferTargetAcceptanceDocumentProofV1.CurrentEffective(null!));
+            InventoryTransferOutgoingDocumentProofV1.Match(null!, OutgoingSnapshot()));
+        Assert.Throws<ArgumentNullException>(() =>
+            InventoryTransferOutgoingDocumentProofV1.Match(Outgoing(), null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            InventoryTransferTargetAcceptanceDocumentProofV1.Match(null!, TargetSnapshot()));
+        Assert.Throws<ArgumentNullException>(() =>
+            InventoryTransferTargetAcceptanceDocumentProofV1.Match(Target(), null!));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             InventoryTransferOutgoingDocumentProofV1.Refused(
                 InventoryTransferDocumentProofOutcomeV1.CurrentEffective));
@@ -116,6 +125,82 @@ public sealed class InventoryTransferDocumentProofContractTests
                 InventoryTransferDocumentProofOutcomeV1.CurrentEffective));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             InventoryTransferOutgoingDocumentProofV1.Refused((InventoryTransferDocumentProofOutcomeV1)999));
+
+        Assert.DoesNotContain(typeof(InventoryTransferOutgoingDocumentProofV1).GetMethods(),
+            method => method.Name == "CurrentEffective");
+        Assert.DoesNotContain(typeof(InventoryTransferTargetAcceptanceDocumentProofV1).GetMethods(),
+            method => method.Name == "CurrentEffective");
+    }
+
+    [Theory]
+    [InlineData("omitted")]
+    [InlineData("extra")]
+    [InlineData("duplicate")]
+    [InlineData("reordered")]
+    public void Outgoing_proof_requires_the_owner_complete_ordered_line_set(string drift)
+    {
+        var requested = Outgoing(lines: [FirstLine, SecondLine]);
+        IReadOnlyList<Guid> ownerLines = drift switch
+        {
+            "omitted" => [FirstLine],
+            "extra" => [FirstLine, SecondLine, Guid.NewGuid()],
+            "duplicate" => [FirstLine, SecondLine, SecondLine],
+            "reordered" => [SecondLine, FirstLine],
+            _ => throw new InvalidOperationException(),
+        };
+
+        var result = InventoryTransferOutgoingDocumentProofV1.Match(requested, OutgoingSnapshot(ownerLines));
+
+        Assert.Equal(InventoryTransferDocumentProofOutcomeV1.BindingMismatch, result.Outcome);
+        Assert.Null(result.EffectiveBinding);
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("transfer")]
+    [InlineData("document")]
+    [InlineData("version")]
+    public void Outgoing_proof_requires_every_owner_identity_and_version_to_match_exactly(string drift)
+    {
+        var requested = Outgoing(version: 5);
+        var ownerSnapshot = drift switch
+        {
+            "company" => OutgoingSnapshot(companyId: Guid.NewGuid(), version: 5),
+            "transfer" => OutgoingSnapshot(transferId: Guid.NewGuid(), version: 5),
+            "document" => OutgoingSnapshot(documentId: Guid.NewGuid(), version: 5),
+            "version" => OutgoingSnapshot(version: 6),
+            _ => throw new InvalidOperationException(),
+        };
+
+        var result = InventoryTransferOutgoingDocumentProofV1.Match(requested, ownerSnapshot);
+
+        Assert.Equal(InventoryTransferDocumentProofOutcomeV1.BindingMismatch, result.Outcome);
+        Assert.Null(result.EffectiveBinding);
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("transfer")]
+    [InlineData("line")]
+    [InlineData("document")]
+    [InlineData("version")]
+    public void Target_proof_requires_every_owner_binding_to_match_exactly(string drift)
+    {
+        var requested = Target(version: 5);
+        var ownerSnapshot = drift switch
+        {
+            "company" => TargetSnapshot(companyId: Guid.NewGuid(), version: 5),
+            "transfer" => TargetSnapshot(transferId: Guid.NewGuid(), version: 5),
+            "line" => TargetSnapshot(lineId: Guid.NewGuid(), version: 5),
+            "document" => TargetSnapshot(documentId: Guid.NewGuid(), version: 5),
+            "version" => TargetSnapshot(version: 6),
+            _ => throw new InvalidOperationException(),
+        };
+
+        var result = InventoryTransferTargetAcceptanceDocumentProofV1.Match(requested, ownerSnapshot);
+
+        Assert.Equal(InventoryTransferDocumentProofOutcomeV1.BindingMismatch, result.Outcome);
+        Assert.Null(result.EffectiveBinding);
     }
 
     [Fact]
@@ -161,6 +246,30 @@ public sealed class InventoryTransferDocumentProofContractTests
         lines ?? [FirstLine, SecondLine]);
 
     private static InventoryTransferTargetAcceptanceDocumentProofQueryV1 Target(
+        Guid? companyId = null,
+        Guid? transferId = null,
+        Guid? lineId = null,
+        Guid? documentId = null,
+        int version = 1) => new(
+        companyId ?? Company,
+        transferId ?? Transfer,
+        lineId ?? FirstLine,
+        documentId ?? Document,
+        version);
+
+    private static InventoryTransferOutgoingDocumentOwnerSnapshotV1 OutgoingSnapshot(
+        IEnumerable<Guid>? lines = null,
+        Guid? companyId = null,
+        Guid? transferId = null,
+        Guid? documentId = null,
+        int version = 1) => new(
+        companyId ?? Company,
+        transferId ?? Transfer,
+        documentId ?? Document,
+        version,
+        lines ?? [FirstLine, SecondLine]);
+
+    private static InventoryTransferTargetAcceptanceDocumentOwnerSnapshotV1 TargetSnapshot(
         Guid? companyId = null,
         Guid? transferId = null,
         Guid? lineId = null,

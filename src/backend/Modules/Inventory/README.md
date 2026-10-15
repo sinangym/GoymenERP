@@ -512,8 +512,10 @@ Only `CurrentEffective` carries its exact binding. Missing, stale, draft, cancel
 wrong-transfer/line and unavailable reads fail closed; binding mismatches share the non-disclosing `BindingMismatch`
 outcome and carry no proof body. Proof reads create no stock, audit or outbox effect. The contract package registers no
 producer, permission, route or host binding and changes neither the existing transfer DTO/runtime nor its whole-label
-grain. A later runtime package must keep its existing company/actor/permission fence around the awaited proof and
-must consume an owner implementation that proves the document from its authoritative source.
+grain. A caller request cannot authorize itself: a positive proof is created only when the matcher compares it with a
+separate owner-authoritative snapshot and every company/transfer/document/version and ordered-line or target-line
+field matches exactly. A later runtime package must keep its existing company/actor/permission fence around the
+awaited proof and must consume an owner implementation that reads that snapshot from its authoritative source.
 
 I02.1 remains separate: the accepted partial-acceptance invariant does not by itself decide per-line quantity grain.
 No quantity, migration or stock-effect wiring is introduced by this contract-only slice.
