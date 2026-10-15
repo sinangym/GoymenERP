@@ -350,6 +350,26 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         </section>
       )}
 
+      {plan.cutToLengthSpec === null ? null : (
+        // M01.2: the stored cut lines, read-only and in source order (never re-sorted by sequence), so they are seen
+        // before an edit or the approval. The line id is the row's stable identity, not its visible content.
+        <section className={styles.commandCard} aria-labelledby="manufacturing-plan-cut-to-length-spec-heading">
+          <h2 id="manufacturing-plan-cut-to-length-spec-heading">Boy kesme ayrıntısı</h2>
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead><tr><th scope="col">Sıra</th><th scope="col">Uzunluk (mm)</th><th scope="col">Adet</th></tr></thead>
+              <tbody>
+                {plan.cutToLengthSpec.lines.map((line) => (
+                  <tr key={line.lineId}>
+                    <th scope="row">{line.sequence}</th><td>{line.lengthMm} mm</td><td>{line.count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       <section className={styles.commandCard} aria-labelledby="manufacturing-stored-plan-calculation-heading">
         <h2 id="manufacturing-stored-plan-calculation-heading">Kayıtlı plan hesaplaması</h2>
         {plan.calculation === null ? (

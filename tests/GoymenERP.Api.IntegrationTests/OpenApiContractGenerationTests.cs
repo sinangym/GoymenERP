@@ -2697,6 +2697,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("approvedAtUtc", "type:null|string;format:date-time")),
+                ["CutToLengthLineViewV1"] = ObjectSchema(
+                    ["lineId", "sequence", "lengthMm", "count"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("sequence", "type:integer|string;format:int32"),
+                    ("lengthMm", "type:string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["CutToLengthSpecViewV1"] = ObjectSchema(
+                    ["lines"],
+                    ("lines", "type:array;items:ref:CutToLengthLineViewV1")),
                 // MFG-PLAN-EDIT: every appended revision of a Draft plan, in order, with its reason and author.
                 ["PlanRevisionListViewV1"] = ObjectSchema(
                     ["planId", "revisions"],
@@ -2709,6 +2718,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array;items:ref:PlanRevisionInputViewV1"),
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecViewV1|type:null"),
                     ("reason", "type:null|string"),
                     ("revisedBy", "type:null|string"),
                     ("recordedAtUtc", "type:string;format:date-time")),
@@ -4275,7 +4285,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("approvedByUserId", "type:null|string;format:uuid"),
                     ("approvedAtUtc", "type:null|string;format:date-time"),
                     ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null"),
-                    ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null")),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecViewV1|type:null")),
                 ["SlitLineViewV1"] = ObjectSchema(
                     ["bandWidthMm", "count"],
                     ("bandWidthMm", "type:string"),
@@ -4624,11 +4635,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ("legalName", "type:string"),
                     ("isPlaceholder", "type:boolean")),
                 ["IdentityProfile"] = ObjectSchema(
-                    ["userId", "displayName", "email", "allowedCompanyIds"],
+                    ["userId", "displayName", "email", "allowedCompanyIds", "authenticationSessionBinding"],
                     ("userId", "type:string;format:uuid"),
                     ("displayName", "type:string"),
                     ("email", "type:null|string"),
-                    ("allowedCompanyIds", "type:array;items:type:string;format:uuid")),
+                    ("allowedCompanyIds", "type:array;items:type:string;format:uuid"),
+                    ("authenticationSessionBinding", "type:null|string")),
                 ["InventoryLabelViewV1"] = ObjectSchema(
                     ["labelId", "companyId", "code", "productId", "lotId", "heatNumber", "coilNumber",
                         "classification", "documentStatus", "requiredDocuments", "documents", "prints", "lot"],
@@ -5801,6 +5813,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ["lines"],
                     ("lines", "type:array|null;items:ref:SlitLineRequestV1"),
                     ("windingTargetKg", "type:null|string")),
+                ["CutToLengthLineRequestV1"] = ObjectSchema(
+                    ["lineId", "sequence", "lengthMm", "count"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("sequence", "type:integer|string;format:int32"),
+                    ("lengthMm", "type:null|string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["CutToLengthSpecRequestV1"] = ObjectSchema(
+                    ["lines"],
+                    ("lines", "type:array|null;items:ref:CutToLengthLineRequestV1")),
                 ["RecordFactRequestV1"] = ObjectSchema(
                     ["factId", "expectedVersion", "parentRollId", "kg", "occurredAtUtc"],
                     ("factId", "type:string;format:uuid"),
@@ -5814,14 +5835,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
-                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null")),
                 // AT-061: the preview takes the save's grammar without the plan id (nothing is created).
                 ["PlanPreviewRequestV1"] = ObjectSchema(
                     ["workCenterId", "inputs", "target"],
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
-                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null")),
                 // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
                 ["RevisePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion", "workCenterId", "inputs", "target", "reason"],
@@ -5829,6 +5852,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null"),
                     ("reason", "type:null|string")),
                 ["TargetRequestV1"] = ObjectSchema(
                     ["basis", "kg"],

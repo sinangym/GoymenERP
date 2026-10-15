@@ -77,6 +77,10 @@ public sealed class CompanyIsolationTests(GoymenErpApiFactory factory)
             TestCompanyIds.CompanyB.ToString(),
             body,
             StringComparison.OrdinalIgnoreCase);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(
+            JsonValueKind.Null,
+            document.RootElement.GetProperty("authenticationSessionBinding").ValueKind);
     }
 
     [Fact]

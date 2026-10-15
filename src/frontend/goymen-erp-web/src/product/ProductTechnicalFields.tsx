@@ -1,5 +1,9 @@
 import type { ProductReferenceOptions } from './contract'
-import { editableTemplate, fieldApplies, TECHNICAL_TEXT, technicalDraft, type TechnicalDraft } from './technicalForm'
+import { UNIT_ROLE_LABEL } from './productText'
+import {
+  CLOSED_UNIT_ROLES, editableTemplate, familyFactsOf, fieldApplies, OPEN_UNIT_ROLES, TECHNICAL_TEXT, technicalDraft,
+  type TechnicalDraft,
+} from './technicalForm'
 import styles from './ProductCreatePage.module.css'
 
 export function ProductTechnicalFields({ familyId, options, value, frozen, onChange, errors = {}, fieldRef }: {
@@ -11,6 +15,9 @@ export function ProductTechnicalFields({ familyId, options, value, frozen, onCha
 }) {
   const draft = value ?? technicalDraft()
   const template = editableTemplate(options, familyId, draft)
+  const facts = familyFactsOf(options, familyId)
+  const closedRoles = CLOSED_UNIT_ROLES.filter(role =>
+    draft.closedUnits[role] !== undefined || errors[`references.units.${role}`] !== undefined)
   function changeAttribute(key: string, value: string) {
     const attributes = { ...draft.attributes, [key]: value }
     // Remove children/conditional fields that no longer apply after this explicit choice.
@@ -29,6 +36,12 @@ export function ProductTechnicalFields({ familyId, options, value, frozen, onCha
   return <fieldset id="references" ref={fieldRef} className={styles.roles} disabled={frozen} tabIndex={-1}>
     <legend>{TECHNICAL_TEXT.heading}</legend>
     {familyId !== '' && !template ? <p role="status">{TECHNICAL_TEXT.unavailable}</p> : null}
+    {facts ? <dl aria-label={TECHNICAL_TEXT.familyFacts}>
+      {(['cins', 'tur', 'tip'] as const).map(fact => <div key={fact}>
+        <dt>{TECHNICAL_TEXT[fact]}</dt>
+        <dd>{facts[fact]}</dd>
+      </div>)}
+    </dl> : null}
     {template ? <p>{template.displayName}</p> : null}
     {template?.fields.filter(field => fieldApplies(field, draft.attributes)).map(field => {
       const id = `references.attributes.${field.key}`
@@ -50,7 +63,7 @@ export function ProductTechnicalFields({ familyId, options, value, frozen, onCha
         {errors[id] ? <p role="alert">{errors[id]}</p> : null}
       </div>
     })}
-    {(['stock', 'purchase', 'sales'] as const).map(role => <div className={styles.field} key={role}>
+    {OPEN_UNIT_ROLES.map(role => <div className={styles.field} key={role}>
       <label htmlFor={`references.units.${role}`}>{TECHNICAL_TEXT[role]}</label>
       <select id={`references.units.${role}`} value={draft[role]}
         disabled={!options?.technical || options.unavailableCatalogs.includes('units')}
@@ -63,6 +76,23 @@ export function ProductTechnicalFields({ familyId, options, value, frozen, onCha
       </select>
       {errors[`references.units.${role}`] ? <p role="alert">{errors[`references.units.${role}`]}</p> : null}
     </div>)}
+    {closedRoles.length > 0 ? <div className={styles.field}>
+      <p role="status">{TECHNICAL_TEXT.closedUnitMismatch}</p>
+      <dl>
+        {closedRoles.map(role => {
+          const stored = draft.closedUnits[role]
+          const unit = options?.technical?.units.find(u => u.id === stored)
+          const error = errors[`references.units.${role}`]
+          return <div key={role} id={`references.units.${role}`} data-testid={`product-closed-unit-${role}`}>
+            <dt>{UNIT_ROLE_LABEL[role]}</dt>
+            <dd>{stored === undefined ? TECHNICAL_TEXT.closedUnitNone
+              : unit ? `${TECHNICAL_TEXT.closedUnitStored}: ${unit.displayName} (${unit.symbol})`
+                : `${TECHNICAL_TEXT.closedUnitStored}: ${TECHNICAL_TEXT.closedUnitUnknown}`}</dd>
+            {error ? <dd role="alert">{error}</dd> : null}
+          </div>
+        })}
+      </dl>
+    </div> : null}
     {errors['references.attributes'] ? <p role="alert">{errors['references.attributes']}</p> : null}
   </fieldset>
 }

@@ -138,3 +138,14 @@ public sealed class ProductOperationException(string code, int statusCode)
     public string Code { get; } = code;
     public int StatusCode { get; } = statusCode;
 }
+
+/// <summary>
+/// A Draft card reached the activation boundary without the references required by its released family.
+/// This is distinct from ordinary request/draft validation: the HTTP contract reports these structured
+/// field errors as 422 while <see cref="ProductValidationException"/> remains a 400 response.
+/// </summary>
+public sealed class ProductActivationValidationException(IReadOnlyList<ProductFieldError> errors)
+    : Exception("Ürün kartı etkinleştirme için eksik.")
+{
+    public IReadOnlyList<ProductFieldError> Errors { get; } = errors;
+}

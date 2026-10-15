@@ -6,7 +6,7 @@ import { referenceOptions, FAMILY_FLAT, GROUP_SAC, installFetch, renderProductAp
   productCard, productCore, mutation, references } from './testHarness'
 import { PRODUCT_CAPABILITY } from './capabilities'
 import { resetPendingAttempts } from './pendingAttempt'
-import { technicalDraft, technicalWrite } from './technicalForm'
+import { CLOSED_UNIT_ROLES, familyFactsOf, technicalDraft, technicalWrite } from './technicalForm'
 import { validateCreateForm, EMPTY_CREATE_FORM } from './createForm'
 
 export const TEMPLATE = '81000000-0000-4000-8000-000000000001'
@@ -101,6 +101,31 @@ describe('released technical fields', () => {
       .toEqual({ ok: true, references: { units: { purchase: PIECE } } })
     expect(technicalWrite({ ...loaded, purchase: TEMPLATE, purchaseChanged: true }, options, FAMILY_FLAT).ok).toBe(false)
     expect(technicalWrite({ ...loaded, purchaseChanged: true }, null, FAMILY_FLAT).ok).toBe(false)
+  })
+  it('reads the fixed Cins/Tür/Tip of the chosen family from the server registry only', () => {
+    expect(familyFactsOf(options, FAMILY_FLAT)).toMatchObject({ cins: 'Metal', tur: 'Sac', tip: 'Düz' })
+    expect(familyFactsOf(options, '')).toBeUndefined()
+    expect(familyFactsOf(options, TEMPLATE)).toBeUndefined()
+    expect(familyFactsOf({ ...options, unavailableCatalogs: ['families'] }, FAMILY_FLAT)).toBeUndefined()
+    expect(familyFactsOf(null, FAMILY_FLAT)).toBeUndefined()
+  })
+  it('authors only the three open unit roles; closed roles are never written, defaulted or copied from stock', () => {
+    const empty = technicalDraft(references({ units: { ...references().units, stock: KG } }))
+    expect(empty.closedUnits).toEqual({})
+    const result = technicalWrite({ ...empty, stockChanged: true, purchase: KG, purchaseChanged: true,
+      sales: PIECE, salesChanged: true }, options, FAMILY_FLAT)
+    expect(result).toEqual({ ok: true, references: { units: { stock: KG, purchase: KG, sales: PIECE } } })
+    if (result.ok) for (const role of CLOSED_UNIT_ROLES) expect(result.references.units).not.toHaveProperty(role)
+  })
+  it('keeps an unexpected stored closed-role value visible and out of every write', () => {
+    const legacy = technicalDraft(references({ templateId: TEMPLATE, templateVersion: '1', attributes: { thickness: 1 },
+      units: { ...references().units, stock: KG, price: PIECE, package: KG } }))
+    expect(legacy.closedUnits).toEqual({ price: PIECE, package: KG })
+    expect(technicalWrite(legacy, options, FAMILY_FLAT)).toEqual({ ok: true, references: {} })
+    expect(technicalWrite({ ...legacy, sales: PIECE, salesChanged: true }, options, FAMILY_FLAT))
+      .toEqual({ ok: true, references: { units: { sales: PIECE } } })
+    const attributes = technicalWrite({ ...legacy, attributes: { thickness: '2' }, attributesChanged: true }, options, FAMILY_FLAT)
+    expect(attributes.ok && attributes.references.units).toBeUndefined()
   })
   it('never erases unknown attributes while editing another attribute', () => {
     expect(technicalWrite({ ...technicalDraft(), attributes: { historicUnknown: 'old', thickness: '2' }, attributesChanged: true }, options, FAMILY_FLAT).ok).toBe(false)

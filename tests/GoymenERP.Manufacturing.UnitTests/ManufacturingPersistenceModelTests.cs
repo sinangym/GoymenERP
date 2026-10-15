@@ -2,9 +2,11 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence.Migrations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace GoymenERP.Manufacturing.UnitTests;
 
@@ -20,7 +22,8 @@ public sealed class ManufacturingPersistenceModelTests
     private static readonly DateTimeOffset At = new(2026, 9, 18, 8, 0, 0, TimeSpan.Zero);
 
     private static readonly Type[] TenantRows =
-        [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanRevisionRow), typeof(PlanRevisionInputRow),
+        [typeof(PlanRow), typeof(PlanInputRow), typeof(PlanSlitLineRow), typeof(PlanCutLineRow),
+            typeof(PlanRevisionRow), typeof(PlanRevisionInputRow), typeof(PlanRevisionCutLineRow),
             typeof(OrderRow), typeof(OrderInputRow), typeof(OrderClosureDecisionRow), typeof(FactRow), typeof(CommandRow)];
 
     [Fact]
@@ -61,6 +64,7 @@ public sealed class ManufacturingPersistenceModelTests
         {
             (typeof(PlanInputRow), "PlanId", typeof(PlanRow)),
             (typeof(PlanSlitLineRow), "PlanId", typeof(PlanRow)),
+            (typeof(PlanCutLineRow), "PlanId", typeof(PlanRow)),
             (typeof(PlanRevisionRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderRow), "PlanId", typeof(PlanRow)),
             (typeof(OrderInputRow), "OrderId", typeof(OrderRow)),
@@ -83,6 +87,9 @@ public sealed class ManufacturingPersistenceModelTests
         Assert.Contains(revisionInputs.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PlanRevisionRow)
             && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PlanId", "RevisionNo"]));
         Assert.False(revisionInputs.FindProperty(nameof(PlanRevisionInputRow.ExpectedLabelVersion))!.IsNullable);
+        var revisionCutLines = context.Model.FindEntityType(typeof(PlanRevisionCutLineRow))!;
+        Assert.Contains(revisionCutLines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(PlanRevisionRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PlanId", "RevisionNo"]));
 
         var facts = context.Model.FindEntityType(typeof(FactRow))!;
         Assert.Equal(["CompanyId", "Kind", "Id"], facts.FindPrimaryKey()!.Properties.Select(property => property.Name));
@@ -110,7 +117,67 @@ public sealed class ManufacturingPersistenceModelTests
             migration => migration.EndsWith("_AddManufacturingPlanTechnicalSnapshots", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(),
             migration => migration.EndsWith("_AddManufacturingCommercialContexts", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanCutLines", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(),
+            migration => migration.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", StringComparison.Ordinal));
         Assert.False(context.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Technical_length_rollback_checks_both_immutable_snapshot_tables_before_dropping_either_column()
+    {
+        using var context = Context();
+        var migrations = context.Database.GetMigrations().ToArray();
+        var current = Assert.Single(migrations,
+            migration => migration.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots", StringComparison.Ordinal));
+        var currentIndex = Array.IndexOf(migrations, current);
+        Assert.True(currentIndex > 0);
+
+        var rollback = context.GetService<IMigrator>().GenerateScript(current, migrations[currentIndex - 1]);
+        var refusal = rollback.IndexOf("THROW 51047", StringComparison.Ordinal);
+        var firstDrop = rollback.IndexOf("DROP COLUMN [TechnicalLengthMm]", StringComparison.Ordinal);
+
+        Assert.Contains("FROM [manufacturing].[PlanInputs]", rollback, StringComparison.Ordinal);
+        Assert.Contains("FROM [manufacturing].[PlanRevisionInputs]", rollback, StringComparison.Ordinal);
+        Assert.Contains("WHERE [TechnicalLengthMm] IS NOT NULL", rollback, StringComparison.Ordinal);
+        Assert.True(refusal >= 0 && firstDrop > refusal,
+            "Rollback must refuse before it drops immutable technical-length provenance.");
+        Assert.Equal(2, rollback.Split("DROP COLUMN [TechnicalLengthMm]", StringSplitOptions.None).Length - 1);
+        Assert.Equal(AddManufacturingPlanTechnicalLengthSnapshots.MigrationId, current);
+    }
+
+    [Fact]
+    public void Cut_lines_store_client_identity_input_order_explicit_sequence_and_three_decimal_length()
+    {
+        using var context = Context();
+        var model = context.GetService<IDesignTimeModel>().Model;
+
+        foreach (var (type, keyNames, indexNames, foreignKeyNames) in new[]
+        {
+            (typeof(PlanCutLineRow), new[] { "CompanyId", "PlanId", "LineId" },
+                new[] { "CompanyId", "PlanId", "Ordinal" }, new[] { "CompanyId", "PlanId" }),
+            (typeof(PlanRevisionCutLineRow), new[] { "CompanyId", "PlanId", "RevisionNo", "LineId" },
+                new[] { "CompanyId", "PlanId", "RevisionNo", "Ordinal" },
+                new[] { "CompanyId", "PlanId", "RevisionNo" }),
+        })
+        {
+            var entity = model.FindEntityType(type)!;
+            Assert.Equal(keyNames, entity.FindPrimaryKey()!.Properties.Select(property => property.Name));
+            Assert.Contains(entity.GetIndexes(), index => index.IsUnique
+                && index.Properties.Select(property => property.Name).SequenceEqual(indexNames));
+            Assert.Contains(entity.GetForeignKeys(), key => key.Properties.Select(property => property.Name)
+                .SequenceEqual(foreignKeyNames) && key.DeleteBehavior == DeleteBehavior.Restrict);
+            Assert.Equal((18, 3),
+                (entity.FindProperty("LengthMm")!.GetPrecision(), entity.FindProperty("LengthMm")!.GetScale()));
+            Assert.False(entity.FindProperty("Sequence")!.IsNullable);
+            Assert.Contains(entity.GetCheckConstraints(), check => check.Name!.EndsWith("_Identity", StringComparison.Ordinal)
+                && !check.Sql.Contains("[Sequence]", StringComparison.Ordinal));
+            Assert.Contains(entity.GetCheckConstraints(), check => check.Name!.EndsWith("_Length", StringComparison.Ordinal)
+                && check.Sql == "[LengthMm] > 0");
+            Assert.Contains(entity.GetCheckConstraints(), check => check.Name!.EndsWith("_Count", StringComparison.Ordinal)
+                && check.Sql == "[Count] >= 1");
+        }
     }
 
     [Fact]
@@ -168,11 +235,16 @@ public sealed class ManufacturingPersistenceModelTests
                 entity.FindProperty(nameof(PlanInputRow.TechnicalFamilyCode))!.GetMaxLength());
             Assert.Equal(18, entity.FindProperty(nameof(PlanInputRow.TechnicalThicknessMm))!.GetPrecision());
             Assert.Equal(3, entity.FindProperty(nameof(PlanInputRow.TechnicalThicknessMm))!.GetScale());
+            Assert.Equal(18, entity.FindProperty(nameof(PlanInputRow.TechnicalLengthMm))!.GetPrecision());
+            Assert.Equal(3, entity.FindProperty(nameof(PlanInputRow.TechnicalLengthMm))!.GetScale());
+            Assert.True(entity.FindProperty(nameof(PlanInputRow.TechnicalLengthMm))!.IsNullable);
             Assert.True(entity.FindProperty(nameof(PlanInputRow.TechnicalProductId))!.IsNullable);
             var sql = entity.GetCheckConstraints().Single(check => check.Name == constraintName).Sql;
             Assert.Contains("[TechnicalKilogramUnitCompanyId] = [CompanyId]", sql, StringComparison.Ordinal);
             Assert.Contains("[TechnicalThicknessMm] > 0", sql, StringComparison.Ordinal);
             Assert.Contains("[TechnicalWidthMm] > 0", sql, StringComparison.Ordinal);
+            Assert.Contains("[TechnicalLengthMm] IS NULL OR [TechnicalLengthMm] > 0", sql,
+                StringComparison.Ordinal);
         }
     }
 
@@ -255,6 +327,8 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("edit-plan-winding-target")]
     [InlineData("edit-plan-slit-line")]
     [InlineData("delete-plan-slit-line")]
+    [InlineData("edit-plan-cut-line")]
+    [InlineData("delete-plan-cut-line")]
     [InlineData("edit-order-plan")]
     [InlineData("edit-order-input")]
     [InlineData("edit-order-company")]
@@ -266,6 +340,8 @@ public sealed class ManufacturingPersistenceModelTests
     [InlineData("delete-plan-revision")]
     [InlineData("edit-plan-revision-input")]
     [InlineData("delete-plan-revision-input")]
+    [InlineData("edit-plan-revision-cut-line")]
+    [InlineData("delete-plan-revision-cut-line")]
     [InlineData("edit-order-closure-decision")]
     [InlineData("delete-order-closure-decision")]
     public void Stored_manufacturing_is_never_deleted_and_only_its_allowed_fields_change(string fault)
@@ -291,6 +367,12 @@ public sealed class ManufacturingPersistenceModelTests
                 break;
             case "delete-plan-slit-line":
                 context.PlanSlitLines.Remove(Attach(context, SlitLine()));
+                break;
+            case "edit-plan-cut-line":
+                Attach(context, CutLine()).Sequence = -7;
+                break;
+            case "delete-plan-cut-line":
+                context.PlanCutLines.Remove(Attach(context, CutLine()));
                 break;
             case "edit-order-plan":
                 Attach(context, Order()).PlanId = Guid.NewGuid();
@@ -325,6 +407,12 @@ public sealed class ManufacturingPersistenceModelTests
                 break;
             case "delete-plan-revision-input":
                 context.PlanRevisionInputs.Remove(Attach(context, RevisionInput()));
+                break;
+            case "edit-plan-revision-cut-line":
+                Attach(context, RevisionCutLine()).Count = 2;
+                break;
+            case "delete-plan-revision-cut-line":
+                context.PlanRevisionCutLines.Remove(Attach(context, RevisionCutLine()));
                 break;
             case "edit-order-closure-decision":
                 Attach(context, ClosureDecision()).MaximumFirePercent = "9.99";
@@ -486,6 +574,18 @@ public sealed class ManufacturingPersistenceModelTests
     private static PlanSlitLineRow SlitLine() => new()
     {
         CompanyId = CompanyA, PlanId = Guid.NewGuid(), Sequence = 1, BandWidthMm = 150m, BandCount = 4,
+    };
+
+    private static PlanCutLineRow CutLine() => new()
+    {
+        CompanyId = CompanyA, PlanId = Guid.NewGuid(), LineId = Guid.NewGuid(), Ordinal = 1,
+        Sequence = 40, LengthMm = 6000m, Count = 1,
+    };
+
+    private static PlanRevisionCutLineRow RevisionCutLine() => new()
+    {
+        CompanyId = CompanyA, PlanId = Guid.NewGuid(), RevisionNo = 1, LineId = Guid.NewGuid(), Ordinal = 1,
+        Sequence = -7, LengthMm = 2500.5m, Count = 1,
     };
 
     private static PlanRow Plan() => new()

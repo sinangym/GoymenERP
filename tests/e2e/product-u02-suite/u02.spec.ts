@@ -61,6 +61,71 @@ type ProductHistory = {
   readonly truncated: boolean
 }
 
+type FamilyFacts = {
+  readonly cins: string
+  readonly tur: string
+  readonly tip: string
+}
+
+type UnitReferences = {
+  readonly stock: string | null
+  readonly purchase: string | null
+  readonly sales: string | null
+  readonly price: string | null
+  readonly production: string | null
+  readonly package: string | null
+}
+
+type ProductCard = {
+  readonly product: {
+    readonly id: string
+    readonly version: string
+    readonly labels: { readonly familyFacts: FamilyFacts | null }
+  }
+  readonly references: {
+    readonly templateId: string | null
+    readonly templateVersion: string | null
+    readonly attributes: Record<string, unknown>
+    readonly units: UnitReferences
+  }
+}
+
+const CLOSED_UNIT_ROLES = ['price', 'production', 'package'] as const
+const CLOSED_UNIT_LABELS = ['Fiyat birimi', 'Üretim birimi', 'Paket birimi'] as const
+
+/** The read-only value paired with an exact definition-list term. */
+function definitionOf(page: Page, term: string) {
+  const exact = new RegExp(`^${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+  return page.locator('dt', { hasText: exact }).locator('xpath=following-sibling::dd[1]')
+}
+
+async function expectFamilyFacts(page: Page, facts: FamilyFacts): Promise<void> {
+  await expect(definitionOf(page, 'Cins')).toHaveText(facts.cins)
+  await expect(definitionOf(page, 'Tür')).toHaveText(facts.tur)
+  await expect(definitionOf(page, 'Tip')).toHaveText(facts.tip)
+}
+
+/** Closed roles remain readable on the card, but this form must never offer an authoring control for them. */
+async function expectClosedUnitRolesNotEditable(page: Page): Promise<void> {
+  for (const label of CLOSED_UNIT_LABELS) {
+    await expect(page.getByRole('combobox', { name: label, exact: true })).toHaveCount(0)
+  }
+}
+
+function expectClosedUnitRolesNull(units: UnitReferences): void {
+  for (const role of CLOSED_UNIT_ROLES) expect(units[role], `${role} remains null`).toBeNull()
+}
+
+function expectClosedUnitRolesOmitted(units: Record<string, unknown>): void {
+  for (const role of CLOSED_UNIT_ROLES) expect(units, `${role} is not written`).not.toHaveProperty(role)
+}
+
+async function expectClosedUnitRolesUnassigned(page: Page): Promise<void> {
+  for (const role of CLOSED_UNIT_ROLES) {
+    await expect(page.getByTestId(`product-unit-${role}`), `${role} never falls back to stock`).toHaveText('atanmadı')
+  }
+}
+
 /** Counts the browser's own Product traffic (reads and writes), with the write statuses. */
 function watchProducts(page: Page): { reads: number; writes: number; writeStatuses: number[] } {
   const traffic = { reads: 0, writes: 0, writeStatuses: [] as number[] }
@@ -133,9 +198,12 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   }
   const family = options.familyFacts.find(item => item.id === technicalFamilyId)
   expect(family, 'the test-only released family must come from the real registry read').toBeDefined()
+  const familyFacts = { cins: family!.cins, tur: family!.tur, tip: family!.tip }
   const template = options.templates.find(item => item.id === family!.templateId && item.version === family!.templateVersion)!
   expect(template).toBeDefined()
   await page.getByLabel('Ürün ailesi').selectOption(technicalFamilyId)
+  await expectFamilyFacts(page, familyFacts)
+  await expectClosedUnitRolesNotEditable(page)
   const thickness = template.fields.find(field => field.role === 'thickness')!
   expect(thickness).toBeDefined()
   const expectedAttributes: Record<string, number | string> = {}
@@ -165,23 +233,32 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
 
   const createdResponse = await created
   expect(createdResponse.status(), 'the real create').toBe(201)
-  const createdBody = await createdResponse.json() as { card: { product: { id: string; version: string }; references: { templateId: string; templateVersion: string; attributes: Record<string, unknown>; units: { stock: string; purchase: string | null; sales: string } } } }
+  const createdBody = await createdResponse.json() as { card: ProductCard }
+  const createdUnits = createdResponse.request().postDataJSON().references.units as Record<string, unknown>
+  expect(createdUnits).toEqual({ stock: kilogram.id, purchase: kilogram.id, sales: kilogram.id })
+  expectClosedUnitRolesOmitted(createdUnits)
   expect(createdBody.card.references.attributes).toEqual(expectedAttributes)
   expect(createdBody.card.references.templateId).toBe(template.id)
   expect(createdBody.card.references.templateVersion).toBe(template.version)
   expect(createdBody.card.references.units.stock).toBe(kilogram.id)
   expect(createdBody.card.references.units.sales).toBe(kilogram.id)
   expect(createdBody.card.references.units.purchase).toBe(kilogram.id)
-  expect(createdResponse.request().postDataJSON().references.units.purchase).toBe(kilogram.id)
+  expectClosedUnitRolesNull(createdBody.card.references.units)
   await expect(page.getByRole('heading', { level: 1, name: 'Taslak kaydedildi' })).toBeVisible()
   await expect(page.getByText(new RegExp(`^${group!.prefix}-[0-9]+ — ${name}$`))).toBeVisible()
   const id = createdBody.card.product.id
   await page.goto(`/urun/${id}`)
+  await expectFamilyFacts(page, familyFacts)
   await expect(page.getByText(coatingName, { exact: true })).toBeVisible()
   await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram.displayName)
   await expect(page.getByTestId('product-unit-sales')).toHaveText(kilogram.displayName)
   await expect(page.getByTestId('product-unit-purchase')).toHaveText(kilogram.displayName)
+  await expectClosedUnitRolesUnassigned(page)
   await page.locator(`a[href="/urun/${id}/duzenle"]`).click()
+  await expectFamilyFacts(page, familyFacts)
+  await expectClosedUnitRolesNotEditable(page)
+  await expect(page.getByLabel('Stok birimi (kg)')).toHaveValue(kilogram.id)
+  await expect(page.getByLabel('Satış birimi')).toHaveValue(kilogram.id)
   await expect(page.getByLabel('Alış birimi')).toHaveValue(kilogram.id)
   await page.getByLabel('Alış birimi').selectOption('')
   await page.getByLabel(`${thickness.key} (mm)`, { exact: false }).fill('2.5')
@@ -191,9 +268,12 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   const editedResponse = await edited
   expect(editedResponse.status()).toBe(200)
   expect(editedResponse.request().postDataJSON().expectedVersion).toBe(createdBody.card.product.version)
-  expect(editedResponse.request().postDataJSON().changes.references.units).toEqual({ purchase: null })
-  const editedBody = await editedResponse.json()
+  const clearedUnits = editedResponse.request().postDataJSON().changes.references.units as Record<string, unknown>
+  expect(clearedUnits).toEqual({ purchase: null })
+  expectClosedUnitRolesOmitted(clearedUnits)
+  const editedBody = await editedResponse.json() as { card: ProductCard }
   expect(editedBody.card.references.units.purchase).toBeNull()
+  expectClosedUnitRolesNull(editedBody.card.references.units)
   expect(editedBody.card.product.id).toBe(id)
   expect(editedBody.card.product.version).not.toBe(createdBody.card.product.version)
   await expect(page.getByRole('heading', { name: 'Değişiklikler kaydedildi' })).toBeVisible()
@@ -202,21 +282,30 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   await page.goto(`/urun/${id}`)
   const reopenedResponse = await reopened
   expect(reopenedResponse.status()).toBe(200)
-  const persisted = await reopenedResponse.json()
+  const persisted = await reopenedResponse.json() as ProductCard
   expect(persisted.product.id).toBe(id)
   expect(persisted.product.version).toBe(editedBody.card.product.version)
+  expect(persisted.product.labels.familyFacts, 'the reopened card resolves the same fixed family facts').toEqual(familyFacts)
   expect(persisted.references.templateId).toBe(template.id)
   expect(persisted.references.templateVersion).toBe(template.version)
   expect(persisted.references.units.stock).toBe(kilogram.id)
   expect(persisted.references.units.sales).toBe(kilogram.id)
   expect(persisted.references.units.purchase).toBeNull()
+  expectClosedUnitRolesNull(persisted.references.units)
   expect(persisted.references.attributes).toEqual({ ...expectedAttributes, [thickness.key]: 2.5 })
   await expect(page.getByText('2.5', { exact: true })).toBeVisible()
   await expect(page.getByText(coatingName, { exact: true })).toBeVisible()
+  await expectFamilyFacts(page, familyFacts)
   await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram.displayName)
   await expect(page.getByTestId('product-unit-sales')).toHaveText(kilogram.displayName)
+  await expect(page.getByTestId('product-unit-purchase')).toHaveText('atanmadı')
+  await expectClosedUnitRolesUnassigned(page)
   // Use the same reopened card in the next edit; selecting purchase must not overwrite stock/sales.
   await page.locator(`a[href="/urun/${id}/duzenle"]`).click()
+  await expectFamilyFacts(page, familyFacts)
+  await expectClosedUnitRolesNotEditable(page)
+  await expect(page.getByLabel('Stok birimi (kg)')).toHaveValue(kilogram.id)
+  await expect(page.getByLabel('Satış birimi')).toHaveValue(kilogram.id)
   await expect(page.getByLabel('Alış birimi')).toHaveValue('')
   await page.getByLabel('Alış birimi').selectOption(kilogram.id)
   await page.getByLabel('Değişiklik gerekçesi').fill('SENTETIK u02 alış birimi seçimi')
@@ -225,8 +314,11 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   const selectedResponse = await selected
   expect(selectedResponse.status()).toBe(200)
   expect(selectedResponse.request().postDataJSON().expectedVersion).toBe(persisted.product.version)
-  expect(selectedResponse.request().postDataJSON().changes.references.units).toEqual({ purchase: kilogram.id })
-  const selectedBody = await selectedResponse.json()
+  const restoredUnits = selectedResponse.request().postDataJSON().changes.references.units as Record<string, unknown>
+  expect(restoredUnits).toEqual({ purchase: kilogram.id })
+  expectClosedUnitRolesOmitted(restoredUnits)
+  const selectedBody = await selectedResponse.json() as { card: ProductCard }
+  expectClosedUnitRolesNull(selectedBody.card.references.units)
   expect(selectedBody.card.product.id).toBe(id)
   expect(selectedBody.card.product.version).not.toBe(persisted.product.version)
   await expect(page.getByRole('heading', { name: 'Değişiklikler kaydedildi' })).toBeVisible()
@@ -238,15 +330,19 @@ test('U02-FIX-01 the authorized actor creates, edits and reopens technical field
   const finalHistoryResponse = await finalHistoryRead
   expect(finalResponse.status()).toBe(200)
   expect(finalHistoryResponse.status()).toBe(200)
-  const finalCard = await finalResponse.json()
+  const finalCard = await finalResponse.json() as ProductCard
   const history = await finalHistoryResponse.json() as ProductHistory
   expect(finalCard.product.id).toBe(id)
   expect(finalCard.product.version).toBe(selectedBody.card.product.version)
+  expect(finalCard.product.labels.familyFacts).toEqual(familyFacts)
   expect(finalCard.references.units.purchase).toBe(kilogram.id)
   expect(finalCard.references.units.stock).toBe(kilogram.id)
   expect(finalCard.references.units.sales).toBe(kilogram.id)
+  expectClosedUnitRolesNull(finalCard.references.units)
   expect(finalCard.references.attributes).toEqual(persisted.references.attributes)
+  await expectFamilyFacts(page, familyFacts)
   await expect(page.getByTestId('product-unit-purchase')).toHaveText(kilogram.displayName)
+  await expectClosedUnitRolesUnassigned(page)
   expect(history.productId).toBe(id)
   expect(history.truncated).toBe(false)
   expect(history.entries.map(entry => entry.operation)).toEqual(['DraftBasicEdit', 'DraftBasicEdit', 'DraftCreate'])

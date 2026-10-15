@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MANUFACTURING_CAPABILITY, orderDetailPath } from './capabilities'
 import { pendingPlanLifecycleKey, reservePendingPlanLifecycle } from './planCommandApi'
@@ -7,8 +7,11 @@ import {
   APPROVER,
   COMPANY_A,
   COMPANY_B,
+  CUT_LINE_1,
+  CUT_LINE_2,
   PLAN,
   ROLL_1,
+  cutToLengthSpec,
   installFetch,
   json,
   massBalance,
@@ -329,6 +332,74 @@ describe('plan detail navigation', () => {
     await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
     expect(screen.queryByRole('link', { name: '← Üretim planları' })).toBeNull()
     expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+  })
+})
+
+describe('stored cut-to-length lines on the plan detail', () => {
+  /** Browser-selector test data (#66/6173714948): signed, non-monotonic sequences in source order. */
+  const LINES = [
+    { lineId: CUT_LINE_2, sequence: 40, lengthMm: '6000', count: 3 },
+    { lineId: CUT_LINE_1, sequence: -7, lengthMm: '2500.5', count: 2 },
+  ]
+
+  function stubPlan(stored: ReturnType<typeof plan>, capabilities: readonly string[] = LIFECYCLE_CAPABILITIES) {
+    return installFetch({
+      capabilities,
+      respond: (url, init) =>
+        url.endsWith(`/manufacturing/plans/${PLAN}`) && (init?.method ?? 'GET') === 'GET' ? json(stored) : undefined,
+    })
+  }
+
+  it('shows the ordered sequence, length and count read-only before the approval is offered', async () => {
+    stubPlan(plan({ process: 'CutToLength', cutToLengthSpec: cutToLengthSpec({ lines: LINES }) }))
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    const section = await screen.findByRole('region', { name: 'Boy kesme ayrıntısı' })
+    const rows = within(within(section).getByRole('table')).getAllByRole('row').slice(1)
+    // Source order, not sorted by sequence; the signed sequence is shown as stored.
+    expect(rows.map((row) => [
+      within(row).getByRole('rowheader').textContent,
+      ...within(row).getAllByRole('cell').map((cell) => cell.textContent),
+    ])).toEqual([['40', '6000 mm', '3'], ['-7', '2500.5 mm', '2']])
+    expect(within(section).getAllByRole('columnheader').map((header) => header.textContent))
+      .toEqual(['Sıra', 'Uzunluk (mm)', 'Adet'])
+    // Read-only and business-first: no control, and the technical line id is not the visible content.
+    expect(within(section).queryAllByRole('textbox')).toHaveLength(0)
+    expect(within(section).queryAllByRole('button')).toHaveLength(0)
+    expect(within(section).queryByText(CUT_LINE_1)).toBeNull()
+    expect(within(section).queryByText(CUT_LINE_2)).toBeNull()
+    // The approval is still the existing, unchanged command beside it.
+    expect(screen.getByRole('button', { name: 'Planı onayla' })).toBeTruthy()
+  })
+
+  it('keeps the lines visible on an approved plan and for a read-only viewer', async () => {
+    stubPlan(
+      plan({
+        process: 'CutToLength',
+        status: 'Approved',
+        version: 2,
+        approvedByUserId: APPROVER,
+        approvedAtUtc: '2026-09-24T09:00:00Z',
+        cutToLengthSpec: cutToLengthSpec({ lines: LINES }),
+      }),
+      [MANUFACTURING_CAPABILITY.planDetail],
+    )
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    const section = await screen.findByRole('region', { name: 'Boy kesme ayrıntısı' })
+    expect(within(section).getAllByRole('rowheader').map((cell) => cell.textContent)).toEqual(['40', '-7'])
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+  })
+
+  it.each([
+    ['an explicit null', plan()],
+    ['the legacy omitted member', (({ cutToLengthSpec: _omitted, ...legacy }) => legacy)(plan()) as ReturnType<typeof plan>],
+  ])('draws no cut-line section for %s', async (_case, stored) => {
+    stubPlan(stored)
+    renderAt(`/uretim/plan/${PLAN}`)
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    expect(screen.queryByRole('region', { name: 'Boy kesme ayrıntısı' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Planı onayla' })).toBeTruthy()
   })
 })
 

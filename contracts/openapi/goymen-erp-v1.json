@@ -30973,6 +30973,30 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductRuntimeProblemContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "validation_failed"
+            ]
           }
         },
         "security": [
@@ -69111,6 +69135,108 @@
           }
         }
       },
+      "CutToLengthLineRequestV1": {
+        "required": [
+          "lineId",
+          "sequence",
+          "lengthMm",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lengthMm": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "CutToLengthLineViewV1": {
+        "required": [
+          "lineId",
+          "sequence",
+          "lengthMm",
+          "count"
+        ],
+        "type": "object",
+        "properties": {
+          "lineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "lengthMm": {
+            "type": "string"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "CutToLengthSpecRequestV1": {
+        "required": [
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/CutToLengthLineRequestV1"
+            }
+          }
+        }
+      },
+      "CutToLengthSpecViewV1": {
+        "required": [
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CutToLengthLineViewV1"
+            }
+          }
+        }
+      },
       "DecideCounterpartyTaxIdentityChange": {
         "required": [
           "expectedVersion",
@@ -71238,7 +71364,8 @@
           "userId",
           "displayName",
           "email",
-          "allowedCompanyIds"
+          "allowedCompanyIds",
+          "authenticationSessionBinding"
         ],
         "type": "object",
         "properties": {
@@ -71261,6 +71388,12 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "authenticationSessionBinding": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -76360,6 +76493,16 @@
                 "$ref": "#/components/schemas/SlittingSpecRequestV1"
               }
             ]
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -76558,6 +76701,16 @@
           "recordedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecViewV1"
+              }
+            ]
           }
         }
       },
@@ -76776,6 +76929,16 @@
               },
               {
                 "$ref": "#/components/schemas/SlittingSpecViewV1"
+              }
+            ]
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecViewV1"
               }
             ]
           }
@@ -80828,6 +80991,16 @@
               "null",
               "string"
             ]
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecRequestV1"
+              }
+            ]
           }
         }
       },
@@ -83659,6 +83832,16 @@
               },
               {
                 "$ref": "#/components/schemas/SlittingSpecRequestV1"
+              }
+            ]
+          },
+          "cutToLengthSpec": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CutToLengthSpecRequestV1"
               }
             ]
           }

@@ -45,8 +45,28 @@ public sealed class DevelopmentAuthenticationHandler(
             new(GoymenClaimTypes.IdentitySubject, selectedUser.UserId),
         };
 
+        if (TryGetSessionId(options.SessionHeaderName, out var sessionId))
+        {
+            claims.Add(new Claim(
+                GoymenClaimTypes.AuthenticationSession,
+                sessionId.ToString("D")));
+        }
+
         var identity = new ClaimsIdentity(claims, SchemeName);
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName);
         return Task.FromResult(AuthenticateResult.Success(ticket));
+    }
+
+    private bool TryGetSessionId(string headerName, out Guid sessionId)
+    {
+        sessionId = Guid.Empty;
+        if (string.IsNullOrWhiteSpace(headerName)
+            || !Request.Headers.TryGetValue(headerName, out var values)
+            || values.Count != 1)
+        {
+            return false;
+        }
+
+        return Guid.TryParseExact(values[0], "D", out sessionId);
     }
 }
