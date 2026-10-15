@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -22,6 +23,17 @@ VERIFIER_SPEC = importlib.util.spec_from_file_location(
 assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
+REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
+    "88b674917e76a0745721b173d3b7c04a0b97b527d2901e82633ac26223592da2"
+)
+
+
+def reviewed_source_fingerprint(source: str) -> str:
+    normalized = "\n".join(
+        line.rstrip()
+        for line in source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    ).rstrip("\n") + "\n"
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def trx(results: str, definitions: str) -> str:
@@ -1112,6 +1124,34 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
         execution_bypass_mutations = (
             (
+                "unreviewed executable line added",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          echo bypass\n",
+            ),
+            (
+                "reviewed executable line removed",
+                "          trap cleanup EXIT\n",
+                "",
+            ),
+            (
+                "reviewed executable lines reordered",
+                '          generator_path="tools/generate_recovery_surface_inventory.py"\n'
+                '          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"\n',
+                '          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"\n'
+                '          generator_path="tools/generate_recovery_surface_inventory.py"\n',
+            ),
+            (
+                "errexit disabled",
+                "          set -euo pipefail\n",
+                "          set +e\n",
+            ),
+            (
+                "python executable overridden",
+                "          python3 -I -S -B -m unittest discover ",
+                "          python3() { :; }\n"
+                "          python3 -I -S -B -m unittest discover ",
+            ),
+            (
                 "successful early exit",
                 "          set -euo pipefail\n",
                 "          set -euo pipefail\n          exit 0\n",
@@ -1125,6 +1165,16 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 "successful exec bypass",
                 "          set -euo pipefail\n",
                 "          set -euo pipefail\n          exec true\n",
+            ),
+            (
+                "absolute successful exec bypass",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          exec /bin/true\n",
+            ),
+            (
+                "evaluated successful exit",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          eval 'exit 0'\n",
             ),
             (
                 "job condition disabled",
@@ -1332,17 +1382,11 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 ) from error
             previous_index = current_index
 
-        self.assertNotRegex(job, r"(?m)^\s+if\s*:")
-        self.assertNotRegex(job, r"(?m)^\s+shell\s*:")
-        for line in proof_lines[: previous_index + 1]:
-            self.assertNotRegex(
-                line,
-                r"(?:^|[;&|]\s*)(?:exit|return)(?:\s+0)?(?:\s|$)",
-            )
-            self.assertNotRegex(
-                line,
-                r"(?:^|[;&|]\s*)exec\s+(?:true|:)(?:\s|$)",
-            )
+        self.assertEqual(
+            REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT,
+            reviewed_source_fingerprint(job),
+            "Recovery inventory proof job left its complete reviewed execution body",
+        )
 
         self.assertNotIn("actions/upload-artifact@", job)
         self.assertNotIn("actions/download-artifact@", job)
