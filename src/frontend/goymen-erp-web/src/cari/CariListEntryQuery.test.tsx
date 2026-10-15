@@ -15,7 +15,7 @@ import { CAPABILITY } from '../shell/capabilities'
 import { DEFAULT_CARI_LIST_VIEW, resetCariListView, withEntryQuery, type CariListView } from './listViewState'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
-const IDENTITY = { userId: '99999999-9999-9999-9999-999999999999', displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [A_ID] }
+const IDENTITY = { userId: '99999999-9999-9999-9999-999999999999', displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [A_ID], authenticationSessionBinding: null }
 const DIRECTORY = [{ id: A_ID, code: 'GDC', legalName: 'Göymen A', isPlaceholder: true }]
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })

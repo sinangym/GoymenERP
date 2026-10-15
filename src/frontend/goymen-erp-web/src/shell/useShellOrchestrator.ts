@@ -29,7 +29,6 @@ import {
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from './uiState'
 import { useShellDispatch, useShellState } from './shellContext'
 import { contextActorMismatch, needsBootstrap, type CompanyContext } from './shellState'
-import { establishSessionBinding } from './sessionBinding'
 
 const COMPANY_PREFERENCE_KEY = 'goymen-company-id'
 
@@ -123,7 +122,8 @@ export function useShellOrchestrator(): ShellOrchestration {
   const dispatch = useShellDispatch()
   const queryClient = useQueryClient()
 
-  const seenActorId = useRef<string | null>(null)
+  /** The actor and server session binding the shell last acted on, as one pair from one identity response. */
+  const seenSession = useRef<{ readonly actorId: string; readonly binding: string | null } | null>(null)
   const [bootstrapFailure, setBootstrapFailure] = useState(false)
   const [switchFailure, setSwitchFailure] = useState(false)
   // Terminal session-invalid now lives in the reducer so a business-read 401 and a
@@ -165,23 +165,29 @@ export function useShellOrchestrator(): ShellOrchestration {
   const identity = identityState.kind === 'ready' ? identityState.data : null
   const directory = directoryOf(directoryQuery.data)
   const identityId = identity?.userId ?? null
+  // From the SAME decoded response as `identityId`: the pair is the server's answer about one authenticated session.
+  const identityBinding = identity === null ? null : identity.authenticationSessionBinding
 
   // --- P1-1: actor change -> full reset --------------------------------------
+  // M01.3 r5 (#66/6187473245): a change of the server's session binding for the SAME actor is a session boundary too
+  // (a real logout/login the server named), handled exactly like an actor change. An identity re-read that answers the
+  // same actor and the same binding — an ordinary F5 cannot even reach here, a token refresh does — is no boundary.
+  // A local SESSION_RESET is never evidence of a new server session; only the server's answer is.
   useEffect(() => {
     if (identityId === null) return
-    if (seenActorId.current === null) {
-      seenActorId.current = identityId
+    if (seenSession.current === null) {
+      seenSession.current = { actorId: identityId, binding: identityBinding }
       return
     }
-    if (seenActorId.current !== identityId) {
-      seenActorId.current = identityId
+    if (seenSession.current.actorId !== identityId || seenSession.current.binding !== identityBinding) {
+      seenSession.current = { actorId: identityId, binding: identityBinding }
       setBootstrapFailure(false)
       setSwitchFailure(false)
       setSessionInvalid(false)
       dispatch({ type: 'SESSION_RESET' })
       queryClient.clear()
     }
-  }, [identityId, dispatch, queryClient, setSessionInvalid])
+  }, [identityId, identityBinding, dispatch, queryClient, setSessionInvalid])
 
   // --- bootstrap -----------------------------------------------------------
   const directoryReady = directoryState.kind === 'ready'
@@ -225,13 +231,13 @@ export function useShellOrchestrator(): ShellOrchestration {
         }
         // Fenced to the epoch this request was STARTED under; the reducer drops it
         // if a SESSION_RESET landed in between (Codex #139 P1-2).
-        // The binding is established only now, for the actor whose context commits: the same actor in a reloaded
-        // document gets the same one, anyone after a boundary a new one (M01.3 K2 #728/6180459736).
+        // The binding is the server's, from the very identity response that named this actor (closed over with it, so
+        // a later identity answer cannot be paired with this context); the shell mints none (M01.3 r5 #66/6187473245).
         dispatch({
           type: 'SESSION_READY',
           forSessionEpoch: sessionEpoch,
           context,
-          sessionBinding: establishSessionBinding(identityId),
+          sessionBinding: identityBinding,
         })
       })
       .catch(() => {
@@ -243,6 +249,7 @@ export function useShellOrchestrator(): ShellOrchestration {
     sessionInvalid,
     neverBootstrapped,
     identityId,
+    identityBinding,
     directoryReady,
     directoryQuery.data,
     sessionEpoch,

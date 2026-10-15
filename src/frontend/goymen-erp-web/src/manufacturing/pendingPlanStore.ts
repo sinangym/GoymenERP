@@ -74,9 +74,10 @@ function validSlittingSpec(value: SavePlanRequest['slittingSpec']): boolean {
 }
 
 /**
- * M01.3 (K2 #728/6180459736): the create slot of an actor and company, bound to the shell's reload-stable session
- * binding (shell/sessionBinding.ts) — not to `sessionEpoch`, which restarts at 0 in every document. null = no context.
- * A null binding still names a slot, and that slot is `unreadable`: a missing binding never reads as absence.
+ * M01.3 (K2 #728/6180459736, r5 #66/6187473245): the create slot of an actor and company, bound to the SERVER's session
+ * binding (`state.sessionBinding`, from `/identity/me`) — not to `sessionEpoch`, which restarts at 0 in every document,
+ * and not to anything the client minted or stored. null = no context. A null binding (the server gave none) still names
+ * a slot, and that slot is `unreadable`: a missing binding never reads as absence and never lets a create be stored or sent.
  */
 export function pendingPlanCreateKey(
   sessionBinding: string | null,
@@ -86,7 +87,10 @@ export function pendingPlanCreateKey(
   return actorId === null || companyId === null ? null : JSON.stringify([sessionBinding, actorId, companyId])
 }
 
-/** Where an actor's and company's create is stored. The binding is in the record, so a later session finds — and refuses — it. */
+/**
+ * Where an actor's and company's create is stored. The server binding is in the record, so a later server session of the
+ * same actor finds — and refuses — it, whatever happened to local storage in between.
+ */
 const STORED_CREATE_PREFIX = 'goymen.manufacturing.plan-create.v2:'
 /** Epoch-keyed slots written before the binding: `…v1:${sessionEpoch}:${actorId}:${companyId}`. Read, never written. */
 const LEGACY_CREATE_PREFIX = 'goymen.manufacturing.plan-create.v1:'

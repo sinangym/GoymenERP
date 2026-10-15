@@ -78,15 +78,23 @@ const BLOCKED_TEXT =
   'Bu plan için bu oturumda bekleyen bir komut kaydı okunamadı. Önceki işlemin sonucu bilinmediği için bu ekrandan '
   + 'yeni düzenleme, onay veya emir gönderilmez; plan yalnız okunabilir.'
 
+/**
+ * M01.3 r5 (#66/6187473245): the server answered `authenticationSessionBinding: null`. Without a server session identity
+ * no pending command can be bound to this session, so none is stored or sent; the plan stays readable.
+ */
+const NO_SESSION_TEXT =
+  'Sunucu bu oturum için oturum bağlayıcısı vermedi. Bekleyen bir komut kaydının bu oturuma ait olduğu doğrulanamayacağı '
+  + 'için bu ekrandan düzenleme, onay veya emir gönderilmez; plan yalnız okunabilir.'
+
 const NOT_DURABLE_TEXT =
   'Düzenleme, sayfa yenilense de aynı istek ve anahtarla yeniden gönderilebilecek biçimde saklanamadı; istek gönderilmedi.'
 
-function initialAttempt(slot: PendingPlanSlot): Attempt {
+function initialAttempt(slot: PendingPlanSlot, sessionBinding: string | null): Attempt {
   if (slot.state === 'absent') return { phase: 'idle' }
   if (slot.state === 'pending') {
     return { phase: 'unknown', pending: slot.pending, message: unknownText(slot.pending.snapshot.kind) }
   }
-  return { phase: 'blocked', message: BLOCKED_TEXT }
+  return { phase: 'blocked', message: sessionBinding === null ? NO_SESSION_TEXT : BLOCKED_TEXT }
 }
 
 export function PlanDetailPage() {
@@ -111,9 +119,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const canOpenOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
   // MFG-PLAN-LIST: back to the saved plans, only where the list itself is published to this actor.
   const canOpenPlanList = hasCapability(shell, MANUFACTURING_CAPABILITY.planList)
-  const storeKey = pendingPlanLifecycleKey(shell.sessionBinding, actorId, companyId, planId)
+  const sessionBinding = shell.sessionBinding
+  const storeKey = pendingPlanLifecycleKey(sessionBinding, actorId, companyId, planId)
   // Only a proven-empty slot opens idle; an unreadable one stays blocked for this mount, whatever the read shows.
-  const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanLifecycle(storeKey)))
+  const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanLifecycle(storeKey), sessionBinding))
   const [editing, setEditing] = useState(false)
   const generation = useRef(0)
   const inFlight = useRef(false)
@@ -210,7 +219,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       return
     }
     if (reservation.type === 'unreadable') {
-      setAttempt({ phase: 'blocked', message: BLOCKED_TEXT })
+      setAttempt({ phase: 'blocked', message: sessionBinding === null ? NO_SESSION_TEXT : BLOCKED_TEXT })
       return
     }
     if (reservation.type === 'not-durable') {
@@ -268,7 +277,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         ? 'Önceki emir oluşturma sonucu yeniden gösterildi.'
         : 'Üretim emri oluşturuldu.',
     })
-  }, [actorId, allowed, boundary, canOpenOrder, companyId, navigate, planId, planProcess, refreshPlan, storeKey])
+  }, [actorId, allowed, boundary, canOpenOrder, companyId, navigate, planId, planProcess, refreshPlan, sessionBinding, storeKey])
 
   const start = (snapshot: PlanLifecycleSnapshot) => {
     if (companyId === null || actorId === null) return

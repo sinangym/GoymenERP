@@ -340,11 +340,12 @@ const pendingLifecycle = new Map<string, PendingPlanLifecycle>()
  * command in, a revise is sent only once its exact attempt is durably stored, and an unresolved revise is never
  * displaced by another command of the same slot.
  *
- * M01.3 (K2 #728/6180459736): the stored slot is named by actor, company and plan only, and the record carries the
- * shell's reload-stable session binding (shell/sessionBinding.ts) — not `sessionEpoch`, which restarts at 0 in every
- * document. The same session after an F5 finds its attempt; a record of another session (another binding), a missing
- * binding, or a legacy epoch-keyed v1 record of the same context is `unreadable`, never absent. Nothing is moved,
- * rebound or deleted to make it fit.
+ * M01.3 (K2 #728/6180459736, r5 #66/6187473245): the stored slot is named by actor, company and plan only, and the
+ * record carries the SERVER's session binding (`state.sessionBinding`, from `/identity/me`) — not `sessionEpoch`, which
+ * restarts at 0 in every document, and not anything the client minted or stored, which a transient storage failure
+ * could revive. The same server session after an F5 finds its attempt; a record of another server session (another
+ * binding), a missing binding (the server gave none), or a legacy epoch-keyed v1 record of the same context is
+ * `unreadable`, never absent. Nothing is moved, rebound or deleted to make it fit.
  */
 const STORED_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v2:'
 /** Epoch-keyed slots written before the binding: `[sessionEpoch, actorId, companyId, planId]`. Read, never written. */
@@ -431,7 +432,7 @@ function validReviseRequest(value: unknown): boolean {
 }
 
 interface SlotContext {
-  /** The shell's session binding; null = none could be established, so nothing stored can be trusted. */
+  /** The server's session binding; null = the server gave none, so nothing stored can be trusted or written. */
   readonly sessionBinding: string | null
   readonly actorId: string
   readonly companyId: string

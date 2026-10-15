@@ -58,14 +58,22 @@ const BLOCKED_TEXT =
   'Bu şirket için bu oturumda bekleyen bir plan kaydı okunamadı. Önceki gönderimin sonucu bilinmediği için bu '
   + 'ekrandan yeni plan gönderilmez; kayıtlı planlar okunabilir.'
 
+/**
+ * M01.3 r5 (#66/6187473245): the server answered `authenticationSessionBinding: null`. Without a server session identity
+ * no pending create can be bound to this session, so none is stored or sent; nothing local stands in for the server.
+ */
+const NO_SESSION_TEXT =
+  'Sunucu bu oturum için oturum bağlayıcısı vermedi. Bekleyen bir plan kaydının bu oturuma ait olduğu doğrulanamayacağı '
+  + 'için bu ekrandan yeni plan gönderilmez; kayıtlı planlar okunabilir.'
+
 const NOT_DURABLE_TEXT =
   'Plan, sayfa yenilense de aynı istek ve anahtarla yeniden gönderilebilecek biçimde saklanamadı; istek gönderilmedi.'
 
 /** Only a proven-empty slot opens the form; an unreadable one keeps it closed for this mount. */
-function initialAttempt(slot: PendingPlanCreateSlot): Attempt {
+function initialAttempt(slot: PendingPlanCreateSlot, sessionBinding: string | null): Attempt {
   if (slot.state === 'absent') return { phase: 'idle' }
   if (slot.state === 'pending') return { phase: 'unknown', snapshot: slot.pending, message: UNKNOWN_TEXT }
-  return { phase: 'blocked', message: BLOCKED_TEXT }
+  return { phase: 'blocked', message: sessionBinding === null ? NO_SESSION_TEXT : BLOCKED_TEXT }
 }
 
 /** AT-063: the roll an ST-01 row named, as far as Inventory's candidate read confirmed it. */
@@ -147,8 +155,9 @@ function PlanCreate({ namespace, preselect }: {
   const { capture: captureSecurity, report: reportSecurity } = authBoundary
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
-  const storeKey = pendingPlanCreateKey(shell.sessionBinding, actorId, companyId)
-  const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanCreate(storeKey)))
+  const sessionBinding = shell.sessionBinding
+  const storeKey = pendingPlanCreateKey(sessionBinding, actorId, companyId)
+  const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanCreate(storeKey), sessionBinding))
   const [workCenters, setWorkCenters] = useState<ReadState<readonly WorkCenterSummary[]>>({ type: 'loading' })
   const [workCenterId, setWorkCenterId] = useState('')
   const [search, setSearch] = useState(preselect?.labelCode ?? '')
@@ -266,7 +275,7 @@ function PlanCreate({ namespace, preselect }: {
       // Nothing is sent unless the exact attempt is durably stored for a reload first.
       const reservation = reservePendingPlanCreate(storeKey, snapshot)
       if (reservation.type === 'unreadable') {
-        setAttempt({ phase: 'blocked', message: BLOCKED_TEXT })
+        setAttempt({ phase: 'blocked', message: sessionBinding === null ? NO_SESSION_TEXT : BLOCKED_TEXT })
         return
       }
       if (reservation.type === 'occupied') {
@@ -314,7 +323,7 @@ function PlanCreate({ namespace, preselect }: {
           : { phase: 'failed', message: commandFailure(outcome) },
       )
     },
-    [actorId, captureSecurity, companyId, reportSecurity, storeKey],
+    [actorId, captureSecurity, companyId, reportSecurity, sessionBinding, storeKey],
   )
 
   // AT-061 / AT-062: the button-less backend preview of what is typed (DEC-PRDCT-005). It writes nothing and never

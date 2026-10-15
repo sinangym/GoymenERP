@@ -8,6 +8,8 @@ import {
   IDENTITY,
   ROLL_1,
   ROLL_2,
+  SESSION_1,
+  SESSION_2,
   WORK_CENTER,
   installFetch,
   json,
@@ -16,6 +18,7 @@ import {
   reloadDocument,
   renderAt,
   requestsFor,
+  sessionBinding,
   type RecordedRequest,
 } from './testHarness'
 
@@ -85,13 +88,16 @@ function installPlanApi(options: {
   readonly preview?: (body: Record<string, unknown>) => Response | Promise<Response>
   readonly capabilities?: readonly string[]
   readonly actor?: () => string
+  /** The server session binding `/identity/me` answers with (M01.3 r5); the client has no other session authority. */
+  readonly session?: () => string | null
 } = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
-  const actor = options.actor
+  const actor = options.actor ?? (() => IDENTITY.userId)
+  const session = options.session ?? (() => SESSION_1)
   const recorded = installFetch({
     capabilities: options.capabilities ?? [MANUFACTURING_CAPABILITY.planCreate, MANUFACTURING_CAPABILITY.planDetail],
-    identity: actor === undefined ? undefined : () => ({ ...IDENTITY, userId: actor() }),
+    identity: () => ({ ...IDENTITY, userId: actor(), authenticationSessionBinding: session() }),
     respond: (url, init) => {
       if (url.includes('/organization/work-centers')) return json([workCenter(), cutWorkCenter()])
       if (url.includes('/inventory/references/parent-rolls')) {
@@ -630,18 +636,28 @@ describe('AT-061 / AT-062: the live plan preview', () => {
 })
 
 /**
- * M01.3 K2 #728/6180459736 — the pending create across the real session boundary. An actor change is the orchestrator's
- * SESSION_RESET; the reload is a new module graph and a new provider over the same sessionStorage. Nothing here sets an
- * epoch or a binding by hand.
+ * M01.3 r5 (#66/6187473245) — the pending create across the SERVER's session boundary: `/identity/me` answers
+ * `authenticationSessionBinding`, and only a change of that value for the same actor (or an actor change) ends the session
+ * the create slot belongs to. The paths are the real shell paths: an identity re-read the orchestrator acts on, and a reload
+ * that is a new module graph and a new provider over the same sessionStorage. Nothing here sets an epoch or a binding by
+ * hand, and nothing local stands in for the server's answer.
  */
 describe('pending plan create across the session boundary', () => {
   const OTHER_ACTOR = '88888888-8888-4888-8888-888888888888'
+  const OTHER_ACTOR_SESSION = sessionBinding(0xf)
   const BLOCKED = /bekleyen bir plan kaydı okunamadı/
+  const NO_SESSION = /oturum bağlayıcısı vermedi/
 
-  async function actorChange(recorded: readonly RecordedRequest[], queryClient: import('@tanstack/react-query').QueryClient) {
+  async function sessionChange(recorded: readonly RecordedRequest[], queryClient: import('@tanstack/react-query').QueryClient) {
     const bootstraps = requestsFor(recorded, '/shell/capabilities').length
     await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
     await waitFor(() => expect(requestsFor(recorded, '/shell/capabilities').length).toBe(bootstraps + 1))
+  }
+
+  async function identityRefresh(recorded: readonly RecordedRequest[], queryClient: import('@tanstack/react-query').QueryClient) {
+    const identityReads = requestsFor(recorded, '/identity/me').length
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(requestsFor(recorded, '/identity/me').length).toBe(identityReads + 1))
   }
 
   function storedCreates(): Record<string, string | null> {
@@ -652,18 +668,24 @@ describe('pending plan create across the session boundary', () => {
     return entries
   }
 
-  it('A: a create left unknown in a session reached through a real reset is restored over F5 — same key, same bytes', async () => {
+  async function saveUntilUnknown(user: ReturnType<typeof userEvent.setup>) {
+    await fillPlan(user)
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+  }
+
+  it('A: a create left unknown in a session reached through a real boundary is restored over F5 under the same server binding — same key, same bytes', async () => {
     const user = userEvent.setup()
     let actor = OTHER_ACTOR
-    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor })
+    let session: string | null = OTHER_ACTOR_SESSION
+    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor, session: () => session })
     const first = renderAt('/uretim/plan/yeni')
     await screen.findByRole('option', { name: 'SLT-01 — Dilme Hattı' })
 
     actor = APPROVER
-    await actorChange(recorded, first.queryClient)
-    await fillPlan(user)
-    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
-    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+    session = SESSION_1
+    await sessionChange(recorded, first.queryClient)
+    await saveUntilUnknown(user)
 
     const next = await reloadDocument(first.view)
     const second = next.renderAt('/uretim/plan/yeni')
@@ -680,27 +702,132 @@ describe('pending plan create across the session boundary', () => {
     }
   })
 
-  it("B: after a real reset back to the same actor, the earlier session's create is neither replayed nor replaced", async () => {
+  it('a token-refresh-equivalent identity re-read with the same actor and binding is no boundary: the unknown create keeps its exact retry', async () => {
     const user = userEvent.setup()
-    let actor = APPROVER
-    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor })
+    const recorded = installPlanApi({ failFirstSave: true })
     const view = renderAt('/uretim/plan/yeni')
-    await fillPlan(user)
-    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
-    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+    await saveUntilUnknown(user)
+    const stored = storedCreates()
+    const bootstraps = requestsFor(recorded, '/shell/capabilities').length
+
+    await identityRefresh(recorded, view.queryClient)
+
+    expect(requestsFor(recorded, '/shell/capabilities')).toHaveLength(bootstraps)
+    expect(storedCreates()).toEqual(stored)
+    await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    const [lost, replay] = saveRequests(recorded)
+    expect(saveRequests(recorded)).toHaveLength(2)
+    expect(replay.headers['Idempotency-Key']).toBe(lost.headers['Idempotency-Key'])
+    expect(JSON.stringify(replay.body)).toBe(JSON.stringify(lost.body))
+  })
+
+  it("B: the same actor in a new server session (a different binding, no reload) finds the earlier session's create neither replayed nor replaced", async () => {
+    const user = userEvent.setup()
+    let session: string | null = SESSION_1
+    const recorded = installPlanApi({ failFirstSave: true, session: () => session })
+    const view = renderAt('/uretim/plan/yeni')
+    await saveUntilUnknown(user)
     const stored = storedCreates()
     expect(Object.keys(stored)).toHaveLength(1)
 
-    actor = OTHER_ACTOR
-    await actorChange(recorded, view.queryClient)
-    actor = APPROVER
-    await actorChange(recorded, view.queryClient)
+    session = SESSION_2
+    await sessionChange(recorded, view.queryClient)
 
     expect(await screen.findByText(BLOCKED)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeNull()
     expect(saveRequests(recorded)).toHaveLength(1)
     expect(storedCreates()).toEqual(stored)
+  })
+
+  it("B: A→B→A in one tab, each its own server session: the earlier session's create is neither replayed nor replaced", async () => {
+    const user = userEvent.setup()
+    let actor = APPROVER
+    let session: string | null = SESSION_1
+    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor, session: () => session })
+    const view = renderAt('/uretim/plan/yeni')
+    await saveUntilUnknown(user)
+    const stored = storedCreates()
+    expect(Object.keys(stored)).toHaveLength(1)
+
+    actor = OTHER_ACTOR
+    session = OTHER_ACTOR_SESSION
+    await sessionChange(recorded, view.queryClient)
+    actor = APPROVER
+    session = SESSION_2
+    await sessionChange(recorded, view.queryClient)
+
+    expect(await screen.findByText(BLOCKED)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeNull()
+    expect(saveRequests(recorded)).toHaveLength(1)
+    expect(storedCreates()).toEqual(stored)
+  })
+
+  it('a transient storage failure across the boundary changes nothing: the next server session still cannot read the old create', async () => {
+    const user = userEvent.setup()
+    let actor = APPROVER
+    let session: string | null = SESSION_1
+    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor, session: () => session })
+    const first = renderAt('/uretim/plan/yeni')
+    await saveUntilUnknown(user)
+    const stored = storedCreates()
+
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('transient') })
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('transient') })
+    try {
+      actor = OTHER_ACTOR
+      session = OTHER_ACTOR_SESSION
+      await sessionChange(recorded, first.queryClient)
+    } finally {
+      setItem.mockRestore()
+      removeItem.mockRestore()
+    }
+    expect(storedCreates()).toEqual(stored)
+
+    actor = APPROVER
+    session = SESSION_2
+    const next = await reloadDocument(first.view)
+    const second = next.renderAt('/uretim/plan/yeni')
+    try {
+      expect(await screen.findByText(BLOCKED)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeNull()
+      expect(saveRequests(recorded)).toHaveLength(1)
+      expect(storedCreates()).toEqual(stored)
+    } finally {
+      second.view.unmount()
+    }
+  })
+
+  it('a null server binding is fail-closed, not a session: the form stays closed, nothing is minted, stored or sent', async () => {
+    const recorded = installPlanApi({ session: () => null })
+    renderAt('/uretim/plan/yeni')
+    expect(await screen.findByText(NO_SESSION)).toBeTruthy()
+    expect(screen.queryByText(BLOCKED)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+    expect(saveRequests(recorded)).toHaveLength(0)
+    expect(storedCreates()).toEqual({})
+    expect(Object.keys(sessionStorage).filter((name) => name.includes('session'))).toEqual([])
+  })
+
+  it('an identity answer without the binding property is malformed: no context, no form, no save', async () => {
+    const recorded = installPlanApi()
+    const { authenticationSessionBinding: _omitted, ...withoutBinding } = IDENTITY
+    const fetchMock = vi.mocked(fetch)
+    const real = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      return url.endsWith('/identity/me') ? json(withoutBinding) : real(input, init)
+    })
+    renderAt('/uretim/plan/yeni')
+    expect(await screen.findByText(/Beklenmeyen yanıt/i)).toBeTruthy()
+    expect(requestsFor(recorded, '/shell/capabilities')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    expect(saveRequests(recorded)).toHaveLength(0)
+    expect(storedCreates()).toEqual({})
   })
 
   it('a create whose attempt cannot be stored for a reload is not sent', async () => {

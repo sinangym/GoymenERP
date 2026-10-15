@@ -210,9 +210,9 @@ describe('savePlan', () => {
 describe('pending revise across a module re-creation (reload boundary)', () => {
   const ACTOR = '99999999-9999-9999-9999-999999999999'
   const REVISE_KEY = '30000000-0000-4000-8000-000000000001'
-  /** The shell's session binding (M01.3 K2 #728/6180459736); the epoch is no part of a stored slot any more. */
-  const BINDING = '50000000-0000-4000-8000-000000000001'
-  const OTHER_BINDING = '50000000-0000-4000-8000-000000000002'
+  /** Controlled server `authenticationSessionBinding` values (M01.3 r5, #66/6187473245); the epoch is no part of a stored slot. */
+  const BINDING = `v1.${'1'.repeat(64)}`
+  const OTHER_BINDING = `v1.${'2'.repeat(64)}`
   const REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v2:'
   const LEGACY_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v1:'
   const CUT_LINES = [
