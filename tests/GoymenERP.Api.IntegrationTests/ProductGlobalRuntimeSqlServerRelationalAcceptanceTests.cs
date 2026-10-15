@@ -602,13 +602,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     new(Stock: SettingsUnitIdentitiesV1.Kilogram, Sales: SettingsUnitIdentitiesV1.Kilogram));
             }
 
-            async Task<ProductMutationResponse> CreateAsync(bool includeLength, string key)
+            async Task<ProductMutationResponse> CreateCardAsync(CreateProductDraftRequest draft, string key)
             {
-                var draft = new CreateProductDraftRequest(
-                    includeLength ? "S235JR 3 × 1250 × 2500,125 kesilmiş sac" : "Boyu eksik kesilmiş sac",
-                    ProductInitialCodeGroupV1.SacGroupId,
-                    FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
-                    References: References(includeLength));
                 using var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products")
                 { Content = JsonContent.Create(draft) };
                 message.Headers.Add(ProductApiV1.IdempotencyHeader, key);
@@ -617,27 +612,84 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 return (await response.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
             }
 
-            async Task<HttpResponseMessage> ActivateAsync(Guid productId, string key)
+            Task<ProductMutationResponse> CreateCutSheetAsync(bool includeLength, string key) =>
+                CreateCardAsync(new CreateProductDraftRequest(
+                    includeLength ? "S235JR 3 × 1250 × 2500,125 kesilmiş sac" : "Boyu eksik kesilmiş sac",
+                    ProductInitialCodeGroupV1.SacGroupId,
+                    FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                    References: References(includeLength)), key);
+
+            async Task<HttpResponseMessage> ActivateAsync(Guid productId, string key, string version)
             {
                 var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/products/{productId:D}/activation")
-                { Content = JsonContent.Create(new ActivateProductRequest("1")) };
+                { Content = JsonContent.Create(new ActivateProductRequest(version)) };
                 message.Headers.Add(ProductApiV1.IdempotencyHeader, key);
                 return await client.SendAsync(message);
             }
 
-            var incomplete = await CreateAsync(false, "product-cut-sheet-missing-length");
-            using (var refused = await ActivateAsync(incomplete.Card.Product.Id,
-                       "product-cut-sheet-missing-length-activate"))
+            // DEC-PRD-010 compatibility: family-less and legacy coil/band drafts do not acquire the
+            // cut-sheet-only completeness prerequisite.
+            var familyless = await CreateCardAsync(new CreateProductDraftRequest(
+                "Ailesiz eski ürün", ProductInitialCodeGroupV1.SacGroupId), "product-familyless-legacy");
+            using (var familylessResponse = await ActivateAsync(familyless.Card.Product.Id,
+                       "product-familyless-legacy-activate", "1"))
             {
-                Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
-                var body = await refused.Content.ReadAsStringAsync();
-                Assert.Contains("references.attributes.length-mm", body, StringComparison.Ordinal);
-                Assert.Contains(ProductFamilyPolicyCodesV1.Required, body, StringComparison.Ordinal);
+                Assert.Equal(HttpStatusCode.OK, familylessResponse.StatusCode);
+                var body = (await familylessResponse.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+                Assert.Equal(("Active", "2"), (body.Card.Product.Lifecycle, body.Card.Product.Version));
             }
 
-            var created = await CreateAsync(true, "product-cut-sheet-exact-length");
+            var legacyCoil = await CreateCardAsync(new CreateProductDraftRequest(
+                "Eksik teknik alanlı eski rulo", ProductInitialCodeGroupV1.SacGroupId,
+                FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCoilFamilyId,
+                References: new ProductReferences(ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                    new Dictionary<string, JsonElement>(StringComparer.Ordinal), null)),
+                "product-legacy-coil-incomplete");
+            using (var legacyResponse = await ActivateAsync(legacyCoil.Card.Product.Id,
+                       "product-legacy-coil-incomplete-activate", "1"))
+            {
+                Assert.Equal(HttpStatusCode.OK, legacyResponse.StatusCode);
+                var body = (await legacyResponse.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+                Assert.Equal(("Active", "2"), (body.Card.Product.Lifecycle, body.Card.Product.Version));
+            }
+
+            var incomplete = await CreateCutSheetAsync(false, "product-cut-sheet-missing-length");
+            using (var edited = await EditAsync(client, incomplete.Card.Product.Id,
+                       "product-cut-sheet-missing-length-edit", "1", "Boyu eksik kesilmiş sac v2"))
+            {
+                Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
+                var body = (await edited.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+                Assert.Equal(("Draft", "2"), (body.Card.Product.Lifecycle, body.Card.Product.Version));
+            }
+
+            var beforeStale = await SnapshotAsync(factory.DatabaseConnectionString);
+            using (var stale = await ActivateAsync(incomplete.Card.Product.Id,
+                       "product-cut-sheet-missing-length-stale-activate", "1"))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+                var problem = await stale.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(ProductApiV1.VersionConflict, problem.GetProperty("code").GetString());
+                Assert.Equal("1", problem.GetProperty("expectedVersion").GetString());
+                Assert.Equal("2", problem.GetProperty("currentVersion").GetString());
+                Assert.DoesNotContain(problem.EnumerateObject(), property => property.NameEquals("errors"));
+            }
+            Assert.Equal(beforeStale, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            using (var refused = await ActivateAsync(incomplete.Card.Product.Id,
+                       "product-cut-sheet-missing-length-activate", "2"))
+            {
+                Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+                var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(ProductApiV1.ValidationFailed, problem.GetProperty("code").GetString());
+                var error = Assert.Single(problem.GetProperty("errors").EnumerateArray(), candidate =>
+                    candidate.GetProperty("field").GetString() == "references.attributes.length-mm");
+                Assert.Equal(ProductFamilyPolicyCodesV1.Required, error.GetProperty("code").GetString());
+            }
+            Assert.Equal(beforeStale, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            var created = await CreateCutSheetAsync(true, "product-cut-sheet-exact-length");
             using var activatedResponse = await ActivateAsync(created.Card.Product.Id,
-                "product-cut-sheet-exact-length-activate");
+                "product-cut-sheet-exact-length-activate", "1");
             Assert.Equal(HttpStatusCode.OK, activatedResponse.StatusCode);
             var activated = (await activatedResponse.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
             Assert.Equal((created.Card.Product.Id, "Active", "2"),
