@@ -38,10 +38,18 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             Assert.Equal((LogisticsWriteOutcome.Recorded, LogisticsWriteOutcome.Replayed, run.Correlation),
                 (first.Outcome, replay.Outcome, replay.OriginalCorrelationId));
 
-            var draftProof = await owner.Adapter.ReadAsync(new InventoryTransferOutgoingDocumentProofQueryV1(
-                CompanyA, transferId, documentId, 1, lines));
-            Assert.Equal(InventoryTransferDocumentProofOutcomeV1.Draft, draftProof.Outcome);
-            Assert.Null(draftProof.EffectiveBinding);
+            var beforeDraftProofReads = await ProofReadEffectsAsync(run, documentId);
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.Draft,
+                new(CompanyA, transferId, documentId, 1, lines));
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.BindingMismatch,
+                new(CompanyA, Guid.NewGuid(), documentId, 1, lines));
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.BindingMismatch,
+                new(CompanyA, transferId, documentId, 1, lines.Reverse()));
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.BindingMismatch,
+                new(CompanyA, transferId, documentId, 1, lines.Take(1)));
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.BindingMismatch,
+                new(CompanyB, transferId, documentId, 1, lines));
+            Assert.Equal(beforeDraftProofReads, await ProofReadEffectsAsync(run, documentId));
 
             var effective = await owner.Store.MutateAsync(run.Envelope("transfer-doc-finalize"), Hash("transfer-doc-finalize"),
                 LogisticsTransferOutgoingDocumentCommandsV1.Finalize, documentId,
@@ -49,6 +57,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             Assert.Equal((TransferOutgoingDocumentStatus.Effective, 2),
                 (effective.Document.Status, effective.Document.Version));
 
+            var beforeEffectiveProofReads = await ProofReadEffectsAsync(run, documentId);
             var exact = await owner.Adapter.ReadAsync(new InventoryTransferOutgoingDocumentProofQueryV1(
                 CompanyA, transferId, documentId, 2, lines));
             Assert.Equal(InventoryTransferDocumentProofOutcomeV1.CurrentEffective, exact.Outcome);
@@ -63,6 +72,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 CompanyA, transferId, documentId, 2, lines.Reverse()));
             Assert.Equal(InventoryTransferDocumentProofOutcomeV1.BindingMismatch, reordered.Outcome);
             Assert.Null(reordered.EffectiveBinding);
+            Assert.Equal(beforeEffectiveProofReads, await ProofReadEffectsAsync(run, documentId));
         }
 
         await using (var foreign = TransferStore(run, CompanyB))
@@ -89,7 +99,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         await using var run = await Run.StartAsync();
         var documentId = Guid.NewGuid();
         var transferId = Guid.NewGuid();
-        var lines = new[] { Guid.NewGuid() };
+        var lines = new[] { Guid.NewGuid(), Guid.NewGuid() };
         await using (var creator = TransferStore(run, CompanyA))
         {
             await creator.Store.StoreDraftAsync(run.Envelope("race-create"), Hash("race-create"),
@@ -130,10 +140,18 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             await owner.Store.MutateAsync(run.Envelope("cancel-effective"), Hash("cancel-effective"),
                 LogisticsTransferOutgoingDocumentCommandsV1.Cancel, documentId,
                 (item, now) => item.Cancel(2, run.Actor, "wrong destination", now), _ => Task.CompletedTask);
-            var proof = await owner.Adapter.ReadAsync(new InventoryTransferOutgoingDocumentProofQueryV1(
-                CompanyA, transferId, documentId, 3, lines));
-            Assert.Equal(InventoryTransferDocumentProofOutcomeV1.Cancelled, proof.Outcome);
-            Assert.Null(proof.EffectiveBinding);
+            var beforeProofReads = await ProofReadEffectsAsync(run, documentId);
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.Cancelled,
+                new(CompanyA, transferId, documentId, 3, lines));
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.BindingMismatch,
+                new(CompanyA, Guid.NewGuid(), documentId, 3, lines));
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.BindingMismatch,
+                new(CompanyA, transferId, documentId, 3, lines.Reverse()));
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.BindingMismatch,
+                new(CompanyA, transferId, documentId, 3, lines.Take(1)));
+            await AssertRefusedProofAsync(owner.Adapter, InventoryTransferDocumentProofOutcomeV1.BindingMismatch,
+                new(CompanyB, transferId, documentId, 3, lines));
+            Assert.Equal(beforeProofReads, await ProofReadEffectsAsync(run, documentId));
         }
     }
 
@@ -195,6 +213,27 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             .UseSqlServer(factory.DatabaseConnectionString,
                 sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", LogisticsDbContext.Schema))
             .Options;
+
+    private static async Task AssertRefusedProofAsync(InventoryTransferOutgoingDocumentProofAdapter adapter,
+        InventoryTransferDocumentProofOutcomeV1 expected,
+        InventoryTransferOutgoingDocumentProofQueryV1 query)
+    {
+        var proof = await adapter.ReadAsync(query);
+        Assert.Equal(expected, proof.Outcome);
+        Assert.Null(proof.EffectiveBinding);
+    }
+
+    private static async Task<(int Attempts, int Audits, int Movements, int Outbox)> ProofReadEffectsAsync(
+        Run run,
+        Guid documentId) =>
+        (await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM logistics.TransferOutgoingDocumentAttempts WHERE DocumentId = @id",
+                ("@id", documentId)),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId = @id",
+                ("@id", documentId.ToString("D"))),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.OutboxMessages"));
 
     private sealed class TransferDocumentScope(
         LogisticsDbContext context,

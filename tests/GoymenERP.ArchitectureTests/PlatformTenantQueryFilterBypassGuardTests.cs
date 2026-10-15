@@ -1103,7 +1103,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // exact-source and exact-count reviewed and performs no bypass or write.
                 [ReviewedInventoryTransferOutgoingDocumentProofAdapterPath] =
                     new(
-                        "6dab9f835df44a102c156c1f171c7f3b2ab46f7acd85514ae0b4385e6b7945f9",
+                        "658c983d5a1cace101562f83ac38bbd359c35f5aab929b63ce5f1cbb762c1321",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             [".FindAsync"] = 1

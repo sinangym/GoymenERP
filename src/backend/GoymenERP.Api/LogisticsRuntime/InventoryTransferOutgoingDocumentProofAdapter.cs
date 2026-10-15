@@ -73,6 +73,15 @@ internal sealed class InventoryTransferOutgoingDocumentProofAdapter(
         if (owner is null)
             return InventoryTransferOutgoingDocumentProofV1.Refused(
                 InventoryTransferDocumentProofOutcomeV1.Missing);
+
+        var sameBindingExceptVersion = owner.CompanyId == query.CompanyId
+            && owner.TransferId == query.TransferId
+            && owner.DocumentId == query.DocumentId
+            && owner.OrderedTransferLineIds.SequenceEqual(query.OrderedTransferLineIds);
+        if (!sameBindingExceptVersion)
+            return InventoryTransferOutgoingDocumentProofV1.Refused(
+                InventoryTransferDocumentProofOutcomeV1.BindingMismatch);
+
         if (owner.State == LogisticsTransferOutgoingDocumentProofStateV1.Draft)
             return InventoryTransferOutgoingDocumentProofV1.Refused(
                 InventoryTransferDocumentProofOutcomeV1.Draft);
@@ -83,11 +92,7 @@ internal sealed class InventoryTransferOutgoingDocumentProofAdapter(
             return InventoryTransferOutgoingDocumentProofV1.Refused(
                 InventoryTransferDocumentProofOutcomeV1.Unavailable);
 
-        var sameBindingExceptVersion = owner.CompanyId == query.CompanyId
-            && owner.TransferId == query.TransferId
-            && owner.DocumentId == query.DocumentId
-            && owner.OrderedTransferLineIds.SequenceEqual(query.OrderedTransferLineIds);
-        if (sameBindingExceptVersion && owner.DocumentVersion != query.ExpectedDocumentVersion)
+        if (owner.DocumentVersion != query.ExpectedDocumentVersion)
             return InventoryTransferOutgoingDocumentProofV1.Refused(
                 InventoryTransferDocumentProofOutcomeV1.Stale);
 
