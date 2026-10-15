@@ -119,6 +119,7 @@ public sealed record CapturedPlanTechnicalSnapshotViewV1(
     CapturedPlanTemplateRevisionViewV1 Template,
     string ThicknessMm,
     string WidthMm,
+    string? LengthMm,
     CapturedPlanKilogramUnitViewV1 UnitKg,
     DateOnly EffectiveOn);
 
@@ -2547,6 +2548,7 @@ public sealed partial class ManufacturingCommandService(
         new(snapshot.TemplateId, snapshot.TemplateVersion, snapshot.TemplateCode, snapshot.TemplateSourceRevision),
         Text(snapshot.ThicknessMm),
         Text(snapshot.WidthMm),
+        snapshot.LengthMm is { } lengthMm ? Text(lengthMm) : null,
         new(snapshot.KilogramUnitCompanyId, snapshot.KilogramUnitId, snapshot.KilogramUnitCode,
             snapshot.KilogramProfileId, snapshot.KilogramProfileVersion),
         snapshot.EffectiveOn);

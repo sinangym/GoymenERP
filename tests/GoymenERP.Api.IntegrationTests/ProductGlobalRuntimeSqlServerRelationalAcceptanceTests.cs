@@ -1064,8 +1064,9 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             Assert.Equal((planId, CompanyA, workCenterId, labelId, "1000"),
                 (createdPlan.PlanId, createdPlan.CompanyId, createdPlan.WorkCenterId,
                     plannedInput.ParentRollId, plannedInput.PlannedKg));
-            Assert.Equal((stocked.ProductId, stocked.ProductVersion, "3", "248"),
-                (captured.ProductId, captured.ProductVersion, captured.ThicknessMm, captured.WidthMm));
+            Assert.Equal((stocked.ProductId, stocked.ProductVersion, "3", "248", "2500.125"),
+                (captured.ProductId, captured.ProductVersion, captured.ThicknessMm, captured.WidthMm,
+                    captured.LengthMm));
             Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
                 ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                 (captured.Family.FamilyId, captured.Family.SourceRevision));
