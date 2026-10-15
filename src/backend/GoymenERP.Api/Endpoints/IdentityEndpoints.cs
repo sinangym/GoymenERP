@@ -21,6 +21,7 @@ public static class IdentityEndpoints
             IAuthenticationSessionBindingResolver sessionBindingResolver,
             CancellationToken cancellationToken) =>
         {
+            NoStore(httpContext);
             var profile = await profileService.GetCurrentAsync(cancellationToken);
             return profile is null
                 ? Results.Problem(

@@ -107,8 +107,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // production-activation surface.
     // ORG-LOCATION-OPERATOR-API-01B adds one scoped in-process Counterparty-to-Organization eligibility
     // adapter after both modules are registered; it adds no network, hosted-service or production-activation surface.
+    // M01.3-AUTH-SESSION-CONTRACT-01 adds one scoped in-process authentication-session binding resolver;
+    // it adds no OpenAPI-generation, network or hosted-service surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "08d1f4762a909861cc7013c37600235e04c7f5f0693435d9c952550df8e32be4";
+        "3e240589f44ca7975a0bcd2a14cd1f2a0566c65a87b9648fc720ce89084b4b12";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =

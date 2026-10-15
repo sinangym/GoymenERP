@@ -3,7 +3,11 @@ using System.Security.Claims;
 using System.Text.Json;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Application.Contracts;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 
@@ -56,6 +60,23 @@ public sealed class AuthenticationSessionBindingResolverTests(GoymenErpApiFactor
     }
 
     [Fact]
+    public async Task SameClientSameActorRelogin_DoesNotReuseCachedSessionBinding()
+    {
+        var sessionA = Guid.NewGuid().ToString("D");
+        var sessionB = Guid.NewGuid().ToString("D");
+        using var client = CreateClient(TestUsers.CompanyA, sessionA);
+
+        var bindingA = await GetBindingAsync(client);
+        client.DefaultRequestHeaders.Remove(SessionHeaderName);
+        client.DefaultRequestHeaders.TryAddWithoutValidation(SessionHeaderName, sessionB);
+        var bindingB = await GetBindingAsync(client);
+
+        Assert.NotNull(bindingA);
+        Assert.NotNull(bindingB);
+        Assert.NotEqual(bindingA, bindingB);
+    }
+
+    [Fact]
     public async Task ActorChangeWithSameSession_DoesNotReuseAnotherActorsBinding()
     {
         var session = Guid.NewGuid().ToString("D");
@@ -86,6 +107,27 @@ public sealed class AuthenticationSessionBindingResolverTests(GoymenErpApiFactor
         Assert.Null(await GetBindingAsync(missing));
         Assert.Null(await GetBindingAsync(malformed));
         Assert.Null(await GetBindingAsync(multiple));
+    }
+
+    [Fact]
+    public async Task MissingIdentityProfile_ErrorResponseIsPrivateAndNotStored()
+    {
+        await using var isolatedFactory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IIdentityProfileService>();
+                services.AddScoped<IIdentityProfileService, MissingIdentityProfileService>();
+            }));
+        using var client = isolatedFactory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Development-User", TestUsers.CompanyA);
+        client.DefaultRequestHeaders.Add(SessionHeaderName, Guid.NewGuid().ToString("D"));
+
+        using var response = await client.GetAsync("/api/v1/identity/me");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.NotNull(response.Headers.CacheControl);
+        Assert.True(response.Headers.CacheControl.Private);
+        Assert.True(response.Headers.CacheControl.NoStore);
     }
 
     [Theory]
@@ -143,6 +185,9 @@ public sealed class AuthenticationSessionBindingResolverTests(GoymenErpApiFactor
         var payload = await response.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(response.Headers.CacheControl);
+        Assert.True(response.Headers.CacheControl.Private);
+        Assert.True(response.Headers.CacheControl.NoStore);
         using var document = JsonDocument.Parse(payload);
         var binding = document.RootElement.GetProperty("authenticationSessionBinding");
         return binding.ValueKind == JsonValueKind.Null ? null : binding.GetString();
@@ -179,5 +224,11 @@ public sealed class AuthenticationSessionBindingResolverTests(GoymenErpApiFactor
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
 
         public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
+    private sealed class MissingIdentityProfileService : IIdentityProfileService
+    {
+        public Task<IdentityProfile?> GetCurrentAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IdentityProfile?>(null);
     }
 }
