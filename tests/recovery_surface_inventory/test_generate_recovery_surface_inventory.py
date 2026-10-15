@@ -64,6 +64,9 @@ EXPECTED_STORES = {
     ("logistics", "LoadingAttempts"): (
         "LoadingAttemptRow", "idempotency", "LogisticsDbContext"
     ),
+    ("logistics", "TransferOutgoingDocumentAttempts"): (
+        "TransferOutgoingDocumentAttemptRow", "idempotency", "LogisticsDbContext"
+    ),
     ("manufacturing", "Commands"): ("CommandRow", "idempotency", "ManufacturingDbContext"),
     ("product", "PriceListAttempts"): (
         "PriceListAttemptRow", "idempotency", "ProductPriceListDbContext"
@@ -427,7 +430,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 95, "durableStores": 20},
+            {"dbContexts": 18, "migrations": 96, "durableStores": 21},
             self.inventory["counts"],
         )
         actual = {
@@ -437,13 +440,13 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(20, len(actual))
+        self.assertEqual(21, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
     def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(20, len(specs_by_id))
+        self.assertEqual(21, len(specs_by_id))
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]
@@ -468,17 +471,40 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
                 record["id"],
             )
 
+    def test_transfer_outgoing_document_attempts_are_the_reviewed_replay_store(self) -> None:
+        store = next(
+            item
+            for item in self.inventory["durableStores"]
+            if item["id"] == "logistics.transfer-outgoing-document-attempts"
+        )
+        self.assertEqual("Logistics", store["module"])
+        self.assertEqual("idempotency", store["kind"])
+        self.assertEqual("LogisticsDbContext", store["dbContext"])
+        self.assertEqual("TransferOutgoingDocumentAttemptRow", store["entityType"])
+        self.assertEqual("logistics", store["schema"])
+        self.assertEqual("TransferOutgoingDocumentAttempts", store["table"])
+        self.assertEqual(
+            {
+                generator.LOGISTICS_CONTEXT,
+                "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+                "Persistence/Migrations/20261015163000_AddTransferOutgoingDocuments.cs",
+                "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
+                "Persistence/LogisticsTransferOutgoingDocumentStore.cs",
+            },
+            {source["path"] for source in store["sourceFiles"]},
+        )
+
     def test_snapshot_discovery_is_exact_and_excludes_only_audit_metadata(self) -> None:
         discovered = generator._discover_idempotency_key_tables(self.snapshot)
         self.assertEqual(generator.EXPECTED_IDEMPOTENCY_KEY_TABLES, discovered)
-        self.assertEqual(16, len(discovered))
+        self.assertEqual(17, len(discovered))
         replay_tables = set(generator._discover_replay_enforcement_tables(self.snapshot))
         specified = {
             (spec.schema, spec.table)
             for spec in generator.DURABLE_STORE_SPECS
             if spec.kind == "idempotency"
         }
-        self.assertEqual(15, len(replay_tables))
+        self.assertEqual(16, len(replay_tables))
         self.assertEqual(specified, replay_tables)
         self.assertEqual((("audit", "AuditEvents"),), generator.METADATA_ONLY_IDEMPOTENCY_KEY_TABLES)
 
@@ -1889,12 +1915,13 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(95, len(migrations))
+        self.assertEqual(96, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
             "20261015123000_AddManufacturingPlanTechnicalLengthSnapshots.cs",
             "20261015150000_SerializeManufacturingTolerancePolicyWindows.cs",
+            "20261015163000_AddTransferOutgoingDocuments.cs",
         }
         self.assertTrue(
             accepted_main_migrations.issubset(
@@ -2229,7 +2256,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1063, len(source_paths))
+        self.assertEqual(1071, len(source_paths))
         self.assertIn(
             "src/backend/Modules/Inventory/"
             "GoymenERP.Modules.Inventory.Application/InventoryTransferDocumentProofContractsV1.cs",

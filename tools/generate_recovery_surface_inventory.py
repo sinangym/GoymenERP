@@ -49,18 +49,18 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 95
+EXPECTED_MIGRATION_COUNT = 96
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "7d1ad41b18cdbb44a4c2b97c91a2489ee4129f1c2098ea6c3ffef61daff3afab"
+    "27ac7349e65da82402f838b812e279ebcef7a5b8d76dba1e67839aef19ad7c9f"
 )
-EXPECTED_DURABLE_STORE_COUNT = 20
+EXPECTED_DURABLE_STORE_COUNT = 21
 # The source-only inventory is reviewed for one frozen backend compilation surface.  A
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
 # lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1063
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1071
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "ddc36ab047fe0476b3ba4790f2c3e97eeaf8d9010a9984cb81a5865bffaa104c"
+    "3ec0ac48606867d3d881f0ce4f740dbeeffdbd69e885eef262f385c2386cb3cc"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -143,6 +143,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("inventory", "Commands"),
     ("logistics", "CustomerReturnAttempts"),
     ("logistics", "LoadingAttempts"),
+    ("logistics", "TransferOutgoingDocumentAttempts"),
     ("manufacturing", "Commands"),
     ("product", "PriceListAttempts"),
     ("purchasing", "PurchaseAcceptanceShares"),
@@ -445,6 +446,14 @@ DURABLE_STORE_SPECS = (
         ("dbContext.Attempts.Add(Attempt(",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "logistics.transfer-outgoing-document-attempts", "Logistics", "idempotency", "LogisticsDbContext",
+        "TransferOutgoingDocumentAttemptRow", "logistics", "TransferOutgoingDocumentAttempts", LOGISTICS_CONTEXT,
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20261015163000_AddTransferOutgoingDocuments.cs",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs",
+        ("dbContext.TransferOutgoingDocumentAttempts.Add(Attempt(",),
+        mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "manufacturing.command-replay", "Manufacturing", "idempotency", "ManufacturingDbContext",
         "CommandRow", "manufacturing", "Commands",
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingDbContext.cs",
@@ -550,6 +559,10 @@ WRITER_METHOD_SCOPES = {
         "logistics.loading-attempts",
         "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs",
     ): "StoreInstructionAsync",
+    (
+        "logistics.transfer-outgoing-document-attempts",
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs",
+    ): "StoreDraftAsync",
     (
         "manufacturing.command-replay",
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs",
@@ -668,6 +681,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "StoreInstructionAsync",
     ): "b20047f6fd00f51dade9e63d521876ae53e58786c428f2634e631be438f64c5b",
     (
+        "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs",
+        "StoreDraftAsync",
+    ): "b25fe77df6b48a6c508d8247c26a920ad8af3fbc22a4155efa7428533a4eeb0b",
+    (
         "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs",
         "AddCommand",
     ): "a916e16fe247ded30e0b038e9489e897bfa54e2eeebb26a8a524f13a2e5e4683",
@@ -716,6 +733,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryDefiniteShipmentParticipant.cs": "9aec0b823987c573ffd9d94e55192d5c80d49e29ef6ac713c02e07583ee00df7",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsCustomerReturnStore.cs": "06808d6fe56293d16cf04d41fdff20505dcc0ed1862471ceae600e48a30c91df",
     "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsStore.cs": "2e19c8adc7f83d82a3685adb47572f00681c4e2434e00567c6aa379c46df64b9",
+    "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/LogisticsTransferOutgoingDocumentStore.cs": "9dd1ad58f60b05d3213c8ca8c08f7678e91d99efde65b4412486cebc08e89cd3",
     "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "39b3481ad59125465d1b94d3bb2219372e907e5a5fe1128d66eb1bac8bce908f",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "ea3481d674648b893796c93b15dab32e0a7a49b7c9ba0a1ef686f2d8a6afac2d",
