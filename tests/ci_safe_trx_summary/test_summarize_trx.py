@@ -795,11 +795,12 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "relational",
             "contract-drift",
             "containers",
+            "recovery-surface-inventory",
         }
-        self.assertEqual(required_jobs, set(jobs) - {"recovery-surface-inventory"})
-        recovery_job = jobs.get("recovery-surface-inventory")
-        if recovery_job is not None:
-            self._assert_recovery_surface_inventory_job_contract(recovery_job)
+        self.assertEqual(required_jobs, set(jobs))
+        self._assert_recovery_surface_inventory_job_contract(
+            jobs["recovery-surface-inventory"]
+        )
 
         summaries = {
             "backend-build": (
@@ -990,18 +991,22 @@ class SafeTrxSummaryTests(unittest.TestCase):
         workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
         )
-        safe_job = (
-            "  recovery-surface-inventory:\n"
-            "    name: Recovery surface inventory exact-source proof\n"
-            "    runs-on: ubuntu-latest\n"
-            "    steps:\n"
-            "      - uses: actions/checkout@v7\n"
-            "      - name: Verify exact source\n"
-            "        run: python3 -I -S -B tools/generate_recovery_surface_inventory.py\n\n"
+        self.assert_ci_workflow_summary_contract(workflow)
+
+        deleted = self._workflow_without_job(workflow, "recovery-surface-inventory")
+        with self.assertRaises(AssertionError):
+            self.assert_ci_workflow_summary_contract(deleted)
+
+        renamed = workflow.replace(
+            "  recovery-surface-inventory:\n",
+            "  recovery-surface-inventory-renamed:\n",
+            1,
         )
-        self.assert_ci_workflow_summary_contract(
-            self._workflow_with_recovery_job(workflow, safe_job)
-        )
+        self.assertNotEqual(renamed, workflow)
+        with self.assertRaises(AssertionError):
+            self.assert_ci_workflow_summary_contract(renamed)
+
+        safe_job = self._workflow_job_body(workflow, "recovery-surface-inventory")
 
         step_mutations = (
             (
@@ -1046,20 +1051,22 @@ class SafeTrxSummaryTests(unittest.TestCase):
         for label, addition in step_mutations:
             with self.subTest(mutant=label):
                 changed_job = safe_job.replace(
-                    "      - name: Verify exact source\n",
-                    addition + "      - name: Verify exact source\n",
+                    "    steps:\n",
+                    "    steps:\n" + addition,
                     1,
                 )
-                changed_workflow = self._workflow_with_recovery_job(
-                    workflow, changed_job
+                self.assertNotEqual(changed_job, safe_job)
+                changed_workflow = self._workflow_with_job_body(
+                    workflow, "recovery-surface-inventory", changed_job
                 )
                 with self.assertRaises(AssertionError):
                     self.assert_ci_workflow_summary_contract(changed_workflow)
         for label, addition in job_mutations:
             with self.subTest(mutant=label):
                 changed_job = safe_job.replace("    steps:\n", addition + "    steps:\n", 1)
-                changed_workflow = self._workflow_with_recovery_job(
-                    workflow, changed_job
+                self.assertNotEqual(changed_job, safe_job)
+                changed_workflow = self._workflow_with_job_body(
+                    workflow, "recovery-surface-inventory", changed_job
                 )
                 with self.assertRaises(AssertionError):
                     self.assert_ci_workflow_summary_contract(changed_workflow)
@@ -1133,12 +1140,29 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assertNotRegex(job, r"(?i)\bsecrets\b")
 
     @staticmethod
-    def _workflow_with_recovery_job(workflow: str, job: str) -> str:
-        marker = "  frontend:\n"
-        changed = workflow.replace(marker, job + marker, 1)
-        if changed == workflow:
-            raise AssertionError("Expected frontend job insertion marker")
-        return changed
+    def _workflow_job_match(workflow: str, job_name: str) -> re.Match[str]:
+        match = re.search(
+            rf"(?ms)^  {re.escape(job_name)}:\n"
+            r"(.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            workflow,
+        )
+        if match is None:
+            raise AssertionError(f"Expected workflow job: {job_name}")
+        return match
+
+    def _workflow_job_body(self, workflow: str, job_name: str) -> str:
+        return self._workflow_job_match(workflow, job_name).group(1)
+
+    def _workflow_without_job(self, workflow: str, job_name: str) -> str:
+        match = self._workflow_job_match(workflow, job_name)
+        return workflow[:match.start()] + workflow[match.end():]
+
+    def _workflow_with_job_body(
+        self, workflow: str, job_name: str, job_body: str
+    ) -> str:
+        match = self._workflow_job_match(workflow, job_name)
+        replacement = f"  {job_name}:\n{job_body}"
+        return workflow[:match.start()] + replacement + workflow[match.end():]
 
     def _workflow_step_lines(self, job: str, step_name: str) -> list[str]:
         matches = list(
