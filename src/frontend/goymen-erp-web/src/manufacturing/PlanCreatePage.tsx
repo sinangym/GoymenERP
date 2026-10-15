@@ -21,13 +21,16 @@ import {
 } from './planCommandApi'
 import {
   pendingPlanCreateKey,
-  recallPendingPlanCreate,
+  readPendingPlanCreate,
   releasePendingPlanCreate,
   reservePendingPlanCreate,
   type PendingPlanCreate,
+  type PendingPlanCreateSlot,
 } from './pendingPlanStore'
 import { PlanPreviewPanel } from './PlanPreviewPanel'
-import { planPreviewInput, usePlanPreview } from './usePlanPreview'
+import { cutToLengthDraftInput, planPreviewInput, usePlanPreview, type CutToLengthLineDraft } from './usePlanPreview'
+import { CutToLengthLinesEditor } from './CutToLengthLinesEditor'
+import { CUT_LINE_TEXT } from './planEditText'
 import styles from './PlanPage.module.css'
 
 type ReadState<T> =
@@ -46,6 +49,32 @@ type Attempt =
       readonly unresolvedSince?: string
     }
   | { readonly phase: 'completed'; readonly result: Extract<SavePlanOutcome, { type: 'applied' }> }
+  /** The stored slot cannot be trusted either way: nothing is sent from this form (M01.3 K2 #728/6180459736). */
+  | { readonly phase: 'blocked'; readonly message: string }
+
+const UNKNOWN_TEXT = 'Önceki gönderimin sonucu bilinmiyor.'
+
+const BLOCKED_TEXT =
+  'Bu şirket için bu oturumda bekleyen bir plan kaydı okunamadı. Önceki gönderimin sonucu bilinmediği için bu '
+  + 'ekrandan yeni plan gönderilmez; kayıtlı planlar okunabilir.'
+
+/**
+ * M01.3 r5 (#66/6187473245): the server answered `authenticationSessionBinding: null`. Without a server session identity
+ * no pending create can be bound to this session, so none is stored or sent; nothing local stands in for the server.
+ */
+const NO_SESSION_TEXT =
+  'Sunucu bu oturum için oturum bağlayıcısı vermedi. Bekleyen bir plan kaydının bu oturuma ait olduğu doğrulanamayacağı '
+  + 'için bu ekrandan yeni plan gönderilmez; kayıtlı planlar okunabilir.'
+
+const NOT_DURABLE_TEXT =
+  'Plan, sayfa yenilense de aynı istek ve anahtarla yeniden gönderilebilecek biçimde saklanamadı; istek gönderilmedi.'
+
+/** Only a proven-empty slot opens the form; an unreadable one keeps it closed for this mount. */
+function initialAttempt(slot: PendingPlanCreateSlot, sessionBinding: string | null): Attempt {
+  if (slot.state === 'absent') return { phase: 'idle' }
+  if (slot.state === 'pending') return { phase: 'unknown', snapshot: slot.pending, message: UNKNOWN_TEXT }
+  return { phase: 'blocked', message: sessionBinding === null ? NO_SESSION_TEXT : BLOCKED_TEXT }
+}
 
 /** AT-063: the roll an ST-01 row named, as far as Inventory's candidate read confirmed it. */
 type Preselection =
@@ -126,13 +155,9 @@ function PlanCreate({ namespace, preselect }: {
   const { capture: captureSecurity, report: reportSecurity } = authBoundary
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
-  const storeKey = pendingPlanCreateKey(shell.sessionEpoch, actorId, companyId)
-  const recalled = recallPendingPlanCreate(storeKey)
-  const [attempt, setAttempt] = useState<Attempt>(() =>
-    recalled === null
-      ? { phase: 'idle' }
-      : { phase: 'unknown', snapshot: recalled, message: 'Önceki gönderimin sonucu bilinmiyor.' },
-  )
+  const sessionBinding = shell.sessionBinding
+  const storeKey = pendingPlanCreateKey(sessionBinding, actorId, companyId)
+  const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanCreate(storeKey), sessionBinding))
   const [workCenters, setWorkCenters] = useState<ReadState<readonly WorkCenterSummary[]>>({ type: 'loading' })
   const [workCenterId, setWorkCenterId] = useState('')
   const [search, setSearch] = useState(preselect?.labelCode ?? '')
@@ -146,6 +171,8 @@ function PlanCreate({ namespace, preselect }: {
   const [slittingEnabled, setSlittingEnabled] = useState(false)
   const [slitLines, setSlitLines] = useState<readonly SlitLineForm[]>([])
   const [windingTargetKg, setWindingTargetKg] = useState('')
+  // M01.3: no row by default — a CutToLength plan without authored rows sends no cut definition.
+  const [cutLines, setCutLines] = useState<readonly CutToLengthLineDraft[]>([])
   const [formError, setFormError] = useState<string | null>(null)
   const candidateGeneration = useRef(0)
   const commandGeneration = useRef(0)
@@ -245,9 +272,22 @@ function PlanCreate({ namespace, preselect }: {
       ) {
         return
       }
+      // Nothing is sent unless the exact attempt is durably stored for a reload first.
+      const reservation = reservePendingPlanCreate(storeKey, snapshot)
+      if (reservation.type === 'unreadable') {
+        setAttempt({ phase: 'blocked', message: sessionBinding === null ? NO_SESSION_TEXT : BLOCKED_TEXT })
+        return
+      }
+      if (reservation.type === 'occupied') {
+        setAttempt({ phase: 'unknown', snapshot: reservation.pending, message: UNKNOWN_TEXT })
+        return
+      }
+      if (reservation.type === 'not-durable') {
+        setAttempt({ phase: 'failed', message: NOT_DURABLE_TEXT })
+        return
+      }
       inFlight.current = true
       const generation = ++commandGeneration.current
-      reservePendingPlanCreate(storeKey, snapshot)
       setAttempt({ phase: 'submitting', snapshot })
       const security = captureSecurity()
       const outcome = await savePlan(snapshot.request, {
@@ -283,7 +323,7 @@ function PlanCreate({ namespace, preselect }: {
           : { phase: 'failed', message: commandFailure(outcome) },
       )
     },
-    [actorId, captureSecurity, companyId, reportSecurity, storeKey],
+    [actorId, captureSecurity, companyId, reportSecurity, sessionBinding, storeKey],
   )
 
   // AT-061 / AT-062: the button-less backend preview of what is typed (DEC-PRDCT-005). It writes nothing and never
@@ -292,6 +332,7 @@ function PlanCreate({ namespace, preselect }: {
     ? workCenters.data.find((workCenter) => workCenter.id === workCenterId)
     : undefined
   const slittingActive = selectedWorkCenter?.kind === 'Slitting' && slittingEnabled
+  const cutToLengthLine = selectedWorkCenter?.kind === 'CutToLength'
   const previewInput = planPreviewInput(
     workCenterId,
     inputs.map(({ candidate, plannedKg }) => ({
@@ -307,6 +348,8 @@ function PlanCreate({ namespace, preselect }: {
       lines: slitLines.map((line, index) => ({ ...line, label: `Bant ${index + 1}` })),
       windingTargetKg,
     },
+    // Authored rows are validated before preview AND save; only a CutToLength line sends them.
+    cutToLengthLine && cutLines.length > 0 ? cutToLengthDraftInput(cutLines) : null,
   )
   const preview = usePlanPreview(companyId, previewInput, authBoundary)
 
@@ -331,6 +374,7 @@ function PlanCreate({ namespace, preselect }: {
       actorId === null ||
       attempt.phase === 'submitting' ||
       attempt.phase === 'unknown' ||
+      attempt.phase === 'blocked' ||
       (attempt.phase === 'failed' && attempt.unresolvedSince !== undefined)
     ) {
       return
@@ -358,12 +402,28 @@ function PlanCreate({ namespace, preselect }: {
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       slittingSpec: previewInput.request.slittingSpec ?? null,
+      // The same validated ordered definition the preview sent; omitted when no row was authored.
+      ...(previewInput.request.cutToLengthSpec === undefined ? {} : { cutToLengthSpec: previewInput.request.cutToLengthSpec }),
     }
     void send({ actorId, companyId, idempotencyKey: newId(), request })
   }
 
   if (companyId === null || actorId === null) {
     return <main className={styles.page}><p role="alert">Yetkili tek şirket bağlamı seçilmeden plan oluşturulamaz.</p></main>
+  }
+  if (attempt.phase === 'blocked') {
+    return (
+      <main className={styles.page} aria-labelledby="manufacturing-plan-create-heading">
+        <header className={styles.header}>
+          <div>
+            <p className={styles.eyebrow}>ÜRETİM PLANI</p>
+            <h1 id="manufacturing-plan-create-heading">Yeni taslak plan</h1>
+          </div>
+          <Link to={orderListPath()}>← Üretim emirleri</Link>
+        </header>
+        <p className={styles.error} role="alert">{attempt.message}</p>
+      </main>
+    )
   }
   if (attempt.phase === 'completed') {
     const plan = attempt.result.plan
@@ -577,6 +637,12 @@ function PlanCreate({ namespace, preselect }: {
                 </div>
               </>
             ) : null}
+          </fieldset>
+        ) : null}
+        {cutToLengthLine ? (
+          <fieldset disabled={frozen}>
+            <legend>{CUT_LINE_TEXT.legend}</legend>
+            <CutToLengthLinesEditor idPrefix="plan-create-cut" lines={cutLines} onChange={setCutLines} keepOne={false} />
           </fieldset>
         ) : null}
         <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />

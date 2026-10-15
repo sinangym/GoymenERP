@@ -3,21 +3,29 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MANUFACTURING_CAPABILITY, planCreateFromLabelPath } from './capabilities'
 import {
+  APPROVER,
   COMPANY_A,
+  IDENTITY,
   ROLL_1,
   ROLL_2,
+  SESSION_1,
+  SESSION_2,
   WORK_CENTER,
   installFetch,
   json,
   plan,
   problem,
+  reloadDocument,
   renderAt,
   requestsFor,
+  sessionBinding,
+  type RecordedRequest,
 } from './testHarness'
 
 const PRODUCT = '10000000-0000-4000-8000-000000000001'
 const LOT = '20000000-0000-4000-8000-000000000001'
 const LOCATION = '40000000-0000-4000-8000-000000000001'
+const CUT_WORK_CENTER = 'd0000000-0000-4000-8000-000000000007'
 
 function workCenter() {
   return {
@@ -29,6 +37,10 @@ function workCenter() {
     isActive: true,
     canOpenLocationDetail: false,
   }
+}
+
+function cutWorkCenter() {
+  return { ...workCenter(), id: CUT_WORK_CENTER, code: 'CTL-01', name: 'Boy Kesme Hattı', kind: 'CutToLength' }
 }
 
 function candidate(labelId = ROLL_1, overrides: Record<string, unknown> = {}) {
@@ -75,13 +87,19 @@ function installPlanApi(options: {
   readonly candidates?: () => unknown
   readonly preview?: (body: Record<string, unknown>) => Response | Promise<Response>
   readonly capabilities?: readonly string[]
+  readonly actor?: () => string
+  /** The server session binding `/identity/me` answers with (M01.3 r5); the client has no other session authority. */
+  readonly session?: () => string | null
 } = {}) {
   let saves = 0
   let stored: Record<string, unknown> | null = null
+  const actor = options.actor ?? (() => IDENTITY.userId)
+  const session = options.session ?? (() => SESSION_1)
   const recorded = installFetch({
     capabilities: options.capabilities ?? [MANUFACTURING_CAPABILITY.planCreate, MANUFACTURING_CAPABILITY.planDetail],
+    identity: () => ({ ...IDENTITY, userId: actor(), authenticationSessionBinding: session() }),
     respond: (url, init) => {
-      if (url.includes('/organization/work-centers')) return json([workCenter()])
+      if (url.includes('/organization/work-centers')) return json([workCenter(), cutWorkCenter()])
       if (url.includes('/inventory/references/parent-rolls')) {
         if (options.candidates !== undefined) return json(options.candidates())
         return json({
@@ -114,8 +132,15 @@ function installPlanApi(options: {
             lines: Array<{ bandWidthMm: string; count: number }>
             windingTargetKg: string | null
           } | null
+          cutToLengthSpec?: {
+            lines: Array<{ lineId: string; sequence: number; lengthMm: string; count: number }>
+          }
         }
         stored = plan({
+          process: request.workCenterId === CUT_WORK_CENTER ? 'CutToLength' : 'Slitting',
+          cutToLengthSpec: request.cutToLengthSpec === undefined
+            ? null
+            : { lines: request.cutToLengthSpec.lines.map((line) => ({ ...line, lengthMm: canonicalDecimal(line.lengthMm) })) },
           planId: request.planId,
           workCenterId: request.workCenterId,
           inputs: request.inputs.map(({ parentRollId, plannedKg }) => ({
@@ -370,6 +395,155 @@ function previewAnswer(body: Record<string, unknown>) {
   }
 }
 
+describe('M01.3: authoring ordered cut lines on create', () => {
+  type CutBody = { cutToLengthSpec?: { lines: Array<{ lineId: string; sequence: number; lengthMm: string; count: number }> } }
+  const previewBodies = (recorded: ReturnType<typeof installFetch>) =>
+    requestsFor(recorded, '/manufacturing/plans/preview', 'POST').map((request) => request.body as CutBody)
+
+  async function fillCutPlan(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByRole('option', { name: 'CTL-01 — Boy Kesme Hattı' })
+    await user.selectOptions(screen.getByLabelText('İş merkezi'), CUT_WORK_CENTER)
+    await user.click(screen.getByRole('button', { name: 'Ara' }))
+    await user.click(within(await screen.findByRole('row', { name: /LBL-0007/ })).getByRole('button', { name: 'Ekle' }))
+    await user.type(screen.getByLabelText('LBL-0007 planlanan kg'), '1000')
+  }
+
+  async function authorTwoRows(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    await user.type(screen.getByLabelText('Kesim satırı 1 Sıra no'), '40')
+    await user.type(screen.getByLabelText('Kesim satırı 1 Uzunluk (mm)'), '6000.000')
+    await user.type(screen.getByLabelText('Kesim satırı 1 Adet'), '3')
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    await user.type(screen.getByLabelText('Kesim satırı 2 Sıra no'), '-7')
+    await user.type(screen.getByLabelText('Kesim satırı 2 Uzunluk (mm)'), '2500.5')
+    await user.type(screen.getByLabelText('Kesim satırı 2 Adet'), '2')
+  }
+
+  it('offers no row by default and a new row has an empty Sıra no: nothing is numbered for the user', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ preview: (body) => json(previewAnswer(body)) })
+    renderAt('/uretim/plan/yeni')
+    await fillCutPlan(user)
+    expect(screen.queryAllByLabelText(/Sıra no$/)).toHaveLength(0)
+    await waitFor(() => expect(previewBodies(recorded).length).toBeGreaterThan(0))
+    expect(previewBodies(recorded).every((body) => !Object.hasOwn(body, 'cutToLengthSpec'))).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    expect((screen.getByLabelText('Kesim satırı 1 Sıra no') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Kesim satırı 1 Uzunluk (mm)') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Kesim satırı 1 Adet') as HTMLInputElement).value).toBe('')
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    expect((screen.getByLabelText('Kesim satırı 2 Sıra no') as HTMLInputElement).value).toBe('')
+
+    // The editor is the CutToLength work center's: a slitting line shows none.
+    await user.selectOptions(screen.getByLabelText('İş merkezi'), WORK_CENTER)
+    expect(screen.queryByRole('button', { name: 'Kesim satırı ekle' })).toBeNull()
+  })
+
+  it('an incomplete or invalid row sends no preview and no save, and says why', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ preview: (body) => json(previewAnswer(body)) })
+    renderAt('/uretim/plan/yeni')
+    await fillCutPlan(user)
+    await waitFor(() => expect(previewBodies(recorded).length).toBeGreaterThan(0))
+    await user.click(screen.getByRole('button', { name: 'Kesim satırı ekle' }))
+    await user.type(screen.getByLabelText('Kesim satırı 1 Sıra no'), '40')
+    await user.type(screen.getByLabelText('Kesim satırı 1 Uzunluk (mm)'), '6000.0000')
+    await user.type(screen.getByLabelText('Kesim satırı 1 Adet'), '0')
+    const panel = screen.getByTestId('plan-preview')
+    expect(await within(panel).findByText(/Kesim satırı 1: uzunluk/)).toBeTruthy()
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(previewBodies(recorded).some((body) => Object.hasOwn(body, 'cutToLengthSpec'))).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    const alert = await screen.findByText(/Kesim satırı 1: adet/, { selector: '[role="alert"]' })
+    expect(alert).toBeTruthy()
+    expect(saveRequests(recorded)).toHaveLength(0)
+  })
+
+  it('moves a row by keyboard without changing its line id or Sıra no; preview, unknown save, retry and reopen carry one definition', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({
+      preview: (body) => json(previewAnswer(body)),
+      commitThenLoseFirstSave: true,
+    })
+    renderAt('/uretim/plan/yeni')
+    await fillCutPlan(user)
+    await authorTwoRows(user)
+
+    await waitFor(() => expect(previewBodies(recorded).at(-1)?.cutToLengthSpec?.lines.map((line) => line.sequence))
+      .toEqual([40, -7]))
+    const beforeMove = previewBodies(recorded).at(-1)!.cutToLengthSpec!.lines
+    expect(beforeMove.map((line) => line.lineId).every((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)))
+      .toBe(true)
+    expect(new Set(beforeMove.map((line) => line.lineId)).size).toBe(2)
+
+    // The first row cannot move up, but its button stays focusable (aria-disabled).
+    const firstUp = screen.getByRole('button', { name: 'Kesim satırı 1 yukarı taşı' })
+    expect(firstUp.getAttribute('aria-disabled')).toBe('true')
+    const secondUp = screen.getByRole('button', { name: 'Kesim satırı 2 yukarı taşı' })
+    secondUp.focus()
+    await user.keyboard('{Enter}')
+    // The moved row keeps focus on its own control, now first.
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Kesim satırı 1 yukarı taşı')
+    expect((screen.getByLabelText('Kesim satırı 1 Sıra no') as HTMLInputElement).value).toBe('-7')
+    expect((screen.getByLabelText('Kesim satırı 2 Sıra no') as HTMLInputElement).value).toBe('40')
+
+    await waitFor(() => expect(previewBodies(recorded).at(-1)?.cutToLengthSpec?.lines.map((line) => line.sequence))
+      .toEqual([-7, 40]))
+    const authored = previewBodies(recorded).at(-1)!.cutToLengthSpec!
+    expect(authored).toEqual({ lines: [beforeMove[1], beforeMove[0]] })
+
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    expect(await screen.findByText(/Sonuç bilinmiyor\./)).toBeTruthy()
+    const [first] = saveRequests(recorded)
+    expect((first.body as CutBody).cutToLengthSpec).toEqual(authored)
+    // While unknown the whole draft is frozen: nothing typed or moved can reach the frozen attempt.
+    for (const field of [
+      screen.getByLabelText('Kesim satırı 1 Sıra no'),
+      screen.getByLabelText('Kesim satırı 2 Uzunluk (mm)'),
+      screen.getByLabelText('Kesim satırı 2 Adet'),
+      screen.getByRole('button', { name: 'Kesim satırı ekle' }),
+      screen.getByRole('button', { name: 'Kesim satırı 2 yukarı taşı' }),
+      screen.getByRole('button', { name: 'Kesim satırı 1 kaldır' }),
+    ]) {
+      expect((field as HTMLInputElement | HTMLButtonElement).matches(':disabled'), field.getAttribute('aria-label') ?? '').toBe(true)
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    const reopen = await screen.findByRole('link', { name: 'Formu kapat ve planı yeniden aç' })
+    const [, second] = saveRequests(recorded)
+    expect(JSON.stringify(second.body)).toBe(JSON.stringify(first.body))
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+
+    await user.click(reopen)
+    const section = await screen.findByRole('region', { name: 'Boy kesme ayrıntısı' })
+    expect(within(section).getAllByRole('rowheader').map((cell) => cell.textContent)).toEqual(['-7', '40'])
+    expect(within(section).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['2500.5 mm', '2', '6000 mm', '3'])
+  })
+
+  it('a remounted form replays the frozen pending cut definition, not a new one', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ failFirstSave: true })
+    const { view } = renderAt('/uretim/plan/yeni')
+    await fillCutPlan(user)
+    await authorTwoRows(user)
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+    view.unmount()
+
+    renderAt('/uretim/plan/yeni')
+    expect(await screen.findByText('Önceki gönderimin sonucu bilinmiyor.')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    const [first, second] = saveRequests(recorded)
+    expect(JSON.stringify(second.body)).toBe(JSON.stringify(first.body))
+    expect(second.headers['Idempotency-Key']).toBe(first.headers['Idempotency-Key'])
+    expect((second.body as CutBody).cutToLengthSpec?.lines.map((line) => [line.sequence, line.lengthMm, line.count]))
+      .toEqual([[40, '6000.000', 3], [-7, '2500.5', 2]])
+  })
+})
+
 describe('AT-061 / AT-062: the live plan preview', () => {
   it('shows the server preview of the typed content without a button, with every missing parameter named', async () => {
     const user = userEvent.setup()
@@ -458,5 +632,232 @@ describe('AT-061 / AT-062: the live plan preview', () => {
     await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
     await screen.findByText('Taslak plan kaydedildi')
     expect(saveRequests(recorded)).toHaveLength(1)
+  })
+})
+
+/**
+ * M01.3 r5 (#66/6187473245) — the pending create across the SERVER's session boundary: `/identity/me` answers
+ * `authenticationSessionBinding`, and only a change of that value for the same actor (or an actor change) ends the session
+ * the create slot belongs to. The paths are the real shell paths: an identity re-read the orchestrator acts on, and a reload
+ * that is a new module graph and a new provider over the same sessionStorage. Nothing here sets an epoch or a binding by
+ * hand, and nothing local stands in for the server's answer.
+ */
+describe('pending plan create across the session boundary', () => {
+  const OTHER_ACTOR = '88888888-8888-4888-8888-888888888888'
+  const OTHER_ACTOR_SESSION = sessionBinding(0xf)
+  const BLOCKED = /bekleyen bir plan kaydı okunamadı/
+  const NO_SESSION = /oturum bağlayıcısı vermedi/
+
+  async function sessionChange(recorded: readonly RecordedRequest[], queryClient: import('@tanstack/react-query').QueryClient) {
+    const bootstraps = requestsFor(recorded, '/shell/capabilities').length
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(requestsFor(recorded, '/shell/capabilities').length).toBe(bootstraps + 1))
+  }
+
+  async function identityRefresh(recorded: readonly RecordedRequest[], queryClient: import('@tanstack/react-query').QueryClient) {
+    const identityReads = requestsFor(recorded, '/identity/me').length
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(requestsFor(recorded, '/identity/me').length).toBe(identityReads + 1))
+  }
+
+  function storedCreates(): Record<string, string | null> {
+    const entries: Record<string, string | null> = {}
+    for (const name of Object.keys(sessionStorage)) {
+      if (name.startsWith('goymen.manufacturing.plan-create.')) entries[name] = sessionStorage.getItem(name)
+    }
+    return entries
+  }
+
+  async function saveUntilUnknown(user: ReturnType<typeof userEvent.setup>) {
+    await fillPlan(user)
+    await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı anahtarla yeniden gönder' })
+  }
+
+  it('A: a create left unknown in a session reached through a real boundary is restored over F5 under the same server binding — same key, same bytes', async () => {
+    const user = userEvent.setup()
+    let actor = OTHER_ACTOR
+    let session: string | null = OTHER_ACTOR_SESSION
+    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor, session: () => session })
+    const first = renderAt('/uretim/plan/yeni')
+    await screen.findByRole('option', { name: 'SLT-01 — Dilme Hattı' })
+
+    actor = APPROVER
+    session = SESSION_1
+    await sessionChange(recorded, first.queryClient)
+    await saveUntilUnknown(user)
+
+    const next = await reloadDocument(first.view)
+    const second = next.renderAt('/uretim/plan/yeni')
+    try {
+      expect(await screen.findByText('Önceki gönderimin sonucu bilinmiyor.')).toBeTruthy()
+      await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+      await screen.findByText('Taslak plan kaydedildi')
+      const [lost, replay] = saveRequests(recorded)
+      expect(saveRequests(recorded)).toHaveLength(2)
+      expect(replay.headers['Idempotency-Key']).toBe(lost.headers['Idempotency-Key'])
+      expect(JSON.stringify(replay.body)).toBe(JSON.stringify(lost.body))
+    } finally {
+      second.view.unmount()
+    }
+  })
+
+  it('a token-refresh-equivalent identity re-read with the same actor and binding is no boundary: the unknown create keeps its exact retry', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi({ failFirstSave: true })
+    const view = renderAt('/uretim/plan/yeni')
+    await saveUntilUnknown(user)
+    const stored = storedCreates()
+    const bootstraps = requestsFor(recorded, '/shell/capabilities').length
+
+    await identityRefresh(recorded, view.queryClient)
+
+    expect(requestsFor(recorded, '/shell/capabilities')).toHaveLength(bootstraps)
+    expect(storedCreates()).toEqual(stored)
+    await user.click(screen.getByRole('button', { name: 'Aynı anahtarla yeniden gönder' }))
+    await screen.findByText('Taslak plan kaydedildi')
+    const [lost, replay] = saveRequests(recorded)
+    expect(saveRequests(recorded)).toHaveLength(2)
+    expect(replay.headers['Idempotency-Key']).toBe(lost.headers['Idempotency-Key'])
+    expect(JSON.stringify(replay.body)).toBe(JSON.stringify(lost.body))
+  })
+
+  it("B: the same actor in a new server session (a different binding, no reload) finds the earlier session's create neither replayed nor replaced", async () => {
+    const user = userEvent.setup()
+    let session: string | null = SESSION_1
+    const recorded = installPlanApi({ failFirstSave: true, session: () => session })
+    const view = renderAt('/uretim/plan/yeni')
+    await saveUntilUnknown(user)
+    const stored = storedCreates()
+    expect(Object.keys(stored)).toHaveLength(1)
+
+    session = SESSION_2
+    await sessionChange(recorded, view.queryClient)
+
+    expect(await screen.findByText(BLOCKED)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeNull()
+    expect(saveRequests(recorded)).toHaveLength(1)
+    expect(storedCreates()).toEqual(stored)
+  })
+
+  it("B: A→B→A in one tab, each its own server session: the earlier session's create is neither replayed nor replaced", async () => {
+    const user = userEvent.setup()
+    let actor = APPROVER
+    let session: string | null = SESSION_1
+    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor, session: () => session })
+    const view = renderAt('/uretim/plan/yeni')
+    await saveUntilUnknown(user)
+    const stored = storedCreates()
+    expect(Object.keys(stored)).toHaveLength(1)
+
+    actor = OTHER_ACTOR
+    session = OTHER_ACTOR_SESSION
+    await sessionChange(recorded, view.queryClient)
+    actor = APPROVER
+    session = SESSION_2
+    await sessionChange(recorded, view.queryClient)
+
+    expect(await screen.findByText(BLOCKED)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeNull()
+    expect(saveRequests(recorded)).toHaveLength(1)
+    expect(storedCreates()).toEqual(stored)
+  })
+
+  it('a transient storage failure across the boundary changes nothing: the next server session still cannot read the old create', async () => {
+    const user = userEvent.setup()
+    let actor = APPROVER
+    let session: string | null = SESSION_1
+    const recorded = installPlanApi({ failFirstSave: true, actor: () => actor, session: () => session })
+    const first = renderAt('/uretim/plan/yeni')
+    await saveUntilUnknown(user)
+    const stored = storedCreates()
+
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('transient') })
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('transient') })
+    try {
+      actor = OTHER_ACTOR
+      session = OTHER_ACTOR_SESSION
+      await sessionChange(recorded, first.queryClient)
+    } finally {
+      setItem.mockRestore()
+      removeItem.mockRestore()
+    }
+    expect(storedCreates()).toEqual(stored)
+
+    actor = APPROVER
+    session = SESSION_2
+    const next = await reloadDocument(first.view)
+    const second = next.renderAt('/uretim/plan/yeni')
+    try {
+      expect(await screen.findByText(BLOCKED)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Aynı anahtarla yeniden gönder' })).toBeNull()
+      expect(saveRequests(recorded)).toHaveLength(1)
+      expect(storedCreates()).toEqual(stored)
+    } finally {
+      second.view.unmount()
+    }
+  })
+
+  it('a null server binding is fail-closed, not a session: the form stays closed, nothing is minted, stored or sent', async () => {
+    const recorded = installPlanApi({ session: () => null })
+    renderAt('/uretim/plan/yeni')
+    expect(await screen.findByText(NO_SESSION)).toBeTruthy()
+    expect(screen.queryByText(BLOCKED)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+    expect(saveRequests(recorded)).toHaveLength(0)
+    expect(storedCreates()).toEqual({})
+    expect(Object.keys(sessionStorage).filter((name) => name.includes('session'))).toEqual([])
+  })
+
+  it('an identity answer without the binding property is malformed: no context, no form, no save', async () => {
+    const recorded = installPlanApi()
+    const { authenticationSessionBinding: _omitted, ...withoutBinding } = IDENTITY
+    const fetchMock = vi.mocked(fetch)
+    const real = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      return url.endsWith('/identity/me') ? json(withoutBinding) : real(input, init)
+    })
+    renderAt('/uretim/plan/yeni')
+    expect(await screen.findByText(/Beklenmeyen yanıt/i)).toBeTruthy()
+    expect(requestsFor(recorded, '/shell/capabilities')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    expect(saveRequests(recorded)).toHaveLength(0)
+    expect(storedCreates()).toEqual({})
+  })
+
+  it('a create whose attempt cannot be stored for a reload is not sent', async () => {
+    const user = userEvent.setup()
+    const recorded = installPlanApi()
+    renderAt('/uretim/plan/yeni')
+    await fillPlan(user)
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    try {
+      await user.click(screen.getByRole('button', { name: 'Taslak planı kaydet' }))
+      expect(await screen.findByText(/saklanamadı; istek gönderilmedi/)).toBeTruthy()
+    } finally {
+      setItem.mockRestore()
+    }
+    expect(saveRequests(recorded)).toHaveLength(0)
+    expect(storedCreates()).toEqual({})
+    // Nothing is frozen: the same form may be saved again once storage works.
+    expect(screen.getByRole('button', { name: 'Taslak planı kaydet' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('an unavailable store keeps the create form closed and sends nothing', async () => {
+    const recorded = installPlanApi()
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      renderAt('/uretim/plan/yeni')
+      expect(await screen.findByText(BLOCKED)).toBeTruthy()
+      expect(screen.queryByRole('button', { name: 'Taslak planı kaydet' })).toBeNull()
+    } finally {
+      getItem.mockRestore()
+    }
+    expect(saveRequests(recorded)).toHaveLength(0)
   })
 })

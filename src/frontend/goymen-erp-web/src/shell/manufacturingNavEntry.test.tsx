@@ -49,7 +49,7 @@ function installFetch(granted: readonly string[]): string[] {
       const url = String(input)
       calls.push(url)
       if (url.includes('/identity/me'))
-        return json({ userId: USER, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [COMPANY] })
+        return json({ userId: USER, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [COMPANY], authenticationSessionBinding: null })
       if (url.includes('/organization/companies')) return json(DIRECTORY)
       if (url.includes('/shell/capabilities'))
         return json({

@@ -19,6 +19,16 @@ export interface IdentitySummary {
   readonly displayName: string
   readonly email: string | null
   readonly allowedCompanyIds: readonly string[]
+  /**
+   * The server's opaque identity of this authenticated session (`IdentityProfile.authenticationSessionBinding`,
+   * required-nullable; M01.3 r5 #66/6187473245). Stable across an F5 or a token refresh of the same login, different
+   * after a real logout/login or an actor change — as the SERVER decides. `null` is the server's fail-closed answer
+   * (Production/OIDC until OPEN-013): normal reads go on, but nothing persisted may be bound to this session.
+   *
+   * It is compared for equality only. It is not a credential, not a permission and not an idempotency key, and the
+   * client never derives, trims, reshapes or substitutes a value for it.
+   */
+  readonly authenticationSessionBinding: string | null
 }
 
 export interface CompanySummary {
@@ -81,6 +91,17 @@ async function rawRequest(
   return { status: response.status, isOk200: response.status === 200, body }
 }
 
+/**
+ * `authenticationSessionBinding` is required-nullable: the property must be PRESENT, and be `null` or a non-blank
+ * string. An absent property, another type or a blank string is a malformed response — never read as `null`, never
+ * filled in.
+ */
+function isSessionBinding(identity: object): boolean {
+  if (!Object.hasOwn(identity, 'authenticationSessionBinding')) return false
+  const binding = (identity as { readonly authenticationSessionBinding: unknown }).authenticationSessionBinding
+  return binding === null || (typeof binding === 'string' && binding.trim().length > 0)
+}
+
 function isIdentitySummary(value: unknown): value is IdentitySummary {
   if (typeof value !== 'object' || value === null) return false
   const identity = value as IdentitySummary
@@ -89,7 +110,8 @@ function isIdentitySummary(value: unknown): value is IdentitySummary {
     typeof identity.displayName === 'string' &&
     (identity.email === null || typeof identity.email === 'string') &&
     Array.isArray(identity.allowedCompanyIds) &&
-    identity.allowedCompanyIds.every((id) => typeof id === 'string')
+    identity.allowedCompanyIds.every((id) => typeof id === 'string') &&
+    isSessionBinding(identity)
   )
 }
 
@@ -122,7 +144,12 @@ function isCapabilitySnapshot(value: unknown): value is ShellCapabilitySnapshot 
   )
 }
 
-/** Current authenticated user. Context-free. */
+/**
+ * Current authenticated user, with the server's session binding from the SAME response. Context-free.
+ *
+ * In Development/Testing the server derives the binding from a strict `X-Development-Session` header that the TEST
+ * context sends; this client sends none and invents none. Without it the server answers `null`.
+ */
 export async function fetchIdentity(
   signal?: AbortSignal,
 ): Promise<ViewOutcome<IdentitySummary>> {

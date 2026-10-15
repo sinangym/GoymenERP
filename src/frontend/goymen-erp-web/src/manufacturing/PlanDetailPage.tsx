@@ -8,10 +8,11 @@ import {
   createOrder,
   revisePlan,
   pendingPlanLifecycleKey,
-  recallPendingPlanLifecycle,
+  readPendingPlanLifecycle,
   releasePendingPlanLifecycle,
   reservePendingPlanLifecycle,
   type PendingPlanLifecycle,
+  type PendingPlanSlot,
   type PlanLifecycleOutcome,
   type PlanLifecycleSnapshot,
   type RevisePlanRequest,
@@ -34,6 +35,8 @@ type Attempt =
   | { readonly phase: 'idle' }
   | { readonly phase: 'sending'; readonly pending: PendingPlanLifecycle }
   | { readonly phase: 'unknown'; readonly pending: PendingPlanLifecycle; readonly message: string }
+  /** M01.3: the stored pending slot is unreadable; nothing may be sent for this context, the plan stays readable. */
+  | { readonly phase: 'blocked'; readonly message: string }
   | { readonly phase: 'failed'; readonly message: string }
   | { readonly phase: 'refresh-needed'; readonly refresh: RefreshExpectation; readonly message: string }
   | { readonly phase: 'applied'; readonly message: string; readonly orderId?: string }
@@ -71,6 +74,29 @@ function unknownText(kind: PlanLifecycleSnapshot['kind']): string {
   return `${kind === 'approve' ? 'Plan onayının' : 'Emir oluşturmanın'} sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.`
 }
 
+const BLOCKED_TEXT =
+  'Bu plan için bu oturumda bekleyen bir komut kaydı okunamadı. Önceki işlemin sonucu bilinmediği için bu ekrandan '
+  + 'yeni düzenleme, onay veya emir gönderilmez; plan yalnız okunabilir.'
+
+/**
+ * M01.3 r5 (#66/6187473245): the server answered `authenticationSessionBinding: null`. Without a server session identity
+ * no pending command can be bound to this session, so none is stored or sent; the plan stays readable.
+ */
+const NO_SESSION_TEXT =
+  'Sunucu bu oturum için oturum bağlayıcısı vermedi. Bekleyen bir komut kaydının bu oturuma ait olduğu doğrulanamayacağı '
+  + 'için bu ekrandan düzenleme, onay veya emir gönderilmez; plan yalnız okunabilir.'
+
+const NOT_DURABLE_TEXT =
+  'Düzenleme, sayfa yenilense de aynı istek ve anahtarla yeniden gönderilebilecek biçimde saklanamadı; istek gönderilmedi.'
+
+function initialAttempt(slot: PendingPlanSlot, sessionBinding: string | null): Attempt {
+  if (slot.state === 'absent') return { phase: 'idle' }
+  if (slot.state === 'pending') {
+    return { phase: 'unknown', pending: slot.pending, message: unknownText(slot.pending.snapshot.kind) }
+  }
+  return { phase: 'blocked', message: sessionBinding === null ? NO_SESSION_TEXT : BLOCKED_TEXT }
+}
+
 export function PlanDetailPage() {
   const shell = useShellState()
   const key = contextKey(shell)
@@ -93,11 +119,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   const canOpenOrder = hasCapability(shell, MANUFACTURING_CAPABILITY.orderDetail)
   // MFG-PLAN-LIST: back to the saved plans, only where the list itself is published to this actor.
   const canOpenPlanList = hasCapability(shell, MANUFACTURING_CAPABILITY.planList)
-  const storeKey = pendingPlanLifecycleKey(shell.sessionEpoch, actorId, companyId, planId)
-  const recalled = recallPendingPlanLifecycle(storeKey)
-  const [attempt, setAttempt] = useState<Attempt>(() => recalled === null
-    ? { phase: 'idle' }
-    : { phase: 'unknown', pending: recalled, message: unknownText(recalled.snapshot.kind) })
+  const sessionBinding = shell.sessionBinding
+  const storeKey = pendingPlanLifecycleKey(sessionBinding, actorId, companyId, planId)
+  // Only a proven-empty slot opens idle; an unreadable one stays blocked for this mount, whatever the read shows.
+  const [attempt, setAttempt] = useState<Attempt>(() => initialAttempt(readPendingPlanLifecycle(storeKey), sessionBinding))
   const [editing, setEditing] = useState(false)
   const generation = useRef(0)
   const inFlight = useRef(false)
@@ -187,9 +212,22 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     if (companyId === null || actorId === null || inFlight.current) return
     if (pending.companyId !== companyId || pending.actorId !== actorId || pending.planId !== planId) return
     if (!allowed(pending.snapshot.kind)) return
+    const reservation = reservePendingPlanLifecycle(storeKey, pending)
+    if (reservation.type === 'occupied') {
+      const held = reservation.pending
+      setAttempt({ phase: 'unknown', pending: held, message: unknownText(held.snapshot.kind) })
+      return
+    }
+    if (reservation.type === 'unreadable') {
+      setAttempt({ phase: 'blocked', message: sessionBinding === null ? NO_SESSION_TEXT : BLOCKED_TEXT })
+      return
+    }
+    if (reservation.type === 'not-durable') {
+      setAttempt({ phase: 'failed', message: NOT_DURABLE_TEXT })
+      return
+    }
     inFlight.current = true
     const commandGeneration = ++generation.current
-    reservePendingPlanLifecycle(storeKey, pending)
     setAttempt({ phase: 'sending', pending })
     const security = boundary.capture()
     const outcome = pending.snapshot.kind === 'approve'
@@ -239,7 +277,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         ? 'Önceki emir oluşturma sonucu yeniden gösterildi.'
         : 'Üretim emri oluşturuldu.',
     })
-  }, [actorId, allowed, boundary, canOpenOrder, companyId, navigate, planId, planProcess, refreshPlan, storeKey])
+  }, [actorId, allowed, boundary, canOpenOrder, companyId, navigate, planId, planProcess, refreshPlan, sessionBinding, storeKey])
 
   const start = (snapshot: PlanLifecycleSnapshot) => {
     if (companyId === null || actorId === null) return
@@ -266,6 +304,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   }
 
   const busy = attempt.phase === 'sending'
+  const blocked = attempt.phase === 'blocked'
   const unresolved = attempt.phase === 'unknown' && allowed(attempt.pending.snapshot.kind)
   // The edit starts from the plan's current content: the last history entry, of exactly the version shown.
   const current = history === null ? null : currentRevision(history)
@@ -379,7 +418,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         )}
       </section>
 
-      {editing && editable && current !== null && editReady && !unresolved ? (
+      {editing && editable && current !== null && editReady && !unresolved && !blocked ? (
         <PlanEditForm
           key={plan.version}
           companyId={companyId}
@@ -393,7 +432,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
 
       <section className={styles.commandCard} aria-labelledby="manufacturing-plan-next-heading">
         <h2 id="manufacturing-plan-next-heading">Sonraki işlem</h2>
-        {unresolved ? (
+        {blocked ? (
+          <p role="alert" className={styles.error}>{attempt.message}</p>
+        ) : unresolved ? (
           <>
             <p role="alert" className={styles.error}>{attempt.message}</p>
             <div className={styles.actions}>

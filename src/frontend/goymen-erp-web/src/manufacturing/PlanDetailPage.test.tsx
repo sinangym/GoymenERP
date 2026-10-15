@@ -2,15 +2,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MANUFACTURING_CAPABILITY, orderDetailPath } from './capabilities'
-import { pendingPlanLifecycleKey, reservePendingPlanLifecycle } from './planCommandApi'
+import { pendingPlanLifecycleKey, reservePendingPlanLifecycle, type RevisePlanRequest } from './planCommandApi'
 import {
   APPROVER,
   COMPANY_A,
+  IDENTITY,
   COMPANY_B,
   CUT_LINE_1,
   CUT_LINE_2,
   PLAN,
   ROLL_1,
+  ROLL_2,
+  SESSION_1,
+  SESSION_2,
+  WORK_CENTER,
   cutToLengthSpec,
   installFetch,
   json,
@@ -18,9 +23,13 @@ import {
   order,
   plan,
   planCalculation,
+  planRevision,
+  planRevisions,
   problem,
+  reloadDocument,
   renderAt,
   requestsFor,
+  sessionBinding,
   technicalSnapshot,
   type RecordedRequest,
 } from './testHarness'
@@ -238,7 +247,7 @@ describe('plan approval and order creation', () => {
       capabilities: [MANUFACTURING_CAPABILITY.planDetail],
       respond: (url) => url.endsWith(`/manufacturing/plans/${PLAN}`) ? json(plan()) : undefined,
     })
-    reservePendingPlanLifecycle(pendingPlanLifecycleKey(0, APPROVER, COMPANY_A, PLAN), {
+    reservePendingPlanLifecycle(pendingPlanLifecycleKey(SESSION_1, APPROVER, COMPANY_A, PLAN), {
       actorId: APPROVER,
       companyId: COMPANY_A,
       planId: PLAN,
@@ -267,7 +276,7 @@ describe('plan approval and order creation', () => {
       capabilities: [MANUFACTURING_CAPABILITY.planDetail],
       respond: (url) => url.endsWith(`/manufacturing/plans/${PLAN}`) ? json(approved) : undefined,
     })
-    reservePendingPlanLifecycle(pendingPlanLifecycleKey(0, APPROVER, COMPANY_A, PLAN), {
+    reservePendingPlanLifecycle(pendingPlanLifecycleKey(SESSION_1, APPROVER, COMPANY_A, PLAN), {
       actorId: APPROVER,
       companyId: COMPANY_A,
       planId: PLAN,
@@ -423,5 +432,455 @@ describe('stored plan technical projection', () => {
     expect(screen.getByText(/COIL · family-r1/)).toBeTruthy()
     expect(screen.getByText('2 mm × 1500 mm')).toBeTruthy()
     expect(screen.getByText('GDC-PLAN-CALC/1')).toBeTruthy()
+  })
+})
+
+/**
+ * M01.3 K2 #727/6178721152: the first revise (v1 → v2) was processed and only its answer was lost. After the reload the
+ * module memory is empty, the fresh GET already shows version 2 and the expected-version fence would accept a NEW,
+ * newly keyed v2 → v3 revise. So the stored slot decides: unreadable keeps every command of this context closed. The
+ * reload is the seeded state here (empty memory, stored slot, server at N+1); the real F5 is #726's browser journey.
+ */
+describe('reload safety of the pending plan command slot', () => {
+  const STORED_REVISE_PREFIX = 'goymen.manufacturing.plan-revise.v2:'
+  const OTHER_PLAN = 'd0000000-0000-4000-8000-000000000098'
+  const OTHER_LINE = 'd0000000-0000-4000-8000-000000000009'
+  const FIRST_KEY = '40000000-0000-4000-8000-000000000001'
+  const BLOCKED = /bekleyen bir komut kaydı okunamadı/
+  const EDITOR_CAPABILITIES = [
+    MANUFACTURING_CAPABILITY.planDetail,
+    MANUFACTURING_CAPABILITY.planEdit,
+    MANUFACTURING_CAPABILITY.planApprove,
+    MANUFACTURING_CAPABILITY.planOrderCreate,
+  ]
+  /** The request the processed first revise carried: v1 → v2. */
+  const FIRST_REQUEST: RevisePlanRequest = {
+    expectedVersion: 1,
+    workCenterId: WORK_CENTER,
+    inputs: [
+      { parentRollId: ROLL_1, plannedKg: '800', expectedLabelVersion: '7', commercialContext: null },
+      { parentRollId: ROLL_2, plannedKg: '500.5', expectedLabelVersion: '3', commercialContext: null },
+    ],
+    target: null,
+    reason: 'İlk düzenleme işlendi',
+  }
+
+  function storedAttempt(overrides: Record<string, unknown> = {}) {
+    return {
+      actorId: APPROVER,
+      companyId: COMPANY_A,
+      planId: PLAN,
+      snapshot: { kind: 'revise', idempotencyKey: FIRST_KEY, request: FIRST_REQUEST },
+      // Stored in the server session the default identity is still authenticated in (M01.3 r5, #66/6187473245).
+      sessionBinding: SESSION_1,
+      ...overrides,
+    }
+  }
+
+  function slot(planId = PLAN) {
+    return STORED_REVISE_PREFIX + JSON.stringify([APPROVER, COMPANY_A, planId])
+  }
+
+  /** The server after the processed first revise: the plan at version 2 and its history [0, 1]. */
+  function movedServer(
+    revise?: () => Response,
+    { actor = () => APPROVER, session = () => SESSION_1, rejectReads = () => false }: {
+      readonly actor?: () => string
+      /** The server session binding `/identity/me` answers with: the only session authority the client has. */
+      readonly session?: () => string | null
+      readonly rejectReads?: () => boolean
+    } = {},
+  ) {
+    const moved = (planId: string) => plan({ planId, version: 2, inputs: [plan().inputs[0], plan().inputs[1]] })
+    const history = (planId: string) => planRevisions([
+      planRevision(),
+      planRevision({ revision: 1, planVersion: 2, reason: 'İlk düzenleme işlendi', revisedBy: APPROVER }),
+    ], planId)
+    const recorded = installFetch({
+      capabilities: EDITOR_CAPABILITIES,
+      identity: () => ({ ...IDENTITY, userId: actor(), authenticationSessionBinding: session() }),
+      respond: (url, init) => {
+        if (rejectReads() && url.includes('/manufacturing/plans/') && init?.method !== 'POST') return problem(401)
+        for (const planId of [PLAN, OTHER_PLAN]) {
+          if (url.endsWith(`/manufacturing/plans/${planId}`) && init?.method !== 'POST') return json(moved(planId))
+          if (url.endsWith(`/manufacturing/plans/${planId}/revisions`)) return json(history(planId))
+        }
+        if (url.endsWith('/organization/work-centers')) {
+          return json([
+            { id: WORK_CENTER, locationId: WORK_CENTER, code: 'DL-1', name: 'Dilme 1', kind: 'Slitting', isActive: true, canOpenLocationDetail: false },
+            { id: OTHER_LINE, locationId: WORK_CENTER, code: 'DL-2', name: 'Dilme 2', kind: 'Slitting', isActive: true, canOpenLocationDetail: false },
+          ])
+        }
+        if (url.endsWith('/manufacturing/plans/preview') && init?.method === 'POST') {
+          const body = JSON.parse(init.body as string) as { workCenterId: string; inputs: { parentRollId: string; plannedKg: string }[] }
+          return json(planCalculation({
+            workCenterId: body.workCenterId,
+            plannedRollCount: body.inputs.length,
+            rolls: body.inputs.map((input) => ({ parentRollId: input.parentRollId, plannedKg: input.plannedKg, answers: [] })),
+          }))
+        }
+        if (url.includes('/revision') && init?.method === 'POST') return revise?.()
+        return undefined
+      },
+    })
+    return recorded
+  }
+
+  function commandPosts(recorded: readonly RecordedRequest[]) {
+    return recorded.filter((request) => request.method === 'POST' && !request.url.endsWith('/plans/preview'))
+  }
+
+  /** The fresh GET and history are on screen: the plan at version 2 with its processed first revision. */
+  async function readBack() {
+    await screen.findByRole('heading', { name: 'Plan yeniden açıldı' })
+    await screen.findAllByText(/İlk düzenleme işlendi/)
+    expect(within(screen.getByText('Sürüm').parentElement!).getByText('2')).toBeTruthy()
+  }
+
+  it.each([
+    ['malformed', () => '{not json'],
+    ['foreign to this company', () => JSON.stringify(storedAttempt({ companyId: COMPANY_B }))],
+    ['contract-violating', () => JSON.stringify(storedAttempt({ snapshot: { kind: 'revise', idempotencyKey: FIRST_KEY, request: { ...FIRST_REQUEST, expectedVersion: 0 } } }))],
+  ])('a %s pending record keeps edit, approval and order closed even though the fresh GET shows N+1', async (_case, value) => {
+    const recorded = movedServer()
+    const raw = value()
+    sessionStorage.setItem(slot(), raw)
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await readBack()
+    expect(screen.getByRole('alert').textContent).toMatch(BLOCKED)
+    // No new lifecycle can be started — not even a "current" v2 → v3 revise — and nothing is retried.
+    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Taslak planı düzenle' })).toBeNull()
+    expect(commandPosts(recorded)).toHaveLength(0)
+    // Read and back navigation stay; the evidence is neither replayed nor deleted.
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+    expect(sessionStorage.getItem(slot())).toBe(raw)
+  })
+
+  it('an unavailable store is unreadable, not empty: the plan reads and nothing can be sent', async () => {
+    const recorded = movedServer()
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    try {
+      renderAt(`/uretim/plan/${PLAN}`)
+      await readBack()
+      expect(screen.getByRole('alert').textContent).toMatch(BLOCKED)
+      expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+      expect(commandPosts(recorded)).toHaveLength(0)
+    } finally {
+      getItem.mockRestore()
+    }
+  })
+
+  it('a valid stored pending revise offers only its exact retry: same key, same frozen body', async () => {
+    const user = userEvent.setup()
+    const recorded = movedServer(() => { throw new TypeError('still offline') })
+    const raw = JSON.stringify(storedAttempt())
+    sessionStorage.setItem(slot(), raw)
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await readBack()
+    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' }))
+    await waitFor(() => expect(commandPosts(recorded)).toHaveLength(1))
+
+    const [sent] = commandPosts(recorded)
+    expect(sent.url).toMatch(new RegExp(`/manufacturing/plans/${PLAN}/revision$`))
+    expect(sent.headers['Idempotency-Key']).toBe(FIRST_KEY)
+    // The stored v1 body, not one rebuilt from the v2 just read.
+    expect(sent.body).toEqual(FIRST_REQUEST)
+    expect(await screen.findByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeTruthy()
+    expect(sessionStorage.getItem(slot())).toBe(raw)
+  })
+
+  it('an unrelated plan of the same actor and company stays usable', async () => {
+    movedServer()
+    sessionStorage.setItem(slot(), '{not json')
+    renderAt(`/uretim/plan/${OTHER_PLAN}`)
+
+    await readBack()
+    expect(screen.queryByText(BLOCKED)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Planı düzenle' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Planı onayla' })).toBeTruthy()
+  })
+
+  it('a revise whose attempt cannot be stored for a reload is not sent', async () => {
+    const user = userEvent.setup()
+    const recorded = movedServer(() => json(plan({ version: 3 })))
+    renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await user.click(screen.getByRole('button', { name: 'Planı düzenle' }))
+    await screen.findByRole('heading', { name: 'Taslak planı düzenle' })
+    await screen.findByRole('option', { name: /DL-2/ })
+    const kg = screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` })
+    await user.clear(kg)
+    await user.type(kg, '700')
+    await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), 'İkinci düzenleme')
+
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    try {
+      await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
+      expect(await screen.findByText(/saklanamadı; istek gönderilmedi/)).toBeTruthy()
+    } finally {
+      setItem.mockRestore()
+    }
+    expect(commandPosts(recorded)).toHaveLength(0)
+    expect(sessionStorage.getItem(slot())).toBeNull()
+  })
+
+  /*
+   * M01.3 r5 (#66/6187473245) — the session boundary is the SERVER's: `/identity/me` answers `authenticationSessionBinding`,
+   * and only a change of that value for the same actor (or an actor change) ends the session the pending slot belongs to.
+   * The paths are the real shell paths: an identity re-read the orchestrator acts on, a business 401 the reducer's
+   * invalidation, and the reload a new module graph and a new provider over the same sessionStorage. Nothing here sets an
+   * epoch or a binding by hand, and nothing local — not a reset, not a stored record — can stand in for the server's answer.
+   */
+  const OTHER_ACTOR = '88888888-8888-4888-8888-888888888888'
+  const OTHER_ACTOR_SESSION = sessionBinding(0xf)
+  const NO_SESSION = /oturum bağlayıcısı vermedi/
+
+  async function reviseUntilUnknown(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(await screen.findByRole('button', { name: 'Planı düzenle' }))
+    await screen.findByRole('heading', { name: 'Taslak planı düzenle' })
+    await screen.findByRole('option', { name: /DL-2/ })
+    const kg = screen.getByRole('textbox', { name: `${ROLL_1} planlanan kg` })
+    await user.clear(kg)
+    await user.type(kg, '700')
+    await user.type(screen.getByRole('textbox', { name: 'Düzenleme gerekçesi' }), 'İkinci düzenleme')
+    await user.click(screen.getByRole('button', { name: 'Değişikliği kaydet' }))
+    await screen.findByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })
+  }
+
+  /** The identity re-read the orchestrator acts on; resolves once the next session has bootstrapped. */
+  async function sessionChange(
+    recorded: readonly RecordedRequest[],
+    queryClient: import('@tanstack/react-query').QueryClient,
+  ) {
+    const bootstraps = requestsFor(recorded, '/shell/capabilities').length
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(requestsFor(recorded, '/shell/capabilities').length).toBe(bootstraps + 1))
+  }
+
+  /** The same identity re-read when the server still answers the same actor and binding: a token refresh, not a boundary. */
+  async function identityRefresh(
+    recorded: readonly RecordedRequest[],
+    queryClient: import('@tanstack/react-query').QueryClient,
+  ) {
+    const identityReads = requestsFor(recorded, '/identity/me').length
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(requestsFor(recorded, '/identity/me').length).toBe(identityReads + 1))
+  }
+
+  function storedRevises(): Record<string, string | null> {
+    const entries: Record<string, string | null> = {}
+    for (const name of Object.keys(sessionStorage)) {
+      if (name.startsWith('goymen.manufacturing.plan-revise.')) entries[name] = sessionStorage.getItem(name)
+    }
+    return entries
+  }
+
+  function expectBlocked(recorded: readonly RecordedRequest[], text: RegExp, posts: number) {
+    expect(screen.getByRole('alert').textContent).toMatch(text)
+    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeNull()
+    expect(commandPosts(recorded)).toHaveLength(posts)
+  }
+
+  it('A: a revise left unknown in a session reached through a real boundary is restored over F5 under the same server binding — same key, same bytes, no N+2', async () => {
+    const user = userEvent.setup()
+    let actor = OTHER_ACTOR
+    let session: string | null = OTHER_ACTOR_SESSION
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { actor: () => actor, session: () => session })
+    const first = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+
+    // A real in-app session boundary: the epoch is no longer 0 when the approver's session starts.
+    actor = APPROVER
+    session = SESSION_1
+    await sessionChange(recorded, first.queryClient)
+    await reviseUntilUnknown(user)
+    const [lost] = commandPosts(recorded)
+
+    // F5: the server still authenticates the approver in SESSION_1.
+    const next = await reloadDocument(first.view)
+    const second = next.renderAt(`/uretim/plan/${PLAN}`)
+    try {
+      await readBack()
+      expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+      await user.click(await screen.findByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' }))
+      await waitFor(() => expect(commandPosts(recorded)).toHaveLength(2))
+      const [, replay] = commandPosts(recorded)
+      expect(replay.url).toBe(lost.url)
+      expect(replay.headers['Idempotency-Key']).toBe(lost.headers['Idempotency-Key'])
+      expect(JSON.stringify(replay.body)).toBe(JSON.stringify(lost.body))
+    } finally {
+      second.view.unmount()
+    }
+  })
+
+  it('a token-refresh-equivalent identity re-read with the same actor and binding is no boundary: the unknown revise keeps its exact retry', async () => {
+    const user = userEvent.setup()
+    const recorded = movedServer(() => { throw new TypeError('answer lost') })
+    const view = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await reviseUntilUnknown(user)
+    const [lost] = commandPosts(recorded)
+    const stored = storedRevises()
+    const bootstraps = requestsFor(recorded, '/shell/capabilities').length
+
+    await identityRefresh(recorded, view.queryClient)
+
+    // No reset, no re-bootstrap, the same attempt still offered.
+    expect(requestsFor(recorded, '/shell/capabilities')).toHaveLength(bootstraps)
+    expect(storedRevises()).toEqual(stored)
+    await user.click(screen.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' }))
+    await waitFor(() => expect(commandPosts(recorded)).toHaveLength(2))
+    const [, replay] = commandPosts(recorded)
+    expect(replay.headers['Idempotency-Key']).toBe(lost.headers['Idempotency-Key'])
+    expect(JSON.stringify(replay.body)).toBe(JSON.stringify(lost.body))
+  })
+
+  it("B: the same actor in a new server session (a different binding, no reload) finds the earlier session's revise neither replayed nor replaced", async () => {
+    const user = userEvent.setup()
+    let session: string | null = SESSION_1
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { session: () => session })
+    const view = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await reviseUntilUnknown(user)
+    const stored = storedRevises()
+    expect(Object.keys(stored)).toHaveLength(1)
+
+    // A real logout/login as the same actor: the server answers a new binding.
+    session = SESSION_2
+    await sessionChange(recorded, view.queryClient)
+
+    expect(await screen.findByText(BLOCKED)).toBeTruthy()
+    await readBack()
+    expectBlocked(recorded, BLOCKED, 1)
+    expect(storedRevises()).toEqual(stored)
+  })
+
+  it("B: A→B→A in one tab, each its own server session: the earlier session's revise is neither replayed nor replaced", async () => {
+    const user = userEvent.setup()
+    let actor = APPROVER
+    let session: string | null = SESSION_1
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { actor: () => actor, session: () => session })
+    const view = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await reviseUntilUnknown(user)
+    const stored = storedRevises()
+    expect(Object.keys(stored)).toHaveLength(1)
+
+    actor = OTHER_ACTOR
+    session = OTHER_ACTOR_SESSION
+    await sessionChange(recorded, view.queryClient)
+    actor = APPROVER
+    session = SESSION_2
+    await sessionChange(recorded, view.queryClient)
+
+    expect(await screen.findByText(BLOCKED)).toBeTruthy()
+    await readBack()
+    expectBlocked(recorded, BLOCKED, 1)
+    expect(storedRevises()).toEqual(stored)
+  })
+
+  it('B: after the server ended the session, the same actor re-entering over F5 in a new server session gets no replay and no new key', async () => {
+    const user = userEvent.setup()
+    let reject = false
+    let session: string | null = SESSION_1
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { rejectReads: () => reject, session: () => session })
+    const first = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await reviseUntilUnknown(user)
+    const stored = storedRevises()
+
+    reject = true
+    await first.queryClient.invalidateQueries()
+    expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
+
+    // The re-login is a new authenticated session on the server.
+    reject = false
+    session = SESSION_2
+    const next = await reloadDocument(first.view)
+    const second = next.renderAt(`/uretim/plan/${PLAN}`)
+    try {
+      expect(await screen.findByText(BLOCKED)).toBeTruthy()
+      await readBack()
+      expectBlocked(recorded, BLOCKED, 1)
+      expect(storedRevises()).toEqual(stored)
+    } finally {
+      second.view.unmount()
+    }
+  })
+
+  it('a transient storage failure across the boundary changes nothing: the next server session still cannot read the old revise', async () => {
+    const user = userEvent.setup()
+    let actor = APPROVER
+    let session: string | null = SESSION_1
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { actor: () => actor, session: () => session })
+    const first = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await reviseUntilUnknown(user)
+    const stored = storedRevises()
+
+    // Storage fails to write AND to remove exactly across the boundary, then recovers before the next document.
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('transient') })
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('transient') })
+    try {
+      actor = OTHER_ACTOR
+      session = OTHER_ACTOR_SESSION
+      await sessionChange(recorded, first.queryClient)
+    } finally {
+      setItem.mockRestore()
+      removeItem.mockRestore()
+    }
+    expect(storedRevises()).toEqual(stored)
+
+    actor = APPROVER
+    session = SESSION_2
+    const next = await reloadDocument(first.view)
+    const second = next.renderAt(`/uretim/plan/${PLAN}`)
+    try {
+      expect(await screen.findByText(BLOCKED)).toBeTruthy()
+      await readBack()
+      expectBlocked(recorded, BLOCKED, 1)
+      expect(storedRevises()).toEqual(stored)
+    } finally {
+      second.view.unmount()
+    }
+  })
+
+  it('a null server binding is fail-closed, not a session: the plan reads, no command is offered, nothing is minted or stored', async () => {
+    const recorded = movedServer(undefined, { session: () => null })
+    renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    expectBlocked(recorded, NO_SESSION, 0)
+    expect(screen.getByRole('alert').textContent).not.toMatch(BLOCKED)
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+    expect(storedRevises()).toEqual({})
+    // No local stand-in anywhere in the tab: the shell stored no binding of its own.
+    expect(Object.keys(sessionStorage).filter((name) => name.includes('session'))).toEqual([])
+  })
+
+  it('an identity answer without the binding property is malformed: the shell never commits a context, so the plan is not even read', async () => {
+    const recorded = movedServer(undefined, { session: () => SESSION_1 })
+    const { authenticationSessionBinding: _omitted, ...withoutBinding } = IDENTITY
+    const fetchMock = vi.mocked(fetch)
+    const real = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      return url.endsWith('/identity/me') ? json(withoutBinding) : real(input, init)
+    })
+    renderAt(`/uretim/plan/${PLAN}`)
+    expect(await screen.findByText(/Beklenmeyen yanıt/i)).toBeTruthy()
+    expect(requestsFor(recorded, '/shell/capabilities')).toHaveLength(0)
+    expect(planReadRequests(recorded)).toHaveLength(0)
+    expect(commandPosts(recorded)).toHaveLength(0)
   })
 })

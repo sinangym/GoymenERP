@@ -69,7 +69,7 @@ function install(handlers: {
     const call: Call = { url, method: (init?.method ?? 'GET').toUpperCase(), key: headers['Idempotency-Key'] ?? null,
       body: typeof init?.body === 'string' ? init.body : null, company: headers['X-Company-Id'] ?? null }
     calls.push(call)
-    if (url.includes('/identity/me')) return json({ userId: '77777777-7777-7777-7777-777777777777', displayName: 'Fiyat', email: null, allowedCompanyIds: [COMPANY_A] })
+    if (url.includes('/identity/me')) return json({ userId: '77777777-7777-7777-7777-777777777777', displayName: 'Fiyat', email: null, allowedCompanyIds: [COMPANY_A], authenticationSessionBinding: null })
     if (url.includes('/organization/companies')) return json([{ id: COMPANY_A, code: 'GDC', legalName: 'Göymen A', isPlaceholder: true }])
     if (url.includes('/shell/capabilities')) {
       return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: 'gen-1', capabilities: handlers.capabilities ?? ALL })
