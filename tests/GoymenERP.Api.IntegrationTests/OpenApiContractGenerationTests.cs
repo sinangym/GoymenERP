@@ -933,7 +933,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
-            ["GetInventoryStockPositionsV1"] = "anyOf:inline:items,searchWindowFull|InventoryStockPositionPageV1|InventoryStockPositionLocationPageV2|InventoryStockPositionOwnerPageV3",
+            ["GetInventoryStockPositionsV1"] = "anyOf:inline:items,searchWindowFull|InventoryStockPositionPageV1|InventoryStockPositionLocationPageV2|InventoryStockPositionOwnerPageV3|InventoryStockPositionLengthPageV4",
             ["GetInventoryMovementTimelineV1"] = "ref:InventoryMovementTimelinePageV1",
             ["GetInventoryPhysicalAllocationsV1"] = "ref:InventoryPhysicalAllocationReadsV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
@@ -4816,6 +4816,41 @@ public sealed partial class OpenApiContractGenerationTests
                     ("productDisplay", "ref:ProductStockDisplayResultV1"),
                     ("locationDisplay", "ref:OrganizationLocationDisplayV1"),
                     ("ownerDisplay", "oneOf:ref:InventoryStockOwnerDisplayV1|type:null")),
+                ["InventoryStockPositionLengthPageV4"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:InventoryStockPositionLengthDisplayV4"),
+                    ("searchWindowFull", "type:boolean"),
+                    ("nextCursor", "type:null|string")),
+                ["InventoryStockPositionLengthDisplayV4"] = ObjectSchema(
+                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "productVersion",
+                        "classification", "lot", "heatNumber", "coilNumber", "documentStatus", "ownerKind", "ownerId",
+                        "custodianKind", "custodianId", "locationId", "physicalKg", "freePhysicalKg",
+                        "blockedPhysicalKg", "activeAllocationKg", "availableKg", "productDisplay", "locationDisplay",
+                        "ownerDisplay"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("labelId", "type:string;format:uuid"),
+                    ("labelVersion", "type:string"),
+                    ("labelCode", "type:string"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:null|string"),
+                    ("classification", "type:null|string"),
+                    ("lot", "ref:InventoryLotV1"),
+                    ("heatNumber", "type:null|string"),
+                    ("coilNumber", "type:null|string"),
+                    ("documentStatus", "type:string"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"),
+                    ("custodianId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"),
+                    ("physicalKg", "type:string"),
+                    ("freePhysicalKg", "type:string"),
+                    ("blockedPhysicalKg", "type:string"),
+                    ("activeAllocationKg", "type:string"),
+                    ("availableKg", "type:string"),
+                    ("productDisplay", "ref:ProductStockDisplayResultV2"),
+                    ("locationDisplay", "ref:OrganizationLocationDisplayV1"),
+                    ("ownerDisplay", "oneOf:ref:InventoryStockOwnerDisplayV1|type:null")),
                 ["InventoryStockOwnerDisplayV1"] = ObjectSchema(
                     ["partyId", "code", "legalName", "tradeName"],
                     ("partyId", "type:string;format:uuid"),
@@ -4855,6 +4890,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("identity", "oneOf:ref:ProductStockDisplayIdentityV1|type:null"),
                     ("technical", "oneOf:ref:ProductStockNominalTechnicalV1|type:null"),
                     ("errors", "type:array;items:ref:ProductFieldError")),
+                ["ProductStockDisplayResultV2"] = ObjectSchema(
+                    ["productId", "expectedProductVersion", "identity", "technical", "errors"],
+                    ("productId", "type:string;format:uuid"),
+                    ("expectedProductVersion", "type:string"),
+                    ("identity", "oneOf:ref:ProductStockDisplayIdentityV1|type:null"),
+                    ("technical", "oneOf:ref:ProductStockNominalTechnicalV2|type:null"),
+                    ("errors", "type:array;items:ref:ProductFieldError")),
                 ["ProductStockDisplayIdentityV1"] = ObjectSchema(
                     ["productId", "productVersion", "code", "name"],
                     ("productId", "type:string;format:uuid"), ("productVersion", "type:string"),
@@ -4873,6 +4915,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("template", "ref:ProductManufacturingTemplateRevisionV1"),
                     ("thicknessMm", "type:number|string;format:double"),
                     ("widthMm", "type:number|string;format:double")),
+                ["ProductStockNominalTechnicalV2"] = ObjectSchema(
+                    ["family", "template", "thicknessMm", "widthMm", "lengthMm"],
+                    ("family", "ref:ProductManufacturingFamilyRevisionV1"),
+                    ("template", "ref:ProductManufacturingTemplateRevisionV1"),
+                    ("thicknessMm", "type:number|string;format:double"),
+                    ("widthMm", "type:number|string;format:double"),
+                    ("lengthMm", "type:null|number|string;format:double")),
                 ["ProductManufacturingFamilyRevisionV1"] = ObjectSchema(
                     ["familyId", "familyCode", "sourceRevision"],
                     ("familyId", "type:string;format:uuid"), ("familyCode", "type:string"),
@@ -7323,7 +7372,7 @@ public sealed partial class OpenApiContractGenerationTests
         var contract = Assert.Single(operation.GetProperty("parameters").EnumerateArray(), parameter =>
             parameter.GetProperty("in").GetString() == "header"
             && parameter.GetProperty("name").GetString() == InventoryStockPositionApiV1.ProductDisplayContractHeader);
-        Assert.Equal("^(?:1\\.0|2\\.0|3\\.0)$", contract.GetProperty("schema").GetProperty("pattern").GetString());
+        Assert.Equal("^(?:1\\.0|2\\.0|3\\.0|4\\.0)$", contract.GetProperty("schema").GetProperty("pattern").GetString());
         var success = operation.GetProperty("responses").GetProperty("200").GetProperty("content")
             .GetProperty("application/json").GetProperty("schema").GetProperty("anyOf");
         var alternatives = success.EnumerateArray().ToArray();
@@ -7343,6 +7392,8 @@ public sealed partial class OpenApiContractGenerationTests
             alternatives[2].GetProperty("$ref").GetString());
         Assert.Equal("#/components/schemas/InventoryStockPositionOwnerPageV3",
             alternatives[3].GetProperty("$ref").GetString());
+        Assert.Equal("#/components/schemas/InventoryStockPositionLengthPageV4",
+            alternatives[4].GetProperty("$ref").GetString());
         var locationItem = root.GetProperty("components").GetProperty("schemas")
             .GetProperty("InventoryStockPositionLocationDisplayV2");
         Assert.Contains("locationDisplay", locationItem.GetProperty("required")
@@ -7357,6 +7408,26 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("#/components/schemas/InventoryStockOwnerDisplayV1",
             ownerItem.GetProperty("properties").GetProperty("ownerDisplay")
                 .GetProperty("oneOf")[0].GetProperty("$ref").GetString());
+        var lengthItem = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("InventoryStockPositionLengthDisplayV4");
+        Assert.Equal("#/components/schemas/ProductStockDisplayResultV2",
+            lengthItem.GetProperty("properties").GetProperty("productDisplay")
+                .GetProperty("$ref").GetString());
+        Assert.Equal("#/components/schemas/OrganizationLocationDisplayV1",
+            lengthItem.GetProperty("properties").GetProperty("locationDisplay")
+                .GetProperty("$ref").GetString());
+        Assert.Equal("#/components/schemas/InventoryStockOwnerDisplayV1",
+            lengthItem.GetProperty("properties").GetProperty("ownerDisplay")
+                .GetProperty("oneOf")[0].GetProperty("$ref").GetString());
+        var lengthTechnical = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("ProductStockNominalTechnicalV2");
+        Assert.Contains("lengthMm", lengthTechnical.GetProperty("required")
+            .EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal(["null", "number", "string"],
+            lengthTechnical.GetProperty("properties").GetProperty("lengthMm")
+                .GetProperty("type").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal("double", lengthTechnical.GetProperty("properties").GetProperty("lengthMm")
+            .GetProperty("format").GetString());
 
         using var legacyEmpty = JsonDocument.Parse("""{"items":[],"searchWindowFull":false}""");
         using var enrichedEmpty = JsonDocument.Parse("""{"items":[],"nextCursor":null,"searchWindowFull":false}""");

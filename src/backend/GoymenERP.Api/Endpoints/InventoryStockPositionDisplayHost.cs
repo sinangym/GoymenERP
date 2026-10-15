@@ -228,6 +228,120 @@ public static class InventoryStockPositionDisplayHost
         }
     }
 
+    public static async Task<InventoryStockPositionLengthPageV4> ComposeWithLengthAuthorizedAsync(
+        InventoryStockPositionRequestScope scope,
+        InventoryStockPositionsV1 source,
+        IProductStockDisplayReferencesV2 products,
+        IOrganizationLocationDisplayReaderV1 locations,
+        IInventoryStockOwnerDisplaySourceV1 owners,
+        ICompanyContext company,
+        ICurrentUser user,
+        IErpAuthorityRevalidationService authority,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            ArgumentNullException.ThrowIfNull(source.Items);
+            ArgumentNullException.ThrowIfNull(products);
+            ArgumentNullException.ThrowIfNull(locations);
+            ArgumentNullException.ThrowIfNull(owners);
+            await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+            if (source.Items.Count == 0)
+            {
+                return new([], source.SearchWindowFull, source.NextCursor);
+            }
+
+            var productsById = await ReadV2Async(source, products, cancellationToken);
+            await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+
+            var locationIds = source.Items.Select(item => item.LocationId).Distinct().ToArray();
+            if (locationIds.Any(id => id == Guid.Empty))
+            {
+                throw InvalidDisplayComposition();
+            }
+
+            var locationPage = await locations.ReadAsync(scope.CompanyId, locationIds, cancellationToken);
+            await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+            if (locationPage.Count != locationIds.Length
+                || locationPage.Select(item => item.LocationId).Distinct().Count() != locationPage.Count
+                || locationPage.Any(item => item.LocationId == Guid.Empty
+                    || string.IsNullOrWhiteSpace(item.LocationCode)
+                    || string.IsNullOrWhiteSpace(item.LocationName)))
+            {
+                throw InvalidDisplayComposition();
+            }
+
+            var byLocation = locationPage.ToDictionary(item => item.LocationId);
+            if (locationIds.Any(id => !byLocation.ContainsKey(id)))
+            {
+                throw InvalidDisplayComposition();
+            }
+
+            var partyIds = source.Items
+                .Where(item => string.Equals(item.OwnerKind, "Counterparty", StringComparison.Ordinal))
+                .Select(item => item.OwnerId)
+                .Distinct()
+                .Order()
+                .ToArray();
+            if (partyIds.Length > 100 || partyIds.Any(id => id == Guid.Empty)
+                || source.Items.Any(item => item.OwnerKind is not "Company" and not "Counterparty"))
+            {
+                throw InvalidDisplayComposition();
+            }
+
+            IReadOnlyDictionary<Guid, InventoryStockOwnerDisplayV1> byParty =
+                new Dictionary<Guid, InventoryStockOwnerDisplayV1>();
+            if (partyIds.Length > 0)
+            {
+                var answer = await owners.GetAuthorizedBatchAsync(
+                    new(scope.CompanyId, scope.ActorId, partyIds),
+                    cancellationToken);
+                await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+                if (answer.Outcome == InventoryStockOwnerDisplayBatchOutcomeV1.Denied)
+                {
+                    throw Forbidden();
+                }
+                if (answer.Outcome != InventoryStockOwnerDisplayBatchOutcomeV1.Found
+                    || answer.Items.Count != partyIds.Length
+                    || answer.Items.Select(item => item.PartyId).Distinct().Count() != answer.Items.Count
+                    || answer.Items.Any(item => item.PartyId == Guid.Empty
+                        || string.IsNullOrWhiteSpace(item.Code)
+                        || string.IsNullOrWhiteSpace(item.LegalName)))
+                {
+                    throw InvalidDisplayComposition();
+                }
+
+                byParty = answer.Items.ToDictionary(item => item.PartyId);
+                if (partyIds.Any(id => !byParty.ContainsKey(id)))
+                {
+                    throw InvalidDisplayComposition();
+                }
+            }
+
+            return new(
+                [.. source.Items.Select(item => new InventoryStockPositionLengthDisplayV4(
+                    item.CompanyId, item.LabelId, item.LabelVersion, item.LabelCode, item.ProductId,
+                    item.ProductVersion, item.Classification, item.Lot, item.HeatNumber, item.CoilNumber,
+                    item.DocumentStatus, item.OwnerKind, item.OwnerId, item.CustodianKind, item.CustodianId,
+                    item.LocationId, item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                    item.ActiveAllocationKg, item.AvailableKg, productsById[item.ProductId],
+                    byLocation[item.LocationId],
+                    item.OwnerKind == "Counterparty" ? byParty[item.OwnerId] : null))],
+                source.SearchWindowFull,
+                source.NextCursor);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            await RequireFreshInventoryAuthorityAsync(scope, company, user, authority, cancellationToken);
+            throw;
+        }
+    }
+
     public static async Task<InventoryStockPositionPageV1> ComposeAsync(
         InventoryStockPositionsV1 source,
         IProductStockDisplayReferencesV1 products,
@@ -279,6 +393,47 @@ public static class InventoryStockPositionDisplayHost
             [.. source.Items.Select(item => View(item, byProduct[item.ProductId]))],
             source.SearchWindowFull,
             source.NextCursor);
+    }
+
+    private static async Task<IReadOnlyDictionary<Guid, ProductStockDisplayResultV2>> ReadV2Async(
+        InventoryStockPositionsV1 source,
+        IProductStockDisplayReferencesV2 products,
+        CancellationToken cancellationToken)
+    {
+        if (source.Items.Any(item => item.ProductId == Guid.Empty
+            || string.IsNullOrWhiteSpace(item.ProductVersion)))
+        {
+            throw Unavailable();
+        }
+
+        var groups = source.Items.GroupBy(item => item.ProductId).ToArray();
+        if (groups.Any(group => group.Select(item => item.ProductVersion)
+                .Distinct(StringComparer.Ordinal).Count() != 1))
+        {
+            throw Unavailable();
+        }
+
+        var selections = groups.Select(group => new ProductStockDisplaySelectionV1(
+            group.Key, group.First().ProductVersion!)).ToArray();
+        var productPage = await products.ReadAsync(new(selections), cancellationToken);
+        if (productPage.Items.Count != selections.Length
+            || productPage.Items.Select(item => item.ProductId).Distinct().Count() != productPage.Items.Count)
+        {
+            throw Unavailable();
+        }
+
+        var byProduct = productPage.Items.ToDictionary(item => item.ProductId);
+        foreach (var selection in selections)
+        {
+            if (!byProduct.TryGetValue(selection.ProductId, out var item)
+                || !string.Equals(item.ExpectedProductVersion, selection.ExpectedProductVersion,
+                    StringComparison.Ordinal))
+            {
+                throw Unavailable();
+            }
+        }
+
+        return byProduct;
     }
 
     private static InventoryStockPositionDisplayV1 View(
@@ -481,5 +636,36 @@ public sealed record InventoryStockPositionOwnerDisplayV3(
     string ActiveAllocationKg,
     string AvailableKg,
     ProductStockDisplayResultV1 ProductDisplay,
+    OrganizationLocationDisplayV1 LocationDisplay,
+    InventoryStockOwnerDisplayV1? OwnerDisplay);
+
+public sealed record InventoryStockPositionLengthPageV4(
+    IReadOnlyList<InventoryStockPositionLengthDisplayV4> Items,
+    bool SearchWindowFull,
+    string? NextCursor = null);
+
+public sealed record InventoryStockPositionLengthDisplayV4(
+    Guid CompanyId,
+    Guid LabelId,
+    string LabelVersion,
+    string LabelCode,
+    Guid ProductId,
+    string? ProductVersion,
+    string? Classification,
+    InventoryLotV1 Lot,
+    string? HeatNumber,
+    string? CoilNumber,
+    string DocumentStatus,
+    string OwnerKind,
+    Guid OwnerId,
+    string CustodianKind,
+    Guid CustodianId,
+    Guid LocationId,
+    string PhysicalKg,
+    string FreePhysicalKg,
+    string BlockedPhysicalKg,
+    string ActiveAllocationKg,
+    string AvailableKg,
+    ProductStockDisplayResultV2 ProductDisplay,
     OrganizationLocationDisplayV1 LocationDisplay,
     InventoryStockOwnerDisplayV1? OwnerDisplay);
