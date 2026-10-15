@@ -743,6 +743,160 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentAttemptRow", b =>
+            {
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("CommandName")
+                    .HasMaxLength(160)
+                    .HasColumnType("nvarchar(160)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<string>("IdempotencyKeyHash")
+                    .HasMaxLength(64)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(64)")
+                    .UseCollation("Latin1_General_100_BIN2");
+
+                b.Property<string>("ActorId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<string>("CorrelationId")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<Guid>("DocumentId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<DateTimeOffset>("RecordedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("RequestHash")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .IsUnicode(false)
+                    .HasColumnType("varchar(64)");
+
+                b.Property<string>("ResultJson")
+                    .IsRequired()
+                    .HasColumnType("nvarchar(max)");
+
+                b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                b.HasIndex("CompanyId", "DocumentId");
+
+                b.ToTable("TransferOutgoingDocumentAttempts", "logistics", t =>
+                    {
+                        t.HasCheckConstraint("CK_TransferOutgoingDocumentAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                        t.HasCheckConstraint("CK_TransferOutgoingDocumentAttempts_Identity", "[DocumentId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([ActorId]) > 0 AND LEN([CorrelationId]) > 0");
+
+                        t.HasCheckConstraint("CK_TransferOutgoingDocumentAttempts_Result", "ISJSON([ResultJson]) = 1");
+                    });
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentLineRow", b =>
+            {
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("DocumentId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("Ordinal")
+                    .HasColumnType("int");
+
+                b.Property<Guid>("TransferLineId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.HasKey("CompanyId", "DocumentId", "Ordinal");
+
+                b.HasIndex("CompanyId", "DocumentId", "TransferLineId")
+                    .IsUnique()
+                    .HasDatabaseName("UX_TransferOutgoingDocumentLines_LineId");
+
+                b.ToTable("TransferOutgoingDocumentLines", "logistics", t =>
+                    {
+                        t.HasCheckConstraint("CK_TransferOutgoingDocumentLines_Identity", "[DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [TransferLineId] <> '00000000-0000-0000-0000-000000000000'");
+
+                        t.HasCheckConstraint("CK_TransferOutgoingDocumentLines_Ordinal", "[Ordinal] >= 1 AND [Ordinal] <= 200");
+                    });
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentRow", b =>
+            {
+                b.Property<Guid>("CompanyId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<Guid>("DocumentId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<string>("CancellationReason")
+                    .HasMaxLength(500)
+                    .HasColumnType("nvarchar(500)");
+
+                b.Property<DateTimeOffset?>("CancelledAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("CancelledBy")
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<DateTimeOffset>("CreatedAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("CreatedBy")
+                    .IsRequired()
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<string>("EDispatchNumber")
+                    .HasMaxLength(64)
+                    .HasColumnType("nvarchar(64)");
+
+                b.Property<DateTimeOffset?>("EffectiveAtUtc")
+                    .HasColumnType("datetimeoffset");
+
+                b.Property<string>("EffectiveBy")
+                    .HasMaxLength(128)
+                    .HasColumnType("nvarchar(128)");
+
+                b.Property<byte[]>("RowVersion")
+                    .IsConcurrencyToken()
+                    .IsRequired()
+                    .ValueGeneratedOnAddOrUpdate()
+                    .HasColumnType("rowversion");
+
+                b.Property<int>("Status")
+                    .HasColumnType("int");
+
+                b.Property<Guid>("TransferId")
+                    .HasColumnType("uniqueidentifier");
+
+                b.Property<int>("Version")
+                    .IsConcurrencyToken()
+                    .HasColumnType("int");
+
+                b.HasKey("CompanyId", "DocumentId");
+
+                b.HasIndex("CompanyId", "TransferId")
+                    .IsUnique()
+                    .HasDatabaseName("UX_TransferOutgoingDocuments_TransferId");
+
+                b.ToTable("TransferOutgoingDocuments", "logistics", t =>
+                    {
+                        t.HasCheckConstraint("CK_TransferOutgoingDocuments_Actors", "LEN([CreatedBy]) > 0 AND ([EffectiveBy] IS NULL OR LEN([EffectiveBy]) > 0) AND ([CancelledBy] IS NULL OR LEN([CancelledBy]) > 0) AND ([CancellationReason] IS NULL OR LEN([CancellationReason]) > 0) AND ([EDispatchNumber] IS NULL OR LEN([EDispatchNumber]) > 0)");
+
+                        t.HasCheckConstraint("CK_TransferOutgoingDocuments_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DocumentId] <> '00000000-0000-0000-0000-000000000000' AND [TransferId] <> '00000000-0000-0000-0000-000000000000'");
+
+                        t.HasCheckConstraint("CK_TransferOutgoingDocuments_State", "([Status] = 1 AND [Version] = 1 AND [EffectiveBy] IS NULL AND [EffectiveAtUtc] IS NULL AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) OR ([Status] = 2 AND [Version] = 2 AND [EffectiveBy] IS NOT NULL AND [EffectiveAtUtc] IS NOT NULL AND [CancelledBy] IS NULL AND [CancelledAtUtc] IS NULL AND [CancellationReason] IS NULL) OR ([Status] = 3 AND [Version] IN (2, 3) AND [CancelledBy] IS NOT NULL AND [CancelledAtUtc] IS NOT NULL AND [CancellationReason] IS NOT NULL AND (([Version] = 2 AND [EffectiveBy] IS NULL AND [EffectiveAtUtc] IS NULL) OR ([Version] = 3 AND [EffectiveBy] IS NOT NULL AND [EffectiveAtUtc] IS NOT NULL)))");
+                    });
+            });
+
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.VehicleWeighingRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -902,6 +1056,33 @@ partial class LogisticsDbContextModelSnapshot : ModelSnapshot
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentAttemptRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "DocumentId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentLineRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentRow", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId", "DocumentId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.TransferOutgoingDocumentRow", b =>
+            {
+                b.HasOne("GoymenERP.Modules.Logistics.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                    .WithMany()
+                    .HasForeignKey("CompanyId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+            });
 
         modelBuilder.Entity("GoymenERP.Modules.Logistics.Infrastructure.Persistence.VehicleWeighingRow", b =>
         {
