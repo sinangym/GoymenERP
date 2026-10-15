@@ -23,6 +23,7 @@ const PLAN_PREVIEW_RE = /\/api\/v1\/manufacturing\/plans\/preview$/
 const ORDER_POST_RE = /\/api\/v1\/manufacturing\/orders$/
 const ORDER_GET_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const CANDIDATES_RE = /\/api\/v1\/inventory\/references\/parent-rolls(?:\?|$)/
+const IDENTITY_ME_RE = /\/api\/v1\/identity\/me$/
 
 interface CandidateAnswer {
   readonly labelId: string
@@ -118,13 +119,75 @@ async function expectCutToLengthLines(page: Page) {
   await expect(rows.nth(1).getByRole('cell').nth(1)).toHaveText('2')
 }
 
-async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
+interface BrowserIdentityController {
+  readonly rewritten: Set<Request>
+  readonly current: () => { readonly actor: string; readonly sessionId: string }
+  readonly set: (actor: string, sessionId: string) => void
+}
+
+interface BrowserIdentityAnswer {
+  readonly userId: string
+  readonly authenticationSessionBinding: string | null
+}
+
+const browserIdentities = new WeakMap<BrowserContext, () => { readonly actor: string; readonly sessionId: string }>()
+
+function developmentIdentityHeaders(context: BrowserContext): Record<string, string> {
+  const identity = browserIdentities.get(context)?.()
+  if (identity === undefined) throw new Error('browser context has no registered Development identity')
+  return {
+    'x-development-user': identity.actor,
+    'x-development-session': identity.sessionId,
+  }
+}
+
+async function asSessionActor(
+  context: BrowserContext,
+  initialActor: string,
+  initialSessionId = randomUUID(),
+): Promise<BrowserIdentityController> {
   const rewritten = new Set<Request>()
+  let identity: { actor: string; sessionId: string } = { actor: initialActor, sessionId: initialSessionId }
+  browserIdentities.set(context, () => identity)
   await context.route('**/api/v1/**', async (route: Route) => {
     rewritten.add(route.request())
-    await route.fallback({ headers: { ...route.request().headers(), 'x-development-user': actor } })
+    await route.fallback({
+      headers: {
+        ...route.request().headers(),
+        ...developmentIdentityHeaders(context),
+      },
+    })
   })
-  return rewritten
+  return {
+    rewritten,
+    current: () => identity,
+    set: (actor, sessionId) => { identity = { actor, sessionId } },
+  }
+}
+
+async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
+  return (await asSessionActor(context, actor)).rewritten
+}
+
+async function readBrowserIdentity(page: Page): Promise<{
+  readonly answer: BrowserIdentityAnswer
+  readonly sessionHeader: string | undefined
+}> {
+  const responsePromise = page.waitForResponse((response) =>
+    IDENTITY_ME_RE.test(response.url()) && response.request().method() === 'GET')
+  await page.evaluate(async () => {
+    const response = await fetch('/api/v1/identity/me', { cache: 'no-store' })
+    await response.arrayBuffer()
+  })
+  const response = await responsePromise
+  expect(response.status()).toBe(200)
+  const answer = await response.json() as BrowserIdentityAnswer
+  expect(answer.userId).toMatch(/^[0-9a-f-]{36}$/i)
+  expect(answer.authenticationSessionBinding).toMatch(/^v1\.[0-9a-f]{64}$/)
+  return {
+    answer,
+    sessionHeader: response.request().headers()['x-development-session'],
+  }
 }
 
 function watchAnswers(page: Page): Request[] {
@@ -204,6 +267,43 @@ async function readCanonicalWorkCenters(api: APIRequestContext): Promise<Readonl
 }
 
 test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
+  test('M01.3: the real identity endpoint keeps F5 in one session and isolates A to B to A re-entry', async ({ page, context }) => {
+    const firstSession = randomUUID()
+    const otherActorSession = randomUUID()
+    const reentrySession = randomUUID()
+    const identity = await asSessionActor(context, env.seed.recorderActor, firstSession)
+    const answered = watchAnswers(page)
+
+    await page.goto('/uretim/emirler')
+    const first = await readBrowserIdentity(page)
+    expect(first.sessionHeader).toBe(firstSession)
+
+    await page.reload()
+    const refreshed = await readBrowserIdentity(page)
+    expect(refreshed.sessionHeader).toBe(firstSession)
+    expect(refreshed.answer).toEqual(first.answer)
+
+    identity.set(env.seed.readerActor, otherActorSession)
+    await page.reload()
+    const otherActor = await readBrowserIdentity(page)
+    expect(otherActor.sessionHeader).toBe(otherActorSession)
+    expect(otherActor.answer.userId).not.toBe(first.answer.userId)
+    expect(otherActor.answer.authenticationSessionBinding)
+      .not.toBe(first.answer.authenticationSessionBinding)
+
+    identity.set(env.seed.recorderActor, reentrySession)
+    await page.reload()
+    const reentered = await readBrowserIdentity(page)
+    expect(reentered.sessionHeader).toBe(reentrySession)
+    expect(reentered.answer.userId).toBe(first.answer.userId)
+    expect(reentered.answer.authenticationSessionBinding)
+      .not.toBe(first.answer.authenticationSessionBinding)
+    expect(reentered.answer.authenticationSessionBinding)
+      .not.toBe(otherActor.answer.authenticationSessionBinding)
+
+    expectEveryAnswerRewritten(answered, identity.rewritten)
+  })
+
   test('each canonical process follows the same authorized save and fresh-reopen path', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
@@ -501,7 +601,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       if (firstRequest !== null) return route.fallback()
       firstRequest = route.request()
       const response = await route.fetch({
-        headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+        headers: { ...route.request().headers(), ...developmentIdentityHeaders(context) },
       })
       firstStatus = response.status()
       await route.abort('failed')
@@ -571,7 +671,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       if (committedRequest !== null) return route.fallback()
       committedRequest = route.request()
       const response = await route.fetch({
-        headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+        headers: { ...route.request().headers(), ...developmentIdentityHeaders(context) },
       })
       committedStatus = response.status()
       await route.abort('failed')
@@ -1254,7 +1354,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         if (committedCreate !== null) return route.fallback()
         committedCreate = route.request()
         const response = await route.fetch({
-          headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+          headers: { ...route.request().headers(), ...developmentIdentityHeaders(context) },
         })
         committedCreateStatus = response.status()
         await route.abort('failed')
@@ -1380,7 +1480,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         if (committedRevision !== null) return route.fallback()
         committedRevision = route.request()
         const response = await route.fetch({
-          headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+          headers: { ...route.request().headers(), ...developmentIdentityHeaders(context) },
         })
         committedRevisionStatus = response.status()
         await route.abort('failed')
@@ -1516,8 +1616,11 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     expectEveryAnswerRewritten(answered, rewritten)
   })
 
-  test('M01.3: a foreign persisted revision after a committed response loss stays fail-closed on the newer plan', async ({ page, context }) => {
-    const rewritten = await asActor(context, env.seed.recorderActor)
+  test('M01.3: a same-actor new server session cannot replay or replace the earlier session revision', async ({ page, context }) => {
+    const firstSession = randomUUID()
+    const nextSession = randomUUID()
+    const identity = await asSessionActor(context, env.seed.recorderActor, firstSession)
+    const rewritten = identity.rewritten
     const answered = watchAnswers(page)
     const api = await apiAs(env, env.seed.recorderActor)
 
@@ -1547,6 +1650,8 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
 
       await page.goto(`/uretim/plan/${planId}`)
       await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      const firstIdentity = await readBrowserIdentity(page)
+      expect(firstIdentity.sessionHeader).toBe(firstSession)
       await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
       await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
       await page.getByLabel(/Adet$/).fill('4')
@@ -1568,7 +1673,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
           return
         }
         const response = await route.fetch({
-          headers: { ...request.headers(), 'x-development-user': env.seed.recorderActor },
+          headers: { ...request.headers(), ...developmentIdentityHeaders(context) },
         })
         committedStatus = response.status()
         await route.abort('failed')
@@ -1588,7 +1693,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       const stored = await page.evaluate((currentPlanId) => {
         for (const name of Object.keys(sessionStorage)) {
           const value = sessionStorage.getItem(name)
-          if (name.startsWith('goymen.manufacturing.plan-revise.v1:') && value?.includes(currentPlanId)) {
+          if (name.startsWith('goymen.manufacturing.plan-revise.v2:') && value?.includes(currentPlanId)) {
             return { name, value }
           }
         }
@@ -1597,19 +1702,16 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       expect(stored).not.toBeNull()
       const pending = JSON.parse(stored!.value) as {
         companyId: string
+        sessionBinding: string
         snapshot: { idempotencyKey: string; request: Record<string, unknown> }
       }
+      expect(pending.sessionBinding).toBe(firstIdentity.answer.authenticationSessionBinding)
       expect(pending.snapshot.idempotencyKey).toBe(firstAttempt.key)
       expect(JSON.stringify(pending.snapshot.request)).toBe(firstAttempt.body)
 
-      const foreignPending = JSON.stringify({ ...pending, companyId: OTHER_COMPANY })
-      await page.evaluate(({ name, value }) => sessionStorage.setItem(name, value), {
-        name: stored!.name,
-        value: foreignPending,
-      })
-
-      // The first command really moved the server to version 2. The next page load therefore reads newer state while
-      // the persisted evidence is unreadable in this company context; neither fact may authorize a fresh command.
+      // The first command really moved the server to version 2. The same actor then signs in through a genuinely new
+      // Development/Testing server session. Its binding is different, so the earlier session's durable evidence is
+      // unreadable here; neither the newer GET nor the same actor id may authorize a fresh command.
       const committed = await readPlan(api, planId)
       expect(committed.response.status()).toBe(200)
       expect(committed.body).toMatchObject({
@@ -1621,14 +1723,20 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         PLAN_GET_RE.test(response.url())
           && response.url().endsWith(planId)
           && response.request().method() === 'GET')
+      identity.set(env.seed.recorderActor, nextSession)
       await page.reload()
       const fresh = await freshRead
       expect(fresh.status()).toBe(200)
       expect((await fresh.json()) as Record<string, unknown>).toMatchObject({ planId, version: 2 })
+      const reenteredIdentity = await readBrowserIdentity(page)
+      expect(reenteredIdentity.sessionHeader).toBe(nextSession)
+      expect(reenteredIdentity.answer.userId).toBe(firstIdentity.answer.userId)
+      expect(reenteredIdentity.answer.authenticationSessionBinding)
+        .not.toBe(firstIdentity.answer.authenticationSessionBinding)
       await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder', exact: true }))
         .toHaveCount(0)
-      expect(await page.evaluate((name) => sessionStorage.getItem(name), stored!.name)).toBe(foreignPending)
+      expect(await page.evaluate((name) => sessionStorage.getItem(name), stored!.name)).toBe(stored!.value)
 
       // Exercise any mistakenly exposed edit path. A correct fail-closed implementation can hide or disable it; if it
       // is actionable, this deliberately valid change must still produce no second/new-key revision request.
@@ -1643,7 +1751,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
         await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
       }
       await page.waitForTimeout(400)
-      expect(revisionAttempts, 'corrupt or foreign pending evidence must not mint a new revision key').toEqual([
+      expect(revisionAttempts, 'another server session must not mint a new revision key').toEqual([
         firstAttempt,
       ])
 
