@@ -785,20 +785,21 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 jobs_source,
             )
         }
-        self.assertEqual(
-            set(jobs),
-            {
-                "backend-build",
-                "backend-test-group",
-                "backend",
-                "frontend",
-                "relational-shard",
-                "relational-rcsi",
-                "relational",
-                "contract-drift",
-                "containers",
-            },
-        )
+        required_jobs = {
+            "backend-build",
+            "backend-test-group",
+            "backend",
+            "frontend",
+            "relational-shard",
+            "relational-rcsi",
+            "relational",
+            "contract-drift",
+            "containers",
+        }
+        self.assertEqual(required_jobs, set(jobs) - {"recovery-surface-inventory"})
+        recovery_job = jobs.get("recovery-surface-inventory")
+        if recovery_job is not None:
+            self._assert_recovery_surface_inventory_job_contract(recovery_job)
 
         summaries = {
             "backend-build": (
@@ -985,6 +986,84 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assertIn("permissions:\n  contents: read", workflow)
         self.assertNotIn("continue-on-error", workflow)
 
+    def test_recovery_surface_inventory_job_is_artifact_free_and_fail_closed(self) -> None:
+        workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        safe_job = (
+            "  recovery-surface-inventory:\n"
+            "    name: Recovery surface inventory exact-source proof\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@v7\n"
+            "      - name: Verify exact source\n"
+            "        run: python3 -I -S -B tools/generate_recovery_surface_inventory.py\n\n"
+        )
+        self.assert_ci_workflow_summary_contract(
+            self._workflow_with_recovery_job(workflow, safe_job)
+        )
+
+        step_mutations = (
+            (
+                "artifact upload",
+                "      - uses: actions/upload-artifact@v7\n",
+            ),
+            (
+                "artifact download",
+                "      - uses: actions/download-artifact@v8\n",
+            ),
+            (
+                "TRX summary producer",
+                "      - run: python3 -I -S -B tools/ci/summarize_trx.py\n",
+            ),
+            (
+                "deployment command",
+                "      - run: ./deploy.sh\n",
+            ),
+            (
+                "secret context",
+                "      - run: echo '${{ secrets.RECOVERY_TOKEN }}'\n",
+            ),
+        )
+        job_mutations = (
+            (
+                "continue on error",
+                "    continue-on-error: true\n",
+            ),
+            (
+                "write permission",
+                "    permissions:\n      contents: write\n",
+            ),
+            (
+                "deployment environment",
+                "    environment: production\n",
+            ),
+            (
+                "unrelated job dependency",
+                "    needs: backend-build\n",
+            ),
+        )
+        for label, addition in step_mutations:
+            with self.subTest(mutant=label):
+                changed_job = safe_job.replace(
+                    "      - name: Verify exact source\n",
+                    addition + "      - name: Verify exact source\n",
+                    1,
+                )
+                changed_workflow = self._workflow_with_recovery_job(
+                    workflow, changed_job
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed_workflow)
+        for label, addition in job_mutations:
+            with self.subTest(mutant=label):
+                changed_job = safe_job.replace("    steps:\n", addition + "    steps:\n", 1)
+                changed_workflow = self._workflow_with_recovery_job(
+                    workflow, changed_job
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed_workflow)
+
     def test_ci_workflow_rejects_unsafe_or_mismatched_uploads(self) -> None:
         workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
@@ -1041,6 +1120,25 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assertNotEqual(changed, workflow)
         with self.assertRaises(AssertionError):
             self.assert_ci_workflow_summary_contract(changed)
+
+    def _assert_recovery_surface_inventory_job_contract(self, job: str) -> None:
+        self.assertNotIn("actions/upload-artifact@", job)
+        self.assertNotIn("actions/download-artifact@", job)
+        self.assertNotIn("tools/ci/summarize_trx.py", job)
+        self.assertNotIn("continue-on-error", job)
+        self.assertNotRegex(job, r"(?m)^\s*permissions\s*:")
+        self.assertNotRegex(job, r"(?m)^\s*needs\s*:")
+        self.assertNotRegex(job, r"(?m)^\s*environment\s*:")
+        self.assertNotRegex(job, r"(?i)\bdeploy(?:ment)?\b")
+        self.assertNotRegex(job, r"(?i)\bsecrets\b")
+
+    @staticmethod
+    def _workflow_with_recovery_job(workflow: str, job: str) -> str:
+        marker = "  frontend:\n"
+        changed = workflow.replace(marker, job + marker, 1)
+        if changed == workflow:
+            raise AssertionError("Expected frontend job insertion marker")
+        return changed
 
     def _workflow_step_lines(self, job: str, step_name: str) -> list[str]:
         matches = list(
