@@ -1110,6 +1110,58 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self.assert_ci_workflow_summary_contract(changed_workflow)
 
+        execution_bypass_mutations = (
+            (
+                "successful early exit",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          exit 0\n",
+            ),
+            (
+                "successful early return",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          return 0\n",
+            ),
+            (
+                "successful exec bypass",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          exec true\n",
+            ),
+            (
+                "job condition disabled",
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n    if: false\n",
+            ),
+            (
+                "proof step condition disabled",
+                "      - name: Verify recovery inventory exact event source\n",
+                "      - name: Verify recovery inventory exact event source\n"
+                "        if: false\n",
+            ),
+            (
+                "proof step syntax-only shell",
+                "      - name: Verify recovery inventory exact event source\n",
+                "      - name: Verify recovery inventory exact event source\n"
+                "        shell: bash -n {0}\n",
+            ),
+            (
+                "job default non-executing shell",
+                "    steps:\n",
+                "    defaults:\n"
+                "      run:\n"
+                "        shell: bash -n {0}\n"
+                "    steps:\n",
+            ),
+        )
+        for label, original, replacement in execution_bypass_mutations:
+            with self.subTest(mutant=label):
+                changed_job = safe_job.replace(original, replacement, 1)
+                self.assertNotEqual(changed_job, safe_job)
+                changed_workflow = self._workflow_with_job_body(
+                    workflow, "recovery-surface-inventory", changed_job
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed_workflow)
+
         step_mutations = (
             (
                 "artifact upload",
@@ -1279,6 +1331,18 @@ class SafeTrxSummaryTests(unittest.TestCase):
                     f"Missing ordered recovery proof line: {line}"
                 ) from error
             previous_index = current_index
+
+        self.assertNotRegex(job, r"(?m)^\s+if\s*:")
+        self.assertNotRegex(job, r"(?m)^\s+shell\s*:")
+        for line in proof_lines[: previous_index + 1]:
+            self.assertNotRegex(
+                line,
+                r"(?:^|[;&|]\s*)(?:exit|return)(?:\s+0)?(?:\s|$)",
+            )
+            self.assertNotRegex(
+                line,
+                r"(?:^|[;&|]\s*)exec\s+(?:true|:)(?:\s|$)",
+            )
 
         self.assertNotIn("actions/upload-artifact@", job)
         self.assertNotIn("actions/download-artifact@", job)
