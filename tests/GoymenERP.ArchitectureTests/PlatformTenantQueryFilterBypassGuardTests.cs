@@ -253,9 +253,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Customer-owned input context: replace one obsolete refusal with three exact persistence/replay facts.
             // Slitting draft spec: +1 public API SQL fact (e6aa3795... -> 286281c0...).
             // Settings Manufacturing tolerance registry: +1 company/constraint/provider SQL fact.
+            // Settings tolerance serialization: +3 valid/invalid predecessor and empty round-trip SQL facts.
             // M01.2: +1 real-SQL lossless cut-line preview/save/replay/revise/reopen fact.
             ["tools/relational_inventory/manufacturing.txt"] =
-                "e4f7112187a56b8887546025d8b2a85718a1b84470a7de84f15c42f0ce19b693",
+                "e03d7c7b483536bb99f07d3c7ad5b9e174770bf320accd34e25cb7ac44505699",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -1388,6 +1389,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 3
+                        }),
+                // Existing overlap fails before trigger replacement; concurrent publications are serialized by
+                // pre-insert key-range locks. Down refuses history before restoring the predecessor trigger.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261015150000_SerializeManufacturingTolerancePolicyWindows.cs"] =
+                    new(
+                        "5d7736e49d2c7024c7ddfd2ef92b395029ed2d98b32b092f1b440ead50f8e4de",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 4
                         }),
                 // PRODUCT-TECH-FAMILY-02 publishes one exact cut-sheet/plate family and template; Up and
                 // Down use two reviewed raw-SQL mutation surfaces without changing legacy technical rows.
