@@ -1170,4 +1170,3 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence.Migrations
         }
     }
 }
-
