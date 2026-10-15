@@ -1387,12 +1387,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 3
                         }),
-                // Concurrent policy publications are serialized by the database trigger. Up replaces the
+                // Concurrent policy publications are serialized by pre-insert key-range locks. Up replaces the
                 // trigger; Down first refuses rollback with history and then restores the predecessor trigger.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261015150000_SerializeManufacturingTolerancePolicyWindows.cs"] =
                     new(
-                        "b1322fe5e595463db25b75e6911b6ce0dfae8d50b488947bcb0638808c330e54",
+                        "cca037a8e19889937c86aef12fc498adea762b590af01c3b1cac574150247cd0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 3

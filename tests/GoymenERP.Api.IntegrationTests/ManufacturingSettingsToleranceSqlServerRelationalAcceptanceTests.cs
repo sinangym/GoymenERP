@@ -64,7 +64,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
 
             await AssertInsertRejectedAsync(factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(),
                 SettingsManufacturingProcessesV1.Slitting, 8, 2m, true,
-                new DateOnly(2027, 6, 1), null, "synthetic-settings-sql-approver", "overlap");
+                new DateOnly(2027, 6, 1), null, "synthetic-settings-sql-approver", "overlap", 51001);
             await AssertInsertRejectedAsync(factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(),
                 SettingsManufacturingProcessesV1.ColdRolling, 1, 2m, true,
                 new DateOnly(2026, 1, 1), null, "", "missing approval actor");
@@ -79,36 +79,30 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                 new DateOnly(2026, 2, 1), null,
                 "synthetic-settings-sql-approver", "duplicate version must fail");
 
+            await AssertIncomingBatchOverlapRejectedAsync(factory.DatabaseConnectionString);
+
             const int contentionRounds = 4;
             for (var round = 0; round < contentionRounds; round++)
             {
-                using var ready = new Barrier(2);
                 var year = 2028 + round;
-                var contenders = new[]
-                {
-                    ConcurrentInsertAsync(ready, factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(),
-                        (round * 2) + 1, new DateOnly(year, 1, 1), new DateOnly(year, 12, 31)),
-                    ConcurrentInsertAsync(ready, factory.DatabaseConnectionString, CompanyA, Guid.NewGuid(),
-                        (round * 2) + 2, new DateOnly(year, 6, 1), new DateOnly(year, 12, 31)),
-                };
-                var outcomes = await Task.WhenAll(contenders);
-                Assert.Equal(1, outcomes.Count(x => x is null));
-                Assert.Equal(1, outcomes.Count(x => x == 51001));
+                await AssertContendedOverlapRejectedAsync(factory.DatabaseConnectionString,
+                    (round * 2) + 1, (round * 2) + 2, year);
             }
             Assert.Equal(contentionRounds, await CountProcessAsync(factory.DatabaseConnectionString,
                 SettingsManufacturingProcessesV1.ColdRolling));
 
             await AssertCommandRejectedAsync(factory.DatabaseConnectionString,
                 "UPDATE [settings].[ManufacturingTolerancePolicies] SET [MaximumFirePercent] = 99 WHERE [CompanyId] = @company AND [ProfileId] = @profile",
-                CompanyA, profileId);
+                CompanyA, profileId, 51002);
             await AssertCommandRejectedAsync(factory.DatabaseConnectionString,
                 "DELETE FROM [settings].[ManufacturingTolerancePolicies] WHERE [CompanyId] = @company AND [ProfileId] = @profile",
-                CompanyA, profileId);
+                CompanyA, profileId, 51002);
 
             Assert.Equal(4 + contentionRounds, await CountAsync(factory.DatabaseConnectionString));
             await using var rollback = Context(factory.DatabaseConnectionString, CompanyA);
-            await Assert.ThrowsAsync<SqlException>(() =>
+            var rollbackException = await Assert.ThrowsAsync<SqlException>(() =>
                 rollback.GetService<IMigrator>().MigrateAsync("0"));
+            Assert.Equal(51003, rollbackException.Number);
             Assert.Equal(4 + contentionRounds, await CountAsync(factory.DatabaseConnectionString));
         }
         finally
@@ -178,22 +172,81 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
 
     private static async Task AssertInsertRejectedAsync(string connectionString, Guid companyId, Guid profileId,
         string process, long version, decimal maximumFirePercent, bool isActive, DateOnly from,
-        DateOnly? through, string approvedBy, string reason) =>
-        await Assert.ThrowsAsync<SqlException>(() => InsertAsync(connectionString, companyId, profileId,
-            process, version, maximumFirePercent, isActive, from, through, approvedBy, reason));
+        DateOnly? through, string approvedBy, string reason, int? expectedNumber = null)
+    {
+        var exception = await Assert.ThrowsAsync<SqlException>(() => InsertAsync(connectionString, companyId,
+            profileId, process, version, maximumFirePercent, isActive, from, through, approvedBy, reason));
+        if (expectedNumber is not null)
+        {
+            Assert.Equal(expectedNumber.Value, exception.Number);
+        }
+    }
 
-    private static async Task<int?> ConcurrentInsertAsync(Barrier ready, string connectionString, Guid companyId,
-        Guid profileId, long version, DateOnly from, DateOnly? through)
+    private static async Task AssertIncomingBatchOverlapRejectedAsync(string connectionString)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
-        await using var command = InsertCommand(connection, companyId, profileId,
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [settings].[ManufacturingTolerancePolicies]
+                ([CompanyId],[ProfileId],[Process],[Version],[MaximumFirePercent],[IsActive],
+                 [EffectiveFrom],[EffectiveThrough],[ApprovalStatus],[ApprovedBy],[ApprovedAtUtc],[ApprovalReason])
+            VALUES
+                (@company,@firstProfile,@process,1,0.625000,1,'2036-01-01','2036-12-31',
+                 'Approved',@approvedBy,@approvedAt,@reason),
+                (@company,@secondProfile,@process,2,0.625000,1,'2036-06-01','2036-12-31',
+                 'Approved',@approvedBy,@approvedAt,@reason);
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@firstProfile", Guid.NewGuid());
+        command.Parameters.AddWithValue("@secondProfile", Guid.NewGuid());
+        command.Parameters.AddWithValue("@process", SettingsManufacturingProcessesV1.TubeProfile);
+        command.Parameters.AddWithValue("@approvedBy", "synthetic-settings-sql-approver");
+        command.Parameters.AddWithValue("@approvedAt",
+            new DateTimeOffset(2026, 10, 10, 9, 0, 0, TimeSpan.Zero));
+        command.Parameters.AddWithValue("@reason", "incoming batch overlap evidence");
+
+        var exception = await Assert.ThrowsAsync<SqlException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(51001, exception.Number);
+        Assert.Equal(0, await CountProcessAsync(connectionString, SettingsManufacturingProcessesV1.TubeProfile));
+    }
+
+    private static async Task AssertContendedOverlapRejectedAsync(string connectionString,
+        long firstVersion, long secondVersion, int year)
+    {
+        await using var firstConnection = new SqlConnection(connectionString);
+        await firstConnection.OpenAsync();
+        await using var firstTransaction = (SqlTransaction)await firstConnection.BeginTransactionAsync();
+        await using var firstCommand = InsertCommand(firstConnection, CompanyA, Guid.NewGuid(),
+            SettingsManufacturingProcessesV1.ColdRolling, firstVersion, 0.625000m, true,
+            new DateOnly(year, 1, 1), new DateOnly(year, 12, 31),
+            "synthetic-settings-sql-approver", "held contention winner evidence");
+        firstCommand.Transaction = firstTransaction;
+        await firstCommand.ExecuteNonQueryAsync();
+
+        var contenderStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var contender = AttemptContendedInsertAsync(contenderStarted, connectionString, secondVersion,
+            new DateOnly(year, 6, 1), new DateOnly(year, 12, 31));
+        await contenderStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        var completedBeforeCommit = await Task.WhenAny(contender, Task.Delay(TimeSpan.FromMilliseconds(500)))
+            == contender;
+
+        await firstTransaction.CommitAsync();
+        var outcome = await contender.WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.False(completedBeforeCommit);
+        Assert.Equal(51001, outcome);
+    }
+
+    private static async Task<int?> AttemptContendedInsertAsync(TaskCompletionSource<bool> started,
+        string connectionString, long version, DateOnly from, DateOnly through)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = InsertCommand(connection, CompanyA, Guid.NewGuid(),
             SettingsManufacturingProcessesV1.ColdRolling, version, 0.625000m, true, from, through,
-            "synthetic-settings-sql-approver", "concurrent overlap evidence");
-        if (!ready.SignalAndWait(TimeSpan.FromSeconds(30)))
-        {
-            throw new TimeoutException("Concurrent tolerance publication contenders did not become ready.");
-        }
+            "synthetic-settings-sql-approver", "blocked contention loser evidence");
+        started.TrySetResult(true);
 
         try
         {
@@ -207,7 +260,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
     }
 
     private static async Task AssertCommandRejectedAsync(string connectionString, string commandText,
-        Guid companyId, Guid profileId)
+        Guid companyId, Guid profileId, int expectedNumber)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync();
@@ -215,7 +268,8 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         command.CommandText = commandText;
         command.Parameters.AddWithValue("@company", companyId);
         command.Parameters.AddWithValue("@profile", profileId);
-        await Assert.ThrowsAsync<SqlException>(() => command.ExecuteNonQueryAsync());
+        var exception = await Assert.ThrowsAsync<SqlException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(expectedNumber, exception.Number);
     }
 
     private static async Task<int> CountProcessAsync(string connectionString, string process)
