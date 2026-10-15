@@ -23,6 +23,9 @@ VERIFIER_SPEC = importlib.util.spec_from_file_location(
 assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
+REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
+    "791bab0f9cffe9cb829c28369c1fa4b266d24c20ed714fec4c16590175a9c052"
+)
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
     "88b674917e76a0745721b173d3b7c04a0b97b527d2901e82633ac26223592da2"
 )
@@ -783,6 +786,11 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assert_ci_workflow_summary_contract(workflow)
 
     def assert_ci_workflow_summary_contract(self, workflow: str) -> None:
+        self.assertEqual(
+            REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT,
+            reviewed_source_fingerprint(workflow),
+            "CI workflow left its complete reviewed root and job execution context",
+        )
         head_ref = "${{ github.event.pull_request.head.sha || github.sha }}"
         shard_ref = "${{ matrix.shard }}"
         needs_shard = "${{ needs.relational-shard.result }}"
@@ -1019,6 +1027,26 @@ class SafeTrxSummaryTests(unittest.TestCase):
             self.assert_ci_workflow_summary_contract(renamed)
 
         safe_job = self._workflow_job_body(workflow, "recovery-surface-inventory")
+
+        inherited_syntax_only_shell = workflow.replace(
+            "permissions:\n  contents: read\n\nconcurrency:\n",
+            "permissions:\n"
+            "  contents: read\n\n"
+            "defaults:\n"
+            "  run:\n"
+            "    shell: bash -n {0}\n\n"
+            "concurrency:\n",
+            1,
+        )
+        self.assertNotEqual(inherited_syntax_only_shell, workflow)
+        self.assertEqual(
+            safe_job,
+            self._workflow_job_body(
+                inherited_syntax_only_shell, "recovery-surface-inventory"
+            ),
+        )
+        with self.assertRaises(AssertionError):
+            self.assert_ci_workflow_summary_contract(inherited_syntax_only_shell)
 
         no_op_job = (
             "    name: Recovery surface inventory exact-source proof\n"
