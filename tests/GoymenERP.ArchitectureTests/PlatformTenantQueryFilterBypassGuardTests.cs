@@ -1387,15 +1387,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 3
                         }),
-                // Concurrent policy publications are serialized by pre-insert key-range locks. Up replaces the
-                // trigger; Down first refuses rollback with history and then restores the predecessor trigger.
+                // Existing overlap fails before trigger replacement; concurrent publications are serialized by
+                // pre-insert key-range locks. Down refuses history before restoring the predecessor trigger.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261015150000_SerializeManufacturingTolerancePolicyWindows.cs"] =
                     new(
-                        "cca037a8e19889937c86aef12fc498adea762b590af01c3b1cac574150247cd0",
+                        "5d7736e49d2c7024c7ddfd2ef92b395029ed2d98b32b092f1b440ead50f8e4de",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                            ["Sql"] = 3
+                            ["Sql"] = 4
                         }),
                 // PRODUCT-TECH-FAMILY-02 publishes one exact cut-sheet/plate family and template; Up and
                 // Down use two reviewed raw-SQL mutation surfaces without changing legacy technical rows.

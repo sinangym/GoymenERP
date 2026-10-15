@@ -20,6 +20,25 @@ public sealed class SerializeManufacturingTolerancePolicyWindows : Migration
     {
         migrationBuilder.Sql(
             """
+            DECLARE @ExistingRowCount bigint;
+            SELECT @ExistingRowCount = COUNT_BIG(*)
+            FROM [settings].[ManufacturingTolerancePolicies] WITH (TABLOCKX, HOLDLOCK);
+
+            IF EXISTS (
+                SELECT 1
+                FROM [settings].[ManufacturingTolerancePolicies] AS first_existing
+                INNER JOIN [settings].[ManufacturingTolerancePolicies] AS second_existing
+                    ON second_existing.[CompanyId] = first_existing.[CompanyId]
+                    AND second_existing.[Process] = first_existing.[Process]
+                    AND second_existing.[ProfileId] <> first_existing.[ProfileId]
+                    AND second_existing.[EffectiveFrom] <= ISNULL(first_existing.[EffectiveThrough], CONVERT(date, '99991231'))
+                    AND first_existing.[EffectiveFrom] <= ISNULL(second_existing.[EffectiveThrough], CONVERT(date, '99991231')))
+            BEGIN
+                THROW 51004, 'settings_manufacturing_tolerance_existing_history_overlap', 1;
+            END
+            """);
+        migrationBuilder.Sql(
+            """
             CREATE OR ALTER TRIGGER [settings].[TR_ManufacturingTolerancePolicies_NoOverlap]
             ON [settings].[ManufacturingTolerancePolicies]
             INSTEAD OF INSERT, UPDATE, DELETE

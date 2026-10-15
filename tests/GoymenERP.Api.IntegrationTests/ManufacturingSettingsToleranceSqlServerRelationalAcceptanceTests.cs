@@ -11,6 +11,8 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceTests
 {
+    private const string PredecessorMigration = "20261010095724_AddManufacturingTolerancePolicyRegistry";
+    private const string SerializationMigration = "20261015150000_SerializeManufacturingTolerancePolicyWindows";
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
 
@@ -111,6 +113,113 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             SqlConnection.ClearAllPools();
             await DropDatabaseAsync(baseConnection, factory.DatabaseName);
         }
+    }
+
+    [SqlServerFact]
+    public async Task Serialization_migration_accepts_valid_predecessor_history_without_mutation()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            await using var context = Context(connectionString, CompanyA);
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(PredecessorMigration);
+
+            await InsertAsync(connectionString, CompanyA, Guid.NewGuid(),
+                SettingsManufacturingProcessesV1.Slitting, 1, 0.625000m, true,
+                new DateOnly(2037, 1, 1), new DateOnly(2037, 6, 30),
+                "synthetic-settings-sql-approver", "valid predecessor history one");
+            await InsertAsync(connectionString, CompanyA, Guid.NewGuid(),
+                SettingsManufacturingProcessesV1.Slitting, 2, 0.625000m, true,
+                new DateOnly(2037, 7, 1), new DateOnly(2037, 12, 31),
+                "synthetic-settings-sql-approver", "valid predecessor history two");
+
+            var before = await HistoryRowsAsync(connectionString);
+            var predecessorTrigger = await TriggerStateAsync(connectionString);
+            Assert.False(predecessorTrigger.IsInsteadOf);
+            Assert.False(predecessorTrigger.IsDisabled);
+            Assert.Equal(0, await MigrationHistoryCountAsync(connectionString));
+
+            await migrator.MigrateAsync(SerializationMigration);
+
+            Assert.Equal(before, await HistoryRowsAsync(connectionString));
+            Assert.Equal(1, await MigrationHistoryCountAsync(connectionString));
+            var serializedTrigger = await TriggerStateAsync(connectionString);
+            Assert.True(serializedTrigger.IsInsteadOf);
+            Assert.False(serializedTrigger.IsDisabled);
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Serialization_migration_rejects_overlapping_predecessor_history_atomically()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            await using var context = Context(connectionString, CompanyA);
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(PredecessorMigration);
+
+            await SetTriggerEnabledAsync(connectionString, enabled: false);
+            try
+            {
+                await InsertAsync(connectionString, CompanyA, Guid.NewGuid(),
+                    SettingsManufacturingProcessesV1.Paint, 1, 0.625000m, true,
+                    new DateOnly(2038, 1, 1), new DateOnly(2038, 12, 31),
+                    "synthetic-settings-sql-approver", "explicit disposable legacy overlap one");
+                await InsertAsync(connectionString, CompanyA, Guid.NewGuid(),
+                    SettingsManufacturingProcessesV1.Paint, 2, 0.625000m, true,
+                    new DateOnly(2038, 6, 1), new DateOnly(2038, 12, 31),
+                    "synthetic-settings-sql-approver", "explicit disposable legacy overlap two");
+            }
+            finally
+            {
+                await SetTriggerEnabledAsync(connectionString, enabled: true);
+            }
+
+            var before = await HistoryRowsAsync(connectionString);
+            var predecessorTrigger = await TriggerStateAsync(connectionString);
+            Assert.False(predecessorTrigger.IsInsteadOf);
+            Assert.False(predecessorTrigger.IsDisabled);
+            Assert.Equal(2, await CountProcessAsync(connectionString, SettingsManufacturingProcessesV1.Paint));
+            Assert.Equal(0, await MigrationHistoryCountAsync(connectionString));
+
+            var error = await Assert.ThrowsAsync<SqlException>(() =>
+                migrator.MigrateAsync(SerializationMigration));
+
+            Assert.Equal(51004, error.Number);
+            Assert.Contains("settings_manufacturing_tolerance_existing_history_overlap", error.Message,
+                StringComparison.Ordinal);
+            Assert.Equal(0, await MigrationHistoryCountAsync(connectionString));
+            Assert.Equal(before, await HistoryRowsAsync(connectionString));
+            Assert.Equal(predecessorTrigger, await TriggerStateAsync(connectionString));
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Empty_registry_can_downgrade_to_predecessor_and_reapply_serialization()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            await using var context = Context(connectionString, CompanyA);
+            var migrator = context.GetService<IMigrator>();
+            Assert.Equal(1, await MigrationHistoryCountAsync(connectionString));
+            Assert.True((await TriggerStateAsync(connectionString)).IsInsteadOf);
+
+            await migrator.MigrateAsync(PredecessorMigration);
+
+            Assert.Equal(0, await MigrationHistoryCountAsync(connectionString));
+            var predecessorTrigger = await TriggerStateAsync(connectionString);
+            Assert.False(predecessorTrigger.IsInsteadOf);
+            Assert.False(predecessorTrigger.IsDisabled);
+            Assert.Equal([], await HistoryRowsAsync(connectionString));
+
+            await migrator.MigrateAsync(SerializationMigration);
+
+            Assert.Equal(1, await MigrationHistoryCountAsync(connectionString));
+            var serializedTrigger = await TriggerStateAsync(connectionString);
+            Assert.True(serializedTrigger.IsInsteadOf);
+            Assert.False(serializedTrigger.IsDisabled);
+            Assert.Equal([], await HistoryRowsAsync(connectionString));
+        });
     }
 
     private static ProviderScope Provider(string connectionString, Guid company)
@@ -291,6 +400,90 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
+    private static async Task<int> MigrationHistoryCountAsync(string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM [settings].[__EFMigrationsHistory] WHERE [MigrationId] = @migration";
+        command.Parameters.AddWithValue("@migration", SerializationMigration);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<IReadOnlyList<string>> HistoryRowsAsync(string connectionString)
+    {
+        var rows = new List<string>();
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT CONCAT(
+                CONVERT(varchar(36), [CompanyId]), N'|', CONVERT(varchar(36), [ProfileId]), N'|',
+                [Process], N'|', CONVERT(varchar(20), [Version]), N'|',
+                CONVERT(varchar(32), [MaximumFirePercent]), N'|', CONVERT(varchar(1), [IsActive]), N'|',
+                CONVERT(varchar(10), [EffectiveFrom], 23), N'|',
+                COALESCE(CONVERT(varchar(10), [EffectiveThrough], 23), N'<null>'), N'|',
+                [ApprovalStatus], N'|', [ApprovedBy], N'|', CONVERT(varchar(40), [ApprovedAtUtc], 127), N'|',
+                [ApprovalReason])
+            FROM [settings].[ManufacturingTolerancePolicies]
+            ORDER BY [CompanyId], [Process], [EffectiveFrom], [ProfileId];
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(reader.GetString(0));
+        }
+        return rows;
+    }
+
+    private static async Task<TriggerState> TriggerStateAsync(string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT OBJECT_DEFINITION([object_id]), [is_instead_of_trigger], [is_disabled]
+            FROM sys.triggers
+            WHERE [parent_id] = OBJECT_ID(N'[settings].[ManufacturingTolerancePolicies]')
+              AND [name] = N'TR_ManufacturingTolerancePolicies_NoOverlap';
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return new TriggerState(reader.GetString(0), reader.GetBoolean(1), reader.GetBoolean(2));
+    }
+
+    private static async Task SetTriggerEnabledAsync(string connectionString, bool enabled)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            {(enabled ? "ENABLE" : "DISABLE")} TRIGGER [settings].[TR_ManufacturingTolerancePolicies_NoOverlap]
+            ON [settings].[ManufacturingTolerancePolicies];
+            """;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task InDisposableDatabaseAsync(Func<string, Task> acceptance)
+    {
+        var baseConnection = Environment.GetEnvironmentVariable(
+            SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
+        var factory = new SqlServerRelationalApiFactory(baseConnection);
+        try
+        {
+            using var client = factory.CreateClient();
+            using var health = await client.GetAsync("/health/live");
+            health.EnsureSuccessStatusCode();
+            await acceptance(factory.DatabaseConnectionString);
+        }
+        finally
+        {
+            await factory.DisposeAsync();
+            SqlConnection.ClearAllPools();
+            await DropDatabaseAsync(baseConnection, factory.DatabaseName);
+        }
+    }
+
     private static async Task DropDatabaseAsync(string baseConnectionString, string databaseName)
     {
         await using var connection = new SqlConnection(baseConnectionString);
@@ -312,6 +505,8 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         public SettingsManufacturingToleranceProviderV1 Value { get; } = value;
         public ValueTask DisposeAsync() => database.DisposeAsync();
     }
+
+    private sealed record TriggerState(string Definition, bool IsInsteadOf, bool IsDisabled);
 
     private sealed class FixedCompany(Guid companyId) : ICompanyContext
     {
