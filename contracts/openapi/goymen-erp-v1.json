@@ -71364,7 +71364,8 @@
           "userId",
           "displayName",
           "email",
-          "allowedCompanyIds"
+          "allowedCompanyIds",
+          "authenticationSessionBinding"
         ],
         "type": "object",
         "properties": {
@@ -71387,6 +71388,12 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "authenticationSessionBinding": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
