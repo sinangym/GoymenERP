@@ -28,6 +28,7 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
         Assert.Equal((ProductId, StoredVersion, 1.25m, 1250m, On),
             (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm, snapshot.WidthMm, snapshot.EffectiveOn));
+        Assert.Null(snapshot.LengthMm);
         Assert.Equal((FamilyId, "gdc-coil", "#66/5739827887"),
             (snapshot.Family.FamilyId, snapshot.Family.FamilyCode, snapshot.Family.SourceRevision));
         Assert.Equal((TemplateId, "7", "gdc-coil-v7", "#66/5739827887"),
@@ -39,6 +40,20 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         Assert.Equal(4, world.Authorization.Calls);
         Assert.All(world.Authorization.AskedPermissions,
             permission => Assert.Equal(ProductPermissionManifestV1.OperationalSelectionRead, permission));
+    }
+
+    [Fact]
+    public async Task Cut_sheet_plate_snapshot_carries_exact_nominal_length_without_changing_legacy_null()
+    {
+        var world = World(TechnicalRecord(lengthMm: 2500.125m));
+
+        var result = await Service(world, new(Definition(includeLength: true))).ReadAsync(Selection, default);
+
+        Assert.Empty(result.Errors);
+        var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
+        Assert.Equal(2500.125m, snapshot.LengthMm);
+        Assert.Equal((ProductId, StoredVersion, FamilyId, TemplateId),
+            (snapshot.ProductId, snapshot.ProductVersion, snapshot.Family.FamilyId, snapshot.Template.TemplateId));
     }
 
     [Theory]
@@ -287,7 +302,7 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         new(world.Company, world.User, world.Authorization, new TechnicalRecords(world.Records),
             source ?? new(Definition()), new(world.Settings, world.Company));
 
-    private static ProductStoredRecord TechnicalRecord(bool includeThickness = true)
+    private static ProductStoredRecord TechnicalRecord(bool includeThickness = true, decimal? lengthMm = null)
     {
         var attributes = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
         {
@@ -296,6 +311,7 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
             ["coating"] = JsonSerializer.SerializeToElement("none"),
         };
         if (includeThickness) attributes["thicknessMm"] = JsonSerializer.SerializeToElement(1.25m);
+        if (lengthMm is not null) attributes["lengthMm"] = JsonSerializer.SerializeToElement(lengthMm.Value);
         var references = new ProductReferences(TemplateId, "7", attributes, new(Stock: StockUnitId));
         return StoredProduct(units: references.Units) with
         {
@@ -305,14 +321,20 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
     }
 
     private static ProductFamilyDefinitionV2 Definition(bool candidateQuality = false,
-        string sourceRevision = "#66/5739827887", string? entrySourceRevision = null) => new(
+        string sourceRevision = "#66/5739827887", string? entrySourceRevision = null,
+        bool includeLength = false) => new(
         [new(FamilyId, "gdc-coil", "GDC Coil", "coil", "rolling", "band",
-            ProductFamilyRuleSetsV2.GdcBandCoil, sourceRevision)],
+            includeLength ? ProductFamilyRuleSetsV2.GdcCutSheetPlate : ProductFamilyRuleSetsV2.GdcBandCoil,
+            sourceRevision)],
         [new(TemplateId, "7", "gdc-coil-v7", "GDC Coil v7", new HashSet<Guid> { FamilyId },
             [new("thicknessMm", ProductTemplateFieldKindV2.MeasureMillimetre,
                     ProductTemplateFieldRolesV2.Thickness, true, null, false, null, null, null),
                 new("widthMm", ProductTemplateFieldKindV2.MeasureMillimetre,
                     ProductTemplateFieldRolesV2.Width, true, null, false, null, null, null),
+                ..(includeLength
+                    ? new[] { new ProductTemplateFieldV2("lengthMm", ProductTemplateFieldKindV2.MeasureMillimetre,
+                        ProductTemplateFieldRolesV2.Length, true, null, false, null, null, null) }
+                    : []),
                 new("quality", ProductTemplateFieldKindV2.DictionaryReference,
                     ProductTemplateFieldRolesV2.Quality, true, "qualities", false, null, null, null),
                 new("coating", ProductTemplateFieldKindV2.DictionaryReference,

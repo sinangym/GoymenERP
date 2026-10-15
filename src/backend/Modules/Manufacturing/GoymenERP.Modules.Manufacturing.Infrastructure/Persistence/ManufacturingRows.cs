@@ -26,6 +26,7 @@ internal interface IPlanTechnicalSnapshotRow
     DateOnly? TechnicalEffectiveOn { get; set; }
     decimal? TechnicalThicknessMm { get; set; }
     decimal? TechnicalWidthMm { get; set; }
+    decimal? TechnicalLengthMm { get; set; }
 }
 
 /// <summary>The nullable-on-legacy, all-or-none commercial context shared by plan and order input rows.</summary>
@@ -92,6 +93,7 @@ internal sealed class PlanInputRow : IManufacturingTenantRow, IPlanTechnicalSnap
     public DateOnly? TechnicalEffectiveOn { get; set; }
     public decimal? TechnicalThicknessMm { get; set; }
     public decimal? TechnicalWidthMm { get; set; }
+    public decimal? TechnicalLengthMm { get; set; }
     public Guid? CommercialPartyId { get; set; }
     public Guid? CommercialCompanyPartyAccountId { get; set; }
     public string? CommercialPartyVersion { get; set; }
@@ -173,6 +175,7 @@ internal sealed class PlanRevisionInputRow : IManufacturingTenantRow, IPlanTechn
     public DateOnly? TechnicalEffectiveOn { get; set; }
     public decimal? TechnicalThicknessMm { get; set; }
     public decimal? TechnicalWidthMm { get; set; }
+    public decimal? TechnicalLengthMm { get; set; }
     public Guid? CommercialPartyId { get; set; }
     public Guid? CommercialCompanyPartyAccountId { get; set; }
     public string? CommercialPartyVersion { get; set; }

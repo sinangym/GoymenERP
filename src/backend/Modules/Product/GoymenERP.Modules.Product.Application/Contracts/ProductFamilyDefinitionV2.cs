@@ -98,17 +98,19 @@ public enum ProductTemplateFieldKindV2
     DictionaryReference = 2,
 }
 
-/// <summary>The accepted rule sets. Only one exists: GDC band/coil (Business #265 5722701085).</summary>
+/// <summary>The accepted, family-specific rule sets.</summary>
 public static class ProductFamilyRuleSetsV2
 {
     public const string GdcBandCoil = "gdc-band-coil";
+    public const string GdcCutSheetPlate = "gdc-cut-sheet-plate";
 }
 
-/// <summary>The field roles the GDC band/coil rule set requires, each exactly once and required.</summary>
+/// <summary>The field roles a released Product rule set may require, each exactly once and required.</summary>
 public static class ProductTemplateFieldRolesV2
 {
     public const string Thickness = "thickness";
     public const string Width = "width";
+    public const string Length = "length";
     public const string Quality = "quality";
     public const string Coating = "coating";
 }

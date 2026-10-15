@@ -26,6 +26,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Manufacturing.Application;
+using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
@@ -51,6 +52,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
     private const string ProductFamilyRegistryMigration = "20260919100000_AddProductFamilyRegistry";
     private const string ProductTechnicalDefinitionMigration = "20261004130000_ReleaseInitialProductTechnicalDefinition";
     private const string ProductCodeGroupMigration = "20261004213000_ReleaseInitialProductCodeGroup";
+    private const string ProductCutSheetTechnicalDefinitionMigration =
+        "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition";
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
@@ -434,18 +437,20 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(), 51043);
             var product = migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>();
             var productMigrations = (await product.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(ProductCodeGroupMigration, productMigrations[^1]);
+            Assert.Equal(ProductCutSheetTechnicalDefinitionMigration, productMigrations[^1]);
 
             // EF Core 10 commits each migration in its own transaction. First remove the unreferenced
-            // code-group release, then the technical-definition release, before exercising the schema
-            // guard as a single rollback step. Reapply both releases afterwards so this acceptance case
-            // leaves the Product runtime at its entry schema.
-            await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
-            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
-            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
-            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
-            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            // cut-sheet release, then the code-group and technical-definition releases, before exercising
+            // the schema guard as a single rollback step. Reapply all releases afterwards so this
+            // acceptance case leaves the Product runtime at its entry schema.
             await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
+            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
+            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
+            Assert.Equal(productMigrations[..^3], await product.Database.GetAppliedMigrationsAsync());
+            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            await product.GetService<IMigrator>().MigrateAsync(ProductCutSheetTechnicalDefinitionMigration);
             Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
         });
@@ -480,7 +485,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 var definitionBefore = await new SqlProductFamilyDefinitionSource(genuineOnly).GetAsync(default);
                 var groupsBefore = (await genuineOnly.CodeGroups.AsNoTracking().ToListAsync())
                     .Select(row => row.ToContract()).OrderBy(row => row.Id).ToArray();
-                Assert.Equal((4, 1, 4, 5, 5), before);
+                Assert.Equal((5, 2, 5, 11, 5), before);
                 var store = new ProductStockDisplayQualifiedFixtureStore(
                     genuineOnly,
                     new ProductUnitProfileAdapter(
@@ -566,6 +571,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 option => option.FamilyId == ProductTechnicalCardFixture.FamilyId);
             Assert.Contains(familyOptions.Items,
                 option => option.FamilyId == ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId);
+            Assert.Contains(familyOptions.Items,
+                option => option.FamilyId == ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId);
             Assert.All(authority.Permissions,
                 permission => Assert.Equal(ProductPermissionManifestV1.OperationalSelectionRead, permission));
 
@@ -577,26 +584,183 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
         });
 
     [SqlServerFact]
-    public Task Genuine_sac_card_is_created_replayed_reopened_activated_and_read_as_one_technical_snapshot() =>
+    public Task Cut_sheet_plate_requires_length_and_reopens_the_exact_length_in_the_Product_snapshot() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+            ProductReferences References(bool includeLength)
+            {
+                var attributes = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(1250m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                };
+                if (includeLength) attributes["length-mm"] = JsonSerializer.SerializeToElement(2500.125m);
+                return new(ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1", attributes,
+                    new(Stock: SettingsUnitIdentitiesV1.Kilogram, Sales: SettingsUnitIdentitiesV1.Kilogram));
+            }
+
+            async Task<ProductMutationResponse> CreateCardAsync(CreateProductDraftRequest draft, string key)
+            {
+                using var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products")
+                { Content = JsonContent.Create(draft) };
+                message.Headers.Add(ProductApiV1.IdempotencyHeader, key);
+                using var response = await client.SendAsync(message);
+                Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+                return (await response.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            }
+
+            Task<ProductMutationResponse> CreateCutSheetAsync(bool includeLength, string key) =>
+                CreateCardAsync(new CreateProductDraftRequest(
+                    includeLength ? "S235JR 3 × 1250 × 2500,125 kesilmiş sac" : "Boyu eksik kesilmiş sac",
+                    ProductInitialCodeGroupV1.SacGroupId,
+                    FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                    References: References(includeLength)), key);
+
+            async Task<HttpResponseMessage> ActivateAsync(Guid productId, string key, string version)
+            {
+                var message = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/products/{productId:D}/activation")
+                { Content = JsonContent.Create(new ActivateProductRequest(version)) };
+                message.Headers.Add(ProductApiV1.IdempotencyHeader, key);
+                return await client.SendAsync(message);
+            }
+
+            // DEC-PRD-010 compatibility: family-less and legacy coil/band drafts do not acquire the
+            // cut-sheet-only completeness prerequisite.
+            var familyless = await CreateCardAsync(new CreateProductDraftRequest(
+                "Ailesiz eski ürün", ProductInitialCodeGroupV1.SacGroupId), "product-familyless-legacy");
+            using (var familylessResponse = await ActivateAsync(familyless.Card.Product.Id,
+                       "product-familyless-legacy-activate", "1"))
+            {
+                Assert.Equal(HttpStatusCode.OK, familylessResponse.StatusCode);
+                var body = (await familylessResponse.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+                Assert.Equal(("Active", "2"), (body.Card.Product.Lifecycle, body.Card.Product.Version));
+            }
+
+            var legacyCoil = await CreateCardAsync(new CreateProductDraftRequest(
+                "Eksik teknik alanlı eski rulo", ProductInitialCodeGroupV1.SacGroupId,
+                FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCoilFamilyId,
+                References: new ProductReferences(ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                    new Dictionary<string, JsonElement>(StringComparer.Ordinal), null)),
+                "product-legacy-coil-incomplete");
+            using (var legacyResponse = await ActivateAsync(legacyCoil.Card.Product.Id,
+                       "product-legacy-coil-incomplete-activate", "1"))
+            {
+                Assert.Equal(HttpStatusCode.OK, legacyResponse.StatusCode);
+                var body = (await legacyResponse.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+                Assert.Equal(("Active", "2"), (body.Card.Product.Lifecycle, body.Card.Product.Version));
+            }
+
+            var incomplete = await CreateCutSheetAsync(false, "product-cut-sheet-missing-length");
+            using (var edited = await EditAsync(client, incomplete.Card.Product.Id,
+                       "product-cut-sheet-missing-length-edit", "1", "Boyu eksik kesilmiş sac v2"))
+            {
+                Assert.Equal(HttpStatusCode.OK, edited.StatusCode);
+                var body = (await edited.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+                Assert.Equal(("Draft", "2"), (body.Card.Product.Lifecycle, body.Card.Product.Version));
+            }
+
+            var beforeStale = await SnapshotAsync(factory.DatabaseConnectionString);
+            using (var stale = await ActivateAsync(incomplete.Card.Product.Id,
+                       "product-cut-sheet-missing-length-stale-activate", "1"))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
+                var problem = await stale.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(ProductApiV1.VersionConflict, problem.GetProperty("code").GetString());
+                Assert.Equal("1", problem.GetProperty("expectedVersion").GetString());
+                Assert.Equal("2", problem.GetProperty("currentVersion").GetString());
+                Assert.DoesNotContain(problem.EnumerateObject(), property => property.NameEquals("errors"));
+            }
+            Assert.Equal(beforeStale, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            using (var refused = await ActivateAsync(incomplete.Card.Product.Id,
+                       "product-cut-sheet-missing-length-activate", "2"))
+            {
+                Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+                var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Equal(ProductApiV1.ValidationFailed, problem.GetProperty("code").GetString());
+                var error = Assert.Single(problem.GetProperty("errors").EnumerateArray(), candidate =>
+                    candidate.GetProperty("field").GetString() == "references.attributes.length-mm");
+                Assert.Equal(ProductFamilyPolicyCodesV1.Required, error.GetProperty("code").GetString());
+            }
+            Assert.Equal(beforeStale, await SnapshotAsync(factory.DatabaseConnectionString));
+
+            var created = await CreateCutSheetAsync(true, "product-cut-sheet-exact-length");
+            using var activatedResponse = await ActivateAsync(created.Card.Product.Id,
+                "product-cut-sheet-exact-length-activate", "1");
+            Assert.Equal(HttpStatusCode.OK, activatedResponse.StatusCode);
+            var activated = (await activatedResponse.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            Assert.Equal((created.Card.Product.Id, "Active", "2"),
+                (activated.Card.Product.Id, activated.Card.Product.Lifecycle, activated.Card.Product.Version));
+
+            await using (var setup = factory.Services.CreateAsyncScope())
+            {
+                var identity = setup.ServiceProvider.GetRequiredService<IdentityDbContext>();
+                if (!await identity.Users.AnyAsync(user => user.Id == ActorId))
+                    identity.Users.Add(new UserAccount(ActorId, "Disposable Product snapshot actor", null));
+                var roleId = Guid.NewGuid();
+                var role = new RoleDefinition(roleId, $"PRODUCT-CUT-SNAPSHOT-{roleId:N}",
+                    "Disposable cut-sheet Product snapshot actor", true);
+                role.AddPermission(ProductPermissionManifestV1.OperationalSelectionRead);
+                var assignment = new RoleAssignment(Guid.NewGuid(), ActorId, roleId, CompanyA,
+                    DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+                assignment.AddScope(AccessScopeType.Company, CompanyA);
+                identity.Roles.Add(role);
+                identity.RoleAssignments.Add(assignment);
+                await identity.SaveChangesAsync();
+            }
+
+            await using var scope = factory.Services.CreateAsyncScope();
+            var accessor = scope.ServiceProvider.GetRequiredService<IHttpContextAccessor>();
+            accessor.HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity([
+                    new Claim(GoymenClaimTypes.UserId, ActorId.ToString("D")),
+                    new Claim(GoymenClaimTypes.CompanyAccess, CompanyA.ToString("D")),
+                ], "IsolatedSqlFixture")),
+            };
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+            var result = await scope.ServiceProvider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>()
+                .ReadAsync(new(created.Card.Product.Id, activated.Card.Product.Version, new(2026, 10, 15)), default);
+
+            Assert.Empty(result.Errors);
+            var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
+            Assert.Equal((created.Card.Product.Id, "2", 3m, 1250m, 2500.125m),
+                (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm, snapshot.WidthMm,
+                    snapshot.LengthMm));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                    ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
+                (snapshot.Family.FamilyId, snapshot.Family.SourceRevision));
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1",
+                    ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
+                (snapshot.Template.TemplateId, snapshot.Template.TemplateVersion,
+                    snapshot.Template.SourceRevision));
+        });
+
+    [SqlServerFact]
+    public Task Genuine_cut_sheet_plate_card_reopens_one_exact_length_through_Product_plan_and_revision_history() =>
         WithDatabaseAsync(async (factory, _) =>
         {
             const string createKey = "product-genuine-sac-card-once";
             const string activateKey = "product-genuine-sac-activate-once";
             var effectiveOn = new DateOnly(2026, 10, 5);
             var references = new ProductReferences(
-                ProductInitialTechnicalDefinitionV1.TemplateId, "1",
+                ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1",
                 new Dictionary<string, JsonElement>(StringComparer.Ordinal)
                 {
                     ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
                     ["width-mm"] = JsonSerializer.SerializeToElement(248m),
+                    ["length-mm"] = JsonSerializer.SerializeToElement(2500.125m),
                     ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
                     ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
                 },
                 new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram,
                     Sales: SettingsUnitIdentitiesV1.Kilogram));
-            var draft = new CreateProductDraftRequest("S235JR 3 mm × 248 mm kaplamasız sac",
+            var draft = new CreateProductDraftRequest("S235JR 3 mm × 248 mm × 2500,125 mm kesilmiş sac",
                 ProductInitialCodeGroupV1.SacGroupId,
-                FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
                 References: references);
 
             using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
@@ -613,7 +777,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             var first = (await created.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
             Assert.False(first.IsReplay);
             Assert.Equal(("SAC-1", "Draft", "1", ProductInitialCodeGroupV1.SacGroupId,
-                ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId),
+                ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId),
                 (first.Card.Product.Code, first.Card.Product.Lifecycle, first.Card.Product.Version,
                     first.Card.Product.GroupId, first.Card.Product.FamilyId));
             var afterCreate = await SnapshotAsync(factory.DatabaseConnectionString);
@@ -631,12 +795,14 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             {
                 Assert.Equal(HttpStatusCode.OK, reopenedDraft.StatusCode);
                 var card = (await reopenedDraft.Content.ReadFromJsonAsync<ProductCardView>())!;
-                Assert.Equal((first.Card.Product.Id, "1", ProductInitialTechnicalDefinitionV1.TemplateId, "1"),
+                Assert.Equal((first.Card.Product.Id, "1",
+                        ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1"),
                     (card.Product.Id, card.Product.Version, card.References.TemplateId, card.References.TemplateVersion));
                 Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units!.Stock);
                 Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, card.References.Units.Sales);
                 Assert.Equal(3m, card.References.Attributes!["thickness-mm"].GetDecimal());
                 Assert.Equal(248m, card.References.Attributes["width-mm"].GetDecimal());
+                Assert.Equal(2500.125m, card.References.Attributes["length-mm"].GetDecimal());
                 Assert.Equal("S235JR", card.References.Attributes["steel-grade"].GetString());
                 Assert.Equal("uncoated", card.References.Attributes["coating"].GetString());
                 Assert.False(card.References.Attributes.ContainsKey("producer-grade"));
@@ -844,14 +1010,14 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     .ReadAsync(new(stocked.ProductId, stocked.ProductVersion, effectiveOn), default);
                 Assert.Empty(result.Errors);
                 var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV1>(result.Snapshot);
-                Assert.Equal((first.Card.Product.Id, "2", 3m, 248m, effectiveOn),
+                Assert.Equal((first.Card.Product.Id, "2", 3m, 248m, 2500.125m, effectiveOn),
                     (snapshot.ProductId, snapshot.ProductVersion, snapshot.ThicknessMm,
-                        snapshot.WidthMm, snapshot.EffectiveOn));
-                Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
-                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                        snapshot.WidthMm, snapshot.LengthMm, snapshot.EffectiveOn));
+                Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                    ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                     (snapshot.Family.FamilyId, snapshot.Family.SourceRevision));
-                Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
-                    ProductInitialTechnicalDefinitionV1.SourceRef),
+                Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1",
+                    ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                     (snapshot.Template.TemplateId, snapshot.Template.TemplateVersion,
                         snapshot.Template.SourceRevision));
                 Assert.Equal((CompanyA, SettingsUnitIdentitiesV1.Kilogram, "kg",
@@ -900,11 +1066,11 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     plannedInput.ParentRollId, plannedInput.PlannedKg));
             Assert.Equal((stocked.ProductId, stocked.ProductVersion, "3", "248"),
                 (captured.ProductId, captured.ProductVersion, captured.ThicknessMm, captured.WidthMm));
-            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
-                ProductInitialTechnicalDefinitionV1.SourceRef),
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                 (captured.Family.FamilyId, captured.Family.SourceRevision));
-            Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1",
-                ProductInitialTechnicalDefinitionV1.SourceRef),
+            Assert.Equal((ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId, "1",
+                ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                 (captured.Template.TemplateId, captured.Template.TemplateVersion,
                     captured.Template.SourceRevision));
             Assert.Equal((CompanyA, SettingsUnitIdentitiesV1.Kilogram, "kg",
@@ -973,6 +1139,17 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             Assert.Equal(revisedSnapshot, Assert.IsType<CapturedPlanTechnicalSnapshotViewV1>(
                 recordedRevisionInput.TechnicalSnapshot));
 
+            await using (var storedScope = factory.Services.CreateAsyncScope())
+            {
+                storedScope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(CompanyA);
+                var storedHistory = Assert.IsAssignableFrom<IReadOnlyList<ManufacturingPlanRevision>>(
+                    await storedScope.ServiceProvider.GetRequiredService<IManufacturingPlanRevisionStore>()
+                        .ListPlanRevisionsAsync(planId, default));
+                Assert.Equal([0, 1], storedHistory.Select(revision => revision.Revision));
+                Assert.All(storedHistory, revision => Assert.Equal(2500.125m,
+                    Assert.Single(revision.Inputs).TechnicalSnapshot!.LengthMm));
+            }
+
             await using (var sql = new SqlConnection(factory.DatabaseConnectionString))
             {
                 await sql.OpenAsync();
@@ -983,7 +1160,9 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                         [TechnicalTemplateId], [TechnicalTemplateVersion], [TechnicalTemplateSourceRevision],
                         [TechnicalKilogramUnitCompanyId], [TechnicalKilogramUnitId],
                         [TechnicalKilogramProfileId], [TechnicalKilogramProfileVersion],
-                        [TechnicalThicknessMm], [TechnicalWidthMm],
+                        [TechnicalThicknessMm], [TechnicalWidthMm], [TechnicalLengthMm],
+                        (SELECT [TechnicalLengthMm] FROM [manufacturing].[PlanRevisionInputs]
+                            WHERE [CompanyId] = @company AND [PlanId] = @plan AND [RevisionNo] = 1),
                         (SELECT COUNT(*) FROM [manufacturing].[Plans]
                             WHERE [CompanyId] = @company AND [Id] = @plan),
                         (SELECT COUNT(*) FROM [manufacturing].[Commands]
@@ -1005,9 +1184,81 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 Assert.Equal((captured.UnitKg.CompanyId, captured.UnitKg.UnitId, captured.UnitKg.ProfileId,
                     captured.UnitKg.ProfileVersion),
                     (row.GetGuid(9), row.GetGuid(10), row.GetGuid(11), row.GetString(12)));
-                Assert.Equal((3m, 248m), (row.GetDecimal(13), row.GetDecimal(14)));
-                Assert.Equal((1, 1), (row.GetInt32(15), row.GetInt32(16)));
+                Assert.Equal((3m, 248m, 2500.125m, 2500.125m),
+                    (row.GetDecimal(13), row.GetDecimal(14), row.GetDecimal(15), row.GetDecimal(16)));
+                Assert.Equal((1, 1), (row.GetInt32(17), row.GetInt32(18)));
                 Assert.False(await row.ReadAsync());
+            }
+
+            // The newly captured length is immutable plan provenance. Downgrade must refuse before
+            // either table is changed when either current-plan or revision history still carries it.
+            await using (var migrationScope = factory.Services.CreateAsyncScope())
+            {
+                var manufacturing = migrationScope.ServiceProvider.GetRequiredService<ManufacturingDbContext>();
+                var applied = (await manufacturing.Database.GetAppliedMigrationsAsync()).ToArray();
+                var lengthMigration = Assert.Single(applied,
+                    migration => migration.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots",
+                        StringComparison.Ordinal));
+                var lengthMigrationIndex = Array.IndexOf(applied, lengthMigration);
+                Assert.Equal(applied.Length - 1, lengthMigrationIndex);
+                var previousMigration = applied[lengthMigrationIndex - 1];
+                var migrator = manufacturing.GetService<IMigrator>();
+
+                async Task AssertRollbackRefusedAsync(int expectedNonNullRows)
+                {
+                    var error = await Assert.ThrowsAsync<SqlException>(
+                        () => migrator.MigrateAsync(previousMigration));
+                    Assert.Equal(51047, error.Number);
+                    Assert.Equal(applied, await manufacturing.Database.GetAppliedMigrationsAsync());
+                    Assert.Equal(expectedNonNullRows, await manufacturing.Database.SqlQueryRaw<int>(
+                            """
+                            SELECT (SELECT COUNT(*) FROM [manufacturing].[PlanInputs]
+                                    WHERE [CompanyId] = @company AND [PlanId] = @plan
+                                      AND [TechnicalLengthMm] IS NOT NULL)
+                                 + (SELECT COUNT(*) FROM [manufacturing].[PlanRevisionInputs]
+                                    WHERE [CompanyId] = @company AND [PlanId] = @plan
+                                      AND [TechnicalLengthMm] IS NOT NULL) AS [Value]
+                            """,
+                            new SqlParameter("@company", CompanyA),
+                            new SqlParameter("@plan", planId))
+                        .SingleAsync());
+                }
+
+                await AssertRollbackRefusedAsync(expectedNonNullRows: 2);
+
+                // Each side independently retains the downgrade guard; failed attempts do not mutate schema or rows.
+                await manufacturing.Database.ExecuteSqlRawAsync(
+                    "UPDATE [manufacturing].[PlanInputs] SET [TechnicalLengthMm] = NULL WHERE [CompanyId] = {0} AND [PlanId] = {1}",
+                    CompanyA, planId);
+                await AssertRollbackRefusedAsync(expectedNonNullRows: 1);
+
+                await manufacturing.Database.ExecuteSqlRawAsync(
+                    "UPDATE [manufacturing].[PlanInputs] SET [TechnicalLengthMm] = {0} WHERE [CompanyId] = {1} AND [PlanId] = {2}; "
+                    + "UPDATE [manufacturing].[PlanRevisionInputs] SET [TechnicalLengthMm] = NULL WHERE [CompanyId] = {1} AND [PlanId] = {2};",
+                    2500.125m, CompanyA, planId);
+                await AssertRollbackRefusedAsync(expectedNonNullRows: 1);
+
+                // All-null rows carry no length provenance, so the migration is safely reversible and replayable.
+                await manufacturing.Database.ExecuteSqlRawAsync(
+                    "UPDATE [manufacturing].[PlanInputs] SET [TechnicalLengthMm] = NULL WHERE [CompanyId] = {0} AND [PlanId] = {1}",
+                    CompanyA, planId);
+                await migrator.MigrateAsync(previousMigration);
+                Assert.DoesNotContain(lengthMigration, await manufacturing.Database.GetAppliedMigrationsAsync());
+                Assert.Null(await manufacturing.Database.SqlQueryRaw<short?>(
+                        "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
+                    .SingleAsync());
+                Assert.Null(await manufacturing.Database.SqlQueryRaw<short?>(
+                        "SELECT COL_LENGTH(N'[manufacturing].[PlanRevisionInputs]', N'TechnicalLengthMm') AS [Value]")
+                    .SingleAsync());
+
+                await migrator.MigrateAsync();
+                Assert.Equal(lengthMigration, (await manufacturing.Database.GetAppliedMigrationsAsync()).Last());
+                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<short?>(
+                        "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
+                    .SingleAsync());
+                Assert.NotNull(await manufacturing.Database.SqlQueryRaw<short?>(
+                        "SELECT COL_LENGTH(N'[manufacturing].[PlanRevisionInputs]', N'TechnicalLengthMm') AS [Value]")
+                    .SingleAsync());
             }
         });
 

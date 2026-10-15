@@ -39,7 +39,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         + "AND [TechnicalTemplateSourceRevision] IS NULL AND [TechnicalKilogramUnitCompanyId] IS NULL "
         + "AND [TechnicalKilogramUnitId] IS NULL AND [TechnicalKilogramUnitCode] IS NULL "
         + "AND [TechnicalKilogramProfileId] IS NULL AND [TechnicalKilogramProfileVersion] IS NULL "
-        + "AND [TechnicalEffectiveOn] IS NULL AND [TechnicalThicknessMm] IS NULL AND [TechnicalWidthMm] IS NULL) OR "
+        + "AND [TechnicalEffectiveOn] IS NULL AND [TechnicalThicknessMm] IS NULL AND [TechnicalWidthMm] IS NULL "
+        + "AND [TechnicalLengthMm] IS NULL) OR "
         + "([TechnicalProductId] IS NOT NULL AND [TechnicalProductId] <> '00000000-0000-0000-0000-000000000000' "
         + "AND [TechnicalProductVersion] IS NOT NULL AND LEN([TechnicalProductVersion]) > 0 "
         + "AND [TechnicalFamilyId] IS NOT NULL AND [TechnicalFamilyId] <> '00000000-0000-0000-0000-000000000000' "
@@ -57,7 +58,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         + "AND [TechnicalKilogramProfileVersion] IS NOT NULL AND LEN([TechnicalKilogramProfileVersion]) > 0 "
         + "AND [TechnicalEffectiveOn] IS NOT NULL "
         + "AND [TechnicalThicknessMm] IS NOT NULL AND [TechnicalThicknessMm] > 0 "
-        + "AND [TechnicalWidthMm] IS NOT NULL AND [TechnicalWidthMm] > 0)";
+        + "AND [TechnicalWidthMm] IS NOT NULL AND [TechnicalWidthMm] > 0 "
+        + "AND ([TechnicalLengthMm] IS NULL OR [TechnicalLengthMm] > 0))";
 
     private const string CommercialContextCheck =
         "([CommercialPartyId] IS NULL AND [CommercialCompanyPartyAccountId] IS NULL "
@@ -326,6 +328,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.TechnicalEffectiveOn).HasColumnType("date");
         entity.Property(x => x.TechnicalThicknessMm).HasPrecision(18, 3);
         entity.Property(x => x.TechnicalWidthMm).HasPrecision(18, 3);
+        entity.Property(x => x.TechnicalLengthMm).HasPrecision(18, 3);
     }
 
     private void ConfigureOrders(ModelBuilder modelBuilder)

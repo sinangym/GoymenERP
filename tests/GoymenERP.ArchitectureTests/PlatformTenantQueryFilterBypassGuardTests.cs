@@ -275,8 +275,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // DEC-PRD-010: +5 ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests facts (ddeead62… -> d434c2b8…).
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
+            // PRODUCT-TECH-FAMILY-02: replace one renamed runtime fact and add two cut-sheet/plate facts.
             ["tools/relational_inventory/product.txt"] =
-                "e02948f7d4d4ebc817db08478c9c0c47bbd30abcaa5880e90cd68880a8d0aeee",
+                "f99d1623cf8e8a302690007a3eeb5629193b9ebb243b966bf18fa9ad1caef4f1",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
@@ -393,7 +394,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // M01.2: plan and immutable revision cut lines carry the same CompanyId filter and company-leading keys.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "721abc94b3201b892879a578c72004a326ca5f0bbe1aa10f859585ebe0897e14",
+                "e44d5a702167c5a73a67dd0c299da60d829526cdc0224cc1c876597ba17b9123",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1021,7 +1022,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "7d3faa08abb84891049adf7e006678982d422bc1d5c79ac77ad7de002911f447",
+                        "39b3481ad59125465d1b94d3bb2219372e907e5a5fe1128d66eb1bac8bce908f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1386,6 +1387,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 3
                         }),
+                // PRODUCT-TECH-FAMILY-02 publishes one exact cut-sheet/plate family and template; Up and
+                // Down use two reviewed raw-SQL mutation surfaces without changing legacy technical rows.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/"
+                 + "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs"] =
+                    new(
+                        "2972fbf7027788026a2d589785190b7087eef97d40c7b6f5fe4e8d29ed4245a8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
+                        }),
                 // AT-018 price-list history is durable; Down refuses destructive rollback while any
                 // company-scoped price-list row remains.
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
@@ -1414,6 +1425,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261014120000_AddManufacturingPlanCutLines.cs"] =
                     new(
                         "f24f28df3aeb0970909cc32b9a93f1b9f15938660ebc70878cb8f2ec07d600da",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // PRODUCT-TECH-FAMILY-02 technical length is immutable plan/revision provenance; Down uses
+                // one reviewed statement to refuse downgrade while either snapshot table retains a value.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261015123000_AddManufacturingPlanTechnicalLengthSnapshots.cs"] =
+                    new(
+                        "c64289e7907573faa848ce95f382245f90ca60845f952e0432ba543050b20db0",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
