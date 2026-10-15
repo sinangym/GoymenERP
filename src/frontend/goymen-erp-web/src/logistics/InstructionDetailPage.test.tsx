@@ -109,6 +109,7 @@ function installCustomerReturnScreen(capabilities: readonly string[], handlers: 
         displayName: 'Müşteri iadesi kullanıcısı',
         email: null,
         allowedCompanyIds: [companyId],
+        authenticationSessionBinding: null,
       })
     }
     if (url.pathname.endsWith('/organization/companies')) {

@@ -264,12 +264,13 @@ describe('session + capability', () => {
 })
 
 /**
- * M01.3 K2 #728/6180459736: the reload-stable session binding. The reducer never mints one — it only carries the
- * binding the bootstrap established and drops it at every session boundary, in the same transition that advances the
- * epoch, so no render can pair a new session with the old binding.
+ * M01.3 r5 (#66/6187473245): the server's `authenticationSessionBinding`. The reducer never mints one — it only carries
+ * the value SESSION_READY brings from the identity response (null when the server answered null) and drops it at every
+ * session boundary, in the same transition that advances the epoch, so no render can pair a new session with the old
+ * binding.
  */
 describe('session binding', () => {
-  const BINDING = '33333333-3333-4333-8333-333333333333'
+  const BINDING = `v1.${'3'.repeat(64)}`
   const bound = run(initialShellState, {
     type: 'SESSION_READY',
     forSessionEpoch: 0,
@@ -290,10 +291,21 @@ describe('session binding', () => {
     },
   })
 
-  it('starts without a binding and takes the one SESSION_READY carries', () => {
+  it('starts without a binding and takes the one SESSION_READY carries, opaque and unchanged', () => {
     expect(initialShellState.sessionBinding).toBeNull()
     expect(bound.sessionBinding).toBe(BINDING)
     expect(ready.sessionBinding).toBeNull()
+  })
+
+  it('a null server binding stays null: the reducer substitutes nothing for it', () => {
+    const unbound = run(initialShellState, {
+      type: 'SESSION_READY',
+      forSessionEpoch: 0,
+      context: fixtureContext('fixture-company-a'),
+      sessionBinding: null,
+    })
+    expect(unbound.phase).toBe('idle')
+    expect(unbound.sessionBinding).toBeNull()
   })
 
   it('keeps it across a company switch: the authenticated session is the same', () => {

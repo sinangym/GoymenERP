@@ -8,9 +8,9 @@ import {
 } from './pendingPlanStore'
 import { COMPANY_A, COMPANY_B, PLAN, ROLL_1, WORK_CENTER } from './testHarness'
 
-/** The shell's session binding (M01.3 K2 #728/6180459736); the epoch is no part of a stored slot any more. */
-const BINDING = '50000000-0000-4000-8000-000000000001'
-const OTHER_BINDING = '50000000-0000-4000-8000-000000000002'
+/** Controlled server `authenticationSessionBinding` values (M01.3 r5, #66/6187473245); the epoch is no part of a stored slot. */
+const BINDING = `v1.${'1'.repeat(64)}`
+const OTHER_BINDING = `v1.${'2'.repeat(64)}`
 const KEY = pendingPlanCreateKey(BINDING, 'actor-a', COMPANY_A)
 /** Where the store keeps this actor's and company's create attempt. */
 const STORED = `goymen.manufacturing.plan-create.v2:${JSON.stringify(['actor-a', COMPANY_A])}`
@@ -141,7 +141,7 @@ describe('pending slitting plan create', () => {
 })
 
 /**
- * M01.3 K2 #728/6180459736: the create slot of an actor and company is bound to the shell's session binding, not to the
+ * M01.3 r5 (#66/6187473245): the create slot of an actor and company is bound to the server's session binding, not to the
  * document-local epoch. Only a proven-empty slot is absent; everything else keeps the create form closed.
  */
 describe('pending plan create slot', () => {

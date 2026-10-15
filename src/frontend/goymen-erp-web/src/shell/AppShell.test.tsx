@@ -8,19 +8,26 @@ import { shellRoutes } from './router'
 import { SHELL_CAPABILITY_CONTRACT_VERSION } from './api'
 import { useShellOrchestrator } from './useShellOrchestrator'
 import { useShellState } from './shellContext'
-import { forgetSessionBindingMemory } from './sessionBinding'
 
 const A_ID = 'aaaaaaaa-0000-0000-0000-000000000001'
 const B_ID = 'bbbbbbbb-0000-0000-0000-000000000002'
 const USER_A = '11111111-1111-1111-1111-111111111111'
 const USER_B = '22222222-2222-2222-2222-222222222222'
+/**
+ * Controlled server session bindings (M01.3 r5, #66/6187473245): opaque values the stubbed `/identity/me` answers with,
+ * one per authenticated server session. The shell takes them as given and mints none.
+ */
+const SESSION_A1 = `v1.${'a1'.repeat(32)}`
+const SESSION_A2 = `v1.${'a2'.repeat(32)}`
+const SESSION_B1 = `v1.${'b1'.repeat(32)}`
 
-function identity(userId = USER_A) {
+function identity(userId = USER_A, authenticationSessionBinding: string | null = userId === USER_A ? SESSION_A1 : SESSION_B1) {
   return {
     userId,
     displayName: userId === USER_A ? 'Kullanıcı A' : 'Kullanıcı B',
     email: 'test@example.com',
     allowedCompanyIds: [A_ID, B_ID],
+    authenticationSessionBinding,
   }
 }
 const DIRECTORY = [
@@ -449,13 +456,13 @@ describe('SHELL-PILOT-01 company switch', () => {
   })
 })
 
-/**
- * M01.3 K2 #728/6180459736: `sessionEpoch` restarts at 0 in every document, so a persisted command cannot be bound to
- * it. The shell's session binding is what survives an ordinary reload of the same authenticated session and changes at
- * every real session boundary. These cases drive the REAL bootstrap/reset paths — the epoch is never set by hand — and
- * model the reload as what it is: the provider and the document's module memory end, the tab's sessionStorage stays.
+/*
+ * M01.3 r5 (#66/6187473245): the session binding is the SERVER's `authenticationSessionBinding` from `/identity/me`,
+ * carried into SESSION_READY from the same response as the actor. The shell mints nothing, stores nothing of its own, and
+ * reads a same-actor change of the value as a real session boundary — while an ordinary F5 or a token-refresh-equivalent
+ * re-read that answers the same value is no boundary at all.
  */
-describe('M01.3 session binding across a reload', () => {
+describe('M01.3 server session binding', () => {
   interface Seen {
     readonly epoch: number
     readonly binding: string | null
@@ -480,88 +487,150 @@ describe('M01.3 session binding across a reload', () => {
     return { queryClient, view }
   }
 
-  /** F5: this document ends; only sessionStorage carries over into the next one. */
-  function reload(view: { unmount: () => void }) {
-    view.unmount()
-    forgetSessionBindingMemory()
-  }
-
   const last = (seen: readonly Seen[]) => seen[seen.length - 1]
+  const UUID_SHAPED = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
   beforeEach(() => {
     sessionStorage.clear()
-    forgetSessionBindingMemory()
   })
 
-  it('a session reached through a real in-app reset keeps its binding over F5, although the epoch restarts at 0', async () => {
-    let currentUser = USER_B
-    installFetch({ identity: () => json(identity(currentUser)) })
+  it('takes the binding from the identity response and keeps it, at epoch 0, over an F5 that the server still answers the same way', async () => {
+    const fetchMock = installFetch({})
     const seen: Seen[] = []
     const first = mount(seen)
-    await screen.findByText('Kullanıcı B')
     await screen.findByText('Ortak kabuk hazır')
-    const actorB = last(seen).binding
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A1, epoch: 0 }))
+    // Nothing of the shell's own in the tab: the server value is the only session identity.
+    expect(Object.keys(sessionStorage)).toEqual([])
 
-    // B leaves and A arrives in the same tab: the orchestrator's real actor-change SESSION_RESET.
-    currentUser = USER_A
-    await first.queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
-    await screen.findByText('Kullanıcı A')
-    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A }))
-    const before = last(seen)
-    expect(before.epoch).toBeGreaterThan(0)
-    expect(before.binding).toMatch(/^[0-9a-f-]{36}$/i)
-    expect(before.binding).not.toBe(actorB)
-
-    reload(first.view)
+    first.view.unmount()
     const after: Seen[] = []
     mount(after)
     await screen.findByText('Ortak kabuk hazır')
-    await waitFor(() => expect(last(after)).toMatchObject({ actor: USER_A }))
-    expect(last(after).epoch).toBe(0)
-    expect(last(after).binding).toBe(before.binding)
+    await waitFor(() => expect(last(after)).toMatchObject({ actor: USER_A, binding: SESSION_A1, epoch: 0 }))
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/identity/me'))).toHaveLength(2)
   })
 
-  it('a reload after the server ended the session never brings the old binding back for the same actor', async () => {
-    let rejectSwitch = true
+  it('a token-refresh-equivalent identity re-read with the same actor and binding is no boundary', async () => {
+    const fetchMock = installFetch({})
+    const seen: Seen[] = []
+    const { queryClient } = mount(seen)
+    await screen.findByText('Ortak kabuk hazır')
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A1 }))
+    const capabilityReads = () => fetchMock.mock.calls.filter(([url]) => String(url).includes('/shell/capabilities')).length
+    const bootstraps = capabilityReads()
+
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/identity/me'))).toHaveLength(2))
+
+    expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A1, epoch: 0 })
+    expect(capabilityReads()).toBe(bootstraps)
+    expect(seen.some((frame) => frame.epoch > 0)).toBe(false)
+  })
+
+  it('the same actor with a different server binding is a real session boundary: the epoch advances, the old binding never pairs with the new session', async () => {
+    let session = SESSION_A1
+    installFetch({ identity: () => json(identity(USER_A, session)) })
+    const seen: Seen[] = []
+    const { queryClient } = mount(seen)
+    await screen.findByText('Ortak kabuk hazır')
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A1, epoch: 0 }))
+
+    // A real logout/login as the same actor: the server answers a new binding.
+    session = SESSION_A2
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A2 }))
+    expect(last(seen).epoch).toBe(1)
+    // The boundary dropped the old binding in the same transition that advanced the epoch; no frame pairs them.
+    expect(seen.some((frame) => frame.epoch >= 1 && frame.binding === SESSION_A1)).toBe(false)
+    expect(seen.some((frame) => frame.epoch === 0 && frame.binding === SESSION_A2)).toBe(false)
+  })
+
+  it('A→B→A, each answered as its own server session, carries each binding only with its own actor and session', async () => {
+    let current = identity(USER_A, SESSION_A1)
+    installFetch({ identity: () => json(current) })
+    const seen: Seen[] = []
+    const { queryClient } = mount(seen)
+    await screen.findByText('Kullanıcı A')
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A1, epoch: 0 }))
+
+    current = identity(USER_B, SESSION_B1)
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await screen.findByText('Kullanıcı B')
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_B, binding: SESSION_B1, epoch: 1 }))
+
+    current = identity(USER_A, SESSION_A2)
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await screen.findByText('Kullanıcı A')
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A2, epoch: 2 }))
+
+    for (const frame of seen) {
+      if (frame.binding === null) continue
+      const owner = frame.binding === SESSION_B1 ? USER_B : USER_A
+      expect(frame.actor === null || frame.actor === owner).toBe(true)
+    }
+    expect(seen.some((frame) => frame.epoch === 2 && frame.binding === SESSION_A1)).toBe(false)
+  })
+
+  it('an explicit null binding is a valid fail-closed answer: the shell is ready, the binding is null and no local stand-in is made', async () => {
+    installFetch({ identity: () => json(identity(USER_A, null)) })
+    const seen: Seen[] = []
+    mount(seen)
+    await screen.findByText('Ortak kabuk hazır')
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A, epoch: 0 }))
+    expect(last(seen).binding).toBeNull()
+    expect(seen.every((frame) => frame.binding === null)).toBe(true)
+    expect(Object.keys(sessionStorage)).toEqual([])
+    // ...and not a client UUID, not the epoch, not the actor id.
+    expect(seen.some((frame) => frame.binding !== null && (UUID_SHAPED.test(frame.binding) || frame.binding === USER_A))).toBe(false)
+  })
+
+  it.each([
+    ['missing', () => { const { authenticationSessionBinding: _omitted, ...rest } = identity(); return rest }],
+    ['a number', () => ({ ...identity(), authenticationSessionBinding: 42 })],
+    ['an empty string', () => ({ ...identity(), authenticationSessionBinding: '' })],
+    ['whitespace only', () => ({ ...identity(), authenticationSessionBinding: '   ' })],
+    ['an object', () => ({ ...identity(), authenticationSessionBinding: { v: 1 } })],
+  ])('an identity whose binding is %s is malformed: no context is committed and nothing is read as null', async (_case, body) => {
+    const fetchMock = installFetch({ identity: () => json(body()) })
+    const seen: Seen[] = []
+    mount(seen)
+    expect(await screen.findByText(/Beklenmeyen yanıt/i)).toBeTruthy()
+    expect(screen.queryByText('Ortak kabuk hazır')).toBeNull()
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/shell/capabilities'))).toHaveLength(0)
+    expect(seen.every((frame) => frame.actor === null && frame.binding === null && frame.epoch === 0)).toBe(true)
+  })
+
+  it('a stale identity answer cannot commit its binding after the session moved on', async () => {
+    // The first bootstrap's capability read hangs until released; meanwhile the server re-authenticates the same actor.
+    let release: (() => void) | null = null
+    let held = true
+    let session = SESSION_A1
     installFetch({
-      capabilities: (companyId) => companyId === B_ID && rejectSwitch
-        ? json({ title: 'unauth' }, 401)
-        : json(capability(companyId === B_ID ? 'gen-b-1' : 'gen-a-1')),
+      identity: () => json(identity(USER_A, session)),
+      capabilities: (companyId) => {
+        if (held) {
+          held = false
+          return new Promise<Response>((resolve) => {
+            release = () => resolve(json(capability(companyId === B_ID ? 'gen-b-1' : 'gen-a-1')))
+          })
+        }
+        return json(capability(companyId === B_ID ? 'gen-b-1' : 'gen-a-1'))
+      },
     })
     const seen: Seen[] = []
-    const first = mount(seen)
-    await screen.findByText('Ortak kabuk hazır')
-    const before = last(seen).binding
-    expect(before).toMatch(/^[0-9a-f-]{36}$/i)
+    const { queryClient } = mount(seen)
+    await waitFor(() => expect(release).not.toBeNull())
 
-    await userEvent.selectOptions(screen.getByRole('combobox'), B_ID)
-    expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
-    expect(last(seen).binding).toBeNull()
-
-    // The same actor re-enters in a new document of the same tab.
-    rejectSwitch = false
-    reload(first.view)
-    const after: Seen[] = []
-    mount(after)
+    session = SESSION_A2
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
     await screen.findByText('Ortak kabuk hazır')
-    await waitFor(() => expect(last(after)).toMatchObject({ actor: USER_A }))
-    expect(last(after).binding).toMatch(/^[0-9a-f-]{36}$/i)
-    expect(last(after).binding).not.toBe(before)
-  })
+    await waitFor(() => expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A2 }))
 
-  it('an ordinary reload with no session event keeps the binding', async () => {
-    installFetch({})
-    const seen: Seen[] = []
-    const first = mount(seen)
-    await screen.findByText('Ortak kabuk hazır')
-    await waitFor(() => expect(last(seen).binding).not.toBeNull())
-    const before = last(seen).binding
-
-    reload(first.view)
-    const after: Seen[] = []
-    mount(after)
-    await screen.findByText('Ortak kabuk hazır')
-    await waitFor(() => expect(last(after).binding).not.toBeNull())
-    expect(last(after).binding).toBe(before)
+    // The held answer, authorized for the first session, arrives now.
+    release!()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(last(seen)).toMatchObject({ actor: USER_A, binding: SESSION_A2 })
+    expect(seen.some((frame) => frame.binding === SESSION_A1 && frame.epoch >= 1)).toBe(false)
   })
 })

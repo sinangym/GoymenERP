@@ -114,6 +114,7 @@ describe('SAB-010 — one current 403, two independent consumers', () => {
             displayName: 'Kullanıcı A',
             email: null,
             allowedCompanyIds: [A_ID, B_ID],
+            authenticationSessionBinding: null,
           })
         if (url.includes('/organization/companies')) return json(DIRECTORY)
         if (url.includes('/shell/capabilities'))

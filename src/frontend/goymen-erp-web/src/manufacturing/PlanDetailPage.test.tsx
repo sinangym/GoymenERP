@@ -13,6 +13,8 @@ import {
   PLAN,
   ROLL_1,
   ROLL_2,
+  SESSION_1,
+  SESSION_2,
   WORK_CENTER,
   cutToLengthSpec,
   installFetch,
@@ -27,6 +29,7 @@ import {
   reloadDocument,
   renderAt,
   requestsFor,
+  sessionBinding,
   technicalSnapshot,
   type RecordedRequest,
 } from './testHarness'
@@ -41,15 +44,6 @@ const LIFECYCLE_CAPABILITIES = [
 afterEach(() => {
   vi.unstubAllGlobals()
 })
-
-/** The shell's session binding (M01.3 K2 #728/6180459736). */
-const BINDING = '50000000-0000-4000-8000-000000000001'
-
-/** The tab already holds this actor's session binding — the same authenticated session after an ordinary F5. */
-function sameTabSession(): string {
-  sessionStorage.setItem('goymen.shell.session-binding.v1', JSON.stringify({ v: 1, id: BINDING, actorId: APPROVER }))
-  return BINDING
-}
 
 /** The plan read itself; MFG-PLAN-EDIT's history read (`/plans/{id}/revisions`) is a separate request. */
 function planReadRequests(recorded: readonly RecordedRequest[]) {
@@ -253,7 +247,7 @@ describe('plan approval and order creation', () => {
       capabilities: [MANUFACTURING_CAPABILITY.planDetail],
       respond: (url) => url.endsWith(`/manufacturing/plans/${PLAN}`) ? json(plan()) : undefined,
     })
-    reservePendingPlanLifecycle(pendingPlanLifecycleKey(sameTabSession(), APPROVER, COMPANY_A, PLAN), {
+    reservePendingPlanLifecycle(pendingPlanLifecycleKey(SESSION_1, APPROVER, COMPANY_A, PLAN), {
       actorId: APPROVER,
       companyId: COMPANY_A,
       planId: PLAN,
@@ -282,7 +276,7 @@ describe('plan approval and order creation', () => {
       capabilities: [MANUFACTURING_CAPABILITY.planDetail],
       respond: (url) => url.endsWith(`/manufacturing/plans/${PLAN}`) ? json(approved) : undefined,
     })
-    reservePendingPlanLifecycle(pendingPlanLifecycleKey(sameTabSession(), APPROVER, COMPANY_A, PLAN), {
+    reservePendingPlanLifecycle(pendingPlanLifecycleKey(SESSION_1, APPROVER, COMPANY_A, PLAN), {
       actorId: APPROVER,
       companyId: COMPANY_A,
       planId: PLAN,
@@ -477,7 +471,8 @@ describe('reload safety of the pending plan command slot', () => {
       companyId: COMPANY_A,
       planId: PLAN,
       snapshot: { kind: 'revise', idempotencyKey: FIRST_KEY, request: FIRST_REQUEST },
-      sessionBinding: BINDING,
+      // Stored in the server session the default identity is still authenticated in (M01.3 r5, #66/6187473245).
+      sessionBinding: SESSION_1,
       ...overrides,
     }
   }
@@ -489,10 +484,11 @@ describe('reload safety of the pending plan command slot', () => {
   /** The server after the processed first revise: the plan at version 2 and its history [0, 1]. */
   function movedServer(
     revise?: () => Response,
-    { actor = () => APPROVER, rejectReads = () => false, seedSession = true }: {
+    { actor = () => APPROVER, session = () => SESSION_1, rejectReads = () => false }: {
       readonly actor?: () => string
+      /** The server session binding `/identity/me` answers with: the only session authority the client has. */
+      readonly session?: () => string | null
       readonly rejectReads?: () => boolean
-      readonly seedSession?: boolean
     } = {},
   ) {
     const moved = (planId: string) => plan({ planId, version: 2, inputs: [plan().inputs[0], plan().inputs[1]] })
@@ -502,7 +498,7 @@ describe('reload safety of the pending plan command slot', () => {
     ], planId)
     const recorded = installFetch({
       capabilities: EDITOR_CAPABILITIES,
-      identity: () => ({ ...IDENTITY, userId: actor() }),
+      identity: () => ({ ...IDENTITY, userId: actor(), authenticationSessionBinding: session() }),
       respond: (url, init) => {
         if (rejectReads() && url.includes('/manufacturing/plans/') && init?.method !== 'POST') return problem(401)
         for (const planId of [PLAN, OTHER_PLAN]) {
@@ -527,7 +523,6 @@ describe('reload safety of the pending plan command slot', () => {
         return undefined
       },
     })
-    if (seedSession) sameTabSession()
     return recorded
   }
 
@@ -638,11 +633,15 @@ describe('reload safety of the pending plan command slot', () => {
   })
 
   /*
-   * M01.3 K2 #728/6180459736 — the session boundary itself, through the REAL shell paths: an actor change dispatches
-   * the orchestrator's SESSION_RESET, a business 401 the reducer's invalidation, and the reload is a new module graph
-   * and a new provider over the same sessionStorage. Nothing here sets an epoch or a binding by hand.
+   * M01.3 r5 (#66/6187473245) — the session boundary is the SERVER's: `/identity/me` answers `authenticationSessionBinding`,
+   * and only a change of that value for the same actor (or an actor change) ends the session the pending slot belongs to.
+   * The paths are the real shell paths: an identity re-read the orchestrator acts on, a business 401 the reducer's
+   * invalidation, and the reload a new module graph and a new provider over the same sessionStorage. Nothing here sets an
+   * epoch or a binding by hand, and nothing local — not a reset, not a stored record — can stand in for the server's answer.
    */
   const OTHER_ACTOR = '88888888-8888-4888-8888-888888888888'
+  const OTHER_ACTOR_SESSION = sessionBinding(0xf)
+  const NO_SESSION = /oturum bağlayıcısı vermedi/
 
   async function reviseUntilUnknown(user: ReturnType<typeof userEvent.setup>) {
     await user.click(await screen.findByRole('button', { name: 'Planı düzenle' }))
@@ -657,13 +656,23 @@ describe('reload safety of the pending plan command slot', () => {
   }
 
   /** The identity re-read the orchestrator acts on; resolves once the next session has bootstrapped. */
-  async function actorChange(
+  async function sessionChange(
     recorded: readonly RecordedRequest[],
     queryClient: import('@tanstack/react-query').QueryClient,
   ) {
     const bootstraps = requestsFor(recorded, '/shell/capabilities').length
     await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
     await waitFor(() => expect(requestsFor(recorded, '/shell/capabilities').length).toBe(bootstraps + 1))
+  }
+
+  /** The same identity re-read when the server still answers the same actor and binding: a token refresh, not a boundary. */
+  async function identityRefresh(
+    recorded: readonly RecordedRequest[],
+    queryClient: import('@tanstack/react-query').QueryClient,
+  ) {
+    const identityReads = requestsFor(recorded, '/identity/me').length
+    await queryClient.refetchQueries({ queryKey: ['shell', 'identity'] })
+    await waitFor(() => expect(requestsFor(recorded, '/identity/me').length).toBe(identityReads + 1))
   }
 
   function storedRevises(): Record<string, string | null> {
@@ -674,19 +683,30 @@ describe('reload safety of the pending plan command slot', () => {
     return entries
   }
 
-  it('A: a revise left unknown in a session reached through a real reset is restored over F5 — same key, same bytes, no N+2', async () => {
+  function expectBlocked(recorded: readonly RecordedRequest[], text: RegExp, posts: number) {
+    expect(screen.getByRole('alert').textContent).toMatch(text)
+    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeNull()
+    expect(commandPosts(recorded)).toHaveLength(posts)
+  }
+
+  it('A: a revise left unknown in a session reached through a real boundary is restored over F5 under the same server binding — same key, same bytes, no N+2', async () => {
     const user = userEvent.setup()
     let actor = OTHER_ACTOR
-    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { actor: () => actor, seedSession: false })
+    let session: string | null = OTHER_ACTOR_SESSION
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { actor: () => actor, session: () => session })
     const first = renderAt(`/uretim/plan/${PLAN}`)
     await readBack()
 
     // A real in-app session boundary: the epoch is no longer 0 when the approver's session starts.
     actor = APPROVER
-    await actorChange(recorded, first.queryClient)
+    session = SESSION_1
+    await sessionChange(recorded, first.queryClient)
     await reviseUntilUnknown(user)
     const [lost] = commandPosts(recorded)
 
+    // F5: the server still authenticates the approver in SESSION_1.
     const next = await reloadDocument(first.view)
     const second = next.renderAt(`/uretim/plan/${PLAN}`)
     try {
@@ -704,10 +724,53 @@ describe('reload safety of the pending plan command slot', () => {
     }
   })
 
-  it("B: after a real reset back to the same actor, the earlier session's revise is neither replayed nor replaced", async () => {
+  it('a token-refresh-equivalent identity re-read with the same actor and binding is no boundary: the unknown revise keeps its exact retry', async () => {
+    const user = userEvent.setup()
+    const recorded = movedServer(() => { throw new TypeError('answer lost') })
+    const view = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await reviseUntilUnknown(user)
+    const [lost] = commandPosts(recorded)
+    const stored = storedRevises()
+    const bootstraps = requestsFor(recorded, '/shell/capabilities').length
+
+    await identityRefresh(recorded, view.queryClient)
+
+    // No reset, no re-bootstrap, the same attempt still offered.
+    expect(requestsFor(recorded, '/shell/capabilities')).toHaveLength(bootstraps)
+    expect(storedRevises()).toEqual(stored)
+    await user.click(screen.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' }))
+    await waitFor(() => expect(commandPosts(recorded)).toHaveLength(2))
+    const [, replay] = commandPosts(recorded)
+    expect(replay.headers['Idempotency-Key']).toBe(lost.headers['Idempotency-Key'])
+    expect(JSON.stringify(replay.body)).toBe(JSON.stringify(lost.body))
+  })
+
+  it("B: the same actor in a new server session (a different binding, no reload) finds the earlier session's revise neither replayed nor replaced", async () => {
+    const user = userEvent.setup()
+    let session: string | null = SESSION_1
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { session: () => session })
+    const view = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await reviseUntilUnknown(user)
+    const stored = storedRevises()
+    expect(Object.keys(stored)).toHaveLength(1)
+
+    // A real logout/login as the same actor: the server answers a new binding.
+    session = SESSION_2
+    await sessionChange(recorded, view.queryClient)
+
+    expect(await screen.findByText(BLOCKED)).toBeTruthy()
+    await readBack()
+    expectBlocked(recorded, BLOCKED, 1)
+    expect(storedRevises()).toEqual(stored)
+  })
+
+  it("B: A→B→A in one tab, each its own server session: the earlier session's revise is neither replayed nor replaced", async () => {
     const user = userEvent.setup()
     let actor = APPROVER
-    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { actor: () => actor, seedSession: false })
+    let session: string | null = SESSION_1
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { actor: () => actor, session: () => session })
     const view = renderAt(`/uretim/plan/${PLAN}`)
     await readBack()
     await reviseUntilUnknown(user)
@@ -715,23 +778,23 @@ describe('reload safety of the pending plan command slot', () => {
     expect(Object.keys(stored)).toHaveLength(1)
 
     actor = OTHER_ACTOR
-    await actorChange(recorded, view.queryClient)
+    session = OTHER_ACTOR_SESSION
+    await sessionChange(recorded, view.queryClient)
     actor = APPROVER
-    await actorChange(recorded, view.queryClient)
+    session = SESSION_2
+    await sessionChange(recorded, view.queryClient)
 
     expect(await screen.findByText(BLOCKED)).toBeTruthy()
     await readBack()
-    expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeNull()
-    expect(commandPosts(recorded)).toHaveLength(1)
+    expectBlocked(recorded, BLOCKED, 1)
     expect(storedRevises()).toEqual(stored)
   })
 
-  it('B: after the server ended the session, the same actor re-entering over F5 gets no replay and no new key', async () => {
+  it('B: after the server ended the session, the same actor re-entering over F5 in a new server session gets no replay and no new key', async () => {
     const user = userEvent.setup()
     let reject = false
-    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { rejectReads: () => reject, seedSession: false })
+    let session: string | null = SESSION_1
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { rejectReads: () => reject, session: () => session })
     const first = renderAt(`/uretim/plan/${PLAN}`)
     await readBack()
     await reviseUntilUnknown(user)
@@ -741,19 +804,83 @@ describe('reload safety of the pending plan command slot', () => {
     await first.queryClient.invalidateQueries()
     expect(await screen.findByText(/Oturum sonlandı/i)).toBeTruthy()
 
+    // The re-login is a new authenticated session on the server.
     reject = false
+    session = SESSION_2
     const next = await reloadDocument(first.view)
     const second = next.renderAt(`/uretim/plan/${PLAN}`)
     try {
       expect(await screen.findByText(BLOCKED)).toBeTruthy()
       await readBack()
-      expect(screen.queryByRole('button', { name: 'Planı düzenle' })).toBeNull()
-      expect(screen.queryByRole('button', { name: 'Planı onayla' })).toBeNull()
-      expect(screen.queryByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder' })).toBeNull()
-      expect(commandPosts(recorded)).toHaveLength(1)
+      expectBlocked(recorded, BLOCKED, 1)
       expect(storedRevises()).toEqual(stored)
     } finally {
       second.view.unmount()
     }
+  })
+
+  it('a transient storage failure across the boundary changes nothing: the next server session still cannot read the old revise', async () => {
+    const user = userEvent.setup()
+    let actor = APPROVER
+    let session: string | null = SESSION_1
+    const recorded = movedServer(() => { throw new TypeError('answer lost') }, { actor: () => actor, session: () => session })
+    const first = renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    await reviseUntilUnknown(user)
+    const stored = storedRevises()
+
+    // Storage fails to write AND to remove exactly across the boundary, then recovers before the next document.
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('transient') })
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('transient') })
+    try {
+      actor = OTHER_ACTOR
+      session = OTHER_ACTOR_SESSION
+      await sessionChange(recorded, first.queryClient)
+    } finally {
+      setItem.mockRestore()
+      removeItem.mockRestore()
+    }
+    expect(storedRevises()).toEqual(stored)
+
+    actor = APPROVER
+    session = SESSION_2
+    const next = await reloadDocument(first.view)
+    const second = next.renderAt(`/uretim/plan/${PLAN}`)
+    try {
+      expect(await screen.findByText(BLOCKED)).toBeTruthy()
+      await readBack()
+      expectBlocked(recorded, BLOCKED, 1)
+      expect(storedRevises()).toEqual(stored)
+    } finally {
+      second.view.unmount()
+    }
+  })
+
+  it('a null server binding is fail-closed, not a session: the plan reads, no command is offered, nothing is minted or stored', async () => {
+    const recorded = movedServer(undefined, { session: () => null })
+    renderAt(`/uretim/plan/${PLAN}`)
+    await readBack()
+    expectBlocked(recorded, NO_SESSION, 0)
+    expect(screen.getByRole('alert').textContent).not.toMatch(BLOCKED)
+    expect(screen.getByRole('link', { name: '← Üretim emirleri' })).toBeTruthy()
+    expect(storedRevises()).toEqual({})
+    // No local stand-in anywhere in the tab: the shell stored no binding of its own.
+    expect(Object.keys(sessionStorage).filter((name) => name.includes('session'))).toEqual([])
+  })
+
+  it('an identity answer without the binding property is malformed: the shell never commits a context, so the plan is not even read', async () => {
+    const recorded = movedServer(undefined, { session: () => SESSION_1 })
+    const { authenticationSessionBinding: _omitted, ...withoutBinding } = IDENTITY
+    const fetchMock = vi.mocked(fetch)
+    const real = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      return url.endsWith('/identity/me') ? json(withoutBinding) : real(input, init)
+    })
+    renderAt(`/uretim/plan/${PLAN}`)
+    expect(await screen.findByText(/Beklenmeyen yanıt/i)).toBeTruthy()
+    expect(requestsFor(recorded, '/shell/capabilities')).toHaveLength(0)
+    expect(planReadRequests(recorded)).toHaveLength(0)
+    expect(commandPosts(recorded)).toHaveLength(0)
   })
 })
