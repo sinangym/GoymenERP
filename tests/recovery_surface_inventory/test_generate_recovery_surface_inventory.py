@@ -2256,10 +2256,15 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1071, len(source_paths))
+        self.assertEqual(1072, len(source_paths))
         self.assertIn(
             "src/backend/Modules/Inventory/"
             "GoymenERP.Modules.Inventory.Application/InventoryTransferDocumentProofContractsV1.cs",
+            source_paths,
+        )
+        self.assertIn(
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Application/"
+            "Contracts/IProductStockDisplayReferencesV2.cs",
             source_paths,
         )
         self.assertEqual(

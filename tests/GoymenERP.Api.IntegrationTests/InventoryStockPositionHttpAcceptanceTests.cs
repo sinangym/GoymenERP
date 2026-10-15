@@ -65,21 +65,22 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             using var actor = sqlFactory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
 
             var references = new ProductReferences(
-                ProductInitialTechnicalDefinitionV1.TemplateId,
+                ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId,
                 "1",
                 new Dictionary<string, JsonElement>(StringComparer.Ordinal)
                 {
                     ["thickness-mm"] = JsonSerializer.SerializeToElement(3m),
                     ["width-mm"] = JsonSerializer.SerializeToElement(248m),
+                    ["length-mm"] = JsonSerializer.SerializeToElement(2500.125m),
                     ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
                     ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
                 },
                 new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram,
                     Sales: SettingsUnitIdentitiesV1.Kilogram));
             using var created = await SendSqlCommandAsync(actor, HttpMethod.Post, ProductApiV1.BasePath,
-                new CreateProductDraftRequest("S235JR 3 mm × 248 mm kaplamasız sac",
+                new CreateProductDraftRequest("S235JR 3 mm × 248 mm × 2500,125 mm kaplamasız sac",
                     ProductInitialCodeGroupV1.SacGroupId,
-                    FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId,
+                    FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
                     References: references),
                 "inventory-location-display-product-create");
             Assert.Equal(HttpStatusCode.Created, created.StatusCode);
@@ -92,6 +93,33 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
             var active = (await activated.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
 
+            var legacyReferences = new ProductReferences(
+                ProductInitialTechnicalDefinitionV1.TemplateId,
+                "1",
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["thickness-mm"] = JsonSerializer.SerializeToElement(2m),
+                    ["width-mm"] = JsonSerializer.SerializeToElement(1250m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                },
+                new ProductUnitReferences(Stock: SettingsUnitIdentitiesV1.Kilogram,
+                    Sales: SettingsUnitIdentitiesV1.Kilogram));
+            using var legacyCreated = await SendSqlCommandAsync(actor, HttpMethod.Post, ProductApiV1.BasePath,
+                new CreateProductDraftRequest("S235JR 2 mm × 1250 mm sıcak rulo",
+                    ProductInitialCodeGroupV1.SacGroupId,
+                    FamilyId: ProductInitialTechnicalDefinitionV1.HotRolledCoilFamilyId,
+                    References: legacyReferences),
+                "inventory-location-display-legacy-product-create");
+            Assert.Equal(HttpStatusCode.Created, legacyCreated.StatusCode);
+            var legacyDraft = (await legacyCreated.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            using var legacyActivated = await SendSqlCommandAsync(actor, HttpMethod.Post,
+                $"/api/v1/products/{legacyDraft.Card.Product.Id:D}/activation",
+                new ActivateProductRequest(legacyDraft.Card.Product.Version),
+                "inventory-location-display-legacy-product-activate");
+            Assert.Equal(HttpStatusCode.OK, legacyActivated.StatusCode);
+            var legacyActive = (await legacyActivated.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+
             using var locationsResponse = await actor.GetAsync(InventoryReferenceEndpoints.LocationPath);
             Assert.Equal(HttpStatusCode.OK, locationsResponse.StatusCode);
             var locations = (await locationsResponse.Content.ReadFromJsonAsync<OrganizationLocationCandidatesV1>())!;
@@ -99,10 +127,14 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             var location = locations.Items[0];
 
             var labelId = Guid.NewGuid();
+            var legacyLabelId = Guid.NewGuid();
             var opening = new OpeningCountRequestV1(Guid.NewGuid(), location.LocationId,
                 new DateOnly(2026, 10, 7), "Disposable stock-position location composition",
                 [new OpeningCountLineRequestV1(Guid.NewGuid(), labelId, "SAC-LOCATION-DISPLAY-1",
-                    Guid.NewGuid(), null, null, active.Card.Product.Id, active.Card.Product.Version, "1000")]);
+                    Guid.NewGuid(), null, null, active.Card.Product.Id, active.Card.Product.Version, "1000"),
+                 new OpeningCountLineRequestV1(Guid.NewGuid(), legacyLabelId, "RULO-LOCATION-DISPLAY-1",
+                    Guid.NewGuid(), null, null, legacyActive.Card.Product.Id,
+                    legacyActive.Card.Product.Version, "500")]);
             using var opened = await SendSqlCommandAsync(actor, HttpMethod.Post,
                 "/api/v1/inventory/opening-counts", opening,
                 "inventory-location-display-opening-create");
@@ -110,29 +142,41 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
 
             using var freshActor = sqlFactory.CreateClientFor(TestUsers.GroupAdmin, TestCompanyIds.CompanyA);
             freshActor.DefaultRequestHeaders.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader,
-                InventoryStockPositionDisplayHost.LocationDisplayContractVersion);
+                InventoryStockPositionApiV1.NominalLengthDisplayContractVersion);
             using var response = await freshActor.GetAsync(
                 $"{InventoryStockPositionApiV1.PositionsPath}?productId={active.Card.Product.Id:D}" +
                 $"&locationId={location.LocationId:D}" +
-                $"&productFamilyId={ProductInitialTechnicalDefinitionV1.HotRolledSlitCoilFamilyId:D}" +
+                $"&productFamilyId={ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId:D}" +
                 "&thicknessMinMm=2.999&thicknessMaxMm=3&widthMm=248&limit=25");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            var page = (await response.Content.ReadFromJsonAsync<InventoryStockPositionLocationPageV2>())!;
+            var page = (await response.Content.ReadFromJsonAsync<InventoryStockPositionLengthPageV4>())!;
             var position = Assert.Single(page.Items);
             Assert.Equal((labelId, location.LocationId, active.Card.Product.Id, active.Card.Product.Version),
                 (position.LabelId, position.LocationId, position.ProductId, position.ProductVersion));
             var productIdentity = Assert.IsType<ProductStockDisplayIdentityV1>(position.ProductDisplay.Identity);
-            var productTechnical = Assert.IsType<ProductStockNominalTechnicalV1>(position.ProductDisplay.Technical);
+            var productTechnical = Assert.IsType<ProductStockNominalTechnicalV2>(position.ProductDisplay.Technical);
             Assert.Equal((active.Card.Product.Id, active.Card.Product.Version,
                     active.Card.Product.Code, active.Card.Product.Name),
                 (productIdentity.ProductId, productIdentity.ProductVersion,
                     productIdentity.Code, productIdentity.Name));
-            Assert.Equal((3m, 248m),
-                (productTechnical.ThicknessMm, productTechnical.WidthMm));
+            Assert.Equal((3m, 248m, 2500.125m),
+                (productTechnical.ThicknessMm, productTechnical.WidthMm, productTechnical.LengthMm));
             Assert.Equal(new OrganizationLocationDisplayV1(location.LocationId,
                     location.LocationCode, location.LocationName),
                 position.LocationDisplay);
             Assert.Equal(position.LocationId, position.LocationDisplay.LocationId);
+            Assert.Null(position.OwnerDisplay);
+
+            using var legacyResponse = await freshActor.GetAsync(
+                $"{InventoryStockPositionApiV1.PositionsPath}?productId={legacyActive.Card.Product.Id:D}" +
+                $"&locationId={location.LocationId:D}&limit=25");
+            Assert.Equal(HttpStatusCode.OK, legacyResponse.StatusCode);
+            var legacyPage = (await legacyResponse.Content.ReadFromJsonAsync<InventoryStockPositionLengthPageV4>())!;
+            var legacyPosition = Assert.Single(legacyPage.Items);
+            Assert.Equal(legacyLabelId, legacyPosition.LabelId);
+            var legacyTechnical = Assert.IsType<ProductStockNominalTechnicalV2>(
+                legacyPosition.ProductDisplay.Technical);
+            Assert.Null(legacyTechnical.LengthMm);
         }
         finally
         {
@@ -212,6 +256,8 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
         Assert.Equal("P-1", item.GetProperty("productDisplay").GetProperty("identity").GetProperty("code").GetString());
+        Assert.False(item.GetProperty("productDisplay").GetProperty("technical")
+            .TryGetProperty("lengthMm", out _));
         var location = item.GetProperty("locationDisplay");
         Assert.Equal(LocationId, location.GetProperty("locationId").GetGuid());
         Assert.Equal("DEP-01", location.GetProperty("locationCode").GetString());
@@ -235,6 +281,8 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
         Assert.True(item.TryGetProperty("productDisplay", out _));
         Assert.False(item.TryGetProperty("locationDisplay", out _));
+        Assert.False(item.GetProperty("productDisplay").GetProperty("technical")
+            .TryGetProperty("lengthMm", out _));
     }
 
     [Fact]
@@ -260,11 +308,69 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
         Assert.Equal("P-1", item.GetProperty("productDisplay").GetProperty("identity").GetProperty("code").GetString());
+        Assert.False(item.GetProperty("productDisplay").GetProperty("technical")
+            .TryGetProperty("lengthMm", out _));
         Assert.Equal("DEP-01", item.GetProperty("locationDisplay").GetProperty("locationCode").GetString());
         var owner = item.GetProperty("ownerDisplay");
         Assert.Equal(partyId, owner.GetProperty("partyId").GetGuid());
         Assert.Equal("CAR-993001", owner.GetProperty("code").GetString());
         Assert.Equal("Tarihsel Stok Maliki", owner.GetProperty("legalName").GetString());
+    }
+
+    [Fact]
+    public async Task Length_display_4_0_composes_Product_location_owner_and_nullable_nominal_length_once()
+    {
+        var partyId = Guid.Parse("73000000-0000-0000-0000-000000000004");
+        var productV1 = new StubProductDisplays(ProductDisplays());
+        var productV2 = new StubProductDisplaysV2(ProductDisplaysV2(2500.125m));
+        var locations = new StubLocationDisplays(LocationDisplays());
+        var owners = new StubStockOwnerDisplays(new(
+            InventoryStockOwnerDisplayBatchOutcomeV1.Found,
+            [new(partyId, "CAR-993004", "Kesilmiş Sac Maliki", null)]));
+        using var host = CreateHost(
+            new ControlledAuthority(),
+            new StubPositions(CounterpartyPositions(partyId)),
+            productV1,
+            locations,
+            stockOwners: owners,
+            productV2: productV2);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(LengthDisplayRequest(InventoryStockPositionApiV1.PositionsPath));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Empty(productV1.Queries);
+        Assert.Single(productV2.Queries);
+        Assert.Single(locations.Queries);
+        Assert.Single(owners.Queries);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray());
+        Assert.Equal("P-1", item.GetProperty("productDisplay").GetProperty("identity")
+            .GetProperty("code").GetString());
+        Assert.Equal(2500.125m, item.GetProperty("productDisplay").GetProperty("technical")
+            .GetProperty("lengthMm").GetDecimal());
+        Assert.Equal("DEP-01", item.GetProperty("locationDisplay").GetProperty("locationCode").GetString());
+        Assert.Equal(partyId, item.GetProperty("ownerDisplay").GetProperty("partyId").GetGuid());
+    }
+
+    [Fact]
+    public async Task Length_display_4_0_preserves_explicit_null_for_legacy_Product()
+    {
+        var productV2 = new StubProductDisplaysV2(ProductDisplaysV2(null));
+        using var host = CreateHost(
+            new ControlledAuthority(),
+            new StubPositions(Positions()),
+            productV2: productV2);
+        using var client = CreateClient(host);
+
+        using var response = await client.SendAsync(LengthDisplayRequest(InventoryStockPositionApiV1.PositionsPath));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var technical = Assert.Single(document.RootElement.GetProperty("items").EnumerateArray())
+            .GetProperty("productDisplay").GetProperty("technical");
+        Assert.Equal(JsonValueKind.Null, technical.GetProperty("lengthMm").ValueKind);
+        Assert.Single(productV2.Queries);
     }
 
     [Fact]
@@ -428,7 +534,7 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     [Fact]
     public async Task Invalid_or_duplicate_display_contract_is_coded_400_before_owner_read()
     {
-        foreach (var values in new[] { new[] { "4.0" }, new[] { "1.0", "1.0" } })
+        foreach (var values in new[] { new[] { "5.0" }, new[] { "1.0", "1.0" } })
         {
             var owner = new StubPositions(Positions());
             using var host = CreateHost(new ControlledAuthority(), owner);
@@ -666,9 +772,10 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
     private WebApplicationFactory<Program> CreateHost(ControlledAuthority authority, StubPositions owner,
         StubProductDisplays? product = null, StubLocationDisplays? locations = null,
         MutableCompanyContext? company = null, MutableCurrentUser? user = null,
-        StubStockOwnerDisplays? stockOwners = null)
+        StubStockOwnerDisplays? stockOwners = null, StubProductDisplaysV2? productV2 = null)
     {
         product ??= new StubProductDisplays(ProductDisplays());
+        productV2 ??= new StubProductDisplaysV2(ProductDisplaysV2(null));
         locations ??= new StubLocationDisplays(LocationDisplays());
         stockOwners ??= new StubStockOwnerDisplays(new(InventoryStockOwnerDisplayBatchOutcomeV1.Found, []));
         return factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
@@ -681,6 +788,8 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
             services.AddSingleton<IInventoryStockPositionsV1>(owner);
             services.RemoveAll<IProductStockDisplayReferencesV1>();
             services.AddSingleton<IProductStockDisplayReferencesV1>(product);
+            services.RemoveAll<IProductStockDisplayReferencesV2>();
+            services.AddSingleton<IProductStockDisplayReferencesV2>(productV2);
             services.RemoveAll<IOrganizationLocationDisplayReaderV1>();
             services.AddSingleton<IOrganizationLocationDisplayReaderV1>(locations);
             services.RemoveAll<IInventoryStockOwnerDisplaySourceV1>();
@@ -722,6 +831,14 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         return request;
     }
 
+    private static HttpRequestMessage LengthDisplayRequest(string uri)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader,
+            InventoryStockPositionApiV1.NominalLengthDisplayContractVersion);
+        return request;
+    }
+
     private static HttpClient CreateClient(WebApplicationFactory<Program> host)
     {
         var client = host.CreateClient();
@@ -752,6 +869,13 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         new(ProductId, "7", new(ProductId, "7", "P-1", "Galvaniz bant"),
             new(new(Guid.NewGuid(), "coil", "#66/stock-display"),
                 new(Guid.NewGuid(), "1", "coil-v1", "#66/stock-display"), 1.5m, 1250m), []),
+    ]);
+
+    private static ProductStockDisplayBatchV2 ProductDisplaysV2(decimal? lengthMm) => new([
+        new(ProductId, "7", new(ProductId, "7", "P-1", "Galvaniz bant"),
+            new(new(Guid.NewGuid(), lengthMm.HasValue ? "cut-sheet" : "coil", "#66/stock-display"),
+                new(Guid.NewGuid(), "1", lengthMm.HasValue ? "cut-sheet-v1" : "coil-v1", "#66/stock-display"),
+                1.5m, 1250m, lengthMm), []),
     ]);
 
     private static IReadOnlyList<OrganizationLocationDisplayV1> LocationDisplays() =>
@@ -791,6 +915,23 @@ public sealed class InventoryStockPositionHttpAcceptanceTests(GoymenErpApiFactor
         public Action? DuringRead { get; init; }
 
         public Task<ProductStockDisplayBatchV1> ReadAsync(ProductStockDisplayBatchQueryV1 query,
+            CancellationToken cancellationToken = default)
+        {
+            Queries.Add(query);
+            DuringRead?.Invoke();
+            if (Failure is not null) throw Failure;
+            return Task.FromResult(answer);
+        }
+    }
+
+    private sealed class StubProductDisplaysV2(ProductStockDisplayBatchV2 answer)
+        : IProductStockDisplayReferencesV2
+    {
+        public List<ProductStockDisplayBatchQueryV1> Queries { get; } = [];
+        public Exception? Failure { get; init; }
+        public Action? DuringRead { get; init; }
+
+        public Task<ProductStockDisplayBatchV2> ReadAsync(ProductStockDisplayBatchQueryV1 query,
             CancellationToken cancellationToken = default)
         {
             Queries.Add(query);
