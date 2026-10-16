@@ -47,6 +47,7 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
                 var row = await FindLockedAsync(command.ProfileId, cancellationToken);
                 ManufacturingToleranceProfileLifecycleV1 next;
                 string beforeJson;
+                long? beforeVersion;
                 if (row is null)
                 {
                     next = ManufacturingToleranceProfileLifecyclePolicyV1.Prepare(
@@ -59,6 +60,7 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
                         command.EffectiveThrough, command.Context);
                     database.ManufacturingToleranceProfileLifecycles.Add(row);
                     beforeJson = "{}";
+                    beforeVersion = null;
                 }
                 else
                 {
@@ -69,6 +71,7 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
                     }
 
                     beforeJson = Serialize(row);
+                    beforeVersion = row.StateVersion;
                     next = ManufacturingToleranceProfileLifecyclePolicyV1.Revise(
                         Lifecycle(row), LifecycleContext(command.Context));
                     ApplyLifecycle(row, next);
@@ -78,7 +81,7 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
                     ApplyPreparationEvidence(row, command.Context);
                 }
 
-                return new PendingTransition(row, beforeJson, "Prepare", next.StateVersion - 1);
+                return new PendingTransition(row, beforeJson, "Prepare", beforeVersion);
             },
             cancellationToken);
     }
@@ -114,6 +117,13 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
                     new PrepareNextManufacturingToleranceProfileVersionV1(
                         command.ProfileId,
                         LifecycleContext(command.Context)));
+                var existingSuccessor = await FindSuccessorAsync(
+                    next.Process, next.ProfileVersion, command.ProfileId, cancellationToken);
+                if (existingSuccessor is not null)
+                {
+                    throw SuccessorVersionConflict(existingSuccessor);
+                }
+
                 var row = NewRow(next, command.MaximumFirePercent, command.EffectiveFrom,
                     command.EffectiveThrough, command.Context);
                 database.ManufacturingToleranceProfileLifecycles.Add(row);
@@ -290,17 +300,29 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
                 current,
                 exception);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException exception)
         {
             database.ChangeTracker.Clear();
             var winner = await FindExecutionAsync(action, keyHash, cancellationToken);
-            if (winner is null)
+            if (winner is not null)
             {
-                throw;
+                await RequireAuthorityAsync(action, context, cancellationToken);
+                return ResolveReplay(winner, requestHash, context);
             }
 
-            await RequireAuthorityAsync(action, context, cancellationToken);
-            return ResolveReplay(winner, requestHash, context);
+            if (fingerprint is PrepareNextFingerprint prepareNext)
+            {
+                var successor = await FindSuccessorForPredecessorAsync(
+                    prepareNext.PublishedProfileId,
+                    prepareNext.ProfileId,
+                    cancellationToken);
+                if (successor is not null)
+                {
+                    throw SuccessorVersionConflict(successor, exception);
+                }
+            }
+
+            throw;
         }
         catch (ManufacturingToleranceProfilePersistenceException)
         {
@@ -389,6 +411,37 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
         database.CommandExecutions.AsNoTracking().SingleOrDefaultAsync(
             row => row.CommandName == action && row.IdempotencyKeyHash == keyHash,
             cancellationToken);
+
+    private Task<ManufacturingToleranceProfileLifecycleRow?> FindSuccessorAsync(
+        string process,
+        long profileVersion,
+        Guid requestedProfileId,
+        CancellationToken cancellationToken) =>
+        database.ManufacturingToleranceProfileLifecycles.AsNoTracking()
+            .SingleOrDefaultAsync(
+                row => row.Process == process
+                    && row.ProfileVersion == profileVersion
+                    && row.ProfileId != requestedProfileId,
+                cancellationToken);
+
+    private async Task<ManufacturingToleranceProfileLifecycleRow?> FindSuccessorForPredecessorAsync(
+        Guid publishedProfileId,
+        Guid requestedProfileId,
+        CancellationToken cancellationToken)
+    {
+        var predecessor = await database.ManufacturingToleranceProfileLifecycles.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.ProfileId == publishedProfileId, cancellationToken);
+        if (predecessor is null || predecessor.ProfileVersion == long.MaxValue)
+        {
+            return null;
+        }
+
+        return await FindSuccessorAsync(
+            predecessor.Process,
+            predecessor.ProfileVersion + 1,
+            requestedProfileId,
+            cancellationToken);
+    }
 
     private static ManufacturingToleranceProfileCommandExecutionV1 ResolveReplay(
         CommandExecution execution,
@@ -603,6 +656,15 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
 
     private static ManufacturingToleranceProfilePersistenceException Failure(string code) =>
         new ManufacturingToleranceProfilePersistenceException(code);
+
+    private static ManufacturingToleranceProfilePersistenceException SuccessorVersionConflict(
+        ManufacturingToleranceProfileLifecycleRow existingSuccessor,
+        Exception? innerException = null) =>
+        new(
+            ManufacturingToleranceProfilePersistenceCodesV1.VersionConflict,
+            expectedStateVersion: 0,
+            currentStateVersion: existingSuccessor.StateVersion,
+            innerException: innerException);
 
     private static readonly IReadOnlySet<string> AllowedSourceChannels = new HashSet<string>(StringComparer.Ordinal)
     {

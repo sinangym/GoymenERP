@@ -477,15 +477,17 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                     b.ToTable("ManufacturingToleranceProfileLifecycles", "settings", t =>
                         {
-                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Approval", "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [ApprovalCorrelationId] IS NULL AND [ApprovalCausationId] IS NULL AND [ApprovalSourceChannel] IS NULL AND [ApprovalClientIpAddress] IS NULL AND [ApprovalUserAgent] IS NULL) OR ([Status] IN (2,3) AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND [ApprovalReason] IS NOT NULL AND [ApprovalCorrelationId] IS NOT NULL AND [ApprovalSourceChannel] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Approval", "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [ApprovalCorrelationId] IS NULL AND [ApprovalCausationId] IS NULL AND [ApprovalSourceChannel] IS NULL AND [ApprovalClientIpAddress] IS NULL AND [ApprovalUserAgent] IS NULL) OR ([Status] IN (2,3) AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND [ApprovalReason] IS NOT NULL AND [ApprovalCorrelationId] IS NOT NULL AND [ApprovalSourceChannel] IS NOT NULL AND LEN(LTRIM(RTRIM([ApprovedBy]))) > 0 AND LEN(LTRIM(RTRIM([ApprovalReason]))) > 0 AND LEN(LTRIM(RTRIM([ApprovalCorrelationId]))) > 0 AND LEN(LTRIM(RTRIM([ApprovalSourceChannel]))) > 0)");
 
                             t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Percent", "[MaximumFirePercent] >= 0");
 
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_PreparationProvenance", "LEN(LTRIM(RTRIM([PreparedBy]))) > 0 AND LEN(LTRIM(RTRIM([PreparationReason]))) > 0 AND LEN(LTRIM(RTRIM([PreparationCorrelationId]))) > 0 AND LEN(LTRIM(RTRIM([PreparationSourceChannel]))) > 0");
+
                             t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Process", "[Process] IN ('Slitting','ColdRolling','TubeProfile','Paint','CutToLength')");
 
-                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Publication", "([Status] IN (1,2) AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL AND [PublicationCorrelationId] IS NULL AND [PublicationCausationId] IS NULL AND [PublicationSourceChannel] IS NULL AND [PublicationClientIpAddress] IS NULL AND [PublicationUserAgent] IS NULL) OR ([Status] = 3 AND [PublishedBy] IS NOT NULL AND [PublishedAtUtc] IS NOT NULL AND [PublicationReason] IS NOT NULL AND [PublicationCorrelationId] IS NOT NULL AND [PublicationSourceChannel] IS NOT NULL)");
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Publication", "([Status] IN (1,2) AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL AND [PublicationCorrelationId] IS NULL AND [PublicationCausationId] IS NULL AND [PublicationSourceChannel] IS NULL AND [PublicationClientIpAddress] IS NULL AND [PublicationUserAgent] IS NULL) OR ([Status] = 3 AND [PublishedBy] IS NOT NULL AND [PublishedAtUtc] IS NOT NULL AND [PublicationReason] IS NOT NULL AND [PublicationCorrelationId] IS NOT NULL AND [PublicationSourceChannel] IS NOT NULL AND LEN(LTRIM(RTRIM([PublishedBy]))) > 0 AND LEN(LTRIM(RTRIM([PublicationReason]))) > 0 AND LEN(LTRIM(RTRIM([PublicationCorrelationId]))) > 0 AND LEN(LTRIM(RTRIM([PublicationSourceChannel]))) > 0)");
 
                             t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Separation", "([ApprovedBy] IS NULL OR [ApprovedBy] <> [PreparedBy]) AND ([PublishedBy] IS NULL OR [PublishedBy] <> [PreparedBy])");
 

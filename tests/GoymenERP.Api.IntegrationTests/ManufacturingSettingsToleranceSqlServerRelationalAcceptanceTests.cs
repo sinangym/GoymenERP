@@ -90,6 +90,9 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             Assert.Equal(1, await CountTableAsync(connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
             Assert.Equal(3, await CountSettingsCommandsAsync(connectionString));
             Assert.Equal(3, await CountSettingsAuditsAsync(connectionString));
+            var prepareAuditVersions = await AuditVersionsAsync(connectionString, profileId, "Prepare", 1);
+            Assert.Null(prepareAuditVersions.Before);
+            Assert.Equal(1, prepareAuditVersions.After);
             var evidence = await LifecycleEvidenceAsync(connectionString, CompanyA, profileId);
             Assert.Equal((Maker, "prepare reason", Checker, "checker approval evidence", Checker,
                 "checker publication evidence", 3L), evidence);
@@ -122,6 +125,29 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                 .MigrateAsync(SerializationMigration));
             Assert.Equal(51012, downgrade.Number);
             Assert.Equal(1, await CountTableAsync(connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Initial_prepare_and_revision_audit_exact_versions()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            var profileId = Guid.NewGuid();
+            await using (var maker = Command(connectionString, CompanyA, Maker, new GrantingAuthority()))
+            {
+                await maker.Service.PrepareAsync(Prepare(
+                    profileId, Maker, 0, "settings-profile-audit-create"));
+                await maker.Service.PrepareAsync(Prepare(
+                    profileId, Maker, 1, "settings-profile-audit-revise", maximumFirePercent: 1.500000m));
+            }
+
+            var create = await AuditVersionsAsync(connectionString, profileId, "Prepare", 1);
+            Assert.Null(create.Before);
+            Assert.Equal(1, create.After);
+            var revision = await AuditVersionsAsync(connectionString, profileId, "Prepare", 2);
+            Assert.Equal(1, revision.Before);
+            Assert.Equal(2, revision.After);
         });
     }
 
@@ -160,6 +186,49 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             Assert.Equal(1, await CountTableAsync(connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
             Assert.Equal(1, await CountSettingsCommandsAsync(connectionString));
             Assert.Equal(1, await CountSettingsAuditsAsync(connectionString));
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Mandatory_lifecycle_provenance_rejects_blank_direct_sql_values()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            foreach (var field in new[]
+            {
+                "PreparedBy",
+                "PreparationReason",
+                "PreparationCorrelationId",
+                "PreparationSourceChannel",
+            })
+            {
+                await AssertBlankPreparationProvenanceRejectedAsync(connectionString, field);
+            }
+
+            var profileId = Guid.NewGuid();
+            await InsertLifecycleDraftAsync(connectionString, profileId);
+            foreach (var field in new[]
+            {
+                "ApprovedBy",
+                "ApprovalReason",
+                "ApprovalCorrelationId",
+                "ApprovalSourceChannel",
+            })
+            {
+                await AssertBlankApprovalProvenanceRejectedAsync(connectionString, profileId, field);
+            }
+
+            await ApplyLifecycleApprovalAsync(connectionString, profileId);
+            foreach (var field in new[]
+            {
+                "PublishedBy",
+                "PublicationReason",
+                "PublicationCorrelationId",
+                "PublicationSourceChannel",
+            })
+            {
+                await AssertBlankPublicationProvenanceRejectedAsync(connectionString, profileId, field);
+            }
         });
     }
 
@@ -249,6 +318,21 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                     (next.Profile.Lifecycle.ProfileId, next.Profile.Lifecycle.ProfileVersion,
                         next.Profile.Lifecycle.StateVersion, next.Profile.Lifecycle.Status));
 
+                var sequentialConflict = await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                    maker.Service.PrepareNextVersionAsync(
+                        new PrepareNextManufacturingToleranceProfileVersionCommandV1(
+                            publishedPredecessor,
+                            Guid.NewGuid(),
+                            1.500000m,
+                            new DateOnly(2034, 1, 1),
+                            new DateOnly(2034, 6, 30),
+                            Context(CompanyA, Maker, 3, "settings-profile-next-sequential-conflict",
+                                "second successor must conflict"))));
+                Assert.Equal(ManufacturingToleranceProfilePersistenceCodesV1.VersionConflict,
+                    sequentialConflict.Code);
+                Assert.Equal(0, sequentialConflict.ExpectedStateVersion);
+                Assert.Equal(1, sequentialConflict.CurrentStateVersion);
+
                 var sameIdentity = await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
                     maker.Service.PrepareNextVersionAsync(
                         new PrepareNextManufacturingToleranceProfileVersionCommandV1(
@@ -260,6 +344,42 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                             Context(CompanyA, Maker, 3, "settings-profile-next-same-id", "same id refusal"))));
                 Assert.Equal(ManufacturingToleranceProfileLifecycleCodesV1.Invalid, sameIdentity.Code);
             }
+
+            var concurrentPredecessor = Guid.NewGuid();
+            await PrepareApprovedAsync(connectionString, concurrentPredecessor, 20,
+                new DateOnly(2035, 1, 1), new DateOnly(2035, 6, 30), "next-version-race",
+                SettingsManufacturingProcessesV1.Paint);
+            await using (var publisher = Command(connectionString, CompanyA, Checker, new GrantingAuthority()))
+            {
+                await publisher.Service.PublishAsync(Transition(concurrentPredecessor, Checker, 2,
+                    "settings-profile-next-race-publish", "next race predecessor publish"));
+            }
+
+            await using var firstMaker = Command(connectionString, CompanyA, Maker, new GrantingAuthority());
+            await using var secondMaker = Command(connectionString, CompanyA, Maker, new GrantingAuthority());
+            var firstSuccessor = PrepareNextOutcomeAsync(firstMaker.Service,
+                new PrepareNextManufacturingToleranceProfileVersionCommandV1(
+                    concurrentPredecessor,
+                    Guid.NewGuid(),
+                    1.625000m,
+                    new DateOnly(2035, 7, 1),
+                    new DateOnly(2035, 12, 31),
+                    Context(CompanyA, Maker, 3, "settings-profile-next-race-a", "next race a")));
+            var secondSuccessor = PrepareNextOutcomeAsync(secondMaker.Service,
+                new PrepareNextManufacturingToleranceProfileVersionCommandV1(
+                    concurrentPredecessor,
+                    Guid.NewGuid(),
+                    1.750000m,
+                    new DateOnly(2035, 7, 1),
+                    new DateOnly(2035, 12, 31),
+                    Context(CompanyA, Maker, 3, "settings-profile-next-race-b", "next race b")));
+            var successorOutcomes = await Task.WhenAll(firstSuccessor, secondSuccessor)
+                .WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.Single(successorOutcomes, outcome => outcome == "Succeeded");
+            Assert.Single(successorOutcomes,
+                outcome => outcome == ManufacturingToleranceProfilePersistenceCodesV1.VersionConflict);
+            Assert.Equal(1, await CountLifecycleVersionAsync(
+                connectionString, SettingsManufacturingProcessesV1.Paint, 21));
         });
     }
 
@@ -567,6 +687,21 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         }
     }
 
+    private static async Task<string> PrepareNextOutcomeAsync(
+        SettingsManufacturingToleranceProfileCommandServiceV1 service,
+        PrepareNextManufacturingToleranceProfileVersionCommandV1 command)
+    {
+        try
+        {
+            await service.PrepareNextVersionAsync(command);
+            return "Succeeded";
+        }
+        catch (ManufacturingToleranceProfilePersistenceException exception)
+        {
+            return exception.Code;
+        }
+    }
+
     private static CommandScope Command(
         string connectionString,
         Guid company,
@@ -638,6 +773,32 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
+    private static async Task<(long? Before, long After)> AuditVersionsAsync(
+        string connectionString,
+        Guid profileId,
+        string operation,
+        long after)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT [EntityVersionBefore], [EntityVersionAfter]
+            FROM [audit].[AuditEvents]
+            WHERE [EntityType] = N'Settings.ManufacturingToleranceProfileLifecycle'
+              AND [EntityId] = @profile
+              AND [Operation] = @operation
+              AND [EntityVersionAfter] = @after;
+            """;
+        command.Parameters.AddWithValue("@profile", profileId.ToString("D"));
+        command.Parameters.AddWithValue("@operation", operation);
+        command.Parameters.AddWithValue("@after", after);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        long? before = reader.IsDBNull(0) ? null : reader.GetInt64(0);
+        return (before, reader.GetInt64(1));
+    }
+
     private static async Task<int> CountLifecycleStatusAsync(
         string connectionString,
         ManufacturingToleranceProfileStatusV1 status)
@@ -652,6 +813,25 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             """;
         command.Parameters.AddWithValue("@company", CompanyA);
         command.Parameters.AddWithValue("@status", (int)status);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<int> CountLifecycleVersionAsync(
+        string connectionString,
+        string process,
+        long profileVersion)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM [settings].[ManufacturingToleranceProfileLifecycles]
+            WHERE [CompanyId] = @company AND [Process] = @process AND [ProfileVersion] = @profileVersion;
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@process", process);
+        command.Parameters.AddWithValue("@profileVersion", profileVersion);
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
@@ -827,6 +1007,190 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             return exception.Number;
         }
     }
+
+    private static async Task AssertBlankPreparationProvenanceRejectedAsync(
+        string connectionString,
+        string blankField)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "PreparedBy",
+            "PreparationReason",
+            "PreparationCorrelationId",
+            "PreparationSourceChannel",
+        };
+        Assert.Contains(blankField, allowed);
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [settings].[ManufacturingToleranceProfileLifecycles]
+                ([CompanyId],[ProfileId],[Process],[ProfileVersion],[MaximumFirePercent],
+                 [EffectiveFrom],[EffectiveThrough],[StateVersion],[Status],
+                 [PreparedBy],[PreparedAtUtc],[PreparationReason],[PreparationCorrelationId],
+                 [PreparationSourceChannel])
+            VALUES
+                (@company,@profile,@process,100,1.250000,'2040-01-01','2040-12-31',1,1,
+                 @preparedBy,@preparedAt,@preparationReason,@preparationCorrelationId,
+                 @preparationSourceChannel);
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@profile", Guid.NewGuid());
+        command.Parameters.AddWithValue("@process", SettingsManufacturingProcessesV1.CutToLength);
+        command.Parameters.AddWithValue("@preparedBy", Provenance(blankField, "PreparedBy", Maker));
+        command.Parameters.AddWithValue("@preparedAt",
+            new DateTimeOffset(2026, 10, 16, 13, 0, 0, TimeSpan.Zero));
+        command.Parameters.AddWithValue("@preparationReason",
+            Provenance(blankField, "PreparationReason", "direct SQL preparation"));
+        command.Parameters.AddWithValue("@preparationCorrelationId",
+            Provenance(blankField, "PreparationCorrelationId", "direct-sql-preparation"));
+        command.Parameters.AddWithValue("@preparationSourceChannel",
+            Provenance(blankField, "PreparationSourceChannel", "System"));
+        await AssertCheckConstraintRejectedAsync(command);
+    }
+
+    private static async Task InsertLifecycleDraftAsync(string connectionString, Guid profileId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [settings].[ManufacturingToleranceProfileLifecycles]
+                ([CompanyId],[ProfileId],[Process],[ProfileVersion],[MaximumFirePercent],
+                 [EffectiveFrom],[EffectiveThrough],[StateVersion],[Status],
+                 [PreparedBy],[PreparedAtUtc],[PreparationReason],[PreparationCorrelationId],
+                 [PreparationSourceChannel])
+            VALUES
+                (@company,@profile,@process,200,1.250000,'2041-01-01','2041-12-31',1,1,
+                 @preparedBy,@preparedAt,@preparationReason,@preparationCorrelationId,
+                 @preparationSourceChannel);
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@profile", profileId);
+        command.Parameters.AddWithValue("@process", SettingsManufacturingProcessesV1.CutToLength);
+        command.Parameters.AddWithValue("@preparedBy", Maker);
+        command.Parameters.AddWithValue("@preparedAt",
+            new DateTimeOffset(2026, 10, 16, 13, 1, 0, TimeSpan.Zero));
+        command.Parameters.AddWithValue("@preparationReason", "direct SQL valid preparation");
+        command.Parameters.AddWithValue("@preparationCorrelationId", "direct-sql-valid-preparation");
+        command.Parameters.AddWithValue("@preparationSourceChannel", "System");
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task AssertBlankApprovalProvenanceRejectedAsync(
+        string connectionString,
+        Guid profileId,
+        string blankField)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ApprovedBy",
+            "ApprovalReason",
+            "ApprovalCorrelationId",
+            "ApprovalSourceChannel",
+        };
+        Assert.Contains(blankField, allowed);
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [settings].[ManufacturingToleranceProfileLifecycles]
+            SET [StateVersion] = 2, [Status] = 2,
+                [ApprovedBy] = @approvedBy, [ApprovedAtUtc] = @approvedAt,
+                [ApprovalReason] = @approvalReason,
+                [ApprovalCorrelationId] = @approvalCorrelationId,
+                [ApprovalSourceChannel] = @approvalSourceChannel
+            WHERE [CompanyId] = @company AND [ProfileId] = @profile;
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@profile", profileId);
+        command.Parameters.AddWithValue("@approvedBy", Provenance(blankField, "ApprovedBy", Checker));
+        command.Parameters.AddWithValue("@approvedAt",
+            new DateTimeOffset(2026, 10, 16, 13, 2, 0, TimeSpan.Zero));
+        command.Parameters.AddWithValue("@approvalReason",
+            Provenance(blankField, "ApprovalReason", "direct SQL approval"));
+        command.Parameters.AddWithValue("@approvalCorrelationId",
+            Provenance(blankField, "ApprovalCorrelationId", "direct-sql-approval"));
+        command.Parameters.AddWithValue("@approvalSourceChannel",
+            Provenance(blankField, "ApprovalSourceChannel", "System"));
+        await AssertCheckConstraintRejectedAsync(command);
+    }
+
+    private static async Task ApplyLifecycleApprovalAsync(string connectionString, Guid profileId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [settings].[ManufacturingToleranceProfileLifecycles]
+            SET [StateVersion] = 2, [Status] = 2,
+                [ApprovedBy] = @approvedBy, [ApprovedAtUtc] = @approvedAt,
+                [ApprovalReason] = @approvalReason,
+                [ApprovalCorrelationId] = @approvalCorrelationId,
+                [ApprovalSourceChannel] = @approvalSourceChannel
+            WHERE [CompanyId] = @company AND [ProfileId] = @profile;
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@profile", profileId);
+        command.Parameters.AddWithValue("@approvedBy", Checker);
+        command.Parameters.AddWithValue("@approvedAt",
+            new DateTimeOffset(2026, 10, 16, 13, 3, 0, TimeSpan.Zero));
+        command.Parameters.AddWithValue("@approvalReason", "direct SQL valid approval");
+        command.Parameters.AddWithValue("@approvalCorrelationId", "direct-sql-valid-approval");
+        command.Parameters.AddWithValue("@approvalSourceChannel", "System");
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task AssertBlankPublicationProvenanceRejectedAsync(
+        string connectionString,
+        Guid profileId,
+        string blankField)
+    {
+        var allowed = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "PublishedBy",
+            "PublicationReason",
+            "PublicationCorrelationId",
+            "PublicationSourceChannel",
+        };
+        Assert.Contains(blankField, allowed);
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [settings].[ManufacturingToleranceProfileLifecycles]
+            SET [StateVersion] = 3, [Status] = 3,
+                [PublishedBy] = @publishedBy, [PublishedAtUtc] = @publishedAt,
+                [PublicationReason] = @publicationReason,
+                [PublicationCorrelationId] = @publicationCorrelationId,
+                [PublicationSourceChannel] = @publicationSourceChannel
+            WHERE [CompanyId] = @company AND [ProfileId] = @profile;
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@profile", profileId);
+        command.Parameters.AddWithValue("@publishedBy", Provenance(blankField, "PublishedBy", Checker));
+        command.Parameters.AddWithValue("@publishedAt",
+            new DateTimeOffset(2026, 10, 16, 13, 4, 0, TimeSpan.Zero));
+        command.Parameters.AddWithValue("@publicationReason",
+            Provenance(blankField, "PublicationReason", "direct SQL publication"));
+        command.Parameters.AddWithValue("@publicationCorrelationId",
+            Provenance(blankField, "PublicationCorrelationId", "direct-sql-publication"));
+        command.Parameters.AddWithValue("@publicationSourceChannel",
+            Provenance(blankField, "PublicationSourceChannel", "System"));
+        await AssertCheckConstraintRejectedAsync(command);
+    }
+
+    private static async Task AssertCheckConstraintRejectedAsync(SqlCommand command)
+    {
+        var exception = await Assert.ThrowsAsync<SqlException>(() => command.ExecuteNonQueryAsync());
+        Assert.Equal(547, exception.Number);
+    }
+
+    private static string Provenance(string blankField, string currentField, string validValue) =>
+        string.Equals(blankField, currentField, StringComparison.Ordinal) ? "   " : validValue;
 
     private static async Task AssertCommandRejectedAsync(string connectionString, string commandText,
         Guid companyId, Guid profileId, int expectedNumber)
