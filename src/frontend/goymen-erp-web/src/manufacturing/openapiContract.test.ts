@@ -18,6 +18,7 @@ import {
   decodeOrder,
   decodeOrderList,
   decodePlan,
+  decodeTechnicalSnapshot,
   FACT_KINDS,
   OUTPUT_CLASSES,
 } from './contract'
@@ -408,6 +409,21 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(operation?.operationId).toBe('ListManufacturingPlanRevisionsV1')
     expect((document.paths[`${plans}/{planId}/revision`]?.post as { readonly operationId?: string } | undefined)
       ?.operationId).toBe('ReviseManufacturingPlanV1')
+  })
+
+  it('reads exactly the properties CapturedPlanTechnicalSnapshotViewV1 declares, lengthMm required and nullable text', () => {
+    const name = 'CapturedPlanTechnicalSnapshotViewV1'
+    for (const reference of ['PlannedInputViewV1', 'PlanRevisionInputViewV1']) {
+      expect(JSON.stringify(schema(reference).properties?.technicalSnapshot), reference).toContain(
+        `#/components/schemas/${name}`,
+      )
+    }
+    expect(Object.keys(technicalSnapshot()).sort()).toEqual(names(name))
+    expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
+    expect(schema(name).properties?.lengthMm).toEqual({ type: ['null', 'string'] })
+    // Both real serialized values decode: a captured nominal length kept as text, and the explicit null.
+    expect(decodeTechnicalSnapshot(technicalSnapshot({ lengthMm: '2500.125' }))?.lengthMm).toBe('2500.125')
+    expect(decodeTechnicalSnapshot(technicalSnapshot())?.lengthMm).toBeNull()
   })
 
   it('knows the five output classes by the server names the domain uses', () => {

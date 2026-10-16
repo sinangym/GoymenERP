@@ -433,6 +433,60 @@ describe('stored plan technical projection', () => {
     expect(screen.getByText('2 mm × 1500 mm')).toBeTruthy()
     expect(screen.getByText('GDC-PLAN-CALC/1')).toBeTruthy()
   })
+
+  function stubCapturedLength(lengthMm: unknown, extra: Record<string, unknown> = {}) {
+    return installFetch({
+      capabilities: [MANUFACTURING_CAPABILITY.planDetail],
+      respond: (url) => url.endsWith(`/manufacturing/plans/${PLAN}`) ? json(plan({
+        ...extra,
+        inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot({ lengthMm }) }],
+      })) : undefined,
+    })
+  }
+
+  it('shows the captured nominal length exactly as stored, apart from the cut-line lengths', async () => {
+    stubCapturedLength('2500.125', {
+      process: 'CutToLength',
+      cutToLengthSpec: cutToLengthSpec({
+        lines: [
+          { lineId: CUT_LINE_2, sequence: 40, lengthMm: '6000', count: 3 },
+          { lineId: CUT_LINE_1, sequence: -7, lengthMm: '2500.5', count: 2 },
+        ],
+      }),
+    })
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    const inputs = await screen.findByRole('region', { name: 'Planlanan ana rulolar' })
+    const item = within(inputs).getByText(/^Nominal ürün boyu:/)
+    expect(item.tagName).toBe('LI')
+    // The server's text as is: not 2500.13, not 2.500,125, not a cut-line length.
+    expect(item.textContent).toBe('Nominal ürün boyu: 2500.125 mm')
+    const cuts = screen.getByRole('region', { name: 'Boy kesme ayrıntısı' })
+    expect(within(cuts).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['6000 mm', '3', '2500.5 mm', '2'])
+    expect(within(cuts).queryByText(/2500\.125/)).toBeNull()
+  })
+
+  it('shows an explicit null nominal length as absence, never as a number', async () => {
+    stubCapturedLength(null)
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    const inputs = await screen.findByRole('region', { name: 'Planlanan ana rulolar' })
+    const item = within(inputs).getByText(/^Nominal ürün boyu:/)
+    expect(item.textContent).toBe('Nominal ürün boyu: kaydedilmemiş')
+    expect(item.textContent).not.toMatch(/\d/)
+    // The other captured measures still read as stored.
+    expect(within(inputs).getByText('2 mm × 1500 mm')).toBeTruthy()
+  })
+
+  it('reads a plan whose nominal length is malformed as unreadable, not as a plan without it', async () => {
+    const requests = stubCapturedLength(2500.125)
+    renderAt(`/uretim/plan/${PLAN}`)
+
+    await waitFor(() => expect(requests.some((request) => request.url.endsWith(`/manufacturing/plans/${PLAN}`))).toBe(true))
+    await waitFor(() => expect(screen.queryByText(/Plan.*okunamad|beklenmeyen/i)).toBeTruthy())
+    expect(screen.queryByRole('region', { name: 'Planlanan ana rulolar' })).toBeNull()
+    expect(screen.queryByText(/Nominal ürün boyu/)).toBeNull()
+  })
 })
 
 /**
