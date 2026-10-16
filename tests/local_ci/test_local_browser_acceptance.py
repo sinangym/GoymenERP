@@ -391,6 +391,93 @@ class LocalBrowserAcceptanceTests(unittest.TestCase):
             self.assertLessEqual(len(receipt.encode("utf-8")), 256)
             self.assertEqual(b"\xff\n", next((root / "quarantine").glob("*.stdout.bin")).read_bytes())
 
+    def test_captured_stdout_privacy_and_decode_blocks_are_recorded_before_commands_json(self):
+        contract = module.load_browser_contract(ROOT)
+        patterns = module._canonical_forbidden_patterns(contract)
+        secret = "opaque-captured-runtime-secret"
+        variants = (
+            (
+                "runtime-secret",
+                ["python3", "-c", "import os; print(os.environ['LOG_CANARY'])"],
+                secret.encode("utf-8"),
+                (secret,),
+                "RUNTIME_SECRET",
+            ),
+            (
+                "decode",
+                ["python3", "-c", "import os; os.write(1, bytes([255, 10]))"],
+                b"\xff\n",
+                (),
+                "NON_UTF8_OUTPUT",
+            ),
+        )
+        for label, arguments, rejected, secrets, expected_failure in variants:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                runner = module.CommandRunner(root / "quarantine", root / "evidence", patterns)
+                environment = dict(module.clean_environment())
+                environment["LOG_CANARY"] = secret
+                with self.assertRaises(module.SecretOutputError):
+                    runner.capture(
+                        arguments,
+                        cwd=ROOT,
+                        environment=environment,
+                        label=f"capture-{label}",
+                        timeout=10,
+                        secret_values=secrets,
+                    )
+                write_json(root / "commands.json", runner.records)
+                self.assertEqual(1, len(runner.records))
+                record = runner.records[0]
+                self.assertEqual("FAIL", record["status"])
+                self.assertTrue(record["credentialOutputDetected"])
+                self.assertEqual("BLOCKED_SECRET_OUTPUT", record["reason"])
+                self.assertEqual(expected_failure, record["privacyFailure"])
+                self.assertFalse(any((root / "quarantine").iterdir()))
+                persisted = b"".join(
+                    path.read_bytes()
+                    for path in root.rglob("*")
+                    if path.is_file()
+                )
+                self.assertNotIn(rejected, persisted)
+                receipt = next((root / "evidence").glob("*.log")).read_bytes()
+                self.assertLessEqual(len(receipt), 256)
+                self.assertIn(f"reason={expected_failure}".encode("ascii"), receipt)
+
+    def test_sensitive_captured_compose_model_is_returned_without_publishing_stdout(self):
+        contract = module.load_browser_contract(ROOT)
+        secret = "opaque-compose-model-secret"
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            runner = module.CommandRunner(
+                root / "quarantine",
+                root / "evidence",
+                module._canonical_forbidden_patterns(contract),
+            )
+            environment = dict(module.clean_environment())
+            environment["COMPOSE_MODEL"] = secret
+            captured = runner.capture(
+                ["python3", "-c", "import os; print(os.environ['COMPOSE_MODEL'])"],
+                cwd=ROOT,
+                environment=environment,
+                label="sensitive-compose-model",
+                timeout=10,
+                sensitive_stdout=True,
+                secret_values=(secret,),
+            )
+            self.assertEqual(f"{secret}\n", captured)
+            self.assertEqual("PASS", runner.records[0]["status"])
+            self.assertFalse(runner.records[0]["credentialOutputDetected"])
+            self.assertFalse(any((root / "quarantine").glob("*.stdout.bin")))
+            self.assertNotIn(
+                secret.encode("utf-8"),
+                b"".join(path.read_bytes() for path in (root / "quarantine").iterdir()),
+            )
+            self.assertNotIn(
+                secret.encode("utf-8"),
+                next((root / "evidence").glob("*.log")).read_bytes(),
+            )
+
     def test_source_head_and_dirty_state_are_fail_closed(self):
         with patch.object(module, "git", side_effect=(str(ROOT), HEAD, "c" * 40, "")):
             self.assertEqual(HEAD, module.source_binding(ROOT, HEAD)["commit"])

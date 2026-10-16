@@ -473,11 +473,32 @@ class CommandRunner:
             raise
         stdout_bytes = stdout or b""
         stderr_bytes = stderr or b""
-        quarantine_prefix.with_suffix(".stdout.bin").write_bytes(stdout_bytes)
-        quarantine_prefix.with_suffix(".stderr.bin").write_bytes(stderr_bytes)
         logged_bytes = stderr_bytes if capture_stdout else stdout_bytes
         safe, privacy_failure = _scan_log_bytes(logged_bytes, secret_values, self.forbidden_patterns)
+        captured_stdout: str | None = None
+        if capture_stdout:
+            # Captured stdout is classified in memory before any audit record or
+            # quarantine write; intentional sensitive compose data stays memory-only.
+            if sensitive_stdout:
+                try:
+                    captured_stdout = stdout_bytes.decode("utf-8")
+                except UnicodeDecodeError:
+                    privacy_failure = privacy_failure or "NON_UTF8_OUTPUT"
+            else:
+                captured_stdout, captured_failure = _scan_log_bytes(
+                    stdout_bytes,
+                    secret_values,
+                    self.forbidden_patterns,
+                )
+                privacy_failure = privacy_failure or captured_failure
         detected = privacy_failure is not None
+        if not capture_stdout:
+            quarantine_prefix.with_suffix(".stdout.bin").write_bytes(stdout_bytes)
+            quarantine_prefix.with_suffix(".stderr.bin").write_bytes(stderr_bytes)
+        elif not detected:
+            if not sensitive_stdout:
+                quarantine_prefix.with_suffix(".stdout.bin").write_bytes(stdout_bytes)
+            quarantine_prefix.with_suffix(".stderr.bin").write_bytes(stderr_bytes)
         if detected:
             receipt = (
                 "LOCAL_CHILD_LOG_REJECTED\n"
@@ -496,6 +517,7 @@ class CommandRunner:
             "log": log_name,
         })
         if privacy_failure is not None:
+            record["reason"] = "BLOCKED_SECRET_OUTPUT"
             record["privacyFailure"] = privacy_failure
         self.records.append(record)
         if detected:
@@ -505,20 +527,9 @@ class CommandRunner:
         if check and process.returncode != 0:
             raise CommandFailure(f"Command failed ({process.returncode}): {label}")
         if capture_stdout:
-            try:
-                decoded_stdout = stdout_bytes.decode("utf-8")
-            except UnicodeDecodeError as error:
-                raise SecretOutputError(f"Non-UTF-8 captured output detected in {label}") from error
-            if sensitive_stdout:
-                return process.returncode, decoded_stdout
-            safe_stdout, stdout_detected = _safe_output(
-                decoded_stdout,
-                secret_values,
-                self.forbidden_patterns,
-            )
-            if stdout_detected:
-                raise SecretOutputError(f"Credential-shaped captured output detected in {label}")
-            return process.returncode, safe_stdout
+            if captured_stdout is None:
+                raise AssertionError("Captured stdout was not classified")
+            return process.returncode, captured_stdout
         return process.returncode, ""
 
     def run(self, arguments: list[str], **kwargs) -> None:
