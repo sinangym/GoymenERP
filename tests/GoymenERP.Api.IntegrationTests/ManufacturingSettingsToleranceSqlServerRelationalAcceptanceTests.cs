@@ -1,5 +1,7 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Infrastructure.Persistence;
+using GoymenERP.Modules.Audit.Infrastructure.Services;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
@@ -15,6 +17,251 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
     private const string SerializationMigration = "20261015150000_SerializeManufacturingTolerancePolicyWindows";
     private static readonly Guid CompanyA = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-000000000002");
+    private const string Maker = "20000000-0000-0000-0000-0000000000a1";
+    private const string Checker = "20000000-0000-0000-0000-0000000000b2";
+
+    [SqlServerFact]
+    public async Task Lifecycle_commands_are_authorized_replay_safe_audited_and_do_not_activate_runtime_policy()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            var profileId = Guid.NewGuid();
+            var prepare = Prepare(profileId, Maker, expectedVersion: 0, "settings-profile-prepare-0001");
+            await using (var maker = Command(connectionString, CompanyA, Maker, new GrantingAuthority()))
+            {
+                var prepared = await maker.Service.PrepareAsync(prepare);
+                Assert.False(prepared.IsReplay);
+                Assert.Equal((1, ManufacturingToleranceProfileStatusV1.Draft),
+                    (prepared.Profile.Lifecycle.StateVersion, prepared.Profile.Lifecycle.Status));
+
+                var selfApproval = await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                    maker.Service.ApproveAsync(Transition(profileId, Maker, 1,
+                        "settings-profile-self-approve-0001", "maker cannot approve")));
+                Assert.Equal(ManufacturingToleranceProfileLifecycleCodesV1.MakerSeparationRequired,
+                    selfApproval.Code);
+            }
+
+            await using (var denied = Command(connectionString, CompanyA, Checker,
+                new GrantingAuthority(ManufacturingToleranceProfileActionsV1.Prepare)))
+            {
+                var refusal = await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                    denied.Service.ApproveAsync(Transition(profileId, Checker, 1,
+                        "settings-profile-denied-approve-0001", "independent permission evidence")));
+                Assert.Equal(ManufacturingToleranceProfilePersistenceCodesV1.Forbidden, refusal.Code);
+            }
+
+            await using (var checker = Command(connectionString, CompanyA, Checker, new GrantingAuthority()))
+            {
+                var approved = await checker.Service.ApproveAsync(Transition(profileId, Checker, 1,
+                    "settings-profile-approve-0001", "checker approval evidence"));
+                Assert.Equal((2, ManufacturingToleranceProfileStatusV1.Approved),
+                    (approved.Profile.Lifecycle.StateVersion, approved.Profile.Lifecycle.Status));
+
+                var published = await checker.Service.PublishAsync(Transition(profileId, Checker, 2,
+                    "settings-profile-publish-0001", "checker publication evidence"));
+                Assert.Equal((3, ManufacturingToleranceProfileStatusV1.Published),
+                    (published.Profile.Lifecycle.StateVersion, published.Profile.Lifecycle.Status));
+            }
+
+            await using (var replay = Command(connectionString, CompanyA, Maker, new GrantingAuthority()))
+            {
+                var result = await replay.Service.PrepareAsync(prepare);
+                Assert.True(result.IsReplay);
+                Assert.Equal("correlation-settings-profile-prepare-0001", result.OriginalCorrelationId);
+                Assert.Equal(ManufacturingToleranceProfileStatusV1.Draft, result.Profile.Lifecycle.Status);
+
+                var changedPayload = prepare with { MaximumFirePercent = 1.500001m };
+                Assert.Equal(ManufacturingToleranceProfilePersistenceCodesV1.IdempotencyConflict,
+                    (await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                        replay.Service.PrepareAsync(changedPayload))).Code);
+            }
+
+            await using (var changedActor = Command(connectionString, CompanyA, Checker, new GrantingAuthority()))
+            {
+                var sameKey = prepare with
+                {
+                    Context = prepare.Context with { ActorId = Checker },
+                };
+                Assert.Equal(ManufacturingToleranceProfilePersistenceCodesV1.IdempotencyConflict,
+                    (await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                        changedActor.Service.PrepareAsync(sameKey))).Code);
+            }
+
+            Assert.Equal(1, await CountTableAsync(connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
+            Assert.Equal(3, await CountSettingsCommandsAsync(connectionString));
+            Assert.Equal(3, await CountSettingsAuditsAsync(connectionString));
+            var evidence = await LifecycleEvidenceAsync(connectionString, CompanyA, profileId);
+            Assert.Equal((Maker, "prepare reason", Checker, "checker approval evidence", Checker,
+                "checker publication evidence", 3L), evidence);
+
+            await using (var foreign = Command(connectionString, CompanyB, Checker, new GrantingAuthority()))
+            {
+                var missing = await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                    foreign.Service.PublishAsync(Transition(profileId, Checker, 3,
+                        "settings-profile-foreign-0001", "foreign company evidence", CompanyB)));
+                Assert.Equal(ManufacturingToleranceProfilePersistenceCodesV1.NotFound, missing.Code);
+            }
+
+            await using (var provider = Provider(connectionString, CompanyA))
+            {
+                var unavailable = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => provider.Value
+                    .GetManufacturingToleranceAsync(SettingsManufacturingProcessesV1.Slitting,
+                        new DateOnly(2030, 6, 1)));
+                Assert.Equal("settings_provider_unavailable", unavailable.Code);
+            }
+
+            await AssertCommandRejectedAsync(connectionString,
+                "UPDATE [settings].[ManufacturingToleranceProfileLifecycles] SET [MaximumFirePercent] = 2 WHERE [CompanyId] = @company AND [ProfileId] = @profile",
+                CompanyA, profileId, 51010);
+            await AssertCommandRejectedAsync(connectionString,
+                "DELETE FROM [settings].[ManufacturingToleranceProfileLifecycles] WHERE [CompanyId] = @company AND [ProfileId] = @profile",
+                CompanyA, profileId, 51010);
+
+            await using var migration = Context(connectionString, CompanyA);
+            var downgrade = await Assert.ThrowsAsync<SqlException>(() => migration.GetService<IMigrator>()
+                .MigrateAsync(SerializationMigration));
+            Assert.Equal(51012, downgrade.Number);
+            Assert.Equal(1, await CountTableAsync(connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Authority_revocation_before_save_or_replay_writes_nothing()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            var rejected = Prepare(Guid.NewGuid(), Maker, 0, "settings-profile-revoked-save-0001");
+            await using (var revokedBeforeSave = Command(connectionString, CompanyA, Maker,
+                new SequencedAuthority(true, false)))
+            {
+                var refusal = await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                    revokedBeforeSave.Service.PrepareAsync(rejected));
+                Assert.Equal(ManufacturingToleranceProfilePersistenceCodesV1.Forbidden, refusal.Code);
+            }
+
+            Assert.Equal(0, await CountTableAsync(connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
+            Assert.Equal(0, await CountSettingsCommandsAsync(connectionString));
+            Assert.Equal(0, await CountSettingsAuditsAsync(connectionString));
+
+            var accepted = Prepare(Guid.NewGuid(), Maker, 0, "settings-profile-revoked-replay-0001");
+            await using (var writer = Command(connectionString, CompanyA, Maker, new GrantingAuthority()))
+            {
+                await writer.Service.PrepareAsync(accepted);
+            }
+
+            await using (var revokedBeforeReplay = Command(connectionString, CompanyA, Maker,
+                new SequencedAuthority(true, false)))
+            {
+                var refusal = await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                    revokedBeforeReplay.Service.PrepareAsync(accepted));
+                Assert.Equal(ManufacturingToleranceProfilePersistenceCodesV1.Forbidden, refusal.Code);
+            }
+
+            Assert.Equal(1, await CountTableAsync(connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
+            Assert.Equal(1, await CountSettingsCommandsAsync(connectionString));
+            Assert.Equal(1, await CountSettingsAuditsAsync(connectionString));
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Serializable_publication_and_state_version_races_have_one_winner_and_next_version_is_distinct()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            var first = Guid.NewGuid();
+            var second = Guid.NewGuid();
+            await PrepareApprovedAsync(connectionString, first, 1,
+                new DateOnly(2031, 1, 1), new DateOnly(2031, 6, 30), "race-a");
+            await PrepareApprovedAsync(connectionString, second, 2,
+                new DateOnly(2031, 4, 1), new DateOnly(2031, 9, 30), "race-b");
+
+            await using var firstPublisher = Command(connectionString, CompanyA, Checker, new GrantingAuthority());
+            await using var secondPublisher = Command(connectionString, CompanyA, Checker, new GrantingAuthority());
+            var firstPublication = PublishOutcomeAsync(firstPublisher.Service,
+                Transition(first, Checker, 2, "settings-profile-race-publish-a", "race publish a"));
+            var secondPublication = PublishOutcomeAsync(secondPublisher.Service,
+                Transition(second, Checker, 2, "settings-profile-race-publish-b", "race publish b"));
+            var publicationOutcomes = await Task.WhenAll(firstPublication, secondPublication)
+                .WaitAsync(TimeSpan.FromSeconds(30));
+
+            Assert.Single(publicationOutcomes, outcome => outcome == "Succeeded");
+            Assert.Single(publicationOutcomes,
+                outcome => outcome == ManufacturingToleranceProfilePersistenceCodesV1.PublicationOverlap);
+            Assert.Equal(1, await CountLifecycleStatusAsync(connectionString,
+                ManufacturingToleranceProfileStatusV1.Published));
+
+            var nonOverlapping = Guid.NewGuid();
+            await PrepareApprovedAsync(connectionString, nonOverlapping, 10,
+                new DateOnly(2031, 10, 1), new DateOnly(2031, 12, 31), "non-overlap");
+            await using (var publisher = Command(connectionString, CompanyA, Checker, new GrantingAuthority()))
+            {
+                var result = await publisher.Service.PublishAsync(Transition(nonOverlapping, Checker, 2,
+                    "settings-profile-non-overlap-publish", "non-overlap publish"));
+                Assert.Equal(ManufacturingToleranceProfileStatusV1.Published, result.Profile.Lifecycle.Status);
+            }
+            Assert.Equal(2, await CountLifecycleStatusAsync(connectionString,
+                ManufacturingToleranceProfileStatusV1.Published));
+
+            var approvalRace = Guid.NewGuid();
+            await using (var maker = Command(connectionString, CompanyA, Maker, new GrantingAuthority()))
+            {
+                await maker.Service.PrepareAsync(Prepare(approvalRace, Maker, 0,
+                    "settings-profile-approval-race-prepare", profileVersion: 11,
+                    from: new DateOnly(2032, 1, 1), through: new DateOnly(2032, 12, 31)));
+            }
+
+            await using var firstChecker = Command(connectionString, CompanyA, Checker, new GrantingAuthority());
+            await using var secondChecker = Command(connectionString, CompanyA,
+                "20000000-0000-0000-0000-0000000000c3", new GrantingAuthority());
+            var firstDecision = ApproveOutcomeAsync(firstChecker.Service,
+                Transition(approvalRace, Checker, 1, "settings-profile-approval-race-a", "approval race a"));
+            var secondDecision = ApproveOutcomeAsync(secondChecker.Service,
+                Transition(approvalRace, "20000000-0000-0000-0000-0000000000c3", 1,
+                    "settings-profile-approval-race-b", "approval race b"));
+            var decisionOutcomes = await Task.WhenAll(firstDecision, secondDecision)
+                .WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.Single(decisionOutcomes, outcome => outcome == "Succeeded");
+            Assert.Single(decisionOutcomes,
+                outcome => outcome == ManufacturingToleranceProfilePersistenceCodesV1.VersionConflict);
+
+            var publishedPredecessor = Guid.NewGuid();
+            await PrepareApprovedAsync(connectionString, publishedPredecessor, 1,
+                new DateOnly(2033, 1, 1), new DateOnly(2033, 6, 30), "next-version",
+                SettingsManufacturingProcessesV1.Paint);
+            await using (var publisher = Command(connectionString, CompanyA, Checker, new GrantingAuthority()))
+            {
+                await publisher.Service.PublishAsync(Transition(publishedPredecessor, Checker, 2,
+                    "settings-profile-next-publish", "next predecessor publish"));
+            }
+
+            var nextId = Guid.NewGuid();
+            await using (var maker = Command(connectionString, CompanyA, Maker, new GrantingAuthority()))
+            {
+                var next = await maker.Service.PrepareNextVersionAsync(
+                    new PrepareNextManufacturingToleranceProfileVersionCommandV1(
+                        publishedPredecessor,
+                        nextId,
+                        1.375000m,
+                        new DateOnly(2033, 7, 1),
+                        new DateOnly(2033, 12, 31),
+                        Context(CompanyA, Maker, 3, "settings-profile-next-prepare", "next version prepare")));
+                Assert.Equal((nextId, 2L, 1L, ManufacturingToleranceProfileStatusV1.Draft),
+                    (next.Profile.Lifecycle.ProfileId, next.Profile.Lifecycle.ProfileVersion,
+                        next.Profile.Lifecycle.StateVersion, next.Profile.Lifecycle.Status));
+
+                var sameIdentity = await Assert.ThrowsAsync<ManufacturingToleranceProfilePersistenceException>(() =>
+                    maker.Service.PrepareNextVersionAsync(
+                        new PrepareNextManufacturingToleranceProfileVersionCommandV1(
+                            publishedPredecessor,
+                            publishedPredecessor,
+                            1.375000m,
+                            new DateOnly(2034, 1, 1),
+                            null,
+                            Context(CompanyA, Maker, 3, "settings-profile-next-same-id", "same id refusal"))));
+                Assert.Equal(ManufacturingToleranceProfileLifecycleCodesV1.Invalid, sameIdentity.Code);
+            }
+        });
+    }
 
     [SqlServerFact]
     public async Task Approved_registry_is_company_scoped_versioned_audited_and_fail_closed()
@@ -220,6 +467,219 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             Assert.False(serializedTrigger.IsDisabled);
             Assert.Equal([], await HistoryRowsAsync(connectionString));
         });
+    }
+
+    private static PrepareManufacturingToleranceProfileCommandV1 Prepare(
+        Guid profileId,
+        string actor,
+        long expectedVersion,
+        string idempotencyKey,
+        Guid? company = null,
+        long profileVersion = 1,
+        DateOnly? from = null,
+        DateOnly? through = null,
+        decimal maximumFirePercent = 1.250000m,
+        string process = SettingsManufacturingProcessesV1.Slitting) => new(
+        profileId,
+        process,
+        profileVersion,
+        maximumFirePercent,
+        from ?? new DateOnly(2030, 1, 1),
+        through ?? new DateOnly(2030, 12, 31),
+        Context(company ?? CompanyA, actor, expectedVersion, idempotencyKey, "prepare reason"));
+
+    private static TransitionManufacturingToleranceProfileCommandV1 Transition(
+        Guid profileId,
+        string actor,
+        long expectedVersion,
+        string idempotencyKey,
+        string reason,
+        Guid? company = null) => new(
+        profileId,
+        Context(company ?? CompanyA, actor, expectedVersion, idempotencyKey, reason));
+
+    private static ManufacturingToleranceProfilePersistenceContextV1 Context(
+        Guid company,
+        string actor,
+        long expectedVersion,
+        string idempotencyKey,
+        string reason) => new(
+        company,
+        actor,
+        expectedVersion,
+        idempotencyKey,
+        reason,
+        new DateTimeOffset(2026, 10, 16, 12, (int)(expectedVersion % 60), 0, TimeSpan.Zero),
+        $"correlation-{idempotencyKey}",
+        $"causation-{idempotencyKey}",
+        "Web",
+        "127.0.0.1",
+        "synthetic-settings-sql-agent");
+
+    private static async Task PrepareApprovedAsync(
+        string connectionString,
+        Guid profileId,
+        long profileVersion,
+        DateOnly from,
+        DateOnly through,
+        string keySuffix,
+        string process = SettingsManufacturingProcessesV1.Slitting)
+    {
+        await using (var maker = Command(connectionString, CompanyA, Maker, new GrantingAuthority()))
+        {
+            await maker.Service.PrepareAsync(Prepare(profileId, Maker, 0,
+                $"settings-profile-{keySuffix}-prepare", profileVersion: profileVersion,
+                from: from, through: through, process: process));
+        }
+
+        await using var checker = Command(connectionString, CompanyA, Checker, new GrantingAuthority());
+        await checker.Service.ApproveAsync(Transition(profileId, Checker, 1,
+            $"settings-profile-{keySuffix}-approve", $"{keySuffix} approval"));
+    }
+
+    private static async Task<string> PublishOutcomeAsync(
+        SettingsManufacturingToleranceProfileCommandServiceV1 service,
+        TransitionManufacturingToleranceProfileCommandV1 command)
+    {
+        try
+        {
+            await service.PublishAsync(command);
+            return "Succeeded";
+        }
+        catch (ManufacturingToleranceProfilePersistenceException exception)
+        {
+            return exception.Code;
+        }
+    }
+
+    private static async Task<string> ApproveOutcomeAsync(
+        SettingsManufacturingToleranceProfileCommandServiceV1 service,
+        TransitionManufacturingToleranceProfileCommandV1 command)
+    {
+        try
+        {
+            await service.ApproveAsync(command);
+            return "Succeeded";
+        }
+        catch (ManufacturingToleranceProfilePersistenceException exception)
+        {
+            return exception.Code;
+        }
+    }
+
+    private static CommandScope Command(
+        string connectionString,
+        Guid company,
+        string actor,
+        IErpAuthorityRevalidationService authority)
+    {
+        var companyContext = new FixedCompany(company);
+        var collector = new AuditEventCollector();
+        var options = new DbContextOptionsBuilder<SettingsDbContext>()
+            .UseSqlServer(connectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SettingsDbContext.Schema))
+            .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext))
+            .Options;
+        var database = new SettingsDbContext(options, companyContext);
+        var service = new SettingsManufacturingToleranceProfileCommandServiceV1(
+            database,
+            companyContext,
+            new FixedActor(company, actor),
+            authority,
+            collector);
+        return new CommandScope(database, service);
+    }
+
+    private static async Task<int> CountTableAsync(
+        string connectionString,
+        string schema,
+        string table)
+    {
+        var allowed = (schema, table) is
+            ("settings", "ManufacturingToleranceProfileLifecycles");
+        if (!allowed)
+        {
+            throw new ArgumentOutOfRangeException(nameof(table));
+        }
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM [{schema}].[{table}];";
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<int> CountSettingsCommandsAsync(string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM [idempotency].[CommandExecutions]
+            WHERE [CommandName] IN
+                (N'settings.manufacturing-tolerance-profiles.prepare',
+                 N'settings.manufacturing-tolerance-profiles.approve',
+                 N'settings.manufacturing-tolerance-profiles.publish');
+            """;
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<int> CountSettingsAuditsAsync(string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM [audit].[AuditEvents]
+            WHERE [EntityType] = N'Settings.ManufacturingToleranceProfileLifecycle';
+            """;
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<int> CountLifecycleStatusAsync(
+        string connectionString,
+        ManufacturingToleranceProfileStatusV1 status)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM [settings].[ManufacturingToleranceProfileLifecycles]
+            WHERE [CompanyId] = @company AND [Status] = @status;
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@status", (int)status);
+        return Convert.ToInt32(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<(string PreparedBy, string PreparationReason, string ApprovedBy,
+        string ApprovalReason, string PublishedBy, string PublicationReason, long StateVersion)>
+        LifecycleEvidenceAsync(string connectionString, Guid company, Guid profileId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT [PreparedBy], [PreparationReason], [ApprovedBy], [ApprovalReason],
+                   [PublishedBy], [PublicationReason], [StateVersion]
+            FROM [settings].[ManufacturingToleranceProfileLifecycles]
+            WHERE [CompanyId] = @company AND [ProfileId] = @profile;
+            """;
+        command.Parameters.AddWithValue("@company", company);
+        command.Parameters.AddWithValue("@profile", profileId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return (
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetString(5),
+            reader.GetInt64(6));
     }
 
     private static ProviderScope Provider(string connectionString, Guid company)
@@ -515,11 +975,63 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         public void Set(Guid id) => throw new NotSupportedException();
     }
 
-    private sealed class FixedActor(Guid companyId) : ICurrentUser
+    private sealed class FixedActor(Guid companyId, string actorId = "synthetic-settings-sql-actor") : ICurrentUser
     {
         public bool IsAuthenticated => true;
-        public string? UserId => "synthetic-settings-sql-actor";
+        public string? UserId { get; } = actorId;
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { companyId };
         public bool CanAccessCompany(Guid candidate) => AllowedCompanyIds.Contains(candidate);
     }
+
+    private sealed class CommandScope(
+        SettingsDbContext database,
+        SettingsManufacturingToleranceProfileCommandServiceV1 service) : IAsyncDisposable
+    {
+        public SettingsManufacturingToleranceProfileCommandServiceV1 Service { get; } = service;
+        public ValueTask DisposeAsync() => database.DisposeAsync();
+    }
+
+    private sealed class GrantingAuthority(params string[] permissions) : IErpAuthorityRevalidationService
+    {
+        private readonly IReadOnlySet<string> granted = permissions.Length == 0
+            ? new HashSet<string>(
+            [
+                ManufacturingToleranceProfileActionsV1.Prepare,
+                ManufacturingToleranceProfileActionsV1.Approve,
+                ManufacturingToleranceProfileActionsV1.Publish,
+            ], StringComparer.Ordinal)
+            : new HashSet<string>(permissions, StringComparer.Ordinal);
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(granted.Contains(permission)
+                ? GrantedScope
+                : PermissionScope.Denied);
+    }
+
+    private sealed class SequencedAuthority(params bool[] grants) : IErpAuthorityRevalidationService
+    {
+        private int call;
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            var index = Interlocked.Increment(ref call) - 1;
+            return Task.FromResult(index < grants.Length && grants[index]
+                ? GrantedScope
+                : PermissionScope.Denied);
+        }
+    }
+
+    private static readonly PermissionScope GrantedScope = new(
+        true,
+        true,
+        new HashSet<string>(["settings-profile-checker"], StringComparer.Ordinal),
+        new HashSet<Guid>(),
+        new HashSet<Guid>(),
+        new HashSet<Guid>());
 }

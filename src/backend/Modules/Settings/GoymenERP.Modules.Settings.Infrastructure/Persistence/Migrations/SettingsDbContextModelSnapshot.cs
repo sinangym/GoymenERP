@@ -22,6 +22,243 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("GoymenERP.Modules.Audit.Domain.Events.AuditEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("AfterJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiContextJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AiInvolvement")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ApprovalContextJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("AuthorityRevision")
+                        .HasMaxLength(128)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("BeforeJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ClientIpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<long?>("EntityVersionAfter")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("EntityVersionBefore")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("IntegrityHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<DateTimeOffset>("OccurredAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("OriginCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PermissionCode")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("RoleCodesJson")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceChannel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("SubjectKind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasDefaultValue("Company")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CorrelationId");
+
+                    b.HasIndex("CompanyId", "OccurredAtUtc", "Id")
+                        .IsDescending(false, true, true);
+
+                    b.HasIndex("CompanyId", "EntityType", "EntityId", "OccurredAtUtc");
+
+                    b.HasIndex("SubjectKind", "EntityType", "EntityId", "OccurredAtUtc", "Id");
+
+                    b.ToTable("AuditEvents", "audit", t =>
+                        {
+                            t.ExcludeFromMigrations();
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Idempotency.Domain.Executions.CommandExecution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CommandName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CompletedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("HttpStatusCode")
+                        .HasColumnType("int");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("OriginalCorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<string>("ResponseJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("SchemaVersion")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CompanyId", "CommandName", "IdempotencyKeyHash")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "CompletedAtUtc", "Id");
+
+                    b.ToTable("CommandExecutions", "idempotency", t =>
+                        {
+                            t.ExcludeFromMigrations();
+
+                            t.HasCheckConstraint("CK_CommandExecutions_CompanyId_NotEmpty", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_CommandExecutions_Hash_Lengths", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_CommandExecutions_HttpStatusCode_Valid", "[HttpStatusCode] BETWEEN 100 AND 599");
+
+                            t.HasCheckConstraint("CK_CommandExecutions_ResponseJson_Valid", "ISJSON([ResponseJson]) = 1");
+
+                            t.HasCheckConstraint("CK_CommandExecutions_SchemaVersion_Positive", "[SchemaVersion] > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingTolerancePolicyRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -93,6 +330,170 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Version", "[Version] > 0");
 
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingToleranceProfileLifecycleRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ApprovalCausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ApprovalClientIpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ApprovalCorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("ApprovalReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("ApprovalSourceChannel")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ApprovalUserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("EffectiveThrough")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("MaximumFirePercent")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)");
+
+                    b.Property<string>("PreparationCausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PreparationClientIpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PreparationCorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PreparationReason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("PreparationSourceChannel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PreparationUserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset>("PreparedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PreparedBy")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Process")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)");
+
+                    b.Property<long>("ProfileVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("PublicationCausationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PublicationClientIpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("PublicationCorrelationId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PublicationReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("PublicationSourceChannel")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("PublicationUserAgent")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<DateTimeOffset?>("PublishedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("PublishedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("StateVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "ProfileId");
+
+                    b.HasIndex("CompanyId", "Process", "ProfileVersion")
+                        .IsUnique();
+
+                    b.HasIndex("CompanyId", "Process", "Status", "EffectiveFrom", "EffectiveThrough")
+                        .HasDatabaseName("IX_SettingsMfgToleranceLifecycle_PublicationWindow");
+
+                    b.ToTable("ManufacturingToleranceProfileLifecycles", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Approval", "([Status] = 1 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [ApprovalReason] IS NULL AND [ApprovalCorrelationId] IS NULL AND [ApprovalCausationId] IS NULL AND [ApprovalSourceChannel] IS NULL AND [ApprovalClientIpAddress] IS NULL AND [ApprovalUserAgent] IS NULL) OR ([Status] IN (2,3) AND [ApprovedBy] IS NOT NULL AND [ApprovedAtUtc] IS NOT NULL AND [ApprovalReason] IS NOT NULL AND [ApprovalCorrelationId] IS NOT NULL AND [ApprovalSourceChannel] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Percent", "[MaximumFirePercent] >= 0");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Process", "[Process] IN ('Slitting','ColdRolling','TubeProfile','Paint','CutToLength')");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Publication", "([Status] IN (1,2) AND [PublishedBy] IS NULL AND [PublishedAtUtc] IS NULL AND [PublicationReason] IS NULL AND [PublicationCorrelationId] IS NULL AND [PublicationCausationId] IS NULL AND [PublicationSourceChannel] IS NULL AND [PublicationClientIpAddress] IS NULL AND [PublicationUserAgent] IS NULL) OR ([Status] = 3 AND [PublishedBy] IS NOT NULL AND [PublishedAtUtc] IS NOT NULL AND [PublicationReason] IS NOT NULL AND [PublicationCorrelationId] IS NOT NULL AND [PublicationSourceChannel] IS NOT NULL)");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Separation", "([ApprovedBy] IS NULL OR [ApprovedBy] <> [PreparedBy]) AND ([PublishedBy] IS NULL OR [PublishedBy] <> [PreparedBy])");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Status", "[Status] IN (1,2,3)");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Versions", "[ProfileVersion] > 0 AND [StateVersion] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
                         });
                 });
 #pragma warning restore 612, 618
