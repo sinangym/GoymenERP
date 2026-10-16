@@ -8,6 +8,19 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $PSNativeCommandUseErrorActionPreference=$false
+function Get-WindowsPortableEvidenceKey([string]$RelativePath) {
+ if([string]::IsNullOrWhiteSpace($RelativePath) -or $RelativePath.Length -gt 240){throw 'Evidence path is not Windows-portable.'}
+ $parts=@($RelativePath -split '/')
+ $keys=[Collections.Generic.List[string]]::new()
+ foreach($part in $parts){
+  if($part.Length -gt 255 -or $part.EndsWith('.') -or $part.EndsWith(' ') -or
+     $part -match '^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)'){
+   throw 'Evidence path is not Windows-portable.'
+  }
+  $keys.Add($part.ToUpperInvariant())
+ }
+ return [string]::Join('/',$keys)
+}
 if($env:COMPUTERNAME -ne 'DESKTOP-11CDRHD'){throw 'This launcher is bound to DESKTOP-11CDRHD.'}
 if($LinuxRepository -notmatch '^/home/ci/[A-Za-z0-9_./-]+$' -or $LinuxRepository.Contains('..')){throw 'Unexpected Linux repository path.'}
 $root='E:\GoymenERP-CI'
@@ -66,11 +79,14 @@ try {
   $bundle=Join-Path $runDir 'bundle'
   New-Item -ItemType Directory -Path $bundle | Out-Null
   $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+  $portableSeen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
   foreach($entry in $manifest){
    if($entry.path -notmatch '^(?:[A-Za-z0-9][A-Za-z0-9_.-]*/)*[A-Za-z0-9][A-Za-z0-9_.-]*$'){throw 'Evidence manifest path is not a safe relative path.'}
    if($entry.sha256 -notmatch '^[0-9a-f]{64}$' -or $entry.bytes -isnot [ValueType] -or [long]$entry.bytes -lt 0){throw 'Evidence manifest hash/size is invalid.'}
    $segments=@($entry.path -split '/')
    if($segments -contains '.' -or $segments -contains '..' -or -not $seen.Add([string]$entry.path)){throw 'Evidence manifest path is duplicate or traversing.'}
+   $portableKey=Get-WindowsPortableEvidenceKey ([string]$entry.path)
+   if(-not $portableSeen.Add($portableKey)){throw 'Evidence manifest has a Windows destination collision.'}
    $cursor=$source
    if($segments.Count -gt 1){
     foreach($segment in $segments[0..($segments.Count-2)]){
@@ -88,7 +104,17 @@ try {
    $destinationParent=Split-Path -Parent $destination
    if(-not (Test-Path -LiteralPath $destinationParent)){New-Item -ItemType Directory -Path $destinationParent | Out-Null}
    Copy-Item -LiteralPath $file.FullName -Destination $destination
-   if((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.sha256){throw 'Windows evidence hash mismatch.'}
+   $copied=Get-Item -LiteralPath $destination
+   if($copied.Length -ne $entry.bytes -or
+      (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.sha256){throw 'Windows evidence hash/size mismatch.'}
+  }
+  foreach($entry in $manifest){
+   $relative=([string]$entry.path).Replace('/','\')
+   $destination=Join-Path $bundle $relative
+   $copied=Get-Item -LiteralPath $destination
+   if(($copied.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $copied.PSIsContainer){throw 'Windows bundle contains non-regular evidence.'}
+   $observed=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+   if($copied.Length -ne $entry.bytes -or $observed -cne $entry.sha256){throw 'Windows bundle post-copy hash/size mismatch.'}
   }
   if(-not $seen.Contains('result.json')){throw 'Evidence manifest does not contain result.json.'}
   Copy-Item -LiteralPath $manifestPath -Destination $bundle

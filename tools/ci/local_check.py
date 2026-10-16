@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
-import importlib.util
 import stat
+import types
 from datetime import datetime, timezone
 from time import monotonic_ns
 import hashlib
@@ -38,6 +38,9 @@ LOCAL_PATH = "/opt/goymen-ci/tools/dotnet-10.0.303:/opt/goymen-ci/tools/node-v24
 P032_BROWSER_PROFILE = "p032-u02-r14"
 HEAVY_PROFILES = frozenset(("frontend", P032_BROWSER_PROFILE))
 EVIDENCE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+WINDOWS_RESERVED_NAMES = frozenset({"CON", "PRN", "AUX", "NUL"}) | frozenset(
+    {f"{prefix}{index}" for prefix in ("COM", "LPT") for index in range(1, 10)}
+)
 
 
 def scrub_output(value: str) -> tuple[str, bool]:
@@ -179,15 +182,43 @@ def selected_steps(root: Path, profile: str) -> list[dict]:
     raise ValueError("Unknown targeted profile")
 
 
-def load_browser_adapter(root: Path):
-    path = root / "tools/ci/local_browser_acceptance.py"
-    name = "local_browser_acceptance"
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise ValueError("P03.2 browser adapter cannot be loaded")
-    module = importlib.util.module_from_spec(spec)
+def load_tracked_source_module(root: Path, relative: str, name: str, revision: str = "HEAD"):
+    """Execute the clean tracked UTF-8 source bytes, never an ignored bytecode cache."""
+    path = (root / relative).resolve()
+    if not path.is_relative_to(root.resolve()) or path.is_symlink() or not stat.S_ISREG(path.stat().st_mode):
+        raise ValueError("Reviewed Python source must be a confined regular file")
+    if git(root, "ls-files", "--error-unmatch", relative) != relative:
+        raise ValueError("Reviewed Python source must be tracked")
+    source_bytes = subprocess.check_output(
+        ["git", "-C", str(root), "cat-file", "blob", f"{revision}:{relative}"],
+        env=command_environment(),
+    )
+    if path.read_bytes() != source_bytes:
+        raise ValueError("Reviewed Python source does not match the exact HEAD blob")
+    try:
+        source = source_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("Reviewed Python source must be strict UTF-8") from error
+    module = types.ModuleType(name)
+    module.__file__ = str(path)
+    module.__package__ = name.rpartition(".")[0]
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    try:
+        exec(compile(source, str(path), "exec", dont_inherit=True), module.__dict__)
+    except BaseException:
+        if sys.modules.get(name) is module:
+            del sys.modules[name]
+        raise
+    return module
+
+
+def load_browser_adapter(root: Path, revision: str = "HEAD"):
+    module = load_tracked_source_module(
+        root,
+        "tools/ci/local_browser_acceptance.py",
+        "local_browser_acceptance",
+        revision,
+    )
     if module.PROFILE != P032_BROWSER_PROFILE:
         raise ValueError("P03.2 browser adapter profile mismatch")
     return module
@@ -215,10 +246,25 @@ def evidence_manifest(directory: Path) -> list[dict]:
     return validate_evidence_manifest(directory, result)
 
 
+def windows_portable_evidence_key(relative: str) -> str:
+    """Return the destination identity used by a case-insensitive Windows bundle."""
+    parts = relative.split("/") if isinstance(relative, str) else []
+    if not parts or len(relative) > 240:
+        raise ValueError("Evidence path is not Windows-portable")
+    normalized = []
+    for part in parts:
+        if (not part or len(part) > 255 or part.endswith((".", " "))
+                or part.split(".", 1)[0].upper() in WINDOWS_RESERVED_NAMES):
+            raise ValueError("Evidence path is not Windows-portable")
+        normalized.append(part.casefold())
+    return "/".join(normalized)
+
+
 def validate_evidence_manifest(directory: Path, entries: list[dict]) -> list[dict]:
     """Re-open and verify the exact relative-path manifest consumed by Windows."""
     root = directory.resolve()
     seen = set()
+    windows_seen = set()
     validated = []
     for entry in entries:
         if not isinstance(entry, dict) or set(entry) != {"path", "bytes", "sha256"}:
@@ -230,6 +276,10 @@ def validate_evidence_manifest(directory: Path, entries: list[dict]) -> list[dic
         if relative in seen:
             raise ValueError("Duplicate local evidence path")
         seen.add(relative)
+        windows_key = windows_portable_evidence_key(relative)
+        if windows_key in windows_seen:
+            raise ValueError("Windows-portable evidence path collision")
+        windows_seen.add(windows_key)
         if (type(entry["bytes"]) is not int or entry["bytes"] < 0
                 or not isinstance(entry["sha256"], str)
                 or re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) is None):
@@ -380,7 +430,7 @@ def main() -> int:
             with heavy_lock(args.profile):
                 if args.profile == P032_BROWSER_PROFILE:
                     validate_lease(root, args.profile, args.launcher_lease, args.expected_head)
-                    adapter = load_browser_adapter(root)
+                    adapter = load_browser_adapter(root, args.expected_head)
                     entry = adapter.run_acceptance(
                         root,
                         directory / P032_BROWSER_PROFILE,

@@ -1,6 +1,8 @@
 from __future__ import annotations
 import importlib.util
 from pathlib import Path
+import py_compile
+import subprocess
 import tempfile
 import types
 import unittest
@@ -9,6 +11,17 @@ ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("local_check", ROOT / "tools/ci/local_check.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+
+
+def commit_sources(root: Path) -> None:
+    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=Local CI", "-c",
+         "user.email=local-ci@example.invalid", "commit", "-qm", "fixture"],
+        check=True,
+    )
 
 
 class LocalCheckTests(unittest.TestCase):
@@ -98,8 +111,43 @@ class LocalCheckTests(unittest.TestCase):
             "Evidence parent must be a regular directory.",
             "Linux evidence hash/size mismatch.",
             "Evidence manifest does not contain result.json.",
+            "Get-WindowsPortableEvidenceKey",
+            "Evidence manifest has a Windows destination collision.",
+            "Windows bundle post-copy hash/size mismatch.",
         ):
             self.assertIn(expected, launcher)
+        self.assertGreaterEqual(launcher.count("foreach($entry in $manifest)"), 2)
+
+    def test_reviewed_adapter_loader_ignores_direct_valid_pyc(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            path = root / "tools/ci/local_browser_acceptance.py"
+            path.parent.mkdir(parents=True)
+            path.write_text("PROFILE = 'poison'\nMARKER = 'POISON'\n", encoding="utf-8")
+            py_compile.compile(
+                str(path),
+                invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+            )
+            path.write_text(
+                f"PROFILE = '{module.P032_BROWSER_PROFILE}'\nMARKER = 'SOURCE'\n",
+                encoding="utf-8",
+            )
+            commit_sources(root)
+            loaded = module.load_browser_adapter(root)
+        self.assertEqual("SOURCE", loaded.MARKER)
+
+    def test_windows_launcher_revalidates_every_destination_after_all_copies(self):
+        launcher = (ROOT / "tools/ci/Invoke-LocalChecks.ps1").read_text(encoding="utf-8")
+        copy = launcher.index("Copy-Item -LiteralPath $file.FullName -Destination $destination")
+        revalidation = launcher.index("foreach($entry in $manifest)", copy)
+        post_copy_failure = launcher.index("Windows bundle post-copy hash/size mismatch.", revalidation)
+        manifest_copy = launcher.index("Copy-Item -LiteralPath $manifestPath -Destination $bundle")
+        self.assertLess(copy, revalidation)
+        self.assertLess(revalidation, post_copy_failure)
+        self.assertLess(post_copy_failure, manifest_copy)
+        block = launcher[revalidation:manifest_copy]
+        self.assertIn("$copied.Length -ne $entry.bytes", block)
+        self.assertIn("Get-FileHash -LiteralPath $destination", block)
 
     def test_nested_evidence_manifest_hashes_regular_files_and_rejects_symlinks(self):
         import hashlib
@@ -127,6 +175,26 @@ class LocalCheckTests(unittest.TestCase):
             (nested / "link.txt").symlink_to(target)
             with self.assertRaisesRegex(ValueError, "Symlink evidence rejected"):
                 module.evidence_manifest(directory)
+
+    def test_windows_portable_manifest_rejects_case_alias_trailing_dot_and_device_names(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            lower = directory / "proof.txt"
+            upper = directory / "PROOF.txt"
+            lower.write_bytes(b"lower")
+            upper.write_bytes(b"upper")
+            entries = [
+                {"path": path.name, "bytes": path.stat().st_size,
+                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                for path in (lower, upper)
+            ]
+            with self.assertRaisesRegex(ValueError, "Windows-portable.*collision"):
+                module.validate_evidence_manifest(directory, entries)
+            valid = entries[0]
+            for relative in ("proof.", "CON.txt", "nested/Lpt1.json"):
+                with self.subTest(relative=relative), self.assertRaisesRegex(ValueError, "Windows-portable"):
+                    module.validate_evidence_manifest(directory, [{**valid, "path": relative}])
 
     def test_p032_dispatches_only_the_owned_adapter_and_remains_targeted(self):
         from contextlib import nullcontext

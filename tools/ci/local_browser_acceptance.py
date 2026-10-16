@@ -72,6 +72,8 @@ SENSITIVE = re.compile(
 BEARER = re.compile(r"(?i)\bBearer\s+[^\r\n]+")
 UNSAFE_XML = re.compile(br"<!\s*(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 MAX_JUNIT_BYTES = 10_000_000
+MAX_JUNIT_ELEMENTS = 20_000
+MAX_JUNIT_DEPTH = 16
 
 
 class AcceptanceError(RuntimeError):
@@ -152,15 +154,75 @@ def source_binding(root: Path, expected_head: str) -> dict:
     return snapshot
 
 
-def load_browser_contract(root: Path):
+class _ReviewedSourceLoader:
+    """Minimal loader that compiles the reviewed source bytes and ignores all pyc files."""
+
+    def __init__(self, root: Path, path: Path, revision: str):
+        self.root = root.resolve()
+        self.path = path.resolve()
+        self.revision = revision
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module) -> None:
+        if (not self.path.is_relative_to(self.root) or self.path.is_symlink()
+                or not stat.S_ISREG(self.path.stat().st_mode)):
+            raise AcceptanceError("Reviewed Python source must be a confined regular file")
+        relative = self.path.relative_to(self.root).as_posix()
+        if git(self.root, "ls-files", "--error-unmatch", relative) != relative:
+            raise AcceptanceError("Reviewed Python source must be tracked")
+        source_bytes = subprocess.check_output(
+            ["git", "-C", str(self.root), "cat-file", "blob", f"{self.revision}:{relative}"],
+            env=clean_environment(),
+        )
+        if self.path.read_bytes() != source_bytes:
+            raise AcceptanceError("Reviewed Python source does not match the exact HEAD blob")
+        try:
+            source = source_bytes.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise AcceptanceError("Reviewed Python source must be strict UTF-8") from error
+        module.__file__ = str(self.path)
+        exec(compile(source, str(self.path), "exec", dont_inherit=True), module.__dict__)
+
+
+def _reviewed_source_spec(
+    root: Path,
+    name: str,
+    location: str | os.PathLike[str],
+    revision: str,
+):
+    path = Path(location).resolve()
+    loader = _ReviewedSourceLoader(root, path, revision)
+    return importlib.util.spec_from_loader(name, loader, origin=str(path))
+
+
+def load_browser_contract(root: Path, revision: str = "HEAD"):
+    root = root.resolve()
     path = root / "tools/validate_browser_acceptance.py"
     name = "local_p032_browser_contract"
-    spec = importlib.util.spec_from_file_location(name, path)
+    spec = _reviewed_source_spec(root, name, path, revision)
     if spec is None or spec.loader is None:
         raise AcceptanceError("Canonical browser validator cannot be loaded")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
-    spec.loader.exec_module(module)
+    original = importlib.util.spec_from_file_location
+
+    def reviewed_spec(module_name, location, *args, **kwargs):
+        candidate = Path(location).resolve()
+        if candidate.suffix == ".py" and candidate.is_relative_to(root):
+            return _reviewed_source_spec(root, module_name, candidate, revision)
+        return original(module_name, location, *args, **kwargs)
+
+    importlib.util.spec_from_file_location = reviewed_spec
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if sys.modules.get(name) is module:
+            del sys.modules[name]
+        raise
+    finally:
+        importlib.util.spec_from_file_location = original
     return module
 
 
@@ -295,18 +357,64 @@ def compose_arguments(root: Path, binding: SuiteBinding) -> list[str]:
     ]
 
 
-def _safe_output(value: str, secret_values: tuple[str, ...]) -> tuple[str, bool]:
-    if any(secret and secret in value for secret in secret_values) or SENSITIVE.search(value) or BEARER.search(value):
+def _safe_output(
+    value: str,
+    secret_values: tuple[str, ...],
+    forbidden_patterns: tuple[re.Pattern[bytes], ...] = (),
+) -> tuple[str, bool]:
+    encoded = value.encode("utf-8")
+    if (any(secret and secret in value for secret in secret_values)
+            or any(pattern.search(encoded) for pattern in forbidden_patterns)
+            or SENSITIVE.search(value) or BEARER.search(value)):
         return "[CREDENTIAL_REDACTED]\n", True
     return value, False
+
+
+def _canonical_forbidden_patterns(contract) -> tuple[re.Pattern[bytes], ...]:
+    patterns = getattr(getattr(contract, "c01", None), "ARTIFACT_FORBIDDEN_PATTERNS", None)
+    if not isinstance(patterns, tuple) or not patterns:
+        raise AcceptanceError("Canonical artifact privacy patterns are unavailable")
+    result = []
+    for item in patterns:
+        if (not isinstance(item, tuple) or len(item) != 2 or not isinstance(item[0], str)
+                or not hasattr(item[1], "search")):
+            raise AcceptanceError("Canonical artifact privacy patterns are invalid")
+        result.append(item[1])
+    return tuple(result)
+
+
+def _scan_log_bytes(
+    content: bytes,
+    secret_values: tuple[str, ...],
+    forbidden_patterns: tuple[re.Pattern[bytes], ...],
+) -> tuple[str | None, str | None]:
+    try:
+        decoded = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return None, "NON_UTF8_OUTPUT"
+    if any(pattern.search(content) for pattern in forbidden_patterns):
+        return None, "CANONICAL_PRIVACY_PATTERN"
+    if any(secret and secret.encode("utf-8") in content for secret in secret_values):
+        return None, "RUNTIME_SECRET"
+    if SENSITIVE.search(decoded) or BEARER.search(decoded):
+        return None, "CREDENTIAL_SHAPE"
+    return decoded, None
 
 
 class CommandRunner:
     """Run owned local children and persist only bounded, secret-scanned output."""
 
-    def __init__(self, logs: Path):
-        self.logs = logs
-        self.logs.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        quarantine_logs: Path,
+        evidence_logs: Path,
+        forbidden_patterns: tuple[re.Pattern[bytes], ...],
+    ):
+        self.quarantine_logs = quarantine_logs
+        self.evidence_logs = evidence_logs
+        self.forbidden_patterns = forbidden_patterns
+        self.quarantine_logs.mkdir(parents=True, exist_ok=True)
+        self.evidence_logs.mkdir(parents=True, exist_ok=True)
         self.records: list[dict] = []
         self._index = 0
 
@@ -326,7 +434,9 @@ class CommandRunner:
     ) -> tuple[int, str]:
         self._index += 1
         safe_label = re.sub(r"[^A-Za-z0-9_.-]+", "-", label).strip("-") or "command"
-        log_path = self.logs / f"{self._index:02d}-{safe_label}.log"
+        log_name = f"{self._index:02d}-{safe_label}.log"
+        log_path = self.evidence_logs / log_name
+        quarantine_prefix = self.quarantine_logs / f"{self._index:02d}-{safe_label}"
         record = {
             "index": self._index,
             "label": label,
@@ -342,15 +452,13 @@ class CommandRunner:
             stdin=subprocess.PIPE if input_text is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE if capture_stdout else subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
             start_new_session=True,
         )
         timed_out = False
         try:
             try:
-                stdout, stderr = process.communicate(input=input_text, timeout=timeout)
+                stdin = input_text.encode("utf-8") if input_text is not None else None
+                stdout, stderr = process.communicate(input=stdin, timeout=timeout)
             except subprocess.TimeoutExpired:
                 timed_out = True
                 os.killpg(process.pid, signal.SIGKILL)
@@ -363,17 +471,32 @@ class CommandRunner:
                 if stream is not None:
                     stream.close()
             raise
-        combined = (stderr or "") if capture_stdout else (stdout or "")
-        safe, detected = _safe_output(combined, secret_values)
-        log_path.write_text(safe, encoding="utf-8")
+        stdout_bytes = stdout or b""
+        stderr_bytes = stderr or b""
+        quarantine_prefix.with_suffix(".stdout.bin").write_bytes(stdout_bytes)
+        quarantine_prefix.with_suffix(".stderr.bin").write_bytes(stderr_bytes)
+        logged_bytes = stderr_bytes if capture_stdout else stdout_bytes
+        safe, privacy_failure = _scan_log_bytes(logged_bytes, secret_values, self.forbidden_patterns)
+        detected = privacy_failure is not None
+        if detected:
+            receipt = (
+                "LOCAL_CHILD_LOG_REJECTED\n"
+                f"reason={privacy_failure}\n"
+                f"label={safe_label[:64]}\n"
+            )
+            log_path.write_text(receipt, encoding="utf-8")
+        else:
+            log_path.write_text(safe or "", encoding="utf-8")
         record.update({
             **clock_fields("finish"),
             "exitCode": process.returncode,
             "timedOut": timed_out,
             "credentialOutputDetected": detected,
             "status": "PASS" if process.returncode == 0 and not timed_out and not detected else "FAIL",
-            "log": log_path.name,
+            "log": log_name,
         })
+        if privacy_failure is not None:
+            record["privacyFailure"] = privacy_failure
         self.records.append(record)
         if detected:
             raise SecretOutputError(f"Credential-shaped output detected in {label}")
@@ -382,9 +505,17 @@ class CommandRunner:
         if check and process.returncode != 0:
             raise CommandFailure(f"Command failed ({process.returncode}): {label}")
         if capture_stdout:
+            try:
+                decoded_stdout = stdout_bytes.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise SecretOutputError(f"Non-UTF-8 captured output detected in {label}") from error
             if sensitive_stdout:
-                return process.returncode, stdout or ""
-            safe_stdout, stdout_detected = _safe_output(stdout or "", secret_values)
+                return process.returncode, decoded_stdout
+            safe_stdout, stdout_detected = _safe_output(
+                decoded_stdout,
+                secret_values,
+                self.forbidden_patterns,
+            )
             if stdout_detected:
                 raise SecretOutputError(f"Credential-shaped captured output detected in {label}")
             return process.returncode, safe_stdout
@@ -475,22 +606,111 @@ def validate_fixture_evidence(
     return value
 
 
+class _BoundedJUnitTreeBuilder(ET.TreeBuilder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.elements = 0
+        self.depth = 0
+
+    def start(self, tag: str, attrs: dict[str, str]) -> ET.Element:
+        self.elements += 1
+        self.depth += 1
+        if self.elements > MAX_JUNIT_ELEMENTS or self.depth > MAX_JUNIT_DEPTH:
+            raise AcceptanceError("Browser JUnit exceeds the bounded XML shape")
+        return super().start(tag, attrs)
+
+    def end(self, tag: str) -> ET.Element:
+        element = super().end(tag)
+        self.depth -= 1
+        return element
+
+
+def _junit_counter(element: ET.Element, key: str) -> int:
+    value = element.attrib.get(key)
+    if (not isinstance(value, str) or len(value) > 6
+            or re.fullmatch(r"0|[1-9][0-9]*", value) is None
+            or int(value) > MAX_JUNIT_ELEMENTS):
+        raise AcceptanceError(f"Browser JUnit has an invalid or missing {key} counter")
+    return int(value)
+
+
+def _junit_counts(element: ET.Element) -> dict[str, int]:
+    return {key: _junit_counter(element, key) for key in ("tests", "failures", "errors", "skipped")}
+
+
 def validate_junit(path: Path) -> dict:
     content = path.read_bytes()
     if not content or len(content) > MAX_JUNIT_BYTES:
         raise AcceptanceError("Browser JUnit is empty or exceeds the bounded size")
+    if (content.startswith((b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")) or b"\x00" in content):
+        raise AcceptanceError("Browser JUnit must use strict UTF-8 without a BOM")
     if UNSAFE_XML.search(content):
         raise AcceptanceError("Browser JUnit contains an unsafe XML declaration")
     try:
-        root = ET.fromstring(content)
-    except ET.ParseError as error:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise AcceptanceError("Browser JUnit must use strict UTF-8") from error
+    declaration = re.match(r"\s*<\?xml\s+[^?]*encoding\s*=\s*['\"]([^'\"]+)['\"]", text, re.IGNORECASE)
+    if declaration and declaration.group(1).lower() != "utf-8":
+        raise AcceptanceError("Browser JUnit declares an unsupported encoding")
+    try:
+        builder = _BoundedJUnitTreeBuilder()
+        parser = ET.XMLParser(target=builder)
+        parser.feed(text)
+        root = parser.close()
+    except (ET.ParseError, AcceptanceError) as error:
+        if isinstance(error, AcceptanceError):
+            raise
         raise AcceptanceError("Browser JUnit is malformed") from error
-    cases = list(root.iter("testcase"))
+    if root.tag == "testsuite":
+        suites = [root]
+        root_counts = None
+    elif root.tag == "testsuites":
+        if not list(root) or any(child.tag != "testsuite" for child in root):
+            raise AcceptanceError("Browser JUnit has an unsupported root schema")
+        suites = list(root)
+        root_counts = _junit_counts(root)
+    else:
+        raise AcceptanceError("Browser JUnit has an unsupported root schema")
+
+    cases: list[ET.Element] = []
+    direct_outcomes: set[int] = set()
+    aggregate = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+    allowed_suite_children = {"testcase", "properties", "system-out", "system-err"}
+    allowed_case_children = {"failure", "error", "skipped", "properties", "system-out", "system-err"}
+    for suite in suites:
+        if any(child.tag not in allowed_suite_children for child in suite):
+            raise AcceptanceError("Browser JUnit has an unsupported suite schema")
+        suite_cases = [child for child in suite if child.tag == "testcase"]
+        suite_counts = _junit_counts(suite)
+        actual = {"tests": len(suite_cases), "failures": 0, "errors": 0, "skipped": 0}
+        for case in suite_cases:
+            if any(child.tag not in allowed_case_children for child in case):
+                raise AcceptanceError("Browser JUnit has an unsupported testcase schema")
+            outcomes = [child.tag for child in case if child.tag in {"failure", "error", "skipped"}]
+            direct_outcomes.update(id(child) for child in case if child.tag in {"failure", "error", "skipped"})
+            if len(outcomes) > 1:
+                raise AcceptanceError("Browser JUnit testcase has contradictory outcomes")
+            if outcomes:
+                key = {"failure": "failures", "error": "errors", "skipped": "skipped"}[outcomes[0]]
+                actual[key] += 1
+        if suite_counts != actual:
+            raise AcceptanceError("Browser JUnit suite counters contradict testcase outcomes")
+        for key in aggregate:
+            aggregate[key] += actual[key]
+        cases.extend(suite_cases)
+    if len(cases) != len(list(root.iter("testcase"))):
+        raise AcceptanceError("Browser JUnit has a testcase outside the accepted suite schema")
+    if any(id(element) not in direct_outcomes for element in root.iter()
+           if element.tag in {"failure", "error", "skipped"}):
+        raise AcceptanceError("Browser JUnit has a suite-level or nested outcome node")
+    if root_counts is not None and root_counts != aggregate:
+        raise AcceptanceError("Browser JUnit root counters contradict suite totals")
     if not cases:
         raise AcceptanceError("Browser JUnit contains no test cases")
-    failed = sum(1 for case in cases if case.find("failure") is not None)
-    errors = sum(1 for case in cases if case.find("error") is not None)
-    skipped = sum(1 for case in cases if case.find("skipped") is not None)
+    failed = aggregate["failures"]
+    errors = aggregate["errors"]
+    skipped = aggregate["skipped"]
     if failed or errors or skipped:
         raise AcceptanceError("Browser JUnit contains failure, error or skipped cases")
     identities = sorted(
@@ -920,9 +1140,14 @@ def run_acceptance(
     evidence.mkdir(mode=0o700)
     started = clock_fields("start")
     initial = source_binding(root, expected_head)
-    contract = load_browser_contract(root)
+    contract = load_browser_contract(root, expected_head)
     source_contract = validate_source_contract(root, contract)
-    runner = CommandRunner(evidence / "logs")
+    log_quarantine = tempfile.TemporaryDirectory(prefix=f"goymen-{PROFILE}-logs-")
+    runner = CommandRunner(
+        Path(log_quarantine.name),
+        evidence / "logs",
+        _canonical_forbidden_patterns(contract),
+    )
     result: dict = {
         "schemaVersion": 1,
         "suiteId": "LOCAL-P032-U02-R14-V1",
@@ -991,6 +1216,7 @@ def run_acceptance(
         })
         write_json(evidence / "commands.json", runner.records)
         write_json(evidence / "result.json", result)
+        log_quarantine.cleanup()
     return {
         "name": "P03.2 fixed U02/R14 disposable browser acceptance",
         "command": "source-owned p032-u02-r14 adapter (u02 then r14)",

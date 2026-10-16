@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import py_compile
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -30,6 +32,17 @@ def write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value) + "\n", encoding="utf-8")
 
 
+def commit_sources(root: Path) -> None:
+    (root / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=Local CI", "-c",
+         "user.email=local-ci@example.invalid", "commit", "-qm", "fixture"],
+        check=True,
+    )
+
+
 def materialize_artifacts(root: Path, item, *, suite: str = "u02", outcome: str = "pass") -> None:
     write_json(root / "browser-fixture-evidence.json", {
         "schemaVersion": 1,
@@ -53,8 +66,16 @@ def materialize_artifacts(root: Path, item, *, suite: str = "u02", outcome: str 
     })
     write_json(root / "browser-suite-seed.json", {"companyId": "10000000-0000-0000-0000-000000000001"})
     outcome_xml = "" if outcome == "pass" else f"<{outcome}>unsafe</{outcome}>"
+    counters = {"failures": 0, "errors": 0, "skipped": 0}
+    if outcome != "pass":
+        counters[{"failure": "failures", "error": "errors", "skipped": "skipped"}[outcome]] = 1
     (root / f"browser-{suite}-junit.xml").write_text(
-        f'<testsuites><testsuite><testcase classname="suite" name="proof">{outcome_xml}</testcase></testsuite></testsuites>',
+        '<testsuites tests="1" failures="{failures}" errors="{errors}" skipped="{skipped}">'
+        '<testsuite tests="1" failures="{failures}" errors="{errors}" skipped="{skipped}">'
+        '<testcase classname="suite" name="proof">{outcome}</testcase></testsuite></testsuites>'.format(
+            outcome=outcome_xml,
+            **counters,
+        ),
         encoding="utf-8",
     )
     logs = root / "container-logs"
@@ -93,6 +114,47 @@ class LocalBrowserAcceptanceTests(unittest.TestCase):
             [item["script"] for item in result],
         )
         self.assertTrue(all(item["fixture"] for item in result))
+
+    def test_reviewed_contract_loader_ignores_direct_valid_pyc(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            path = root / "tools/validate_browser_acceptance.py"
+            path.parent.mkdir(parents=True)
+            path.write_text("MARKER = 'POISON'\n", encoding="utf-8")
+            py_compile.compile(
+                str(path),
+                invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+            )
+            path.write_text("MARKER = 'SOURCE'\n", encoding="utf-8")
+            commit_sources(root)
+            loaded = module.load_browser_contract(root)
+        self.assertEqual("SOURCE", loaded.MARKER)
+
+    def test_reviewed_contract_loader_ignores_transitive_valid_pyc(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            tools = root / "tools"
+            tools.mkdir()
+            child = tools / "validate_c01_e2e_contract.py"
+            child.write_text("MARKER = 'POISON'\n", encoding="utf-8")
+            py_compile.compile(
+                str(child),
+                invalidation_mode=py_compile.PycInvalidationMode.UNCHECKED_HASH,
+            )
+            child.write_text("MARKER = 'SOURCE'\n", encoding="utf-8")
+            (tools / "validate_browser_acceptance.py").write_text(
+                "import importlib.util, pathlib, sys\n"
+                "path = pathlib.Path(__file__).with_name('validate_c01_e2e_contract.py')\n"
+                "spec = importlib.util.spec_from_file_location('transitive_c01_canary', path)\n"
+                "c01 = importlib.util.module_from_spec(spec)\n"
+                "sys.modules[spec.name] = c01\n"
+                "spec.loader.exec_module(c01)\n"
+                "MARKER = c01.MARKER\n",
+                encoding="utf-8",
+            )
+            commit_sources(root)
+            loaded = module.load_browser_contract(root)
+        self.assertEqual("SOURCE", loaded.MARKER)
 
     def test_retry_or_script_drift_is_refused(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -172,8 +234,12 @@ class LocalBrowserAcceptanceTests(unittest.TestCase):
         for outcome in ("failure", "error", "skipped"):
             with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as folder:
                 path = Path(folder) / "result.xml"
+                counters = {"failures": 0, "errors": 0, "skipped": 0}
+                counters[{"failure": "failures", "error": "errors", "skipped": "skipped"}[outcome]] = 1
                 path.write_text(
-                    f"<testsuite><testcase name='x'><{outcome}/></testcase></testsuite>",
+                    f"<testsuite tests='1' failures='{counters['failures']}' "
+                    f"errors='{counters['errors']}' skipped='{counters['skipped']}'>"
+                    f"<testcase name='x'><{outcome}/></testcase></testsuite>",
                     encoding="utf-8",
                 )
                 with self.assertRaisesRegex(module.AcceptanceError, "failure, error or skipped"):
@@ -188,7 +254,7 @@ class LocalBrowserAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "result.xml"
             path.write_text(
-                "<testsuite>"
+                "<testsuite tests='2' failures='0' errors='0' skipped='0'>"
                 "<testcase classname='suite' name='proof' file='proof.spec.ts'/>"
                 "<testcase classname='suite' name='proof' file='proof.spec.ts'/>"
                 "</testsuite>",
@@ -196,6 +262,45 @@ class LocalBrowserAcceptanceTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(module.AcceptanceError, "duplicate/retried"):
                 module.validate_junit(path)
+
+    def test_junit_rejects_utf16_dtd_entities_and_non_utf8_bytes(self):
+        xml = "<testsuite tests='1' failures='0' errors='0' skipped='0'><testcase name='x'/></testsuite>"
+        variants = (
+            xml.encode("utf-16-le"),
+            xml.encode("utf-16-be"),
+            b"\xff\xfe" + xml.encode("utf-16-le"),
+            b"\xfe\xff" + xml.encode("utf-16-be"),
+            b"<testsuite tests='1' failures='0' errors='0' skipped='0'>\xff</testsuite>",
+        )
+        for content in variants:
+            with self.subTest(prefix=content[:4]), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "result.xml"
+                path.write_bytes(content)
+                with self.assertRaisesRegex(module.AcceptanceError, "strict UTF-8"):
+                    module.validate_junit(path)
+        for declaration in ("DOCTYPE x", "ENTITY x 'secret'"):
+            with self.subTest(declaration=declaration), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "result.xml"
+                path.write_text(f"<!{declaration}><testsuite/>", encoding="utf-8")
+                with self.assertRaisesRegex(module.AcceptanceError, "unsafe XML"):
+                    module.validate_junit(path)
+
+    def test_junit_rejects_contradictory_root_suite_and_outcome_counters(self):
+        documents = (
+            "<testsuite tests='2' failures='0' errors='0' skipped='0'><testcase name='x'/></testsuite>",
+            "<testsuites tests='2' failures='0' errors='0' skipped='0'>"
+            "<testsuite tests='1' failures='0' errors='0' skipped='0'><testcase name='x'/></testsuite></testsuites>",
+            "<testsuite tests='1' failures='0' errors='0' skipped='0'><error/><testcase name='x'/></testsuite>",
+            "<testsuite tests='1' failures='0' errors='0' skipped='0'>"
+            "<testcase name='x'><failure/></testcase></testsuite>",
+            "<testsuite><testcase name='x'/></testsuite>",
+        )
+        for xml in documents:
+            with self.subTest(xml=xml), tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / "result.xml"
+                path.write_text(xml, encoding="utf-8")
+                with self.assertRaises(module.AcceptanceError):
+                    module.validate_junit(path)
 
     def test_privacy_runs_before_any_artifact_is_transported(self):
         item = binding()
@@ -231,6 +336,60 @@ class LocalBrowserAcceptanceTests(unittest.TestCase):
         self.assertTrue(detected)
         self.assertEqual("[CREDENTIAL_REDACTED]\n", safe)
         self.assertNotIn("opaque", safe)
+
+    def test_child_cursor_idempotency_and_runtime_secret_logs_only_publish_safe_receipts(self):
+        contract = module.load_browser_contract(ROOT)
+        patterns = module._canonical_forbidden_patterns(contract)
+        samples = (
+            "GET /api/inventory/stock-positions?cursor=opaque_cursor_value",
+            "Idempotency-Key: opaque-idempotency-value",
+            "opaque-runtime-secret-value",
+        )
+        for sample in samples:
+            with self.subTest(sample=sample), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                runner = module.CommandRunner(root / "quarantine", root / "evidence", patterns)
+                environment = dict(module.clean_environment())
+                environment["LOG_CANARY"] = sample
+                secrets = (sample,) if sample == samples[-1] else ()
+                with self.assertRaises(module.SecretOutputError):
+                    runner.run(
+                        ["python3", "-c", "import os; print(os.environ['LOG_CANARY'])"],
+                        cwd=ROOT,
+                        environment=environment,
+                        label="privacy-canary",
+                        timeout=10,
+                        secret_values=secrets,
+                    )
+                receipt = next((root / "evidence").glob("*.log")).read_text(encoding="utf-8")
+                quarantined = b"".join(path.read_bytes() for path in (root / "quarantine").glob("*.bin"))
+                self.assertIn(sample.encode("utf-8"), quarantined)
+                self.assertLessEqual(len(receipt.encode("utf-8")), 256)
+                self.assertIn("LOCAL_CHILD_LOG_REJECTED", receipt)
+                self.assertNotIn("opaque", receipt)
+                self.assertNotIn("opaque", json.dumps(runner.records))
+
+    def test_non_utf8_child_log_is_quarantined_and_only_a_safe_receipt_is_published(self):
+        contract = module.load_browser_contract(ROOT)
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            runner = module.CommandRunner(
+                root / "quarantine",
+                root / "evidence",
+                module._canonical_forbidden_patterns(contract),
+            )
+            with self.assertRaises(module.SecretOutputError):
+                runner.run(
+                    ["python3", "-c", "import os; os.write(1, bytes([255, 10]))"],
+                    cwd=ROOT,
+                    environment=module.clean_environment(),
+                    label="decode-canary",
+                    timeout=10,
+                )
+            receipt = next((root / "evidence").glob("*.log")).read_text(encoding="utf-8")
+            self.assertIn("reason=NON_UTF8_OUTPUT", receipt)
+            self.assertLessEqual(len(receipt.encode("utf-8")), 256)
+            self.assertEqual(b"\xff\n", next((root / "quarantine").glob("*.stdout.bin")).read_bytes())
 
     def test_source_head_and_dirty_state_are_fail_closed(self):
         with patch.object(module, "git", side_effect=(str(ROOT), HEAD, "c" * 40, "")):
@@ -283,7 +442,8 @@ class FakeRunner:
             write_json(Path(environment["BROWSER_E2E_SUITE_SEED_FILE"]), {"companyId": "id"})
         if arguments[:2] == ["npm", "run"]:
             Path(environment["BROWSER_E2E_JUNIT_FILE"]).write_text(
-                "<testsuite><testcase classname='x' name='y'/></testsuite>",
+                "<testsuite tests='1' failures='0' errors='0' skipped='0'>"
+                "<testcase classname='x' name='y'/></testsuite>",
                 encoding="utf-8",
             )
 
