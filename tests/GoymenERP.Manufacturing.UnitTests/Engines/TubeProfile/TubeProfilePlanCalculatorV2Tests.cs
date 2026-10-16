@@ -122,6 +122,42 @@ public sealed class TubeProfilePlanCalculatorV2Tests
     }
 
     [Fact]
+    public void Representable_duration_uses_full_cross_factor_cancellation_independent_of_quantity()
+    {
+        const decimal length = decimal.MaxValue - 3m;
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 7,
+            targetLengthMm: length,
+            package: new TubeProfilePackageStandardSnapshotV1(PackageSource, "package-v3", 2),
+            speed: new TubeProfileLineSpeedSnapshotV1(SpeedSource, "speed-v7", 21m),
+            unitKg: new TubeProfileVerifiedUnitKgSnapshotV1(UnitKgSource, "unit-kg-v11", 1m)));
+
+        AssertRefused(calculation.Quantity, TubeProfilePlanCalculatorV2.TotalMetresResult);
+        Assert.Equal((3, 1, 4),
+            (calculation.Package.Value!.FullPackages,
+                calculation.Package.Value.RemainderPieces,
+                calculation.Package.Value.SuggestedPackageCount));
+        Assert.Equal(26409387504754779197847983.444m, calculation.Duration.Value!.RunMinutes);
+        Assert.Equal(7m, calculation.TheoreticalMass.Value!.TheoreticalKg);
+    }
+
+    [Fact]
+    public void Non_terminating_duration_refuses_without_selecting_a_rounding_policy()
+    {
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 1,
+            targetLengthMm: 1000m,
+            package: new TubeProfilePackageStandardSnapshotV1(PackageSource, "package-v3", 1),
+            speed: new TubeProfileLineSpeedSnapshotV1(SpeedSource, "speed-v7", 3m),
+            unitKg: new TubeProfileVerifiedUnitKgSnapshotV1(UnitKgSource, "unit-kg-v11", 1m)));
+
+        Assert.Equal(1m, calculation.Quantity.Value!.TotalMetres);
+        Assert.Equal(1, calculation.Package.Value!.SuggestedPackageCount);
+        AssertRefused(calculation.Duration, TubeProfilePlanCalculatorV2.RunMinutesResult);
+        Assert.Equal(1m, calculation.TheoreticalMass.Value!.TheoreticalKg);
+    }
+
+    [Fact]
     public void Unrepresentable_duration_refuses_only_duration()
     {
         var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(

@@ -51,71 +51,53 @@ public static class TubeProfilePlanCalculatorV2
     {
         ArgumentNullException.ThrowIfNull(spec);
 
-        var quantity = Quantity(spec, out var totalMetres);
+        var quantity = Quantity(spec);
 
         var package = spec.PackageStandardSnapshot is { } packageStandard
             ? Package(spec.TargetPieceCount, packageStandard.PiecesPerPackage)
             : EngineResult<TubeProfilePlanPackageV2>.Unavailable([PackageStandardParameter]);
 
-        var duration = Duration(spec, totalMetres);
+        var duration = Duration(spec);
 
         var mass = Mass(spec);
 
         return new TubeProfilePlanCalculationV2(quantity, package, duration, mass);
     }
 
-    private static EngineResult<TubeProfilePlanQuantityV2> Quantity(
-        TubeProfilePlanSpecV1 spec,
-        out decimal? totalMetres)
+    private static EngineResult<TubeProfilePlanQuantityV2> Quantity(TubeProfilePlanSpecV1 spec)
     {
-        // TargetLengthMm has at most three decimal places, so reducing the millimetre scale first is exact.
-        // It also avoids an intermediate overflow when the final metre value is representable.
-        var scaledLength = spec.TargetLengthMm / MillimetresPerMetre;
-        if (TryExactProduct(scaledLength, spec.TargetPieceCount, out var metres))
+        var lengthBits = decimal.GetBits(spec.TargetLengthMm);
+        var numerator = Coefficient(lengthBits) * spec.TargetPieceCount;
+        var denominator = (BigInteger)MillimetresPerMetre * PowerOfTen(Scale(lengthBits));
+        if (TryMaterializeExactRational(numerator, denominator, out var metres))
         {
-            totalMetres = metres;
             return EngineResult<TubeProfilePlanQuantityV2>.Computed(
                 new TubeProfilePlanQuantityV2(FormulaVersion, spec.TargetPieceCount, metres));
         }
 
-        totalMetres = null;
         return EngineResult<TubeProfilePlanQuantityV2>.Refused(
             ArithmeticNotRepresentableCode, TotalMetresResult);
     }
 
-    private static EngineResult<TubeProfilePlanDurationV2> Duration(
-        TubeProfilePlanSpecV1 spec,
-        decimal? totalMetres)
+    private static EngineResult<TubeProfilePlanDurationV2> Duration(TubeProfilePlanSpecV1 spec)
     {
         if (spec.LineSpeedSnapshot is not { } speed)
         {
             return EngineResult<TubeProfilePlanDurationV2>.Unavailable([LineSpeedParameter]);
         }
 
-        if (totalMetres is { } metres)
-        {
-            try
-            {
-                var runMinutes = metres / speed.MetresPerMinute;
-                return runMinutes == 0m
-                    ? UnrepresentableDuration()
-                    : EngineResult<TubeProfilePlanDurationV2>.Computed(
-                        new TubeProfilePlanDurationV2(FormulaVersion, runMinutes));
-            }
-            catch (OverflowException)
-            {
-                return UnrepresentableDuration();
-            }
-        }
-
-        // Quantity may be outside decimal's exact range while duration is representable. Prefer cancelling the
-        // count against speed exactly; otherwise divide the already-scaled length before the exact multiplication.
-        var scaledLength = spec.TargetLengthMm / MillimetresPerMetre;
-        if (TryCancelledDuration(scaledLength, spec.TargetPieceCount, speed.MetresPerMinute, out var independentMinutes)
-            || TryPerPieceDuration(scaledLength, spec.TargetPieceCount, speed.MetresPerMinute, out independentMinutes))
+        var lengthBits = decimal.GetBits(spec.TargetLengthMm);
+        var speedBits = decimal.GetBits(speed.MetresPerMinute);
+        var numerator = Coefficient(lengthBits)
+            * spec.TargetPieceCount
+            * PowerOfTen(Scale(speedBits));
+        var denominator = (BigInteger)MillimetresPerMetre
+            * Coefficient(speedBits)
+            * PowerOfTen(Scale(lengthBits));
+        if (TryMaterializeExactRational(numerator, denominator, out var runMinutes))
         {
             return EngineResult<TubeProfilePlanDurationV2>.Computed(
-                new TubeProfilePlanDurationV2(FormulaVersion, independentMinutes));
+                new TubeProfilePlanDurationV2(FormulaVersion, runMinutes));
         }
 
         return UnrepresentableDuration();
@@ -128,7 +110,10 @@ public static class TubeProfilePlanCalculatorV2
             return EngineResult<TubeProfilePlanMassV2>.Unavailable([VerifiedUnitKgParameter]);
         }
 
-        if (TryExactProduct(verifiedUnitKg.UnitKg, spec.TargetPieceCount, out var theoreticalKg))
+        var unitKgBits = decimal.GetBits(verifiedUnitKg.UnitKg);
+        var numerator = Coefficient(unitKgBits) * spec.TargetPieceCount;
+        var denominator = PowerOfTen(Scale(unitKgBits));
+        if (TryMaterializeExactRational(numerator, denominator, out var theoreticalKg))
         {
             return EngineResult<TubeProfilePlanMassV2>.Computed(
                 new TubeProfilePlanMassV2(FormulaVersion, theoreticalKg));
@@ -142,60 +127,45 @@ public static class TubeProfilePlanCalculatorV2
         EngineResult<TubeProfilePlanDurationV2>.Refused(
             ArithmeticNotRepresentableCode, RunMinutesResult);
 
-    private static bool TryCancelledDuration(
-        decimal scaledLength,
-        int targetPieces,
-        decimal speed,
-        out decimal runMinutes)
+    private static bool TryMaterializeExactRational(
+        BigInteger numerator,
+        BigInteger denominator,
+        out decimal value)
     {
-        try
+        if (denominator <= BigInteger.Zero)
         {
-            var countOverSpeed = targetPieces / speed;
-            if (countOverSpeed != 0m
-                && TryExactProduct(countOverSpeed, speed, out var recoveredCount)
-                && recoveredCount == targetPieces
-                && TryExactProduct(scaledLength, countOverSpeed, out runMinutes)
-                && runMinutes != 0m)
-            {
-                return true;
-            }
-        }
-        catch (OverflowException)
-        {
-            // The other safe order can still be representable when this intermediate is not.
-        }
-
-        runMinutes = 0m;
-        return false;
-    }
-
-    private static bool TryPerPieceDuration(
-        decimal scaledLength,
-        int targetPieces,
-        decimal speed,
-        out decimal runMinutes)
-    {
-        runMinutes = 0m;
-        try
-        {
-            var perPieceMinutes = scaledLength / speed;
-            return perPieceMinutes != 0m
-                && TryExactProduct(perPieceMinutes, targetPieces, out runMinutes)
-                && runMinutes != 0m;
-        }
-        catch (OverflowException)
-        {
-            runMinutes = 0m;
+            value = 0m;
             return false;
         }
-    }
 
-    private static bool TryExactProduct(decimal left, decimal right, out decimal product)
-    {
-        var leftBits = decimal.GetBits(left);
-        var rightBits = decimal.GetBits(right);
-        var coefficient = Coefficient(leftBits) * Coefficient(rightBits);
-        var scale = Scale(leftBits) + Scale(rightBits);
+        var greatestCommonDivisor = BigInteger.GreatestCommonDivisor(BigInteger.Abs(numerator), denominator);
+        numerator /= greatestCommonDivisor;
+        denominator /= greatestCommonDivisor;
+
+        var powersOfTwo = 0;
+        while (denominator % 2 == BigInteger.Zero)
+        {
+            denominator /= 2;
+            powersOfTwo++;
+        }
+
+        var powersOfFive = 0;
+        while (denominator % 5 == BigInteger.Zero)
+        {
+            denominator /= 5;
+            powersOfFive++;
+        }
+
+        if (denominator != BigInteger.One)
+        {
+            value = 0m;
+            return false;
+        }
+
+        var scale = Math.Max(powersOfTwo, powersOfFive);
+        var coefficient = numerator
+            * BigInteger.Pow(2, scale - powersOfTwo)
+            * BigInteger.Pow(5, scale - powersOfFive);
 
         while (scale > 0 && coefficient % 10 == 0)
         {
@@ -203,19 +173,21 @@ public static class TubeProfilePlanCalculatorV2
             scale--;
         }
 
-        if (scale > 28 || coefficient > DecimalMaximumCoefficient)
+        var coefficientMagnitude = BigInteger.Abs(coefficient);
+        if (scale > 28 || coefficientMagnitude > DecimalMaximumCoefficient)
         {
-            product = 0m;
+            value = 0m;
             return false;
         }
 
-        var low = unchecked((int)(uint)(coefficient & uint.MaxValue));
-        var middle = unchecked((int)(uint)((coefficient >> 32) & uint.MaxValue));
-        var high = unchecked((int)(uint)((coefficient >> 64) & uint.MaxValue));
-        var negative = (leftBits[3] < 0) != (rightBits[3] < 0);
-        product = new decimal(low, middle, high, negative, (byte)scale);
+        var low = unchecked((int)(uint)(coefficientMagnitude & uint.MaxValue));
+        var middle = unchecked((int)(uint)((coefficientMagnitude >> 32) & uint.MaxValue));
+        var high = unchecked((int)(uint)((coefficientMagnitude >> 64) & uint.MaxValue));
+        value = new decimal(low, middle, high, coefficient.Sign < 0, (byte)scale);
         return true;
     }
+
+    private static BigInteger PowerOfTen(int scale) => BigInteger.Pow(10, scale);
 
     private static BigInteger Coefficient(IReadOnlyList<int> bits) =>
         ((BigInteger)(uint)bits[2] << 64) | ((BigInteger)(uint)bits[1] << 32) | (uint)bits[0];
