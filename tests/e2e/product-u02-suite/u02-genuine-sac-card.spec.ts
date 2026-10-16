@@ -1,4 +1,4 @@
-import { expect, test, type APIResponse } from '@playwright/test'
+import { expect, test, type APIResponse, type Locator, type Page } from '@playwright/test'
 import sql from 'mssql'
 
 /**
@@ -10,6 +10,8 @@ import sql from 'mssql'
 const GROUP_ID = '829e576d-c635-502a-97b8-9d5074c9d6a0'
 const FAMILY_ID = '2ffdf417-c7b0-4cc5-8c58-40b5cd906c55'
 const TEMPLATE_ID = 'ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2'
+const CUT_SHEET_FAMILY_ID = '075d01d5-c57c-44b9-903a-89c00e4db029'
+const CUT_SHEET_TEMPLATE_ID = '57937348-393e-4982-a5a4-63eff8be40c9'
 const KILOGRAM_ID = 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983'
 // ApprovedSettingsUnitProfileCatalog.GdcKilogramV1, not an inferred unit conversion.
 const KILOGRAM_PROFILE_ID = '4a790fdc-2a6b-5126-835f-d3a13d28b71c'
@@ -26,13 +28,21 @@ type ReferenceOptions = {
     readonly id: string
     readonly code: string
     readonly displayName: string
+    readonly cins: string
+    readonly tur: string
+    readonly tip: string
     readonly templateId: string | null
     readonly templateVersion: string | null
   }[]
   readonly templates: {
     readonly id: string
     readonly version: string
-    readonly fields: { readonly key: string; readonly role: string | null }[]
+    readonly fields: {
+      readonly key: string
+      readonly kind: string
+      readonly role: string | null
+      readonly required: boolean
+    }[]
   }[]
   readonly dictionaries: {
     readonly name: string
@@ -76,6 +86,10 @@ type ProductHistory = {
   }[]
 }
 
+function definitionOf(root: Page | Locator, label: string) {
+  return root.locator('dt').filter({ hasText: new RegExp(`^${label}$`) }).locator('..').locator('dd')
+}
+
 test('approved GDC Sac card is created through the form and reopened from the real Product API', async ({ page }) => {
   const groupRead = page.waitForResponse(response =>
     new URL(response.url()).pathname === `${PRODUCTS_PATH}/code-groups`
@@ -98,13 +112,17 @@ test('approved GDC Sac card is created through the form and reopened from the re
   expect(optionsResponse.status()).toBe(200)
   const options = await optionsResponse.json() as ReferenceOptions
   const family = options.familyFacts.find(item => item.id === FAMILY_ID)
-  expect(family).toMatchObject({ code: 'hr-slit-coil', templateId: TEMPLATE_ID, templateVersion: '1' })
+  expect(family).toMatchObject({
+    code: 'hr-slit-coil', cins: 'Sac', tur: 'Sıcak Haddelenmiş', tip: 'Dilinmiş Bant',
+    templateId: TEMPLATE_ID, templateVersion: '1',
+  })
   const template = options.templates.find(item => item.id === TEMPLATE_ID && item.version === '1')
   expect(template?.fields.map(field => field.key)).toEqual([
     'thickness-mm', 'width-mm', 'steel-grade', 'coating', 'producer-grade',
   ])
   expect(template?.fields.filter(field => field.role === 'thickness' || field.role === 'width')
     .map(field => field.key)).toEqual(['thickness-mm', 'width-mm'])
+  expect(template?.fields.some(field => field.role === 'length' || field.key === 'length-mm')).toBe(false)
   const steelGrade = options.dictionaries.find(item => item.name === 'gdc-steel-grades')
     ?.entries.find(item => item.code === 'S235JR')
   expect(steelGrade).toMatchObject({ status: 'approved' })
@@ -117,8 +135,13 @@ test('approved GDC Sac card is created through the form and reopened from the re
   const name = `S235JR 3 mm × 248 mm kaplamasız sac ${Date.now()}`
   await page.getByLabel('Ürün adı').fill(name)
   await page.getByLabel('Ürün ailesi').selectOption(FAMILY_ID)
-  await page.getByLabel('thickness-mm (mm)', { exact: false }).fill('3')
-  await page.getByLabel('width-mm (mm)', { exact: false }).fill('248')
+  const familyFacts = page.locator('dl[aria-label="Ailenin sabit sınıflandırması"]')
+  await expect(definitionOf(familyFacts, 'Cins')).toHaveText('Sac')
+  await expect(definitionOf(familyFacts, 'Tür')).toHaveText('Sıcak Haddelenmiş')
+  await expect(definitionOf(familyFacts, 'Tip')).toHaveText('Dilinmiş Bant')
+  await page.getByLabel('Kalınlık (mm)', { exact: false }).fill('3')
+  await page.getByLabel('En (mm)', { exact: false }).fill('248')
+  await expect(page.getByLabel('Boy (mm)', { exact: false })).toHaveCount(0)
   await page.getByLabel('steel-grade', { exact: false }).selectOption('S235JR')
   await page.getByLabel('coating', { exact: false }).selectOption('uncoated')
   await page.getByLabel('Stok birimi (kg)').selectOption(KILOGRAM_ID)
@@ -139,6 +162,7 @@ test('approved GDC Sac card is created through the form and reopened from the re
     units: { stock: KILOGRAM_ID, sales: KILOGRAM_ID, purchase: null },
   })
   expect(created.references.attributes).not.toHaveProperty('producer-grade')
+  expect(created.references.attributes).not.toHaveProperty('length-mm')
   await expect(page.getByRole('heading', { level: 1, name: 'Taslak kaydedildi' })).toBeVisible()
 
   await page.goto('about:blank')
@@ -154,11 +178,293 @@ test('approved GDC Sac card is created through the form and reopened from the re
     groupId: GROUP_ID, familyId: FAMILY_ID,
   })
   expect(reopened.references).toEqual(created.references)
+  expect(reopened.references.attributes).not.toHaveProperty('length-mm')
   await expect(page.getByTestId('product-family')).toHaveText(family!.displayName)
+  await expect(definitionOf(page, 'Cins')).toHaveText('Sac')
+  await expect(definitionOf(page, 'Tür')).toHaveText('Sıcak Haddelenmiş')
+  await expect(definitionOf(page, 'Tip')).toHaveText('Dilinmiş Bant')
+  await expect(definitionOf(page, 'Kalınlık')).toHaveText('3')
+  await expect(definitionOf(page, 'En')).toHaveText('248')
+  await expect(definitionOf(page, 'Boy')).toHaveCount(0)
   await expect(page.getByText(steelGrade!.displayName, { exact: true })).toBeVisible()
   await expect(page.getByText(coating!.displayName, { exact: true })).toBeVisible()
   await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram!.displayName)
   await expect(page.getByTestId('product-unit-sales')).toHaveText(kilogram!.displayName)
+})
+
+test('P03.2 a genuine cut-sheet card keeps nominal length exact through clear, refusal, restore, activation and reopen', async ({ page }) => {
+  const rawSeed = process.env.BROWSER_E2E_U02_SEED?.trim()
+  if (!rawSeed) throw new Error('BROWSER_E2E_U02_SEED is required for the disposable u02 actor binding.')
+  const actorSeed = JSON.parse(rawSeed) as Record<string, unknown>
+  const companyId = actorSeed.companyId
+  const requester = actorSeed.authorizedActor
+  const activator = actorSeed.activatorActor
+  if (typeof companyId !== 'string' || typeof requester !== 'string' || typeof activator !== 'string'
+    || !companyId || !requester || !/^u02-[a-z0-9-]+$/.test(activator) || requester === activator) {
+    throw new Error('The u02 fixture must bind distinct Product requester and activator actors.')
+  }
+  const apiBaseUrl = process.env.BROWSER_E2E_API_BASE_URL?.trim().replace(/\/$/, '')
+  if (!apiBaseUrl || new URL(apiBaseUrl).hostname !== '127.0.0.1') {
+    throw new Error('BROWSER_E2E_API_BASE_URL must name the disposable loopback API.')
+  }
+  const headersFor = (actor: string) => ({ 'X-Development-User': actor, 'X-Company-Id': companyId })
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': requester })
+  const groupRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${PRODUCTS_PATH}/code-groups`
+      && response.request().method() === 'GET')
+  await page.goto('/urun')
+  await page.getByRole('main').getByRole('link', { name: 'Yeni ürün', exact: true }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Yeni ürün' })).toBeVisible()
+  const groupsResponse = await groupRead
+  expect(groupsResponse.status()).toBe(200)
+  const groups = await groupsResponse.json() as { id: string; name: string; prefix: string }[]
+  expect(groups.find(group => group.id === GROUP_ID)).toMatchObject({ id: GROUP_ID, name: 'Sac', prefix: 'SAC' })
+
+  const optionsRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${PRODUCTS_PATH}/reference-options`
+      && response.request().method() === 'GET')
+  await page.getByLabel('Kod grubu').selectOption(GROUP_ID)
+  const optionsResponse = await optionsRead
+  expect(optionsResponse.status()).toBe(200)
+  const options = await optionsResponse.json() as ReferenceOptions
+  const family = options.familyFacts.find(item => item.id === CUT_SHEET_FAMILY_ID)
+  expect(family).toMatchObject({
+    code: 'hr-cut-sheet-plate', displayName: 'Sıcak Haddelenmiş Kesilmiş Sac/Levha',
+    cins: 'Sac', tur: 'Sıcak Haddelenmiş', tip: 'Kesilmiş Sac/Levha',
+    templateId: CUT_SHEET_TEMPLATE_ID, templateVersion: '1',
+  })
+  const template = options.templates.find(item =>
+    item.id === CUT_SHEET_TEMPLATE_ID && item.version === '1')
+  expect(template?.fields.map(field => field.key)).toEqual([
+    'thickness-mm', 'width-mm', 'length-mm', 'steel-grade', 'coating', 'producer-grade',
+  ])
+  expect(template?.fields.filter(field =>
+    field.role === 'thickness' || field.role === 'width' || field.role === 'length')
+    .map(field => [field.key, field.kind, field.required])).toEqual([
+    ['thickness-mm', 'measureMillimetre', true],
+    ['width-mm', 'measureMillimetre', true],
+    ['length-mm', 'measureMillimetre', true],
+  ])
+  const steelGrade = options.dictionaries.find(item => item.name === 'gdc-steel-grades')
+    ?.entries.find(item => item.code === 'S235JR')
+  const coating = options.dictionaries.find(item => item.name === 'gdc-coatings')
+    ?.entries.find(item => item.code === 'uncoated')
+  const kilogram = options.units.find(unit => unit.id === KILOGRAM_ID)
+  expect(steelGrade).toMatchObject({ status: 'approved' })
+  expect(coating).toMatchObject({ status: 'approved', isExplicitNone: true })
+  expect(kilogram).toMatchObject({ isKilogram: true })
+
+  const name = `S235JR 3 × 1250 × 2500.125 kesilmiş sac ${Date.now()}`
+  await page.getByLabel('Ürün adı').fill(name)
+  await page.getByLabel('Ürün ailesi').selectOption(CUT_SHEET_FAMILY_ID)
+  const familyFacts = page.locator('dl[aria-label="Ailenin sabit sınıflandırması"]')
+  await expect(definitionOf(familyFacts, 'Cins')).toHaveText('Sac')
+  await expect(definitionOf(familyFacts, 'Tür')).toHaveText('Sıcak Haddelenmiş')
+  await expect(definitionOf(familyFacts, 'Tip')).toHaveText('Kesilmiş Sac/Levha')
+  await page.getByLabel('Kalınlık (mm)', { exact: false }).fill('3')
+  await page.getByLabel('En (mm)', { exact: false }).fill('1250')
+  await page.getByLabel('Boy (mm)', { exact: false }).fill('2500.125')
+  await page.getByLabel('steel-grade', { exact: false }).selectOption('S235JR')
+  await page.getByLabel('coating', { exact: false }).selectOption('uncoated')
+  await page.getByLabel('Stok birimi (kg)').selectOption(KILOGRAM_ID)
+  await page.getByLabel('Satış birimi').selectOption(KILOGRAM_ID)
+
+  const createRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === PRODUCTS_PATH && response.request().method() === 'POST')
+  await page.getByRole('button', { name: 'Taslak olarak kaydet' }).click()
+  const createResponse = await createRead
+  expect(createResponse.status()).toBe(201)
+  const createPayload = createResponse.request().postDataJSON() as {
+    readonly familyId: string
+    readonly references: { readonly templateId: string; readonly templateVersion: string
+      readonly attributes: Record<string, unknown> }
+  }
+  expect(createPayload.familyId).toBe(CUT_SHEET_FAMILY_ID)
+  expect(createPayload.references).toMatchObject({
+    templateId: CUT_SHEET_TEMPLATE_ID, templateVersion: '1',
+    attributes: {
+      'thickness-mm': 3, 'width-mm': 1250, 'length-mm': 2500.125,
+      'steel-grade': 'S235JR', coating: 'uncoated',
+    },
+  })
+  const created = (await createResponse.json() as { card: StoredCard }).card
+  expect(created.product).toMatchObject({
+    name, lifecycle: 'Draft', version: '1', groupId: GROUP_ID, familyId: CUT_SHEET_FAMILY_ID,
+  })
+  expect(created.references).toMatchObject({
+    templateId: CUT_SHEET_TEMPLATE_ID, templateVersion: '1',
+    attributes: {
+      'thickness-mm': 3, 'width-mm': 1250, 'length-mm': 2500.125,
+      'steel-grade': 'S235JR', coating: 'uncoated',
+    },
+  })
+  expect(created.references.attributes).not.toHaveProperty('producer-grade')
+  const cardPath = `${PRODUCTS_PATH}/${created.product.id}`
+
+  await page.goto('about:blank')
+  const firstCardRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === cardPath && response.request().method() === 'GET')
+  await page.goto(`/urun/${created.product.id}`)
+  const firstCardResponse = await firstCardRead
+  expect(firstCardResponse.status()).toBe(200)
+  expect((await firstCardResponse.json() as StoredCard).references).toEqual(created.references)
+  await expect(page.getByTestId('product-family')).toHaveText(family!.displayName)
+  await expect(definitionOf(page, 'Cins')).toHaveText('Sac')
+  await expect(definitionOf(page, 'Tür')).toHaveText('Sıcak Haddelenmiş')
+  await expect(definitionOf(page, 'Tip')).toHaveText('Kesilmiş Sac/Levha')
+  await expect(definitionOf(page, 'Kalınlık')).toHaveText('3')
+  await expect(definitionOf(page, 'En')).toHaveText('1250')
+  await expect(definitionOf(page, 'Boy')).toHaveText('2500.125')
+
+  await page.locator(`a[href="/urun/${created.product.id}/duzenle"]`).click()
+  await expect(page.getByLabel('Kalınlık (mm)', { exact: false })).toHaveValue('3')
+  await expect(page.getByLabel('En (mm)', { exact: false })).toHaveValue('1250')
+  await expect(page.getByLabel('Boy (mm)', { exact: false })).toHaveValue('2500.125')
+  await page.getByLabel('Boy (mm)', { exact: false }).fill('')
+  await page.getByLabel('Değişiklik gerekçesi').fill('SENTETIK u02 nominal boy temizleme')
+  const clearRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${cardPath}/draft` && response.request().method() === 'PATCH')
+  await page.getByRole('button', { name: 'Değişiklikleri kaydet' }).click()
+  const clearResponse = await clearRead
+  expect(clearResponse.status()).toBe(200)
+  const clearPayload = clearResponse.request().postDataJSON() as {
+    readonly expectedVersion: string
+    readonly changes: { readonly references: { readonly attributes: Record<string, unknown> } }
+  }
+  expect(clearPayload.expectedVersion).toBe(created.product.version)
+  expect(clearPayload.changes.references.attributes).toEqual({
+    'thickness-mm': 3, 'width-mm': 1250, 'steel-grade': 'S235JR', coating: 'uncoated',
+  })
+  expect(clearPayload.changes.references.attributes).not.toHaveProperty('length-mm')
+  const cleared = (await clearResponse.json() as { card: StoredCard }).card
+  expect(cleared.product.version).toBe((BigInt(created.product.version) + 1n).toString())
+  expect(cleared.references.attributes).not.toHaveProperty('length-mm')
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': activator })
+  await page.goto('about:blank')
+  const incompleteRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === cardPath && response.request().method() === 'GET')
+  await page.goto(`/urun/${created.product.id}`)
+  const incompleteResponse = await incompleteRead
+  expect(incompleteResponse.status()).toBe(200)
+  const incomplete = await incompleteResponse.json() as StoredCard
+  expect(incomplete.product).toMatchObject({ lifecycle: 'Draft', version: cleared.product.version })
+  expect(incomplete.references.attributes).not.toHaveProperty('length-mm')
+  const beforeRefusalHistoryResponse = await page.request.get(`${apiBaseUrl}${cardPath}/history`,
+    { headers: headersFor(activator) })
+  expect(beforeRefusalHistoryResponse.status()).toBe(200)
+  const beforeRefusalHistory = await beforeRefusalHistoryResponse.json() as ProductHistory
+
+  const activationRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${cardPath}/activation`
+      && response.request().method() === 'POST')
+  await page.getByRole('button', { name: 'Ürünü aktifleştir', exact: true }).click()
+  const activationRefusal = await activationRead
+  expect(activationRefusal.status()).toBe(422)
+  expect(activationRefusal.request().postDataJSON()).toEqual({ expectedVersion: cleared.product.version })
+  const refusal = await activationRefusal.json() as {
+    readonly code: string
+    readonly errors: readonly { readonly field: string; readonly code: string }[]
+  }
+  expect(refusal.code).toBe('validation_failed')
+  expect(refusal.errors).toContainEqual({ field: 'references.attributes.length-mm', code: 'required' })
+  const lengthAlert = page.getByRole('alert').filter({ hasText: 'Boy' })
+    .filter({ hasText: 'Bu alan zorunludur.' })
+  await expect(lengthAlert).toBeVisible()
+  const afterRefusalCard = await page.request.get(`${apiBaseUrl}${cardPath}`, { headers: headersFor(activator) })
+  const afterRefusalHistory = await page.request.get(`${apiBaseUrl}${cardPath}/history`,
+    { headers: headersFor(activator) })
+  expect(afterRefusalCard.status()).toBe(200)
+  expect(afterRefusalHistory.status()).toBe(200)
+  expect(await afterRefusalCard.json()).toEqual(incomplete)
+  expect(await afterRefusalHistory.json()).toEqual(beforeRefusalHistory)
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': requester })
+  await page.goto('about:blank')
+  await page.goto(`/urun/${created.product.id}/duzenle`)
+  await expect(page.getByLabel('Boy (mm)', { exact: false })).toHaveValue('')
+  await page.getByLabel('Boy (mm)', { exact: false }).fill('2500.125')
+  await page.getByLabel('Değişiklik gerekçesi').fill('SENTETIK u02 nominal boy geri yükleme')
+  const restoreRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${cardPath}/draft` && response.request().method() === 'PATCH')
+  await page.getByRole('button', { name: 'Değişiklikleri kaydet' }).click()
+  const restoreResponse = await restoreRead
+  expect(restoreResponse.status()).toBe(200)
+  const restorePayload = restoreResponse.request().postDataJSON() as {
+    readonly expectedVersion: string
+    readonly changes: { readonly references: { readonly attributes: Record<string, unknown> } }
+  }
+  expect(restorePayload.expectedVersion).toBe(cleared.product.version)
+  expect(restorePayload.changes.references.attributes['length-mm']).toBe(2500.125)
+  const restored = (await restoreResponse.json() as { card: StoredCard }).card
+  expect(restored.product.version).toBe((BigInt(cleared.product.version) + 1n).toString())
+  expect(restored.references.attributes['length-mm']).toBe(2500.125)
+
+  await page.setExtraHTTPHeaders({ 'X-Development-User': activator })
+  await page.goto('about:blank')
+  const restoredRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === cardPath && response.request().method() === 'GET')
+  await page.goto(`/urun/${created.product.id}`)
+  const restoredResponse = await restoredRead
+  expect(restoredResponse.status()).toBe(200)
+  expect((await restoredResponse.json() as StoredCard).references.attributes['length-mm']).toBe(2500.125)
+  await expect(definitionOf(page, 'Boy')).toHaveText('2500.125')
+  const finalActivationRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${cardPath}/activation`
+      && response.request().method() === 'POST')
+  await page.getByRole('button', { name: 'Ürünü aktifleştir', exact: true }).click()
+  const finalActivationResponse = await finalActivationRead
+  expect(finalActivationResponse.status()).toBe(200)
+  expect(finalActivationResponse.request().postDataJSON()).toEqual({ expectedVersion: restored.product.version })
+  const activated = (await finalActivationResponse.json() as { card: StoredCard; isReplay: boolean })
+  expect(activated.isReplay).toBe(false)
+  expect(activated.card.product).toMatchObject({
+    lifecycle: 'Active', version: (BigInt(restored.product.version) + 1n).toString(),
+  })
+  expect(activated.card.references.attributes['length-mm']).toBe(2500.125)
+
+  await page.goto('about:blank')
+  const finalCardRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === cardPath && response.request().method() === 'GET')
+  const finalHistoryRead = page.waitForResponse(response =>
+    new URL(response.url()).pathname === `${cardPath}/history` && response.request().method() === 'GET')
+  await page.goto(`/urun/${created.product.id}`)
+  const finalCardResponse = await finalCardRead
+  const finalHistoryResponse = await finalHistoryRead
+  expect(finalCardResponse.status()).toBe(200)
+  expect(finalHistoryResponse.status()).toBe(200)
+  const reopened = await finalCardResponse.json() as StoredCard
+  const history = await finalHistoryResponse.json() as ProductHistory
+  expect(reopened.product).toMatchObject({
+    lifecycle: 'Active', version: activated.card.product.version,
+    groupId: GROUP_ID, familyId: CUT_SHEET_FAMILY_ID,
+  })
+  expect(reopened.references.attributes['length-mm']).toBe(2500.125)
+  expect(history.productId).toBe(created.product.id)
+  expect(history.entries.map(entry => entry.operation)).toEqual([
+    'Activate', 'DraftBasicEdit', 'DraftBasicEdit', 'DraftCreate',
+  ])
+  expect(history.entries.map(entry => [entry.versionBefore, entry.versionAfter])).toEqual([
+    [restored.product.version, activated.card.product.version],
+    [cleared.product.version, restored.product.version],
+    [created.product.version, cleared.product.version],
+    [null, created.product.version],
+  ])
+  expect(history.entries.map(entry => entry.reason)).toEqual([
+    'Ürün kartı onayı',
+    'SENTETIK u02 nominal boy geri yükleme',
+    'SENTETIK u02 nominal boy temizleme',
+    'Ürün taslağı oluşturma',
+  ])
+  await expect(page.getByTestId('product-family')).toHaveText(family!.displayName)
+  await expect(definitionOf(page, 'Cins')).toHaveText('Sac')
+  await expect(definitionOf(page, 'Tür')).toHaveText('Sıcak Haddelenmiş')
+  await expect(definitionOf(page, 'Tip')).toHaveText('Kesilmiş Sac/Levha')
+  await expect(definitionOf(page, 'Kalınlık')).toHaveText('3')
+  await expect(definitionOf(page, 'En')).toHaveText('1250')
+  await expect(definitionOf(page, 'Boy')).toHaveText('2500.125')
+  await expect(page.getByTestId('product-history').getByRole('listitem')).toHaveCount(4)
 })
 
 test('the same genuine SAC card is activated by the existing activator and reopened as Active', async ({ page }) => {
@@ -192,15 +498,19 @@ test('the same genuine SAC card is activated by the existing activator and reope
   expect(optionsResponse.status()).toBe(200)
   const options = await optionsResponse.json() as ReferenceOptions
   const family = options.familyFacts.find(item => item.id === FAMILY_ID)
-  expect(family).toMatchObject({ code: 'hr-slit-coil', templateId: TEMPLATE_ID, templateVersion: '1' })
+  expect(family).toMatchObject({
+    code: 'hr-slit-coil', cins: 'Sac', tur: 'Sıcak Haddelenmiş', tip: 'Dilinmiş Bant',
+    templateId: TEMPLATE_ID, templateVersion: '1',
+  })
   const kilogram = options.units.find(unit => unit.id === KILOGRAM_ID)
   expect(kilogram).toMatchObject({ isKilogram: true })
 
   const name = `S235JR 3 mm × 248 mm kaplamasız aktivasyon ${Date.now()}`
   await page.getByLabel('Ürün adı').fill(name)
   await page.getByLabel('Ürün ailesi').selectOption(FAMILY_ID)
-  await page.getByLabel('thickness-mm (mm)', { exact: false }).fill('3')
-  await page.getByLabel('width-mm (mm)', { exact: false }).fill('248')
+  await page.getByLabel('Kalınlık (mm)', { exact: false }).fill('3')
+  await page.getByLabel('En (mm)', { exact: false }).fill('248')
+  await expect(page.getByLabel('Boy (mm)', { exact: false })).toHaveCount(0)
   await page.getByLabel('steel-grade', { exact: false }).selectOption('S235JR')
   await page.getByLabel('coating', { exact: false }).selectOption('uncoated')
   await page.getByLabel('Stok birimi (kg)').selectOption(KILOGRAM_ID)
@@ -293,8 +603,9 @@ test('the same genuine SAC card is activated by the existing activator and reope
     reason: 'Ürün kartı onayı', changedFields: ['lifecycle'],
   })
   await expect(page.getByTestId('product-family')).toHaveText(family!.displayName)
-  await expect(page.locator('dt').filter({ hasText: 'thickness-mm' }).locator('..').locator('dd')).toHaveText('3')
-  await expect(page.locator('dt').filter({ hasText: 'width-mm' }).locator('..').locator('dd')).toHaveText('248')
+  await expect(definitionOf(page, 'Kalınlık')).toHaveText('3')
+  await expect(definitionOf(page, 'En')).toHaveText('248')
+  await expect(definitionOf(page, 'Boy')).toHaveCount(0)
   await expect(page.getByText('S235JR', { exact: true })).toBeVisible()
   await expect(page.getByText('Kaplamasız', { exact: true })).toBeVisible()
   await expect(page.getByTestId('product-unit-stock')).toHaveText(kilogram!.displayName)
