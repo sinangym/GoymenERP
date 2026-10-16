@@ -246,9 +246,51 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.DoesNotContain("Göymen", page.Text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("logo", page.Text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("antet", page.Text, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(Environment.UserName, pdfSyntax, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(Environment.MachineName, pdfSyntax, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(Directory.GetCurrentDirectory(), pdfSyntax, StringComparison.OrdinalIgnoreCase);
+        AssertNoHostIdentifiers(pdf, artifact.Content,
+            Environment.UserName, Environment.MachineName, Directory.GetCurrentDirectory());
+    }
+
+    [Fact]
+    public void Pdf_privacy_guard_does_not_mistake_required_font_names_for_a_short_username()
+    {
+        var content = CreatePrivacyProbePdf();
+        Assert.Contains("/CIDFontType2", Encoding.Latin1.GetString(content), StringComparison.Ordinal);
+        using var pdf = PdfDocument.Open(content);
+
+        AssertNoHostIdentifiers(pdf, content, "ci");
+    }
+
+    [Theory]
+    [InlineData("/Author")]
+    [InlineData("/Creator")]
+    [InlineData("/LocalHostMarker")]
+    public void Pdf_privacy_guard_rejects_host_information_in_standard_and_custom_metadata(string field)
+    {
+        var content = CreatePrivacyProbePdf(field: field, value: "ci");
+        using var pdf = PdfDocument.Open(content);
+
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, "ci"));
+    }
+
+    [Fact]
+    public void Pdf_privacy_guard_rejects_unicode_encoded_metadata_that_raw_search_misses()
+    {
+        const string privateMarker = "private-host-canary-d9a57c";
+        var content = CreatePrivacyProbePdf(field: "/LocalHostMarker", value: privateMarker, unicode: true);
+        Assert.DoesNotContain(privateMarker, Encoding.Latin1.GetString(content), StringComparison.Ordinal);
+        using var pdf = PdfDocument.Open(content);
+
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, privateMarker));
+    }
+
+    [Fact]
+    public void Pdf_privacy_guard_rejects_host_information_in_extracted_page_text()
+    {
+        var content = CreatePrivacyProbePdf(lines: [GoldenTurkishText, "ci"]);
+        using var pdf = PdfDocument.Open(content);
+        Assert.Contains("ci", Assert.Single(pdf.GetPages()).Text, StringComparison.Ordinal);
+
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, "ci"));
     }
 
     [Fact]
@@ -392,6 +434,37 @@ public sealed class TechnicalPdfGeneratorTests
         var exception = Assert.Throws<ArgumentException>(() => new TechnicalPdfGenerator().Generate(request));
 
         Assert.Contains("raw input limit", exception.Message, StringComparison.Ordinal);
+    }
+
+    private static void AssertNoHostIdentifiers(PdfDocument pdf, byte[] content, params string[] identifiers)
+    {
+        // RED baseline: preserve the original raw-byte policy to prove the portable regression.
+        var syntax = Encoding.Latin1.GetString(content);
+        foreach (var identifier in identifiers)
+        {
+            Assert.DoesNotContain(identifier, syntax, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static byte[] CreatePrivacyProbePdf(
+        string[]? lines = null, string? field = null, string? value = null, bool unicode = false)
+    {
+        var artifact = new TechnicalPdfGenerator().Generate(new PdfGenerationRequest(
+            Guid.Parse("eb4b6211-2afc-46e1-9a55-1a96c3c06897"),
+            CreateFileNameParts(), lines ?? ["Teknik PDF PoC", GoldenTurkishText]));
+        if (field is null)
+        {
+            return artifact.Content;
+        }
+
+        using var source = new MemoryStream(artifact.Content, writable: false);
+        using var document = PdfSharp.Pdf.IO.PdfReader.Open(source, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Modify);
+        document.Info.Elements[field] = unicode
+            ? new PdfSharp.Pdf.PdfString(value!, PdfSharp.Pdf.PdfStringEncoding.Unicode)
+            : new PdfSharp.Pdf.PdfString(value!);
+        using var output = new MemoryStream();
+        document.Save(output, closeStream: false);
+        return output.ToArray();
     }
 
     private static PdfDocumentFileNameParts CreateFileNameParts() => new(
