@@ -282,8 +282,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             // PRODUCT-TECH-FAMILY-02: replace one renamed runtime fact and add two cut-sheet/plate facts.
+            // P01.3: +2 welded-tube/profile exact release, activation, rollback, and replay SQL facts.
             ["tools/relational_inventory/product.txt"] =
-                "f99d1623cf8e8a302690007a3eeb5629193b9ebb243b966bf18fa9ad1caef4f1",
+                "a3d5800cc6e1c9bea1c940e972088e881abfa289fbbefcd784b52a2e95c3686e",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
@@ -315,10 +316,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "7b5999d3529adaccd72c13d3c3412f6f4acae56616839f8ede77732150806f76";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
         "95abaadfa075a9f6077670a2e15660629e6b1073ade36b64e45d74404fd3f4cb";
-    // Re-reviewed after isolating the exact-source recovery proof from inherited shell, path and redirect state:
-    // the workflow keeps every existing application gate and image build while that artifact-free job fails closed.
+    // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
+    // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "8f852a4759a1a273900929138d3c0a36ca36718572927dd7eb8aa360ce74373d";
+        "4395cb2fc98659df3c7f9ac9c5d175da862457f7dfdae3663f18504a4974ed57";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -1439,6 +1440,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs"] =
                     new(
                         "2972fbf7027788026a2d589785190b7087eef97d40c7b6f5fe4e8d29ed4245a8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
+                        }),
+                // P01.3 publishes the exact welded-tube/profile family surface. Up refuses prerequisite or
+                // identity drift; Down refuses changed cards/replays before deleting only the exact footprint.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/"
+                 + "20261016100000_ReleaseWeldedTubeProfileTechnicalDefinition.cs"] =
+                    new(
+                        "4381e7da3ddc8a5a6a6e1657f3b844cddb4921903d77fc31eb5477676f1226c8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 2
