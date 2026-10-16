@@ -40,10 +40,13 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
 
             var context = new MutableCompanyContext(TestCompanyIds.CompanyA);
             var user = new MutableCurrentUser(Actor, new HashSet<Guid> { TestCompanyIds.CompanyA });
+            var authority = new MutableAuthority(
+                readLocations: new HashSet<Guid> { LocationOne, LocationTwo, LocationThree },
+                writeLocations: new HashSet<Guid> { LocationOne });
             var observer = new CapturingObserver();
             await using var dbContext = CreateDbContext(factory.DatabaseConnectionString, context);
             using var cursorCodec = CreateCursorCodec();
-            var source = Source(dbContext, context, user, cursorCodec, observer);
+            var source = Source(dbContext, context, user, authority, cursorCodec, observer);
 
             var display = await source.ReadAuthorizedDisplaysAsync(new(
                 TestCompanyIds.CompanyA,
@@ -102,14 +105,45 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
             var queriesBeforeCursorDrift = observer.Commands.Count;
             var cursorDrift = await source.SearchAuthorizedCandidatesAsync(
                 Candidate(LocationTwo, pageSize: 1) with { Cursor = first.NextCursor });
-            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.InvalidCursor, cursorDrift.Outcome);
+            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, cursorDrift.Outcome);
             Assert.Equal(queriesBeforeCursorDrift, observer.Commands.Count);
 
-            var driftingUser = new MutableCurrentUser(Actor, new HashSet<Guid> { TestCompanyIds.CompanyA });
-            var driftObserver = new CapturingObserver { OnObserve = () => driftingUser.SetActor("replacement-writer") };
+            var queryCollision = await source.SearchAuthorizedCandidatesAsync(
+                Candidate(LocationOne, pageSize: 1) with { Query = "-", Cursor = first.NextCursor });
+            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.InvalidCursor, queryCollision.Outcome);
+            Assert.Equal(queriesBeforeCursorDrift, observer.Commands.Count);
+
+            var displayScope = new MutableAuthority(
+                readLocations: new HashSet<Guid> { LocationOne },
+                writeLocations: new HashSet<Guid> { LocationOne });
+            var displayScopeObserver = new CapturingObserver();
+            await using var displayScopeDb = CreateDbContext(factory.DatabaseConnectionString, context);
+            using var displayScopeCodec = CreateCursorCodec();
+            var deniedDisplay = await Source(
+                    displayScopeDb,
+                    context,
+                    user,
+                    displayScope,
+                    displayScopeCodec,
+                    displayScopeObserver)
+                .ReadAuthorizedDisplaysAsync(new(
+                    TestCompanyIds.CompanyA,
+                    Actor,
+                    [new(LocationTwo, EligibleTwo)]));
+            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, deniedDisplay.Outcome);
+            Assert.Empty(deniedDisplay.Items);
+            Assert.Empty(displayScopeObserver.Commands);
+
+            var driftingAuthority = new MutableAuthority(
+                readLocations: new HashSet<Guid> { LocationOne },
+                writeLocations: new HashSet<Guid> { LocationOne });
+            var driftObserver = new CapturingObserver
+            {
+                OnObserve = () => driftingAuthority.Revoke(ErpPermissions.OrganizationLocationsWrite),
+            };
             await using var driftDb = CreateDbContext(factory.DatabaseConnectionString, context);
             using var driftCodec = CreateCursorCodec();
-            var authorityDrift = await Source(driftDb, context, driftingUser, driftCodec, driftObserver)
+            var authorityDrift = await Source(driftDb, context, user, driftingAuthority, driftCodec, driftObserver)
                 .SearchAuthorizedCandidatesAsync(Candidate(LocationOne, pageSize: 25));
             Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, authorityDrift.Outcome);
             Assert.Empty(authorityDrift.Items);
@@ -117,7 +151,7 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
 
             await using var outageDb = CreateDbContext(factory.DatabaseConnectionString, context);
             using var outageCodec = CreateCursorCodec();
-            var outage = await Source(outageDb, context, user, outageCodec, new ThrowingObserver())
+            var outage = await Source(outageDb, context, user, authority, outageCodec, new ThrowingObserver())
                 .SearchAuthorizedCandidatesAsync(Candidate(LocationOne, pageSize: 25));
             Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable, outage.Outcome);
             Assert.Empty(outage.Items);
@@ -155,9 +189,10 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
         CounterpartyDbContext dbContext,
         ICompanyContext companyContext,
         ICurrentUser currentUser,
+        IErpAuthorityRevalidationService authority,
         ICounterpartyCursorCodec cursorCodec,
         ICounterpartyOrganizationLocationOperatorReadSqlObserver observer) =>
-        new(dbContext, companyContext, currentUser, cursorCodec, TimeProvider.System, observer);
+        new(dbContext, companyContext, currentUser, authority, cursorCodec, TimeProvider.System, observer);
 
     private static CounterpartyCursorCodec CreateCursorCodec() =>
         new(TimeProvider.System, new CounterpartyCursorRuntimeOptions(
@@ -254,6 +289,42 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
         public IReadOnlySet<Guid> AllowedCompanyIds => companies;
         public bool CanAccessCompany(Guid companyId) => companies.Contains(companyId);
         public void SetActor(string actor) => UserId = actor;
+    }
+
+    private sealed class MutableAuthority(
+        IReadOnlySet<Guid> readLocations,
+        IReadOnlySet<Guid> writeLocations) : IErpAuthorityRevalidationService
+    {
+        private readonly HashSet<string> revoked = new(StringComparer.Ordinal);
+
+        public void Revoke(string permission) => revoked.Add(permission);
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            if (companyId != TestCompanyIds.CompanyA || revoked.Contains(permission))
+            {
+                return Task.FromResult(PermissionScope.Denied);
+            }
+
+            IReadOnlySet<Guid>? locations = permission switch
+            {
+                ErpPermissions.OrganizationLocationsRead => readLocations,
+                ErpPermissions.OrganizationLocationsWrite => writeLocations,
+                _ => null,
+            };
+            return Task.FromResult(locations is null
+                ? PermissionScope.Denied
+                : new PermissionScope(
+                    true,
+                    false,
+                    new HashSet<string>(StringComparer.Ordinal),
+                    new HashSet<Guid>(),
+                    locations,
+                    new HashSet<Guid>()));
+        }
     }
 
     private sealed class CapturingObserver : ICounterpartyOrganizationLocationOperatorReadSqlObserver

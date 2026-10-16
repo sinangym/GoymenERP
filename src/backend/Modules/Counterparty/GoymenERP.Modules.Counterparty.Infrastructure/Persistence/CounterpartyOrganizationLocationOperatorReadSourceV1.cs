@@ -16,6 +16,7 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
     CounterpartyDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
+    IErpAuthorityRevalidationService authority,
     ICounterpartyCursorCodec cursorCodec,
     TimeProvider timeProvider,
     ICounterpartyOrganizationLocationOperatorReadSqlObserver sqlObserver)
@@ -40,8 +41,24 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
         var actorId = currentUser.UserId!;
         try
         {
+            var locationIds = canonical.Bindings.Select(binding => binding.LocationId).ToArray();
+            if (!await HasFreshLocationAuthorityAsync(
+                    ErpPermissions.OrganizationLocationsRead,
+                    companyId,
+                    actorId,
+                    locationIds,
+                    cancellationToken))
+            {
+                return Display(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied);
+            }
+
             var rows = await ReadDisplayRowsAsync(companyId, canonical.Bindings, cancellationToken);
-            if (!RemainsCurrent(canonical.CompanyId, canonical.ActorId, companyId, actorId))
+            if (!await HasFreshLocationAuthorityAsync(
+                    ErpPermissions.OrganizationLocationsRead,
+                    companyId,
+                    actorId,
+                    locationIds,
+                    cancellationToken))
             {
                 return Display(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied);
             }
@@ -103,25 +120,40 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
 
         var companyId = companyContext.CompanyId;
         var actorId = currentUser.UserId!;
-        if (!cursorCodec.IsAvailable)
-        {
-            return Candidates(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable);
-        }
-
-        var bindingHash = ComputeBindingHash(canonical);
-        CounterpartyCursorState? cursor = null;
-        if (canonical.Cursor is not null
-            && (!cursorCodec.TryUnprotect(canonical.Cursor, out cursor)
-                || cursor.Sort != CounterpartySort.Code
-                || !string.Equals(cursor.BindingHash, bindingHash, StringComparison.Ordinal)))
-        {
-            return Candidates(CounterpartyOrganizationLocationOperatorReadOutcomeV1.InvalidCursor);
-        }
-
         try
         {
+            if (!await HasFreshLocationAuthorityAsync(
+                    ErpPermissions.OrganizationLocationsWrite,
+                    companyId,
+                    actorId,
+                    [canonical.LocationId],
+                    cancellationToken))
+            {
+                return Candidates(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied);
+            }
+
+            if (!cursorCodec.IsAvailable)
+            {
+                return Candidates(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable);
+            }
+
+            var bindingHash = ComputeBindingHash(canonical);
+            CounterpartyCursorState? cursor = null;
+            if (canonical.Cursor is not null
+                && (!cursorCodec.TryUnprotect(canonical.Cursor, out cursor)
+                    || cursor.Sort != CounterpartySort.Code
+                    || !string.Equals(cursor.BindingHash, bindingHash, StringComparison.Ordinal)))
+            {
+                return Candidates(CounterpartyOrganizationLocationOperatorReadOutcomeV1.InvalidCursor);
+            }
+
             var rows = await ReadCandidateRowsAsync(companyId, canonical, cursor, cancellationToken);
-            if (!RemainsCurrent(canonical.CompanyId, canonical.ActorId, companyId, actorId))
+            if (!await HasFreshLocationAuthorityAsync(
+                    ErpPermissions.OrganizationLocationsWrite,
+                    companyId,
+                    actorId,
+                    [canonical.LocationId],
+                    cancellationToken))
             {
                 return Candidates(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied);
             }
@@ -311,7 +343,11 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
         AppendCanonical(canonical, request.SessionBinding);
         AppendCanonical(canonical, request.CompanyId.ToString("D", CultureInfo.InvariantCulture));
         AppendCanonical(canonical, request.LocationId.ToString("D", CultureInfo.InvariantCulture));
-        AppendCanonical(canonical, request.Query ?? "-");
+        AppendCanonical(canonical, request.Query is null ? "query:null" : "query:value");
+        if (request.Query is not null)
+        {
+            AppendCanonical(canonical, request.Query);
+        }
         AppendCanonical(canonical, request.PageSize.ToString(CultureInfo.InvariantCulture));
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString())));
     }
@@ -338,6 +374,25 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
         MatchesCurrentContext(requestCompanyId, requestActorId)
         && companyContext.CompanyId == companyId
         && string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal);
+
+    private async Task<bool> HasFreshLocationAuthorityAsync(
+        string permission,
+        Guid companyId,
+        string actorId,
+        IReadOnlyCollection<Guid> locationIds,
+        CancellationToken cancellationToken)
+    {
+        if (!RemainsCurrent(companyId, actorId, companyId, actorId))
+        {
+            return false;
+        }
+
+        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        return RemainsCurrent(companyId, actorId, companyId, actorId)
+            && scope.IsGranted
+            && (scope.IsCompanyWide || locationIds.All(scope.LocationIds.Contains));
+    }
 
     private static bool TryCanonicalize(
         CounterpartyOrganizationLocationOperatorDisplayRequestV1? request,
