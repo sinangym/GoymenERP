@@ -660,7 +660,7 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
     private static ManufacturingToleranceProfilePersistenceException SuccessorVersionConflict(
         ManufacturingToleranceProfileLifecycleRow existingSuccessor,
         Exception? innerException = null) =>
-        new(
+        new ManufacturingToleranceProfilePersistenceException(
             ManufacturingToleranceProfilePersistenceCodesV1.VersionConflict,
             expectedStateVersion: 0,
             currentStateVersion: existingSuccessor.StateVersion,
