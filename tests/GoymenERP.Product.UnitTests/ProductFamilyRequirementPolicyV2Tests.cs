@@ -184,6 +184,81 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
                 overrideTemplate: true), default));
     }
 
+    [Fact]
+    public async Task Released_round_square_and_canonical_rectangle_cards_pass_their_distinct_geometries()
+    {
+        var definition = ProductInitialTechnicalDefinitionV1.Definition();
+
+        Assert.Empty(await ValidateReleasedAsync(definition, RoundPipeAttributes(),
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId));
+        Assert.Empty(await ValidateReleasedAsync(definition, ProfileAttributes(40m, 40m),
+            ProductInitialTechnicalDefinitionV1.WeldedSquareProfileFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedSquareProfileTemplateId));
+        Assert.Empty(await ValidateReleasedAsync(definition, ProfileAttributes(60m, 40m),
+            ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileTemplateId));
+    }
+
+    [Theory]
+    [InlineData("missing", ProductFamilyPolicyCodesV1.Required)]
+    [InlineData("zero", ProductFamilyPolicyCodesV1.InvalidValue)]
+    [InlineData("four-decimals", ProductFamilyPolicyCodesV1.PrecisionExceeded)]
+    public async Task Released_tube_profile_geometry_fields_keep_the_exact_measure_contract(string fault, string code)
+    {
+        var definition = ProductInitialTechnicalDefinitionV1.Definition();
+        var cases = new[]
+        {
+            (RoundPipeAttributes(), ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+                ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
+                new[] { "outside-diameter-mm", "wall-thickness-mm", "length-mm" }),
+            (ProfileAttributes(40m, 40m), ProductInitialTechnicalDefinitionV1.WeldedSquareProfileFamilyId,
+                ProductInitialTechnicalDefinitionV1.WeldedSquareProfileTemplateId,
+                new[] { "section-width-mm", "section-height-mm", "wall-thickness-mm", "length-mm" }),
+        };
+
+        foreach (var (valid, familyId, templateId, fields) in cases)
+        {
+            foreach (var field in fields)
+            {
+                var attributes = new Dictionary<string, object?>(valid, StringComparer.Ordinal);
+                Apply(attributes, field, fault);
+                var error = Assert.Single(await ValidateReleasedAsync(definition, attributes, familyId, templateId));
+                Assert.Equal(($"references.attributes.{field}", code), (error.Field, error.Code));
+            }
+        }
+    }
+
+    [Fact]
+    public async Task Square_and_rectangle_geometry_is_canonical_and_does_not_alias_round_pipe_fields()
+    {
+        var definition = ProductInitialTechnicalDefinitionV1.Definition();
+
+        var square = Assert.Single(await ValidateReleasedAsync(definition, ProfileAttributes(60m, 40m),
+            ProductInitialTechnicalDefinitionV1.WeldedSquareProfileFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedSquareProfileTemplateId));
+        Assert.Equal(("references.attributes.section-height-mm", ProductFamilyPolicyCodesV1.InvalidValue),
+            (square.Field, square.Code));
+
+        foreach (var dimensions in new[] { (Width: 40m, Height: 40m), (Width: 40m, Height: 60m) })
+        {
+            var rectangle = Assert.Single(await ValidateReleasedAsync(definition,
+                ProfileAttributes(dimensions.Width, dimensions.Height),
+                ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileFamilyId,
+                ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileTemplateId));
+            Assert.Equal(("references.attributes.section-width-mm", ProductFamilyPolicyCodesV1.InvalidValue),
+                (rectangle.Field, rectangle.Code));
+        }
+
+        var round = RoundPipeAttributes();
+        round["section-width-mm"] = 48.3m;
+        var alien = Assert.Single(await ValidateReleasedAsync(definition, round,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId));
+        Assert.Equal(("references.attributes.section-width-mm", ProductFamilyPolicyCodesV1.FieldUnknown),
+            (alien.Field, alien.Code));
+    }
+
     [Theory]
     [InlineData("missing", ProductFamilyPolicyCodesV1.Required)]
     [InlineData("null", ProductFamilyPolicyCodesV1.Required)]
@@ -540,6 +615,30 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
 
     private static ProductFamilyRequirementPolicyV2 Policy(ProductFamilyDefinitionV2? definition = null) =>
         new(new FixedSource(definition ?? Definition()));
+
+    private static Task<IReadOnlyList<ProductFieldError>> ValidateReleasedAsync(ProductFamilyDefinitionV2 definition,
+        Dictionary<string, object?> attributes, Guid familyId, Guid templateId) =>
+        Policy(definition).ValidateAsync(Card(attributes, family: familyId, useFamily: true,
+            templateId: templateId, templateVersion: "1", overrideTemplate: true), default);
+
+    private static Dictionary<string, object?> RoundPipeAttributes() => new(StringComparer.Ordinal)
+    {
+        ["outside-diameter-mm"] = 48.3m,
+        ["wall-thickness-mm"] = 1.5m,
+        ["length-mm"] = 6000m,
+        ["steel-grade"] = "S235JR",
+        ["coating"] = "uncoated",
+    };
+
+    private static Dictionary<string, object?> ProfileAttributes(decimal width, decimal height) => new(StringComparer.Ordinal)
+    {
+        ["section-width-mm"] = width,
+        ["section-height-mm"] = height,
+        ["wall-thickness-mm"] = 1.4m,
+        ["length-mm"] = 6000m,
+        ["steel-grade"] = "S235JR",
+        ["coating"] = "uncoated",
+    };
 
     private static void Apply(Dictionary<string, object?> attributes, string field, string fault)
     {

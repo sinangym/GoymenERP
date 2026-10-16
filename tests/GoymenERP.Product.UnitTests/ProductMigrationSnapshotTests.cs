@@ -23,6 +23,8 @@ public sealed class ProductMigrationSnapshotTests
         Assert.Contains(migrations, migration => migration.EndsWith("_AddProductFamilyRegistry", StringComparison.Ordinal));
         Assert.Contains(migrations, migration => migration.EndsWith(
             "_ReleaseHotRolledCutSheetPlateTechnicalDefinition", StringComparison.Ordinal));
+        Assert.Contains(migrations, migration => migration.EndsWith(
+            "_ReleaseWeldedTubeProfileTechnicalDefinition", StringComparison.Ordinal));
 
         var snapshot = context.GetService<IMigrationsAssembly>().ModelSnapshot?.Model;
         Assert.NotNull(snapshot);

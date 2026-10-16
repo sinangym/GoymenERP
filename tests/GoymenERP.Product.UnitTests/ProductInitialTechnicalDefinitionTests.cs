@@ -9,16 +9,17 @@ namespace GoymenERP.Product.UnitTests;
 public sealed class ProductInitialTechnicalDefinitionTests
 {
     [Fact]
-    public void Decision_4A_definition_is_exact_source_stamped_and_well_formed()
+    public void Released_definition_is_exact_source_stamped_and_well_formed()
     {
         var definition = ProductInitialTechnicalDefinitionV1.Definition();
 
         ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
-        Assert.Equal(5, definition.Families.Count);
+        Assert.Equal(8, definition.Families.Count);
         Assert.Equal(
-            ["cr-coil", "cr-slit-coil", "hr-coil", "hr-cut-sheet-plate", "hr-slit-coil"],
+            ["cr-coil", "cr-slit-coil", "hr-coil", "hr-cut-sheet-plate", "hr-slit-coil",
+             "welded-rectangle-profile", "welded-round-pipe", "welded-square-profile"],
             definition.Families.Select(family => family.Code).Order(StringComparer.Ordinal));
-        Assert.All(definition.Families.Where(family => family.Code != "hr-cut-sheet-plate"), family =>
+        Assert.All(definition.Families.Where(family => family.RuleSet == ProductFamilyRuleSetsV2.GdcBandCoil), family =>
         {
             Assert.Equal("Sac", family.Cins);
             Assert.Equal(ProductFamilyRuleSetsV2.GdcBandCoil, family.RuleSet);
@@ -30,7 +31,20 @@ public sealed class ProductInitialTechnicalDefinitionTests
                 ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
             (cutSheet.Cins, cutSheet.Tur, cutSheet.Tip, cutSheet.RuleSet, cutSheet.SourceRef));
 
-        Assert.Equal(2, definition.Templates.Count);
+        Assert.Equal(
+            [
+                ("welded-rectangle-profile", "Profil", "Kaynaklı", "Dikdörtgen",
+                    ProductFamilyRuleSetsV2.GdcWeldedRectangleProfile),
+                ("welded-round-pipe", "Boru", "Kaynaklı", "Yuvarlak",
+                    ProductFamilyRuleSetsV2.GdcWeldedRoundPipe),
+                ("welded-square-profile", "Profil", "Kaynaklı", "Kare",
+                    ProductFamilyRuleSetsV2.GdcWeldedSquareProfile),
+            ],
+            definition.Families.Where(family => family.SourceRef == ProductInitialTechnicalDefinitionV1.WeldedTubeProfileSourceRef)
+                .OrderBy(family => family.Code)
+                .Select(family => (family.Code, family.Cins, family.Tur, family.Tip, family.RuleSet)));
+
+        Assert.Equal(5, definition.Templates.Count);
         var template = definition.Templates.Single(candidate => candidate.Id == ProductInitialTechnicalDefinitionV1.TemplateId);
         Assert.Equal((ProductInitialTechnicalDefinitionV1.TemplateId, "1", "gdc-flat-coil-v1"),
             (template.Id, template.Version, template.Code));
@@ -62,6 +76,27 @@ public sealed class ProductInitialTechnicalDefinitionTests
              ProductTemplateFieldRolesV2.Coating],
             cutSheetTemplate.Fields.Where(field => field.Role is not null).Select(field => field.Role));
 
+        AssertTemplate(definition, ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId, "gdc-welded-round-pipe-v1",
+            ["outside-diameter-mm", "wall-thickness-mm", "length-mm", "steel-grade", "coating", "producer-grade"],
+            [ProductTemplateFieldRolesV2.OutsideDiameter, ProductTemplateFieldRolesV2.WallThickness,
+             ProductTemplateFieldRolesV2.Length, ProductTemplateFieldRolesV2.Quality,
+             ProductTemplateFieldRolesV2.Coating]);
+        AssertTemplate(definition, ProductInitialTechnicalDefinitionV1.WeldedSquareProfileTemplateId,
+            ProductInitialTechnicalDefinitionV1.WeldedSquareProfileFamilyId, "gdc-welded-square-profile-v1",
+            ["section-width-mm", "section-height-mm", "wall-thickness-mm", "length-mm", "steel-grade", "coating",
+             "producer-grade"],
+            [ProductTemplateFieldRolesV2.SectionWidth, ProductTemplateFieldRolesV2.SectionHeight,
+             ProductTemplateFieldRolesV2.WallThickness, ProductTemplateFieldRolesV2.Length,
+             ProductTemplateFieldRolesV2.Quality, ProductTemplateFieldRolesV2.Coating]);
+        AssertTemplate(definition, ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileTemplateId,
+            ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileFamilyId, "gdc-welded-rectangle-profile-v1",
+            ["section-width-mm", "section-height-mm", "wall-thickness-mm", "length-mm", "steel-grade", "coating",
+             "producer-grade"],
+            [ProductTemplateFieldRolesV2.SectionWidth, ProductTemplateFieldRolesV2.SectionHeight,
+             ProductTemplateFieldRolesV2.WallThickness, ProductTemplateFieldRolesV2.Length,
+             ProductTemplateFieldRolesV2.Quality, ProductTemplateFieldRolesV2.Coating]);
+
         Assert.Equal(5, definition.Entries.Count);
         Assert.All(definition.Entries, entry => Assert.Equal(ProductDefinitionEntryStatusV2.Approved, entry.Status));
         Assert.DoesNotContain(definition.Entries, entry => entry.Dictionary.Contains("unit", StringComparison.OrdinalIgnoreCase));
@@ -86,5 +121,18 @@ public sealed class ProductInitialTechnicalDefinitionTests
             context.Database.GetMigrations());
         Assert.Contains(ReleaseHotRolledCutSheetPlateTechnicalDefinition.MigrationId,
             context.Database.GetMigrations());
+        Assert.Contains(ReleaseWeldedTubeProfileTechnicalDefinition.MigrationId,
+            context.Database.GetMigrations());
+    }
+
+    private static void AssertTemplate(ProductFamilyDefinitionV2 definition, Guid templateId, Guid familyId,
+        string code, string[] keys, string[] roles)
+    {
+        var template = definition.Templates.Single(candidate => candidate.Id == templateId);
+        Assert.Equal(("1", code, ProductInitialTechnicalDefinitionV1.WeldedTubeProfileSourceRef),
+            (template.Version, template.Code, template.SourceRef));
+        Assert.Equal([familyId], template.FamilyIds);
+        Assert.Equal(keys, template.Fields.Select(field => field.Key));
+        Assert.Equal(roles, template.Fields.Where(field => field.Role is not null).Select(field => field.Role));
     }
 }

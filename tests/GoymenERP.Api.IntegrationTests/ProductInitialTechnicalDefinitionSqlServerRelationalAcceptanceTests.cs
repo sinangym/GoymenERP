@@ -58,17 +58,90 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
         var definition = await new SqlProductFamilyDefinitionSource(
             read.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default);
         ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
-        Assert.Equal(6, definition.Families.Count);
-        Assert.Equal(3, definition.Templates.Count);
+        Assert.Equal(9, definition.Families.Count);
+        Assert.Equal(6, definition.Templates.Count);
         Assert.Equal(8, definition.Entries.Count);
         Assert.Equal(4, definition.Families.Count(row => row.SourceRef == ProductInitialTechnicalDefinitionV1.SourceRef));
         Assert.Equal(ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef,
             definition.Families.Single(row =>
                 row.Id == ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId).SourceRef);
+        Assert.Equal(3, definition.Families.Count(row =>
+            row.SourceRef == ProductInitialTechnicalDefinitionV1.WeldedTubeProfileSourceRef));
+        Assert.Equal(3, definition.Templates.Count(row =>
+            row.SourceRef == ProductInitialTechnicalDefinitionV1.WeldedTubeProfileSourceRef));
         Assert.Equal(ProductTechnicalCardFixture.SourceRef,
             definition.Families.Single(row => row.Id == ProductTechnicalCardFixture.FamilyId).SourceRef);
         Assert.Equal(ProductTechnicalCardFixture.SourceRef,
             definition.Templates.Single(row => row.Id == ProductTechnicalCardFixture.TemplateId).SourceRef);
+    }
+
+    [SqlServerFact]
+    public async Task Welded_release_refuses_changed_card_or_replay_footprints_then_reapplies_exactly()
+    {
+        await using var run = await Run.StartAsync();
+
+        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
+            UPDATE [product].[TemplateFields]
+               SET [Role] = 'outside-diameter-changed'
+             WHERE [TemplateId] = 'f944d764-56f6-4a04-9a31-65074b2c06c1'
+               AND [TemplateVersion] = 1 AND [Key] = 'outside-diameter-mm';
+            """);
+        var changed = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory,
+            ReleaseHotRolledCutSheetPlateTechnicalDefinition.MigrationId));
+        Assert.Equal(51045, changed.Number);
+        Assert.Contains("partial or changed", changed.Message, StringComparison.Ordinal);
+        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
+            UPDATE [product].[TemplateFields]
+               SET [Role] = 'outside-diameter'
+             WHERE [TemplateId] = 'f944d764-56f6-4a04-9a31-65074b2c06c1'
+               AND [TemplateVersion] = 1 AND [Key] = 'outside-diameter-mm';
+            INSERT INTO [product].[CodeGroups] ([Id], [Name], [Prefix])
+                VALUES ('b7100000-0000-4000-8000-000000000101', N'SENTETIK welded rollback group', 'WRG');
+            INSERT INTO [product].[Products]
+                ([Id], [Code], [Name], [GroupId], [ClassId], [FamilyId],
+                 [PurchasableValue], [PurchasableProvenance], [SellableValue], [SellableProvenance],
+                 [ProductionInputValue], [ProductionInputProvenance], [ProductionOutputValue], [ProductionOutputProvenance],
+                 [Lifecycle], [Version], [CreatedAtUtc], [UpdatedAtUtc], [ReferencesJson])
+            VALUES
+                ('b7100000-0000-4000-8000-000000000401', 'WRG-1', N'SENTETIK kaynaklı yuvarlak boru',
+                 'b7100000-0000-4000-8000-000000000101', NULL, 'b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99',
+                 NULL, 0, NULL, 0, NULL, 0, NULL, 0, 0, 1,
+                 '2026-10-16T10:00:00+00:00', '2026-10-16T10:00:00+00:00',
+                 N'{"templateId":"f944d764-56f6-4a04-9a31-65074b2c06c1","templateVersion":"1","attributes":{"outside-diameter-mm":48.3,"wall-thickness-mm":1.5,"length-mm":6000,"steel-grade":"S235JR","coating":"uncoated"}}');
+            """);
+
+        var referenced = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory,
+            ReleaseHotRolledCutSheetPlateTechnicalDefinition.MigrationId));
+        Assert.Equal(51045, referenced.Number);
+        Assert.Contains("Product cards reference", referenced.Message, StringComparison.Ordinal);
+
+        await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
+            DELETE FROM [product].[Products] WHERE [Id] = '{ProductId:D}';
+            """);
+        await InsertWeldedHistoricalReplayAsync(run.Factory.DatabaseConnectionString);
+        var replay = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory,
+            ReleaseHotRolledCutSheetPlateTechnicalDefinition.MigrationId));
+        Assert.Equal(51045, replay.Number);
+        Assert.Contains("replay history references", replay.Message, StringComparison.Ordinal);
+
+        await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
+            DELETE FROM [idempotency].[GroupSharedCommandTerminals]
+             WHERE [Subject] = 'Product' AND [CommandName] = 'product.draft.create.v1'
+               AND [IdempotencyKeyHash] = '{new string('C', 64)}';
+            DELETE FROM [product].[CodeGroups] WHERE [Id] = '{GroupId:D}';
+            """);
+        await MigrateAsync(run.Factory, ReleaseHotRolledCutSheetPlateTechnicalDefinition.MigrationId);
+        Assert.Equal(5, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Families]"));
+        Assert.Equal(2, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Templates]"));
+        Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Families] WHERE [SourceRef] = 'issue66-6210091477-p013-a'"));
+
+        await MigrateAsync(run.Factory);
+        await using var replayed = run.Factory.Services.CreateAsyncScope();
+        AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
+            replayed.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
     }
 
     [SqlServerFact]
@@ -244,9 +317,23 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
     private static void AssertExactInitialRelease(ProductFamilyDefinitionV2 actual)
     {
         var full = ProductInitialTechnicalDefinitionV1.Definition();
+        var additiveFamilyIds = new HashSet<Guid>
+        {
+            ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedSquareProfileFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileFamilyId,
+        };
+        var additiveTemplateIds = new HashSet<Guid>
+        {
+            ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
+            ProductInitialTechnicalDefinitionV1.WeldedSquareProfileTemplateId,
+            ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileTemplateId,
+        };
         var expected = new ProductFamilyDefinitionV2(
-            [.. full.Families.Where(row => row.Id != ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId)],
-            [.. full.Templates.Where(row => row.Id != ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId)],
+            [.. full.Families.Where(row => !additiveFamilyIds.Contains(row.Id))],
+            [.. full.Templates.Where(row => !additiveTemplateIds.Contains(row.Id))],
             full.Entries);
         AssertExact(expected, actual);
     }
@@ -320,6 +407,44 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
             """;
         command.Parameters.AddWithValue("@key", new string('A', 64));
         command.Parameters.AddWithValue("@request", new string('B', 64));
+        command.Parameters.AddWithValue("@response", responseJson);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task InsertWeldedHistoricalReplayAsync(string connectionString)
+    {
+        var at = DateTimeOffset.Parse("2026-10-16T10:00:00+00:00", System.Globalization.CultureInfo.InvariantCulture);
+        var product = new ProductDraftView(ProductId, "WRG-1", "SENTETIK kaynaklı yuvarlak boru", GroupId,
+            null, ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+            new(new(null, "not-evaluated"), new(true, "manual"),
+                new(null, "not-evaluated"), new(null, "not-evaluated")),
+            "Draft", "1", at, at, new(null, null, null, null), new("Complete", []));
+        var references = new ProductReferences(ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId, "1",
+            new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+            {
+                ["outside-diameter-mm"] = JsonSerializer.SerializeToElement(48.3m),
+                ["wall-thickness-mm"] = JsonSerializer.SerializeToElement(1.5m),
+                ["length-mm"] = JsonSerializer.SerializeToElement(6000m),
+                ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+            });
+        var responseJson = JsonSerializer.Serialize(new ProductMutationResponse(new(product, references), false),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO [idempotency].[GroupSharedCommandTerminals]
+                ([Subject], [CommandName], [IdempotencyKeyHash], [LocalActorId], [OriginCompanyId], [RequestHash],
+                 [StatusCode], [ResponseJson], [OriginalCorrelationId], [SchemaVersion], [CompletedAtUtc])
+            VALUES
+                ('Product', 'product.draft.create.v1', @key, '20000000-0000-0000-0000-000000000003',
+                 '10000000-0000-0000-0000-000000000001', @request, 201, @response,
+                 'product-p013-rollback-history', 1, '2026-10-16T10:00:00+00:00');
+            """;
+        command.Parameters.AddWithValue("@key", new string('C', 64));
+        command.Parameters.AddWithValue("@request", new string('D', 64));
         command.Parameters.AddWithValue("@response", responseJson);
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
