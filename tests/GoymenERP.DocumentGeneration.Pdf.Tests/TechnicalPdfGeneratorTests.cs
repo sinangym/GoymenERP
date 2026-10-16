@@ -580,6 +580,10 @@ public sealed class TechnicalPdfGeneratorTests
                         yield return key;
                     }
                     var itemValue = dictionary.Elements[key];
+                    if (itemValue is null)
+                    {
+                        continue;
+                    }
                     if (key == "/Subtype" && itemValue is PdfSharp.Pdf.PdfName { Value: "/CIDFontType2" })
                     {
                         continue;
