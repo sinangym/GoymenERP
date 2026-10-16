@@ -1055,25 +1055,25 @@ class WorkflowOrderingTests(unittest.TestCase):
 
     def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
         expected_job_fingerprints = {
-            "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
-            "backend-test-group": "4138b2c1aa82cb51ccbaf6cbe3a42a54416a93b61b598ca776a0a9207272be58",
+            "backend-build": "641b61cfa11ebac1105f1e259c12e5d053c16027c83a0a94c7f972a068679f66",
+            "backend-test-group": "3566ea60fc73bd77bc94bd4efbaafd9c6b50dea6b65ab9ce93751faf8edb79a7",
             "backend": (
-                "05bb62fbf78799a5700b3f0ba221b307cd9cd9908399641c151ed157362a0172"
+                "234a8fb95d086d8c8e4a5981ad6d3f92adbdbfa4a900e8ea2e0fb34826afc6f7"
             ),
             "frontend": (
-                "35f367ca26c395da8b82562519f4532ed750792a453d5840584ec082917f0895"
+                "e9c3e81fab8292129ef6889eab3cc426dece83c2d5f40acbf8e78d1a91a48b6f"
             ),
             "relational-shard": (
-                "83e78c46fff384d3d3f42f75d5fe42ac06a8c59387b84d7e5c1532228c7aacb6"
+                "47327ffd439f6308051591a7feb4dc1c3d1893fa4e997491a9518bbcd76cab79"
             ),
             "relational-rcsi": (
-                "54511265ef8c5306a868e698b9aacaffa784a8e8c8e7540366c532eb8425af77"
+                "146acd198b1bf61ba9314a5ab675033972ddbba8801570b62c9613f1a5ef5bb7"
             ),
             "relational": (
-                "0e13b8a66d7f02d8e5ea545d028ea37daffe5a5d5d31bbc4be6b4ff67dd47412"
+                "cca5d1491c5951a2ebe2adf7580a424dea027ae0e7d102c84a5c3c53a7cd7d63"
             ),
             "contract-drift": (
-                "067e1d19ce60a40f11e34e4dba7bae591e33c3ef06d271a8a557ca9226fffcea"
+                "9411969b92693589ca31561dff55eefeff4eeed2332355e4b68a92b08dfad494"
             ),
         }
 
@@ -1156,7 +1156,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", build, re.M),
             ["    name: Backend full build, vulnerability and migrations",
-             "    runs-on: ubuntu-latest", "    steps:"],
+             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    steps:"],
         )
         self.assertIn("dotnet build GoymenERP.slnx -noAutoResponse", build)
         self.assertIn(
@@ -1176,7 +1176,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", worker, re.M),
             ["    name: Backend test group (${{ matrix.group }})",
-             "    runs-on: ubuntu-latest", "    strategy:", "    steps:"],
+             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    strategy:", "    steps:"],
         )
         self.assertIn(
             "    strategy:\n      fail-fast: false\n      matrix:\n"
@@ -1226,7 +1226,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             ["    name: Backend build, test and migration",
              "    needs: [backend-build, backend-test-group]",
              "    if: ${{ always() }}",
-             "    runs-on: ubuntu-latest", "    steps:"],
+             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    steps:"],
         )
         self.assertNotIn("continue-on-error:", aggregate)
         self.assertNotIn("dotnet ", aggregate)
