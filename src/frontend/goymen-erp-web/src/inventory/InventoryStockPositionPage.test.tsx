@@ -102,7 +102,8 @@ function row(overrides: Record<string, unknown> = {}) {
       technical: {
         family: { familyId: FAMILY, familyCode: 'coil', sourceRevision: '#66/stock-display' },
         template: { templateId: TEMPLATE, templateVersion: '1', templateCode: 'coil-v1', sourceRevision: '#66/stock-display' },
-        thicknessMm: '1.5', widthMm: '1250',
+        // P03.2 / #738 `4.0`: the key is required; a coil publishes no nominal length, so it is an explicit null.
+        thicknessMm: '1.5', widthMm: '1250', lengthMm: null,
       },
       errors: [],
     },
@@ -252,6 +253,37 @@ describe('ST-01 on the #597 opt-in contract', () => {
     mount()
     await screen.findByRole('link', { name: 'ROLL-1' })
     expect(cellTexts(bodyRow('ROLL-1'))[2]).toBe('1,5 × 1.250')
+  })
+
+  // P03.2 / #738 `4.0`: the Product card's nominal length joins the size; a null one adds nothing.
+  const cutSheet = (lengthMm: string | null) => row({
+    labelId: LABEL_2, labelCode: 'SHEET-1',
+    productDisplay: {
+      ...row().productDisplay,
+      technical: {
+        ...row().productDisplay.technical,
+        family: { familyId: FAMILY, familyCode: 'cut-sheet', sourceRevision: '#66/stock-display' },
+        thicknessMm: '3', widthMm: '1500', lengthMm,
+      },
+    },
+  })
+
+  it('shows a cut sheet’s nominal length after thickness and width, with its digits unrounded', async () => {
+    api.page.mockResolvedValue(ready([row(), cutSheet('2500.125')]))
+    mount()
+    await screen.findByRole('link', { name: 'SHEET-1' })
+    expect(cellTexts(bodyRow('SHEET-1'))[2]).toBe('3 × 1.500 × 2.500,125')
+    // A coil (null length) keeps its two measures; no "× 0" and no guessed length.
+    expect(cellTexts(bodyRow('ROLL-1'))[2]).toBe('1,5 × 1.250')
+  })
+
+  it('never turns a null nominal length into a number', async () => {
+    api.page.mockResolvedValue(ready([cutSheet(null)]))
+    mount()
+    await screen.findByRole('link', { name: 'SHEET-1' })
+    const size = cellTexts(bodyRow('SHEET-1'))[2]
+    expect(size).toBe('3 × 1.500')
+    expect(size).not.toMatch(/× 0\b|×\s*$/)
   })
 
   it('says "—" where the Product owner published no identity or nominal size, and keeps the authorised card link', async () => {
@@ -647,6 +679,16 @@ describe('ST-01 on a phone', () => {
     expect(screen.getAllByRole('link', { name: 'ROLL-1' })).toHaveLength(1)
   })
 
+  it('shows the nominal length on the phone card exactly as on the table', async () => {
+    stubViewport(true)
+    const technical = { ...row().productDisplay.technical, thicknessMm: '3', widthMm: '1500', lengthMm: '2500.125' }
+    api.page.mockResolvedValue(ready([row({ productDisplay: { ...row().productDisplay, technical } })]))
+    mount()
+    const cards = await screen.findByTestId('stock-position-cards')
+    const size = within(cards).getByText('Ölçü (mm)', { selector: 'dt' }).nextElementSibling?.textContent
+    expect(size).toBe('3 × 1.500 × 2.500,125')
+  })
+
   it('switches between table and cards when the window crosses the phone width', async () => {
     const viewport = stubViewport(false)
     mount()
@@ -909,7 +951,7 @@ describe('ST-01 inside the real shell: capability route, auth boundary, no legac
   /** No read of this screen may go out without the #597 opt-in, and the legacy reader is never called. */
   function expectNoLegacyRead() {
     expect(api.legacy).not.toHaveBeenCalled()
-    expect(positionCalls.every((call) => call.optIn === '3.0')).toBe(true)
+    expect(positionCalls.every((call) => call.optIn === '4.0')).toBe(true)
   }
 
   beforeEach(() => {

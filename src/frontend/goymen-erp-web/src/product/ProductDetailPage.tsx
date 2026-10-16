@@ -40,6 +40,9 @@ import {
   labelOrUnavailable,
   lifecycleLabel,
   lifecycleMeaning,
+  productFieldPathLabel,
+  technicalFieldLabel,
+  technicalFieldRole,
 } from './productText'
 import {
   PRODUCT_ACTIVATE_CAPABILITY,
@@ -87,6 +90,25 @@ function formatInstant(value: string): string {
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return value
   return parsed.toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+const NOMINAL_MEASURE_ROLES: ReadonlySet<string> = new Set(['thickness', 'width', 'length'])
+const DECIMAL_TEXT = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/
+
+const isNominalMeasure = (key: string) => NOMINAL_MEASURE_ROLES.has(technicalFieldRole(key) ?? '')
+
+/** A stored attribute's name, as the edit form writes it: a nominal measure carries its unit in the name. */
+function attributeLabel(key: string): string {
+  return isNominalMeasure(key) ? `${technicalFieldLabel(key)} (mm)` : technicalFieldLabel(key)
+}
+
+/**
+ * A stored attribute without a server label: a number as its stored digits (never re-rounded), a nominal measure
+ * published as decimal text as that text, and a code the catalogue could not name as exactly that.
+ */
+function attributeValueText(key: string, value: unknown): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return isNominalMeasure(key) && typeof value === 'string' && DECIMAL_TEXT.test(value) ? value : 'Katalog adı okunamıyor'
 }
 
 export function ProductDetailPage() {
@@ -966,7 +988,7 @@ function ProductCardView({
             ) : (
               <ul className={styles.missingList} data-testid="product-missing-fields">
                 {completeness.missingFields.map((field) => (
-                  <li key={field}>{field}</li>
+                  <li key={field}>{productFieldPathLabel(field)}</li>
                 ))}
               </ul>
             )}
@@ -1017,8 +1039,8 @@ function ProductCardView({
             <dd>{product.labels.familyFacts?.[fact] ?? UNASSIGNED}</dd>
           </div>)}
           {Object.entries(references.attributes ?? {}).map(([key, value]) => <div key={key}>
-            <dt>{key}</dt>
-            <dd>{product.labels.attributes?.[key] ?? (typeof value === 'number' ? String(value) : 'Katalog adı okunamıyor')}</dd>
+            <dt>{attributeLabel(key)}</dt>
+            <dd>{product.labels.attributes?.[key] ?? attributeValueText(key, value)}</dd>
           </div>)}
           {UNIT_ROLE.map((role) => (
             <div key={role}>
