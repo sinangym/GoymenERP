@@ -16,7 +16,7 @@ concurrency:
 jobs:
   backend-build:
     name: Backend full build, vulnerability and migrations
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
       - uses: actions/checkout@v7
 
@@ -135,7 +135,7 @@ jobs:
 
   backend-test-group:
     name: Backend test group (${{ matrix.group }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     strategy:
       fail-fast: false
       matrix:
@@ -202,7 +202,7 @@ jobs:
     name: Backend build, test and migration
     needs: [backend-build, backend-test-group]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
       - uses: actions/checkout@v7
 
@@ -228,7 +228,7 @@ jobs:
 
   recovery-surface-inventory:
     name: Recovery surface inventory exact-source proof
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -307,7 +307,7 @@ jobs:
 
   release-manifest:
     name: Release manifest exact-source proof
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -391,7 +391,7 @@ jobs:
 
   frontend:
     name: Frontend lint, test and build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     defaults:
       run:
         working-directory: src/frontend/goymen-erp-web
@@ -413,7 +413,7 @@ jobs:
 
   relational-shard:
     name: SQL Server relational shard (${{ matrix.shard }})
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     strategy:
       fail-fast: false
       matrix:
@@ -497,7 +497,7 @@ jobs:
 
   relational-rcsi:
     name: Exact RCSI relational acceptance
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     env:
       GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
         Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True
@@ -568,7 +568,7 @@ jobs:
     name: SQL Server relational acceptance
     needs: [relational-shard, relational-rcsi]
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
       - uses: actions/checkout@v7
 
@@ -594,7 +594,7 @@ jobs:
 
   contract-drift:
     name: OpenAPI contract drift
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -641,7 +641,7 @@ jobs:
       - frontend
       - relational
       - contract-drift
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     env:
       MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!
     steps:

@@ -11,7 +11,7 @@ permissions:
 jobs:
   cari-c006-backend:
     name: Cari C006 backend envelope
-    runs-on: windows-latest
+    runs-on: [self-hosted, Windows, X64, goymen-ci-windows]
     timeout-minutes: 30
     defaults:
       run:

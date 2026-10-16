@@ -1,0 +1,732 @@
+name: Local CI migration acceptance
+
+on:
+  push:
+    branches:
+      - chatgpt/local-ci-validate-20261016
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-ci-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-build:
+    name: Backend full build, vulnerability and migrations
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Delivery backlog integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_task_manifest.py
+          python3 -I -S -B -m unittest discover -s tests/task_manifest_validator -p "test_*.py" -v
+          python3 -I -S -B tools/validate_delivery_backlog.py
+          python3 -I -S -B -m unittest discover -s tests/delivery_backlog_validator -p "test_*.py" -v
+
+      - name: Restore tools and packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool restore --tool-manifest dotnet-tools.json --configfile NuGet.Config
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
+
+      - name: Build
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet build GoymenERP.slnx -noAutoResponse --configuration Release --no-restore
+
+      - name: Architecture dependency guard
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet test tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj \
+          -noAutoResponse \
+          --configuration Release \
+          --no-build \
+          --results-directory artifacts/ci-test-results/backend \
+          --logger "console;verbosity=normal" \
+          --logger "trx;LogFilePrefix=architecture"
+
+      - name: Produce secret-free backend test summary
+        if: always() && hashFiles('artifacts/ci-test-results/backend/**/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/backend \
+          --output artifacts/ci-safe-test-summary/backend.json \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job backend-build \
+          --phase test-suite
+
+      - name: Upload secret-free backend test summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/backend.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-backend-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/backend.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Check vulnerable dependencies
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet list GoymenERP.slnx package --vulnerable --include-transitive --no-restore --configfile NuGet.Config
+
+      - name: Generate idempotent SQL migration script
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --output artifacts/organization-migration.sql
+
+      - name: Generate identity idempotent SQL migration script
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/GoymenERP.Modules.Identity.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context IdentityDbContext \
+          --output artifacts/identity-migration.sql
+
+      - name: Generate audit idempotent SQL migration script
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context AuditDbContext \
+          --output artifacts/audit-migration.sql
+
+      - name: Generate idempotency idempotent SQL migration script
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context CommandExecutionDbContext \
+          --output artifacts/idempotency-migration.sql
+
+  backend-test-group:
+    name: Backend test group (${{ matrix.group }})
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [architecture, api, modules]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore locked solution packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
+
+      - name: Run exact backend test group
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_backend_test_groups.py \
+          --group "${{ matrix.group }}" \
+          --results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
+          --proof-output "artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)"
+
+      - name: Upload exact backend group proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-backend-test-group-proof-${{ matrix.group }}
+          path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Produce secret-free backend group summary
+        if: always() && hashFiles('artifacts/ci-test-results/backend-groups/*/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
+          --output "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job backend-test-group \
+          --phase test-suite
+
+      - name: Upload secret-free backend group summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/backend-*.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-backend-group-${{ matrix.group }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  backend:
+    name: Backend build, test and migration
+    needs: [backend-build, backend-test-group]
+    if: ${{ always() }}
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify backend group proof parser
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
+
+      - name: Download exact backend group proofs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-backend-test-group-proof-*
+          path: artifacts/ci-backend-group-proofs
+
+      - name: Verify complete backend build and test groups
+        run: |
+          python3 -I -S -B tools/verify_backend_test_groups.py \
+          --aggregate \
+          --proof-directory artifacts/ci-backend-group-proofs \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --build-result "${{ needs.backend-build.result }}" \
+          --worker-result "${{ needs.backend-test-group.result }}"
+
+  recovery-surface-inventory:
+    name: Recovery surface inventory exact-source proof
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify recovery inventory exact event source
+        working-directory: ${{ github.workspace }}
+        shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}
+        env:
+          GIT_NO_REPLACE_OBJECTS: "1"
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          unset \
+            GIT_ALTERNATE_OBJECT_DIRECTORIES \
+            GIT_CEILING_DIRECTORIES \
+            GIT_COMMON_DIR \
+            GIT_CONFIG_COUNT \
+            GIT_CONFIG_GLOBAL \
+            GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_SYSTEM \
+            GIT_DIR \
+            GIT_DISCOVERY_ACROSS_FILESYSTEM \
+            GIT_EXEC_PATH \
+            GIT_GRAFT_FILE \
+            GIT_INDEX_FILE \
+            GIT_NAMESPACE \
+            GIT_OBJECT_DIRECTORY \
+            GIT_REPLACE_REF_BASE \
+            GIT_SHALLOW_FILE \
+            GIT_WORK_TREE \
+            PYTHONBREAKPOINT \
+            PYTHONHOME \
+            PYTHONINSPECT \
+            PYTHONPATH \
+            PYTHONPLATLIBDIR \
+            PYTHONSTARTUP \
+            PYTHONUSERBASE \
+            PYTHONWARNINGS
+          test "$SOURCE_COMMIT" = "$(printf '%s' "$SOURCE_COMMIT" | grep -E '^[0-9a-f]{40}$')"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+          generator_path="tools/generate_recovery_surface_inventory.py"
+          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"
+          generator_temp="$(mktemp --suffix=.py)"
+          inventory_temp="$(mktemp --suffix=.json)"
+
+          cleanup() {
+            rm -f "$generator_temp" "$inventory_temp"
+          }
+          trap cleanup EXIT
+
+          python3 -I -S -B -m unittest discover \
+            -s tests/recovery_surface_inventory \
+            -p "test_*.py" \
+            -v
+
+          git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"
+          test "$(git hash-object "$generator_temp")" = "$generator_blob"
+
+          python3 -I -S -B "$generator_temp" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$inventory_temp"
+          python3 -I -S -B -m json.tool "$inventory_temp" > /dev/null
+
+          printf 'source_commit=%s\n' "$SOURCE_COMMIT"
+          printf 'tested_commit=%s\n' "$(git rev-parse HEAD)"
+          printf 'generator_blob=%s\n' "$generator_blob"
+          printf 'generator_sha256=%s\n' "$(sha256sum "$generator_temp" | cut -d ' ' -f 1)"
+          printf 'inventory_sha256=%s\n' "$(sha256sum "$inventory_temp" | cut -d ' ' -f 1)"
+          printf 'inventory_bytes=%s\n' "$(wc -c < "$inventory_temp" | tr -d '[:space:]')"
+
+  release-manifest:
+    name: Release manifest exact-source proof
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify source-only release manifest
+        working-directory: ${{ github.workspace }}
+        shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}
+        env:
+          GIT_NO_REPLACE_OBJECTS: "1"
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          unset \
+            GIT_ALTERNATE_OBJECT_DIRECTORIES \
+            GIT_CEILING_DIRECTORIES \
+            GIT_COMMON_DIR \
+            GIT_CONFIG_COUNT \
+            GIT_CONFIG_GLOBAL \
+            GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_SYSTEM \
+            GIT_DIR \
+            GIT_DISCOVERY_ACROSS_FILESYSTEM \
+            GIT_EXEC_PATH \
+            GIT_GRAFT_FILE \
+            GIT_INDEX_FILE \
+            GIT_NAMESPACE \
+            GIT_OBJECT_DIRECTORY \
+            GIT_REPLACE_REF_BASE \
+            GIT_SHALLOW_FILE \
+            GIT_WORK_TREE \
+            PYTHONBREAKPOINT \
+            PYTHONHOME \
+            PYTHONINSPECT \
+            PYTHONPATH \
+            PYTHONPLATLIBDIR \
+            PYTHONSTARTUP \
+            PYTHONUSERBASE \
+            PYTHONWARNINGS
+          test "$SOURCE_COMMIT" = "$(printf '%s' "$SOURCE_COMMIT" | grep -E '^[0-9a-f]{40}$')"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+          generator_path="tools/generate_release_manifest.py"
+          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"
+          first_manifest="$(mktemp --suffix=.json)"
+          second_manifest="$(mktemp --suffix=.json)"
+
+          cleanup() {
+            rm -f "$first_manifest" "$second_manifest"
+          }
+          trap cleanup EXIT
+
+          test "$(git hash-object "$generator_path")" = "$generator_blob"
+          python3 -I -S -B -m unittest discover \
+            -s tests/release_manifest \
+            -p "test_*.py" \
+            -v
+
+          python3 -I -S -B "$generator_path" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$first_manifest"
+          python3 -I -S -B "$generator_path" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$second_manifest"
+          cmp --silent "$first_manifest" "$second_manifest"
+          python3 -I -S -B -c \
+            'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); assert d["source"]["commit"]==sys.argv[2]; assert d["source"]["tree"]==sys.argv[3]; assert d["manifestMode"]=="SOURCE_ONLY"; assert d["result"]=="UNVERIFIED"; assert d["deployable"] is False' \
+            "$first_manifest" "$SOURCE_COMMIT" "$(git rev-parse "$SOURCE_COMMIT^{tree}")"
+
+          printf 'source_commit=%s\n' "$SOURCE_COMMIT"
+          printf 'tested_commit=%s\n' "$(git rev-parse HEAD)"
+          printf 'generator_blob=%s\n' "$generator_blob"
+          printf 'generator_sha256=%s\n' "$(sha256sum "$generator_path" | cut -d ' ' -f 1)"
+          printf 'release_manifest_sha256=%s\n' "$(sha256sum "$first_manifest" | cut -d ' ' -f 1)"
+          printf 'release_manifest_bytes=%s\n' "$(wc -c < "$first_manifest" | tr -d '[:space:]')"
+
+  frontend:
+    name: Frontend lint, test and build
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    defaults:
+      run:
+        working-directory: src/frontend/goymen-erp-web
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/frontend/goymen-erp-web/package-lock.json
+
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  relational-shard:
+    name: SQL Server relational shard (${{ matrix.shard }})
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [A, B, C]
+    env:
+      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
+        Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore relational test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Run exact SQL Server relational shard
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --shard "${{ matrix.shard }}" \
+          --trx-output "artifacts/ci-test-results/relational/broad-${{ matrix.shard }}.trx" \
+          --proof-output "artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)"
+
+      - name: Upload exact SQL shard proof
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-relational-shard-proof-${{ matrix.shard }}
+          path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Produce secret-free relational shard summary
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --output "artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job relational-shard \
+          --phase sql-acceptance
+
+      - name: Upload secret-free relational shard summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/shard-*.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-relational-shard-${{ matrix.shard }}-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  relational-rcsi:
+    name: Exact RCSI relational acceptance
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    env:
+      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
+        Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore relational test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Run exact RCSI relational acceptance verifier
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --rcsi \
+          --trx-output artifacts/ci-test-results/relational/rcsi.trx
+
+      - name: Produce secret-free RCSI test summary
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --output artifacts/ci-safe-test-summary/relational.json \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job relational-rcsi \
+          --phase sql-acceptance
+
+      - name: Upload secret-free RCSI test summary
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/relational.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-test-summary-relational-rcsi-${{ github.event.pull_request.head.sha || github.sha }}
+          path: artifacts/ci-safe-test-summary/relational.json
+          if-no-files-found: error
+          retention-days: 7
+
+  relational:
+    name: SQL Server relational acceptance
+    needs: [relational-shard, relational-rcsi]
+    if: ${{ always() }}
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify relational shard proof parser
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
+
+      - name: Download exact SQL shard proofs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-relational-shard-proof-*
+          path: artifacts/ci-relational-proofs
+
+      - name: Verify complete SQL Server relational acceptance
+        run: |
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --aggregate \
+          --proof-directory artifacts/ci-relational-proofs \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
+
+  contract-drift:
+    name: OpenAPI contract drift
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: .NET bootstrap and drift validator preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/openapi_contract_drift -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore OpenAPI contract test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Generate and verify deterministic OpenAPI contract
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configuration Release \
+          --no-restore \
+          --filter "FullyQualifiedName~OpenApiContractGenerationTests" \
+          --logger "console;verbosity=normal"
+
+      - name: Compare generated OpenAPI with canonical baseline
+        run: |
+          python3 -I -S -B tools/validate_openapi_contract.py \
+          --baseline contracts/openapi/goymen-erp-v1.json \
+          --generated artifacts/openapi.json
+
+  containers:
+    name: Container build
+    needs:
+      - backend
+      - frontend
+      - relational
+      - contract-drift
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    env:
+      MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dockerhub_mirror_contract -p "test_*.py" -v
+
+      - name: Configure Docker Hub cache mirror
+        run: |
+          sudo python3 -I -S -B tools/configure_dockerhub_mirror.py configure \
+            --daemon-config /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info --format '{{json .RegistryConfig.Mirrors}}' | \
+            python3 -I -S -B tools/configure_dockerhub_mirror.py verify
+
+      - name: Validate compose model
+        run: docker compose -f infra/docker-compose.yml config --quiet
+
+      - name: Build application images
+        run: docker compose -f infra/docker-compose.yml build api web
+
+  validate-ui-catalog:
+    name: UI catalog structure, references and hashes
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Run validator negative tests
+        run: >-
+          python -m unittest discover
+          --start-directory tests/ui_catalog_validator
+          --pattern "test_*.py"
+          --verbose
+
+      - name: Validate UI catalog golden state
+        run: python tools/validate_ui_catalog.py
+
+  cari-c006-backend:
+    name: Cari C006 backend envelope
+    runs-on: [self-hosted, Windows, X64, goymen-ci-windows]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Existing frontend-owned scanner at an immutable source, not browser PASS evidence.
+      - uses: actions/checkout@v7
+        with:
+          ref: c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe
+          path: artifacts/c006-frontend-scanner
+          persist-credentials: false
+          sparse-checkout: tests/e2e/cari-acceptance-009
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Build and verify backend source and lifecycle
+        run: >-
+          ./tools/ci/cari-c02-link.ps1 -Mode BackendVerify
+          -OutputParent "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Scan final evidence before uploading
+        id: scan
+        if: always()
+        run: >-
+          node artifacts/c006-frontend-scanner/tests/e2e/cari-acceptance-009/scan-evidence.mjs
+          "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}/scan.json"
+          "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Preserve scanned results, including failed runs
+        if: ${{ always() && steps.scan.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 14
