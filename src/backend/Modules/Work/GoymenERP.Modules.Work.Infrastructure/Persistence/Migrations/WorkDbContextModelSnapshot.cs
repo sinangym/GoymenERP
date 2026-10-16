@@ -10,5 +10,5 @@ namespace GoymenERP.Modules.Work.Infrastructure.Persistence.Migrations;
 partial class WorkDbContextModelSnapshot : ModelSnapshot
 {
     protected override void BuildModel(ModelBuilder modelBuilder) =>
-        WorkInitialStorageModelV1.Build(modelBuilder);
+        WorkExternalEventInboxModelV1.Build(modelBuilder);
 }

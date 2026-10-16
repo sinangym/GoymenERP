@@ -2,7 +2,10 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Work.Domain;
+using GoymenERP.Modules.Work.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Work.Infrastructure;
 
@@ -245,6 +248,339 @@ public static class InventoryShipmentEvidenceConsumerV1
         string message,
         Exception? innerException = null) => new(message, innerException);
 }
+
+/// <summary>
+/// Work-owned durable receipt/high-water store. The host must persist the admitted Work observation
+/// before calling <see cref="CompleteAfterWorkEffectAsync"/>. A crash between those two steps is safe:
+/// the pending receipt is returned as Ready again and the existing Work reconciliation is idempotent.
+/// This service does not poll, schedule, retry or activate a worker.
+/// </summary>
+public sealed class InventoryShipmentEvidenceStoreV1(
+    WorkDbContext dbContext,
+    ICompanyContext companyContext,
+    TimeProvider timeProvider)
+{
+    public async Task<InventoryShipmentEvidenceReceiveResultV1> ReceiveAsync(
+        InventoryShipmentEvidenceEnvelopeV1 envelope,
+        CancellationToken cancellationToken = default)
+    {
+        var admission = InventoryShipmentEvidenceConsumerV1.Admit(envelope);
+        if (!MatchesCompany(envelope.CompanyId))
+        {
+            return new(InventoryShipmentEvidenceDeliveryDecisionV1.Refused, admission);
+        }
+
+        return await ReceiveAttemptAsync(admission, retryRace: true, cancellationToken);
+    }
+
+    public async Task<InventoryShipmentEvidenceDeliveryDecisionV1> CompleteAfterWorkEffectAsync(
+        InventoryShipmentEvidenceEnvelopeV1 envelope,
+        CancellationToken cancellationToken = default)
+    {
+        var admission = InventoryShipmentEvidenceConsumerV1.Admit(envelope);
+        if (!MatchesCompany(envelope.CompanyId))
+        {
+            return InventoryShipmentEvidenceDeliveryDecisionV1.Refused;
+        }
+
+        return await CompleteAttemptAsync(admission, retryRace: true, cancellationToken);
+    }
+
+    internal static InventoryShipmentEvidenceDeliveryDecisionV1 Evaluate(
+        long? initialSequence,
+        long? highestCompletedSequence,
+        long sequence,
+        bool alreadyCompleted)
+    {
+        if (sequence <= 0
+            || initialSequence is <= 0
+            || highestCompletedSequence is not null && initialSequence is null
+            || highestCompletedSequence < initialSequence)
+        {
+            return InventoryShipmentEvidenceDeliveryDecisionV1.Conflict;
+        }
+
+        if (alreadyCompleted)
+        {
+            return InventoryShipmentEvidenceDeliveryDecisionV1.Replay;
+        }
+
+        if (initialSequence is null)
+        {
+            return InventoryShipmentEvidenceDeliveryDecisionV1.Ready;
+        }
+
+        if (highestCompletedSequence is null)
+        {
+            if (sequence == initialSequence.Value)
+            {
+                return InventoryShipmentEvidenceDeliveryDecisionV1.Ready;
+            }
+
+            return sequence > initialSequence.Value
+                ? InventoryShipmentEvidenceDeliveryDecisionV1.GapPending
+                : InventoryShipmentEvidenceDeliveryDecisionV1.Conflict;
+        }
+
+        var expected = checked(highestCompletedSequence.Value + 1);
+        if (sequence == expected)
+        {
+            return InventoryShipmentEvidenceDeliveryDecisionV1.Ready;
+        }
+
+        return sequence > expected
+            ? InventoryShipmentEvidenceDeliveryDecisionV1.GapPending
+            : InventoryShipmentEvidenceDeliveryDecisionV1.Conflict;
+    }
+
+    internal static bool SameEnvelope(
+        WorkExternalEventInboxRow row,
+        InventoryShipmentEvidenceEnvelopeV1 envelope) =>
+        row.CompanyId == envelope.CompanyId
+        && string.Equals(row.ConsumerName, InventoryShipmentEvidenceConsumerV1.ConsumerName, StringComparison.Ordinal)
+        && row.MessageId == envelope.MessageId
+        && string.Equals(row.EventType, envelope.EventType, StringComparison.Ordinal)
+        && row.SchemaVersion == envelope.SchemaVersion
+        && string.Equals(row.SourceOperation, envelope.SourceOperation, StringComparison.Ordinal)
+        && string.Equals(row.AggregateType, envelope.AggregateType, StringComparison.Ordinal)
+        && row.AggregateId == envelope.AggregateId
+        && row.AggregateVersion == envelope.AggregateVersion
+        && row.Sequence == envelope.Sequence
+        && string.Equals(row.PayloadJson, envelope.PayloadJson, StringComparison.Ordinal)
+        && string.Equals(row.PayloadSha256, envelope.PayloadSha256, StringComparison.Ordinal)
+        && row.OccurredAtUtc == envelope.OccurredAtUtc
+        && string.Equals(row.CorrelationId, envelope.CorrelationId, StringComparison.Ordinal)
+        && string.Equals(row.CausationId, envelope.CausationId, StringComparison.Ordinal);
+
+    private async Task<InventoryShipmentEvidenceReceiveResultV1> ReceiveAttemptAsync(
+        InventoryShipmentEvidenceAdmissionV1 admission,
+        bool retryRace,
+        CancellationToken cancellationToken)
+    {
+        var envelope = admission.Envelope;
+        var existing = await FindInboxAsync(envelope, tracked: false, cancellationToken);
+        if (!MatchesCompany(envelope.CompanyId))
+        {
+            return new(InventoryShipmentEvidenceDeliveryDecisionV1.Refused, admission);
+        }
+
+        var highWater = await FindHighWaterAsync(envelope, tracked: false, cancellationToken);
+        if (!MatchesCompany(envelope.CompanyId))
+        {
+            return new(InventoryShipmentEvidenceDeliveryDecisionV1.Refused, admission);
+        }
+
+        if (existing is not null)
+        {
+            var decision = highWater is not null && SameEnvelope(existing, envelope)
+                ? Evaluate(highWater?.InitialSequence, highWater?.HighestCompletedSequence,
+                    envelope.Sequence, existing.CompletedAtUtc is not null)
+                : InventoryShipmentEvidenceDeliveryDecisionV1.Conflict;
+            return new(decision, admission);
+        }
+
+        var sequenceOwner = await dbContext.ExternalEventInbox.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CompanyId == envelope.CompanyId
+                && row.ConsumerName == InventoryShipmentEvidenceConsumerV1.ConsumerName
+                && row.EventType == envelope.EventType
+                && row.AggregateType == envelope.AggregateType
+                && row.AggregateId == envelope.AggregateId
+                && row.Sequence == envelope.Sequence,
+                cancellationToken);
+        if (sequenceOwner is not null)
+        {
+            return new(InventoryShipmentEvidenceDeliveryDecisionV1.Conflict, admission);
+        }
+
+        var now = RequireUtcNow();
+        if (highWater is null)
+        {
+            highWater = NewHighWater(envelope, now);
+            dbContext.ExternalEventHighWater.Add(highWater);
+        }
+
+        dbContext.ExternalEventInbox.Add(NewInbox(envelope, now));
+        try
+        {
+            if (!MatchesCompany(envelope.CompanyId))
+            {
+                dbContext.ChangeTracker.Clear();
+                return new(InventoryShipmentEvidenceDeliveryDecisionV1.Refused, admission);
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (!MatchesCompany(envelope.CompanyId))
+            {
+                throw new InvalidOperationException(
+                    "The server company changed after the Work external event receipt commit.");
+            }
+
+            dbContext.ChangeTracker.Clear();
+            return new(Evaluate(highWater.InitialSequence, highWater.HighestCompletedSequence,
+                envelope.Sequence, alreadyCompleted: false), admission);
+        }
+        catch (DbUpdateException) when (retryRace)
+        {
+            dbContext.ChangeTracker.Clear();
+            return await ReceiveAttemptAsync(admission, retryRace: false, cancellationToken);
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private async Task<InventoryShipmentEvidenceDeliveryDecisionV1> CompleteAttemptAsync(
+        InventoryShipmentEvidenceAdmissionV1 admission,
+        bool retryRace,
+        CancellationToken cancellationToken)
+    {
+        var envelope = admission.Envelope;
+        var inbox = await FindInboxAsync(envelope, tracked: true, cancellationToken);
+        var highWater = await FindHighWaterAsync(envelope, tracked: true, cancellationToken);
+        if (!MatchesCompany(envelope.CompanyId))
+        {
+            dbContext.ChangeTracker.Clear();
+            return InventoryShipmentEvidenceDeliveryDecisionV1.Refused;
+        }
+
+        if (inbox is null || highWater is null || !SameEnvelope(inbox, envelope))
+        {
+            dbContext.ChangeTracker.Clear();
+            return InventoryShipmentEvidenceDeliveryDecisionV1.Conflict;
+        }
+
+        var decision = Evaluate(highWater.InitialSequence, highWater.HighestCompletedSequence,
+            envelope.Sequence, inbox.CompletedAtUtc is not null);
+        if (decision != InventoryShipmentEvidenceDeliveryDecisionV1.Ready)
+        {
+            dbContext.ChangeTracker.Clear();
+            return decision;
+        }
+
+        var now = RequireUtcNow();
+        inbox.CompletedAtUtc = now;
+        highWater.HighestCompletedSequence = envelope.Sequence;
+        highWater.Version = checked(highWater.Version + 1);
+        highWater.UpdatedAtUtc = now;
+        try
+        {
+            if (!MatchesCompany(envelope.CompanyId))
+            {
+                dbContext.ChangeTracker.Clear();
+                return InventoryShipmentEvidenceDeliveryDecisionV1.Refused;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+            if (!MatchesCompany(envelope.CompanyId))
+            {
+                throw new InvalidOperationException(
+                    "The server company changed after the Work external event completion commit.");
+            }
+
+            dbContext.ChangeTracker.Clear();
+            return InventoryShipmentEvidenceDeliveryDecisionV1.Completed;
+        }
+        catch (DbUpdateConcurrencyException) when (retryRace)
+        {
+            dbContext.ChangeTracker.Clear();
+            return await CompleteAttemptAsync(admission, retryRace: false, cancellationToken);
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private Task<WorkExternalEventInboxRow?> FindInboxAsync(
+        InventoryShipmentEvidenceEnvelopeV1 envelope,
+        bool tracked,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.ExternalEventInbox.Where(row => row.CompanyId == envelope.CompanyId
+            && row.ConsumerName == InventoryShipmentEvidenceConsumerV1.ConsumerName
+            && row.MessageId == envelope.MessageId);
+        return (tracked ? query : query.AsNoTracking()).SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private Task<WorkExternalEventHighWaterRow?> FindHighWaterAsync(
+        InventoryShipmentEvidenceEnvelopeV1 envelope,
+        bool tracked,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.ExternalEventHighWater.Where(row => row.CompanyId == envelope.CompanyId
+            && row.ConsumerName == InventoryShipmentEvidenceConsumerV1.ConsumerName
+            && row.EventType == envelope.EventType
+            && row.AggregateType == envelope.AggregateType
+            && row.AggregateId == envelope.AggregateId);
+        return (tracked ? query : query.AsNoTracking()).SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private bool MatchesCompany(Guid companyId) =>
+        companyContext.IsResolved && companyContext.CompanyId == companyId;
+
+    private DateTimeOffset RequireUtcNow()
+    {
+        var now = timeProvider.GetUtcNow();
+        return now.Offset == TimeSpan.Zero
+            ? now
+            : throw new InvalidOperationException("Work external event time provider must return UTC.");
+    }
+
+    private static WorkExternalEventHighWaterRow NewHighWater(
+        InventoryShipmentEvidenceEnvelopeV1 envelope,
+        DateTimeOffset now) => new()
+        {
+            CompanyId = envelope.CompanyId,
+            ConsumerName = InventoryShipmentEvidenceConsumerV1.ConsumerName,
+            EventType = envelope.EventType,
+            AggregateType = envelope.AggregateType,
+            AggregateId = envelope.AggregateId,
+            InitialSequence = envelope.Sequence,
+            HighestCompletedSequence = null,
+            Version = 1,
+            UpdatedAtUtc = now
+        };
+
+    private static WorkExternalEventInboxRow NewInbox(
+        InventoryShipmentEvidenceEnvelopeV1 envelope,
+        DateTimeOffset now) => new()
+        {
+            CompanyId = envelope.CompanyId,
+            ConsumerName = InventoryShipmentEvidenceConsumerV1.ConsumerName,
+            MessageId = envelope.MessageId,
+            EventType = envelope.EventType,
+            SchemaVersion = envelope.SchemaVersion,
+            SourceOperation = envelope.SourceOperation,
+            AggregateType = envelope.AggregateType,
+            AggregateId = envelope.AggregateId,
+            AggregateVersion = envelope.AggregateVersion,
+            Sequence = envelope.Sequence,
+            PayloadJson = envelope.PayloadJson,
+            PayloadSha256 = envelope.PayloadSha256,
+            OccurredAtUtc = envelope.OccurredAtUtc,
+            CorrelationId = envelope.CorrelationId,
+            CausationId = envelope.CausationId,
+            ReceivedAtUtc = now,
+            CompletedAtUtc = null
+        };
+}
+
+public enum InventoryShipmentEvidenceDeliveryDecisionV1
+{
+    Ready = 1,
+    GapPending = 2,
+    Completed = 3,
+    Replay = 4,
+    Conflict = 5,
+    Refused = 6
+}
+
+public sealed record InventoryShipmentEvidenceReceiveResultV1(
+    InventoryShipmentEvidenceDeliveryDecisionV1 Decision,
+    InventoryShipmentEvidenceAdmissionV1 Admission);
 
 public sealed record InventoryShipmentEvidenceEnvelopeV1(
     Guid MessageId,

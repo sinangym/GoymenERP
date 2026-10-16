@@ -1,7 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Work.Domain;
 using GoymenERP.Modules.Work.Infrastructure;
+using GoymenERP.Modules.Work.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Work.UnitTests;
 
@@ -155,6 +158,81 @@ public sealed class InventoryShipmentEvidenceConsumerContractTests
         Assert.Equal(InventoryShipmentEvidenceConsumerV1.ConsumerName, "work.shipment-evidence.v1");
     }
 
+    [Theory]
+    [InlineData(null, null, 7L, false, InventoryShipmentEvidenceDeliveryDecisionV1.Ready)]
+    [InlineData(7L, null, 7L, false, InventoryShipmentEvidenceDeliveryDecisionV1.Ready)]
+    [InlineData(7L, null, 8L, false, InventoryShipmentEvidenceDeliveryDecisionV1.GapPending)]
+    [InlineData(7L, null, 6L, false, InventoryShipmentEvidenceDeliveryDecisionV1.Conflict)]
+    [InlineData(7L, 7L, 8L, false, InventoryShipmentEvidenceDeliveryDecisionV1.Ready)]
+    [InlineData(7L, 7L, 9L, false, InventoryShipmentEvidenceDeliveryDecisionV1.GapPending)]
+    [InlineData(7L, 8L, 8L, false, InventoryShipmentEvidenceDeliveryDecisionV1.Conflict)]
+    [InlineData(7L, 8L, 8L, true, InventoryShipmentEvidenceDeliveryDecisionV1.Replay)]
+    public void Durable_ordering_uses_first_sequence_as_high_water_and_waits_on_later_gaps(
+        long? initial,
+        long? completed,
+        long sequence,
+        bool alreadyCompleted,
+        InventoryShipmentEvidenceDeliveryDecisionV1 expected)
+    {
+        var actual = InventoryShipmentEvidenceStoreV1.Evaluate(
+            initial, completed, sequence, alreadyCompleted);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void Message_replay_requires_full_source_envelope_equality()
+    {
+        var envelope = Envelope();
+        var row = InboxRow(envelope);
+
+        Assert.True(InventoryShipmentEvidenceStoreV1.SameEnvelope(row, envelope));
+        Assert.False(InventoryShipmentEvidenceStoreV1.SameEnvelope(
+            row, envelope with { PayloadJson = envelope.PayloadJson + " " }));
+        Assert.False(InventoryShipmentEvidenceStoreV1.SameEnvelope(
+            row, envelope with { PayloadSha256 = new string('0', 64) }));
+        Assert.False(InventoryShipmentEvidenceStoreV1.SameEnvelope(
+            row, envelope with { AggregateVersion = 8, Sequence = 8 }));
+        Assert.False(InventoryShipmentEvidenceStoreV1.SameEnvelope(
+            row, envelope with { CorrelationId = "other-correlation" }));
+    }
+
+    [Fact]
+    public void Persistence_model_has_tenant_filters_dedup_and_aggregate_sequence_guards()
+    {
+        var options = new DbContextOptionsBuilder<WorkDbContext>()
+            .UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=WorkContractOnly;Trusted_Connection=True;")
+            .Options;
+        using var context = new WorkDbContext(options, new FixedCompanyContext(CompanyId));
+
+        var inbox = context.Model.FindEntityType(typeof(WorkExternalEventInboxRow));
+        var highWater = context.Model.FindEntityType(typeof(WorkExternalEventHighWaterRow));
+
+        Assert.NotNull(inbox);
+        Assert.NotNull(highWater);
+        Assert.NotEmpty(inbox!.GetDeclaredQueryFilters());
+        Assert.NotEmpty(highWater!.GetDeclaredQueryFilters());
+        Assert.Equal(["CompanyId", "ConsumerName", "MessageId"],
+            inbox.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(inbox.GetIndexes(), index => index.IsUnique
+            && index.GetDatabaseName() == "UX_WorkExternalInbox_AggregateSequence"
+            && index.Properties.Select(property => property.Name).SequenceEqual(
+                ["CompanyId", "ConsumerName", "EventType", "AggregateType", "AggregateId", "Sequence"]));
+        Assert.Equal(
+            ["CompanyId", "ConsumerName", "EventType", "AggregateType", "AggregateId"],
+            highWater.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.True(inbox.FindProperty("RowVersion")!.IsConcurrencyToken);
+        Assert.True(highWater.FindProperty("RowVersion")!.IsConcurrencyToken);
+        Assert.True(highWater.FindProperty("Version")!.IsConcurrencyToken);
+
+        Assert.Contains("20261016121000_AddWorkExternalEventInbox", context.Database.GetMigrations());
+        var createScript = context.Database.GenerateCreateScript();
+        Assert.Contains("[work].[ExternalEventHighWater]", createScript, StringComparison.Ordinal);
+        Assert.Contains("[work].[ExternalEventInbox]", createScript, StringComparison.Ordinal);
+        Assert.Contains("UX_WorkExternalInbox_AggregateSequence", createScript, StringComparison.Ordinal);
+        Assert.Contains("CK_WorkExternalInbox_Payload", createScript, StringComparison.Ordinal);
+    }
+
     private static InventoryShipmentEvidenceEnvelopeV1 Envelope(
         string? payloadJson = null,
         string? causationId = "causation-a")
@@ -196,4 +274,32 @@ public sealed class InventoryShipmentEvidenceConsumerContractTests
         ["correlationId"] = "correlation-a",
         ["causationId"] = causationId
     };
+
+    private static WorkExternalEventInboxRow InboxRow(
+        InventoryShipmentEvidenceEnvelopeV1 envelope) => new()
+        {
+            CompanyId = envelope.CompanyId,
+            ConsumerName = InventoryShipmentEvidenceConsumerV1.ConsumerName,
+            MessageId = envelope.MessageId,
+            EventType = envelope.EventType,
+            SchemaVersion = envelope.SchemaVersion,
+            SourceOperation = envelope.SourceOperation,
+            AggregateType = envelope.AggregateType,
+            AggregateId = envelope.AggregateId,
+            AggregateVersion = envelope.AggregateVersion,
+            Sequence = envelope.Sequence,
+            PayloadJson = envelope.PayloadJson,
+            PayloadSha256 = envelope.PayloadSha256,
+            OccurredAtUtc = envelope.OccurredAtUtc,
+            CorrelationId = envelope.CorrelationId,
+            CausationId = envelope.CausationId,
+            ReceivedAtUtc = OccurredAtUtc
+        };
+
+    private sealed class FixedCompanyContext(Guid companyId) : ICompanyContext
+    {
+        public bool IsResolved => true;
+        public Guid CompanyId { get; } = companyId;
+        public void Set(Guid value) => throw new InvalidOperationException();
+    }
 }
