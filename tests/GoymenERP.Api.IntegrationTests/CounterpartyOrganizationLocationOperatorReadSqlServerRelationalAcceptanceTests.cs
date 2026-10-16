@@ -48,6 +48,21 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
             using var cursorCodec = CreateCursorCodec();
             var source = Source(dbContext, context, user, authority, cursorCodec, observer);
 
+            var emptyBindings = await source.ReadAuthorizedDisplaysAsync(new(
+                TestCompanyIds.CompanyA,
+                Actor,
+                []));
+            var duplicateBindings = await source.ReadAuthorizedDisplaysAsync(new(
+                TestCompanyIds.CompanyA,
+                Actor,
+                [new(LocationOne, EligibleOne), new(LocationOne, EligibleTwo)]));
+            Assert.All(new[] { emptyBindings, duplicateBindings }, answer =>
+            {
+                Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable, answer.Outcome);
+                Assert.Empty(answer.Items);
+            });
+            Assert.Empty(observer.Commands);
+
             var display = await source.ReadAuthorizedDisplaysAsync(new(
                 TestCompanyIds.CompanyA,
                 Actor,
