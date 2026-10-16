@@ -48,6 +48,80 @@ public sealed class ColdRollingEngineV2Tests
         Assert.Equal([int.MaxValue, int.MinValue], rolled.Lines.Select(line => line.SourceSequence));
     }
 
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 7850)]
+    public void Elongation_is_exact_geometry_and_independent_of_mass_and_density(decimal wipKg, decimal density)
+    {
+        var result = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(
+            wipKg,
+            density,
+            Spec(Line(FirstLine, 0, 5m, 7m, 1m, 5m))));
+
+        Assert.Equal(EngineOutcome.Computed, result.Outcome);
+        Assert.Equal(7m, result.Value!.Lines.Single().ElongationRatio);
+    }
+
+    [Fact]
+    public void Elongation_uses_direct_cross_section_geometry_not_rounded_lengths()
+    {
+        var result = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(
+            1m,
+            7850m,
+            Spec(Line(FirstLine, 0, 2m, 7m, 1m, 5m))));
+
+        Assert.Equal(EngineOutcome.Computed, result.Outcome);
+        Assert.Equal(2.8m, result.Value!.Lines.Single().ElongationRatio);
+    }
+
+    [Fact]
+    public void Representable_extreme_mass_computes_without_intermediate_overflow()
+    {
+        var result = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(
+            decimal.MaxValue,
+            1_000_000_000m,
+            Spec(Line(FirstLine, 0, 2m, 1000m, 1m, 1000m))));
+
+        Assert.Equal(EngineOutcome.Computed, result.Outcome);
+        Assert.NotNull(result.Value);
+        Assert.True(result.Value.Lines.Single().InputMetres > 0m);
+    }
+
+    [Fact]
+    public void Representable_tiny_length_computes_without_intermediate_underflow()
+    {
+        var result = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(
+            1m,
+            1_000_000m,
+            Spec(Line(FirstLine, 0, 1_000_000_000_000m, 1_000_000_000_000m,
+                999_999_999_999m, 1_000_000_000_000m))));
+
+        Assert.Equal(EngineOutcome.Computed, result.Outcome);
+        Assert.Equal(0.000000000000000000000001m, result.Value!.Lines.Single().InputMetres);
+    }
+
+    [Fact]
+    public void Unrepresentable_arithmetic_is_a_stable_refusal_and_never_throws()
+    {
+        var overflow = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(
+            1m,
+            0.0000000000000000000000000001m,
+            Spec(Line(FirstLine, 0, 0.002m, 0.001m, 0.001m, 0.001m))));
+        var underflow = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(
+            0.001m,
+            decimal.MaxValue,
+            Spec(Line(FirstLine, 0, decimal.MaxValue, decimal.MaxValue,
+                decimal.MaxValue - 1m, decimal.MaxValue))));
+
+        Assert.All([overflow, underflow], result =>
+        {
+            Assert.Equal(EngineOutcome.Refused, result.Outcome);
+            Assert.Equal(EngineCodes.ArithmeticUnrepresentable, result.RefusalCode);
+            Assert.Equal("coldRollingPassArithmetic", result.RefusedParameter);
+            Assert.Null(result.Value);
+        });
+    }
+
     [Fact]
     public void Missing_wip_density_and_spec_are_named_and_never_defaulted_to_zero()
     {

@@ -1,3 +1,4 @@
+using System.Numerics;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
 
 namespace GoymenERP.Modules.Manufacturing.Domain.Engines.ColdRolling;
@@ -40,6 +41,8 @@ public static class ColdRollingEngineV2
     public const string FormulaVersion = "GDC-CR/2";
 
     private const decimal SquareMillimetresPerSquareMetre = 1_000_000m;
+    private const string ArithmeticParameter = "coldRollingPassArithmetic";
+    private static readonly BigInteger MaxDecimalCoefficient = (BigInteger.One << 96) - BigInteger.One;
 
     public static EngineResult<ColdRollingPassResultV2> Roll(ColdRollingPassInputV2 input)
     {
@@ -88,11 +91,32 @@ public static class ColdRollingEngineV2
         var mass = input.WipKg!.Value;
         var densityValue = input.DensityKgPerCubicMetre!.Value;
         var spec = input.PassSpec!;
-        var lines = spec.Lines.Select(line =>
+        var lines = new List<ColdRollingPassLineResultV2>(spec.Lines.Count);
+        foreach (var line in spec.Lines)
         {
-            var inputMetres = Metres(mass, line.InputThicknessMm, line.InputWidthMm, densityValue);
-            var outputMetres = Metres(mass, line.OutputThicknessMm, line.OutputWidthMm, densityValue);
-            return new ColdRollingPassLineResultV2(
+            if (!TryEvaluate(
+                    [mass, SquareMillimetresPerSquareMetre],
+                    [line.InputThicknessMm, line.InputWidthMm, densityValue],
+                    out var inputMetres)
+                || !TryEvaluate(
+                    [mass, SquareMillimetresPerSquareMetre],
+                    [line.OutputThicknessMm, line.OutputWidthMm, densityValue],
+                    out var outputMetres)
+                || !TryEvaluate(
+                    [line.InputThicknessMm - line.OutputThicknessMm, 100m],
+                    [line.InputThicknessMm],
+                    out var reductionPercent)
+                || !TryEvaluate(
+                    [line.InputThicknessMm, line.InputWidthMm],
+                    [line.OutputThicknessMm, line.OutputWidthMm],
+                    out var elongationRatio))
+            {
+                return EngineResult<ColdRollingPassResultV2>.Refused(
+                    EngineCodes.ArithmeticUnrepresentable,
+                    ArithmeticParameter);
+            }
+
+            lines.Add(new ColdRollingPassLineResultV2(
                 line.LineId,
                 line.SourceSequence,
                 line.InputThicknessMm,
@@ -101,9 +125,9 @@ public static class ColdRollingEngineV2
                 line.OutputWidthMm,
                 inputMetres,
                 outputMetres,
-                (line.InputThicknessMm - line.OutputThicknessMm) * 100m / line.InputThicknessMm,
-                outputMetres / inputMetres);
-        }).ToArray();
+                reductionPercent,
+                elongationRatio));
+        }
 
         return EngineResult<ColdRollingPassResultV2>.Computed(new ColdRollingPassResultV2(
             FormulaVersion,
@@ -111,11 +135,84 @@ public static class ColdRollingEngineV2
             spec.Version,
             mass,
             densityValue,
-            Array.AsReadOnly(lines)));
+            lines.AsReadOnly()));
     }
 
-    private static decimal Metres(decimal massKg, decimal thicknessMm, decimal widthMm, decimal densityKgPerCubicMetre) =>
-        massKg * SquareMillimetresPerSquareMetre / (thicknessMm * widthMm * densityKgPerCubicMetre);
+    private static bool TryEvaluate(
+        IReadOnlyList<decimal> numeratorFactors,
+        IReadOnlyList<decimal> denominatorFactors,
+        out decimal value)
+    {
+        var numerator = BigInteger.One;
+        var denominator = BigInteger.One;
+
+        foreach (var factor in numeratorFactors)
+        {
+            AppendFactor(factor, ref numerator, ref denominator);
+        }
+
+        foreach (var factor in denominatorFactors)
+        {
+            AppendFactor(factor, ref denominator, ref numerator);
+        }
+
+        var common = BigInteger.GreatestCommonDivisor(numerator, denominator);
+        numerator /= common;
+        denominator /= common;
+
+        if (numerator > MaxDecimalCoefficient * denominator
+            || numerator * BigInteger.Pow(10, 28) < denominator)
+        {
+            value = default;
+            return false;
+        }
+
+        for (var scale = 28; scale >= 0; scale--)
+        {
+            var scaledNumerator = numerator * BigInteger.Pow(10, scale);
+            var coefficient = BigInteger.DivRem(scaledNumerator, denominator, out var remainder);
+            var twiceRemainder = remainder * 2;
+            if (twiceRemainder > denominator
+                || (twiceRemainder == denominator && !coefficient.IsEven))
+            {
+                coefficient++;
+            }
+
+            if (coefficient <= 0 || coefficient > MaxDecimalCoefficient)
+            {
+                continue;
+            }
+
+            while (scale > 0 && coefficient % 10 == 0)
+            {
+                coefficient /= 10;
+                scale--;
+            }
+
+            value = new decimal(
+                (int)(uint)(coefficient & uint.MaxValue),
+                (int)(uint)((coefficient >> 32) & uint.MaxValue),
+                (int)(uint)((coefficient >> 64) & uint.MaxValue),
+                isNegative: false,
+                (byte)scale);
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static void AppendFactor(decimal factor, ref BigInteger numerator, ref BigInteger denominator)
+    {
+        var bits = decimal.GetBits(factor);
+        var coefficient = (BigInteger)(uint)bits[0]
+            | ((BigInteger)(uint)bits[1] << 32)
+            | ((BigInteger)(uint)bits[2] << 64);
+        var scale = (bits[3] >> 16) & 0x7F;
+
+        numerator *= coefficient;
+        denominator *= BigInteger.Pow(10, scale);
+    }
 
     private static int DecimalScale(decimal value) =>
         (decimal.GetBits(value)[3] >> 16) & 0x7F;

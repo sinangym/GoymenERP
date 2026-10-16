@@ -78,6 +78,12 @@ public static class EngineCodes
     public const string CountNotPositive = "engine_count_not_positive";
 
     /// <summary>
+    /// An otherwise valid formula cannot be represented by <see cref="decimal"/>. The engine refuses
+    /// instead of throwing, clamping, returning zero or applying a business rounding policy.
+    /// </summary>
+    public const string ArithmeticUnrepresentable = "engine_arithmetic_unrepresentable";
+
+    /// <summary>
     /// A ratio that is a fraction by definition (the paint's solids ratio, PNT-006) is above 1 — e.g. a
     /// percentage (55) given where the fraction (0,55) is meant. Refused, never divided by 100.
     /// </summary>
