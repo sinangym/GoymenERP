@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using GoymenERP.DocumentGeneration.Pdf;
 using UglyToad.PdfPig;
+using UglyToad.PdfPig.Tokens;
 
 namespace GoymenERP.DocumentGeneration.Pdf.Tests;
 
@@ -246,7 +247,7 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.DoesNotContain("Göymen", page.Text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("logo", page.Text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("antet", page.Text, StringComparison.OrdinalIgnoreCase);
-        AssertNoHostIdentifiers(pdf, artifact.Content,
+        AssertNoHostIdentifiers(pdf,
             Environment.UserName, Environment.MachineName, Directory.GetCurrentDirectory());
     }
 
@@ -257,7 +258,7 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.Contains("/CIDFontType2", Encoding.Latin1.GetString(content), StringComparison.Ordinal);
         using var pdf = PdfDocument.Open(content);
 
-        AssertNoHostIdentifiers(pdf, content, "ci");
+        AssertNoHostIdentifiers(pdf, "ci");
     }
 
     [Theory]
@@ -269,7 +270,7 @@ public sealed class TechnicalPdfGeneratorTests
         var content = CreatePrivacyProbePdf(field: field, value: "ci");
         using var pdf = PdfDocument.Open(content);
 
-        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, "ci"));
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, "ci"));
     }
 
     [Fact]
@@ -280,7 +281,7 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.DoesNotContain(privateMarker, Encoding.Latin1.GetString(content), StringComparison.Ordinal);
         using var pdf = PdfDocument.Open(content);
 
-        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, privateMarker));
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, privateMarker));
     }
 
     [Fact]
@@ -290,7 +291,15 @@ public sealed class TechnicalPdfGeneratorTests
         using var pdf = PdfDocument.Open(content);
         Assert.Contains("ci", Assert.Single(pdf.GetPages()).Text, StringComparison.Ordinal);
 
-        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, "ci"));
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, "ci"));
+    }
+
+    [Fact]
+    public void Pdf_privacy_guard_never_treats_unresolved_metadata_as_empty()
+    {
+        var reference = new IndirectReferenceToken(new UglyToad.PdfPig.Core.IndirectReference(1234, 0));
+
+        Assert.Throws<InvalidOperationException>(() => DecodedMetadataValues(reference).ToArray());
     }
 
     [Fact]
@@ -436,13 +445,52 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.Contains("raw input limit", exception.Message, StringComparison.Ordinal);
     }
 
-    private static void AssertNoHostIdentifiers(PdfDocument pdf, byte[] content, params string[] identifiers)
+    private static void AssertNoHostIdentifiers(PdfDocument pdf, params string[] identifiers)
     {
-        // RED baseline: preserve the original raw-byte policy to prove the portable regression.
-        var syntax = Encoding.Latin1.GetString(content);
+        // PDF names and the hash-locked font bytes are not host disclosure values.
+        // Decode actual text and all Info values, including custom and encoded metadata.
+        var surfaces = pdf.GetPages().Select(page => page.Text)
+            .Concat(DecodedMetadataValues(pdf.Information.DocumentInformationDictionary)).ToArray();
         foreach (var identifier in identifiers)
         {
-            Assert.DoesNotContain(identifier, syntax, StringComparison.OrdinalIgnoreCase);
+            Assert.NotEmpty(identifier);
+            foreach (var surface in surfaces)
+            {
+                Assert.DoesNotContain(identifier, surface, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+    }
+
+    private static IEnumerable<string> DecodedMetadataValues(IToken? token)
+    {
+        switch (token)
+        {
+            case null:
+            case NullToken:
+                yield break;
+            case StringToken text:
+                yield return text.Data;
+                yield break;
+            case HexToken hex:
+                yield return hex.Data;
+                yield break;
+            case NameToken name:
+                yield return name.Data;
+                yield break;
+            case DictionaryToken dictionary:
+                foreach (var value in dictionary.Data.Values.SelectMany(DecodedMetadataValues))
+                {
+                    yield return value;
+                }
+                yield break;
+            case ArrayToken array:
+                foreach (var value in array.Data.SelectMany(DecodedMetadataValues))
+                {
+                    yield return value;
+                }
+                yield break;
+            default:
+                throw new InvalidOperationException("Unresolved or unsupported PDF metadata cannot be ignored.");
         }
     }
 
