@@ -194,41 +194,90 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
     {
         await InDisposableDatabaseAsync(async connectionString =>
         {
-            foreach (var field in new[]
+            var whitespaceOnlyValues = new[]
+            {
+                "   ",
+                "\t\t",
+                "\r\n\r\n",
+                " \t\r\n\u00a0",
+                "\v\f",
+            };
+            var preparationFields = new[]
             {
                 "PreparedBy",
                 "PreparationReason",
                 "PreparationCorrelationId",
                 "PreparationSourceChannel",
-            })
-            {
-                await AssertBlankPreparationProvenanceRejectedAsync(connectionString, field);
-            }
-
-            var profileId = Guid.NewGuid();
-            await InsertLifecycleDraftAsync(connectionString, profileId);
-            foreach (var field in new[]
+            };
+            var approvalFields = new[]
             {
                 "ApprovedBy",
                 "ApprovalReason",
                 "ApprovalCorrelationId",
                 "ApprovalSourceChannel",
-            })
-            {
-                await AssertBlankApprovalProvenanceRejectedAsync(connectionString, profileId, field);
-            }
-
-            await ApplyLifecycleApprovalAsync(connectionString, profileId);
-            foreach (var field in new[]
+            };
+            var publicationFields = new[]
             {
                 "PublishedBy",
                 "PublicationReason",
                 "PublicationCorrelationId",
                 "PublicationSourceChannel",
-            })
+            };
+
+            foreach (var whitespaceOnlyValue in whitespaceOnlyValues)
             {
-                await AssertBlankPublicationProvenanceRejectedAsync(connectionString, profileId, field);
+                foreach (var field in preparationFields)
+                {
+                    await AssertBlankPreparationProvenanceRejectedAsync(
+                        connectionString,
+                        field,
+                        whitespaceOnlyValue);
+                }
             }
+
+            Assert.Equal(0,
+                await CountTableAsync(connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
+            Assert.Equal(0, await CountSettingsAuditsAsync(connectionString));
+
+            var profileId = Guid.NewGuid();
+            await InsertLifecycleDraftAsync(connectionString, profileId);
+            foreach (var whitespaceOnlyValue in whitespaceOnlyValues)
+            {
+                foreach (var field in approvalFields)
+                {
+                    await AssertBlankApprovalProvenanceRejectedAsync(
+                        connectionString,
+                        profileId,
+                        field,
+                        whitespaceOnlyValue);
+                }
+            }
+
+            Assert.Equal((1L, ManufacturingToleranceProfileStatusV1.Draft),
+                await LifecycleStateAsync(connectionString, profileId));
+            Assert.Equal(0, await CountSettingsAuditsAsync(connectionString));
+
+            await ApplyLifecycleApprovalAsync(connectionString, profileId);
+            foreach (var whitespaceOnlyValue in whitespaceOnlyValues)
+            {
+                foreach (var field in publicationFields)
+                {
+                    await AssertBlankPublicationProvenanceRejectedAsync(
+                        connectionString,
+                        profileId,
+                        field,
+                        whitespaceOnlyValue);
+                }
+            }
+
+            Assert.Equal((2L, ManufacturingToleranceProfileStatusV1.Approved),
+                await LifecycleStateAsync(connectionString, profileId));
+            Assert.Equal(0, await CountSettingsAuditsAsync(connectionString));
+
+            await ApplyLifecyclePublicationAsync(connectionString, profileId);
+            Assert.Equal((3L, ManufacturingToleranceProfileStatusV1.Published),
+                await LifecycleStateAsync(connectionString, profileId));
+            Assert.Equal(0, await CountSettingsAuditsAsync(connectionString));
         });
     }
 
@@ -816,6 +865,24 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         return Convert.ToInt32(await command.ExecuteScalarAsync());
     }
 
+    private static async Task<(long StateVersion, ManufacturingToleranceProfileStatusV1 Status)>
+        LifecycleStateAsync(string connectionString, Guid profileId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT [StateVersion], [Status]
+            FROM [settings].[ManufacturingToleranceProfileLifecycles]
+            WHERE [CompanyId] = @company AND [ProfileId] = @profile;
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@profile", profileId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return (reader.GetInt64(0), (ManufacturingToleranceProfileStatusV1)reader.GetInt32(1));
+    }
+
     private static async Task<int> CountLifecycleVersionAsync(
         string connectionString,
         string process,
@@ -1010,7 +1077,8 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
 
     private static async Task AssertBlankPreparationProvenanceRejectedAsync(
         string connectionString,
-        string blankField)
+        string blankField,
+        string blankValue)
     {
         var allowed = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -1038,15 +1106,15 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         command.Parameters.AddWithValue("@company", CompanyA);
         command.Parameters.AddWithValue("@profile", Guid.NewGuid());
         command.Parameters.AddWithValue("@process", SettingsManufacturingProcessesV1.CutToLength);
-        command.Parameters.AddWithValue("@preparedBy", Provenance(blankField, "PreparedBy", Maker));
+        command.Parameters.AddWithValue("@preparedBy", Provenance(blankField, "PreparedBy", blankValue, Maker));
         command.Parameters.AddWithValue("@preparedAt",
             new DateTimeOffset(2026, 10, 16, 13, 0, 0, TimeSpan.Zero));
         command.Parameters.AddWithValue("@preparationReason",
-            Provenance(blankField, "PreparationReason", "direct SQL preparation"));
+            Provenance(blankField, "PreparationReason", blankValue, "direct SQL preparation"));
         command.Parameters.AddWithValue("@preparationCorrelationId",
-            Provenance(blankField, "PreparationCorrelationId", "direct-sql-preparation"));
+            Provenance(blankField, "PreparationCorrelationId", blankValue, "direct-sql-preparation"));
         command.Parameters.AddWithValue("@preparationSourceChannel",
-            Provenance(blankField, "PreparationSourceChannel", "System"));
+            Provenance(blankField, "PreparationSourceChannel", blankValue, "System"));
         await AssertCheckConstraintRejectedAsync(command);
     }
 
@@ -1081,7 +1149,8 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
     private static async Task AssertBlankApprovalProvenanceRejectedAsync(
         string connectionString,
         Guid profileId,
-        string blankField)
+        string blankField,
+        string blankValue)
     {
         var allowed = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -1106,15 +1175,15 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             """;
         command.Parameters.AddWithValue("@company", CompanyA);
         command.Parameters.AddWithValue("@profile", profileId);
-        command.Parameters.AddWithValue("@approvedBy", Provenance(blankField, "ApprovedBy", Checker));
+        command.Parameters.AddWithValue("@approvedBy", Provenance(blankField, "ApprovedBy", blankValue, Checker));
         command.Parameters.AddWithValue("@approvedAt",
             new DateTimeOffset(2026, 10, 16, 13, 2, 0, TimeSpan.Zero));
         command.Parameters.AddWithValue("@approvalReason",
-            Provenance(blankField, "ApprovalReason", "direct SQL approval"));
+            Provenance(blankField, "ApprovalReason", blankValue, "direct SQL approval"));
         command.Parameters.AddWithValue("@approvalCorrelationId",
-            Provenance(blankField, "ApprovalCorrelationId", "direct-sql-approval"));
+            Provenance(blankField, "ApprovalCorrelationId", blankValue, "direct-sql-approval"));
         command.Parameters.AddWithValue("@approvalSourceChannel",
-            Provenance(blankField, "ApprovalSourceChannel", "System"));
+            Provenance(blankField, "ApprovalSourceChannel", blankValue, "System"));
         await AssertCheckConstraintRejectedAsync(command);
     }
 
@@ -1146,7 +1215,8 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
     private static async Task AssertBlankPublicationProvenanceRejectedAsync(
         string connectionString,
         Guid profileId,
-        string blankField)
+        string blankField,
+        string blankValue)
     {
         var allowed = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -1171,16 +1241,41 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             """;
         command.Parameters.AddWithValue("@company", CompanyA);
         command.Parameters.AddWithValue("@profile", profileId);
-        command.Parameters.AddWithValue("@publishedBy", Provenance(blankField, "PublishedBy", Checker));
+        command.Parameters.AddWithValue("@publishedBy", Provenance(blankField, "PublishedBy", blankValue, Checker));
         command.Parameters.AddWithValue("@publishedAt",
             new DateTimeOffset(2026, 10, 16, 13, 4, 0, TimeSpan.Zero));
         command.Parameters.AddWithValue("@publicationReason",
-            Provenance(blankField, "PublicationReason", "direct SQL publication"));
+            Provenance(blankField, "PublicationReason", blankValue, "direct SQL publication"));
         command.Parameters.AddWithValue("@publicationCorrelationId",
-            Provenance(blankField, "PublicationCorrelationId", "direct-sql-publication"));
+            Provenance(blankField, "PublicationCorrelationId", blankValue, "direct-sql-publication"));
         command.Parameters.AddWithValue("@publicationSourceChannel",
-            Provenance(blankField, "PublicationSourceChannel", "System"));
+            Provenance(blankField, "PublicationSourceChannel", blankValue, "System"));
         await AssertCheckConstraintRejectedAsync(command);
+    }
+
+    private static async Task ApplyLifecyclePublicationAsync(string connectionString, Guid profileId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE [settings].[ManufacturingToleranceProfileLifecycles]
+            SET [StateVersion] = 3, [Status] = 3,
+                [PublishedBy] = @publishedBy, [PublishedAtUtc] = @publishedAt,
+                [PublicationReason] = @publicationReason,
+                [PublicationCorrelationId] = @publicationCorrelationId,
+                [PublicationSourceChannel] = @publicationSourceChannel
+            WHERE [CompanyId] = @company AND [ProfileId] = @profile;
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@profile", profileId);
+        command.Parameters.AddWithValue("@publishedBy", Checker);
+        command.Parameters.AddWithValue("@publishedAt",
+            new DateTimeOffset(2026, 10, 16, 13, 5, 0, TimeSpan.Zero));
+        command.Parameters.AddWithValue("@publicationReason", "direct SQL valid publication");
+        command.Parameters.AddWithValue("@publicationCorrelationId", "direct-sql-valid-publication");
+        command.Parameters.AddWithValue("@publicationSourceChannel", "System");
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static async Task AssertCheckConstraintRejectedAsync(SqlCommand command)
@@ -1189,8 +1284,12 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         Assert.Equal(547, exception.Number);
     }
 
-    private static string Provenance(string blankField, string currentField, string validValue) =>
-        string.Equals(blankField, currentField, StringComparison.Ordinal) ? "   " : validValue;
+    private static string Provenance(
+        string blankField,
+        string currentField,
+        string blankValue,
+        string validValue) =>
+        string.Equals(blankField, currentField, StringComparison.Ordinal) ? blankValue : validValue;
 
     private static async Task AssertCommandRejectedAsync(string connectionString, string commandText,
         Guid companyId, Guid profileId, int expectedNumber)
