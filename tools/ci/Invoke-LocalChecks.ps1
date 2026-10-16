@@ -21,6 +21,8 @@ $record=[ordered]@{runId=$runId;computer=$env:COMPUTERNAME;profile=$Profile;repo
  command=@('wsl','-d','GoymenERP-CI','-u','ci','--','python3','-B',($LinuxRepository+'/tools/ci/local_check.py'),'--profile',$Profile)}
 $record | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $runDir 'launcher-start.json') -Encoding utf8
 $lock=$null
+$lease=$null
+$leaseFile=$null
 $code=2
 try {
  $lock=[IO.File]::Open((Join-Path $root 'local-heavy.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
@@ -29,12 +31,26 @@ try {
   $record.reason='Less than 2 GiB free physical memory; no heavy test was started.'
  } else {
   $path='/opt/goymen-ci/tools/dotnet-10.0.303:/opt/goymen-ci/tools/node-v24.20.0-linux-x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
-  $arguments=@('-d','GoymenERP-CI','-u','ci','--','env',('PATH='+$path),
+  $expected=(wsl.exe -d GoymenERP-CI -u ci -- /usr/bin/env -i PATH=/usr/bin:/bin HOME=/home/ci /usr/bin/git -C $LinuxRepository rev-parse HEAD).Trim()
+  if($LASTEXITCODE -ne 0 -or $expected -notmatch '^[0-9a-f]{40}$'){throw 'Cannot bind the expected source commit.'}
+  $nonce=[Guid]::NewGuid().ToString('N')
+  $linuxLease='/home/ci/local-ci-leases/lease-'+$nonce+'.json'
+  wsl.exe -d GoymenERP-CI -u ci -- /usr/bin/mkdir -p /home/ci/local-ci-leases
+  if($LASTEXITCODE -ne 0){throw 'Cannot create local lease directory.'}
+  $leaseFile='\\wsl.localhost\GoymenERP-CI'+$linuxLease.Replace('/','\')
+  $lease=[ordered]@{host='DESKTOP-11CDRHD';status='ACTIVE';repository=$LinuxRepository;expectedHead=$expected;
+   profile=$Profile;nonce=$nonce;availableMemoryBytes=$availableBytes;createdUtc=$started;expiresUtc=[DateTime]::UtcNow.AddHours(1).ToString('o')}
+  [IO.File]::WriteAllText($leaseFile,($lease|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+  wsl.exe -d GoymenERP-CI -u ci -- /usr/bin/chmod 600 $linuxLease
+  if($LASTEXITCODE -ne 0){throw 'Cannot protect local lease file.'}
+  $arguments=@('-d' ,'GoymenERP-CI','-u','ci','--','/usr/bin/env','-i',('PATH='+$path),'HOME=/home/ci',
    'DOTNET_ROOT=/opt/goymen-ci/tools/dotnet-10.0.303','DOTNET_CLI_HOME=/home/ci/.dotnet',
    'NUGET_PACKAGES=/home/ci/.cache/nuget/packages','NPM_CONFIG_CACHE=/home/ci/.cache/npm',
-   'python3','-B',($LinuxRepository+'/tools/ci/local_check.py'),'--repository',$LinuxRepository,
+   '/usr/bin/python3','-I','-B',($LinuxRepository+'/tools/ci/local_check.py'),'--repository',$LinuxRepository,'--expected-head',$expected,'--launcher-lease',$linuxLease,
    '--profile',$Profile,'--evidence-root','/home/ci/local-ci-evidence')
   if($PlanOnly){$arguments+='--plan'}
+  $record.command=@('wsl.exe')+$arguments
+  $record.expectedHead=$expected
   & wsl.exe @arguments *>&1 | Tee-Object -FilePath (Join-Path $runDir 'console.log')
   $code=$LASTEXITCODE
   $line=Get-Content -LiteralPath (Join-Path $runDir 'console.log') | Where-Object {$_ -match '^LOCAL_EVIDENCE='} | Select-Object -Last 1
@@ -67,6 +83,10 @@ try {
  $record.reason=$_.Exception.Message
  $code=2
 } finally {
+ if($leaseFile -and $lease){
+  $lease.status='CLOSED'
+  [IO.File]::WriteAllText($leaseFile,($lease|ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+ }
  if($lock){$lock.Dispose()}
  $record.finishUtc=[DateTime]::UtcNow.ToString('o')
  $record.exitCode=$code

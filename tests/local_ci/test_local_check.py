@@ -14,7 +14,12 @@ class LocalCheckTests(unittest.TestCase):
     def test_all_canonical_full_jobs_remain_visible(self):
         inventory = module.full_inventory(ROOT)
         names = {(item["workflow"], item["job"]) for item in inventory}
-        self.assertEqual(14, len(names))
+        expected = {(relative, job) for relative in module.WORKFLOWS
+                    for job in module.workflow(ROOT, relative)["jobs"]}
+        self.assertEqual(expected, names)
+        self.assertEqual(6, len(module.WORKFLOWS))
+        self.assertIn((".github/workflows/browser-acceptance.yml", "browser"), names)
+        self.assertIn((".github/workflows/openapi-generate.yml", "generate"), names)
         for job in ("backend-build", "backend-test-group", "backend", "recovery-surface-inventory",
                     "release-manifest", "frontend", "relational-shard", "relational-rcsi",
                     "relational", "contract-drift", "containers"):
@@ -61,14 +66,17 @@ class LocalCheckTests(unittest.TestCase):
         self.assertEqual("true", environment["CI"])
 
     def test_command_log_redacts_common_credential_forms(self):
-        value = module.SENSITIVE.sub(r"\1[REDACTED]", "password=opaque token:opaque secret=opaque")
-        self.assertNotIn("opaque", value)
+        for sample in ("password=opaque value", "token:opaque value", "secret=opaque value",
+                       "Authorization: Bearer opaque-token", "Proxy-Authorization: Basic opaque-token"):
+            value, detected = module.scrub_output(sample)
+            self.assertNotIn("opaque", value)
+            self.assertTrue(detected)
 
     def test_full_run_cannot_report_pass_without_owned_adapters(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as folder:
-            argv = ["local_check", "--profile", "full", "--repository", str(ROOT), "--evidence-root", folder]
-            with patch.object(module.sys, "argv", argv):
+            argv = ["local_check", "--profile", "full", "--repository", str(ROOT), "--evidence-root", folder, "--expected-head", "a"*40, "--launcher-lease", "/unused"]
+            with patch.object(module.sys, "argv", argv), patch.object(module, "validate_lease", return_value={}):
                 code = module.main()
             result_path = next(Path(folder).glob("*/result.json"))
             import json
@@ -83,14 +91,58 @@ class LocalCheckTests(unittest.TestCase):
         from unittest.mock import patch
         failure = {"name": "canonical guard", "exitCode": 7, "status": "FAIL", "counts": None}
         with tempfile.TemporaryDirectory() as folder:
-            argv = ["local_check", "--profile", "guards", "--repository", str(ROOT), "--evidence-root", folder]
-            with patch.object(module.sys, "argv", argv), patch.object(module, "run_step", return_value=failure):
+            argv = ["local_check", "--profile", "guards", "--repository", str(ROOT), "--evidence-root", folder, "--expected-head", "a"*40, "--launcher-lease", "/unused"]
+            with patch.object(module.sys, "argv", argv), patch.object(module, "validate_lease", return_value={}), patch.object(module, "run_step", return_value=failure):
                 code = module.main()
             import json
             result = json.loads(next(Path(folder).glob("*/result.json")).read_text(encoding="utf-8"))
         self.assertEqual(7, code)
         self.assertEqual("LOCAL_TARGETED_FAIL", result["status"])
         self.assertEqual(7, result["steps"][0]["exitCode"])
+    def test_shell_hooks_and_cloud_credentials_are_not_inherited(self):
+        from unittest.mock import patch
+        poisons = {"BASH_ENV": "/tmp/untrusted", "ENV": "/tmp/untrusted",
+                   "BASH_FUNC_npm%%": "() { return 0; }", "AWS_SECRET_ACCESS_KEY": "opaque",
+                   "AZURE_CLIENT_SECRET": "opaque", "NUGET_CREDENTIALPROVIDERS_PATH": "/tmp/untrusted",
+                   "NODE_OPTIONS": "--require=/tmp/untrusted"}
+        with patch.dict(module.os.environ, poisons):
+            environment = module.command_environment()
+        for key in poisons:
+            if key == "NODE_OPTIONS":
+                self.assertNotIn("require", environment[key])
+            else:
+                self.assertNotIn(key, environment)
+
+    def test_actual_shell_ignores_bash_env_forged_success(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            hook = directory / "untrusted.sh"
+            hook.write_text('python3() { echo FORGED_SUCCESS; }; export -f python3\n', encoding="utf-8")
+            with patch.dict(module.os.environ, {"BASH_ENV": str(hook)}):
+                entry = module.run_step(ROOT, directory, 1, {"run": "python3 -c 'print(123456789)'"})
+            log = (directory / "step-01.log").read_text(encoding="utf-8")
+        self.assertEqual(0, entry["exitCode"])
+        self.assertIn("123456789", log)
+        self.assertNotIn("FORGED_SUCCESS", log)
+
+    def test_multiline_credentials_never_enter_closed_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            command = "printf 'Authorization:\\n Bearer opaque-token\\nsecond-opaque-fragment\\n'"
+            entry = module.run_step(ROOT, directory, 1, {"run": command})
+            log = (directory / "step-01.log").read_text(encoding="utf-8")
+        self.assertNotIn("opaque-token", log)
+        self.assertNotIn("second-opaque-fragment", log)
+        self.assertEqual("BLOCKED_SECRET_OUTPUT", entry["status"])
+        self.assertEqual(2, entry["exitCode"])
+
+    def test_missing_or_wrong_launcher_lease_is_rejected(self):
+        with self.assertRaises(ValueError):
+            module.validate_lease(ROOT, "frontend", Path("/tmp/untrusted.json"), "a"*40)
+        with self.assertRaises(ValueError):
+            module.validate_lease(ROOT, "frontend", Path("/tmp/untrusted.json"), "wrong")
+
     def test_unknown_profile_is_rejected(self):
         with self.assertRaises(ValueError):
             module.selected_steps(ROOT, "hosted")

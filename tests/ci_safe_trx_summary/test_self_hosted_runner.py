@@ -84,14 +84,20 @@ class MigrationRoutingTests(unittest.TestCase):
         workflows = repo / '.github' / 'workflows'
         names = ['ci.yml', 'ui-catalog-validation.yml', 'cari-c02-link-acceptance.yml']
         bodies = [(workflows / name).read_text(encoding='utf-8').split('\njobs:\n', 1)[1].rstrip() + '\n' for name in names]
-        self.assertEqual((workflows / 'local-ci-bootstrap.yml').read_text(encoding='utf-8'), BOOTSTRAP_HEADER + '\n'.join(bodies))
+        self.assertEqual((workflows / 'local-ci-bootstrap.yml.disabled').read_text(encoding='utf-8'), BOOTSTRAP_HEADER + '\n'.join(bodies))
+
+    def test_unaccepted_migration_templates_cannot_register_as_workflows(self):
+        workflows = ROOT.parents[1] / '.github' / 'workflows'
+        for name in ('local-ci-bootstrap.yml', 'local-runner-smoke.yml'):
+            self.assertFalse((workflows / name).exists())
+            self.assertTrue((workflows / (name + '.disabled')).is_file())
 
     def test_all_workflow_jobs_use_explicit_local_runners(self):
         workflows = ROOT.parents[1] / '.github' / 'workflows'
         allowed = {'runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]',
                    'runs-on: [self-hosted, Windows, X64, goymen-ci-windows]'}
         count = 0
-        for path in workflows.glob('*.yml'):
+        for path in workflows.glob('*.yml*'):
             for line in path.read_text(encoding='utf-8').splitlines():
                 if line.lstrip().startswith('runs-on:'):
                     count += 1
