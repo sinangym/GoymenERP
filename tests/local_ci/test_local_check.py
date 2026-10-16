@@ -203,6 +203,47 @@ class LocalCheckTests(unittest.TestCase):
         self.assertEqual(2, code)
         self.assertEqual("BLOCKED_SECRET_OUTPUT", result["status"])
 
+    def test_monotonic_evidence_preserves_step_order_when_utc_moves_backwards(self):
+        from datetime import datetime, timedelta
+        import json
+        from unittest.mock import patch
+        times = [
+            "2026-10-16T14:23:36.436824+00:00",
+            "2026-10-16T14:23:36.526604+00:00",
+            "2026-10-16T14:23:49.631161+00:00",
+            "2026-10-16T14:23:37.671100+00:00",
+        ]
+        state = {"commit": "a" * 40, "tree": "b" * 40, "dirty": False, "files": []}
+        with tempfile.TemporaryDirectory() as folder:
+            argv = ["local_check", "--profile", "guards", "--repository", str(ROOT),
+                    "--evidence-root", folder, "--expected-head", "a" * 40,
+                    "--launcher-lease", "/unused"]
+            with (patch.object(module.sys, "argv", argv),
+                  patch.object(module, "validate_lease", return_value={}),
+                  patch.object(module, "source_state", return_value=state),
+                  patch.object(module, "full_inventory", return_value=[]),
+                  patch.object(module, "selected_steps", return_value=[{"name": "clock fixture", "run": "true"}]),
+                  patch.object(module, "now", side_effect=times),
+                  patch.object(module, "monotonic_ns", side_effect=[100, 200, 300, 400], create=True)):
+                code = module.main()
+            directory = next(Path(folder).glob("local-*"))
+            result = json.loads((directory / "result.json").read_text(encoding="utf-8"))
+            persisted_step = json.loads((directory / "step-01.json").read_text(encoding="utf-8"))
+        self.assertEqual(0, code)
+        self.assertEqual("LOCAL_TARGETED_PASS", result["status"])
+        step = result["steps"][0]
+        self.assertLess(datetime.fromisoformat(result["finishUtc"]), datetime.fromisoformat(step["finishUtc"]))
+        self.assertEqual([100, 200, 300, 400], [result["startMonotonicNs"], step["startMonotonicNs"],
+                                              step["finishMonotonicNs"], result["finishMonotonicNs"]])
+        for entry in (result, step):
+            for key in ("startMonotonicNs", "finishMonotonicNs"):
+                self.assertIs(type(entry[key]), int)
+            self.assertLessEqual(entry["startMonotonicNs"], entry["finishMonotonicNs"])
+            for key in ("startUtc", "finishUtc"):
+                self.assertEqual(timedelta(0), datetime.fromisoformat(entry[key]).utcoffset())
+        for key in ("startUtc", "finishUtc", "startMonotonicNs", "finishMonotonicNs"):
+            self.assertEqual(step[key], persisted_step[key])
+
     def test_unknown_profile_is_rejected(self):
         with self.assertRaises(ValueError):
             module.selected_steps(ROOT, "hosted")

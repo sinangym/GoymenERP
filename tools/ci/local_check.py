@@ -7,6 +7,7 @@ import contextlib
 import fcntl
 import stat
 from datetime import datetime, timezone
+from time import monotonic_ns
 import hashlib
 import json
 import os
@@ -91,6 +92,11 @@ def heavy_lock(profile: str):
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def clock_fields(prefix: str) -> dict[str, str | int]:
+    """Wall time is descriptive; monotonic ordering is local to this process/run only."""
+    return {prefix + "Utc": now(), prefix + "MonotonicNs": monotonic_ns()}
 
 
 def write_json(path: Path, value: object) -> None:
@@ -208,7 +214,7 @@ def run_step(root: Path, directory: Path, index: int, step: dict) -> dict:
     if not working.is_relative_to(root):
         raise ValueError("Working directory escaped repository")
     entry = {"name": scrub_output(step.get("name", command))[0], "command": scrub_output(command)[0],
-             "workingDirectory": str(working), "startUtc": now(), "status": "RUNNING"}
+             "workingDirectory": str(working), **clock_fields("start"), "status": "RUNNING"}
     write_json(directory / f"step-{index:02d}.json", entry)
     with subprocess.Popen(["/bin/bash", "--noprofile", "--norc", "-p", "-euo", "pipefail", "-c", command],
                                cwd=working, env=command_environment(), stdout=subprocess.PIPE,
@@ -229,7 +235,7 @@ def run_step(root: Path, directory: Path, index: int, step: dict) -> dict:
                 print(safe, end="", flush=True)
         process.stdout.close()
         code = process.wait()
-    entry.update({"finishUtc": now(), "exitCode": code, "status": "PASS" if code == 0 else "FAIL",
+    entry.update({**clock_fields("finish"), "exitCode": code, "status": "PASS" if code == 0 else "FAIL",
                   "counts": test_counts("".join(chunks)), "credentialOutputDetected": credential_output})
     if credential_output:
         entry.update({"status": "BLOCKED_SECRET_OUTPUT", "exitCode": code if code else 2})
@@ -261,7 +267,7 @@ def main() -> int:
     initial = source_state(root)
     write_json(directory / "source-start.json", initial)
     result = {"runId": run_id, "kind": "LOCAL_FULL" if args.profile == "full" else "LOCAL_TARGETED",
-              "profile": args.profile, "startUtc": now(), "computer": platform.node(),
+              "profile": args.profile, **clock_fields("start"), "computer": platform.node(),
               "environment": {"platform": platform.platform(), "python": platform.python_version()},
               "source": {key: value for key, value in initial.items() if key != "files"},
               "steps": [], "githubJobStarted": False, "githubStorageUsed": False, "status": "RUNNING"}
@@ -309,7 +315,7 @@ def main() -> int:
         if initial != final:
             result.update({"status": "BLOCKED_SOURCE_CHANGED", "reason": "Source changed during local checks"})
             code = 2
-        result.update({"finishUtc": now(), "exitCode": code})
+        result.update({**clock_fields("finish"), "exitCode": code})
         write_json(directory / "result.json", result)
         files = []
         for path in sorted(directory.iterdir()):
