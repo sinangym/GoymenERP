@@ -247,8 +247,10 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.DoesNotContain("Göymen", page.Text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("logo", page.Text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("antet", page.Text, StringComparison.OrdinalIgnoreCase);
-        AssertNoHostIdentifiers(pdf,
+        AssertNoHostIdentifiers(pdf, artifact.Content,
             Environment.UserName, Environment.MachineName, Directory.GetCurrentDirectory());
+        Assert.DoesNotContain(Environment.MachineName, pdfSyntax, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(Directory.GetCurrentDirectory(), pdfSyntax, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -258,7 +260,7 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.Contains("/CIDFontType2", Encoding.Latin1.GetString(content), StringComparison.Ordinal);
         using var pdf = PdfDocument.Open(content);
 
-        AssertNoHostIdentifiers(pdf, "ci");
+        AssertNoHostIdentifiers(pdf, content, "ci");
     }
 
     [Theory]
@@ -270,7 +272,7 @@ public sealed class TechnicalPdfGeneratorTests
         var content = CreatePrivacyProbePdf(field: field, value: "ci");
         using var pdf = PdfDocument.Open(content);
 
-        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, "ci"));
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, "ci"));
     }
 
     [Fact]
@@ -281,7 +283,7 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.DoesNotContain(privateMarker, Encoding.Latin1.GetString(content), StringComparison.Ordinal);
         using var pdf = PdfDocument.Open(content);
 
-        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, privateMarker));
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, privateMarker));
     }
 
     [Fact]
@@ -291,7 +293,7 @@ public sealed class TechnicalPdfGeneratorTests
         using var pdf = PdfDocument.Open(content);
         Assert.Contains("ci", Assert.Single(pdf.GetPages()).Text, StringComparison.Ordinal);
 
-        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, "ci"));
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, "ci"));
     }
 
     [Fact]
@@ -300,6 +302,28 @@ public sealed class TechnicalPdfGeneratorTests
         var reference = new IndirectReferenceToken(new UglyToad.PdfPig.Core.IndirectReference(1234, 0));
 
         Assert.Throws<InvalidOperationException>(() => DecodedMetadataValues(reference).ToArray());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Pdf_privacy_guard_rejects_uninspected_catalog_and_page_xmp(bool onPage)
+    {
+        var content = CreateExtraPayloadPrivacyProbe("private-xmp-canary-2a74", onPage, literal: false);
+        using var pdf = PdfDocument.Open(content);
+
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() =>
+            AssertNoHostIdentifiers(pdf, content, "private-xmp-canary-2a74"));
+    }
+
+    [Fact]
+    public void Pdf_privacy_guard_rejects_literal_host_information_outside_info_and_page_text()
+    {
+        var content = CreateExtraPayloadPrivacyProbe("private-catalog-canary-2a74", onPage: false, literal: true);
+        using var pdf = PdfDocument.Open(content);
+
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() =>
+            AssertNoHostIdentifiers(pdf, content, "private-catalog-canary-2a74"));
     }
 
     [Fact]
@@ -445,12 +469,16 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.Contains("raw input limit", exception.Message, StringComparison.Ordinal);
     }
 
-    private static void AssertNoHostIdentifiers(PdfDocument pdf, params string[] identifiers)
+    private static void AssertNoHostIdentifiers(PdfDocument pdf, byte[] content, params string[] identifiers)
     {
-        // PDF names and the hash-locked font bytes are not host disclosure values.
-        // Decode actual text and all Info values, including custom and encoded metadata.
+        using var input = new MemoryStream(content, writable: false);
+        using var structure = PdfSharp.Pdf.IO.PdfReader.Open(input, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+        AssertSupportedPrivacyPayloads(structure);
+        // Inspect literal strings throughout the document, not only trailer /Info.
+        // Structural names are not strings; font binary bytes remain exactly vendor-locked.
         var surfaces = pdf.GetPages().Select(page => page.Text)
-            .Concat(DecodedMetadataValues(pdf.Information.DocumentInformationDictionary)).ToArray();
+            .Concat(DecodedMetadataValues(pdf.Information.DocumentInformationDictionary))
+            .Concat(structure.Internals.GetAllObjects().SelectMany(DecodedObjectStrings)).ToArray();
         foreach (var identifier in identifiers)
         {
             Assert.NotEmpty(identifier);
@@ -458,6 +486,86 @@ public sealed class TechnicalPdfGeneratorTests
             {
                 Assert.DoesNotContain(identifier, surface, StringComparison.OrdinalIgnoreCase);
             }
+        }
+    }
+
+    private static void AssertSupportedPrivacyPayloads(PdfSharp.Pdf.PdfDocument document)
+    {
+        var supportedStreams = new HashSet<PdfSharp.Pdf.PdfDictionary>();
+        var expectedFont = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "Fonts", "NotoSans-Regular.ttf"));
+        foreach (var page in document.Pages)
+        {
+            for (var index = 0; index < page.Contents.Elements.Count; index++)
+            {
+                supportedStreams.Add(Assert.IsAssignableFrom<PdfSharp.Pdf.PdfDictionary>(page.Contents.Elements.GetDictionary(index)));
+            }
+            var fonts = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(page.Resources.Elements.GetDictionary("/Font"));
+            foreach (var key in fonts.Elements.Keys)
+            {
+                var font = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(fonts.Elements.GetDictionary(key));
+                supportedStreams.Add(Assert.IsType<PdfSharp.Pdf.PdfDictionary>(font.Elements.GetDictionary("/ToUnicode")));
+                var descendants = Assert.IsType<PdfSharp.Pdf.PdfArray>(font.Elements.GetArray("/DescendantFonts"));
+                for (var index = 0; index < descendants.Elements.Count; index++)
+                {
+                    var descendant = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(descendants.Elements.GetDictionary(index));
+                    var descriptor = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(descendant.Elements.GetDictionary("/FontDescriptor"));
+                    var binaryFont = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(descriptor.Elements.GetDictionary("/FontFile2"));
+                    Assert.NotNull(binaryFont.Stream);
+                    Assert.Equal(expectedFont, binaryFont.Stream.UnfilteredValue);
+                    supportedStreams.Add(binaryFont);
+                }
+            }
+        }
+        foreach (var dictionary in document.Internals.GetAllObjects().OfType<PdfSharp.Pdf.PdfDictionary>())
+        {
+            // This fixed technical PoC has no XMP or arbitrary payload channel.
+            Assert.False(dictionary.Elements.ContainsKey("/Metadata"), "Uninspected XMP metadata is not supported by this privacy proof.");
+            if (dictionary.Stream is not null)
+            {
+                Assert.Contains(dictionary, supportedStreams);
+            }
+        }
+    }
+
+    private static IEnumerable<string> DecodedObjectStrings(PdfSharp.Pdf.PdfItem item)
+    {
+        switch (item)
+        {
+            case PdfSharp.Pdf.PdfString text:
+                yield return text.Value;
+                yield break;
+            case PdfSharp.Pdf.PdfStringObject textObject:
+                yield return textObject.Value;
+                yield break;
+            case PdfSharp.Pdf.PdfDictionary dictionary:
+                foreach (var value in dictionary.Elements.Values.SelectMany(DecodedObjectStrings))
+                {
+                    yield return value;
+                }
+                yield break;
+            case PdfSharp.Pdf.PdfArray array:
+                foreach (var value in array.Elements.Cast<PdfSharp.Pdf.PdfItem>().SelectMany(DecodedObjectStrings))
+                {
+                    yield return value;
+                }
+                yield break;
+            // Every indirect object is visited separately; names and numeric primitives are structural.
+            case PdfSharp.Pdf.Advanced.PdfReference:
+            case PdfSharp.Pdf.PdfName:
+            case PdfSharp.Pdf.PdfNameObject:
+            case PdfSharp.Pdf.PdfBoolean:
+            case PdfSharp.Pdf.PdfBooleanObject:
+            case PdfSharp.Pdf.PdfInteger:
+            case PdfSharp.Pdf.PdfIntegerObject:
+            case PdfSharp.Pdf.PdfLongInteger:
+            case PdfSharp.Pdf.PdfLongIntegerObject:
+            case PdfSharp.Pdf.PdfReal:
+            case PdfSharp.Pdf.PdfRealObject:
+            case PdfSharp.Pdf.PdfNull:
+            case PdfSharp.Pdf.PdfNullObject:
+                yield break;
+            default:
+                throw new InvalidOperationException("An uninspected PDF payload cannot be ignored.");
         }
     }
 
@@ -492,6 +600,29 @@ public sealed class TechnicalPdfGeneratorTests
             default:
                 throw new InvalidOperationException("Unresolved or unsupported PDF metadata cannot be ignored.");
         }
+    }
+
+    private static byte[] CreateExtraPayloadPrivacyProbe(string marker, bool onPage, bool literal)
+    {
+        using var input = new MemoryStream(CreatePrivacyProbePdf(), writable: false);
+        using var document = PdfSharp.Pdf.IO.PdfReader.Open(input, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Modify);
+        if (literal)
+        {
+            document.Internals.Catalog.Elements["/LocalHostPayload"] = new PdfSharp.Pdf.PdfString(marker);
+        }
+        else
+        {
+            var metadata = new PdfSharp.Pdf.PdfDictionary(document);
+            metadata.Elements.SetName("/Type", "/Metadata");
+            metadata.Elements.SetName("/Subtype", "/XML");
+            metadata.CreateStream(Encoding.UTF8.GetBytes($"<x:xmpmeta xmlns:x='adobe:ns:meta/'>{marker}</x:xmpmeta>"));
+            document.Internals.AddObject(metadata);
+            PdfSharp.Pdf.PdfDictionary target = onPage ? document.Pages[0] : document.Internals.Catalog;
+            target.Elements["/Metadata"] = metadata.Reference!;
+        }
+        using var output = new MemoryStream();
+        document.Save(output, closeStream: false);
+        return output.ToArray();
     }
 
     private static byte[] CreatePrivacyProbePdf(
