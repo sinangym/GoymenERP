@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
@@ -177,6 +178,70 @@ public sealed class InventoryTransferQuantitySegmentLedgerV2Tests
     }
 
     [Fact]
+    public void Reversal_of_an_older_revision_cannot_erase_a_newer_active_terminal_fact()
+    {
+        var ledger = AcceptedFifteenPendingTen();
+        var staleTarget = ledger.Revisions[^1];
+        var accepted = ledger.Current.Segments.Single(segment =>
+            segment.State == InventoryTransferQuantitySegmentStateV2.Accepted);
+        var pending = ledger.Current.Segments.Single(segment =>
+            segment.State == InventoryTransferQuantitySegmentStateV2.InTransit);
+
+        ledger.Apply(new(Guid.NewGuid(), 2, Partition(SingleShare(25m),
+        [
+            accepted,
+            Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.Accepted, 5m, FirstShareId,
+                pending.SegmentId),
+            Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.InTransit, 5m, FirstShareId,
+                pending.SegmentId),
+        ])));
+        var currentJson = JsonSerializer.Serialize(ledger.Current);
+
+        AssertInvalid(() => ledger.Apply(new(
+            Guid.NewGuid(),
+            3,
+            ledger.Revisions[0].Partition,
+            staleTarget.RevisionId,
+            "Eski kabulü tersle")));
+
+        Assert.Equal(3, ledger.Version);
+        Assert.Equal(3, ledger.Revisions.Count);
+        Assert.Equal(20m, ledger.Current.AcceptedQuantity.Value);
+        Assert.Equal(5m, ledger.Current.InTransitQuantity.Value);
+        Assert.Equal(currentJson, JsonSerializer.Serialize(ledger.Current));
+    }
+
+    [Fact]
+    public void Reversal_of_the_current_revision_must_restore_its_exact_prior_partition()
+    {
+        var ledger = AcceptedFifteenPendingTen();
+        var currentRevision = ledger.Revisions[^1];
+        var accepted = ledger.Current.Segments.Single(segment =>
+            segment.State == InventoryTransferQuantitySegmentStateV2.Accepted);
+        var pending = ledger.Current.Segments.Single(segment =>
+            segment.State == InventoryTransferQuantitySegmentStateV2.InTransit);
+        var beforeJson = JsonSerializer.Serialize(ledger.Current);
+
+        AssertInvalid(() => ledger.Apply(new(
+            Guid.NewGuid(),
+            2,
+            Partition(SingleShare(25m),
+            [
+                accepted,
+                Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.Accepted, 5m, FirstShareId,
+                    pending.SegmentId),
+                Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.InTransit, 5m, FirstShareId,
+                    pending.SegmentId),
+            ]),
+            currentRevision.RevisionId,
+            "Farklı bir bölümle tersle")));
+
+        Assert.Equal(2, ledger.Version);
+        Assert.Equal(2, ledger.Revisions.Count);
+        Assert.Equal(beforeJson, JsonSerializer.Serialize(ledger.Current));
+    }
+
+    [Fact]
     public void Reversal_requires_a_recorded_target_and_a_reason()
     {
         var ledger = AcceptedFifteenPendingTen();
@@ -185,6 +250,88 @@ public sealed class InventoryTransferQuantitySegmentLedgerV2Tests
             Guid.NewGuid(), 2, ledger.Revisions[0].Partition, Guid.NewGuid(), "Düzeltme")));
         AssertInvalid(() => _ = new InventoryTransferQuantityRevisionV2(
             Guid.NewGuid(), 2, ledger.Revisions[0].Partition, ledger.Revisions[^1].RevisionId, "  "));
+    }
+
+    [Fact]
+    public void Segment_allocation_sum_overflow_is_a_stable_inventory_refusal()
+    {
+        AssertInvalid(() => _ = new InventoryTransferQuantitySegmentV2(
+            Guid.NewGuid(),
+            InventoryTransferQuantitySegmentStateV2.InTransit,
+            Kg(decimal.MaxValue),
+            [
+                Allocation(FirstShareId, decimal.MaxValue),
+                Allocation(SecondShareId, decimal.MaxValue),
+            ]));
+    }
+
+    [Fact]
+    public void Source_allocation_sum_overflow_is_a_stable_inventory_refusal_without_partial_revision()
+    {
+        var ledger = SingleShareLedger();
+        var before = ledger.Current;
+
+        AssertInvalid(() => ledger.Apply(new(Guid.NewGuid(), 1,
+            new InventoryTransferQuantityPartitionV2(
+                [Share(FirstShareId, FirstLabelId, decimal.MaxValue)],
+                [
+                    Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.InTransit,
+                        decimal.MaxValue, FirstShareId),
+                    Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.Accepted,
+                        decimal.MaxValue, FirstShareId),
+                ]))));
+
+        Assert.Equal(1, ledger.Version);
+        Assert.Single(ledger.Revisions);
+        Assert.Same(before, ledger.Current);
+    }
+
+    [Fact]
+    public void State_sum_overflow_is_a_stable_inventory_refusal_without_partial_revision()
+    {
+        var ledger = SingleShareLedger();
+        var before = ledger.Current;
+
+        AssertInvalid(() => ledger.Apply(new(Guid.NewGuid(), 1,
+            new InventoryTransferQuantityPartitionV2(
+                [
+                    Share(FirstShareId, FirstLabelId, decimal.MaxValue),
+                    Share(SecondShareId, SecondLabelId, decimal.MaxValue),
+                ],
+                [
+                    Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.InTransit,
+                        decimal.MaxValue, FirstShareId),
+                    Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.InTransit,
+                        decimal.MaxValue, SecondShareId),
+                ]))));
+
+        Assert.Equal(1, ledger.Version);
+        Assert.Single(ledger.Revisions);
+        Assert.Same(before, ledger.Current);
+    }
+
+    [Fact]
+    public void Source_share_sum_overflow_is_a_stable_inventory_refusal_without_partial_revision()
+    {
+        var ledger = SingleShareLedger();
+        var before = ledger.Current;
+
+        AssertInvalid(() => ledger.Apply(new(Guid.NewGuid(), 1,
+            new InventoryTransferQuantityPartitionV2(
+                [
+                    Share(FirstShareId, FirstLabelId, decimal.MaxValue),
+                    Share(SecondShareId, SecondLabelId, decimal.MaxValue),
+                ],
+                [
+                    Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.InTransit,
+                        decimal.MaxValue, FirstShareId),
+                    Segment(Guid.NewGuid(), InventoryTransferQuantitySegmentStateV2.Accepted,
+                        decimal.MaxValue, SecondShareId),
+                ]))));
+
+        Assert.Equal(1, ledger.Version);
+        Assert.Single(ledger.Revisions);
+        Assert.Same(before, ledger.Current);
     }
 
     [Fact]

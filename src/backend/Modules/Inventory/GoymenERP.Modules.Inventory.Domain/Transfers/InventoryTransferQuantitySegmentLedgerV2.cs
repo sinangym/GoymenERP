@@ -111,7 +111,9 @@ public sealed record InventoryTransferQuantitySegmentV2
             throw Invalid("Segment benzersiz ve en az bir kaynak payı dağılımı içermelidir.");
         }
 
-        var allocated = allocations.Sum(allocation => allocation.Quantity.Value);
+        var allocated = InventoryTransferQuantityArithmeticV2.Sum(
+            allocations.Select(allocation => allocation.Quantity.Value),
+            "Segment kaynak payı toplamı decimal miktar sınırını aşıyor.");
         if (allocated != quantity.Value)
         {
             throw Invalid("Segment kaynak payları segment miktarına tam eşit olmalıdır.");
@@ -166,10 +168,12 @@ public sealed class InventoryTransferQuantityPartitionV2
 
         foreach (var source in sources)
         {
-            var allocated = partition
-                .SelectMany(segment => segment.SourceAllocations)
-                .Where(allocation => allocation.SourceShareId == source.SourceShareId)
-                .Sum(allocation => allocation.Quantity.Value);
+            var allocated = InventoryTransferQuantityArithmeticV2.Sum(
+                partition
+                    .SelectMany(segment => segment.SourceAllocations)
+                    .Where(allocation => allocation.SourceShareId == source.SourceShareId)
+                    .Select(allocation => allocation.Quantity.Value),
+                "Kaynak payına dağıtılan miktar toplamı decimal miktar sınırını aşıyor.");
             if (allocated != source.DispatchedQuantity.Value)
             {
                 throw Invalid("Her kaynak payının sevk miktarı segmentlere tam ve yalnız bir kez dağıtılmalıdır.");
@@ -178,12 +182,16 @@ public sealed class InventoryTransferQuantityPartitionV2
 
         SourceShares = Array.AsReadOnly(sources);
         Segments = Array.AsReadOnly(partition);
-        DispatchedQuantity = Kilograms.Of(sources.Sum(source => source.DispatchedQuantity.Value));
         InTransitQuantity = Sum(InventoryTransferQuantitySegmentStateV2.InTransit);
         AcceptedQuantity = Sum(InventoryTransferQuantitySegmentStateV2.Accepted);
         DiscrepancyQuantity = Sum(InventoryTransferQuantitySegmentStateV2.Discrepancy);
-        if (InTransitQuantity.Value + AcceptedQuantity.Value + DiscrepancyQuantity.Value
-            != DispatchedQuantity.Value)
+        DispatchedQuantity = Kilograms.Of(InventoryTransferQuantityArithmeticV2.Sum(
+            sources.Select(source => source.DispatchedQuantity.Value),
+            "Sevk edilen kaynak miktarı toplamı decimal miktar sınırını aşıyor."));
+        var partitionedQuantity = InventoryTransferQuantityArithmeticV2.Sum(
+            [InTransitQuantity.Value, AcceptedQuantity.Value, DiscrepancyQuantity.Value],
+            "Segment durum miktarı toplamı decimal miktar sınırını aşıyor.");
+        if (partitionedQuantity != DispatchedQuantity.Value)
         {
             throw Invalid("Yoldaki, kabul edilen ve fark miktarlarının toplamı sevk miktarına eşit olmalıdır.");
         }
@@ -197,7 +205,9 @@ public sealed class InventoryTransferQuantityPartitionV2
     public Kilograms DiscrepancyQuantity { get; }
 
     private Kilograms Sum(InventoryTransferQuantitySegmentStateV2 state) =>
-        Kilograms.Of(Segments.Where(segment => segment.State == state).Sum(segment => segment.Quantity.Value));
+        Kilograms.Of(InventoryTransferQuantityArithmeticV2.Sum(
+            Segments.Where(segment => segment.State == state).Select(segment => segment.Quantity.Value),
+            "Aynı durumdaki segment miktarı toplamı decimal miktar sınırını aşıyor."));
 
     private static InventoryRuleException Invalid(string message) =>
         new(InventoryRuleCodes.InvalidTransfer, message);
@@ -411,21 +421,29 @@ public sealed class InventoryTransferQuantitySegmentLedgerV2
 
     private void RequireLinkedReversal(InventoryTransferQuantityRevisionV2 revision)
     {
-        if (!revisions.Any(existing => existing.RevisionId == revision.ReversesRevisionId))
+        if (revisions.Count < 2 || revision.ReversesRevisionId != revisions[^1].RevisionId)
         {
-            throw Invalid("Ters/düzeltme yalnız kayıtlı bir revizyona bağlanabilir.");
+            throw Invalid("Ters/düzeltme yalnız güncel etkin revizyona bağlanabilir.");
         }
 
-        var historicalSegments = revisions.SelectMany(item => item.Partition.Segments).ToArray();
-        var historicalIds = historicalSegments.Select(segment => segment.SegmentId).ToHashSet();
-        foreach (var segment in revision.Partition.Segments.Where(segment => !historicalIds.Contains(segment.SegmentId)))
+        if (!SamePartition(revisions[^2].Partition, revision.Partition))
         {
-            if (segment.ParentSegmentId is null
-                || historicalSegments.All(parent => parent.SegmentId != segment.ParentSegmentId.Value))
-            {
-                throw Invalid("Yeni düzeltme segmenti kayıtlı bir segment köküne bağlanmalıdır.");
-            }
+            throw Invalid("Ters/düzeltme güncel revizyonun hemen önceki tam bölümünü geri yüklemelidir.");
         }
+    }
+
+    private static bool SamePartition(
+        InventoryTransferQuantityPartitionV2 left,
+        InventoryTransferQuantityPartitionV2 right)
+    {
+        if (left.Segments.Count != right.Segments.Count)
+        {
+            return false;
+        }
+
+        var rightById = right.Segments.ToDictionary(segment => segment.SegmentId);
+        return left.Segments.All(segment =>
+            rightById.TryGetValue(segment.SegmentId, out var candidate) && SameSegment(segment, candidate));
     }
 
     private static bool SameSegment(
@@ -442,10 +460,14 @@ public sealed class InventoryTransferQuantitySegmentLedgerV2
         IEnumerable<InventoryTransferSegmentSourceAllocationV2> left,
         IEnumerable<InventoryTransferSegmentSourceAllocationV2> right) =>
         left.GroupBy(allocation => allocation.SourceShareId)
-            .ToDictionary(group => group.Key, group => group.Sum(allocation => allocation.Quantity.Value))
+            .ToDictionary(group => group.Key, group => InventoryTransferQuantityArithmeticV2.Sum(
+                group.Select(allocation => allocation.Quantity.Value),
+                "Segment kaynak payı toplamı decimal miktar sınırını aşıyor."))
             .OrderBy(pair => pair.Key)
             .SequenceEqual(right.GroupBy(allocation => allocation.SourceShareId)
-                .ToDictionary(group => group.Key, group => group.Sum(allocation => allocation.Quantity.Value))
+                .ToDictionary(group => group.Key, group => InventoryTransferQuantityArithmeticV2.Sum(
+                    group.Select(allocation => allocation.Quantity.Value),
+                    "Segment kaynak payı toplamı decimal miktar sınırını aşıyor."))
                 .OrderBy(pair => pair.Key));
 
     private static Guid RequireId(Guid id, string name) =>
@@ -453,4 +475,25 @@ public sealed class InventoryTransferQuantitySegmentLedgerV2
 
     private static InventoryRuleException Invalid(string message) =>
         new(InventoryRuleCodes.InvalidTransfer, message);
+}
+
+internal static class InventoryTransferQuantityArithmeticV2
+{
+    public static decimal Sum(IEnumerable<decimal> values, string overflowMessage)
+    {
+        try
+        {
+            var total = 0m;
+            foreach (var value in values)
+            {
+                total = checked(total + value);
+            }
+
+            return total;
+        }
+        catch (OverflowException)
+        {
+            throw new InventoryRuleException(InventoryRuleCodes.InvalidTransfer, overflowMessage);
+        }
+    }
 }
