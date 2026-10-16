@@ -435,7 +435,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       expect(createdPlan.cutToLengthSpec).toEqual(cutToLengthSpec)
 
       await page.goto(`/uretim/plan/${planId}`)
-      await expect(page.getByRole('heading', { name: 'Üretim planı' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
       const inputRegion = page.getByRole('region', { name: 'Planlanan ana rulolar' })
       await expect(inputRegion.getByText(/^Nominal ürün boyu:/))
         .toHaveText('Nominal ürün boyu: 2500.125 mm')
