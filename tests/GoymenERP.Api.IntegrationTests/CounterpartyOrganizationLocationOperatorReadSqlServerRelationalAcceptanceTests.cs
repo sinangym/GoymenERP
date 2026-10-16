@@ -56,13 +56,13 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
             Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Success, display.Outcome);
             Assert.Collection(display.Items.OrderBy(item => item.LocationId),
                 item => Assert.Equal(
-                    (LocationOne, EligibleOne, "SUP-100", "Birinci Tedarikçi", (string?)"Birinci Ticaret", true),
+                    (LocationOne, EligibleOne, "CAR-000100", "Birinci Tedarikçi", (string?)"Birinci Ticaret", true),
                     (item.LocationId, item.PartyId, item.Code, item.LegalName, item.TradeName, item.IsCurrentlyEligible)),
                 item => Assert.Equal(
-                    (LocationTwo, InactiveParty, "SUP-300", "Tarihsel Pasif Taraf", (string?)null, false),
+                    (LocationTwo, InactiveParty, "CAR-000300", "Tarihsel Pasif Taraf", (string?)null, false),
                     (item.LocationId, item.PartyId, item.Code, item.LegalName, item.TradeName, item.IsCurrentlyEligible)),
                 item => Assert.Equal(
-                    (LocationThree, RemovedSupplier, "SUP-500", "Rolü Kaldırılmış", (string?)null, false),
+                    (LocationThree, RemovedSupplier, "CAR-000500", "Rolü Kaldırılmış", (string?)null, false),
                     (item.LocationId, item.PartyId, item.Code, item.LegalName, item.TradeName, item.IsCurrentlyEligible)));
 
             var missing = await source.ReadAuthorizedDisplaysAsync(new(
@@ -177,13 +177,13 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
             INSERT INTO [counterparty].[Parties]
                 ([Id], [Code], [Kind], [LegalName], [TradeName], [IsActive], [Version], [CreatedAtUtc], [UpdatedAtUtc])
             VALUES
-                (@EligibleOne, N'SUP-100', N'LegalEntity', N'Birinci Tedarikçi', N'Birinci Ticaret', 1, 1, @Now, @Now),
-                (@EligibleTwo, N'SUP-100', N'LegalEntity', N'İkinci Tedarikçi', NULL, 1, 1, @Now, @Now),
-                (@EligibleThree, N'SUP-200', N'LegalEntity', N'Üçüncü Tedarikçi', NULL, 1, 1, @Now, @Now),
-                (@InactiveParty, N'SUP-300', N'LegalEntity', N'Tarihsel Pasif Taraf', NULL, 0, 1, @Now, @Now),
-                (@InactiveAccount, N'SUP-400', N'LegalEntity', N'Pasif Şirket Hesabı', NULL, 1, 1, @Now, @Now),
-                (@RemovedSupplier, N'SUP-500', N'LegalEntity', N'Rolü Kaldırılmış', NULL, 1, 1, @Now, @Now),
-                (@ForeignSupplier, N'SUP-600', N'LegalEntity', N'Yabancı Şirket Tedarikçisi', NULL, 1, 1, @Now, @Now);
+                (@EligibleOne, N'CAR-000100', N'LegalEntity', N'Birinci Tedarikçi', N'Birinci Ticaret', 1, 1, @Now, @Now),
+                (@EligibleTwo, N'CAR-000101', N'LegalEntity', N'İkinci Tedarikçi', NULL, 1, 1, @Now, @Now),
+                (@EligibleThree, N'CAR-000200', N'LegalEntity', N'Üçüncü Tedarikçi', NULL, 1, 1, @Now, @Now),
+                (@InactiveParty, N'CAR-000300', N'LegalEntity', N'Tarihsel Pasif Taraf', NULL, 0, 1, @Now, @Now),
+                (@InactiveAccount, N'CAR-000400', N'LegalEntity', N'Pasif Şirket Hesabı', NULL, 1, 1, @Now, @Now),
+                (@RemovedSupplier, N'CAR-000500', N'LegalEntity', N'Rolü Kaldırılmış', NULL, 1, 1, @Now, @Now),
+                (@ForeignSupplier, N'CAR-000600', N'LegalEntity', N'Yabancı Şirket Tedarikçisi', NULL, 1, 1, @Now, @Now);
 
             INSERT INTO [counterparty].[CompanyPartyAccounts]
                 ([Id], [CompanyId], [PartyId], [Roles], [ExternalIntegrationCode], [IsActive], [Version], [CreatedAtUtc], [UpdatedAtUtc])
