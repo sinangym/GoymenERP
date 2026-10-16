@@ -104,8 +104,12 @@ public sealed class ReleaseWeldedTubeProfileTechnicalDefinition : Migration
     {
         migrationBuilder.Sql("""
             DECLARE @ExpectedFamilies TABLE
-                ([Id] uniqueidentifier, [Code] varchar(64), [Name] nvarchar(200), [Cins] nvarchar(64),
-                 [Tur] nvarchar(64), [Tip] nvarchar(64), [RuleSet] varchar(64), [SourceRef] varchar(64));
+                ([Id] uniqueidentifier, [Code] varchar(64) COLLATE Latin1_General_100_BIN2,
+                 [Name] nvarchar(200) COLLATE Turkish_100_CI_AS,
+                 [Cins] nvarchar(64) COLLATE Turkish_100_CI_AS,
+                 [Tur] nvarchar(64) COLLATE Turkish_100_CI_AS,
+                 [Tip] nvarchar(64) COLLATE Turkish_100_CI_AS,
+                 [RuleSet] varchar(64) COLLATE Latin1_General_100_BIN2, [SourceRef] varchar(64));
             INSERT INTO @ExpectedFamilies VALUES
                 ('b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99', 'welded-round-pipe', N'Kaynaklı Yuvarlak Boru', N'Boru', N'Kaynaklı', N'Yuvarlak', 'gdc-welded-round-pipe', 'issue66-6210091477-p013-a'),
                 ('b5d078ba-dbb8-4ada-9b6f-28a5ecdeac54', 'welded-square-profile', N'Kaynaklı Kare Profil', N'Profil', N'Kaynaklı', N'Kare', 'gdc-welded-square-profile', 'issue66-6210091477-p013-a'),
@@ -123,7 +127,9 @@ public sealed class ReleaseWeldedTubeProfileTechnicalDefinition : Migration
                 THROW 51045, 'The welded tube/profile family release is partial or changed; use a reviewed forward fix.', 1;
 
             DECLARE @ExpectedTemplates TABLE
-                ([Id] uniqueidentifier, [Version] bigint, [Code] varchar(64), [Name] nvarchar(200), [SourceRef] varchar(64));
+                ([Id] uniqueidentifier, [Version] bigint,
+                 [Code] varchar(64) COLLATE Latin1_General_100_BIN2,
+                 [Name] nvarchar(200) COLLATE Turkish_100_CI_AS, [SourceRef] varchar(64));
             INSERT INTO @ExpectedTemplates VALUES
                 ('f944d764-56f6-4a04-9a31-65074b2c06c1', 1, 'gdc-welded-round-pipe-v1', N'GDC Kaynaklı Yuvarlak Boru Teknik Kartı', 'issue66-6210091477-p013-a'),
                 ('93772f5f-5be9-4dba-8c61-f9942f4e523d', 1, 'gdc-welded-square-profile-v1', N'GDC Kaynaklı Kare Profil Teknik Kartı', 'issue66-6210091477-p013-a'),
@@ -155,10 +161,14 @@ public sealed class ReleaseWeldedTubeProfileTechnicalDefinition : Migration
                 THROW 51045, 'The welded tube/profile family-template release is partial or changed; use a reviewed forward fix.', 1;
 
             DECLARE @ExpectedFields TABLE
-                ([TemplateId] uniqueidentifier, [TemplateVersion] bigint, [Key] varchar(64), [Position] int,
-                 [Kind] int, [Role] varchar(32) NULL, [Required] bit, [Dictionary] varchar(64) NULL,
-                 [AllowsCandidate] bit, [AppliesWhenField] varchar(64) NULL, [AppliesWhenCode] nvarchar(64) NULL,
-                 [ParentField] varchar(64) NULL);
+                ([TemplateId] uniqueidentifier, [TemplateVersion] bigint,
+                 [Key] varchar(64) COLLATE Latin1_General_100_BIN2, [Position] int,
+                 [Kind] int, [Role] varchar(32) COLLATE Latin1_General_100_BIN2 NULL, [Required] bit,
+                 [Dictionary] varchar(64) COLLATE Latin1_General_100_BIN2 NULL,
+                 [AllowsCandidate] bit,
+                 [AppliesWhenField] varchar(64) COLLATE Latin1_General_100_BIN2 NULL,
+                 [AppliesWhenCode] nvarchar(64) COLLATE Latin1_General_100_BIN2 NULL,
+                 [ParentField] varchar(64) COLLATE Latin1_General_100_BIN2 NULL);
             INSERT INTO @ExpectedFields VALUES
                 ('f944d764-56f6-4a04-9a31-65074b2c06c1',1,'outside-diameter-mm',1,1,'outside-diameter',1,NULL,0,NULL,NULL,NULL),
                 ('f944d764-56f6-4a04-9a31-65074b2c06c1',1,'wall-thickness-mm',2,1,'wall-thickness',1,NULL,0,NULL,NULL,NULL),
