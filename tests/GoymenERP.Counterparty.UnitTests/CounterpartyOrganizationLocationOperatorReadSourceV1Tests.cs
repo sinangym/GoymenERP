@@ -1,3 +1,4 @@
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -84,10 +85,49 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
                 new(Company, "organization-location-writer", [new(Location, Party)]), cancellation.Token));
     }
 
+    [Fact]
+    public async Task Exact_location_authority_is_required_before_storage_access()
+    {
+        var context = new TestCompanyContext(Company);
+        var user = new TestCurrentUser("organization-location-writer", new HashSet<Guid> { Company });
+        var authority = new TestAuthority(new PermissionScope(
+            true,
+            false,
+            new HashSet<string>(StringComparer.Ordinal),
+            new HashSet<Guid>(),
+            new HashSet<Guid> { Guid.Parse("72000000-0000-4000-8000-000000000099") },
+            new HashSet<Guid>()));
+        var source = Source(context, user, authority);
+
+        var display = await source.ReadAuthorizedDisplaysAsync(
+            new(Company, "organization-location-writer", [new(Location, Party)]));
+        var candidates = await source.SearchAuthorizedCandidatesAsync(Candidate());
+
+        Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, display.Outcome);
+        Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, candidates.Outcome);
+        Assert.Equal(
+            [ErpPermissions.OrganizationLocationsRead, ErpPermissions.OrganizationLocationsWrite],
+            authority.Permissions);
+    }
+
     private static CounterpartyOrganizationLocationOperatorReadSourceV1 Source(
         TestCompanyContext context,
-        TestCurrentUser user) =>
-        new(null!, context, user, new RejectingCursorCodec(), TimeProvider.System, null!);
+        TestCurrentUser user,
+        IErpAuthorityRevalidationService? authority = null) =>
+        new(
+            null!,
+            context,
+            user,
+            authority ?? new TestAuthority(new PermissionScope(
+                true,
+                false,
+                new HashSet<string>(StringComparer.Ordinal),
+                new HashSet<Guid>(),
+                new HashSet<Guid> { Location },
+                new HashSet<Guid>())),
+            new RejectingCursorCodec(),
+            TimeProvider.System,
+            null!);
 
     private static CounterpartyOrganizationLocationOperatorCandidateRequestV1 Candidate() =>
         new(Company, "organization-location-writer", "organization.location.operator", Location, null, 25, null);
@@ -100,6 +140,20 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
         {
             state = null!;
             return false;
+        }
+    }
+
+    private sealed class TestAuthority(PermissionScope scope) : IErpAuthorityRevalidationService
+    {
+        public List<string> Permissions { get; } = [];
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            Permissions.Add(permission);
+            return Task.FromResult(companyId == Company ? scope : PermissionScope.Denied);
         }
     }
 
