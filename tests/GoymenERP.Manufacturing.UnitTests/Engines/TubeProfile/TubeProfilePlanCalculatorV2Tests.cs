@@ -92,6 +92,121 @@ public sealed class TubeProfilePlanCalculatorV2Tests
     }
 
     [Fact]
+    public void Representable_maximum_total_metres_does_not_overflow_before_scaling()
+    {
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 1000,
+            targetLengthMm: decimal.MaxValue));
+
+        Assert.Equal(EngineOutcome.Computed, calculation.Quantity.Outcome);
+        Assert.Equal(decimal.MaxValue, calculation.Quantity.Value!.TotalMetres);
+    }
+
+    [Fact]
+    public void Unrepresentable_total_metres_refuses_only_quantity_and_a_representable_duration_still_computes()
+    {
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 1001,
+            targetLengthMm: decimal.MaxValue,
+            package: new TubeProfilePackageStandardSnapshotV1(PackageSource, "package-v3", 50),
+            speed: new TubeProfileLineSpeedSnapshotV1(SpeedSource, "speed-v7", 1001m),
+            unitKg: new TubeProfileVerifiedUnitKgSnapshotV1(UnitKgSource, "unit-kg-v11", 1m)));
+
+        AssertRefused(calculation.Quantity, TubeProfilePlanCalculatorV2.TotalMetresResult);
+        Assert.Equal((20, 1, 21),
+            (calculation.Package.Value!.FullPackages,
+                calculation.Package.Value.RemainderPieces,
+                calculation.Package.Value.SuggestedPackageCount));
+        Assert.Equal(decimal.MaxValue / 1000m, calculation.Duration.Value!.RunMinutes);
+        Assert.Equal(1001m, calculation.TheoreticalMass.Value!.TheoreticalKg);
+    }
+
+    [Fact]
+    public void Unrepresentable_duration_refuses_only_duration()
+    {
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 1000,
+            targetLengthMm: decimal.MaxValue,
+            package: new TubeProfilePackageStandardSnapshotV1(PackageSource, "package-v3", 50),
+            speed: new TubeProfileLineSpeedSnapshotV1(SpeedSource, "speed-v7", 0.1m),
+            unitKg: new TubeProfileVerifiedUnitKgSnapshotV1(UnitKgSource, "unit-kg-v11", 1m)));
+
+        Assert.Equal(decimal.MaxValue, calculation.Quantity.Value!.TotalMetres);
+        Assert.Equal(20, calculation.Package.Value!.SuggestedPackageCount);
+        AssertRefused(calculation.Duration, TubeProfilePlanCalculatorV2.RunMinutesResult);
+        Assert.Equal(1000m, calculation.TheoreticalMass.Value!.TheoreticalKg);
+    }
+
+    [Fact]
+    public void Unrepresentable_theoretical_mass_refuses_only_mass()
+    {
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 2,
+            targetLengthMm: 1000m,
+            package: new TubeProfilePackageStandardSnapshotV1(PackageSource, "package-v3", 1),
+            speed: new TubeProfileLineSpeedSnapshotV1(SpeedSource, "speed-v7", 1m),
+            unitKg: new TubeProfileVerifiedUnitKgSnapshotV1(UnitKgSource, "unit-kg-v11", decimal.MaxValue)));
+
+        Assert.Equal(2m, calculation.Quantity.Value!.TotalMetres);
+        Assert.Equal(2, calculation.Package.Value!.SuggestedPackageCount);
+        Assert.Equal(2m, calculation.Duration.Value!.RunMinutes);
+        AssertRefused(calculation.TheoreticalMass, TubeProfilePlanCalculatorV2.TheoreticalKgResult);
+    }
+
+    [Fact]
+    public void Duration_below_decimal_range_refuses_instead_of_becoming_zero()
+    {
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 1,
+            targetLengthMm: 0.001m,
+            package: new TubeProfilePackageStandardSnapshotV1(PackageSource, "package-v3", 1),
+            speed: new TubeProfileLineSpeedSnapshotV1(SpeedSource, "speed-v7", decimal.MaxValue),
+            unitKg: new TubeProfileVerifiedUnitKgSnapshotV1(UnitKgSource, "unit-kg-v11", 1m)));
+
+        Assert.Equal(0.000001m, calculation.Quantity.Value!.TotalMetres);
+        Assert.Equal(1, calculation.Package.Value!.SuggestedPackageCount);
+        AssertRefused(calculation.Duration, TubeProfilePlanCalculatorV2.RunMinutesResult);
+        Assert.Equal(1m, calculation.TheoreticalMass.Value!.TheoreticalKg);
+    }
+
+    [Fact]
+    public void Exact_quantity_that_would_require_silent_scale_rounding_is_refused()
+    {
+        const decimal length = 79228162514264337593543950.335m;
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 3,
+            targetLengthMm: length,
+            package: new TubeProfilePackageStandardSnapshotV1(PackageSource, "package-v3", 2),
+            speed: new TubeProfileLineSpeedSnapshotV1(SpeedSource, "speed-v7", 3m),
+            unitKg: new TubeProfileVerifiedUnitKgSnapshotV1(UnitKgSource, "unit-kg-v11", 1m)));
+
+        AssertRefused(calculation.Quantity, TubeProfilePlanCalculatorV2.TotalMetresResult);
+        Assert.Equal((1, 1, 2),
+            (calculation.Package.Value!.FullPackages,
+                calculation.Package.Value.RemainderPieces,
+                calculation.Package.Value.SuggestedPackageCount));
+        Assert.Equal(length / 1000m, calculation.Duration.Value!.RunMinutes);
+        Assert.Equal(3m, calculation.TheoreticalMass.Value!.TheoreticalKg);
+    }
+
+    [Fact]
+    public void Exact_mass_that_would_require_silent_scale_rounding_is_refused()
+    {
+        const decimal unitKg = 7.9228162514264337593543950335m;
+        var calculation = TubeProfilePlanCalculatorV2.Calculate(Spec(
+            targetPieces: 3,
+            targetLengthMm: 1000m,
+            package: new TubeProfilePackageStandardSnapshotV1(PackageSource, "package-v3", 1),
+            speed: new TubeProfileLineSpeedSnapshotV1(SpeedSource, "speed-v7", 1m),
+            unitKg: new TubeProfileVerifiedUnitKgSnapshotV1(UnitKgSource, "unit-kg-v11", unitKg)));
+
+        Assert.Equal(3m, calculation.Quantity.Value!.TotalMetres);
+        Assert.Equal(3, calculation.Package.Value!.SuggestedPackageCount);
+        Assert.Equal(3m, calculation.Duration.Value!.RunMinutes);
+        AssertRefused(calculation.TheoreticalMass, TubeProfilePlanCalculatorV2.TheoreticalKgResult);
+    }
+
+    [Fact]
     public void Null_spec_fails_closed()
     {
         Assert.Throws<ArgumentNullException>(() => TubeProfilePlanCalculatorV2.Calculate(null!));
@@ -99,10 +214,11 @@ public sealed class TubeProfilePlanCalculatorV2Tests
 
     private static TubeProfilePlanSpecV1 Spec(
         int targetPieces,
+        decimal targetLengthMm = 6000m,
         TubeProfilePackageStandardSnapshotV1? package = null,
         TubeProfileLineSpeedSnapshotV1? speed = null,
         TubeProfileVerifiedUnitKgSnapshotV1? unitKg = null) =>
-        new(Product, "product-v5", 6000m, targetPieces, package, speed, unitKg);
+        new(Product, "product-v5", targetLengthMm, targetPieces, package, speed, unitKg);
 
     private static void AssertOwnOutcome<T>(EngineResult<T> result, bool hasSource, string parameter)
         where T : class
@@ -118,5 +234,15 @@ public sealed class TubeProfilePlanCalculatorV2Tests
         Assert.Equal(EngineOutcome.Unavailable, result.Outcome);
         Assert.Null(result.Value);
         Assert.Equal(parameter, Assert.Single(result.MissingParameters));
+    }
+
+    private static void AssertRefused<T>(EngineResult<T> result, string affectedResult)
+        where T : class
+    {
+        Assert.Equal(EngineOutcome.Refused, result.Outcome);
+        Assert.Null(result.Value);
+        Assert.Empty(result.MissingParameters);
+        Assert.Equal(TubeProfilePlanCalculatorV2.ArithmeticNotRepresentableCode, result.RefusalCode);
+        Assert.Equal(affectedResult, result.RefusedParameter);
     }
 }
