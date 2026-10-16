@@ -1405,7 +1405,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "    name: SQL Server relational acceptance",
                 "    needs: [relational-shard, relational-rcsi]",
                 "    if: ${{ always() }}",
-                "    runs-on: ubuntu-latest",
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]",
                 "    steps:",
             ],
         )
@@ -1570,7 +1570,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "      - frontend\n"
                 "      - relational\n"
                 "      - contract-drift\n"
-                "    runs-on: ubuntu-latest\n"
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
                 "    env:\n"
                 "      MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!\n"
                 "    steps:\n"
@@ -1602,7 +1602,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "    name: Container build",
                 "    needs:",
-                "    runs-on: ubuntu-latest",
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]",
                 "    env:",
                 "    steps:",
             ],
