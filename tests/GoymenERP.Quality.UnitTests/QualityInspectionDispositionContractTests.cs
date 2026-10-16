@@ -13,7 +13,7 @@ public sealed class QualityInspectionDispositionContractTests
 
         Assert.Equal(Company, value.CompanyId);
         Assert.Equal(Label, value.LabelId);
-        Assert.Equal(("label-v5", "hold-v3"), (value.ExpectedLabelVersion, value.ExpectedHoldVersion));
+        Assert.Equal(("5", "3"), (value.ExpectedLabelVersion, value.ExpectedHoldVersion));
         Assert.Equal(("quality-preparer", "quality-decider"),
             (value.PreparedByActorId, value.DecidedByActorId));
         Assert.Equal(kind, value.Kind);
@@ -45,6 +45,9 @@ public sealed class QualityInspectionDispositionContractTests
         Assert.Throws<ArgumentException>(() => Valid(labelId: Guid.Empty));
         Assert.Throws<ArgumentException>(() => Valid(expectedLabelVersion: " "));
         Assert.Throws<ArgumentException>(() => Valid(expectedHoldVersion: ""));
+        Assert.Throws<ArgumentException>(() => Valid(expectedLabelVersion: "0"));
+        Assert.Throws<ArgumentException>(() => Valid(expectedLabelVersion: "01"));
+        Assert.Throws<ArgumentException>(() => Valid(expectedHoldVersion: "-1"));
         Assert.Throws<ArgumentException>(() => Valid(reason: ""));
     }
 
@@ -58,8 +61,8 @@ public sealed class QualityInspectionDispositionContractTests
         string kind = QualityDispositionKindsV1.Release,
         Guid? companyId = null,
         Guid? labelId = null,
-        string expectedLabelVersion = "label-v5",
-        string expectedHoldVersion = "hold-v3",
+        string expectedLabelVersion = "5",
+        string expectedHoldVersion = "3",
         string preparedBy = "quality-preparer",
         string decidedBy = "quality-decider",
         string reason = "SENTETIK disposition reason",

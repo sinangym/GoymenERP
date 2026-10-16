@@ -76,8 +76,19 @@ public sealed class QualityInspectionDispositionV1
     private static Guid Required(Guid value, string parameterName) =>
         value != Guid.Empty ? value : throw new ArgumentException("A non-empty identity is required.", parameterName);
 
-    private static string RequiredVersion(string value, string parameterName) =>
-        RequiredText(value, MaximumEvidenceVersionLength, parameterName);
+    private static string RequiredVersion(string value, string parameterName)
+    {
+        if (!long.TryParse(value, System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var version)
+            || version < 1
+            || !string.Equals(value, version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException("A canonical positive version is required.", parameterName);
+        }
+
+        return value;
+    }
 
     private static string RequiredText(string value, int maximumLength, string parameterName)
     {

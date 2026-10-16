@@ -242,6 +242,46 @@ internal sealed class AllocationChangeRow : IInventoryTenantRow
 }
 
 /// <summary>
+/// Inventory-owned physical hold on one complete real label. The row keeps the exact physical place
+/// and kilograms Inventory blocked; a Quality decision may close only a Quality-owned row. Other
+/// typed holds remain separate rows, so closing one never erases another owner's restriction.
+/// </summary>
+internal sealed class InventoryPhysicalHoldRow : IInventoryTenantRow
+{
+    public Guid Id { get; set; }
+    public Guid CompanyId { get; set; }
+    public Guid LabelId { get; set; }
+    public long LabelVersionAtPlacement { get; set; }
+    public int OwnerKind { get; set; }
+    public string SourceKind { get; set; } = string.Empty;
+    public Guid SourceId { get; set; }
+    public int PositionOwnerKind { get; set; }
+    public Guid PositionOwnerId { get; set; }
+    public int CustodianKind { get; set; }
+    public Guid CustodianId { get; set; }
+    public Guid LocationId { get; set; }
+    public Guid ProductId { get; set; }
+    public decimal QuantityKg { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset? ExpiresAtUtc { get; set; }
+    public int Status { get; set; }
+    public long Version { get; set; }
+    public string PlacementPayloadHash { get; set; } = string.Empty;
+    public Guid? BlockMovementId { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
+    public string CreatedCorrelationId { get; set; } = string.Empty;
+    public Guid? ReleaseDispositionId { get; set; }
+    public string? ReleasePayloadHash { get; set; }
+    public Guid? ReleaseMovementId { get; set; }
+    public DateTimeOffset? ReleasedAtUtc { get; set; }
+    public string? ReleasedBy { get; set; }
+    public string? ReleaseReason { get; set; }
+    public string? ReleaseCorrelationId { get; set; }
+    public byte[] RowVersion { get; set; } = [];
+}
+
+/// <summary>
 /// One unpublished Inventory-owned event stored in the producer transaction. This slice has no
 /// dispatcher and never mutates publication state; the row is append-only.
 /// </summary>

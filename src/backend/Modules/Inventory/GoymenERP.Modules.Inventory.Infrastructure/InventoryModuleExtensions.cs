@@ -50,6 +50,8 @@ public static class InventoryModuleExtensions
         services.AddScoped<IInventoryLotStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryLabelStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryMovementStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
+        services.AddScoped<IInventoryPhysicalHoldWriterV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryOpeningStore>(serviceProvider => serviceProvider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryPhysicalAllocationWriterV1>(serviceProvider =>
             serviceProvider.GetRequiredService<InventoryStore>());

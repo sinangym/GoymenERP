@@ -61,6 +61,8 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
 
     internal DbSet<AllocationChangeRow> AllocationChanges => Set<AllocationChangeRow>();
 
+    internal DbSet<InventoryPhysicalHoldRow> PhysicalHolds => Set<InventoryPhysicalHoldRow>();
+
     internal DbSet<InventoryOutboxRow> OutboxMessages => Set<InventoryOutboxRow>();
 
     internal DbSet<OpeningCountRow> OpeningCounts => Set<OpeningCountRow>();
@@ -105,6 +107,7 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         ConfigureBalances(modelBuilder);
         ConfigureAllocations(modelBuilder);
         ConfigureAllocationChanges(modelBuilder);
+        ConfigurePhysicalHolds(modelBuilder);
         ConfigureOutboxMessages(modelBuilder);
         ConfigureOpeningCounts(modelBuilder);
         ConfigureCommands(modelBuilder);
@@ -641,6 +644,76 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
         command.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigurePhysicalHolds(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<InventoryPhysicalHoldRow>();
+        entity.ToTable("PhysicalHolds", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PhysicalHolds_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LabelId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [SourceId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PositionOwnerId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CustodianId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [LocationId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_PhysicalHolds_State",
+                "[OwnerKind] >= 1 AND [PositionOwnerKind] IN (1, 2) AND [CustodianKind] IN (1, 2) "
+                + "AND [LabelVersionAtPlacement] >= 1 AND [QuantityKg] > 0 AND [Version] >= 1 "
+                + "AND (([Status] = 1 AND [ReleasedAtUtc] IS NULL AND [ReleasedBy] IS NULL "
+                + "AND [ReleaseDispositionId] IS NULL AND [ReleasePayloadHash] IS NULL "
+                + "AND [ReleaseMovementId] IS NULL AND [ReleaseReason] IS NULL AND [ReleaseCorrelationId] IS NULL) "
+                + "OR ([Status] = 2 AND [ReleasedAtUtc] IS NOT NULL AND [ReleasedBy] IS NOT NULL "
+                + "AND [ReleaseDispositionId] IS NOT NULL AND [ReleasePayloadHash] IS NOT NULL "
+                + "AND [ReleaseReason] IS NOT NULL AND [ReleaseCorrelationId] IS NOT NULL))");
+            table.HasCheckConstraint("CK_PhysicalHolds_Text",
+                "LEN([SourceKind]) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0 "
+                + "AND LEN([PlacementPayloadHash]) = 64 AND LEN([CreatedBy]) > 0 "
+                + "AND LEN([CreatedCorrelationId]) > 0 "
+                + "AND ([ReleasePayloadHash] IS NULL OR LEN([ReleasePayloadHash]) = 64)");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Id).ValueGeneratedNever();
+        entity.Property(x => x.SourceKind).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.QuantityKg).HasPrecision(18, 3);
+        entity.Property(x => x.Reason).HasMaxLength(1000).IsRequired();
+        entity.Property(x => x.PlacementPayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.CreatedCorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.ReleasePayloadHash).HasMaxLength(64).IsUnicode(false);
+        entity.Property(x => x.ReleasedBy).HasMaxLength(128);
+        entity.Property(x => x.ReleaseReason).HasMaxLength(1000);
+        entity.Property(x => x.ReleaseCorrelationId).HasMaxLength(128);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        entity.HasIndex(x => new { x.CompanyId, x.OwnerKind, x.SourceKind, x.SourceId }).IsUnique();
+        entity.HasIndex(x => new { x.CompanyId, x.LabelId, x.Status, x.Id });
+        entity.HasIndex(x => new { x.CompanyId, x.ReleaseDispositionId }).IsUnique()
+            .HasFilter("[ReleaseDispositionId] IS NOT NULL");
+        entity.HasIndex(x => new { x.CompanyId, x.BlockMovementId }).IsUnique()
+            .HasFilter("[BlockMovementId] IS NOT NULL");
+        entity.HasIndex(x => new { x.CompanyId, x.ReleaseMovementId }).IsUnique()
+            .HasFilter("[ReleaseMovementId] IS NOT NULL");
+        entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<LabelRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.LabelId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.BlockMovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<MovementRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReleaseMovementId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        LocationOf(entity);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     /// <summary>
     /// ST-05 / AT-037 (DEC-STK-007): a count of one stocked label at its stored position, and at most one decision
     /// on it. A count names its company's label and location; an approval names the adjustment movement it posted
@@ -989,6 +1062,16 @@ public sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> opti
                     [
                         nameof(InventoryTransferRow.Version), nameof(InventoryTransferRow.Status),
                         nameof(InventoryTransferRow.UpdatedAtUtc),
+                    ],
+                    InventoryPhysicalHoldRow =>
+                    [
+                        nameof(InventoryPhysicalHoldRow.Status), nameof(InventoryPhysicalHoldRow.Version),
+                        nameof(InventoryPhysicalHoldRow.ReleaseDispositionId),
+                        nameof(InventoryPhysicalHoldRow.ReleasePayloadHash),
+                        nameof(InventoryPhysicalHoldRow.ReleaseMovementId),
+                        nameof(InventoryPhysicalHoldRow.ReleasedAtUtc), nameof(InventoryPhysicalHoldRow.ReleasedBy),
+                        nameof(InventoryPhysicalHoldRow.ReleaseReason),
+                        nameof(InventoryPhysicalHoldRow.ReleaseCorrelationId),
                     ],
                     _ => [],
                 };
