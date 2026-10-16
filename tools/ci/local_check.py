@@ -29,7 +29,7 @@ WORKFLOWS = (
     ".github/workflows/openapi-generate.yml",
 )
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-SENSITIVE = re.compile(r"(?i)\b(?:password|passwd|secret|token|api[_-]?key|client[_-]?secret|authorization|proxy-authorization)\s*[=:]\s*.*")
+SENSITIVE = re.compile(r"(?i)\b[\w.-]*(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|authorization|connection[_-]?string)[\w.-]*\s*[=:]")
 BEARER = re.compile(r"(?i)\bBearer\s+[^\r\n]+")
 LEASE_ROOT = Path("/home/ci/local-ci-leases")
 LOCAL_PATH = "/opt/goymen-ci/tools/dotnet-10.0.303:/opt/goymen-ci/tools/node-v24.20.0-linux-x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -37,11 +37,10 @@ LOCAL_PATH = "/opt/goymen-ci/tools/dotnet-10.0.303:/opt/goymen-ci/tools/node-v24
 
 def scrub_output(value: str) -> tuple[str, bool]:
     """Fail closed on credential-shaped output; never persist its value."""
-    redacted = SENSITIVE.sub("[CREDENTIAL_REDACTED]", value)
-    redacted = BEARER.sub("[CREDENTIAL_REDACTED]", redacted)
-    if value.endswith("\n") and not redacted.endswith("\n"):
-        redacted += "\n"
-    return redacted, redacted != value
+    detected = bool(SENSITIVE.search(value) or BEARER.search(value))
+    if detected:
+        return "[CREDENTIAL_REDACTED]" + ("\n" if value.endswith("\n") else ""), True
+    return value, False
 
 
 def validate_lease(root: Path, profile: str, path: Path, expected_head: str) -> dict:
@@ -211,25 +210,25 @@ def run_step(root: Path, directory: Path, index: int, step: dict) -> dict:
     entry = {"name": scrub_output(step.get("name", command))[0], "command": scrub_output(command)[0],
              "workingDirectory": str(working), "startUtc": now(), "status": "RUNNING"}
     write_json(directory / f"step-{index:02d}.json", entry)
-    process = subprocess.Popen(["/bin/bash", "--noprofile", "--norc", "-p", "-euo", "pipefail", "-c", command],
+    with subprocess.Popen(["/bin/bash", "--noprofile", "--norc", "-p", "-euo", "pipefail", "-c", command],
                                cwd=working, env=command_environment(), stdout=subprocess.PIPE,
-                               stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="strict")
-    chunks = []
-    credential_output = False
-    with (directory / f"step-{index:02d}.log").open("x", encoding="utf-8") as log:
-        assert process.stdout is not None
-        for line in process.stdout:
-            safe, detected = scrub_output(line)
-            if credential_output:
-                # A wrapped/multiline credential cannot resume ordinary logging safely.
-                safe, detected = "[OUTPUT_SUPPRESSED_AFTER_CREDENTIAL]\n", True
-            credential_output = credential_output or detected
-            chunks.append(safe)
-            log.write(safe)
-            log.flush()
-            print(safe, end="", flush=True)
-    process.stdout.close()
-    code = process.wait()
+                               stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="strict") as process:
+        chunks = []
+        credential_output = False
+        with (directory / f"step-{index:02d}.log").open("x", encoding="utf-8") as log:
+            assert process.stdout is not None
+            for line in process.stdout:
+                safe, detected = scrub_output(line)
+                if credential_output:
+                    # A wrapped/multiline credential cannot resume ordinary logging safely.
+                    safe, detected = "[OUTPUT_SUPPRESSED_AFTER_CREDENTIAL]\n", True
+                credential_output = credential_output or detected
+                chunks.append(safe)
+                log.write(safe)
+                log.flush()
+                print(safe, end="", flush=True)
+        process.stdout.close()
+        code = process.wait()
     entry.update({"finishUtc": now(), "exitCode": code, "status": "PASS" if code == 0 else "FAIL",
                   "counts": test_counts("".join(chunks)), "credentialOutputDetected": credential_output})
     if credential_output:
@@ -297,7 +296,10 @@ def main() -> int:
                     if entry["exitCode"] != 0:
                         code = entry["exitCode"]
                         break
-            result["status"] = ("LOCAL_TARGETED_PASS_DIRTY" if initial["dirty"] else "LOCAL_TARGETED_PASS") if code == 0 else "LOCAL_TARGETED_FAIL"
+            blocked_step = next((entry["status"] for entry in result["steps"]
+                                 if entry["status"].startswith("BLOCKED")), None)
+            result["status"] = blocked_step or (("LOCAL_TARGETED_PASS_DIRTY" if initial["dirty"] else "LOCAL_TARGETED_PASS")
+                                                  if code == 0 else "LOCAL_TARGETED_FAIL")
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         result.update({"status": "BLOCKED", "reason": type(error).__name__ + ": " + scrub_output(str(error))[0]})
         code = 2

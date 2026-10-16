@@ -143,6 +143,66 @@ class LocalCheckTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             module.validate_lease(ROOT, "frontend", Path("/tmp/untrusted.json"), "wrong")
 
+    def test_prefixed_credentials_are_redacted_completely(self):
+        for name in ("GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY", "AWS_ACCESS_KEY_ID",
+                     "AZURE_CLIENT_SECRET", "NPM_TOKEN", "PRIVATE_KEY", "ConnectionStrings__Default"):
+            output, detected = module.scrub_output(name + "=opaque-secret-value\n")
+            self.assertTrue(detected, name)
+            self.assertEqual("[CREDENTIAL_REDACTED]\n", output)
+
+    def test_decode_error_reaps_owned_child_before_return(self):
+        from unittest.mock import patch
+        children = []
+        original = module.subprocess.Popen
+        def capture(*args, **kwargs):
+            child = original(*args, **kwargs)
+            children.append(child)
+            return child
+        try:
+            with tempfile.TemporaryDirectory() as folder, patch.object(module.subprocess, "Popen", side_effect=capture):
+                with self.assertRaises(UnicodeDecodeError):
+                    module.run_step(ROOT, Path(folder), 1, {"run":
+                        "python3 -c \"import os,time; os.write(1, bytes([255,10])); time.sleep(0.2)\""})
+                self.assertIsNotNone(children[0].poll())
+        finally:
+            for child in children:
+                child.wait(timeout=5)
+
+    def test_log_error_reaps_owned_child_before_return(self):
+        from unittest.mock import patch
+        children = []
+        original_popen = module.subprocess.Popen
+        original_open = Path.open
+        def capture(*args, **kwargs):
+            child = original_popen(*args, **kwargs)
+            children.append(child)
+            return child
+        def fail_log(path, *args, **kwargs):
+            if path.name == "step-01.log":
+                raise OSError("synthetic log writer unavailable")
+            return original_open(path, *args, **kwargs)
+        try:
+            with tempfile.TemporaryDirectory() as folder, patch.object(module.subprocess, "Popen", side_effect=capture), patch.object(Path, "open", fail_log):
+                with self.assertRaises(OSError):
+                    module.run_step(ROOT, Path(folder), 1, {"run": "python3 -c 'import time; time.sleep(0.2)'"})
+                self.assertIsNotNone(children[0].poll())
+        finally:
+            for child in children:
+                child.wait(timeout=5)
+
+    def test_secret_blocked_result_is_not_reclassified(self):
+        from unittest.mock import patch
+        import json
+        entry = {"name": "redacted", "exitCode": 2, "status": "BLOCKED_SECRET_OUTPUT", "counts": None}
+        with tempfile.TemporaryDirectory() as folder:
+            argv = ["local_check", "--profile", "guards", "--repository", str(ROOT), "--evidence-root", folder,
+                    "--expected-head", "a"*40, "--launcher-lease", "/unused"]
+            with patch.object(module.sys, "argv", argv), patch.object(module, "validate_lease", return_value={}), patch.object(module, "run_step", return_value=entry):
+                code = module.main()
+            result = json.loads(next(Path(folder).glob("*/result.json")).read_text(encoding="utf-8"))
+        self.assertEqual(2, code)
+        self.assertEqual("BLOCKED_SECRET_OUTPUT", result["status"])
+
     def test_unknown_profile_is_rejected(self):
         with self.assertRaises(ValueError):
             module.selected_steps(ROOT, "hosted")
