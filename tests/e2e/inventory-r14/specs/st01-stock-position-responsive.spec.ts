@@ -108,7 +108,8 @@ function stockCard(page: Page, labelId: string): Locator {
 function trNumber(value: string): string {
   const [whole, fraction] = value.split('.')
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  return fraction === undefined ? grouped : `${grouped},${fraction}`
+  const trimmed = fraction?.replace(/0+$/, '')
+  return trimmed === undefined || trimmed === '' ? grouped : `${grouped},${trimmed}`
 }
 
 function amountOf(position: Position): readonly string[] {
@@ -489,6 +490,9 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
     expect(position.productDisplay.technical).not.toBeNull()
     expect(Object.prototype.hasOwnProperty.call(position.productDisplay.technical!, 'lengthMm')).toBe(true)
     expect(position.productDisplay.technical!.lengthMm).toBeNull()
+    // A Product card without a nominal piece length stays two-dimensional. Inventory never substitutes a lot/label
+    // observation, quantity or zero as a third dimension.
+    expect(dimensionOf(position).split(' × ')).toHaveLength(2)
   }
   const extreme = all.find((item) => item.labelId === lines[0].labelId)
   const normal = all.find((item) => item.labelId === lines[1].labelId)
@@ -736,6 +740,7 @@ test('ST-01 keeps a real cut-sheet nominal length exact in V4 and readable at de
   expect(String(v4Position.productDisplay.technical?.thicknessMm)).toBe('3')
   expect(String(v4Position.productDisplay.technical?.widthMm)).toBe('248')
   expect(String(v4Position.productDisplay.technical?.lengthMm)).toBe('2500.125')
+  expect(dimensionOf(v4Position)).toBe('3 × 248 × 2.500,125')
 
   // Older opt-ins remain real and strict: they answer the same row without the V4-only length key.
   for (const version of LEGACY_STOCK_DISPLAY_VERSIONS) {
