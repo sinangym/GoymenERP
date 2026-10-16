@@ -39,9 +39,6 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
         {
             new(Guid.Empty, "organization-location-writer", [new(Location, Party)]),
             new(Company, " other", [new(Location, Party)]),
-            new(Company, "organization-location-writer", []),
-            new(Company, "organization-location-writer", [new(Guid.Empty, Party)]),
-            new(Company, "organization-location-writer", [new(Location, Party), new(Location, Guid.NewGuid())]),
         };
         foreach (var request in displayRequests)
         {
@@ -66,6 +63,30 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
             Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, answer.Outcome);
             Assert.Empty(answer.Items);
         }
+    }
+
+    [Fact]
+    public async Task Malformed_or_duplicate_display_bindings_are_unavailable_before_database_access()
+    {
+        var context = new TestCompanyContext(Company);
+        var user = new TestCurrentUser("organization-location-writer", new HashSet<Guid> { Company });
+        var authority = new TestAuthority(PermissionScope.Denied);
+        var source = Source(context, user, authority);
+        var requests = new CounterpartyOrganizationLocationOperatorDisplayRequestV1[]
+        {
+            new(Company, "organization-location-writer", []),
+            new(Company, "organization-location-writer", [new(Guid.Empty, Party)]),
+            new(Company, "organization-location-writer", [new(Location, Party), new(Location, Guid.NewGuid())]),
+        };
+
+        foreach (var request in requests)
+        {
+            var answer = await source.ReadAuthorizedDisplaysAsync(request);
+            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable, answer.Outcome);
+            Assert.Empty(answer.Items);
+        }
+
+        Assert.Empty(authority.Permissions);
     }
 
     [Fact]

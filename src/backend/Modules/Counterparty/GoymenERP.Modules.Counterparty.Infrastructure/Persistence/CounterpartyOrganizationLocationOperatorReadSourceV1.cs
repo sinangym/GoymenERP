@@ -32,7 +32,14 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!TryCanonicalize(request, out var canonical) || !RequestMatchesCurrentContext(canonical))
+        if (!TryCanonicalize(request, out var canonical, out var invalidBindings))
+        {
+            return Display(invalidBindings
+                ? CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable
+                : CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied);
+        }
+
+        if (!RequestMatchesCurrentContext(canonical))
         {
             return Display(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied);
         }
@@ -396,19 +403,27 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
 
     private static bool TryCanonicalize(
         CounterpartyOrganizationLocationOperatorDisplayRequestV1? request,
-        out CounterpartyOrganizationLocationOperatorDisplayRequestV1 canonical)
+        out CounterpartyOrganizationLocationOperatorDisplayRequestV1 canonical,
+        out bool invalidBindings)
     {
         canonical = null!;
-        if (request is null || request.CompanyId == Guid.Empty || !IsCanonical(request.ActorId)
-            || request.Bindings is null || request.Bindings.Count is 0 or > MaximumBindingCount
+        invalidBindings = false;
+        if (request is null || request.CompanyId == Guid.Empty || !IsCanonical(request.ActorId))
+        {
+            return false;
+        }
+
+        if (request.Bindings is null || request.Bindings.Count is 0 or > MaximumBindingCount
             || request.Bindings.Any(binding => binding.LocationId == Guid.Empty || binding.PartyId == Guid.Empty))
         {
+            invalidBindings = true;
             return false;
         }
 
         var bindings = request.Bindings.OrderBy(binding => binding.LocationId).ThenBy(binding => binding.PartyId).ToArray();
         if (bindings.Select(binding => binding.LocationId).Distinct().Count() != bindings.Length)
         {
+            invalidBindings = true;
             return false;
         }
 
