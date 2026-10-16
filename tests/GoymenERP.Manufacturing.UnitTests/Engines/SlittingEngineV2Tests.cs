@@ -115,6 +115,53 @@ public sealed class SlittingEngineV2Tests
             (usedBeyondNet.Outcome, usedBeyondNet.RefusalCode, usedBeyondNet.RefusedParameter));
     }
 
+    [Fact]
+    public void Repeating_fraction_components_follow_each_locked_formula_and_conserve_exactly()
+    {
+        var result = SlittingEngineV2.Allocate(new SlittingMassInputV2(10m, 6m, 2m, 1m));
+
+        Assert.Equal(EngineOutcome.Computed, result.Outcome);
+        var allocation = result.Value!;
+        Assert.Equal(10m * 1m / 6m, allocation.BandKg);
+        Assert.Equal(10m * 4m / 6m, allocation.TrimKg);
+        Assert.Equal(10m * 1m / 6m, allocation.NetRemainingKg);
+        Assert.Equal(10m, allocation.BandKg + allocation.TrimKg + allocation.NetRemainingKg);
+        Assert.All([allocation.BandKg, allocation.TrimKg, allocation.NetRemainingKg], value => Assert.True(value >= 0m));
+    }
+
+    [Fact]
+    public void Used_width_equal_to_net_width_never_creates_a_negative_decimal_residue()
+    {
+        var allocation = SlittingEngineV2.Allocate(new SlittingMassInputV2(10m, 9m, 8m, 8m)).Value!;
+
+        Assert.Equal(10m * 8m / 9m, allocation.BandKg);
+        Assert.Equal(10m * 1m / 9m, allocation.TrimKg);
+        Assert.Equal(0m, allocation.NetRemainingKg);
+        Assert.Equal(10m, allocation.BandKg + allocation.TrimKg + allocation.NetRemainingKg);
+    }
+
+    [Fact]
+    public void Scale_valid_decimal_18_3_values_do_not_overflow_an_intermediate()
+    {
+        const decimal maximumAcceptedValue = 999999999999999.999m;
+
+        var exception = Record.Exception(() => SlittingEngineV2.Allocate(new SlittingMassInputV2(
+            maximumAcceptedValue,
+            maximumAcceptedValue,
+            maximumAcceptedValue,
+            maximumAcceptedValue)));
+
+        Assert.Null(exception);
+        var allocation = SlittingEngineV2.Allocate(new SlittingMassInputV2(
+            maximumAcceptedValue,
+            maximumAcceptedValue,
+            maximumAcceptedValue,
+            maximumAcceptedValue)).Value!;
+        Assert.Equal((maximumAcceptedValue, 0m, 0m),
+            (allocation.BandKg, allocation.TrimKg, allocation.NetRemainingKg));
+        Assert.Equal(maximumAcceptedValue, allocation.BandKg + allocation.TrimKg + allocation.NetRemainingKg);
+    }
+
     [Theory]
     [InlineData("1", "1", "1", "1")]
     [InlineData("1000", "3", "2", "1")]
