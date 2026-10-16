@@ -39,6 +39,21 @@ public sealed class WindingSectionPlannerV1Tests
         Assert.Equal(10m, result.Value.Sections.Sum(section => section.PlannedKg));
     }
 
+    [Theory]
+    [InlineData(12, 20, 30, 40, 12)]
+    [InlineData(30, 20, 12, 40, 12)]
+    public void Selects_target_and_machine_limits_when_each_is_the_smallest(
+        int target, int diameter, int machine, int handling, int expected)
+    {
+        var result = WindingSectionPlannerV1.Plan(new WindingSectionPlanInputV1(
+            25m, target, diameter, machine, handling));
+
+        Assert.Equal(EngineOutcome.Computed, result.Outcome);
+        Assert.Equal(expected, result.Value!.EffectiveSectionLimitKg);
+        Assert.Equal([expected, expected, 1m], result.Value.Sections.Select(section => section.PlannedKg));
+        Assert.Equal(25m, result.Value.Sections.Sum(section => section.PlannedKg));
+    }
+
     [Fact]
     public void Exact_division_does_not_create_a_zero_remainder_section()
     {
@@ -109,11 +124,40 @@ public sealed class WindingSectionPlannerV1Tests
         Assert.Equal(parameter, result.RefusedParameter);
     }
 
+    [Theory]
+    [InlineData("totalPlannedKg")]
+    [InlineData("targetKg")]
+    [InlineData("machineLimitKg")]
+    [InlineData("handlingLimitKg")]
+    public void A_nominal_kg_with_more_than_three_decimals_is_refused_without_rounding(string parameter)
+    {
+        decimal? total = 40m;
+        decimal? target = 15m;
+        decimal? diameter = 18.123456m;
+        decimal? machine = 16m;
+        decimal? handling = 14m;
+        switch (parameter)
+        {
+            case "totalPlannedKg": total = 40.0001m; break;
+            case "targetKg": target = 15.0001m; break;
+            case "machineLimitKg": machine = 16.0001m; break;
+            case "handlingLimitKg": handling = 14.0001m; break;
+        }
+
+        var result = WindingSectionPlannerV1.Plan(
+            new WindingSectionPlanInputV1(total, target, diameter, machine, handling));
+
+        Assert.Equal(EngineOutcome.Refused, result.Outcome);
+        Assert.Equal(EngineCodes.PrecisionExceeded, result.RefusalCode);
+        Assert.Equal(parameter, result.RefusedParameter);
+        Assert.Null(result.Value);
+    }
+
     [Fact]
     public void Refuses_a_result_that_cannot_be_addressed_without_an_arbitrary_coil_cap()
     {
         var result = WindingSectionPlannerV1.Plan(new WindingSectionPlanInputV1(
-            decimal.MaxValue, 0.0000000000000000000000000001m, 1m, 1m, 1m));
+            decimal.MaxValue, 1m, 0.0000000000000000000000000001m, 1m, 1m));
 
         Assert.Equal(EngineOutcome.Refused, result.Outcome);
         Assert.Equal(WindingSectionPlannerV1.SectionCountOverflowCode, result.RefusalCode);
@@ -135,6 +179,24 @@ public sealed class WindingSectionPlannerV1Tests
         Assert.Equal([14000m, 12000m], spec.Sections.Select(section => section.PlannedKg));
         Assert.DoesNotContain(spec.Sections[0].GetType().GetProperties(), property =>
             property.Name.Contains("Label", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Repeating_the_same_input_and_caller_ids_preserves_the_same_values_order_and_identity()
+    {
+        var input = new WindingSectionPlanInputV1(40000m, 15000m, 18421.550123m, 16000m, 14000m);
+        var firstPlan = WindingSectionPlannerV1.Plan(input).Value!;
+        var secondPlan = WindingSectionPlannerV1.Plan(input).Value!;
+        var ids = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+
+        var firstSpec = new WindingSectionPlanSpecV1(firstPlan.Sections.Select((section, index) =>
+            new WindingSectionPlanLineV1(ids[index], section.PlannedKg)));
+        var secondSpec = new WindingSectionPlanSpecV1(secondPlan.Sections.Select((section, index) =>
+            new WindingSectionPlanLineV1(ids[index], section.PlannedKg)));
+
+        Assert.Equal(firstPlan.EffectiveSectionLimitKg, secondPlan.EffectiveSectionLimitKg);
+        Assert.Equal(firstPlan.Sections, secondPlan.Sections);
+        Assert.Equal(firstSpec.Sections, secondSpec.Sections);
     }
 
     [Fact]

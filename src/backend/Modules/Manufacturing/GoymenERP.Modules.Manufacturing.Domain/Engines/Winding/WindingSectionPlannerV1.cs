@@ -4,7 +4,9 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Engines.Winding;
 
 /// <summary>
 /// Source-stamped values are captured by the plan/profile owner before this pure planner is called.
-/// Every selected limit remains nullable here so missing data is explicit and fail-closed.
+/// Every selected limit remains nullable here so missing data is explicit and fail-closed. Total,
+/// target, machine and handling kilograms are nominal Ö2 measures. Diameter capacity is the lossless,
+/// unrounded result of <see cref="WindingEngineV1.Capacity"/> (WND-006), not another nominal measure.
 /// </summary>
 public sealed record WindingSectionPlanInputV1(
     decimal? TotalPlannedKg,
@@ -36,11 +38,11 @@ public static class WindingSectionPlannerV1
     {
         ArgumentNullException.ThrowIfNull(input);
         var inputs = new EngineInputs();
-        var total = inputs.Positive(input.TotalPlannedKg, "totalPlannedKg");
-        var target = inputs.Positive(input.TargetKg, "targetKg");
+        var total = inputs.Measure(input.TotalPlannedKg, "totalPlannedKg");
+        var target = inputs.Measure(input.TargetKg, "targetKg");
         var diameter = inputs.Positive(input.DiameterCapacityKg, "diameterCapacityKg");
-        var machine = inputs.Positive(input.MachineLimitKg, "machineLimitKg");
-        var handling = inputs.Positive(input.HandlingLimitKg, "handlingLimitKg");
+        var machine = inputs.Measure(input.MachineLimitKg, "machineLimitKg");
+        var handling = inputs.Measure(input.HandlingLimitKg, "handlingLimitKg");
         if (!inputs.IsComplete)
         {
             return inputs.Incomplete<WindingSectionPlanV1>();
