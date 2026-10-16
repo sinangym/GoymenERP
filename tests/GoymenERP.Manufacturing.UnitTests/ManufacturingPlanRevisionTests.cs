@@ -744,6 +744,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         new(Guid.Parse("f2000000-0000-0000-0000-000000000002"), "3", "COIL-SHEET", "template-r3"),
         thicknessMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
         widthMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        null,
         new(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
             Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
         DateOnly.FromDateTime(At.UtcDateTime));

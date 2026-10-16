@@ -66501,6 +66501,7 @@
           "template",
           "thicknessMm",
           "widthMm",
+          "lengthMm",
           "unitKg",
           "effectiveOn"
         ],
@@ -66524,6 +66525,12 @@
           },
           "widthMm": {
             "type": "string"
+          },
+          "lengthMm": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "unitKg": {
             "$ref": "#/components/schemas/CapturedPlanKilogramUnitViewV1"

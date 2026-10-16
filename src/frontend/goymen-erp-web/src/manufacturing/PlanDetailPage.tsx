@@ -359,6 +359,13 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
                         <li>Aile {input.technicalSnapshot.family.familyCode} · {input.technicalSnapshot.family.sourceRevision}</li>
                         <li>Şablon {input.technicalSnapshot.template.templateCode} · {input.technicalSnapshot.template.templateVersion}</li>
                         <li>{input.technicalSnapshot.thicknessMm} mm × {input.technicalSnapshot.widthMm} mm</li>
+                        {/* The captured nominal length, exactly as stored; it is not a cut-line length. */}
+                        <li>
+                          Nominal ürün boyu:{' '}
+                          {input.technicalSnapshot.lengthMm === null
+                            ? <span className={styles.muted}>kaydedilmemiş</span>
+                            : `${input.technicalSnapshot.lengthMm} mm`}
+                        </li>
                         <li>kg profili {input.technicalSnapshot.unitKg.profileVersion} · {input.technicalSnapshot.effectiveOn}</li>
                       </ul>
                     )}

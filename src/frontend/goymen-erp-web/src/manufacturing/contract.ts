@@ -98,6 +98,11 @@ export interface CapturedPlanTechnicalSnapshot {
   }
   readonly thicknessMm: string
   readonly widthMm: string
+  /**
+   * The captured Product nominal length, kept as the server's exact decimal text. Null is a captured
+   * absence (legacy or no nominal length); never derived from cut lines, a lot or the current Product card.
+   */
+  readonly lengthMm: string | null
   readonly unitKg: {
     readonly companyId: string
     readonly unitId: string
@@ -503,7 +508,7 @@ function decodePlannedInput(value: unknown): PlannedInput | null {
 
 export function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSnapshot | undefined {
   if (!isObject(value) || !hasExactKeys(value, [
-    'productId', 'productVersion', 'family', 'template', 'thicknessMm', 'widthMm', 'unitKg', 'effectiveOn',
+    'productId', 'productVersion', 'family', 'template', 'thicknessMm', 'widthMm', 'lengthMm', 'unitKg', 'effectiveOn',
   ])) return undefined
   if (!isObject(value.family) || !hasExactKeys(value.family, ['familyId', 'familyCode', 'sourceRevision'])) return undefined
   if (!isObject(value.template) || !hasExactKeys(value.template,
@@ -518,8 +523,9 @@ export function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSn
   const profileId = nonNilGuid(value.unitKg.profileId)
   const thicknessMm = snapshotMeasure(value.thicknessMm)
   const widthMm = snapshotMeasure(value.widthMm)
+  const lengthMm = value.lengthMm === null ? null : snapshotMeasure(value.lengthMm) ?? undefined
   if (productId === null || familyId === null || templateId === null || companyId === null
-    || unitId === null || profileId === null || thicknessMm === null || widthMm === null
+    || unitId === null || profileId === null || thicknessMm === null || widthMm === null || lengthMm === undefined
     || !boundedSnapshotText(value.productVersion, 128)
     || !boundedSnapshotText(value.family.familyCode, 64)
     || !boundedSnapshotText(value.family.sourceRevision, 64)
@@ -541,6 +547,7 @@ export function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSn
     },
     thicknessMm,
     widthMm,
+    lengthMm,
     unitKg: {
       companyId,
       unitId,

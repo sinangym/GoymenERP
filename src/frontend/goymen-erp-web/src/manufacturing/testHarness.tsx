@@ -111,6 +111,8 @@ export function technicalSnapshot(overrides: Record<string, unknown> = {}) {
     },
     thicknessMm: '2',
     widthMm: '1500',
+    // Required key in the server shape: a coil source has no captured nominal length, so it is an explicit null.
+    lengthMm: null,
     unitKg: {
       companyId: COMPANY_A,
       unitId: 'f0000000-0000-4000-8000-000000000004',

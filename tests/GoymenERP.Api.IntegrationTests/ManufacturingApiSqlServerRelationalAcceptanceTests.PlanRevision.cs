@@ -71,6 +71,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             (createdSnapshot.ProductId, createdSnapshot.ProductVersion, createdSnapshot.UnitKg.CompanyId,
                 createdSnapshot.UnitKg.UnitId, createdSnapshot.UnitKg.ProfileId,
                 createdSnapshot.UnitKg.ProfileVersion, createdSnapshot.ThicknessMm, createdSnapshot.WidthMm));
+        Assert.Null(createdSnapshot.LengthMm);
         Assert.Equal((2L, "Bobin kalitesi nedeniyle bölündü"), (history.Revisions[1].PlanVersion, history.Revisions[1].Reason));
         Assert.Equal([(rollA.Id, "800.5", rollA.Version), (rollB.Id, "199.5", rollB.Version)],
             history.Revisions[1].Inputs.Select(input =>

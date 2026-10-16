@@ -24,6 +24,11 @@ const ORDER_POST_RE = /\/api\/v1\/manufacturing\/orders$/
 const ORDER_GET_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const CANDIDATES_RE = /\/api\/v1\/inventory\/references\/parent-rolls(?:\?|$)/
 const IDENTITY_ME_RE = /\/api\/v1\/identity\/me$/
+const PRODUCT_ACTOR = 'group-bootstrap-admin'
+const SAC_GROUP_ID = '829e576d-c635-502a-97b8-9d5074c9d6a0'
+const CUT_SHEET_FAMILY_ID = '075d01d5-c57c-44b9-903a-89c00e4db029'
+const CUT_SHEET_TEMPLATE_ID = '57937348-393e-4982-a5a4-63eff8be40c9'
+const KILOGRAM_UNIT_ID = 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983'
 
 interface CandidateAnswer {
   readonly labelId: string
@@ -306,6 +311,190 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       .not.toBe(otherActor.answer.authenticationSessionBinding)
 
     expectEveryAnswerRewritten(answered, identity.rewritten)
+  })
+
+  test('P02.1: a real cut-sheet nominal length stays exact and separate from cut lines through revision and reopen', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const productApi = await apiAs(env, PRODUCT_ACTOR)
+    const recorderApi = await apiAs(env, env.seed.recorderActor)
+    const productName = `SENTETIK P02.1 ${randomUUID()} 3 mm x 248 mm x 2500,125 mm sac`
+    const labelId = randomUUID()
+    const labelCode = `SYN-P021-SHEET-${labelId.replaceAll('-', '')}`
+    const cutLine = { lineId: randomUUID(), sequence: 13, lengthMm: '6000', count: 2 }
+
+    try {
+      const productCreated = await productApi.post('/api/v1/products', {
+        data: {
+          name: productName,
+          groupId: SAC_GROUP_ID,
+          familyId: CUT_SHEET_FAMILY_ID,
+          references: {
+            templateId: CUT_SHEET_TEMPLATE_ID,
+            templateVersion: '1',
+            attributes: {
+              'thickness-mm': 3,
+              'width-mm': 248,
+              'length-mm': 2500.125,
+              'steel-grade': 'S235JR',
+              coating: 'uncoated',
+            },
+            units: { stock: KILOGRAM_UNIT_ID, sales: KILOGRAM_UNIT_ID },
+          },
+        },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      const productCreatedText = await productCreated.text()
+      expect(productCreated.status(), productCreatedText).toBe(201)
+      const productDraft = JSON.parse(productCreatedText) as {
+        card: { product: { id: string; lifecycle: string; version: string } }
+      }
+      expect(productDraft.card.product).toMatchObject({ lifecycle: 'Draft', version: '1' })
+
+      const productActivated = await productApi.post(
+        `/api/v1/products/${productDraft.card.product.id}/activation`,
+        {
+          data: { expectedVersion: productDraft.card.product.version },
+          headers: { 'Idempotency-Key': randomUUID() },
+        },
+      )
+      const productActivatedText = await productActivated.text()
+      expect(productActivated.status(), productActivatedText).toBe(200)
+      const activeProduct = JSON.parse(productActivatedText) as {
+        card: {
+          product: { id: string; lifecycle: string; version: string }
+          references: { attributes: Record<string, unknown> }
+        }
+      }
+      expect(activeProduct.card.product).toMatchObject({
+        id: productDraft.card.product.id,
+        lifecycle: 'Active',
+        version: '2',
+      })
+      expect(activeProduct.card.references.attributes['length-mm']).toBe(2500.125)
+
+      const opening = await recorderApi.post('/api/v1/inventory/opening-counts', {
+        data: {
+          countId: randomUUID(),
+          locationId: env.seed.output.locationId,
+          countedOn: '2026-09-18',
+          sheetReference: `P02.1-${labelId}`,
+          lines: [{
+            lineId: randomUUID(),
+            labelId,
+            labelCode,
+            lotId: randomUUID(),
+            heatNumber: null,
+            coilNumber: null,
+            productId: activeProduct.card.product.id,
+            productVersion: activeProduct.card.product.version,
+            quantityKg: '1000',
+          }],
+        },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      const openingText = await opening.text()
+      expect(opening.status(), openingText).toBe(201)
+
+      const candidates = await recorderApi.get('/api/v1/inventory/references/parent-rolls', {
+        params: { q: labelCode, limit: 25 },
+      })
+      const candidatesText = await candidates.text()
+      expect(candidates.status(), candidatesText).toBe(200)
+      const candidate = (JSON.parse(candidatesText) as { items: CandidateAnswer[] }).items
+        .find((item) => item.labelId === labelId)
+      expect(candidate).toMatchObject({ labelId, physicalKg: '1000', draftSelectable: true })
+      expect(candidate?.labelVersion).toMatch(/^[1-9][0-9]*$/)
+
+      const workCenters = await readCanonicalWorkCenters(recorderApi)
+      const cutToLength = workCenters.get('CutToLength')!
+      const planId = randomUUID()
+      const planInput = {
+        parentRollId: labelId,
+        plannedKg: '1000',
+        expectedLabelVersion: candidate!.labelVersion,
+      }
+      const cutToLengthSpec = { lines: [cutLine] }
+      const created = await recorderApi.post('/api/v1/manufacturing/plans', {
+        data: {
+          planId,
+          workCenterId: cutToLength.id,
+          inputs: [planInput],
+          target: null,
+          cutToLengthSpec,
+        },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      const createdText = await created.text()
+      expect(created.status(), createdText).toBe(201)
+      const createdPlan = JSON.parse(createdText) as {
+        inputs: Array<{ technicalSnapshot: { lengthMm: string | null } }>
+        cutToLengthSpec: CutToLengthSpecAnswer | null
+      }
+      expect(createdPlan.inputs[0].technicalSnapshot.lengthMm).toBe('2500.125')
+      expect(createdPlan.cutToLengthSpec).toEqual(cutToLengthSpec)
+
+      await page.goto(`/uretim/plan/${planId}`)
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      const inputRegion = page.getByRole('region', { name: 'Planlanan ana rulolar' })
+      await expect(inputRegion.getByText(/^Nominal ürün boyu:/))
+        .toHaveText('Nominal ürün boyu: 2500.125 mm')
+      const cutRegion = page.getByRole('region', { name: 'Boy kesme ayrıntısı' })
+      await expect(cutRegion.getByText(/^6000(?:[.,]0+)? mm$/)).toBeVisible()
+      await expect(cutRegion.getByText(/2500[.,]125/)).toHaveCount(0)
+
+      const revised = await recorderApi.post(`/api/v1/manufacturing/plans/${planId}/revision`, {
+        data: {
+          expectedVersion: 1,
+          workCenterId: cutToLength.id,
+          inputs: [{ ...planInput, plannedKg: '900' }],
+          target: null,
+          cutToLengthSpec,
+          reason: 'P02.1 snapshot korunumu',
+        },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      const revisedText = await revised.text()
+      expect(revised.status(), revisedText).toBe(200)
+      const revisedPlan = JSON.parse(revisedText) as {
+        inputs: Array<{ technicalSnapshot: { lengthMm: string | null } }>
+        cutToLengthSpec: CutToLengthSpecAnswer | null
+      }
+      expect(revisedPlan.inputs[0].technicalSnapshot.lengthMm).toBe('2500.125')
+      expect(revisedPlan.cutToLengthSpec).toEqual(cutToLengthSpec)
+
+      await page.reload()
+      const reopenedInputs = page.getByRole('region', { name: 'Planlanan ana rulolar' })
+      await expect(reopenedInputs.getByText(/^Nominal ürün boyu:/))
+        .toHaveText('Nominal ürün boyu: 2500.125 mm')
+      await expectCutToLengthRows(page, [cutLine])
+
+      const freshPlan = await recorderApi.get(`/api/v1/manufacturing/plans/${planId}`)
+      expect(freshPlan.status()).toBe(200)
+      expect((await freshPlan.json()) as unknown).toMatchObject({
+        version: 2,
+        inputs: [{ technicalSnapshot: { lengthMm: '2500.125' } }],
+        cutToLengthSpec,
+      })
+      const history = await recorderApi.get(`/api/v1/manufacturing/plans/${planId}/revisions`)
+      expect(history.status()).toBe(200)
+      const revisions = (await history.json()) as {
+        revisions: Array<{
+          revision: number
+          inputs: Array<{ technicalSnapshot: { lengthMm: string | null } }>
+          cutToLengthSpec: CutToLengthSpecAnswer | null
+        }>
+      }
+      expect(revisions.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+      for (const entry of revisions.revisions) {
+        expect(entry.inputs[0].technicalSnapshot.lengthMm).toBe('2500.125')
+        expect(entry.cutToLengthSpec).toEqual(cutToLengthSpec)
+      }
+    } finally {
+      await productApi.dispose()
+      await recorderApi.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
   })
 
   test('each canonical process follows the same authorized save and fresh-reopen path', async ({ page, context }) => {
@@ -1821,6 +2010,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       },
       thicknessMm: '1',
       widthMm: '1000',
+      lengthMm: null,
       unitKg: {
         companyId: '10000000-0000-0000-0000-000000000001',
         unitId: 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983',
@@ -1832,6 +2022,8 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     })
     expect(capturedTechnicalSnapshot).toEqual(createdTechnicalSnapshot)
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+    await expect(storedPlanInputRows(page).getByText(/^Nominal ürün boyu:/))
+      .toHaveText('Nominal ürün boyu: kaydedilmemiş')
     await expect(page.getByText('Plan oluşturulduğundan beri düzenlenmedi.', { exact: true })).toBeVisible()
 
     // Edit: the planned kg and a target change, with a reason; the roll keeps its accepted label version.
