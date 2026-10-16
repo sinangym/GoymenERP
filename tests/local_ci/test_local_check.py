@@ -2,6 +2,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 import tempfile
+import types
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,6 +87,78 @@ class LocalCheckTests(unittest.TestCase):
         self.assertEqual([], result["steps"])
         self.assertFalse(result["githubJobStarted"])
         self.assertFalse(result["githubStorageUsed"])
+
+    def test_p032_profile_is_heavy_and_launcher_transport_is_nested_fail_closed(self):
+        self.assertIn(module.P032_BROWSER_PROFILE, module.HEAVY_PROFILES)
+        launcher = (ROOT / "tools/ci/Invoke-LocalChecks.ps1").read_text(encoding="utf-8")
+        for expected in (
+            "'p032-u02-r14'",
+            "Evidence manifest path is not a safe relative path.",
+            "Evidence manifest path is duplicate or traversing.",
+            "Evidence parent must be a regular directory.",
+            "Linux evidence hash/size mismatch.",
+            "Evidence manifest does not contain result.json.",
+        ):
+            self.assertIn(expected, launcher)
+
+    def test_nested_evidence_manifest_hashes_regular_files_and_rejects_symlinks(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            nested = directory / "suites/u02/artifacts"
+            nested.mkdir(parents=True)
+            content = b"closed proof\n"
+            (nested / "result.json").write_bytes(content)
+            entries = module.evidence_manifest(directory)
+            valid = {
+                "path": "suites/u02/artifacts/result.json",
+                "bytes": len(content),
+                "sha256": hashlib.sha256(content).hexdigest(),
+            }
+            self.assertEqual([valid], entries)
+            with self.assertRaisesRegex(ValueError, "Unsafe local evidence path"):
+                module.validate_evidence_manifest(directory, [{**valid, "path": "../result.json"}])
+            with self.assertRaisesRegex(ValueError, "Duplicate local evidence path"):
+                module.validate_evidence_manifest(directory, [valid, valid])
+            with self.assertRaisesRegex(ValueError, "hash/size mismatch"):
+                module.validate_evidence_manifest(directory, [{**valid, "sha256": "0" * 64}])
+            target = directory / "target.txt"
+            target.write_text("target\n", encoding="utf-8")
+            (nested / "link.txt").symlink_to(target)
+            with self.assertRaisesRegex(ValueError, "Symlink evidence rejected"):
+                module.evidence_manifest(directory)
+
+    def test_p032_dispatches_only_the_owned_adapter_and_remains_targeted(self):
+        from contextlib import nullcontext
+        import json
+        from unittest.mock import Mock, patch
+        state = {"commit": "a" * 40, "tree": "b" * 40, "dirty": False, "files": []}
+        entry = {
+            "name": "P03.2 fixed U02/R14 disposable browser acceptance",
+            "exitCode": 0,
+            "status": "PASS",
+            "counts": {"total": 2, "passed": 2, "failed": 0, "errors": 0, "skipped": 0},
+        }
+        adapter = types.SimpleNamespace(PROFILE=module.P032_BROWSER_PROFILE, run_acceptance=Mock(return_value=entry))
+        with tempfile.TemporaryDirectory() as folder:
+            argv = [
+                "local_check", "--profile", module.P032_BROWSER_PROFILE,
+                "--repository", str(ROOT), "--evidence-root", folder,
+                "--expected-head", "a" * 40, "--launcher-lease", "/unused",
+            ]
+            with (patch.object(module.sys, "argv", argv),
+                  patch.object(module, "validate_lease", return_value={}),
+                  patch.object(module, "source_state", return_value=state),
+                  patch.object(module, "full_inventory", return_value=[]),
+                  patch.object(module, "load_browser_adapter", return_value=adapter),
+                  patch.object(module, "heavy_lock", return_value=nullcontext())):
+                code = module.main()
+            result = json.loads(next(Path(folder).glob("*/result.json")).read_text(encoding="utf-8"))
+        self.assertEqual(0, code)
+        self.assertEqual("LOCAL_TARGETED", result["kind"])
+        self.assertEqual("LOCAL_TARGETED_PASS", result["status"])
+        self.assertEqual([entry], result["steps"])
+        adapter.run_acceptance.assert_called_once()
 
     def test_failed_canonical_check_keeps_its_exit_code(self):
         from unittest.mock import patch

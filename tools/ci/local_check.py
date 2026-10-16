@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
+import importlib.util
 import stat
 from datetime import datetime, timezone
 from time import monotonic_ns
@@ -34,6 +35,9 @@ SENSITIVE = re.compile(r"(?i)\b[\w.-]*(?:password|passwd|secret|token|api[_-]?ke
 BEARER = re.compile(r"(?i)\bBearer\s+[^\r\n]+")
 LEASE_ROOT = Path("/home/ci/local-ci-leases")
 LOCAL_PATH = "/opt/goymen-ci/tools/dotnet-10.0.303:/opt/goymen-ci/tools/node-v24.20.0-linux-x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+P032_BROWSER_PROFILE = "p032-u02-r14"
+HEAVY_PROFILES = frozenset(("frontend", P032_BROWSER_PROFILE))
+EVIDENCE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 def scrub_output(value: str) -> tuple[str, bool]:
@@ -69,14 +73,14 @@ def validate_lease(root: Path, profile: str, path: Path, expected_head: str) -> 
         raise ValueError("Source moved from the launcher expected commit")
     if platform.node() != "goymen-ci-linux":
         raise ValueError("Unexpected local worker host")
-    if profile == "frontend" and int(lease.get("availableMemoryBytes", 0)) < 2 * 1024**3:
+    if profile in HEAVY_PROFILES and int(lease.get("availableMemoryBytes", 0)) < 2 * 1024**3:
         raise ValueError("Launcher resource admission is missing")
     return lease
 
 
 @contextlib.contextmanager
 def heavy_lock(profile: str):
-    if profile != "frontend":
+    if profile not in HEAVY_PROFILES:
         yield
         return
     path = Path("/home/ci/.local/state/goymen-ci/local-heavy.lock")
@@ -175,6 +179,81 @@ def selected_steps(root: Path, profile: str) -> list[dict]:
     raise ValueError("Unknown targeted profile")
 
 
+def load_browser_adapter(root: Path):
+    path = root / "tools/ci/local_browser_acceptance.py"
+    name = "local_browser_acceptance"
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise ValueError("P03.2 browser adapter cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    if module.PROFILE != P032_BROWSER_PROFILE:
+        raise ValueError("P03.2 browser adapter profile mismatch")
+    return module
+
+
+def evidence_manifest(directory: Path) -> list[dict]:
+    """Hash every confined regular file while preserving nested proof paths."""
+    result = []
+    for path in sorted(directory.rglob("*")):
+        relative = path.relative_to(directory).as_posix()
+        if relative == "SHA256_MANIFEST.json":
+            continue
+        parts = relative.split("/")
+        if any(part in {".", ".."} or EVIDENCE_SEGMENT.fullmatch(part) is None for part in parts):
+            raise ValueError("Unsafe local evidence path")
+        metadata = path.lstat()
+        if stat.S_ISLNK(metadata.st_mode):
+            raise ValueError("Symlink evidence rejected")
+        if path.is_dir():
+            continue
+        if not stat.S_ISREG(metadata.st_mode) or not path.resolve().is_relative_to(directory.resolve()):
+            raise ValueError("Non-regular evidence rejected")
+        content = path.read_bytes()
+        result.append({"path": relative, "bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()})
+    return validate_evidence_manifest(directory, result)
+
+
+def validate_evidence_manifest(directory: Path, entries: list[dict]) -> list[dict]:
+    """Re-open and verify the exact relative-path manifest consumed by Windows."""
+    root = directory.resolve()
+    seen = set()
+    validated = []
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) != {"path", "bytes", "sha256"}:
+            raise ValueError("Invalid local evidence manifest entry")
+        relative = entry["path"]
+        parts = relative.split("/") if isinstance(relative, str) else []
+        if not parts or any(part in {".", ".."} or EVIDENCE_SEGMENT.fullmatch(part) is None for part in parts):
+            raise ValueError("Unsafe local evidence path")
+        if relative in seen:
+            raise ValueError("Duplicate local evidence path")
+        seen.add(relative)
+        if (type(entry["bytes"]) is not int or entry["bytes"] < 0
+                or not isinstance(entry["sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) is None):
+            raise ValueError("Invalid local evidence hash/size")
+        path = root
+        for index, part in enumerate(parts):
+            path = path / part
+            try:
+                metadata = path.lstat()
+            except OSError as error:
+                raise ValueError("Manifest evidence path is missing") from error
+            if stat.S_ISLNK(metadata.st_mode):
+                raise ValueError("Symlink evidence rejected")
+            if index < len(parts) - 1 and not stat.S_ISDIR(metadata.st_mode):
+                raise ValueError("Evidence parent is not a directory")
+        if not stat.S_ISREG(path.stat().st_mode) or not path.resolve().is_relative_to(root):
+            raise ValueError("Non-regular evidence rejected")
+        content = path.read_bytes()
+        if len(content) != entry["bytes"] or hashlib.sha256(content).hexdigest() != entry["sha256"]:
+            raise ValueError("Local evidence hash/size mismatch")
+        validated.append(entry)
+    return validated
+
+
 def test_counts(log: str) -> dict | None:
     text = ANSI.sub("", log)
     totals = re.findall(r"(?m)^Ran (\d+) tests? in ", text)
@@ -245,7 +324,11 @@ def run_step(root: Path, directory: Path, index: int, step: dict) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=("guards", "catalog", "frontend", "full"), required=True)
+    parser.add_argument(
+        "--profile",
+        choices=("guards", "catalog", "frontend", P032_BROWSER_PROFILE, "full"),
+        required=True,
+    )
     parser.add_argument("--repository", type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--expected-head", required=True)
@@ -287,7 +370,7 @@ def main() -> int:
                 "Fresh owned SQL, C01/browser, container and Windows C006 adapters require admission",
             ]
         else:
-            if args.profile == "frontend" and initial["dirty"]:
+            if args.profile in HEAVY_PROFILES and initial["dirty"]:
                 raise ValueError("Heavy acceptance requires a clean exact source commit")
             if args.profile == "frontend":
                 version = subprocess.check_output(["node", "--version"], text=True, env=command_environment()).strip()
@@ -295,18 +378,30 @@ def main() -> int:
                     raise ValueError("Node24 is required by the canonical workflow")
             code = 0
             with heavy_lock(args.profile):
-                for index, step in enumerate(selected_steps(root, args.profile), start=1):
+                if args.profile == P032_BROWSER_PROFILE:
                     validate_lease(root, args.profile, args.launcher_lease, args.expected_head)
-                    entry = run_step(root, directory, index, step)
+                    adapter = load_browser_adapter(root)
+                    entry = adapter.run_acceptance(
+                        root,
+                        directory / P032_BROWSER_PROFILE,
+                        args.expected_head,
+                        lambda: validate_lease(root, args.profile, args.launcher_lease, args.expected_head),
+                    )
                     result["steps"].append(entry)
-                    if entry["exitCode"] != 0:
-                        code = entry["exitCode"]
-                        break
+                    code = entry["exitCode"]
+                else:
+                    for index, step in enumerate(selected_steps(root, args.profile), start=1):
+                        validate_lease(root, args.profile, args.launcher_lease, args.expected_head)
+                        entry = run_step(root, directory, index, step)
+                        result["steps"].append(entry)
+                        if entry["exitCode"] != 0:
+                            code = entry["exitCode"]
+                            break
             blocked_step = next((entry["status"] for entry in result["steps"]
                                  if entry["status"].startswith("BLOCKED")), None)
             result["status"] = blocked_step or (("LOCAL_TARGETED_PASS_DIRTY" if initial["dirty"] else "LOCAL_TARGETED_PASS")
                                                   if code == 0 else "LOCAL_TARGETED_FAIL")
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         result.update({"status": "BLOCKED", "reason": type(error).__name__ + ": " + scrub_output(str(error))[0]})
         code = 2
     finally:
@@ -317,12 +412,7 @@ def main() -> int:
             code = 2
         result.update({**clock_fields("finish"), "exitCode": code})
         write_json(directory / "result.json", result)
-        files = []
-        for path in sorted(directory.iterdir()):
-            if path.is_file():
-                files.append({"path": path.name, "bytes": path.stat().st_size,
-                              "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
-        write_json(directory / "SHA256_MANIFEST.json", files)
+        write_json(directory / "SHA256_MANIFEST.json", evidence_manifest(directory))
         print("LOCAL_EVIDENCE=" + str(directory))
         print("LOCAL_RESULT=" + result["status"])
     return code

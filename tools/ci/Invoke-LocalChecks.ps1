@@ -1,7 +1,7 @@
 #requires -Version 7.2
 [CmdletBinding()]
 param(
-    [ValidateSet('guards','catalog','frontend','full')][string]$Profile='guards',
+    [ValidateSet('guards','catalog','frontend','p032-u02-r14','full')][string]$Profile='guards',
     [string]$LinuxRepository='/home/ci/GoymenERP-local-ci-source',
     [switch]$PlanOnly
 )
@@ -26,7 +26,7 @@ $leaseFile=$null
 $code=2
 try {
  $lock=[IO.File]::Open((Join-Path $root 'local-heavy.lock'),[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
- if(($Profile -eq 'frontend' -or $Profile -eq 'full') -and -not $PlanOnly -and $availableBytes -lt 2GB){
+ if(($Profile -in @('frontend','p032-u02-r14','full')) -and -not $PlanOnly -and $availableBytes -lt 2GB){
   $record.status='BLOCKED_RESOURCE'
   $record.reason='Less than 2 GiB free physical memory; no heavy test was started.'
  } else {
@@ -58,20 +58,41 @@ try {
   $linuxEvidence=$line.Substring('LOCAL_EVIDENCE='.Length)
   if($linuxEvidence -notmatch '^/home/ci/local-ci-evidence/local-[A-Za-z0-9TZ-]+$'){throw 'Unexpected local evidence path.'}
   $source='\\wsl.localhost\GoymenERP-CI'+$linuxEvidence.Replace('/','\')
-  $manifest=Get-Content -LiteralPath (Join-Path $source 'SHA256_MANIFEST.json') -Raw | ConvertFrom-Json
+  $manifestPath=Join-Path $source 'SHA256_MANIFEST.json'
+  $manifestFile=Get-Item -LiteralPath $manifestPath
+  if(($manifestFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $manifestFile.PSIsContainer){throw 'Evidence manifest must be a regular file.'}
+  $manifestText=Get-Content -LiteralPath $manifestPath -Raw
+  $manifest=$manifestText | ConvertFrom-Json
   $bundle=Join-Path $runDir 'bundle'
   New-Item -ItemType Directory -Path $bundle | Out-Null
+  $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
   foreach($entry in $manifest){
-   if($entry.path -notmatch '^[A-Za-z0-9_.-]+$'){throw 'Evidence manifest path is not a flat regular file.'}
-   $file=Get-Item -LiteralPath (Join-Path $source $entry.path)
+   if($entry.path -notmatch '^(?:[A-Za-z0-9][A-Za-z0-9_.-]*/)*[A-Za-z0-9][A-Za-z0-9_.-]*$'){throw 'Evidence manifest path is not a safe relative path.'}
+   if($entry.sha256 -notmatch '^[0-9a-f]{64}$' -or $entry.bytes -isnot [ValueType] -or [long]$entry.bytes -lt 0){throw 'Evidence manifest hash/size is invalid.'}
+   $segments=@($entry.path -split '/')
+   if($segments -contains '.' -or $segments -contains '..' -or -not $seen.Add([string]$entry.path)){throw 'Evidence manifest path is duplicate or traversing.'}
+   $cursor=$source
+   if($segments.Count -gt 1){
+    foreach($segment in $segments[0..($segments.Count-2)]){
+     $cursor=Join-Path $cursor $segment
+     $directory=Get-Item -LiteralPath $cursor
+     if(($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $directory.PSIsContainer){throw 'Evidence parent must be a regular directory.'}
+    }
+   }
+   $relative=$entry.path.Replace('/','\')
+   $file=Get-Item -LiteralPath (Join-Path $source $relative)
    if(($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $file.PSIsContainer){throw 'Symlink/directory evidence rejected.'}
    $observed=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
    if($file.Length -ne $entry.bytes -or $observed -cne $entry.sha256){throw 'Linux evidence hash/size mismatch.'}
-   $destination=Join-Path $bundle $entry.path
+   $destination=Join-Path $bundle $relative
+   $destinationParent=Split-Path -Parent $destination
+   if(-not (Test-Path -LiteralPath $destinationParent)){New-Item -ItemType Directory -Path $destinationParent | Out-Null}
    Copy-Item -LiteralPath $file.FullName -Destination $destination
    if((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -cne $entry.sha256){throw 'Windows evidence hash mismatch.'}
   }
-  Copy-Item -LiteralPath (Join-Path $source 'SHA256_MANIFEST.json') -Destination $bundle
+  if(-not $seen.Contains('result.json')){throw 'Evidence manifest does not contain result.json.'}
+  Copy-Item -LiteralPath $manifestPath -Destination $bundle
+  $record.evidenceManifestSha256=(Get-FileHash -LiteralPath (Join-Path $bundle 'SHA256_MANIFEST.json') -Algorithm SHA256).Hash.ToLowerInvariant()
   $result=Get-Content -LiteralPath (Join-Path $bundle 'result.json') -Raw | ConvertFrom-Json
   if($result.exitCode -ne $code){throw 'Launcher/native exit code mismatch.'}
   $record.status=$result.status
