@@ -15,11 +15,11 @@ public sealed class SlittingEngineV2Tests
             new SlittingMassAllocationV2(
                 "GDC-SLT/2",
                 20m,
-                25300m,
-                383.33333333333333333333333333m,
-                3066.6666666666666666666666667m),
+                new ExactMassV2(25300, 1),
+                new ExactMassV2(1150, 3),
+                new ExactMassV2(9200, 3)),
             result.Value);
-        Assert.Equal(28750m, result.Value!.BandKg + result.Value.TrimKg + result.Value.NetRemainingKg);
+        Assert.Equal(ExactMassV2.FromDecimal(28750m), Sum(result.Value!));
     }
 
     [Fact]
@@ -29,8 +29,12 @@ public sealed class SlittingEngineV2Tests
         var v1 = SlittingEngineV1.Plan(new SlittingPlanInputV1(28750m, 1500m,
             [new SlitLineInputV1(150m, 4), new SlitLineInputV1(240m, 3)])).Value!;
 
-        Assert.Equal((25300m, 0m, 3450m), (v2.BandKg, v2.TrimKg, v2.NetRemainingKg));
-        Assert.Equal((v1.PlanKg, v1.RemainingKg), (v2.BandKg, v2.NetRemainingKg));
+        Assert.Equal(
+            (new ExactMassV2(25300, 1), new ExactMassV2(0, 1), new ExactMassV2(3450, 1)),
+            (v2.BandKg, v2.TrimKg, v2.NetRemainingKg));
+        Assert.Equal(
+            (ExactMassV2.FromDecimal(v1.PlanKg), ExactMassV2.FromDecimal(v1.RemainingKg)),
+            (v2.BandKg, v2.NetRemainingKg));
         Assert.Equal("GDC-SLT/1 (master v3 §28.4)", SlittingEngineV1.FormulaVersion);
     }
 
@@ -41,9 +45,9 @@ public sealed class SlittingEngineV2Tests
         var v1 = SlittingEngineV1.Plan(new SlittingPlanInputV1(28750m, 1480m,
             [new SlitLineInputV1(1320m, 1)])).Value!;
 
-        Assert.Equal(25300m, v2.BandKg);
+        Assert.Equal(new ExactMassV2(25300, 1), v2.BandKg);
         Assert.Equal(28750m * 1320m / 1480m, v1.PlanKg);
-        Assert.NotEqual(v1.PlanKg, v2.BandKg);
+        Assert.NotEqual(ExactMassV2.FromDecimal(v1.PlanKg), v2.BandKg);
     }
 
     [Theory]
@@ -116,28 +120,30 @@ public sealed class SlittingEngineV2Tests
     }
 
     [Fact]
-    public void Repeating_fraction_components_follow_each_locked_formula_and_conserve_exactly()
+    public void One_third_components_follow_each_locked_formula_and_conserve_exactly()
     {
-        var result = SlittingEngineV2.Allocate(new SlittingMassInputV2(10m, 6m, 2m, 1m));
+        var result = SlittingEngineV2.Allocate(new SlittingMassInputV2(1m, 3m, 2m, 1m));
 
         Assert.Equal(EngineOutcome.Computed, result.Outcome);
         var allocation = result.Value!;
-        Assert.Equal(10m * 1m / 6m, allocation.BandKg);
-        Assert.Equal(10m * 4m / 6m, allocation.TrimKg);
-        Assert.Equal(10m * 1m / 6m, allocation.NetRemainingKg);
-        Assert.Equal(10m, allocation.BandKg + allocation.TrimKg + allocation.NetRemainingKg);
-        Assert.All([allocation.BandKg, allocation.TrimKg, allocation.NetRemainingKg], value => Assert.True(value >= 0m));
+        Assert.Equal(new ExactMassV2(1, 3), allocation.BandKg);
+        Assert.Equal(new ExactMassV2(1, 3), allocation.TrimKg);
+        Assert.Equal(new ExactMassV2(1, 3), allocation.NetRemainingKg);
+        Assert.Equal(new ExactMassV2(1, 1), Sum(allocation));
+        Assert.All(
+            [allocation.BandKg, allocation.TrimKg, allocation.NetRemainingKg],
+            value => Assert.True(value.Numerator.Sign >= 0));
     }
 
     [Fact]
-    public void Used_width_equal_to_net_width_never_creates_a_negative_decimal_residue()
+    public void Used_width_equal_to_net_width_has_canonical_zero_net_remainder()
     {
         var allocation = SlittingEngineV2.Allocate(new SlittingMassInputV2(10m, 9m, 8m, 8m)).Value!;
 
-        Assert.Equal(10m * 8m / 9m, allocation.BandKg);
-        Assert.Equal(10m * 1m / 9m, allocation.TrimKg);
-        Assert.Equal(0m, allocation.NetRemainingKg);
-        Assert.Equal(10m, allocation.BandKg + allocation.TrimKg + allocation.NetRemainingKg);
+        Assert.Equal(new ExactMassV2(80, 9), allocation.BandKg);
+        Assert.Equal(new ExactMassV2(10, 9), allocation.TrimKg);
+        Assert.Equal(new ExactMassV2(0, 1), allocation.NetRemainingKg);
+        Assert.Equal(new ExactMassV2(10, 1), Sum(allocation));
     }
 
     [Fact]
@@ -157,9 +163,46 @@ public sealed class SlittingEngineV2Tests
             maximumAcceptedValue,
             maximumAcceptedValue,
             maximumAcceptedValue)).Value!;
-        Assert.Equal((maximumAcceptedValue, 0m, 0m),
+        Assert.Equal(
+            (ExactMassV2.FromDecimal(maximumAcceptedValue), new ExactMassV2(0, 1), new ExactMassV2(0, 1)),
             (allocation.BandKg, allocation.TrimKg, allocation.NetRemainingKg));
-        Assert.Equal(maximumAcceptedValue, allocation.BandKg + allocation.TrimKg + allocation.NetRemainingKg);
+        Assert.Equal(ExactMassV2.FromDecimal(maximumAcceptedValue), Sum(allocation));
+    }
+
+    [Fact]
+    public void Decimal_max_value_is_accepted_without_overflow_or_precision_loss()
+    {
+        var result = SlittingEngineV2.Allocate(new SlittingMassInputV2(
+            decimal.MaxValue,
+            decimal.MaxValue,
+            decimal.MaxValue,
+            decimal.MaxValue));
+
+        Assert.Equal(EngineOutcome.Computed, result.Outcome);
+        Assert.Equal(ExactMassV2.FromDecimal(decimal.MaxValue), result.Value!.BandKg);
+        Assert.Equal(new ExactMassV2(0, 1), result.Value.TrimKg);
+        Assert.Equal(new ExactMassV2(0, 1), result.Value.NetRemainingKg);
+        Assert.Equal(ExactMassV2.FromDecimal(decimal.MaxValue), Sum(result.Value));
+    }
+
+    [Fact]
+    public void Exact_mass_is_reduced_sign_normalized_and_value_equal()
+    {
+        Assert.Equal(new ExactMassV2(1, 2), new ExactMassV2(2, 4));
+        Assert.Equal(new ExactMassV2(-1, 2), new ExactMassV2(1, -2));
+        Assert.Equal(new ExactMassV2(0, 1), new ExactMassV2(0, -999));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ExactMassV2(1, 0));
+    }
+
+    [Fact]
+    public void Same_input_returns_the_same_exact_allocation()
+    {
+        var input = new SlittingMassInputV2(28750.125m, 1500m, 1480m, 1320m);
+
+        var first = SlittingEngineV2.Allocate(input);
+        var second = SlittingEngineV2.Allocate(input);
+
+        Assert.Equal(first, second);
     }
 
     [Theory]
@@ -183,9 +226,12 @@ public sealed class SlittingEngineV2Tests
 
         Assert.Equal(EngineOutcome.Computed, result.Outcome);
         var allocation = result.Value!;
-        Assert.Equal(Value(physicalKgText), allocation.BandKg + allocation.TrimKg + allocation.NetRemainingKg);
-        Assert.True(allocation.BandKg > 0m);
-        Assert.True(allocation.TrimKg >= 0m);
-        Assert.True(allocation.NetRemainingKg >= 0m);
+        Assert.Equal(ExactMassV2.FromDecimal(Value(physicalKgText)), Sum(allocation));
+        Assert.True(allocation.BandKg.Numerator.Sign > 0);
+        Assert.True(allocation.TrimKg.Numerator.Sign >= 0);
+        Assert.True(allocation.NetRemainingKg.Numerator.Sign >= 0);
     }
+
+    private static ExactMassV2 Sum(SlittingMassAllocationV2 allocation) =>
+        allocation.BandKg + allocation.TrimKg + allocation.NetRemainingKg;
 }

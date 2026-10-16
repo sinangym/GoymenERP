@@ -13,15 +13,77 @@ public sealed record SlittingMassInputV2(
     decimal? UsedBandWidthMm);
 
 /// <summary>
+/// An exact, immutable mass value represented as a canonical rational number. The denominator is
+/// always positive, numerator and denominator are reduced by their greatest common divisor, and
+/// zero is always represented as <c>0/1</c>.
+/// </summary>
+public sealed record ExactMassV2
+{
+    public ExactMassV2(BigInteger numerator, BigInteger denominator)
+    {
+        if (denominator.IsZero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(denominator), "The denominator cannot be zero.");
+        }
+
+        if (numerator.IsZero)
+        {
+            Numerator = BigInteger.Zero;
+            Denominator = BigInteger.One;
+            return;
+        }
+
+        if (denominator.Sign < 0)
+        {
+            numerator = BigInteger.Negate(numerator);
+            denominator = BigInteger.Negate(denominator);
+        }
+
+        var common = BigInteger.GreatestCommonDivisor(BigInteger.Abs(numerator), denominator);
+        Numerator = numerator / common;
+        Denominator = denominator / common;
+    }
+
+    public BigInteger Numerator { get; }
+
+    public BigInteger Denominator { get; }
+
+    public static ExactMassV2 FromDecimal(decimal value)
+    {
+        var bits = decimal.GetBits(value);
+        var numerator = (BigInteger)(uint)bits[0]
+            | (BigInteger)(uint)bits[1] << 32
+            | (BigInteger)(uint)bits[2] << 64;
+        if ((bits[3] & int.MinValue) != 0)
+        {
+            numerator = BigInteger.Negate(numerator);
+        }
+
+        var scale = (bits[3] >> 16) & 0xff;
+        return new ExactMassV2(numerator, BigInteger.Pow(10, scale));
+    }
+
+    public static ExactMassV2 operator +(ExactMassV2 left, ExactMassV2 right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
+        return new ExactMassV2(
+            left.Numerator * right.Denominator + right.Numerator * left.Denominator,
+            left.Denominator * right.Denominator);
+    }
+}
+
+/// <summary>
 /// The theoretical allocation of one physical parent-coil mass. All values are unrounded and the
 /// three masses add exactly to the supplied physical mass.
 /// </summary>
 public sealed record SlittingMassAllocationV2(
     string FormulaVersion,
     decimal EdgeTrimWidthMm,
-    decimal BandKg,
-    decimal TrimKg,
-    decimal NetRemainingKg);
+    ExactMassV2 BandKg,
+    ExactMassV2 TrimKg,
+    ExactMassV2 NetRemainingKg);
 
 /// <summary>
 /// Slitting formula version 2. It allocates physical mass over physical width so the edge-trim share
@@ -75,70 +137,14 @@ public static class SlittingEngineV2
             netRemainingKg));
     }
 
-    /// <summary>
-    /// Evaluates <c>mass * width / physicalWidth</c> as one exact rational before converting to the
-    /// nearest representable decimal. <see cref="BigInteger"/> avoids an overflowing multiplication;
-    /// the conversion uses the greatest decimal scale that fits the CLR decimal coefficient and
-    /// midpoint-to-even, matching decimal arithmetic rather than introducing a business rounding rule.
-    /// </summary>
-    private static decimal ProportionalMass(decimal mass, decimal width, decimal physicalWidth)
+    private static ExactMassV2 ProportionalMass(decimal mass, decimal width, decimal physicalWidth)
     {
-        if (width == 0m)
-        {
-            return 0m;
-        }
+        var exactMass = ExactMassV2.FromDecimal(mass);
+        var exactWidth = ExactMassV2.FromDecimal(width);
+        var exactPhysicalWidth = ExactMassV2.FromDecimal(physicalWidth);
 
-        var (massCoefficient, massScale) = Parts(mass);
-        var (widthCoefficient, widthScale) = Parts(width);
-        var (physicalCoefficient, physicalScale) = Parts(physicalWidth);
-
-        var numerator = massCoefficient * widthCoefficient;
-        var denominator = physicalCoefficient;
-        var scaleAdjustment = massScale + widthScale - physicalScale;
-        if (scaleAdjustment > 0)
-        {
-            denominator *= BigInteger.Pow(10, scaleAdjustment);
-        }
-        else if (scaleAdjustment < 0)
-        {
-            numerator *= BigInteger.Pow(10, -scaleAdjustment);
-        }
-
-        var common = BigInteger.GreatestCommonDivisor(numerator, denominator);
-        return ToDecimal(numerator / common, denominator / common);
-    }
-
-    private static (BigInteger Coefficient, int Scale) Parts(decimal value)
-    {
-        var bits = decimal.GetBits(value);
-        var coefficient = (BigInteger)(uint)bits[0]
-            | (BigInteger)(uint)bits[1] << 32
-            | (BigInteger)(uint)bits[2] << 64;
-        return (coefficient, (bits[3] >> 16) & 0x7f);
-    }
-
-    private static decimal ToDecimal(BigInteger numerator, BigInteger denominator)
-    {
-        var maximumCoefficient = (BigInteger.One << 96) - 1;
-        for (var scale = 28; scale >= 0; scale--)
-        {
-            var scaledNumerator = numerator * BigInteger.Pow(10, scale);
-            var coefficient = BigInteger.DivRem(scaledNumerator, denominator, out var remainder);
-            var doubledRemainder = remainder << 1;
-            if (doubledRemainder > denominator || (doubledRemainder == denominator && !coefficient.IsEven))
-            {
-                coefficient++;
-            }
-
-            if (coefficient <= maximumCoefficient)
-            {
-                var low = (uint)(coefficient & uint.MaxValue);
-                var middle = (uint)((coefficient >> 32) & uint.MaxValue);
-                var high = (uint)((coefficient >> 64) & uint.MaxValue);
-                return new decimal((int)low, (int)middle, (int)high, false, (byte)scale);
-            }
-        }
-
-        throw new OverflowException("The proportional mass does not fit in a decimal.");
+        return new ExactMassV2(
+            exactMass.Numerator * exactWidth.Numerator * exactPhysicalWidth.Denominator,
+            exactMass.Denominator * exactWidth.Denominator * exactPhysicalWidth.Numerator);
     }
 }
