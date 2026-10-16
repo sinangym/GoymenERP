@@ -1060,7 +1060,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
         no_op_job = (
             "    name: Recovery surface inventory exact-source proof\n"
-            "    runs-on: ubuntu-latest\n"
+            "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
             "    steps:\n"
             "      - run: echo ok\n\n"
         )
@@ -1246,8 +1246,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "job condition disabled",
-                "    runs-on: ubuntu-latest\n",
-                "    runs-on: ubuntu-latest\n    if: false\n",
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n",
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n    if: false\n",
             ),
             (
                 "proof step condition disabled",
@@ -1367,7 +1367,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
         no_op_job = (
             "    name: Release manifest exact-source proof\n"
-            "    runs-on: ubuntu-latest\n"
+            "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
             "    steps:\n"
             "      - run: echo ok\n\n"
         )
@@ -1561,8 +1561,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "job condition disabled",
-                "    runs-on: ubuntu-latest\n",
-                "    runs-on: ubuntu-latest\n    if: false\n",
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n",
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n    if: false\n",
             ),
             (
                 "proof step condition disabled",
