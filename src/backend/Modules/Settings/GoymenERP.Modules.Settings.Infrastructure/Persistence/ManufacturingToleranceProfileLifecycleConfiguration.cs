@@ -9,12 +9,15 @@ internal sealed class ManufacturingToleranceProfileLifecycleConfiguration
 {
     public const string Table = "ManufacturingToleranceProfileLifecycles";
     public const string PublicationWindowIndex = "IX_SettingsMfgToleranceLifecycle_PublicationWindow";
+    public const string ProtectionTrigger = "TR_ManufacturingToleranceProfileLifecycles_Protect";
     public const string IdentityCollation = "Latin1_General_100_BIN2";
 
     public void Configure(EntityTypeBuilder<ManufacturingToleranceProfileLifecycleRow> entity)
     {
         entity.ToTable(Table, SettingsDbContext.Schema, table =>
         {
+            table.HasTrigger(ProtectionTrigger);
+            table.UseSqlOutputClause(false);
             table.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Identity",
                 "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProfileId] <> '00000000-0000-0000-0000-000000000000'");
             table.HasCheckConstraint("CK_SettingsMfgToleranceLifecycle_Process",
@@ -85,7 +88,7 @@ internal sealed class ManufacturingToleranceProfileLifecycleConfiguration
     }
 
     private static string HasVisibleContent(string property) =>
-        $"LEN(TRIM(TRANSLATE([{property}], NCHAR(9) + NCHAR(10) + NCHAR(11) + NCHAR(12) + NCHAR(13) + NCHAR(32) + NCHAR(133) + NCHAR(160) + NCHAR(5760) + NCHAR(8192) + NCHAR(8193) + NCHAR(8194) + NCHAR(8195) + NCHAR(8196) + NCHAR(8197) + NCHAR(8198) + NCHAR(8199) + NCHAR(8200) + NCHAR(8201) + NCHAR(8202) + NCHAR(8232) + NCHAR(8233) + NCHAR(8239) + NCHAR(8287) + NCHAR(12288), REPLICATE(N' ', 25)))) > 0";
+        $"LEN(TRIM(TRANSLATE([{property}] COLLATE {IdentityCollation}, NCHAR(9) + NCHAR(10) + NCHAR(11) + NCHAR(12) + NCHAR(13) + NCHAR(32) + NCHAR(133) + NCHAR(160) + NCHAR(5760) + NCHAR(8192) + NCHAR(8193) + NCHAR(8194) + NCHAR(8195) + NCHAR(8196) + NCHAR(8197) + NCHAR(8198) + NCHAR(8199) + NCHAR(8200) + NCHAR(8201) + NCHAR(8202) + NCHAR(8232) + NCHAR(8233) + NCHAR(8239) + NCHAR(8287) + NCHAR(12288), REPLICATE(N' ', 25)))) > 0";
 
     private static void ConfigureOptionalEvidence(
         EntityTypeBuilder<ManufacturingToleranceProfileLifecycleRow> entity,

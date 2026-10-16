@@ -25,6 +25,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
     {
         await InDisposableDatabaseAsync(async connectionString =>
         {
+            await AssertLifecycleProtectionTriggerEnabledAsync(connectionString);
             var profileId = Guid.NewGuid();
             var prepare = Prepare(profileId, Maker, expectedVersion: 0, "settings-profile-prepare-0001");
             await using (var maker = Command(connectionString, CompanyA, Maker, new GrantingAuthority()))
@@ -96,6 +97,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             var evidence = await LifecycleEvidenceAsync(connectionString, CompanyA, profileId);
             Assert.Equal((Maker, "prepare reason", Checker, "checker approval evidence", Checker,
                 "checker publication evidence", 3L), evidence);
+            await AssertLifecycleProtectionTriggerEnabledAsync(connectionString);
 
             await using (var foreign = Command(connectionString, CompanyB, Checker, new GrantingAuthority()))
             {
@@ -148,6 +150,41 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             var revision = await AuditVersionsAsync(connectionString, profileId, "Prepare", 2);
             Assert.Equal(1, revision.Before);
             Assert.Equal(2, revision.After);
+        });
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_same_key_prepare_has_one_original_one_replay_and_one_atomic_effect()
+    {
+        await InDisposableDatabaseAsync(async connectionString =>
+        {
+            var profileId = Guid.NewGuid();
+            var command = Prepare(
+                profileId,
+                Maker,
+                0,
+                "settings-profile-same-key-concurrent-prepare",
+                profileVersion: 100,
+                process: SettingsManufacturingProcessesV1.CutToLength);
+            await using var firstMaker = Command(
+                connectionString, CompanyA, Maker, new GrantingAuthority());
+            await using var secondMaker = Command(
+                connectionString, CompanyA, Maker, new GrantingAuthority());
+
+            var outcomes = await Task.WhenAll(
+                    firstMaker.Service.PrepareAsync(command),
+                    secondMaker.Service.PrepareAsync(command))
+                .WaitAsync(TimeSpan.FromSeconds(30));
+
+            var original = Assert.Single(outcomes, outcome => !outcome.IsReplay);
+            var replay = Assert.Single(outcomes, outcome => outcome.IsReplay);
+            Assert.Equal(command.Context.CorrelationId, original.OriginalCorrelationId);
+            Assert.Equal(original.OriginalCorrelationId, replay.OriginalCorrelationId);
+            Assert.All(outcomes, outcome => Assert.Equal(profileId, outcome.Profile.Lifecycle.ProfileId));
+            Assert.Equal(1, await CountTableAsync(
+                connectionString, "settings", "ManufacturingToleranceProfileLifecycles"));
+            Assert.Equal(1, await CountSettingsCommandsAsync(connectionString));
+            Assert.Equal(1, await CountSettingsAuditsAsync(connectionString));
         });
     }
 
@@ -403,7 +440,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                             new DateOnly(2034, 1, 1),
                             null,
                             Context(CompanyA, Maker, 3, "settings-profile-next-same-id", "same id refusal"))));
-                Assert.Equal(ManufacturingToleranceProfileLifecycleCodesV1.Invalid, sameIdentity.Code);
+                Assert.Equal(ManufacturingToleranceProfilePersistenceCodesV1.Invalid, sameIdentity.Code);
             }
 
             var concurrentPredecessor = Guid.NewGuid();
@@ -1403,6 +1440,24 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
         return new TriggerState(reader.GetString(0), reader.GetBoolean(1), reader.GetBoolean(2));
+    }
+
+    private static async Task AssertLifecycleProtectionTriggerEnabledAsync(string connectionString)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT OBJECT_DEFINITION([object_id]), [is_instead_of_trigger], [is_disabled]
+            FROM sys.triggers
+            WHERE [parent_id] = OBJECT_ID(N'[settings].[ManufacturingToleranceProfileLifecycles]')
+              AND [name] = N'TR_ManufacturingToleranceProfileLifecycles_Protect';
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Contains("AFTER INSERT, UPDATE, DELETE", reader.GetString(0), StringComparison.OrdinalIgnoreCase);
+        Assert.False(reader.GetBoolean(1));
+        Assert.False(reader.GetBoolean(2));
     }
 
     private static async Task SetTriggerEnabledAsync(string connectionString, bool enabled)

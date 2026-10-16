@@ -221,7 +221,7 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
             {
                 database.ChangeTracker.Clear();
                 await using var transaction = await BeginSerializableAsync(cancellationToken);
-                var existing = await FindExecutionAsync(action, keyHash, cancellationToken);
+                var existing = await FindExecutionForInsertAsync(action, keyHash, cancellationToken);
                 if (existing is not null)
                 {
                     await RequireAuthorityAsync(action, context, cancellationToken);
@@ -411,6 +411,33 @@ public sealed class SettingsManufacturingToleranceProfileCommandServiceV1(
         database.CommandExecutions.AsNoTracking().SingleOrDefaultAsync(
             row => row.CommandName == action && row.IdempotencyKeyHash == keyHash,
             cancellationToken);
+
+    private async Task<CommandExecution?> FindExecutionForInsertAsync(
+        string action,
+        string keyHash,
+        CancellationToken cancellationToken)
+    {
+        if (!database.Database.IsSqlServer())
+        {
+            return await FindExecutionAsync(action, keyHash, cancellationToken);
+        }
+
+        var companyId = companyContext.CompanyId;
+        return await database.CommandExecutions
+            .FromSqlInterpolated($$"""
+                SELECT [Id], [CompanyId], [CommandName], [IdempotencyKeyHash], [RequestHash],
+                       [ActorId], [Outcome], [HttpStatusCode], [ResponseJson],
+                       [OriginalCorrelationId], [CompletedAtUtc], [SchemaVersion]
+                FROM [idempotency].[CommandExecutions] WITH
+                    (UPDLOCK, HOLDLOCK,
+                     INDEX([IX_CommandExecutions_CompanyId_CommandName_IdempotencyKeyHash]))
+                WHERE [CompanyId] = {{companyId}}
+                  AND [CommandName] = {{action}}
+                  AND [IdempotencyKeyHash] = {{keyHash}}
+                """)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(cancellationToken);
+    }
 
     private Task<ManufacturingToleranceProfileLifecycleRow?> FindSuccessorAsync(
         string process,
