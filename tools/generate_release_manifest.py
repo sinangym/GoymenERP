@@ -262,8 +262,12 @@ def _load_snapshot(repository_root: Path, source_commit: str) -> SourceSnapshot:
     _require_repository_identity(root)
     _require_no_replace_refs(root)
     head = _head_commit(root)
-    resolved = _git_text(root, ("rev-parse", "--verify", f"{source_commit}^{{commit}}"))
-    if resolved != source_commit or head != source_commit:
+    resolved_result = _run_git(root, ("rev-parse", "--verify", f"{source_commit}^{{commit}}"))
+    try:
+        resolved = resolved_result.stdout.decode("ascii").strip()
+    except UnicodeError:
+        resolved = ""
+    if resolved_result.returncode != 0 or resolved != source_commit or head != source_commit:
         raise ReleaseManifestError("Source commit must resolve exactly to current Git HEAD.")
     _require_clean(root)
     _require_index_flags_clean(root)

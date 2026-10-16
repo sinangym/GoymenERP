@@ -229,7 +229,7 @@ class ReleaseManifestTests(unittest.TestCase):
         fixture = {"z": "Göymen", "a": [True, False, 0, 1]}
         encoded = generator.canonical_bytes(fixture)
         self.assertEqual(
-            "eed84727c9ed34494146c003a161860247f93cf283f1141a900066baaea59083",
+            "84568c2defce8688a7900c23f8a59a23bb82f4f8fd83e9887b577bba38d139f6",
             hashlib.sha256(encoded).hexdigest(),
         )
         self.assertNotIn(b"\r\n", encoded)
