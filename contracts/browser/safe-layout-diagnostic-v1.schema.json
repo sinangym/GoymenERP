@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goymenerp.local/contracts/browser/safe-layout-diagnostic-v1.schema.json",
+  "title": "GöymenERP safe browser layout diagnostic v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "suite",
+    "caseId",
+    "testedCommit",
+    "selectorAlias",
+    "boundaryClass",
+    "viewport",
+    "page",
+    "target",
+    "seed"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "browser-layout-diagnostic-v1" },
+    "suite": { "const": "r14" },
+    "caseId": { "const": "E05-R14-LONG-LABEL-320" },
+    "testedCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "selectorAlias": { "const": "stock-owner-label" },
+    "boundaryClass": { "const": "long-wide-label" },
+    "viewport": { "$ref": "#/$defs/viewport" },
+    "page": { "$ref": "#/$defs/widthMeasurement" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientWidthCssPx", "scrollWidthCssPx", "present", "visible"],
+      "properties": {
+        "clientWidthCssPx": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "scrollWidthCssPx": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "present": { "const": true },
+        "visible": { "const": true }
+      }
+    },
+    "seed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtureId", "labelCharacterCount", "wideCharacterCount"],
+      "properties": {
+        "fixtureId": { "const": "e05-wide-label-v1" },
+        "labelCharacterCount": { "type": "integer", "minimum": 80, "maximum": 512 },
+        "wideCharacterCount": { "type": "integer", "minimum": 80, "maximum": 512 }
+      }
+    }
+  },
+  "$defs": {
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["widthCssPx", "heightCssPx"],
+      "properties": {
+        "widthCssPx": { "const": 320 },
+        "heightCssPx": { "type": "integer", "minimum": 1, "maximum": 16384 }
+      }
+    },
+    "widthMeasurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clientWidthCssPx", "scrollWidthCssPx"],
+      "properties": {
+        "clientWidthCssPx": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "scrollWidthCssPx": { "type": "integer", "minimum": 0, "maximum": 65535 }
+      }
+    }
+  }
+}
