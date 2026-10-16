@@ -315,10 +315,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "7b5999d3529adaccd72c13d3c3412f6f4acae56616839f8ede77732150806f76";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
         "95abaadfa075a9f6077670a2e15660629e6b1073ade36b64e45d74404fd3f4cb";
-    // Re-reviewed after isolating the exact-source recovery proof from inherited shell, path and redirect state:
-    // the workflow keeps every existing application gate and image build while that artifact-free job fails closed.
+    // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
+    // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "8f852a4759a1a273900929138d3c0a36ca36718572927dd7eb8aa360ce74373d";
+        "4395cb2fc98659df3c7f9ac9c5d175da862457f7dfdae3663f18504a4974ed57";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
