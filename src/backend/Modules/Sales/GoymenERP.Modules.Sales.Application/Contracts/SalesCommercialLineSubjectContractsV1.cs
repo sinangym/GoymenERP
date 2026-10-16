@@ -1,13 +1,44 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Sales.Application.Contracts;
 
 public sealed class SalesCommercialLineSubjectKindJsonConverterV1
-    : JsonStringEnumConverter<SalesCommercialLineSubjectKindV1>
+    : JsonConverter<SalesCommercialLineSubjectKindV1>
 {
-    public SalesCommercialLineSubjectKindJsonConverterV1()
-        : base(namingPolicy: null, allowIntegerValues: false)
+    public override SalesCommercialLineSubjectKindV1 Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
     {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("Commercial line subject kind must be a string.");
+        }
+
+        return reader.GetString() switch
+        {
+            "Product" => SalesCommercialLineSubjectKindV1.Product,
+            "Service" => SalesCommercialLineSubjectKindV1.Service,
+            "Consumable" => SalesCommercialLineSubjectKindV1.Consumable,
+            _ => throw new JsonException("Unknown commercial line subject kind."),
+        };
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        SalesCommercialLineSubjectKindV1 value,
+        JsonSerializerOptions options)
+    {
+        var wireValue = value switch
+        {
+            SalesCommercialLineSubjectKindV1.Product => "Product",
+            SalesCommercialLineSubjectKindV1.Service => "Service",
+            SalesCommercialLineSubjectKindV1.Consumable => "Consumable",
+            _ => throw new JsonException("Unknown commercial line subject kind."),
+        };
+
+        writer.WriteStringValue(wireValue);
     }
 }
 

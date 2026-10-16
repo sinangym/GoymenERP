@@ -72,6 +72,24 @@ public sealed class SalesCommercialLineSubjectContractTests
             SalesDraftJson.Options));
     }
 
+    [Theory]
+    [InlineData("Product, Service")]
+    [InlineData("1")]
+    [InlineData(" Product")]
+    [InlineData("product")]
+    public void Discriminator_rejects_non_canonical_string_tokens(string wireKind)
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            kind = wireKind,
+            id = SubjectId,
+            expectedVersion = "subject-v7",
+        }, SalesDraftJson.Options);
+
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<SalesCommercialLineSubjectReferenceV1>(
+            json,
+            SalesDraftJson.Options));
+    }
     [Fact]
     public void Identity_rejects_empty_id_blank_version_and_undefined_kind()
     {

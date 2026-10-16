@@ -1,13 +1,44 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
 public sealed class PurchasingCommercialLineSubjectKindJsonConverterV1
-    : JsonStringEnumConverter<PurchasingCommercialLineSubjectKindV1>
+    : JsonConverter<PurchasingCommercialLineSubjectKindV1>
 {
-    public PurchasingCommercialLineSubjectKindJsonConverterV1()
-        : base(namingPolicy: null, allowIntegerValues: false)
+    public override PurchasingCommercialLineSubjectKindV1 Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
     {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("Commercial line subject kind must be a string.");
+        }
+
+        return reader.GetString() switch
+        {
+            "Product" => PurchasingCommercialLineSubjectKindV1.Product,
+            "Service" => PurchasingCommercialLineSubjectKindV1.Service,
+            "Consumable" => PurchasingCommercialLineSubjectKindV1.Consumable,
+            _ => throw new JsonException("Unknown commercial line subject kind."),
+        };
+    }
+
+    public override void Write(
+        Utf8JsonWriter writer,
+        PurchasingCommercialLineSubjectKindV1 value,
+        JsonSerializerOptions options)
+    {
+        var wireValue = value switch
+        {
+            PurchasingCommercialLineSubjectKindV1.Product => "Product",
+            PurchasingCommercialLineSubjectKindV1.Service => "Service",
+            PurchasingCommercialLineSubjectKindV1.Consumable => "Consumable",
+            _ => throw new JsonException("Unknown commercial line subject kind."),
+        };
+
+        writer.WriteStringValue(wireValue);
     }
 }
 
