@@ -201,7 +201,15 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
                 "\r\n\r\n",
                 " \t\r\n\u00a0",
                 "\v\f",
+                "\u0085",
+                "\u1680",
+                "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a",
+                "\u2028\u2029",
+                "\u202f",
+                "\u205f",
+                "\u3000",
             };
+            Assert.All(whitespaceOnlyValues, value => Assert.True(string.IsNullOrWhiteSpace(value)));
             var preparationFields = new[]
             {
                 "PreparedBy",
@@ -277,6 +285,10 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
             await ApplyLifecyclePublicationAsync(connectionString, profileId);
             Assert.Equal((3L, ManufacturingToleranceProfileStatusV1.Published),
                 await LifecycleStateAsync(connectionString, profileId));
+            Assert.Equal(
+                ("direct\u1680SQL valid preparation", "direct\u2003SQL valid approval",
+                    "direct\u2028SQL\u2029valid publication"),
+                await LifecycleReasonsAsync(connectionString, profileId));
             Assert.Equal(0, await CountSettingsAuditsAsync(connectionString));
         });
     }
@@ -883,6 +895,24 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         return (reader.GetInt64(0), (ManufacturingToleranceProfileStatusV1)reader.GetInt32(1));
     }
 
+    private static async Task<(string PreparationReason, string ApprovalReason, string PublicationReason)>
+        LifecycleReasonsAsync(string connectionString, Guid profileId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT [PreparationReason], [ApprovalReason], [PublicationReason]
+            FROM [settings].[ManufacturingToleranceProfileLifecycles]
+            WHERE [CompanyId] = @company AND [ProfileId] = @profile;
+            """;
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@profile", profileId);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        return (reader.GetString(0), reader.GetString(1), reader.GetString(2));
+    }
+
     private static async Task<int> CountLifecycleVersionAsync(
         string connectionString,
         string process,
@@ -1140,7 +1170,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         command.Parameters.AddWithValue("@preparedBy", Maker);
         command.Parameters.AddWithValue("@preparedAt",
             new DateTimeOffset(2026, 10, 16, 13, 1, 0, TimeSpan.Zero));
-        command.Parameters.AddWithValue("@preparationReason", "direct SQL valid preparation");
+        command.Parameters.AddWithValue("@preparationReason", "direct\u1680SQL valid preparation");
         command.Parameters.AddWithValue("@preparationCorrelationId", "direct-sql-valid-preparation");
         command.Parameters.AddWithValue("@preparationSourceChannel", "System");
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
@@ -1206,7 +1236,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         command.Parameters.AddWithValue("@approvedBy", Checker);
         command.Parameters.AddWithValue("@approvedAt",
             new DateTimeOffset(2026, 10, 16, 13, 3, 0, TimeSpan.Zero));
-        command.Parameters.AddWithValue("@approvalReason", "direct SQL valid approval");
+        command.Parameters.AddWithValue("@approvalReason", "direct\u2003SQL valid approval");
         command.Parameters.AddWithValue("@approvalCorrelationId", "direct-sql-valid-approval");
         command.Parameters.AddWithValue("@approvalSourceChannel", "System");
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
@@ -1272,7 +1302,7 @@ public sealed class ManufacturingSettingsToleranceSqlServerRelationalAcceptanceT
         command.Parameters.AddWithValue("@publishedBy", Checker);
         command.Parameters.AddWithValue("@publishedAt",
             new DateTimeOffset(2026, 10, 16, 13, 5, 0, TimeSpan.Zero));
-        command.Parameters.AddWithValue("@publicationReason", "direct SQL valid publication");
+        command.Parameters.AddWithValue("@publicationReason", "direct\u2028SQL\u2029valid publication");
         command.Parameters.AddWithValue("@publicationCorrelationId", "direct-sql-valid-publication");
         command.Parameters.AddWithValue("@publicationSourceChannel", "System");
         Assert.Equal(1, await command.ExecuteNonQueryAsync());
