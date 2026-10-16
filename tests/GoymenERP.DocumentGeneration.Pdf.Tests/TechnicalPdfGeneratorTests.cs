@@ -335,6 +335,7 @@ public sealed class TechnicalPdfGeneratorTests
     [InlineData("cmap-unused-string")]
     [InlineData("catalog-name")]
     [InlineData("outer-comment")]
+    [InlineData("outer-unreferenced-stream")]
     public void Pdf_privacy_guard_rejects_nonvisible_host_payloads(string channel)
     {
         const string marker = "private-host-canary-9b73";
@@ -492,6 +493,10 @@ public sealed class TechnicalPdfGeneratorTests
     {
         using var input = new MemoryStream(content, writable: false);
         using var structure = PdfSharp.Pdf.IO.PdfReader.Open(input, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
+        // Capture original encoded bytes before any library may lazily decode streams.
+        var reviewedRawStreams = structure.Internals.GetAllObjects()
+            .OfType<PdfSharp.Pdf.PdfDictionary>().Where(dictionary => dictionary.Stream is not null)
+            .Select(dictionary => RawStreamIdentity(dictionary.Stream.Value)).ToHashSet();
         var streamSurfaces = InspectSupportedPrivacyPayloads(structure).ToArray();
         // Inspect literal strings throughout the document, not only trailer /Info.
         // Structural names are not strings; font binary bytes remain exactly vendor-locked.
@@ -499,7 +504,7 @@ public sealed class TechnicalPdfGeneratorTests
             .Concat(DecodedMetadataValues(pdf.Information.DocumentInformationDictionary))
             .Concat(structure.Internals.GetAllObjects().SelectMany(DecodedObjectStrings))
             .Concat(streamSurfaces)
-            .Concat(DecodedSyntaxStrings(content, isDocument: true)).ToArray();
+            .Concat(DecodedSyntaxStrings(content, isDocument: true, reviewedRawStreams: reviewedRawStreams)).ToArray();
         foreach (var identifier in identifiers)
         {
             Assert.NotEmpty(identifier);
@@ -616,7 +621,7 @@ public sealed class TechnicalPdfGeneratorTests
     }
 
     private static IEnumerable<string> DecodedSyntaxStrings(
-        ReadOnlyMemory<byte> content, bool isDocument = false, int depth = 0)
+        ReadOnlyMemory<byte> content, bool isDocument = false, int depth = 0, IReadOnlySet<string>? reviewedRawStreams = null)
     {
         Assert.InRange(depth, 0, 64);
         using var input = new UglyToad.PdfPig.Core.MemoryInputBytes(content);
@@ -646,6 +651,8 @@ public sealed class TechnicalPdfGeneratorTests
                 start++;
                 var finish = checked(start + (int)length.Long);
                 Assert.InRange(finish, start, content.Length);
+                Assert.NotNull(reviewedRawStreams);
+                Assert.Contains(RawStreamIdentity(content.Span.Slice(start, finish - start)), reviewedRawStreams);
                 scanner.Seek(finish);
                 scanner.ClearPreReadByte();
                 Assert.True(scanner.MoveNext());
@@ -710,6 +717,9 @@ public sealed class TechnicalPdfGeneratorTests
         }
     }
 
+    private static string RawStreamIdentity(ReadOnlySpan<byte> bytes) =>
+        bytes.Length.ToString(CultureInfo.InvariantCulture) + ":" + Convert.ToHexString(SHA256.HashData(bytes));
+
     private static IEnumerable<string> DecodedMetadataValues(IToken? token)
     {
         switch (token)
@@ -749,6 +759,12 @@ public sealed class TechnicalPdfGeneratorTests
         if (channel == "outer-comment")
         {
             return content.Concat(Encoding.ASCII.GetBytes($"\n% {marker}\n")).ToArray();
+        }
+        if (channel == "outer-unreferenced-stream")
+        {
+            var payload = Encoding.ASCII.GetBytes(marker);
+            var extra = $"\n99999 0 obj\n<< /Length {payload.Length} >>\nstream\n{marker}\nendstream\nendobj\n";
+            return content.Concat(Encoding.ASCII.GetBytes(extra)).ToArray();
         }
         using var input = new MemoryStream(content, writable: false);
         using var document = PdfSharp.Pdf.IO.PdfReader.Open(input, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Modify);
