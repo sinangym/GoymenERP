@@ -2412,4 +2412,3 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
         }
     }
 }
-

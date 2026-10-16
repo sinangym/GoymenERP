@@ -139,6 +139,30 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // A typed hold is immutable stock provenance. Even a released row still owns its movement,
+            // command replay and audit history. Refuse before the table is dropped if the feature has ever
+            // carried business truth; an unused installation remains reversibly removable.
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (SELECT 1 FROM [inventory].[PhysicalHolds])
+                    OR EXISTS
+                    (
+                        SELECT 1
+                        FROM [inventory].[Movements]
+                        WHERE [SourceKind] IN (N'quality.inspection-hold', N'quality.disposition')
+                    )
+                    OR EXISTS
+                    (
+                        SELECT 1
+                        FROM [inventory].[Commands]
+                        WHERE [CommandName] IN
+                            (N'inventory.physical-hold.place.v1', N'inventory.physical-hold.release.v1')
+                    )
+                BEGIN
+                    THROW 51065, 'Inventory physical-hold history exists; use a reviewed forward fix.', 1;
+                END;
+                """);
+
             migrationBuilder.DropTable(
                 name: "PhysicalHolds",
                 schema: "inventory");

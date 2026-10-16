@@ -1,11 +1,24 @@
+using System.Net;
+using System.Net.Http.Json;
+using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.Security;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Identity.Domain.Assignments;
+using GoymenERP.Modules.Identity.Domain.Roles;
+using GoymenERP.Modules.Identity.Domain.Users;
+using GoymenERP.Modules.Identity.Infrastructure.Persistence;
+using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
+using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -143,6 +156,19 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(30m, await run.ScalarAsync<decimal>(
             "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 2", ("@id", allocated.Id)));
 
+        var reader = await GrantStockPositionReaderAsync(run, TestUsers.NoAssignment);
+        using (var client = run.Factory.CreateClientFor(reader, CompanyA))
+        using (var response = await client.GetAsync(
+                   $"{InventoryStockPositionApiV1.PositionsPath}?q=SYN-QUALITY-HOLD-ALLOC&limit=25"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var page = (await response.Content.ReadFromJsonAsync<InventoryStockPositionPageV1>())!;
+            var item = Assert.Single(page.Items);
+            Assert.Equal((allocated.Id, "30", "10", "20", "10", "0"),
+                (item.LabelId, item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                    item.ActiveAllocationKg, item.AvailableKg));
+        }
+
         await ReleaseAsync(run,
             new(allocatedHold, "1", allocated.Id, Version(await LabelVersionAsync(run, allocated.Id)), Guid.NewGuid(),
                 "SENTETIK tahsis korunarak kalite serbest bırakması"),
@@ -152,6 +178,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             ("@id", allocated.Id)));
         Assert.Equal(30m, await run.ScalarAsync<decimal>(
             "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1", ("@id", allocated.Id)));
+        using (var client = run.Factory.CreateClientFor(reader, CompanyA))
+        using (var response = await client.GetAsync(
+                   $"{InventoryStockPositionApiV1.PositionsPath}?q=SYN-QUALITY-HOLD-ALLOC&limit=25"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var page = (await response.Content.ReadFromJsonAsync<InventoryStockPositionPageV1>())!;
+            var item = Assert.Single(page.Items);
+            Assert.Equal((allocated.Id, "30", "30", "0", "10", "20"),
+                (item.LabelId, item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                    item.ActiveAllocationKg, item.AvailableKg));
+        }
     }
 
     [SqlServerFact]
@@ -249,24 +286,113 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task Physical_hold_migration_applies_rolls_back_and_reapplies_on_real_SQL()
     {
-        await using var run = await Run.StartAsync(migrateInventory: false);
-        await using var context = run.Context(CompanyA);
-        var migrator = context.GetService<IMigrator>();
         const string predecessor = "20261002110000_AddInventoryLabelClassification";
         const string physicalHolds = "20261016100000_AddInventoryPhysicalHolds";
 
-        await migrator.MigrateAsync(predecessor);
-        Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT CASE WHEN OBJECT_ID(N'inventory.PhysicalHolds', N'U') IS NULL THEN 0 ELSE 1 END"));
-        await migrator.MigrateAsync(physicalHolds);
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT CASE WHEN OBJECT_ID(N'inventory.PhysicalHolds', N'U') IS NULL THEN 0 ELSE 1 END"));
-        await migrator.MigrateAsync(predecessor);
-        Assert.Equal(0, await run.ScalarAsync<int>(
-            "SELECT CASE WHEN OBJECT_ID(N'inventory.PhysicalHolds', N'U') IS NULL THEN 0 ELSE 1 END"));
-        await migrator.MigrateAsync(physicalHolds);
-        Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT CASE WHEN OBJECT_ID(N'inventory.PhysicalHolds', N'U') IS NULL THEN 0 ELSE 1 END"));
+        await using (var empty = await Run.StartAsync(migrateInventory: false))
+        await using (var context = empty.Context(CompanyA))
+        {
+            var migrator = context.GetService<IMigrator>();
+            await migrator.MigrateAsync(predecessor);
+            Assert.Equal(0, await PhysicalHoldTableExistsAsync(empty));
+            await migrator.MigrateAsync(physicalHolds);
+            Assert.Equal(1, await PhysicalHoldTableExistsAsync(empty));
+            await migrator.MigrateAsync(predecessor);
+            Assert.Equal(0, await PhysicalHoldTableExistsAsync(empty));
+            await migrator.MigrateAsync(physicalHolds);
+            Assert.Equal(1, await PhysicalHoldTableExistsAsync(empty));
+        }
+
+        await using var populated = await Run.StartAsync();
+        var activeLabel = await SeedFreeLabelAsync(populated, "SYN-QUALITY-HOLD-DOWN-ACTIVE", 14m);
+        var releasedLabel = await SeedFreeLabelAsync(populated, "SYN-QUALITY-HOLD-DOWN-RELEASED", 16m);
+        var activeId = Guid.NewGuid();
+        var activeRequest = new PlaceInventoryPhysicalHoldV1(activeId, activeLabel.Id,
+            Version(await LabelVersionAsync(populated, activeLabel.Id)), Guid.NewGuid(),
+            "SENTETIK downgrade aktif hold", null);
+        var activeMetadata = HoldMetadata(populated, "down-active-maker", "down-active-place");
+        await PlaceAsync(populated, activeRequest, activeMetadata);
+
+        var releasedId = Guid.NewGuid();
+        var releasedRequest = new PlaceInventoryPhysicalHoldV1(releasedId, releasedLabel.Id,
+            Version(await LabelVersionAsync(populated, releasedLabel.Id)), Guid.NewGuid(),
+            "SENTETIK downgrade bırakılmış hold", null);
+        var releasedPlacement = HoldMetadata(populated, "down-released-maker", "down-released-place");
+        await PlaceAsync(populated, releasedRequest, releasedPlacement);
+        var releaseRequest = new ReleaseInventoryPhysicalHoldV1(releasedId, "1", releasedLabel.Id,
+            Version(await LabelVersionAsync(populated, releasedLabel.Id)), Guid.NewGuid(),
+            "SENTETIK downgrade öncesi karar");
+        var releaseMetadata = HoldMetadata(populated, "down-released-checker", "down-released-release");
+        await ReleaseAsync(populated, releaseRequest, releaseMetadata);
+
+        var before = await PhysicalHoldRollbackTruthAsync(populated);
+        await using var populatedContext = populated.Context(CompanyA);
+        var populatedMigrator = populatedContext.GetService<IMigrator>();
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => populatedMigrator.MigrateAsync(predecessor));
+        Assert.Equal(51065, refusal.Number);
+        Assert.Equal(1, await PhysicalHoldTableExistsAsync(populated));
+        Assert.Equal(1, await populated.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.__EFMigrationsHistory WHERE MigrationId = @migration",
+            ("@migration", physicalHolds)));
+        Assert.Equal(before, await PhysicalHoldRollbackTruthAsync(populated));
+
+        var activeReplay = await PlaceAsync(populated, activeRequest, activeMetadata);
+        var releaseReplay = await ReleaseAsync(populated, releaseRequest, releaseMetadata);
+        Assert.True(activeReplay.Replayed);
+        Assert.True(releaseReplay.Replayed);
+        Assert.Equal((activeId, releasedId), (activeReplay.Hold.HoldId, releaseReplay.Hold.HoldId));
+    }
+
+    private static Task<int> PhysicalHoldTableExistsAsync(Run run) => run.ScalarAsync<int>(
+        "SELECT CASE WHEN OBJECT_ID(N'inventory.PhysicalHolds', N'U') IS NULL THEN 0 ELSE 1 END");
+
+    private static async Task<(int Holds, int Movements, int Commands, int Audits, decimal FreeKg, decimal BlockedKg)>
+        PhysicalHoldRollbackTruthAsync(Run run) =>
+        (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.PhysicalHolds"),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Movements WHERE SourceKind IN (N'quality.inspection-hold', N'quality.disposition')"),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM inventory.Commands WHERE CommandName IN (N'inventory.physical-hold.place.v1', N'inventory.physical-hold.release.v1')"),
+            await run.ScalarAsync<int>(
+                "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Inventory.PhysicalHold'"),
+            await run.ScalarAsync<decimal>(
+                "SELECT COALESCE(SUM(QuantityKg), 0) FROM inventory.Balances WHERE Block = 1"),
+            await run.ScalarAsync<decimal>(
+                "SELECT COALESCE(SUM(QuantityKg), 0) FROM inventory.Balances WHERE Block = 2")
+        );
+
+    private static async Task<string> GrantStockPositionReaderAsync(Run run, string developmentUser)
+    {
+        await using var scope = run.Factory.Services.CreateAsyncScope();
+        var identity = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        var link = await identity.ExternalIdentities.SingleOrDefaultAsync(candidate =>
+            candidate.Issuer == BootstrapIdentityOptions.Issuer && candidate.Subject == developmentUser);
+        Guid actor;
+        if (link is null)
+        {
+            actor = Guid.NewGuid();
+            identity.Users.Add(new UserAccount(actor, "SENTETIK kalite hold stok okuyucu", null));
+            identity.ExternalIdentities.Add(new ExternalIdentityLink(Guid.NewGuid(), actor,
+                BootstrapIdentityOptions.Issuer, developmentUser));
+        }
+        else
+        {
+            actor = link.UserId;
+        }
+
+        var roleId = Guid.NewGuid();
+        var role = new RoleDefinition(roleId, $"I041-STOCK-READ-{roleId:N}",
+            "SENTETIK I04.1 stok pozisyonu okuma rolü", true);
+        role.AddPermission(ErpPermissions.InventoryLabelsRead);
+        role.AddPermission(ErpPermissions.InventoryBalancesRead);
+        var assignment = new RoleAssignment(Guid.NewGuid(), actor, roleId, CompanyA,
+            DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+        assignment.AddScope(AccessScopeType.Company, CompanyA);
+        identity.Roles.Add(role);
+        identity.RoleAssignments.Add(assignment);
+        await identity.SaveChangesAsync();
+        return developmentUser;
     }
 
     private static async Task<MaterialLabel> SeedFreeLabelAsync(Run run, string code, decimal kilograms)

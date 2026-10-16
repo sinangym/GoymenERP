@@ -8,6 +8,7 @@ using GoymenERP.Modules.Inventory.Domain.Labels;
 using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure;
 
@@ -20,12 +21,25 @@ internal sealed record InventoryActiveAllocationRecord(
     string Block,
     decimal RemainingKg);
 
+internal sealed record InventoryActivePhysicalHoldRecord(
+    int OwnerKind,
+    string SourceKind,
+    Guid SourceId,
+    string PositionOwnerKind,
+    Guid PositionOwnerId,
+    string CustodianKind,
+    Guid CustodianId,
+    Guid LocationId,
+    Guid ProductId,
+    decimal QuantityKg);
+
 internal sealed record InventoryStockPositionRecord(
     long Version,
     MaterialLabel Label,
     MaterialLot Lot,
     IReadOnlyList<StockBalance> Balances,
-    IReadOnlyList<InventoryActiveAllocationRecord> ActiveAllocations);
+    IReadOnlyList<InventoryActiveAllocationRecord> ActiveAllocations,
+    IReadOnlyList<InventoryActivePhysicalHoldRecord> ActivePhysicalHolds);
 
 internal sealed record InventoryStockPositionWindow(
     IReadOnlyList<InventoryStockPositionRecord> Records,
@@ -300,8 +314,35 @@ internal sealed class InventoryStockPositionService(
             }
         }
 
+        var physical = free + blocked;
         var allocated = record.ActiveAllocations.Sum(allocation => allocation.RemainingKg);
-        if (allocated > free)
+        var activeQualityHold = record.ActivePhysicalHolds.Count > 0;
+        if (activeQualityHold)
+        {
+            if (free != 0m || blocked != physical
+                || record.ActivePhysicalHolds.Any(hold =>
+                    hold.OwnerKind != InventoryStore.QualityPhysicalHoldOwner
+                    || hold.SourceKind != InventoryPhysicalHoldTokensV1.QualityInspectionSource
+                    || hold.SourceId == Guid.Empty
+                    || hold.PositionOwnerKind != place.Owner.Kind.ToString()
+                    || hold.PositionOwnerId != place.Owner.Id
+                    || hold.CustodianKind != place.Custodian.Kind.ToString()
+                    || hold.CustodianId != place.Custodian.Id
+                    || hold.LocationId != place.LocationId
+                    || hold.ProductId != label.ProductId
+                    || hold.QuantityKg != physical)
+                || allocated > physical)
+            {
+                throw Error(503, InventoryStockPositionCodesV1.Unavailable);
+            }
+
+            // A whole-label Quality hold and an earlier physical allocation are overlapping restrictions,
+            // not two kilograms to subtract. Keep the public components mutually exclusive: allocation wins
+            // its reserved part, the remaining physical kilograms stay blocked, and nothing is available.
+            free = allocated;
+            blocked = physical - allocated;
+        }
+        else if (allocated > free)
         {
             throw Error(503, InventoryStockPositionCodesV1.Unavailable);
         }
@@ -323,7 +364,7 @@ internal sealed class InventoryStockPositionService(
             place.Custodian.Kind.ToString(),
             place.Custodian.Id,
             place.LocationId,
-            Kilograms.Of(free + blocked).ToString(),
+            Kilograms.Of(physical).ToString(),
             Kilograms.Of(free).ToString(),
             Kilograms.Of(blocked).ToString(),
             Kilograms.Of(allocated).ToString(),
