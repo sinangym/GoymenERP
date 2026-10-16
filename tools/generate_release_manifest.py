@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -49,7 +48,8 @@ GET_SECTION_PATTERN = re.compile(
 )
 CONFIG_CONSTANT_PATTERN = re.compile(
     r"\b(?:const|static\s+readonly)\s+string\s+"
-    r"[A-Za-z_][A-Za-z0-9_]*ConfigurationKey\s*=\s*\"([^\"\r\n]+)\""
+    r"(?:(?:[A-Za-z_][A-Za-z0-9_]*)?ConfigurationKey|SectionName)\s*"
+    r"=\s*\"([^\"\r\n]+)\""
 )
 
 
@@ -303,14 +303,17 @@ def _load_recovery_module(snapshot: SourceSnapshot) -> ModuleType:
             raise ReleaseManifestError("Recovery generator worktree bytes do not match the exact commit.")
     except OSError as exc:
         raise ReleaseManifestError("Recovery generator bytes cannot be read.") from exc
-    spec = importlib.util.spec_from_file_location("_goymenerp_release_recovery_inventory", path)
-    if spec is None or spec.loader is None:
-        raise ReleaseManifestError("Recovery inventory generator cannot be loaded.")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
+    module_name = "_goymenerp_release_recovery_inventory"
+    module = ModuleType(module_name)
+    module.__file__ = str(path)
+    module.__package__ = ""
+    sys.modules[module_name] = module
     try:
-        spec.loader.exec_module(module)
+        exact_code = compile(entry.content, str(path), "exec", dont_inherit=True)
+        exec(exact_code, module.__dict__)
     except Exception as exc:
+        if sys.modules.get(module_name) is module:
+            del sys.modules[module_name]
         raise ReleaseManifestError("Recovery inventory generator cannot be loaded.") from exc
     return module
 

@@ -7,8 +7,10 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import py_compile
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -95,12 +97,90 @@ class ReleaseManifestTests(unittest.TestCase):
             self.assertEqual(entry.object_id, record["gitBlob"])
             self.assertEqual(hashlib.sha256(entry.content).hexdigest(), record["sha256"])
 
+    def test_recovery_generator_executes_exact_blob_not_ignored_valid_pyc(self) -> None:
+        recovery_path = REPOSITORY_ROOT / generator.RECOVERY_GENERATOR_PATH
+        cache_path = Path(importlib.util.cache_from_source(str(recovery_path)))
+        cache_directory_existed = cache_path.parent.exists()
+        previous_cache = cache_path.read_bytes() if cache_path.exists() else None
+        source = recovery_path.read_bytes()
+        canary_name = "_R02_IGNORED_BYTECODE_EXECUTED"
+        malicious_source = source + f"\n{canary_name} = True\n".encode("ascii")
+
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory() as directory:
+                malicious_path = Path(directory) / recovery_path.name
+                malicious_path.write_bytes(malicious_source)
+                py_compile.compile(
+                    str(malicious_path),
+                    cfile=str(cache_path),
+                    dfile=str(recovery_path),
+                    doraise=True,
+                    invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP,
+                )
+
+            payload = bytearray(cache_path.read_bytes())
+            self.assertEqual(0, int.from_bytes(payload[4:8], "little"))
+            source_stat = recovery_path.stat()
+            payload[8:12] = (int(source_stat.st_mtime) & 0xFFFFFFFF).to_bytes(
+                4, "little"
+            )
+            payload[12:16] = (source_stat.st_size & 0xFFFFFFFF).to_bytes(
+                4, "little"
+            )
+            cache_path.write_bytes(payload)
+
+            legacy_name = "_r02_legacy_source_file_loader_probe"
+            legacy_spec = importlib.util.spec_from_file_location(legacy_name, recovery_path)
+            self.assertIsNotNone(legacy_spec)
+            assert legacy_spec is not None and legacy_spec.loader is not None
+            legacy_module = importlib.util.module_from_spec(legacy_spec)
+            sys.modules[legacy_name] = legacy_module
+            try:
+                legacy_spec.loader.exec_module(legacy_module)
+                self.assertIs(getattr(legacy_module, canary_name, False), True)
+            finally:
+                sys.modules.pop(legacy_name, None)
+
+            self.assertEqual(
+                "",
+                _git("status", "--porcelain=v1", "--untracked-files=all"),
+                "Ignored bytecode must not alter the tracked clean-tree proof",
+            )
+            exact_module = generator._load_recovery_module(self.snapshot)
+            self.assertFalse(hasattr(exact_module, canary_name))
+            rebuilt = generator._build_manifest_from_snapshot(
+                self.snapshot, exact_module
+            )
+            self.assertEqual(self.manifest, rebuilt)
+        finally:
+            if previous_cache is None:
+                cache_path.unlink(missing_ok=True)
+                if not cache_directory_existed:
+                    try:
+                        cache_path.parent.rmdir()
+                    except OSError:
+                        pass
+            else:
+                cache_path.write_bytes(previous_cache)
+
+        self.assertEqual("", _git("status", "--porcelain=v1", "--untracked-files=all"))
+
     def test_configuration_lists_key_names_without_values(self) -> None:
         configuration = self.manifest["configuration"]
         self.assertEqual("KEY_NAMES_ONLY", configuration["classification"])
-        self.assertIn("ConnectionStrings:GoymenErp", configuration["backendKeys"])
-        self.assertIn("DB_CONNECTION_STRING", configuration["backendKeys"])
-        self.assertIn("Documents:ObjectStore:RootPath", configuration["backendKeys"])
+        self.assertTrue(
+            {
+                "Authentication",
+                "BootstrapIdentity",
+                "ConnectionStrings:GoymenErp",
+                "DatabaseStartup:Mode",
+                "DB_CONNECTION_STRING",
+                "Documents:ObjectStore:RootPath",
+                "IdentitySeed",
+                "OrganizationSeed",
+            }.issubset(configuration["backendKeys"])
+        )
         self.assertEqual(
             ["VITE_API_BASE_URL", "VITE_BOOTSTRAP_IDENTITY_ENABLED", "VITE_DEV_USER"],
             configuration["frontendKeys"],
@@ -110,9 +190,23 @@ class ReleaseManifestTests(unittest.TestCase):
             "company-a-user",
             "http://localhost:5173",
             "DevelopmentBootstrap",
+            "goymen-erp-api",
+            "https://openapi.invalid",
             "Şirket A Geliştirme Kullanıcısı",
         ):
             self.assertNotIn(value, encoded)
+
+    def test_configuration_constant_recognizer_stays_key_name_only(self) -> None:
+        source = """
+            internal const string ConfigurationKey = "DatabaseStartup:Mode";
+            public const string SectionName = "IdentitySeed";
+            private const string EvidenceConfigurationKey = "Evidence:Enabled";
+            private const string ArbitraryValue = "DO_NOT_INVENTORY";
+        """
+        self.assertEqual(
+            ["DatabaseStartup:Mode", "IdentitySeed", "Evidence:Enabled"],
+            generator.CONFIG_CONSTANT_PATTERN.findall(source),
+        )
 
     def test_environment_secret_canary_is_never_read_or_emitted(self) -> None:
         canary = "R02_SECRET_CANARY_9f0ca61a"
@@ -248,6 +342,7 @@ class ReleaseManifestTests(unittest.TestCase):
             elif isinstance(node, ast.ImportFrom) and node.module:
                 imported.add(node.module.split(".", 1)[0])
         self.assertEqual(set(), imported - allowed)
+        self.assertNotIn("importlib", imported)
 
 
 if __name__ == "__main__":
