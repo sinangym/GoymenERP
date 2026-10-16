@@ -50,15 +50,12 @@ public sealed record ColdRollingPassLine
             throw new ArgumentOutOfRangeException(parameterName, value, "Paso ölçüsü pozitif olmalıdır.");
         }
 
-        if (DecimalScale(value) > 3)
+        if (decimal.Round(value, 3) != value)
         {
             throw new ArgumentOutOfRangeException(parameterName, value,
                 "Paso ölçüsü en çok üç ondalık taşımalıdır.");
         }
     }
-
-    private static int DecimalScale(decimal value) =>
-        (decimal.GetBits(value)[3] >> 16) & 0x7F;
 }
 
 /// <summary>

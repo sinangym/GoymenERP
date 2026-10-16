@@ -101,6 +101,25 @@ public sealed class ColdRollingEngineV2Tests
     }
 
     [Fact]
+    public void Decimal_materialization_uses_ties_to_even_and_refuses_below_the_nonzero_floor()
+    {
+        var pass = Spec(Line(FirstLine, 0,
+            2_000_000_000_000m,
+            1_000_000_000_000m,
+            1_000_000_000_000m,
+            1_000_000_000_000m));
+
+        var onePointFive = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(0.003m, 10_000_000m, pass));
+        var twoPointFive = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(0.005m, 10_000_000m, pass));
+        var belowFloor = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(0.001m, 10_000_000m, pass));
+
+        Assert.Equal(0.0000000000000000000000000002m, onePointFive.Value!.Lines.Single().InputMetres);
+        Assert.Equal(0.0000000000000000000000000002m, twoPointFive.Value!.Lines.Single().InputMetres);
+        Assert.Equal(EngineOutcome.Refused, belowFloor.Outcome);
+        Assert.Equal(EngineCodes.ArithmeticUnrepresentable, belowFloor.RefusalCode);
+    }
+
+    [Fact]
     public void Unrepresentable_arithmetic_is_a_stable_refusal_and_never_throws()
     {
         var overflow = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(
@@ -159,6 +178,17 @@ public sealed class ColdRollingEngineV2Tests
 
         Assert.Equal((EngineOutcome.Refused, EngineCodes.PrecisionExceeded, "wipKg"),
             (result.Outcome, result.RefusalCode, result.RefusedParameter));
+    }
+
+    [Fact]
+    public void Representation_only_trailing_zeroes_do_not_add_fractional_precision()
+    {
+        var pass = Spec(Line(FirstLine, 0, 2.0000m, 1000.0000m, 1.0000m, 1000.0000m));
+
+        var result = ColdRollingEngineV2.Roll(new ColdRollingPassInputV2(12000.0000m, 8000m, pass));
+
+        Assert.Equal(EngineOutcome.Computed, result.Outcome);
+        Assert.Equal(750m, result.Value!.Lines.Single().InputMetres);
     }
 
     [Theory]

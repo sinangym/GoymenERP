@@ -34,7 +34,8 @@ public sealed record ColdRollingPassResultV2(
 /// <summary>
 /// Pure multi-pass cold-rolling calculator selected by D-M014=A. Every pass uses the same explicit WIP
 /// mass and density. No loss, scrap, speed, force, tolerance, setup, quality or machine default exists.
-/// All decimal results are unrounded.
+/// No business rounding or tolerance is applied. Exact rational formula results are materialized as CLR
+/// decimals using deterministic round-to-nearest, ties-to-even; values outside the non-zero decimal range refuse.
 /// </summary>
 public static class ColdRollingEngineV2
 {
@@ -71,7 +72,7 @@ public static class ColdRollingEngineV2
                 return EngineResult<ColdRollingPassResultV2>.Refused(EngineCodes.ValueNotPositive, "wipKg");
             }
 
-            if (DecimalScale(wipKg) > 3)
+            if (decimal.Round(wipKg, 3) != wipKg)
             {
                 return EngineResult<ColdRollingPassResultV2>.Refused(EngineCodes.PrecisionExceeded, "wipKg");
             }
@@ -213,7 +214,4 @@ public static class ColdRollingEngineV2
         numerator *= coefficient;
         denominator *= BigInteger.Pow(10, scale);
     }
-
-    private static int DecimalScale(decimal value) =>
-        (decimal.GetBits(value)[3] >> 16) & 0x7F;
 }
