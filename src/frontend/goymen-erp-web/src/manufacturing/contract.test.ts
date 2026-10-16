@@ -487,6 +487,68 @@ describe('decodePlan', () => {
     }))?.inputs[0].technicalSnapshot).toMatchObject({ thicknessMm: '2.001', effectiveOn: '2024-02-29' })
   })
 
+  it('keeps the captured nominal length as the exact server text and an explicit null as absence', () => {
+    const decode = (lengthMm: unknown) => decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot({ lengthMm }) }],
+    }))?.inputs[0].technicalSnapshot
+
+    expect(decode('2500.125')?.lengthMm).toBe('2500.125')
+    expect(decode('6000')?.lengthMm).toBe('6000')
+    expect(decode('0.001')?.lengthMm).toBe('0.001')
+    // Null stays null: not 0, not a cut-line length, not the current Product card.
+    expect(decode(null)?.lengthMm).toBeNull()
+    expect(decode(null)).toMatchObject({ thicknessMm: '2', widthMm: '1500', lengthMm: null })
+  })
+
+  it('does not take the nominal length from the cut lines of the same plan', () => {
+    const decoded = decodePlan(plan({
+      process: 'CutToLength',
+      cutToLengthSpec: cutToLengthSpec(),
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot() }],
+    }))
+
+    expect(decoded?.cutToLengthSpec?.lines[0].lengthMm).toBe(cutToLengthSpec().lines[0].lengthMm)
+    expect(decoded?.inputs[0].technicalSnapshot?.lengthMm).toBeNull()
+  })
+
+  it('fails closed on a snapshot without the required lengthMm key', () => {
+    const { lengthMm: _omitted, ...withoutLength } = technicalSnapshot()
+    expect(decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: withoutLength }],
+    }))).toBeNull()
+  })
+
+  it.each([
+    ['a JSON number', 2500.125],
+    ['a boolean', true],
+    ['an object', { value: '2500.125' }],
+    ['an empty text', ''],
+    ['a decimal comma', '2500,125'],
+    ['a fourth fraction digit', '2500.1255'],
+    ['a trailing fraction zero', '2500.120'],
+    ['a leading zero', '02500'],
+    ['a sign', '-2500'],
+    ['a plus sign', '+2500'],
+    ['zero', '0'],
+    ['surrounding whitespace', ' 2500 '],
+    ['a unit suffix', '2500 mm'],
+    ['an exponent', '2.5e3'],
+  ])('fails closed on a nominal length that is %s', (_, lengthMm) => {
+    expect(decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot({ lengthMm }) }],
+    }))).toBeNull()
+  })
+
+  it('fails closed on an extra snapshot key next to lengthMm', () => {
+    expect(decodePlan(plan({
+      inputs: [{
+        parentRollId: ROLL_1,
+        plannedKg: '1000.125',
+        technicalSnapshot: { ...technicalSnapshot({ lengthMm: '2500.125' }), nominalLengthMm: '2500.125' },
+      }],
+    }))).toBeNull()
+  })
+
   it.each([
     ['a real fourth decimal', technicalSnapshot({ thicknessMm: '2.0001' })],
     ['a real fourth decimal in width', technicalSnapshot({ widthMm: '1500.0001' })],
