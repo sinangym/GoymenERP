@@ -326,6 +326,25 @@ public sealed class TechnicalPdfGeneratorTests
             AssertNoHostIdentifiers(pdf, content, "private-catalog-canary-2a74"));
     }
 
+    [Theory]
+    [InlineData("page-comment")]
+    [InlineData("cmap-comment")]
+    [InlineData("page-array-comment")]
+    [InlineData("cmap-dictionary-comment")]
+    [InlineData("page-unused-string")]
+    [InlineData("cmap-unused-string")]
+    [InlineData("catalog-name")]
+    [InlineData("outer-comment")]
+    public void Pdf_privacy_guard_rejects_nonvisible_host_payloads(string channel)
+    {
+        const string marker = "private-host-canary-9b73";
+        var content = CreateNonvisiblePrivacyProbe(channel, marker);
+        using var pdf = PdfDocument.Open(content);
+        Assert.DoesNotContain(marker, Assert.Single(pdf.GetPages()).Text, StringComparison.Ordinal);
+
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, marker));
+    }
+
     [Fact]
     public void Vendored_noto_sans_regular_hash_is_locked()
     {
@@ -473,12 +492,14 @@ public sealed class TechnicalPdfGeneratorTests
     {
         using var input = new MemoryStream(content, writable: false);
         using var structure = PdfSharp.Pdf.IO.PdfReader.Open(input, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);
-        AssertSupportedPrivacyPayloads(structure);
+        var streamSurfaces = InspectSupportedPrivacyPayloads(structure).ToArray();
         // Inspect literal strings throughout the document, not only trailer /Info.
         // Structural names are not strings; font binary bytes remain exactly vendor-locked.
         var surfaces = pdf.GetPages().Select(page => page.Text)
             .Concat(DecodedMetadataValues(pdf.Information.DocumentInformationDictionary))
-            .Concat(structure.Internals.GetAllObjects().SelectMany(DecodedObjectStrings)).ToArray();
+            .Concat(structure.Internals.GetAllObjects().SelectMany(DecodedObjectStrings))
+            .Concat(streamSurfaces)
+            .Concat(DecodedSyntaxStrings(content, isDocument: true)).ToArray();
         foreach (var identifier in identifiers)
         {
             Assert.NotEmpty(identifier);
@@ -489,9 +510,10 @@ public sealed class TechnicalPdfGeneratorTests
         }
     }
 
-    private static void AssertSupportedPrivacyPayloads(PdfSharp.Pdf.PdfDocument document)
+    private static IEnumerable<string> InspectSupportedPrivacyPayloads(PdfSharp.Pdf.PdfDocument document)
     {
         var supportedStreams = new HashSet<PdfSharp.Pdf.PdfDictionary>();
+        var lockedFontStreams = new HashSet<PdfSharp.Pdf.PdfDictionary>();
         var expectedFont = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "Fonts", "NotoSans-Regular.ttf"));
         foreach (var page in document.Pages)
         {
@@ -513,6 +535,7 @@ public sealed class TechnicalPdfGeneratorTests
                     Assert.NotNull(binaryFont.Stream);
                     Assert.Equal(expectedFont, binaryFont.Stream.UnfilteredValue);
                     supportedStreams.Add(binaryFont);
+                    lockedFontStreams.Add(binaryFont);
                 }
             }
         }
@@ -523,6 +546,13 @@ public sealed class TechnicalPdfGeneratorTests
             if (dictionary.Stream is not null)
             {
                 Assert.Contains(dictionary, supportedStreams);
+                if (!lockedFontStreams.Contains(dictionary))
+                {
+                    foreach (var surface in DecodedSyntaxStrings(dictionary.Stream.UnfilteredValue))
+                    {
+                        yield return surface;
+                    }
+                }
             }
         }
     }
@@ -538,9 +568,21 @@ public sealed class TechnicalPdfGeneratorTests
                 yield return textObject.Value;
                 yield break;
             case PdfSharp.Pdf.PdfDictionary dictionary:
-                foreach (var value in dictionary.Elements.Values.SelectMany(DecodedObjectStrings))
+                foreach (var key in dictionary.Elements.Keys)
                 {
-                    yield return value;
+                    if (key is not "/CIDSystemInfo" and not "/CIDToGIDMap")
+                    {
+                        yield return key;
+                    }
+                    var itemValue = dictionary.Elements[key];
+                    if (key == "/Subtype" && itemValue is PdfSharp.Pdf.PdfName { Value: "/CIDFontType2" })
+                    {
+                        continue;
+                    }
+                    foreach (var value in DecodedObjectStrings(itemValue))
+                    {
+                        yield return value;
+                    }
                 }
                 yield break;
             case PdfSharp.Pdf.PdfArray array:
@@ -549,10 +591,14 @@ public sealed class TechnicalPdfGeneratorTests
                     yield return value;
                 }
                 yield break;
-            // Every indirect object is visited separately; names and numeric primitives are structural.
+            case PdfSharp.Pdf.PdfName name:
+                yield return name.Value;
+                yield break;
+            case PdfSharp.Pdf.PdfNameObject nameObject:
+                yield return nameObject.Value;
+                yield break;
+            // Every indirect object is visited separately; numeric primitives are structural.
             case PdfSharp.Pdf.Advanced.PdfReference:
-            case PdfSharp.Pdf.PdfName:
-            case PdfSharp.Pdf.PdfNameObject:
             case PdfSharp.Pdf.PdfBoolean:
             case PdfSharp.Pdf.PdfBooleanObject:
             case PdfSharp.Pdf.PdfInteger:
@@ -566,6 +612,101 @@ public sealed class TechnicalPdfGeneratorTests
                 yield break;
             default:
                 throw new InvalidOperationException("An uninspected PDF payload cannot be ignored.");
+        }
+    }
+
+    private static IEnumerable<string> DecodedSyntaxStrings(
+        ReadOnlyMemory<byte> content, bool isDocument = false, int depth = 0)
+    {
+        Assert.InRange(depth, 0, 64);
+        using var input = new UglyToad.PdfPig.Core.MemoryInputBytes(content);
+        var scanner = new UglyToad.PdfPig.Tokenization.Scanner.CoreTokenScanner(
+            input, usePdfDocEncoding: true, new UglyToad.PdfPig.Core.StackDepthGuard(64));
+        IToken? previous = null;
+        while (scanner.MoveNext())
+        {
+            var token = scanner.CurrentToken;
+            if (isDocument && token is OperatorToken { Data: "stream" })
+            {
+                // Parse outer comments without interpreting binary stream bytes as PDF tokens.
+                // Every stream is separately identified/decoded above; only the vendor-pinned
+                // font binary is exempt from payload inspection. Indirect lengths fail closed.
+                var dictionary = Assert.IsType<DictionaryToken>(previous);
+                var length = Assert.IsType<NumericToken>(dictionary.Data[NameToken.Create("Length")]);
+                Assert.False(length.HasDecimalPlaces);
+                Assert.True(double.IsFinite(length.Double));
+                Assert.InRange(length.Double, 0, content.Length);
+                Assert.Equal(Math.Truncate(length.Double), length.Double);
+                var start = checked((int)scanner.CurrentTokenStart + "stream".Length);
+                if (content.Span[start] == (byte)'\r')
+                {
+                    start++;
+                }
+                Assert.Equal((byte)'\n', content.Span[start]);
+                start++;
+                var finish = checked(start + (int)length.Long);
+                Assert.InRange(finish, start, content.Length);
+                scanner.Seek(finish);
+                scanner.ClearPreReadByte();
+                Assert.True(scanner.MoveNext());
+                Assert.Equal("endstream", Assert.IsType<OperatorToken>(scanner.CurrentToken).Data);
+                previous = scanner.CurrentToken;
+                continue;
+            }
+            if (token is ArrayToken or DictionaryToken)
+            {
+                var start = checked((int)scanner.CurrentTokenStart);
+                var finish = checked((int)scanner.CurrentPosition);
+                var delimiter = token is ArrayToken ? 1 : 2;
+                var opening = token is ArrayToken ? (byte)'[' : (byte)'<';
+                var closing = token is ArrayToken ? (byte)']' : (byte)'>';
+                Assert.InRange(finish, start + 2 * delimiter, content.Length);
+                for (var index = 0; index < delimiter; index++)
+                {
+                    Assert.Equal(opening, content.Span[start + index]);
+                    Assert.Equal(closing, content.Span[finish - 1 - index]);
+                }
+                // Container tokenizers discard comments. Rescan the bounded original body
+                // so comments at every nesting level remain visible to the privacy guard.
+                foreach (var value in DecodedSyntaxStrings(
+                    content.Slice(start + delimiter, finish - start - 2 * delimiter), depth: depth + 1))
+                {
+                    yield return value;
+                }
+            }
+            else
+            {
+                switch (token)
+                {
+                    case StringToken text:
+                        yield return text.Data;
+                        break;
+                    case HexToken hex:
+                        yield return hex.Data;
+                        break;
+                    case CommentToken comment:
+                        yield return comment.Data;
+                        break;
+                    case NameToken name:
+                        // Exact PDF/CMap grammar names, never arbitrary names or comments.
+                        if (name.Data is not "CIDInit" and not "CIDSystemInfo" and not "CIDToGIDMap" and not "CIDFontType2")
+                        {
+                            yield return name.Data;
+                        }
+                        break;
+                    case OperatorToken operation:
+                        yield return operation.Data;
+                        break;
+                    case NumericToken:
+                    case BooleanToken:
+                    case NullToken:
+                    case EndOfLineToken:
+                        break;
+                    default:
+                        throw new InvalidOperationException("An uninspected PDF syntax token cannot be ignored.");
+                }
+            }
+            previous = token;
         }
     }
 
@@ -600,6 +741,50 @@ public sealed class TechnicalPdfGeneratorTests
             default:
                 throw new InvalidOperationException("Unresolved or unsupported PDF metadata cannot be ignored.");
         }
+    }
+
+    private static byte[] CreateNonvisiblePrivacyProbe(string channel, string marker)
+    {
+        var content = CreatePrivacyProbePdf();
+        if (channel == "outer-comment")
+        {
+            return content.Concat(Encoding.ASCII.GetBytes($"\n% {marker}\n")).ToArray();
+        }
+        using var input = new MemoryStream(content, writable: false);
+        using var document = PdfSharp.Pdf.IO.PdfReader.Open(input, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Modify);
+        if (channel == "catalog-name")
+        {
+            document.Internals.Catalog.Elements["/LocalHostPayload"] = new PdfSharp.Pdf.PdfName("/" + marker);
+        }
+        else
+        {
+            var page = document.Pages[0];
+            PdfSharp.Pdf.PdfDictionary stream;
+            if (channel.StartsWith("page-", StringComparison.Ordinal))
+            {
+                stream = Assert.IsAssignableFrom<PdfSharp.Pdf.PdfDictionary>(page.Contents.Elements.GetDictionary(0));
+            }
+            else
+            {
+                var fonts = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(page.Resources.Elements.GetDictionary("/Font"));
+                var font = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(fonts.Elements.GetDictionary(fonts.Elements.Keys.First()));
+                stream = Assert.IsType<PdfSharp.Pdf.PdfDictionary>(font.Elements.GetDictionary("/ToUnicode"));
+            }
+            var suffix = channel.EndsWith("array-comment", StringComparison.Ordinal)
+                ? $"\n[ % {marker}\n ]\n"
+                : channel.EndsWith("dictionary-comment", StringComparison.Ordinal)
+                    ? $"\n<< % {marker}\n >>\n"
+                    : channel.EndsWith("unused-string", StringComparison.Ordinal)
+                        ? $"\n({marker})\n"
+                        : $"\n% {marker}\n";
+            var decoded = stream.Stream.UnfilteredValue;
+            stream.Elements.Remove("/Filter");
+            stream.Elements.Remove("/DecodeParms");
+            stream.Stream.Value = decoded.Concat(Encoding.ASCII.GetBytes(suffix)).ToArray();
+        }
+        using var output = new MemoryStream();
+        document.Save(output, closeStream: false);
+        return output.ToArray();
     }
 
     private static byte[] CreateExtraPayloadPrivacyProbe(string marker, bool onPage, bool literal)
