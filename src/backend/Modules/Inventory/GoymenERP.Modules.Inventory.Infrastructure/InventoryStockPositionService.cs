@@ -319,8 +319,7 @@ internal sealed class InventoryStockPositionService(
         var activeQualityHold = record.ActivePhysicalHolds.Count > 0;
         if (activeQualityHold)
         {
-            if (free != 0m || blocked != physical
-                || record.ActivePhysicalHolds.Any(hold =>
+            if (record.ActivePhysicalHolds.Any(hold =>
                     hold.OwnerKind != InventoryStore.QualityPhysicalHoldOwner
                     || hold.SourceKind != InventoryPhysicalHoldTokensV1.QualityInspectionSource
                     || hold.SourceId == Guid.Empty
@@ -331,16 +330,10 @@ internal sealed class InventoryStockPositionService(
                     || hold.LocationId != place.LocationId
                     || hold.ProductId != label.ProductId
                     || hold.QuantityKg != physical)
-                || allocated > physical)
+                || allocated != free || blocked != physical - allocated)
             {
                 throw Error(503, InventoryStockPositionCodesV1.Unavailable);
             }
-
-            // A whole-label Quality hold and an earlier physical allocation are overlapping restrictions,
-            // not two kilograms to subtract. Keep the public components mutually exclusive: allocation wins
-            // its reserved part, the remaining physical kilograms stay blocked, and nothing is available.
-            free = allocated;
-            blocked = physical - allocated;
         }
         else if (allocated > free)
         {

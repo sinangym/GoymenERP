@@ -310,6 +310,12 @@ public sealed class InventoryManufacturingRealizationParticipant
         {
             throw Refused(409, InventoryManufacturingRealizationCodesV1.ParentLabelNotReleasable);
         }
+        if (requireReleasable && await context.PhysicalHolds.AsNoTracking().AnyAsync(
+                hold => hold.LabelId == row.Id && hold.Status == InventoryStore.PhysicalHoldActive,
+                cancellationToken))
+        {
+            throw Refused(409, InventoryManufacturingRealizationCodesV1.ParentLabelNotReleasable);
+        }
 
         return new ParentLabel(row, label);
     }

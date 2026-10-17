@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
+using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.Movements;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
@@ -78,44 +79,53 @@ public sealed partial class InventoryStore : IInventoryPhysicalHoldWriterV1
             .Where(row => row.LabelId == label.Id && row.Status == PhysicalHoldActive)
             .ToListAsync(cancellationToken);
 
-        BalanceRow physical;
+        var physical = PhysicalBalances(balances);
         Guid? movementId = null;
         if (activeHolds.Count == 0)
         {
-            if (balances.Any(row => row.Block == (int)BlockState.Blocked))
+            if (physical.BlockedKg > 0m)
             {
                 throw HoldError(409, InventoryPhysicalHoldCodesV1.LegacyBlockedAmbiguous);
             }
-            physical = SinglePhysicalBalance(balances, BlockState.Free);
-            var free = StoredPosition(physical, label);
-            var movement = new StockMovement(
-                request.HoldId,
-                companyId,
-                StockMovementKind.Block,
-                timeProvider.GetUtcNow(),
-                new StockSourceReference(QualityHoldMovementSource, request.InspectionId),
-                [
-                    new StockMovementLine(free, StockDirection.Out, Kilograms.Positive(physical.QuantityKg)),
-                    new StockMovementLine(free.WithBlock(BlockState.Blocked), StockDirection.In,
-                        Kilograms.Positive(physical.QuantityKg)),
-                ]);
-            try
+            var allocatedKg = await ActiveAllocationKgAsync(physical.Template, cancellationToken);
+            if (allocatedKg < 0m || allocatedKg > physical.FreeKg)
             {
-                await StageMovementAsync(movement, metadata, recordAudit: true, cancellationToken);
+                throw HoldError(503, InventoryPhysicalHoldCodesV1.Unavailable);
             }
-            catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+
+            var availableKg = physical.FreeKg - allocatedKg;
+            if (availableKg > 0m)
             {
-                throw HoldError(409, InventoryPhysicalHoldCodesV1.ConcurrentChange, exception);
+                var free = StoredPosition(physical.Free!, label);
+                var movement = new StockMovement(
+                    request.HoldId,
+                    companyId,
+                    StockMovementKind.Block,
+                    timeProvider.GetUtcNow(),
+                    new StockSourceReference(QualityHoldMovementSource, request.InspectionId),
+                    [
+                        new StockMovementLine(free, StockDirection.Out, Kilograms.Positive(availableKg)),
+                        new StockMovementLine(free.WithBlock(BlockState.Blocked), StockDirection.In,
+                            Kilograms.Positive(availableKg)),
+                    ]);
+                try
+                {
+                    await StageMovementAsync(movement, metadata, recordAudit: true, cancellationToken);
+                }
+                catch (InventoryStoreException exception) when (exception.Code == InventoryStoreCodes.ConcurrentChange)
+                {
+                    throw HoldError(409, InventoryPhysicalHoldCodesV1.ConcurrentChange, exception);
+                }
+                movementId = movement.Id;
             }
-            movementId = movement.Id;
         }
         else
         {
-            physical = SinglePhysicalBalance(balances, BlockState.Blocked);
             if (activeHolds.Any(row => !SamePhysical(row, physical)))
             {
                 throw HoldError(503, InventoryPhysicalHoldCodesV1.Unavailable);
             }
+            await RequireHeldBalanceAsync(physical, cancellationToken);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -135,13 +145,13 @@ public sealed partial class InventoryStore : IInventoryPhysicalHoldWriterV1
             OwnerKind = QualityPhysicalHoldOwner,
             SourceKind = InventoryPhysicalHoldTokensV1.QualityInspectionSource,
             SourceId = request.InspectionId,
-            PositionOwnerKind = physical.OwnerKind,
-            PositionOwnerId = physical.OwnerId,
-            CustodianKind = physical.CustodianKind,
-            CustodianId = physical.CustodianId,
-            LocationId = physical.LocationId,
-            ProductId = physical.ProductId,
-            QuantityKg = physical.QuantityKg,
+            PositionOwnerKind = physical.Template.OwnerKind,
+            PositionOwnerId = physical.Template.OwnerId,
+            CustodianKind = physical.Template.CustodianKind,
+            CustodianId = physical.Template.CustodianId,
+            LocationId = physical.Template.LocationId,
+            ProductId = physical.Template.ProductId,
+            QuantityKg = physical.TotalKg,
             Reason = parsed.Reason,
             ExpiresAtUtc = request.ExpiresAtUtc,
             Status = PhysicalHoldActive,
@@ -246,19 +256,20 @@ public sealed partial class InventoryStore : IInventoryPhysicalHoldWriterV1
         }
 
         var balances = await PositiveBalancesAsync(label.Id, cancellationToken);
-        var blocked = SinglePhysicalBalance(balances, BlockState.Blocked);
-        if (!SamePhysical(row, blocked))
+        var physical = PhysicalBalances(balances);
+        if (!SamePhysical(row, physical))
         {
             throw HoldError(503, InventoryPhysicalHoldCodesV1.Unavailable);
         }
+        await RequireHeldBalanceAsync(physical, cancellationToken);
         var hasOtherActiveHold = await dbContext.PhysicalHolds.AsNoTracking()
             .AnyAsync(candidate => candidate.LabelId == row.LabelId && candidate.Id != row.Id
                 && candidate.Status == PhysicalHoldActive, cancellationToken);
 
         Guid? releaseMovementId = null;
-        if (!hasOtherActiveHold)
+        if (!hasOtherActiveHold && physical.BlockedKg > 0m)
         {
-            var blockedPosition = StoredPosition(blocked, label);
+            var blockedPosition = StoredPosition(physical.Blocked!, label);
             var movement = new StockMovement(
                 request.DispositionId,
                 companyId,
@@ -266,9 +277,9 @@ public sealed partial class InventoryStore : IInventoryPhysicalHoldWriterV1
                 timeProvider.GetUtcNow(),
                 new StockSourceReference(QualityReleaseMovementSource, request.DispositionId),
                 [
-                    new StockMovementLine(blockedPosition, StockDirection.Out, Kilograms.Positive(blocked.QuantityKg)),
+                    new StockMovementLine(blockedPosition, StockDirection.Out, Kilograms.Positive(physical.BlockedKg)),
                     new StockMovementLine(blockedPosition.WithBlock(BlockState.Free), StockDirection.In,
-                        Kilograms.Positive(blocked.QuantityKg)),
+                        Kilograms.Positive(physical.BlockedKg)),
                 ]);
             try
             {
@@ -393,25 +404,67 @@ public sealed partial class InventoryStore : IInventoryPhysicalHoldWriterV1
             .Where(row => row.LabelId == labelId && row.QuantityKg > 0m)
             .ToListAsync(cancellationToken);
 
-    private static BalanceRow SinglePhysicalBalance(IReadOnlyCollection<BalanceRow> balances, BlockState expected)
+    private async Task<decimal> ActiveAllocationKgAsync(BalanceRow position, CancellationToken cancellationToken) =>
+        await dbContext.Allocations.AsNoTracking()
+            .Where(row => row.LabelId == position.LabelId
+                && row.OwnerKind == position.OwnerKind && row.OwnerId == position.OwnerId
+                && row.CustodianKind == position.CustodianKind && row.CustodianId == position.CustodianId
+                && row.LocationId == position.LocationId && row.Block == (int)BlockState.Free
+                && row.Status == (int)StockAllocationStatus.Active)
+            .SumAsync(row => (decimal?)row.RemainingKg, cancellationToken) ?? 0m;
+
+    private async Task RequireHeldBalanceAsync(PhysicalBalance physical, CancellationToken cancellationToken)
     {
-        if (balances.Count != 1 || balances.Single().Block != (int)expected)
+        var allocatedKg = await ActiveAllocationKgAsync(physical.Template, cancellationToken);
+        if (allocatedKg != physical.FreeKg || physical.BlockedKg != physical.TotalKg - allocatedKg)
+        {
+            throw HoldError(503, InventoryPhysicalHoldCodesV1.Unavailable);
+        }
+    }
+
+    private static PhysicalBalance PhysicalBalances(IReadOnlyCollection<BalanceRow> balances)
+    {
+        if (balances.Count == 0
+            || balances.Any(row => row.Block != (int)BlockState.Free && row.Block != (int)BlockState.Blocked)
+            || balances.GroupBy(row => row.Block).Any(group => group.Count() != 1))
         {
             throw HoldError(409, InventoryPhysicalHoldCodesV1.PositionConflict);
         }
-        return balances.Single();
+
+        var template = balances.First();
+        if (balances.Any(row => row.LabelId != template.LabelId
+                || row.OwnerKind != template.OwnerKind || row.OwnerId != template.OwnerId
+                || row.CustodianKind != template.CustodianKind || row.CustodianId != template.CustodianId
+                || row.LocationId != template.LocationId || row.ProductId != template.ProductId))
+        {
+            throw HoldError(409, InventoryPhysicalHoldCodesV1.PositionConflict);
+        }
+
+        var free = balances.SingleOrDefault(row => row.Block == (int)BlockState.Free);
+        var blocked = balances.SingleOrDefault(row => row.Block == (int)BlockState.Blocked);
+        return new PhysicalBalance(template, free, blocked, free?.QuantityKg ?? 0m, blocked?.QuantityKg ?? 0m);
     }
 
-    private static bool SamePhysical(InventoryPhysicalHoldRow hold, BalanceRow balance) =>
-        hold.LabelId == balance.LabelId
-        && hold.PositionOwnerKind == balance.OwnerKind && hold.PositionOwnerId == balance.OwnerId
-        && hold.CustodianKind == balance.CustodianKind && hold.CustodianId == balance.CustodianId
-        && hold.LocationId == balance.LocationId && hold.ProductId == balance.ProductId
-        && hold.QuantityKg == balance.QuantityKg;
+    private static bool SamePhysical(InventoryPhysicalHoldRow hold, PhysicalBalance balance) =>
+        hold.LabelId == balance.Template.LabelId
+        && hold.PositionOwnerKind == balance.Template.OwnerKind && hold.PositionOwnerId == balance.Template.OwnerId
+        && hold.CustodianKind == balance.Template.CustodianKind && hold.CustodianId == balance.Template.CustodianId
+        && hold.LocationId == balance.Template.LocationId && hold.ProductId == balance.Template.ProductId
+        && hold.QuantityKg == balance.TotalKg;
 
     private static StockPosition StoredPosition(BalanceRow balance, LabelRow label) =>
         Position(balance.CompanyId, balance.OwnerKind, balance.OwnerId, balance.CustodianKind, balance.CustodianId,
             balance.LocationId, IdentityOnly(label), balance.Block);
+
+    private sealed record PhysicalBalance(
+        BalanceRow Template,
+        BalanceRow? Free,
+        BalanceRow? Blocked,
+        decimal FreeKg,
+        decimal BlockedKg)
+    {
+        public decimal TotalKg => FreeKg + BlockedKg;
+    }
 
     private static InventoryPhysicalHoldViewV1 PhysicalHoldView(InventoryPhysicalHoldRow row, long labelVersion) => new(
         row.Id,

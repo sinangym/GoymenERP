@@ -169,6 +169,51 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Active_quality_hold_refuses_allocation_release_without_any_effect_on_real_SQL()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-HOLD-RELEASE", 30m);
+        var create = AllocationRequest(source, "30");
+        InventoryPhysicalAllocationResultV1 allocation;
+        await using (var scope = run.Store(CompanyA))
+        {
+            allocation = await scope.Store.CreateAsync(create, Metadata(run));
+        }
+
+        await PlaceAsync(run,
+            new(Guid.NewGuid(), source.LabelId, Version(await LabelVersionAsync(run, source.LabelId)), Guid.NewGuid(),
+                "SENTETIK tahsis release engeli", null),
+            HoldMetadata(run, "allocation-release-hold-maker", "allocation-release-hold-place"));
+
+        var before = (
+            Effects: await AllocationEffectCountsAsync(run),
+            Movements: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            Allocation: await run.ScalarAsync<string>(
+                "SELECT CONCAT(Version, N'|', Status, N'|', RemainingKg) FROM inventory.Allocations WHERE Id = @id",
+                ("@id", allocation.Allocation.AllocationId)),
+            LabelVersion: await LabelVersionAsync(run, source.LabelId));
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<InventoryAllocationException>(() => scope.Store.ReleaseAsync(
+                allocation.Allocation.AllocationId,
+                new ReleasePhysicalAllocationV1(allocation.Allocation.Version, "SENTETIK hold altında release denemesi"),
+                Metadata(run)));
+            Assert.Equal((409, InventoryAllocationCodesV1.AllocationStateConflict),
+                (refused.Status, refused.Code));
+        }
+
+        var after = (
+            Effects: await AllocationEffectCountsAsync(run),
+            Movements: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            Allocation: await run.ScalarAsync<string>(
+                "SELECT CONCAT(Version, N'|', Status, N'|', RemainingKg) FROM inventory.Allocations WHERE Id = @id",
+                ("@id", allocation.Allocation.AllocationId)),
+            LabelVersion: await LabelVersionAsync(run, source.LabelId));
+        Assert.Equal(before, after);
+    }
+
+    [SqlServerFact]
     public async Task Physical_sales_allocation_refuses_over_allocation_stale_and_foreign_sources_without_effect()
     {
         await using var run = await Run.StartAsync();
@@ -527,6 +572,39 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(auditCount, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
         Assert.Equal(1L, await run.ScalarAsync<long>(
             "SELECT Version FROM inventory.Allocations WHERE Id = @id", ("@id", rollbackState.AllocationId)));
+    }
+
+    [SqlServerFact]
+    public async Task Active_quality_hold_refuses_definite_shipment_before_any_effect_after_fresh_reload()
+    {
+        await using var run = await Run.StartAsync();
+        var state = await SeedAllocationAsync(run, "SYN-LOG5-QUALITY-HOLD");
+        await PlaceAsync(run,
+            new(Guid.NewGuid(), state.LabelId, Version(state.LabelVersion), Guid.NewGuid(),
+                "SENTETIK sevkiyat kalite hold", null),
+            HoldMetadata(run, "shipment-hold-maker", "shipment-hold-place"));
+        state = state with { LabelVersion = await LabelVersionAsync(run, state.LabelId) };
+        var before = await SnapshotShipmentEffectsAsync(run, state, state);
+
+        foreach (var operation in new[] { "first", "reload" })
+        {
+            await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await using var participant = await InventoryDefiniteShipmentParticipant.EnlistAsync(connection, transaction,
+                CompanyA, Settings(run, CompanyA));
+            var refused = await Assert.ThrowsAsync<InventoryDefiniteShipmentException>(() => participant.StageAsync(
+                Request(state, "5"), Metadata(run) with
+                {
+                    IdempotencyKey = $"shipment-quality-hold-{operation}-{Guid.NewGuid():N}",
+                    CorrelationId = $"shipment-quality-hold-{operation}-{Guid.NewGuid():N}",
+                }));
+            Assert.Equal((409, InventoryDefiniteShipmentCodesV1.LabelNotReleasable),
+                (refused.Status, refused.Code));
+            await transaction.RollbackAsync();
+        }
+
+        Assert.Equal(before, await SnapshotShipmentEffectsAsync(run, state, state));
     }
 
     [SqlServerFact]

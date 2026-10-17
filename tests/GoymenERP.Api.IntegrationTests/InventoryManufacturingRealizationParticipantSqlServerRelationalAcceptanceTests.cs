@@ -289,6 +289,55 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Active_quality_hold_refuses_manufacturing_input_before_any_effect_after_fresh_reload()
+    {
+        await using var run = await Run.StartAsync();
+        var parent = await SeedManufacturingParentAsync(run, "SYN-MFG-PARENT-QUALITY-HOLD", 20m);
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.CreateAsync(AllocationRequest(
+                new PhysicalSource(parent.Label.Id, parent.Label.ProductId, 2), "20"), Metadata(run));
+        }
+        await PlaceAsync(run,
+            new(Guid.NewGuid(), parent.Label.Id, Version(await LabelVersionAsync(run, parent.Label.Id)), Guid.NewGuid(),
+                "SENTETIK üretim girdisi kalite hold", null),
+            HoldMetadata(run, "manufacturing-hold-maker", "manufacturing-hold-place"));
+
+        var issue = IssueRequest(Guid.NewGuid(), parent.Label.Id,
+            Version(await LabelVersionAsync(run, parent.Label.Id)), "1");
+        var before = (
+            Movements: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            Commands: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"),
+            Audits: await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"),
+            FreeKg: await run.ScalarAsync<decimal>(
+                "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1",
+                ("@id", parent.Label.Id)),
+            AllocationKg: await run.ScalarAsync<decimal>(
+                "SELECT RemainingKg FROM inventory.Allocations WHERE LabelId = @id AND Status = 1",
+                ("@id", parent.Label.Id)),
+            LabelVersion: await LabelVersionAsync(run, parent.Label.Id));
+
+        await AssertIssueRefusalAsync(run, issue, ManufacturingMetadata(run, "quality-hold-first"), 409,
+            InventoryManufacturingRealizationCodesV1.ParentLabelNotReleasable, ManufacturingSettings(run));
+        await AssertIssueRefusalAsync(run, issue with { IssueId = Guid.NewGuid(), MovementId = Guid.NewGuid() },
+            ManufacturingMetadata(run, "quality-hold-reload"), 409,
+            InventoryManufacturingRealizationCodesV1.ParentLabelNotReleasable, ManufacturingSettings(run));
+
+        var after = (
+            Movements: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            Commands: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Commands"),
+            Audits: await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"),
+            FreeKg: await run.ScalarAsync<decimal>(
+                "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1",
+                ("@id", parent.Label.Id)),
+            AllocationKg: await run.ScalarAsync<decimal>(
+                "SELECT RemainingKg FROM inventory.Allocations WHERE LabelId = @id AND Status = 1",
+                ("@id", parent.Label.Id)),
+            LabelVersion: await LabelVersionAsync(run, parent.Label.Id));
+        Assert.Equal(before, after);
+    }
+
+    [SqlServerFact]
     public async Task Manufacturing_participant_refuses_stale_foreign_over_return_payload_and_profile_failures_without_partial_effect()
     {
         await using var run = await Run.StartAsync();

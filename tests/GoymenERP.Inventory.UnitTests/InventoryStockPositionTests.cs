@@ -38,12 +38,26 @@ public sealed class InventoryStockPositionTests
     public async Task Whole_label_quality_hold_and_active_allocation_are_composed_without_double_subtraction()
     {
         var world = new World();
-        world.Reader.Record = Record(freeKg: 0m, blockedKg: 30m, allocatedKg: 10m,
+        world.Reader.Record = Record(freeKg: 10m, blockedKg: 20m, allocatedKg: 10m,
             activeQualityHold: true);
 
         var item = Assert.Single((await world.Service().SearchAsync(new())).Items);
 
         Assert.Equal(("30", "10", "20", "10", "0"),
+            (item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                item.ActiveAllocationKg, item.AvailableKg));
+    }
+
+    [Fact]
+    public async Task Fully_allocated_quality_hold_keeps_truthful_free_components_and_zero_available()
+    {
+        var world = new World();
+        world.Reader.Record = Record(freeKg: 30m, blockedKg: 0m, allocatedKg: 30m,
+            activeQualityHold: true);
+
+        var item = Assert.Single((await world.Service().SearchAsync(new())).Items);
+
+        Assert.Equal(("30", "30", "0", "30", "0"),
             (item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
                 item.ActiveAllocationKg, item.AvailableKg));
     }
@@ -56,8 +70,8 @@ public sealed class InventoryStockPositionTests
     {
         var world = new World();
         world.Reader.Record = Record(
-            freeKg: 0m,
-            blockedKg: 30m,
+            freeKg: corruption == "missing-hold" ? 0m : 10m,
+            blockedKg: corruption == "missing-hold" ? 30m : 20m,
             allocatedKg: corruption == "over-allocation" ? 31m : 10m,
             activeQualityHold: corruption != "missing-hold",
             qualityHoldKg: corruption == "partial-hold" ? 20m : null);

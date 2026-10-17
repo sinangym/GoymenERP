@@ -91,6 +91,72 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Fully_allocated_quality_hold_is_identity_only_and_release_preserves_truthful_stock_on_real_SQL()
+    {
+        await using var run = await Run.StartAsync();
+        var label = await SeedFreeLabelAsync(run, "SYN-QUALITY-HOLD-FULL-ALLOC", 30m);
+        var allocationId = Guid.NewGuid();
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.CreateAsync(
+                new(allocationId, Guid.NewGuid(), Guid.NewGuid(), Product, "product-v1", label.Id,
+                    Version(await LabelVersionAsync(run, label.Id)), "30", "SENTETIK tam tahsis", null),
+                Metadata(run));
+        }
+
+        var movementCount = await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements");
+        var holdId = Guid.NewGuid();
+        var place = new PlaceInventoryPhysicalHoldV1(holdId, label.Id,
+            Version(await LabelVersionAsync(run, label.Id)), Guid.NewGuid(),
+            "SENTETIK tam tahsis kalite hold", null);
+        var maker = HoldMetadata(run, "full-allocation-maker", "full-allocation-place");
+        await using (var scope = run.Store(CompanyA))
+        {
+            var writer = (IInventoryPhysicalHoldWriterV1)scope.Store;
+            var first = await writer.PlacePhysicalHoldAsync(place, maker);
+            var replay = await writer.PlacePhysicalHoldAsync(place, maker);
+            Assert.Equal(("30", false, true), (first.Hold.QuantityKg, first.Replayed, replay.Replayed));
+        }
+
+        Assert.Equal(movementCount, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.PhysicalHolds WHERE Id = @id AND BlockMovementId IS NULL",
+            ("@id", holdId)));
+        Assert.Equal((30m, 0m, 30m), (
+            await run.ScalarAsync<decimal>(
+                "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1", ("@id", label.Id)),
+            await run.ScalarAsync<decimal>(
+                "SELECT COALESCE(SUM(QuantityKg), 0) FROM inventory.Balances WHERE LabelId = @id AND Block = 2",
+                ("@id", label.Id)),
+            await run.ScalarAsync<decimal>(
+                "SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id AND Status = 1", ("@id", allocationId))));
+
+        var reader = await GrantStockPositionReaderAsync(run, TestUsers.NoAssignment);
+        using (var client = run.Factory.CreateClientFor(reader, CompanyA))
+        using (var response = await client.GetAsync(
+                   $"{InventoryStockPositionApiV1.PositionsPath}?q=SYN-QUALITY-HOLD-FULL-ALLOC&limit=25"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var item = Assert.Single((await response.Content.ReadFromJsonAsync<InventoryStockPositionPageV1>())!.Items);
+            Assert.Equal(("30", "30", "0", "30", "0"),
+                (item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                    item.ActiveAllocationKg, item.AvailableKg));
+        }
+
+        var release = new ReleaseInventoryPhysicalHoldV1(holdId, "1", label.Id,
+            Version(await LabelVersionAsync(run, label.Id)), Guid.NewGuid(),
+            "SENTETIK kimlik hold serbest bırakma");
+        await ReleaseAsync(run, release, HoldMetadata(run, "full-allocation-checker", "full-allocation-release"));
+
+        Assert.Equal(movementCount, await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM inventory.PhysicalHolds WHERE Id = @id AND ReleaseMovementId IS NULL AND Status = 2",
+            ("@id", holdId)));
+        Assert.Equal(30m, await run.ScalarAsync<decimal>(
+            "SELECT RemainingKg FROM inventory.Allocations WHERE Id = @id AND Status = 1", ("@id", allocationId)));
+    }
+
+    [SqlServerFact]
     public async Task Quality_holds_release_only_the_last_typed_hold_fail_closed_for_legacy_block_and_preserve_allocation_on_real_SQL()
     {
         await using var run = await Run.StartAsync();
@@ -153,8 +219,10 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM inventory.Allocations WHERE LabelId = @id AND Status = 1 AND RemainingKg = 10",
             ("@id", allocated.Id)));
-        Assert.Equal(30m, await run.ScalarAsync<decimal>(
+        Assert.Equal(20m, await run.ScalarAsync<decimal>(
             "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 2", ("@id", allocated.Id)));
+        Assert.Equal(10m, await run.ScalarAsync<decimal>(
+            "SELECT QuantityKg FROM inventory.Balances WHERE LabelId = @id AND Block = 1", ("@id", allocated.Id)));
 
         var reader = await GrantStockPositionReaderAsync(run, TestUsers.NoAssignment);
         using (var client = run.Factory.CreateClientFor(reader, CompanyA))
