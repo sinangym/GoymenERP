@@ -216,7 +216,7 @@ public sealed class PurchasingSubcontractAdmissionV1Tests
             Service,
             "service-v7",
             Unit,
-            12m,
+            "12",
             PhysicalRequest,
             "physical-v2")]);
 
