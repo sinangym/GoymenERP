@@ -53,11 +53,11 @@ public static class ManufacturingCorrectionPolicyV1
             (impact.ShipmentProof, ManufacturingCorrectionProofOwnerV1.Shipment),
         };
 
-        // Conflict has first priority. A malformed supplied fact or an identity/version mismatch
-        // cannot be hidden behind another owner's missing snapshot.
+        // Structural and binding conflicts have first priority. A malformed supplied fact, owner
+        // mismatch or non-null proof-to-proof fence mismatch cannot be hidden by a missing impact fence.
         if (InvalidImpact(impact)
             || proofs.Any(entry => InvalidProof(entry.Proof, entry.Owner, impact))
-            || InconsistentQuantities(impact))
+            || MismatchedProofFences(proofs.Select(entry => entry.Proof)))
         {
             return Conflict(impact);
         }
@@ -70,6 +70,13 @@ public static class ManufacturingCorrectionPolicyV1
             || proofs.Any(entry => UnavailableProof(entry.Proof)))
         {
             return Unavailable(impact);
+        }
+
+        // Quantity reconciliation is meaningful only after every owner proof is complete,
+        // provenance-bound and on one common current fence. Missing evidence outranks this check.
+        if (InconsistentQuantities(impact))
+        {
+            return Conflict(impact);
         }
 
         var available = impact.AvailabilityProof!.QuantityKg!.Value;
@@ -164,6 +171,37 @@ public static class ManufacturingCorrectionPolicyV1
         || proof.CurrentFenceVersion is null
         || proof.SourceSnapshotVersion is null
         || proof.QuantityKg is null;
+
+    private static bool MismatchedProofFences(
+        IEnumerable<ManufacturingCorrectionOwnerProofV1?> proofs)
+    {
+        Guid? commonId = null;
+        long? commonVersion = null;
+        foreach (var proof in proofs)
+        {
+            if (proof?.CurrentFenceId is { } fenceId)
+            {
+                if (commonId is { } expectedId && fenceId != expectedId)
+                {
+                    return true;
+                }
+
+                commonId ??= fenceId;
+            }
+
+            if (proof?.CurrentFenceVersion is { } fenceVersion)
+            {
+                if (commonVersion is { } expectedVersion && fenceVersion != expectedVersion)
+                {
+                    return true;
+                }
+
+                commonVersion ??= fenceVersion;
+            }
+        }
+
+        return false;
+    }
 
     private static bool InconsistentQuantities(ManufacturingCorrectionImpactV1 impact)
     {

@@ -105,6 +105,8 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
             });
         var missingFence = ManufacturingCorrectionPolicyV1.Evaluate(
             Impact() with { CurrentFenceId = null });
+        var missingFenceVersion = ManufacturingCorrectionPolicyV1.Evaluate(
+            Impact() with { CurrentFenceVersion = null });
         var missingDeclared = ManufacturingCorrectionPolicyV1.Evaluate(
             Impact() with { DeclaredOutputKg = null });
         var missingRequested = ManufacturingCorrectionPolicyV1.Evaluate(
@@ -117,9 +119,87 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, stale.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingOwner.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingFence.Outcome);
+        Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingFenceVersion.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingDeclared.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingRequested.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingImpact.Outcome);
+    }
+
+    [Fact]
+    public void Contradictory_quantities_do_not_override_missing_or_incomplete_proof()
+    {
+        var unavailable = new[]
+        {
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact(availableKg: 1000m, consumptionKg: 600m) with
+            {
+                ConsumptionProof = Proof(
+                    ManufacturingCorrectionProofOwnerV1.Consumption,
+                    ConsumptionSource,
+                    600m) with { Owner = null },
+            }),
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact(availableKg: 1000m, consumptionKg: 600m) with
+            {
+                ConsumptionProof = Proof(
+                    ManufacturingCorrectionProofOwnerV1.Consumption,
+                    ConsumptionSource,
+                    600m) with { IsComplete = false },
+            }),
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact(availableKg: 1000m, consumptionKg: 600m) with
+            {
+                ConsumptionProof = Proof(
+                    ManufacturingCorrectionProofOwnerV1.Consumption,
+                    ConsumptionSource,
+                    600m) with { SourceSnapshotVersion = null },
+            }),
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact(availableKg: 1000m, consumptionKg: 600m) with
+            {
+                ConsumptionProof = Proof(
+                    ManufacturingCorrectionProofOwnerV1.Consumption,
+                    ConsumptionSource,
+                    600m) with { CurrentFenceId = null },
+            }),
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact(availableKg: 1000m, consumptionKg: 600m) with
+            {
+                ConsumptionProof = Proof(
+                    ManufacturingCorrectionProofOwnerV1.Consumption,
+                    ConsumptionSource,
+                    600m) with { CurrentFenceVersion = null },
+            }),
+        };
+
+        Assert.All(unavailable, result =>
+        {
+            Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, result.Outcome);
+            Assert.Equal(ManufacturingCorrectionCodesV1.ImpactUnavailable, result.Code);
+        });
+    }
+
+    [Fact]
+    public void Proof_fence_mismatch_is_a_conflict_even_when_the_impact_fence_is_missing()
+    {
+        var idMismatch = Impact(availableKg: 999m, consumptionKg: 1m) with
+        {
+            CurrentFenceId = null,
+            ConsumptionProof = Proof(
+                ManufacturingCorrectionProofOwnerV1.Consumption,
+                ConsumptionSource,
+                1m) with { CurrentFenceId = Guid.NewGuid() },
+        };
+        var versionMismatch = Impact(availableKg: 999m, consumptionKg: 1m) with
+        {
+            CurrentFenceVersion = null,
+            ShipmentProof = Proof(
+                ManufacturingCorrectionProofOwnerV1.Shipment,
+                ShipmentSource,
+                0m) with { CurrentFenceVersion = 8 },
+        };
+
+        Assert.Equal(
+            ManufacturingCorrectionOutcomeV1.Conflict,
+            ManufacturingCorrectionPolicyV1.Evaluate(idMismatch).Outcome);
+        Assert.Equal(
+            ManufacturingCorrectionOutcomeV1.Conflict,
+            ManufacturingCorrectionPolicyV1.Evaluate(versionMismatch).Outcome);
     }
 
     [Fact]
