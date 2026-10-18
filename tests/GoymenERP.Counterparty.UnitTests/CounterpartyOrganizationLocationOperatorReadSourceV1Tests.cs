@@ -92,7 +92,7 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
             Assert.Empty(answer.Items);
         }
 
-        Assert.Empty(authority.Permissions);
+        Assert.Empty(authority.Requests);
     }
 
     [Fact]
