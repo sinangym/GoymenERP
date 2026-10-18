@@ -1,15 +1,27 @@
 namespace GoymenERP.Modules.Manufacturing.Domain.Corrections;
 
+public enum ManufacturingCorrectionProofOwnerV1
+{
+    Availability = 1,
+    Consumption = 2,
+    Allocation = 3,
+    Shipment = 4,
+}
+
 /// <summary>
 /// One owner-produced quantity proof for the exact production output under review. The source
-/// identity and version identify the immutable owner snapshot; this value grants no authority and
-/// records no counter movement, correction or rework.
+/// identity and version identify the immutable owner snapshot. Owner and current-fence fields bind
+/// separate owner reads to the same evaluation; this value grants no authority and records no
+/// counter movement, correction or rework.
 /// </summary>
 public sealed record ManufacturingCorrectionOwnerProofV1(
+    ManufacturingCorrectionProofOwnerV1? Owner,
     Guid CompanyId,
     Guid ProductionOrderId,
     long ProductionOrderVersion,
     Guid OutputId,
+    Guid? CurrentFenceId,
+    long? CurrentFenceVersion,
     Guid SourceSnapshotId,
     long? SourceSnapshotVersion,
     bool IsComplete,
@@ -25,6 +37,8 @@ public sealed record ManufacturingCorrectionImpactV1(
     Guid ProductionOrderId,
     long ProductionOrderVersion,
     Guid OutputId,
+    Guid? CurrentFenceId,
+    long? CurrentFenceVersion,
     decimal? DeclaredOutputKg,
     decimal? RequestedCounterEffectKg,
     ManufacturingCorrectionOwnerProofV1? AvailabilityProof,

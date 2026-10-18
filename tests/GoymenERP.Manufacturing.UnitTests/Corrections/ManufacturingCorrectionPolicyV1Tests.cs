@@ -7,6 +7,7 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
     private static readonly Guid Company = Guid.Parse("71000000-0000-4000-8000-000000000001");
     private static readonly Guid Order = Guid.Parse("72000000-0000-4000-8000-000000000001");
     private static readonly Guid Output = Guid.Parse("73000000-0000-4000-8000-000000000001");
+    private static readonly Guid CurrentFence = Guid.Parse("73500000-0000-4000-8000-000000000001");
     private static readonly Guid AvailabilitySource = Guid.Parse("74000000-0000-4000-8000-000000000001");
     private static readonly Guid ConsumptionSource = Guid.Parse("74000000-0000-4000-8000-000000000002");
     private static readonly Guid AllocationSource = Guid.Parse("74000000-0000-4000-8000-000000000003");
@@ -48,8 +49,10 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
             availableKg: 400m,
             consumptionKg: 600m));
         var allocated = ManufacturingCorrectionPolicyV1.Evaluate(Impact(
+            availableKg: 999m,
             allocationKg: 1m));
         var shipped = ManufacturingCorrectionPolicyV1.Evaluate(Impact(
+            availableKg: 999m,
             shipmentKg: 1m));
 
         Assert.Equal(ManufacturingCorrectionOutcomeV1.LinkedCorrectionRequired, consumed.Outcome);
@@ -81,9 +84,27 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
         var missing = ManufacturingCorrectionPolicyV1.Evaluate(
             Impact() with { AvailabilityProof = null });
         var incomplete = ManufacturingCorrectionPolicyV1.Evaluate(
-            Impact() with { AllocationProof = Proof(AllocationSource, 0m) with { IsComplete = false } });
+            Impact() with
+            {
+                AllocationProof = Proof(ManufacturingCorrectionProofOwnerV1.Allocation, AllocationSource, 0m)
+                    with { IsComplete = false },
+            });
         var stale = ManufacturingCorrectionPolicyV1.Evaluate(
-            Impact() with { ShipmentProof = Proof(ShipmentSource, 0m) with { SourceSnapshotVersion = null } });
+            Impact() with
+            {
+                ShipmentProof = Proof(ManufacturingCorrectionProofOwnerV1.Shipment, ShipmentSource, 0m)
+                    with { SourceSnapshotVersion = null },
+            });
+        var missingOwner = ManufacturingCorrectionPolicyV1.Evaluate(
+            Impact() with
+            {
+                AvailabilityProof = Proof(
+                    ManufacturingCorrectionProofOwnerV1.Availability,
+                    AvailabilitySource,
+                    1000m) with { Owner = null },
+            });
+        var missingFence = ManufacturingCorrectionPolicyV1.Evaluate(
+            Impact() with { CurrentFenceId = null });
         var missingDeclared = ManufacturingCorrectionPolicyV1.Evaluate(
             Impact() with { DeclaredOutputKg = null });
         var missingRequested = ManufacturingCorrectionPolicyV1.Evaluate(
@@ -94,6 +115,8 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
         Assert.Equal(ManufacturingCorrectionCodesV1.ImpactUnavailable, missing.Code);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, incomplete.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, stale.Outcome);
+        Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingOwner.Outcome);
+        Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingFence.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingDeclared.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingRequested.Outcome);
         Assert.Equal(ManufacturingCorrectionOutcomeV1.Unavailable, missingImpact.Outcome);
@@ -107,37 +130,58 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with { CompanyId = Guid.Empty }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
             {
-                AvailabilityProof = Proof(AvailabilitySource, 1000m) with { CompanyId = Guid.NewGuid() },
+                AvailabilityProof = Proof(ManufacturingCorrectionProofOwnerV1.Availability, AvailabilitySource, 1000m)
+                    with { CompanyId = Guid.NewGuid() },
             }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
             {
-                ConsumptionProof = Proof(ConsumptionSource, 0m) with { ProductionOrderId = Guid.NewGuid() },
+                ConsumptionProof = Proof(ManufacturingCorrectionProofOwnerV1.Consumption, ConsumptionSource, 0m)
+                    with { ProductionOrderId = Guid.NewGuid() },
             }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
             {
-                AllocationProof = Proof(AllocationSource, 0m) with { ProductionOrderVersion = 12 },
+                AllocationProof = Proof(ManufacturingCorrectionProofOwnerV1.Allocation, AllocationSource, 0m)
+                    with { ProductionOrderVersion = 12 },
             }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
             {
-                ShipmentProof = Proof(ShipmentSource, 0m) with { OutputId = Guid.NewGuid() },
+                ShipmentProof = Proof(ManufacturingCorrectionProofOwnerV1.Shipment, ShipmentSource, 0m)
+                    with { OutputId = Guid.NewGuid() },
             }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
             {
-                AvailabilityProof = Proof(AvailabilitySource, 1000m) with { SourceSnapshotId = Guid.Empty },
+                AvailabilityProof = Proof(ManufacturingCorrectionProofOwnerV1.Availability, AvailabilitySource, 1000m)
+                    with { SourceSnapshotId = Guid.Empty },
             }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
             {
-                AvailabilityProof = Proof(AvailabilitySource, 1000m) with { SourceSnapshotVersion = 0 },
+                AvailabilityProof = Proof(ManufacturingCorrectionProofOwnerV1.Availability, AvailabilitySource, 1000m)
+                    with { SourceSnapshotVersion = 0 },
             }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
             {
-                AvailabilityProof = Proof(AvailabilitySource, -1m),
+                AvailabilityProof = Proof(ManufacturingCorrectionProofOwnerV1.Availability, AvailabilitySource, -1m),
             }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
             {
-                AvailabilityProof = Proof(AvailabilitySource, 1001m),
+                AvailabilityProof = Proof(ManufacturingCorrectionProofOwnerV1.Availability, AvailabilitySource, 1001m),
             }),
             ManufacturingCorrectionPolicyV1.Evaluate(Impact(requestedKg: 1001m)),
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
+            {
+                AvailabilityProof = Proof(ManufacturingCorrectionProofOwnerV1.Consumption, AvailabilitySource, 1000m),
+            }),
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
+            {
+                ConsumptionProof = Proof(ManufacturingCorrectionProofOwnerV1.Consumption, ConsumptionSource, 0m)
+                    with { CurrentFenceId = Guid.NewGuid() },
+            }),
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact() with
+            {
+                ShipmentProof = Proof(ManufacturingCorrectionProofOwnerV1.Shipment, ShipmentSource, 0m)
+                    with { CurrentFenceVersion = 8 },
+            }),
+            ManufacturingCorrectionPolicyV1.Evaluate(Impact() with { CurrentFenceId = Guid.Empty }),
         };
 
         Assert.All(conflicts, result =>
@@ -148,15 +192,31 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
     }
 
     [Fact]
+    public void Same_fence_contradiction_cannot_overstate_available_counter_effect()
+    {
+        var contradictory = Impact(
+            availableKg: 1000m,
+            consumptionKg: 600m);
+
+        var result = ManufacturingCorrectionPolicyV1.Evaluate(contradictory);
+
+        Assert.Equal(ManufacturingCorrectionOutcomeV1.Conflict, result.Outcome);
+        Assert.Equal(ManufacturingCorrectionCodesV1.ImpactConflict, result.Code);
+        Assert.Null(result.AvailableCounterEffectKg);
+        Assert.Null(result.CorrectionOrReworkKg);
+    }
+
+    [Fact]
     public void Precedence_is_conflict_then_unavailable_then_linked_then_direct()
     {
         var conflict = Impact(consumptionKg: 1m) with
         {
             AvailabilityProof = null,
-            ShipmentProof = Proof(ShipmentSource, 0m) with { OutputId = Guid.NewGuid() },
+            ShipmentProof = Proof(ManufacturingCorrectionProofOwnerV1.Shipment, ShipmentSource, 0m)
+                with { OutputId = Guid.NewGuid() },
         };
-        var unavailable = Impact(consumptionKg: 1m) with { AllocationProof = null };
-        var linked = Impact(consumptionKg: 1m);
+        var unavailable = Impact(availableKg: 999m, consumptionKg: 1m) with { AllocationProof = null };
+        var linked = Impact(availableKg: 999m, consumptionKg: 1m);
         var direct = Impact();
 
         Assert.Equal(
@@ -198,19 +258,27 @@ public sealed class ManufacturingCorrectionPolicyV1Tests
             Order,
             11,
             Output,
+            CurrentFence,
+            7,
             declaredKg,
             requestedKg,
-            Proof(AvailabilitySource, availableKg),
-            Proof(ConsumptionSource, consumptionKg),
-            Proof(AllocationSource, allocationKg),
-            Proof(ShipmentSource, shipmentKg));
+            Proof(ManufacturingCorrectionProofOwnerV1.Availability, AvailabilitySource, availableKg),
+            Proof(ManufacturingCorrectionProofOwnerV1.Consumption, ConsumptionSource, consumptionKg),
+            Proof(ManufacturingCorrectionProofOwnerV1.Allocation, AllocationSource, allocationKg),
+            Proof(ManufacturingCorrectionProofOwnerV1.Shipment, ShipmentSource, shipmentKg));
 
-    private static ManufacturingCorrectionOwnerProofV1 Proof(Guid sourceSnapshotId, decimal quantityKg) =>
+    private static ManufacturingCorrectionOwnerProofV1 Proof(
+        ManufacturingCorrectionProofOwnerV1 owner,
+        Guid sourceSnapshotId,
+        decimal quantityKg) =>
         new(
+            owner,
             Company,
             Order,
             11,
             Output,
+            CurrentFence,
+            7,
             sourceSnapshotId,
             3,
             true,

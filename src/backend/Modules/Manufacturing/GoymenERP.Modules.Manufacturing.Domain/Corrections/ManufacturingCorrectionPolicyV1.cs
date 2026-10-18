@@ -45,18 +45,19 @@ public static class ManufacturingCorrectionPolicyV1
             return Unavailable(null);
         }
 
-        var proofs = new[]
+        var proofs = new (ManufacturingCorrectionOwnerProofV1? Proof, ManufacturingCorrectionProofOwnerV1 Owner)[]
         {
-            impact.AvailabilityProof,
-            impact.ConsumptionProof,
-            impact.AllocationProof,
-            impact.ShipmentProof,
+            (impact.AvailabilityProof, ManufacturingCorrectionProofOwnerV1.Availability),
+            (impact.ConsumptionProof, ManufacturingCorrectionProofOwnerV1.Consumption),
+            (impact.AllocationProof, ManufacturingCorrectionProofOwnerV1.Allocation),
+            (impact.ShipmentProof, ManufacturingCorrectionProofOwnerV1.Shipment),
         };
 
         // Conflict has first priority. A malformed supplied fact or an identity/version mismatch
         // cannot be hidden behind another owner's missing snapshot.
         if (InvalidImpact(impact)
-            || proofs.Any(proof => InvalidProof(proof, impact)))
+            || proofs.Any(entry => InvalidProof(entry.Proof, entry.Owner, impact))
+            || InconsistentQuantities(impact))
         {
             return Conflict(impact);
         }
@@ -64,7 +65,9 @@ public static class ManufacturingCorrectionPolicyV1
         // Missing or incomplete owner proof is unknown, never zero downstream use.
         if (impact.DeclaredOutputKg is null
             || impact.RequestedCounterEffectKg is null
-            || proofs.Any(UnavailableProof))
+            || impact.CurrentFenceId is null
+            || impact.CurrentFenceVersion is null
+            || proofs.Any(entry => UnavailableProof(entry.Proof)))
         {
             return Unavailable(impact);
         }
@@ -108,6 +111,8 @@ public static class ManufacturingCorrectionPolicyV1
         || impact.ProductionOrderId == Guid.Empty
         || impact.ProductionOrderVersion <= 0
         || impact.OutputId == Guid.Empty
+        || impact.CurrentFenceId == Guid.Empty
+        || impact.CurrentFenceVersion is <= 0
         || impact.DeclaredOutputKg is <= 0m
         || impact.RequestedCounterEffectKg is <= 0m
         || impact.DeclaredOutputKg is { } declared
@@ -116,6 +121,7 @@ public static class ManufacturingCorrectionPolicyV1
 
     private static bool InvalidProof(
         ManufacturingCorrectionOwnerProofV1? proof,
+        ManufacturingCorrectionProofOwnerV1 expectedOwner,
         ManufacturingCorrectionImpactV1 impact)
     {
         if (proof is null)
@@ -123,10 +129,15 @@ public static class ManufacturingCorrectionPolicyV1
             return false;
         }
 
-        return proof.CompanyId == Guid.Empty
+        return proof.Owner is { } owner
+                && !Enum.IsDefined(typeof(ManufacturingCorrectionProofOwnerV1), owner)
+            || proof.Owner is { } suppliedOwner && suppliedOwner != expectedOwner
+            || proof.CompanyId == Guid.Empty
             || proof.ProductionOrderId == Guid.Empty
             || proof.ProductionOrderVersion <= 0
             || proof.OutputId == Guid.Empty
+            || proof.CurrentFenceId == Guid.Empty
+            || proof.CurrentFenceVersion is <= 0
             || proof.SourceSnapshotId == Guid.Empty
             || proof.SourceSnapshotVersion is <= 0
             || proof.QuantityKg is < 0m
@@ -134,6 +145,12 @@ public static class ManufacturingCorrectionPolicyV1
             || proof.ProductionOrderId != impact.ProductionOrderId
             || proof.ProductionOrderVersion != impact.ProductionOrderVersion
             || proof.OutputId != impact.OutputId
+            || proof.CurrentFenceId is { } proofFenceId
+                && impact.CurrentFenceId is { } impactFenceId
+                && proofFenceId != impactFenceId
+            || proof.CurrentFenceVersion is { } proofFenceVersion
+                && impact.CurrentFenceVersion is { } impactFenceVersion
+                && proofFenceVersion != impactFenceVersion
             || proof.QuantityKg is { } quantity
                 && impact.DeclaredOutputKg is { } declared
                 && quantity > declared;
@@ -141,9 +158,31 @@ public static class ManufacturingCorrectionPolicyV1
 
     private static bool UnavailableProof(ManufacturingCorrectionOwnerProofV1? proof) =>
         proof is null
+        || proof.Owner is null
         || !proof.IsComplete
+        || proof.CurrentFenceId is null
+        || proof.CurrentFenceVersion is null
         || proof.SourceSnapshotVersion is null
         || proof.QuantityKg is null;
+
+    private static bool InconsistentQuantities(ManufacturingCorrectionImpactV1 impact)
+    {
+        if (impact.DeclaredOutputKg is not { } declared
+            || impact.AvailabilityProof?.QuantityKg is not { } available)
+        {
+            return false;
+        }
+
+        // Each downstream proof is compared independently because allocation, shipment and
+        // consumption can be related lifecycle facts. They are never blindly added together.
+        var maximumDownstreamForAvailability = declared - available;
+        return impact.ConsumptionProof?.QuantityKg is { } consumed
+                && consumed > maximumDownstreamForAvailability
+            || impact.AllocationProof?.QuantityKg is { } allocated
+                && allocated > maximumDownstreamForAvailability
+            || impact.ShipmentProof?.QuantityKg is { } shipped
+                && shipped > maximumDownstreamForAvailability;
+    }
 
     private static ManufacturingCorrectionDecisionV1 Unavailable(ManufacturingCorrectionImpactV1? impact) =>
         Failed(ManufacturingCorrectionOutcomeV1.Unavailable, ManufacturingCorrectionCodesV1.ImpactUnavailable, impact);
