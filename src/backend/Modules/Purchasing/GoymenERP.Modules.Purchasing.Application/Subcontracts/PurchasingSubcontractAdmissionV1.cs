@@ -173,7 +173,9 @@ public sealed class PurchasingSubcontractAdmissionV1(
         if (answer.Outcome != PurchasingSubcontractSubjectOutcomeV1.Found
             || subject is null
             || subject.Kind != PurchasingCommercialLineSubjectKindV1.Service
-            || subject.Id != expected.Id)
+            || subject.Id != expected.Id
+            || string.IsNullOrWhiteSpace(subject.Code)
+            || string.IsNullOrWhiteSpace(subject.Name))
         {
             throw Failure(PurchasingSubcontractAdmissionProblemV1.SubjectInvalid);
         }

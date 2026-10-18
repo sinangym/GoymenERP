@@ -83,6 +83,27 @@ public sealed class PurchasingSubcontractAdmissionV1Tests
     }
 
     [Theory]
+    [InlineData("code")]
+    [InlineData("name")]
+    public async Task Admit_rejects_a_found_subject_with_blank_presentation(string mutation)
+    {
+        var answer = new PurchasingSubcontractSubjectAnswerV1(
+            PurchasingSubcontractSubjectOutcomeV1.Found,
+            new PurchasingCommercialLineSubjectSnapshotV1(
+                PurchasingCommercialLineSubjectKindV1.Service,
+                Service,
+                "service-v7",
+                mutation == "code" ? " " : "SRV-01",
+                mutation == "name" ? " " : "Fason hizmet"));
+        var sut = new PurchasingSubcontractAdmissionV1(new SubjectSource(answer), new PartySource(FoundParty()));
+
+        var exception = await Assert.ThrowsAsync<PurchasingSubcontractAdmissionExceptionV1>(() =>
+            sut.AdmitAsync(ValidOrder(), Line, ValidPhysicalContext()));
+
+        Assert.Equal(PurchasingSubcontractAdmissionProblemV1.SubjectInvalid, exception.Problem);
+    }
+
+    [Theory]
     [InlineData(PurchasingPartyAccountOutcomeV1.Unavailable, PurchasingSubcontractAdmissionProblemV1.PartyUnavailable)]
     [InlineData(PurchasingPartyAccountOutcomeV1.Denied, PurchasingSubcontractAdmissionProblemV1.PartyDenied)]
     [InlineData(PurchasingPartyAccountOutcomeV1.NotFound, PurchasingSubcontractAdmissionProblemV1.PartyNotFound)]
@@ -143,13 +164,17 @@ public sealed class PurchasingSubcontractAdmissionV1Tests
     [InlineData("version")]
     public async Task Admit_rejects_foreign_or_stale_physical_context_before_owner_reads(string mutation)
     {
-        var physical = ValidPhysicalContext();
-        physical = physical with
-        {
-            CompanyId = mutation == "company" ? Guid.NewGuid() : physical.CompanyId,
-            SourcePhysicalRequestId = mutation == "request" ? Guid.NewGuid() : physical.SourcePhysicalRequestId,
-            SourcePhysicalRequestVersion = mutation == "version" ? "physical-v3" : physical.SourcePhysicalRequestVersion,
-        };
+        var contextCompany = mutation == "company" ? Guid.NewGuid() : Company;
+        var physical = SubcontractPhysicalContextV1.Create(
+            contextCompany,
+            SubcontractMaterialOwnerKindV1.Company,
+            contextCompany,
+            Location,
+            "location-v5",
+            Operator,
+            "operator-v3",
+            mutation == "request" ? Guid.NewGuid() : PhysicalRequest,
+            mutation == "version" ? "physical-v3" : "physical-v2");
         var subjectSource = new SubjectSource(FoundSubject());
         var partySource = new PartySource(FoundParty());
         var sut = new PurchasingSubcontractAdmissionV1(subjectSource, partySource);
@@ -194,7 +219,7 @@ public sealed class PurchasingSubcontractAdmissionV1Tests
             PhysicalRequest,
             "physical-v2")]);
 
-    private static SubcontractPhysicalContextV1 ValidPhysicalContext() => new(
+    private static SubcontractPhysicalContextV1 ValidPhysicalContext() => SubcontractPhysicalContextV1.Create(
         Company,
         SubcontractMaterialOwnerKindV1.Company,
         Company,
