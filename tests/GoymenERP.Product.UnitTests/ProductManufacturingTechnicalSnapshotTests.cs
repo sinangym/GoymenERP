@@ -86,10 +86,18 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         Assert.Empty(result.Errors);
         var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(result.Snapshot);
         Assert.Equal(new ProductManufacturingRoundPipeGeometryV2(60.3m, 1.5m, 6000m), snapshot.Geometry);
-        Assert.Equal((ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
-                ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
-                ProductInitialTechnicalDefinitionV1.WeldedTubeProfileSourceRef),
-            (snapshot.Family.FamilyId, snapshot.Template.TemplateId, snapshot.Template.SourceRevision));
+        Assert.Equal((ProductId, StoredVersion,
+                ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId, "welded-round-pipe",
+                ProductInitialTechnicalDefinitionV1.WeldedTubeProfileSourceRef,
+                ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId, "1", "gdc-welded-round-pipe-v1",
+                ProductInitialTechnicalDefinitionV1.WeldedTubeProfileSourceRef, On),
+            (snapshot.ProductId, snapshot.ProductVersion,
+                snapshot.Family.FamilyId, snapshot.Family.FamilyCode, snapshot.Family.SourceRevision,
+                snapshot.Template.TemplateId, snapshot.Template.TemplateVersion, snapshot.Template.TemplateCode,
+                snapshot.Template.SourceRevision, snapshot.EffectiveOn));
+        Assert.Equal((CompanyId, StockUnitId, "synthetic-kg", world.Settings.ProfileIdFor(StockUnitId), StoredVersion),
+            (snapshot.UnitKg.CompanyId, snapshot.UnitKg.UnitId, snapshot.UnitKg.UnitCode,
+                snapshot.UnitKg.ProfileId, snapshot.UnitKg.ProfileVersion));
     }
 
     [Theory]
@@ -132,6 +140,138 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         Assert.Null(result.Snapshot);
         Assert.Contains(new ProductFieldError("references.attributes.outside-diameter-mm",
             ProductFamilyPolicyCodesV1.Required), result.Errors);
+    }
+
+    [Theory]
+    [InlineData("stale", "expectedProductVersion", ProductApiV1.VersionConflict)]
+    [InlineData("inactive", "productId", ProductApiV1.LifecycleConflict)]
+    public async Task V2_stale_version_and_inactive_product_stop_before_owner_definition_read(
+        string fault, string field, string code)
+    {
+        var source = new DefinitionSource(ProductInitialTechnicalDefinitionV1.Definition());
+        var world = World(fault == "inactive" ? TechnicalRecord() with { Lifecycle = 2 } : TechnicalRecord());
+        var selection = fault == "stale" ? SelectionV2 with { ExpectedProductVersion = "1" } : SelectionV2;
+
+        var result = await Service(world, source).ReadAsync(selection, default);
+
+        Assert.Null(result.Snapshot);
+        Assert.Contains(new ProductFieldError(field, code), result.Errors);
+        Assert.Equal(0, source.Reads);
+        Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Theory]
+    [InlineData("family")]
+    [InlineData("template")]
+    [InlineData("dictionary")]
+    public async Task V2_synthetic_owner_provenance_is_fail_closed_before_Settings_read(string target)
+    {
+        var world = World(P013Record(
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
+            ("outside-diameter-mm", 60.3m), ("wall-thickness-mm", 1.5m), ("length-mm", 6000m)));
+        var error = await Assert.ThrowsAsync<ProductOperationException>(() =>
+            Service(world, new(SyntheticP013Definition(target))).ReadAsync(SelectionV2, default));
+
+        Assert.Equal((503, ProductManufacturingTechnicalSnapshotService.UnavailableCode),
+            (error.StatusCode, error.Code));
+        Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task V2_permission_denial_stops_before_the_Product_record_read()
+    {
+        var world = World();
+        world.Authorization.Granted = false;
+        var source = new DefinitionSource(ProductInitialTechnicalDefinitionV1.Definition());
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => Service(world, source).ReadAsync(SelectionV2, default));
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal(0, world.Records.Reads);
+        Assert.Equal(0, source.Reads);
+        Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("company")]
+    [InlineData("actor")]
+    public async Task V2_scope_change_during_Product_record_read_hides_the_record(string fault)
+    {
+        var world = World();
+        world.Records.During = () =>
+        {
+            if (fault == "permission") world.Authorization.Granted = false;
+            else world.Change(fault);
+        };
+        var source = new DefinitionSource(ProductInitialTechnicalDefinitionV1.Definition());
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => Service(world, source).ReadAsync(SelectionV2, default));
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal(1, world.Records.Reads);
+        Assert.Equal(0, source.Reads);
+        Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("company")]
+    [InlineData("actor")]
+    public async Task V2_scope_change_during_definition_read_hides_the_definition(string fault)
+    {
+        var world = World();
+        var source = new DefinitionSource(ProductInitialTechnicalDefinitionV1.Definition())
+        {
+            During = () =>
+            {
+                if (fault == "permission") world.Authorization.Granted = false;
+                else world.Change(fault);
+            },
+        };
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => Service(world, source).ReadAsync(SelectionV2, default));
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal(1, source.Reads);
+        Assert.Equal(0, world.Settings.Calls);
+    }
+
+    [Theory]
+    [InlineData("permission")]
+    [InlineData("company")]
+    [InlineData("actor")]
+    public async Task V2_scope_change_during_Settings_read_hides_the_unit_profile(string fault)
+    {
+        var world = World();
+        world.Settings.During = () =>
+        {
+            if (fault == "permission") world.Authorization.Granted = false;
+            else world.Change(fault);
+        };
+
+        var error = await Assert.ThrowsAsync<ProductOperationException>(
+            () => Service(world).ReadAsync(SelectionV2, default));
+
+        Assert.Equal((403, ProductSalesEligibilityService.AccessDeniedCode), (error.StatusCode, error.Code));
+        Assert.Equal(1, world.Settings.Calls);
+    }
+
+    [Fact]
+    public async Task V2_inactive_or_non_kilogram_Settings_profile_returns_no_snapshot()
+    {
+        var world = World();
+        world.Settings.Shape = (_, profile) => profile with { IsActive = false, IsKilogram = false };
+
+        var result = await Service(world).ReadAsync(SelectionV2, default);
+
+        Assert.Null(result.Snapshot);
+        Assert.Equal([new ProductFieldError("references.units.stock", "invalid_reference")], result.Errors);
+        Assert.Equal(1, world.Settings.Calls);
     }
 
     [Theory]
@@ -264,9 +404,12 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         await using var provider = services.BuildServiceProvider();
 
         var port = provider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>();
+        var portV2 = provider.GetRequiredService<IProductManufacturingTechnicalSnapshotV2>();
         var error = await Assert.ThrowsAsync<ProductOperationException>(() => port.ReadAsync(Selection, default));
+        var errorV2 = await Assert.ThrowsAsync<ProductOperationException>(() => portV2.ReadAsync(SelectionV2, default));
 
         Assert.Equal((503, "product_runtime_unconfigured"), (error.StatusCode, error.Code));
+        Assert.Equal((503, "product_runtime_unconfigured"), (errorV2.StatusCode, errorV2.Code));
         Assert.Null(provider.GetService<ProductManufacturingTechnicalSnapshotService>());
     }
 
@@ -421,6 +564,35 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         {
             FamilyId = familyId,
             ReferencesJson = JsonSerializer.Serialize(references, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+        };
+    }
+
+    private static ProductFamilyDefinitionV2 SyntheticP013Definition(string target)
+    {
+        var definition = ProductInitialTechnicalDefinitionV1.Definition();
+        const string synthetic = "SYNTHETIC-p022-test";
+        return target switch
+        {
+            "family" => definition with
+            {
+                Families = definition.Families.Select(family =>
+                    family.Id == ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId
+                        ? family with { SourceRef = synthetic }
+                        : family).ToArray(),
+            },
+            "template" => definition with
+            {
+                Templates = definition.Templates.Select(template =>
+                    template.Id == ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId
+                        ? template with { SourceRef = synthetic }
+                        : template).ToArray(),
+            },
+            _ => definition with
+            {
+                Entries = definition.Entries.Select(entry => entry is { Dictionary: "gdc-steel-grades", Code: "S235JR" }
+                    ? entry with { SourceRef = synthetic }
+                    : entry).ToArray(),
+            },
         };
     }
 
