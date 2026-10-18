@@ -56,11 +56,22 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
                 TestCompanyIds.CompanyA,
                 Actor,
                 [new(LocationOne, EligibleOne), new(LocationOne, EligibleTwo)]));
-            Assert.All(new[] { emptyBindings, duplicateBindings }, answer =>
+            var nullBinding = await source.ReadAuthorizedDisplaysAsync(new(
+                TestCompanyIds.CompanyA,
+                Actor,
+                [null!]));
+            Assert.All(new[] { emptyBindings, duplicateBindings, nullBinding }, answer =>
             {
                 Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable, answer.Outcome);
                 Assert.Empty(answer.Items);
             });
+
+            var wrongContextMalformed = await source.ReadAuthorizedDisplaysAsync(new(
+                Guid.Empty,
+                Actor,
+                [null!]));
+            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, wrongContextMalformed.Outcome);
+            Assert.Empty(wrongContextMalformed.Items);
             Assert.Empty(observer.Commands);
 
             var display = await source.ReadAuthorizedDisplaysAsync(new(

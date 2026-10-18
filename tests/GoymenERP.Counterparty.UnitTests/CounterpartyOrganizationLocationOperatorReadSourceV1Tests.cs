@@ -39,6 +39,8 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
         {
             new(Guid.Empty, "organization-location-writer", [new(Location, Party)]),
             new(Company, " other", [new(Location, Party)]),
+            new(Guid.Empty, "organization-location-writer", []),
+            new(Company, "other", [null!]),
         };
         foreach (var request in displayRequests)
         {
@@ -77,6 +79,7 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
             new(Company, "organization-location-writer", []),
             new(Company, "organization-location-writer", [new(Guid.Empty, Party)]),
             new(Company, "organization-location-writer", [new(Location, Party), new(Location, Guid.NewGuid())]),
+            new(Company, "organization-location-writer", [null!]),
         };
 
         foreach (var request in requests)
