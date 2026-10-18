@@ -69,7 +69,7 @@ public sealed partial class OpenApiContractGenerationTests
             [
                 "path:id:true:type:string;format:uuid",
                 "query:q:false:type:string",
-                "query:pageSize:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$",
+                "query:pageSize:false:type:string",
                 "query:cursor:false:type:string",
             ]),
         new("get", "/api/v1/inventory/labels/{labelId}", "GetInventoryLabelV1",

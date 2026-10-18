@@ -98,6 +98,7 @@ public sealed class OrganizationLocationOperatorReadHttpAcceptanceTests(GoymenEr
     [InlineData("?unknown=x", "validation_failed")]
     [InlineData("?q=a&q=b", "validation_failed")]
     [InlineData("?pageSize=26", "validation_failed")]
+    [InlineData("?pageSize=not-an-integer", "validation_failed")]
     [InlineData("?cursor=%20", "invalid_cursor")]
     [InlineData("?cursor=a&cursor=b", "invalid_cursor")]
     public async Task Invalid_candidate_query_is_stable_400_before_the_host(string query, string code)

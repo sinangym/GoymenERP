@@ -118,7 +118,7 @@ public static class OrganizationEndpoints
         group.MapGet("/locations/{id:guid}/operator-candidates", async (
                 Guid id,
                 string? q,
-                int? pageSize,
+                string? pageSize,
                 string? cursor,
                 HttpContext httpContext,
                 IOrganizationLocationOperatorReadHostV1 host,
