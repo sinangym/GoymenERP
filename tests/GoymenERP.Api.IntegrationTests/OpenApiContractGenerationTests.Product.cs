@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Modules.Product.Application.Contracts;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -27,6 +28,12 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/products/{id}", "GetProductV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/products/{id}/manufacturing-technical-snapshot",
+            ProductManufacturingTechnicalHttpApiV2.OperationId,
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid",
+                "query:expectedProductVersion:true:type:string;pattern:^[1-9]\\d{0,18}$",
+                "query:effectiveOn:true:type:string;format:date"]),
         new("get", "/api/v1/products/{id}/history", "GetProductHistoryV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
@@ -62,6 +69,7 @@ public sealed partial class OpenApiContractGenerationTests
         ["GetProductReferenceOptionsV1"] = "ref:ProductReferenceOptions",
         ["GetProductDuplicateCandidatesV1"] = "ref:ProductDuplicateCandidates",
         ["GetProductV1"] = "ref:ProductCardView",
+        [ProductManufacturingTechnicalHttpApiV2.OperationId] = "ref:ProductManufacturingTechnicalHttpResultV2",
         ["GetProductHistoryV1"] = "ref:ProductHistoryView",
         ["CreateProductDraftV1"] = "ref:ProductMutationResponse",
         ["PreviewProductImportV1"] = "ref:ProductImportPreviewV1",
@@ -80,7 +88,10 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal(expected.Path, actual.Path);
         Assert.Equal(expected.Responses.Order(StringComparer.Ordinal), SnapshotResponses(actual.Value).Order(StringComparer.Ordinal));
         Assert.Equal(ProductSuccessSchemas[expected.OperationId], SnapshotSuccessSchema(actual.Value));
-        Assert.Contains("global Product authority", actual.Value.GetProperty("description").GetString(), StringComparison.Ordinal);
+        Assert.Contains(expected.OperationId == ProductManufacturingTechnicalHttpApiV2.OperationId
+                ? "product.operational-selection.read"
+                : "global Product authority",
+            actual.Value.GetProperty("description").GetString(), StringComparison.Ordinal);
         Assert.Equal(expected.Parameters, ReadParameters(actual.Value).Where(parameter => parameter.Location != "header")
             .Select(parameter => $"{parameter.Location}:{parameter.Name}:{parameter.Required.ToString().ToLowerInvariant()}:{parameter.Schema}"));
         var mutation = expected.Method is "post" or "patch" && expected.OperationId != "PreviewProductImportV1";
@@ -131,14 +142,25 @@ public sealed partial class OpenApiContractGenerationTests
                 409 => expected.OperationId is "EditProductDraftV1" or "ActivateProductV1" or "DeactivateProductV1" or "ReactivateProductV1"
                     ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
                 422 => ["validation_failed"],
-                500 => ["internal_error"], 503 => ["product_write_contention"], _ => [],
+                500 => ["internal_error"],
+                503 => expected.OperationId == ProductManufacturingTechnicalHttpApiV2.OperationId
+                    ? ["product_runtime_unconfigured", "product_family_policy_unavailable",
+                        "product_family_policy_invalid", "product_manufacturing_technical_snapshot_unavailable",
+                        "product_manufacturing_measure_undefined", "settings_provider_unavailable",
+                        "settings_profile_invalid", "settings_unit_profile_not_found"]
+                    : ["product_write_contention"],
             };
             Assert.Equal(codes.Length > 0, response.Value.TryGetProperty("x-erp-problem-codes", out var actualCodes));
             if (codes.Length > 0) Assert.Equal(codes, actualCodes.EnumerateArray().Select(value => value.GetString()));
             if (status == 400)
-                Assert.Equal(mutation || expected.OperationId is "GetProductsV1" or "GetProductReferenceOptionsV1"
-                        or "GetProductDuplicateCandidatesV1" or "PreviewProductImportV1",
+            {
+                var emptyBodyPossible = mutation
+                    || (expected.OperationId is "GetProductsV1" or "GetProductReferenceOptionsV1"
+                        or "GetProductDuplicateCandidatesV1" or "PreviewProductImportV1")
+                    || expected.OperationId == ProductManufacturingTechnicalHttpApiV2.OperationId;
+                Assert.Equal(emptyBodyPossible,
                     response.Value.TryGetProperty(ErpOpenApiContract.EmptyBodyPossibleExtensionName, out var empty) && empty.GetBoolean());
+            }
         }
     }
 
@@ -221,6 +243,44 @@ public sealed partial class OpenApiContractGenerationTests
             ["ProductFamilyFactsOption"] = ObjectSchema(["id", "code", "displayName", "cins", "tur", "tip", "templateId", "templateVersion"],
                 ("id", "type:string;format:uuid"), ("code", "type:string"), ("displayName", "type:string"), ("cins", "type:string"),
                 ("tur", "type:string"), ("tip", "type:string"), ("templateId", "type:null|string;format:uuid"), ("templateVersion", "type:null|string")),
+            ["ProductManufacturingTechnicalHttpResultV2"] = ObjectSchema(["snapshot", "errors"],
+                ("snapshot", "oneOf:ref:ProductManufacturingTechnicalHttpSnapshotV2|type:null"),
+                ("errors", "type:array;items:ref:ProductFieldError")),
+            ["ProductManufacturingTechnicalHttpSnapshotV2"] = ObjectSchema(
+                ["productId", "productVersion", "family", "template", "geometry", "unitKg", "effectiveOn"],
+                ("productId", "type:string;format:uuid"), ("productVersion", "type:string"),
+                ("family", "ref:ProductManufacturingFamilyRevisionV1"),
+                ("template", "ref:ProductManufacturingTemplateRevisionV1"),
+                ("geometry", "ref:ProductManufacturingHttpGeometryV2"),
+                ("unitKg", "ref:ProductManufacturingKilogramUnitV1"),
+                ("effectiveOn", "type:string;format:date")),
+            ["ProductManufacturingFamilyRevisionV1"] = ObjectSchema(["familyId", "familyCode", "sourceRevision"],
+                ("familyId", "type:string;format:uuid"), ("familyCode", "type:string"), ("sourceRevision", "type:string")),
+            ["ProductManufacturingTemplateRevisionV1"] = ObjectSchema(
+                ["templateId", "templateVersion", "templateCode", "sourceRevision"],
+                ("templateId", "type:string;format:uuid"), ("templateVersion", "type:string"),
+                ("templateCode", "type:string"), ("sourceRevision", "type:string")),
+            ["ProductManufacturingKilogramUnitV1"] = ObjectSchema(
+                ["companyId", "unitId", "unitCode", "profileId", "profileVersion"],
+                ("companyId", "type:string;format:uuid"), ("unitId", "type:string;format:uuid"),
+                ("unitCode", "type:string"), ("profileId", "type:string;format:uuid"), ("profileVersion", "type:string")),
+            ["ProductFieldError"] = ObjectSchema(["field", "code"], ("field", "type:string"), ("code", "type:string")),
+            ["ProductManufacturingHttpGeometryV2"] = ObjectSchema(["kind"]),
+            ["ProductManufacturingHttpGeometryV2ProductManufacturingFlatHttpGeometryV2"] = ObjectSchema(
+                ["thicknessMm", "widthMm", "lengthMm"],
+                ("kind", "enum:flat"), ("thicknessMm", "type:number|string;format:double"),
+                ("widthMm", "type:number|string;format:double"), ("lengthMm", "type:null|number|string;format:double")),
+            ["ProductManufacturingHttpGeometryV2ProductManufacturingRoundPipeHttpGeometryV2"] = ObjectSchema(
+                ["outsideDiameterMm", "wallThicknessMm", "lengthMm"],
+                ("kind", "enum:roundPipe"), ("outsideDiameterMm", "type:number|string;format:double"),
+                ("wallThicknessMm", "type:number|string;format:double"),
+                ("lengthMm", "type:number|string;format:double")),
+            ["ProductManufacturingHttpGeometryV2ProductManufacturingProfileHttpGeometryV2"] = ObjectSchema(
+                ["sectionWidthMm", "sectionHeightMm", "wallThicknessMm", "lengthMm"],
+                ("kind", "enum:profile"), ("sectionWidthMm", "type:number|string;format:double"),
+                ("sectionHeightMm", "type:number|string;format:double"),
+                ("wallThicknessMm", "type:number|string;format:double"),
+                ("lengthMm", "type:number|string;format:double")),
         };
         AssertComponentSchemaMatrix(schemas, expected);
         var queue = new Queue<string>(ProductSuccessSchemas.Values.Select(value => value[(value.IndexOf(':') + 1)..]));
@@ -232,6 +292,16 @@ public sealed partial class OpenApiContractGenerationTests
         }
         Assert.Equal(expected.Keys.Order(StringComparer.Ordinal), reachable.Order(StringComparer.Ordinal));
         AssertPositiveIntegerStringVersion(schemas, "ProductDraftView");
+        var productVersion = schemas.GetProperty("ProductManufacturingTechnicalHttpSnapshotV2")
+            .GetProperty("properties").GetProperty("productVersion");
+        Assert.Equal("string", productVersion.GetProperty("type").GetString());
+        Assert.Equal(1, productVersion.GetProperty("minLength").GetInt32());
+        Assert.Equal(19, productVersion.GetProperty("maxLength").GetInt32());
+        Assert.Equal(ErpOpenApiContract.PositiveIntegerStringPattern, productVersion.GetProperty("pattern").GetString());
+        var geometry = schemas.GetProperty("ProductManufacturingHttpGeometryV2");
+        Assert.Equal("kind", geometry.GetProperty("discriminator").GetProperty("propertyName").GetString());
+        Assert.Equal(["flat", "profile", "roundPipe"], geometry.GetProperty("discriminator").GetProperty("mapping")
+            .EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
         var historyEntry = schemas.GetProperty("ProductHistoryEntryView").GetProperty("properties");
         foreach (var field in new[] { "versionBefore", "versionAfter" })
         {

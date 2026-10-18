@@ -7,6 +7,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -23,6 +24,85 @@ namespace GoymenERP.Product.UnitTests;
 // platform global-authority or real-browser acceptance.
 public sealed class ProductHttpContractTests
 {
+    [Fact]
+    public async Task Manufacturing_snapshot_V2_is_a_discriminated_round_pipe_HTTP_contract()
+    {
+        var service = new Service();
+        var snapshots = new TechnicalSnapshots(service.Card.Product.Id);
+        await using var app = await StartAsync(service, snapshots: snapshots);
+        using var client = Client(app);
+        var path = ProductManufacturingTechnicalHttpApiV2.Path(service.Card.Product.Id)
+            + "?expectedProductVersion=1&effectiveOn=2026-10-19";
+
+        using var response = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl!.Private);
+        Assert.True(response.Headers.CacheControl.NoStore);
+        using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = document.RootElement;
+        Assert.Equal(["snapshot", "errors"], root.EnumerateObject().Select(property => property.Name));
+        Assert.Empty(root.GetProperty("errors").EnumerateArray());
+        var snapshot = root.GetProperty("snapshot");
+        Assert.Equal(service.Card.Product.Id, snapshot.GetProperty("productId").GetGuid());
+        Assert.Equal("1", snapshot.GetProperty("productVersion").GetString());
+        Assert.Equal("welded-round-pipe", snapshot.GetProperty("family").GetProperty("familyCode").GetString());
+        Assert.Equal("1", snapshot.GetProperty("template").GetProperty("templateVersion").GetString());
+        Assert.Equal("2026-10-19", snapshot.GetProperty("effectiveOn").GetString());
+        var geometry = snapshot.GetProperty("geometry");
+        Assert.Equal("roundPipe", geometry.GetProperty("kind").GetString());
+        Assert.Equal(60.3m, geometry.GetProperty("outsideDiameterMm").GetDecimal());
+        Assert.Equal(1.5m, geometry.GetProperty("wallThicknessMm").GetDecimal());
+        Assert.Equal(6000m, geometry.GetProperty("lengthMm").GetDecimal());
+        Assert.False(geometry.TryGetProperty("thicknessMm", out _));
+        Assert.False(geometry.TryGetProperty("widthMm", out _));
+        Assert.Equal(new ProductManufacturingTechnicalSnapshotSelectionV2(service.Card.Product.Id, "1",
+            new DateOnly(2026, 10, 19)), snapshots.Selection);
+    }
+
+    [Fact]
+    public async Task Manufacturing_snapshot_V2_keeps_field_refusals_in_the_typed_envelope()
+    {
+        var service = new Service();
+        var snapshots = new TechnicalSnapshots(service.Card.Product.Id)
+        {
+            Result = new(null, [new("expectedProductVersion", ProductApiV1.VersionConflict)]),
+        };
+        await using var app = await StartAsync(service, snapshots: snapshots);
+        using var client = Client(app);
+
+        var result = await client.GetFromJsonAsync<ProductManufacturingTechnicalHttpResultV2>(
+            ProductManufacturingTechnicalHttpApiV2.Path(service.Card.Product.Id)
+            + "?expectedProductVersion=stale&effectiveOn=2026-10-19");
+
+        Assert.Null(result!.Snapshot);
+        Assert.Equal([new ProductFieldError("expectedProductVersion", ProductApiV1.VersionConflict)], result.Errors);
+    }
+
+    [Theory]
+    [InlineData("settings_access_denied", 403)]
+    [InlineData("settings_provider_unavailable", 503)]
+    [InlineData(SettingsPrerequisiteCodesV1.UnitProfileNotFound, 503)]
+    public async Task Manufacturing_snapshot_V2_maps_Settings_owner_refusals_without_a_partial_body(
+        string code, int status)
+    {
+        var service = new Service();
+        var snapshots = new TechnicalSnapshots(service.Card.Product.Id)
+        {
+            Failure = new SettingsPrerequisiteException(code),
+        };
+        await using var app = await StartAsync(service, snapshots: snapshots);
+        using var client = Client(app);
+
+        using var response = await client.GetAsync(ProductManufacturingTechnicalHttpApiV2.Path(service.Card.Product.Id)
+            + "?expectedProductVersion=1&effectiveOn=2026-10-19");
+
+        Assert.Equal(status, (int)response.StatusCode);
+        using var problem = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(code, problem.RootElement.GetProperty("code").GetString());
+        Assert.False(problem.RootElement.TryGetProperty("snapshot", out _));
+    }
+
     [Theory]
     [InlineData("?roles=sellable,purchasable&roleMatch=all&sort=name&direction=desc&completeness=NotEvaluated", 200)]
     [InlineData("?roles=sellable,sellable", 400)]
@@ -365,7 +445,8 @@ public sealed class ProductHttpContractTests
         return client;
     }
 
-    private static async Task<WebApplication> StartAsync(Service service, AuditSource? audit = null)
+    private static async Task<WebApplication> StartAsync(Service service, AuditSource? audit = null,
+        TechnicalSnapshots? snapshots = null)
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Testing" });
         builder.WebHost.UseTestServer();
@@ -373,6 +454,8 @@ public sealed class ProductHttpContractTests
         builder.Services.AddAuthentication("fixture").AddScheme<AuthenticationSchemeOptions, FixtureAuthentication>("fixture", _ => { });
         builder.Services.AddAuthorization();
         builder.Services.AddSingleton<IProductService>(service);
+        builder.Services.AddSingleton<IProductManufacturingTechnicalSnapshotV2>(
+            snapshots ?? new TechnicalSnapshots(service.Card.Product.Id));
         builder.Services.AddSingleton<IProductImportServiceV1>(new FailClosedProductImportService());
         builder.Services.AddSingleton<IGroupSharedMasterAuthorizationService,
             UnconfiguredGroupSharedMasterAuthorizationService>();
@@ -385,6 +468,38 @@ public sealed class ProductHttpContractTests
         app.MapProductEndpoints();
         await app.StartAsync();
         return app;
+    }
+
+    private sealed class TechnicalSnapshots
+        : IProductManufacturingTechnicalSnapshotV2
+    {
+        public ProductManufacturingTechnicalSnapshotSelectionV2? Selection { get; private set; }
+        public ProductManufacturingTechnicalSnapshotResultV2 Result { get; init; }
+        public Exception? Failure { get; init; }
+
+        public TechnicalSnapshots(Guid productId)
+        {
+            Result = new(new(productId, "1",
+                new(Guid.Parse("f201c32b-39a0-451a-bc78-76f19230f194"), "welded-round-pipe", "source-family-v1"),
+                new(Guid.Parse("96922145-8f91-4095-966d-00a043b13c02"), "1", "gdc-welded-round-pipe-v1",
+                    "source-template-v1"),
+                new ProductManufacturingRoundPipeGeometryV2(60.3m, 1.5m, 6000m),
+                new(Guid.Parse("10000000-0000-0000-0000-000000000001"),
+                    Guid.Parse("f5fe1f8a-121a-4f19-8600-06afaa669124"), "kg",
+                    Guid.Parse("78564927-0b3c-4d43-8f17-8f904d863b9a"), "4"),
+                new DateOnly(2026, 10, 19)), []);
+        }
+
+        public Task<ProductManufacturingTechnicalSnapshotResultV2> ReadAsync(
+            ProductManufacturingTechnicalSnapshotSelectionV2 selection,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Selection = selection;
+            return Failure is null
+                ? Task.FromResult(Result)
+                : Task.FromException<ProductManufacturingTechnicalSnapshotResultV2>(Failure);
+        }
     }
 
     private sealed class FailClosedProductImportService : IProductImportServiceV1

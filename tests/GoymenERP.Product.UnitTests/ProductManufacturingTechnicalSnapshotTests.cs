@@ -72,6 +72,51 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
             (snapshot.ProductId, snapshot.ProductVersion, snapshot.Family.FamilyId, snapshot.Template.TemplateId));
     }
 
+    [Theory]
+    [InlineData("flat")]
+    [InlineData("round")]
+    [InlineData("profile")]
+    public void HTTP_projection_preserves_the_concrete_V2_geometry_and_revision_evidence(string shape)
+    {
+        ProductManufacturingGeometryV2 geometry = shape switch
+        {
+            "flat" => new ProductManufacturingFlatGeometryV2(1.25m, 1250m, 2500m),
+            "round" => new ProductManufacturingRoundPipeGeometryV2(60.3m, 1.5m, 6000m),
+            _ => new ProductManufacturingProfileGeometryV2(60m, 40m, 1.4m, 6000m),
+        };
+        var source = new ProductManufacturingTechnicalSnapshotV2(ProductId, StoredVersion,
+            new(FamilyId, "family", "family-source"),
+            new(TemplateId, "7", "template-v7", "template-source"), geometry,
+            new(CompanyId, StockUnitId, "kg", Guid.NewGuid(), "11"), On);
+
+        var result = ProductManufacturingTechnicalHttpProjectionV2.From(new(source, []));
+
+        var projected = Assert.IsType<ProductManufacturingTechnicalHttpSnapshotV2>(result.Snapshot);
+        Assert.Equal((source.ProductId, source.ProductVersion, source.Family, source.Template, source.UnitKg,
+                source.EffectiveOn),
+            (projected.ProductId, projected.ProductVersion, projected.Family, projected.Template, projected.UnitKg,
+                projected.EffectiveOn));
+        Assert.Equal(shape switch
+        {
+            "flat" => new ProductManufacturingFlatHttpGeometryV2(1.25m, 1250m, 2500m),
+            "round" => (ProductManufacturingHttpGeometryV2)new ProductManufacturingRoundPipeHttpGeometryV2(
+                60.3m, 1.5m, 6000m),
+            _ => new ProductManufacturingProfileHttpGeometryV2(60m, 40m, 1.4m, 6000m),
+        }, projected.Geometry);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public void HTTP_projection_keeps_a_refusal_without_manufacturing_a_snapshot()
+    {
+        var errors = new[] { new ProductFieldError("productId", ProductApiV1.LifecycleConflict) };
+
+        var result = ProductManufacturingTechnicalHttpProjectionV2.From(new(null, errors));
+
+        Assert.Null(result.Snapshot);
+        Assert.Same(errors, result.Errors);
+    }
+
     [Fact]
     public async Task V2_round_pipe_publishes_exact_diameter_wall_and_length_without_flat_role_fallback()
     {

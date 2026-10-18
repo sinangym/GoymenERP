@@ -11,7 +11,7 @@ public static partial class ErpOpenApiContract
 {
     public static RouteHandlerBuilder WithProductRuntimeContract(this RouteHandlerBuilder builder,
         bool mutation = false, bool notFound = false, bool primitiveBinding = false,
-        bool activationValidation = false)
+        bool activationValidation = false, bool operationalSelection = false, bool unavailable = false)
     {
         builder.Produces<ProductRuntimeProblemContract>(400, "application/problem+json")
             .Produces<ProductRuntimeProblemContract>(401, "application/problem+json")
@@ -24,8 +24,10 @@ public static partial class ErpOpenApiContract
                 .Produces(415);
         if (activationValidation)
             builder.Produces<ProductRuntimeProblemContract>(422, "application/problem+json");
+        if (unavailable)
+            builder.Produces<ProductRuntimeProblemContract>(503, "application/problem+json");
         if (primitiveBinding) builder.AllowsEmptyErpBadRequestBody();
-        builder.Add(endpoint => endpoint.Metadata.Add(new ProductRuntimeContractMetadata()));
+        builder.Add(endpoint => endpoint.Metadata.Add(new ProductRuntimeContractMetadata(operationalSelection)));
         return builder;
     }
 
@@ -33,11 +35,16 @@ public static partial class ErpOpenApiContract
         OpenApiOperationTransformerContext context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!context.Description.ActionDescriptor.EndpointMetadata.OfType<ProductRuntimeContractMetadata>().Any())
+        var metadata = context.Description.ActionDescriptor.EndpointMetadata.OfType<ProductRuntimeContractMetadata>()
+            .SingleOrDefault();
+        if (metadata is null)
             return Task.CompletedTask;
-        operation.Description = "Explicit server-resolved global Product authority is required for this operation. "
-            + "X-Company-Id selects the authorized origin, not a Product owner. Company roles alone grant no global access. "
-            + "Reads never create data. Responses are private, no-store; a successful read is not a durable write grant.";
+        operation.Description = metadata.OperationalSelection
+            ? "Fresh product.operational-selection.read authority is required before and after every Product/Settings owner read. "
+              + "The selected company and actor are fenced for the whole read. Reads never create data; responses are private, no-store."
+            : "Explicit server-resolved global Product authority is required for this operation. "
+              + "X-Company-Id selects the authorized origin, not a Product owner. Company roles alone grant no global access. "
+              + "Reads never create data. Responses are private, no-store; a successful read is not a durable write grant.";
         // Every versioned card write (draft edit, DEC-PRD-010 activation, deactivation, reactivation) answers
         // lifecycle and version conflicts.
         var versioned = operation.OperationId is "EditProductDraftV1" or "ActivateProductV1"
@@ -47,6 +54,10 @@ public static partial class ErpOpenApiContract
             {
                 if (parameter is OpenApiParameter bound && bound.In == ParameterLocation.Query && bound.Name is { Length: > 0 })
                     bound.Name = char.ToLowerInvariant(bound.Name[0]) + bound.Name[1..];
+                if (operation.OperationId == ProductManufacturingTechnicalHttpApiV2.OperationId
+                    && parameter is OpenApiParameter { In: ParameterLocation.Query, Name: "expectedProductVersion" } version)
+                    version.Schema = new OpenApiSchema { Type = JsonSchemaType.String, MinLength = 1, MaxLength = 19,
+                        Pattern = PositiveIntegerStringPattern };
                 if (parameter.Name == "X-Company-Id" && parameter is OpenApiParameter origin)
                     origin.Description = "Explicit authorized origin company, not an owner or a global Product grant.";
                 if (parameter.Name == IdempotencyHeaderName && parameter is OpenApiParameter writable)
@@ -70,7 +81,12 @@ public static partial class ErpOpenApiContract
                 "404" => ["not_found"],
                 "409" => versioned ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
                 "500" => ["internal_error"],
-                "503" => ["product_write_contention"],
+                "503" => metadata.OperationalSelection
+                    ? ["product_runtime_unconfigured", "product_family_policy_unavailable",
+                        "product_family_policy_invalid", "product_manufacturing_technical_snapshot_unavailable",
+                        "product_manufacturing_measure_undefined", "settings_provider_unavailable",
+                        "settings_profile_invalid", "settings_unit_profile_not_found"]
+                    : ["product_write_contention"],
                 "422" => ["validation_failed"],
                 _ => [],
             };
@@ -80,12 +96,16 @@ public static partial class ErpOpenApiContract
                 writable.Extensions[ProblemCodesExtensionName] = new JsonNodeExtension(
                     new JsonArray(codes.Select(code => (JsonNode?)JsonValue.Create(code)).ToArray()));
             }
-            if (status == "403") writable.Description = "Denied without a Product body; handler or company-boundary errors may omit code. "
-                + "A company membership is not a global Product assignment.";
+            if (status == "403") writable.Description = metadata.OperationalSelection
+                ? "Denied without a snapshot when authentication, company/actor scope, fresh operational-selection authority or Settings access fails."
+                : "Denied without a Product body; handler or company-boundary errors may omit code. "
+                  + "A company membership is not a global Product assignment.";
             if (status == "409") writable.Description = "No partial write. Version conflicts expose lossless string expectedVersion/currentVersion "
                 + "at the problem root, not the company V1 numeric conflict object. Replay conflicts disclose no stored Product body.";
-            if (status == "503") writable.Description = "Bounded database contention exhausted; no successful terminal was established. "
-                + "Recover using the same idempotency key, never manufacture a new logical command.";
+            if (status == "503") writable.Description = metadata.OperationalSelection
+                ? "No snapshot is available: Product runtime/released provenance/required geometry or Settings prerequisite is unavailable."
+                : "Bounded database contention exhausted; no successful terminal was established. "
+                  + "Recover using the same idempotency key, never manufacture a new logical command.";
         }
         return Task.CompletedTask;
     }
@@ -124,6 +144,8 @@ public static partial class ErpOpenApiContract
             schema.MinProperties = 1;
         }
         if (type == typeof(ProductDraftView)) SetPositiveIntegerStringProperty(schema, "version");
+        if (type == typeof(ProductManufacturingTechnicalHttpSnapshotV2))
+            SetPositiveIntegerStringProperty(schema, "productVersion");
         if (type == typeof(ProductHistoryEntryView))
         {
             SetPositiveIntegerStringProperty(schema, "versionAfter");
@@ -170,7 +192,7 @@ public static partial class ErpOpenApiContract
         },
     };
 
-    private sealed record ProductRuntimeContractMetadata;
+    private sealed record ProductRuntimeContractMetadata(bool OperationalSelection);
 }
 
 // Documentation only. Runtime still uses the existing module Results.Problem
