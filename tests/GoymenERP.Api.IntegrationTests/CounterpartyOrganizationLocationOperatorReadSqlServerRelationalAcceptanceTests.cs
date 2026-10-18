@@ -219,6 +219,56 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
             Assert.Empty(authorityDrift.Items);
             Assert.Single(driftObserver.Commands);
 
+            var actorDriftContext = new MutableCompanyContext(TestCompanyIds.CompanyA);
+            var actorDriftUser = new MutableCurrentUser(Actor, new HashSet<Guid> { TestCompanyIds.CompanyA });
+            var actorDriftAuthority = new MutableAuthority(
+                readLocations: new HashSet<Guid> { LocationOne },
+                writeLocations: new HashSet<Guid> { LocationOne });
+            var actorDriftObserver = new CapturingObserver
+            {
+                OnObserve = () => actorDriftUser.SetActor("replacement-writer"),
+            };
+            await using var actorDriftDb = CreateDbContext(factory.DatabaseConnectionString, actorDriftContext);
+            using var actorDriftCodec = CreateCursorCodec();
+            var actorDrift = await Source(
+                    actorDriftDb,
+                    actorDriftContext,
+                    actorDriftUser,
+                    actorDriftAuthority,
+                    actorDriftCodec,
+                    actorDriftObserver)
+                .SearchAuthorizedCandidatesAsync(Candidate(LocationOne, pageSize: 25));
+            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, actorDrift.Outcome);
+            Assert.Empty(actorDrift.Items);
+            Assert.Null(actorDrift.NextCursor);
+            Assert.False(actorDrift.HasMore);
+            Assert.Single(actorDriftObserver.Commands);
+
+            var companyDriftContext = new MutableCompanyContext(TestCompanyIds.CompanyA);
+            var companyDriftUser = new MutableCurrentUser(Actor, new HashSet<Guid> { TestCompanyIds.CompanyA });
+            var companyDriftAuthority = new MutableAuthority(
+                readLocations: new HashSet<Guid> { LocationOne },
+                writeLocations: new HashSet<Guid> { LocationOne });
+            var companyDriftObserver = new CapturingObserver
+            {
+                OnObserve = () => companyDriftContext.Set(TestCompanyIds.CompanyB),
+            };
+            await using var companyDriftDb = CreateDbContext(factory.DatabaseConnectionString, companyDriftContext);
+            using var companyDriftCodec = CreateCursorCodec();
+            var companyDrift = await Source(
+                    companyDriftDb,
+                    companyDriftContext,
+                    companyDriftUser,
+                    companyDriftAuthority,
+                    companyDriftCodec,
+                    companyDriftObserver)
+                .SearchAuthorizedCandidatesAsync(Candidate(LocationOne, pageSize: 25));
+            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, companyDrift.Outcome);
+            Assert.Empty(companyDrift.Items);
+            Assert.Null(companyDrift.NextCursor);
+            Assert.False(companyDrift.HasMore);
+            Assert.Single(companyDriftObserver.Commands);
+
             await using var outageDb = CreateDbContext(factory.DatabaseConnectionString, context);
             using var outageCodec = CreateCursorCodec();
             var outage = await Source(outageDb, context, user, authority, outageCodec, new ThrowingObserver())
