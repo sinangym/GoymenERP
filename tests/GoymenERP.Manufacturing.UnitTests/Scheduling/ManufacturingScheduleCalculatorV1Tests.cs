@@ -41,9 +41,9 @@ public sealed class ManufacturingScheduleCalculatorV1Tests
     }
 
     [Fact]
-    public void Overlapping_availability_is_unioned_and_never_double_counted()
+    public void Overlapping_or_duplicate_availability_is_a_conflict_not_silently_repaired()
     {
-        var input = Input(
+        var overlapping = ManufacturingScheduleCalculatorV1.Calculate(Input(
             ready: Utc(2026, 10, 20, 8, 0),
             intervals:
             [
@@ -53,12 +53,14 @@ public sealed class ManufacturingScheduleCalculatorV1Tests
             setup: Duration(0, SetupSource),
             changeover: Duration(0, ChangeoverSource),
             run: Duration(300, RunSource),
-            cleanup: Duration(0, CleanupSource));
+            cleanup: Duration(0, CleanupSource)));
+        var duplicate = ManufacturingScheduleCalculatorV1.Calculate(Input(
+            intervals: [Interval(8, 0, 12, 0), Interval(8, 0, 12, 0)]));
 
-        var result = ManufacturingScheduleCalculatorV1.Calculate(input);
-
-        Assert.Equal(ManufacturingScheduleOutcomeV1.Ready, result.Outcome);
-        Assert.Equal(Utc(2026, 10, 20, 13, 0), result.PlannedFinishUtc);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Conflict, overlapping.Outcome);
+        Assert.Equal(ManufacturingScheduleCodesV1.InputConflict, overlapping.Code);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Conflict, duplicate.Outcome);
+        Assert.Equal(ManufacturingScheduleCodesV1.InputConflict, duplicate.Code);
     }
 
     [Fact]
@@ -94,23 +96,84 @@ public sealed class ManufacturingScheduleCalculatorV1Tests
     }
 
     [Fact]
-    public void Missing_run_or_provenance_is_unavailable_and_never_zero()
+    public void Missing_snapshot_or_provenance_is_unavailable_and_never_zero()
     {
-        var missingRun = ManufacturingScheduleCalculatorV1.Calculate(Input(run: new(
+        var missingAvailability = ManufacturingScheduleCalculatorV1.Calculate(
+            Input() with { Availability = null });
+        var missingCalendarVersion = ManufacturingScheduleCalculatorV1.Calculate(
+            Input(availability: Availability(calendarVersion: null)));
+        var missingRun = ManufacturingScheduleCalculatorV1.Calculate(
+            Input() with { Run = null });
+        var missingRunMinutes = ManufacturingScheduleCalculatorV1.Calculate(Input(run: new(
             null,
             RunSource,
             4,
             "RUN-REV-4")));
-        var missingProvenance = ManufacturingScheduleCalculatorV1.Calculate(Input(setup: new(
+        var missingDurationProvenance = ManufacturingScheduleCalculatorV1.Calculate(Input(setup: new(
             15,
             null,
             null,
             null)));
 
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingAvailability.Outcome);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingCalendarVersion.Outcome);
         Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingRun.Outcome);
         Assert.Equal(ManufacturingScheduleCodesV1.InputUnavailable, missingRun.Code);
-        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingProvenance.Outcome);
-        Assert.Equal(ManufacturingScheduleCodesV1.InputUnavailable, missingProvenance.Code);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingRunMinutes.Outcome);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingDurationProvenance.Outcome);
+        Assert.Equal(ManufacturingScheduleCodesV1.InputUnavailable, missingDurationProvenance.Code);
+    }
+
+    [Fact]
+    public void Supplied_malformed_provenance_is_a_conflict_not_missing_input()
+    {
+        var malformed = new[]
+        {
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(calendarId: Guid.Empty))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(calendarVersion: 0))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(timeZoneBindingVersion: -1))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(setup: new(
+                15,
+                Guid.Empty,
+                4,
+                "SETUP-REV-4"))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(changeover: new(
+                10,
+                ChangeoverSource,
+                0,
+                "CHANGEOVER-REV-4"))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(run: new(
+                120,
+                RunSource,
+                -1,
+                "RUN-REV-4"))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(cleanup: Duration(-1, CleanupSource))),
+        };
+
+        Assert.All(malformed, result =>
+        {
+            Assert.Equal(ManufacturingScheduleOutcomeV1.Conflict, result.Outcome);
+            Assert.Equal(ManufacturingScheduleCodesV1.InputConflict, result.Code);
+        });
+    }
+
+    [Fact]
+    public void Nonblank_opaque_provenance_is_accepted_without_trim_canonicalization()
+    {
+        var input = Input(
+            availability: Availability(
+                calendarSourceRevision: " calendar revision with spaces ",
+                timeZoneId: " Europe/Istanbul ",
+                timeZoneSourceRevision: " timezone revision with spaces "),
+            setup: new(15, SetupSource, 4, " setup revision with spaces "));
+
+        var result = ManufacturingScheduleCalculatorV1.Calculate(input);
+
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Ready, result.Outcome);
+        Assert.Equal(Utc(2026, 10, 20, 11, 30), result.PlannedFinishUtc);
     }
 
     [Fact]
@@ -161,8 +224,8 @@ public sealed class ManufacturingScheduleCalculatorV1Tests
     {
         var mutable = new List<ManufacturingScheduleAvailabilityIntervalV1>
         {
-            Interval(13, 0, 17, 0),
             Interval(8, 0, 12, 0),
+            Interval(13, 0, 17, 0),
         };
         var input = Input(intervals: mutable);
         var snapshotIntervals = input.Availability!.Intervals.ToArray();
@@ -183,25 +246,39 @@ public sealed class ManufacturingScheduleCalculatorV1Tests
         ManufacturingScheduleDurationSnapshotV1? changeover = null,
         ManufacturingScheduleDurationSnapshotV1? run = null,
         ManufacturingScheduleDurationSnapshotV1? cleanup = null,
+        ManufacturingScheduleAvailabilitySnapshotV1? availability = null,
         Guid? availabilityWorkCenter = null) =>
         new(
             item ?? BaseItem(ready ?? Utc(2026, 10, 20, 9, 0)),
-            new ManufacturingScheduleAvailabilitySnapshotV1(
-                Company,
-                availabilityWorkCenter ?? WorkCenter,
-                Calendar,
-                7,
-                "CAL-REV-7",
-                "Europe/Istanbul",
-                3,
-                "TZ-REV-3",
-                Day,
-                Day.AddDays(1),
-                intervals ?? new[] { Interval(8, 0, 17, 0) }),
+            availability ?? Availability(
+                availabilityWorkCenter,
+                intervals: intervals),
             setup ?? Duration(15, SetupSource),
             changeover ?? Duration(10, ChangeoverSource),
             run ?? Duration(120, RunSource),
             cleanup ?? Duration(5, CleanupSource));
+
+    private static ManufacturingScheduleAvailabilitySnapshotV1 Availability(
+        Guid? workCenterId = null,
+        Guid? calendarId = null,
+        long? calendarVersion = 7,
+        string? calendarSourceRevision = "CAL-REV-7",
+        string? timeZoneId = "Europe/Istanbul",
+        long? timeZoneBindingVersion = 3,
+        string? timeZoneSourceRevision = "TZ-REV-3",
+        IEnumerable<ManufacturingScheduleAvailabilityIntervalV1>? intervals = null) =>
+        new(
+            Company,
+            workCenterId ?? WorkCenter,
+            calendarId ?? Calendar,
+            calendarVersion,
+            calendarSourceRevision,
+            timeZoneId,
+            timeZoneBindingVersion,
+            timeZoneSourceRevision,
+            Day,
+            Day.AddDays(1),
+            intervals ?? new[] { Interval(8, 0, 17, 0) });
 
     private static ManufacturingScheduleQueueItemV1 BaseItem(DateTimeOffset ready) =>
         new(

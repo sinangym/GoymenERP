@@ -25,7 +25,22 @@ public static class ManufacturingScheduleCalculatorV1
         }
 
         var availability = input.Availability;
-        if (availability is null || !HasAvailabilityProvenance(availability))
+        if (availability is null)
+        {
+            return ManufacturingScheduleResultV1.Unavailable(
+                item,
+                ManufacturingScheduleCodesV1.InputUnavailable);
+        }
+
+        var availabilityProvenance = ClassifyAvailabilityProvenance(availability);
+        if (availabilityProvenance == ProvenanceState.Invalid)
+        {
+            return ManufacturingScheduleResultV1.Conflict(
+                item,
+                ManufacturingScheduleCodesV1.InputConflict);
+        }
+
+        if (availabilityProvenance == ProvenanceState.Missing)
         {
             return ManufacturingScheduleResultV1.Unavailable(
                 item,
@@ -44,18 +59,28 @@ public static class ManufacturingScheduleCalculatorV1
         }
 
         var durations = new[] { input.Setup, input.Changeover, input.Run, input.Cleanup };
-        if (durations.Any(duration => duration is null || !HasDurationProvenance(duration)))
+        if (durations.Any(duration => duration is null))
         {
             return ManufacturingScheduleResultV1.Unavailable(
                 item,
                 ManufacturingScheduleCodesV1.InputUnavailable);
         }
 
-        if (durations.Any(duration => duration!.Minutes < 0))
+        var durationProvenance = durations
+            .Select(duration => ClassifyDurationProvenance(duration!))
+            .ToArray();
+        if (durationProvenance.Contains(ProvenanceState.Invalid))
         {
             return ManufacturingScheduleResultV1.Conflict(
                 item,
                 ManufacturingScheduleCodesV1.InputConflict);
+        }
+
+        if (durationProvenance.Contains(ProvenanceState.Missing))
+        {
+            return ManufacturingScheduleResultV1.Unavailable(
+                item,
+                ManufacturingScheduleCodesV1.InputUnavailable);
         }
 
         long totalMinutes;
@@ -74,7 +99,7 @@ public static class ManufacturingScheduleCalculatorV1
                 ManufacturingScheduleCodesV1.InputConflict);
         }
 
-        if (!TryNormalizeAvailability(availability, out var intervals))
+        if (!TryValidateAvailability(availability, out var intervals))
         {
             return ManufacturingScheduleResultV1.Conflict(
                 item,
@@ -163,59 +188,76 @@ public static class ManufacturingScheduleCalculatorV1
         return true;
     }
 
-    private static bool HasAvailabilityProvenance(ManufacturingScheduleAvailabilitySnapshotV1 snapshot) =>
-        snapshot.CalendarId != Guid.Empty
-        && snapshot.CalendarVersion > 0
-        && Canonical(snapshot.CalendarSourceRevision)
-        && Canonical(snapshot.TimeZoneId)
-        && snapshot.TimeZoneBindingVersion > 0
-        && Canonical(snapshot.TimeZoneSourceRevision);
-
-    private static bool HasDurationProvenance(ManufacturingScheduleDurationSnapshotV1 snapshot) =>
-        snapshot.Minutes is not null
-        && snapshot.SourceId is not null && snapshot.SourceId != Guid.Empty
-        && snapshot.SourceVersion > 0
-        && Canonical(snapshot.SourceRevision);
-
-    private static bool TryNormalizeAvailability(
-        ManufacturingScheduleAvailabilitySnapshotV1 snapshot,
-        out IReadOnlyList<ManufacturingScheduleAvailabilityIntervalV1> normalized)
+    private static ProvenanceState ClassifyAvailabilityProvenance(
+        ManufacturingScheduleAvailabilitySnapshotV1 snapshot)
     {
-        normalized = [];
-        if (snapshot.Intervals.Any(interval =>
-                interval is null
+        if (snapshot.CalendarId == Guid.Empty
+            || snapshot.CalendarVersion is <= 0
+            || snapshot.TimeZoneBindingVersion is <= 0)
+        {
+            return ProvenanceState.Invalid;
+        }
+
+        return snapshot.CalendarVersion is null
+            || string.IsNullOrWhiteSpace(snapshot.CalendarSourceRevision)
+            || string.IsNullOrWhiteSpace(snapshot.TimeZoneId)
+            || snapshot.TimeZoneBindingVersion is null
+            || string.IsNullOrWhiteSpace(snapshot.TimeZoneSourceRevision)
+                ? ProvenanceState.Missing
+                : ProvenanceState.Complete;
+    }
+
+    private static ProvenanceState ClassifyDurationProvenance(
+        ManufacturingScheduleDurationSnapshotV1 snapshot)
+    {
+        if (snapshot.Minutes is < 0
+            || snapshot.SourceId == Guid.Empty
+            || snapshot.SourceVersion is <= 0)
+        {
+            return ProvenanceState.Invalid;
+        }
+
+        return snapshot.Minutes is null
+            || snapshot.SourceId is null
+            || snapshot.SourceVersion is null
+            || string.IsNullOrWhiteSpace(snapshot.SourceRevision)
+                ? ProvenanceState.Missing
+                : ProvenanceState.Complete;
+    }
+
+    private static bool TryValidateAvailability(
+        ManufacturingScheduleAvailabilitySnapshotV1 snapshot,
+        out IReadOnlyList<ManufacturingScheduleAvailabilityIntervalV1> intervals)
+    {
+        intervals = snapshot.Intervals;
+        for (var index = 0; index < intervals.Count; index++)
+        {
+            var interval = intervals[index];
+            if (interval is null
                 || !Utc(interval.StartsAtUtc)
                 || !Utc(interval.EndsAtUtc)
                 || interval.StartsAtUtc >= interval.EndsAtUtc
                 || interval.StartsAtUtc < snapshot.FromUtc
-                || interval.EndsAtUtc > snapshot.ThroughUtc))
-        {
-            return false;
-        }
-
-        var merged = new List<ManufacturingScheduleAvailabilityIntervalV1>();
-        foreach (var interval in snapshot.Intervals.OrderBy(interval => interval.StartsAtUtc))
-        {
-            if (merged.Count == 0 || interval.StartsAtUtc > merged[^1].EndsAtUtc)
+                || interval.EndsAtUtc > snapshot.ThroughUtc)
             {
-                merged.Add(interval);
-                continue;
+                return false;
             }
 
-            var prior = merged[^1];
-            if (interval.EndsAtUtc > prior.EndsAtUtc)
+            if (index > 0 && interval.StartsAtUtc < intervals[index - 1].EndsAtUtc)
             {
-                merged[^1] = prior with { EndsAtUtc = interval.EndsAtUtc };
+                return false;
             }
         }
 
-        normalized = merged.AsReadOnly();
         return true;
     }
 
-    private static bool Canonical(string? value) =>
-        !string.IsNullOrWhiteSpace(value)
-        && string.Equals(value, value.Trim(), StringComparison.Ordinal);
-
     private static bool Utc(DateTimeOffset value) => value.Offset == TimeSpan.Zero;
+
+    private enum ProvenanceState
+    {
+        Complete,
+        Missing,
+        Invalid,
+    }
 }
