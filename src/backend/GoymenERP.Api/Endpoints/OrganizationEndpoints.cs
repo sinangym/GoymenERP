@@ -1,5 +1,7 @@
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.OrganizationRuntime;
+using GoymenERP.Api.Shell;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
@@ -86,6 +88,94 @@ public static class OrganizationEndpoints
             .Produces<LocationSummary>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
             .ProducesErpCodeLessNotFound()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/locations/{id:guid}/operator", async (
+                Guid id,
+                HttpContext httpContext,
+                IOrganizationLocationOperatorReadHostV1 host,
+                CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response.Headers);
+            var result = await host.ReadDisplayAsync(id, cancellationToken);
+            return result.Outcome switch
+            {
+                OrganizationLocationOperatorReadOutcomeV1.Success when result.Resource is not null =>
+                    Results.Ok(result.Resource),
+                OrganizationLocationOperatorReadOutcomeV1.NotFound => NotFound(),
+                OrganizationLocationOperatorReadOutcomeV1.Unavailable => LocationOperatorUnavailable(),
+                _ => LocationOperatorUnavailable(),
+            };
+        }).RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.OrganizationLocationsRead)
+            .WithName("GetOrganizationLocationOperatorV1")
+            .Produces<OrganizationLocationOperatorContextV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable(OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapGet("/locations/{id:guid}/operator-candidates", async (
+                Guid id,
+                string? q,
+                int? pageSize,
+                string? cursor,
+                HttpContext httpContext,
+                IOrganizationLocationOperatorReadHostV1 host,
+                IActorSessionBindingResolver sessionBindingResolver,
+                CancellationToken cancellationToken) =>
+        {
+            _ = (q, pageSize, cursor);
+            SetPrivateNoStore(httpContext.Response.Headers);
+            var parse = OrganizationLocationOperatorCandidateQueryParserV1.Parse(
+                httpContext.Request.Query,
+                out var query,
+                out var error);
+            if (parse == OrganizationLocationOperatorCandidateQueryParseOutcomeV1.ValidationFailed)
+            {
+                return LocationOperatorBadRequest(
+                    OrganizationLocationOperatorReadCodesV1.ValidationFailed,
+                    error);
+            }
+
+            if (parse == OrganizationLocationOperatorCandidateQueryParseOutcomeV1.InvalidCursor)
+            {
+                return LocationOperatorBadRequest(
+                    OrganizationLocationOperatorReadCodesV1.InvalidCursor,
+                    error);
+            }
+
+            var sessionBinding = await sessionBindingResolver.ResolveAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(sessionBinding))
+            {
+                return LocationOperatorUnavailable();
+            }
+
+            var result = await host.SearchCandidatesAsync(
+                id,
+                query,
+                sessionBinding,
+                cancellationToken);
+            return result.Outcome switch
+            {
+                OrganizationLocationOperatorReadOutcomeV1.Success when result.Resource is not null =>
+                    Results.Ok(result.Resource),
+                OrganizationLocationOperatorReadOutcomeV1.NotFound => NotFound(),
+                OrganizationLocationOperatorReadOutcomeV1.InvalidCursor => LocationOperatorBadRequest(
+                    OrganizationLocationOperatorReadCodesV1.InvalidCursor,
+                    "Cursor bu lokasyon, arama ve oturum bağlamında geçerli değildir."),
+                OrganizationLocationOperatorReadOutcomeV1.Unavailable => LocationOperatorUnavailable(),
+                _ => LocationOperatorUnavailable(),
+            };
+        }).RequireCompanyContext()
+            .RequireAuthorization(OrganizationPermissionManifestV1.LocationsWrite)
+            .WithName("GetOrganizationLocationOperatorCandidatesV1")
+            .Produces<OrganizationLocationOperatorCandidatePageV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(
+                OrganizationLocationOperatorReadCodesV1.ValidationFailed,
+                OrganizationLocationOperatorReadCodesV1.InvalidCursor)
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable(OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable)
             .ProducesErpAuthenticatedProblems();
 
         group.MapPut("/locations/{id:guid}/active-state", async (
@@ -602,6 +692,29 @@ public static class OrganizationEndpoints
             title: "Kayıt bilgisi geçersiz.",
             detail: detail,
             statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    private static IResult LocationOperatorBadRequest(string code, string detail) =>
+        Results.Problem(
+            title: "Lokasyon operatörü isteği geçersiz.",
+            detail: detail,
+            statusCode: StatusCodes.Status400BadRequest,
+            extensions: new Dictionary<string, object?> { ["code"] = code });
+
+    private static IResult LocationOperatorUnavailable() =>
+        Results.Problem(
+            title: "Lokasyon operatörü bilgisi kullanılamıyor.",
+            detail: "Cari operatör kaynağı şu anda güvenli bir yanıt üretemiyor.",
+            statusCode: StatusCodes.Status503ServiceUnavailable,
+            extensions: new Dictionary<string, object?>
+            {
+                ["code"] = OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable,
+            });
+
+    private static void SetPrivateNoStore(IHeaderDictionary headers)
+    {
+        headers.CacheControl = "private, no-store";
+        headers.Pragma = "no-cache";
     }
 
     private static IResult NotFound()
