@@ -26,6 +26,7 @@ public sealed class PurchasingSubcontractAdmissionV1Tests
         var admitted = await sut.AdmitAsync(ValidOrder(), Line, ValidPhysicalContext());
 
         Assert.Equal(Order, admitted.OrderId);
+        Assert.Equal("order-v4", admitted.ExpectedOrderVersion);
         Assert.Equal(Service, admitted.Service.Id);
         Assert.Equal("service-v7", admitted.Service.Version);
         Assert.Equal(PhysicalRequest, admitted.PhysicalContext.SourcePhysicalRequestId);

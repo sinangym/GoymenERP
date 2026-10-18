@@ -76,6 +76,7 @@ public sealed class PurchasingSubcontractAdmissionV1(
         var subject = RequireSubjectAnswer(subjectReference, subjectAnswer);
         return new PurchasingSubcontractAdmissionSnapshotV1(
             order.OrderId,
+            order.ExpectedOrderVersion,
             order.CompanyId,
             line.LineId,
             subject,
@@ -199,6 +200,7 @@ public sealed class PurchasingSubcontractAdmissionV1(
 
 public sealed record PurchasingSubcontractAdmissionSnapshotV1(
     Guid OrderId,
+    string ExpectedOrderVersion,
     Guid CompanyId,
     Guid LineId,
     PurchasingCommercialLineSubjectSnapshotV1 Service,
