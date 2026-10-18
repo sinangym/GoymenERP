@@ -193,16 +193,19 @@ public static class ManufacturingScheduleCalculatorV1
     {
         if (snapshot.CalendarId == Guid.Empty
             || snapshot.CalendarVersion is <= 0
-            || snapshot.TimeZoneBindingVersion is <= 0)
+            || snapshot.TimeZoneBindingVersion is <= 0
+            || SuppliedBlank(snapshot.CalendarSourceRevision)
+            || SuppliedBlank(snapshot.TimeZoneId)
+            || SuppliedBlank(snapshot.TimeZoneSourceRevision))
         {
             return ProvenanceState.Invalid;
         }
 
         return snapshot.CalendarVersion is null
-            || string.IsNullOrWhiteSpace(snapshot.CalendarSourceRevision)
-            || string.IsNullOrWhiteSpace(snapshot.TimeZoneId)
+            || snapshot.CalendarSourceRevision is null
+            || snapshot.TimeZoneId is null
             || snapshot.TimeZoneBindingVersion is null
-            || string.IsNullOrWhiteSpace(snapshot.TimeZoneSourceRevision)
+            || snapshot.TimeZoneSourceRevision is null
                 ? ProvenanceState.Missing
                 : ProvenanceState.Complete;
     }
@@ -212,7 +215,8 @@ public static class ManufacturingScheduleCalculatorV1
     {
         if (snapshot.Minutes is < 0
             || snapshot.SourceId == Guid.Empty
-            || snapshot.SourceVersion is <= 0)
+            || snapshot.SourceVersion is <= 0
+            || SuppliedBlank(snapshot.SourceRevision))
         {
             return ProvenanceState.Invalid;
         }
@@ -220,10 +224,13 @@ public static class ManufacturingScheduleCalculatorV1
         return snapshot.Minutes is null
             || snapshot.SourceId is null
             || snapshot.SourceVersion is null
-            || string.IsNullOrWhiteSpace(snapshot.SourceRevision)
+            || snapshot.SourceRevision is null
                 ? ProvenanceState.Missing
                 : ProvenanceState.Complete;
     }
+
+    private static bool SuppliedBlank(string? value) =>
+        value is not null && string.IsNullOrWhiteSpace(value);
 
     private static bool TryValidateAvailability(
         ManufacturingScheduleAvailabilitySnapshotV1 snapshot,

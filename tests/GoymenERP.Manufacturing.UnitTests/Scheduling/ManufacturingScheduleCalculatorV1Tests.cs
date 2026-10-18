@@ -102,6 +102,12 @@ public sealed class ManufacturingScheduleCalculatorV1Tests
             Input() with { Availability = null });
         var missingCalendarVersion = ManufacturingScheduleCalculatorV1.Calculate(
             Input(availability: Availability(calendarVersion: null)));
+        var missingCalendarRevision = ManufacturingScheduleCalculatorV1.Calculate(
+            Input(availability: Availability(calendarSourceRevision: null)));
+        var missingTimeZoneId = ManufacturingScheduleCalculatorV1.Calculate(
+            Input(availability: Availability(timeZoneId: null)));
+        var missingTimeZoneRevision = ManufacturingScheduleCalculatorV1.Calculate(
+            Input(availability: Availability(timeZoneSourceRevision: null)));
         var missingRun = ManufacturingScheduleCalculatorV1.Calculate(
             Input() with { Run = null });
         var missingRunMinutes = ManufacturingScheduleCalculatorV1.Calculate(Input(run: new(
@@ -114,14 +120,23 @@ public sealed class ManufacturingScheduleCalculatorV1Tests
             null,
             null,
             null)));
+        var missingDurationRevision = ManufacturingScheduleCalculatorV1.Calculate(Input(setup: new(
+            15,
+            SetupSource,
+            4,
+            null)));
 
         Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingAvailability.Outcome);
         Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingCalendarVersion.Outcome);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingCalendarRevision.Outcome);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingTimeZoneId.Outcome);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingTimeZoneRevision.Outcome);
         Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingRun.Outcome);
         Assert.Equal(ManufacturingScheduleCodesV1.InputUnavailable, missingRun.Code);
         Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingRunMinutes.Outcome);
         Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingDurationProvenance.Outcome);
         Assert.Equal(ManufacturingScheduleCodesV1.InputUnavailable, missingDurationProvenance.Code);
+        Assert.Equal(ManufacturingScheduleOutcomeV1.Unavailable, missingDurationRevision.Outcome);
     }
 
     [Fact]
@@ -151,6 +166,28 @@ public sealed class ManufacturingScheduleCalculatorV1Tests
                 -1,
                 "RUN-REV-4"))),
             ManufacturingScheduleCalculatorV1.Calculate(Input(cleanup: Duration(-1, CleanupSource))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(calendarSourceRevision: ""))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(calendarSourceRevision: "   "))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(timeZoneId: ""))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(timeZoneId: "   "))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(timeZoneSourceRevision: ""))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(
+                availability: Availability(timeZoneSourceRevision: "   "))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(setup: new(
+                15,
+                SetupSource,
+                4,
+                ""))),
+            ManufacturingScheduleCalculatorV1.Calculate(Input(setup: new(
+                15,
+                SetupSource,
+                4,
+                "   "))),
         };
 
         Assert.All(malformed, result =>
