@@ -8,6 +8,7 @@ using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
@@ -16,7 +17,7 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
     CounterpartyDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority,
+    IOrganizationLocationAuthorityRevalidationV1 organizationAuthority,
     ICounterpartyCursorCodec cursorCodec,
     TimeProvider timeProvider,
     ICounterpartyOrganizationLocationOperatorReadSqlObserver sqlObserver)
@@ -48,7 +49,7 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
         {
             var locationIds = canonical.Bindings.Select(binding => binding.LocationId).ToArray();
             if (!await HasFreshLocationAuthorityAsync(
-                    ErpPermissions.OrganizationLocationsRead,
+                    OrganizationLocationAuthorityAccessV1.Read,
                     companyId,
                     actorId,
                     locationIds,
@@ -59,7 +60,7 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
 
             var rows = await ReadDisplayRowsAsync(companyId, canonical.Bindings, cancellationToken);
             if (!await HasFreshLocationAuthorityAsync(
-                    ErpPermissions.OrganizationLocationsRead,
+                    OrganizationLocationAuthorityAccessV1.Read,
                     companyId,
                     actorId,
                     locationIds,
@@ -128,7 +129,7 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
         try
         {
             if (!await HasFreshLocationAuthorityAsync(
-                    ErpPermissions.OrganizationLocationsWrite,
+                    OrganizationLocationAuthorityAccessV1.Write,
                     companyId,
                     actorId,
                     [canonical.LocationId],
@@ -154,7 +155,7 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
 
             var rows = await ReadCandidateRowsAsync(companyId, canonical, cursor, cancellationToken);
             if (!await HasFreshLocationAuthorityAsync(
-                    ErpPermissions.OrganizationLocationsWrite,
+                    OrganizationLocationAuthorityAccessV1.Write,
                     companyId,
                     actorId,
                     [canonical.LocationId],
@@ -381,7 +382,7 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
         && string.Equals(currentUser.UserId, actorId, StringComparison.Ordinal);
 
     private async Task<bool> HasFreshLocationAuthorityAsync(
-        string permission,
+        OrganizationLocationAuthorityAccessV1 access,
         Guid companyId,
         string actorId,
         IReadOnlyCollection<Guid> locationIds,
@@ -392,11 +393,12 @@ internal sealed class CounterpartyOrganizationLocationOperatorReadSourceV1(
             return false;
         }
 
-        var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+        var outcome = await organizationAuthority.RevalidateAsync(
+            new OrganizationLocationAuthorityRequestV1(companyId, actorId, access, locationIds.ToArray()),
+            cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return RemainsCurrent(companyId, actorId, companyId, actorId)
-            && scope.IsGranted
-            && (scope.IsCompanyWide || locationIds.All(scope.LocationIds.Contains));
+            && outcome == OrganizationLocationAuthorityOutcomeV1.Authorized;
     }
 
     private static bool TryCanonicalize(

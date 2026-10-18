@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 
@@ -128,6 +129,31 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
                 || item.PartyId == RemovedSupplier
                 || item.PartyId == ForeignSupplier);
 
+            foreach (var scopeOrigin in Enum.GetValues<TestAuthorityScopeOrigin>())
+            {
+                var scopedAuthority = new MutableAuthority(
+                    readLocations: new HashSet<Guid> { LocationOne },
+                    writeLocations: new HashSet<Guid> { LocationOne },
+                    scopeOrigin);
+                var scopedObserver = new CapturingObserver();
+                await using var scopedDb = CreateDbContext(factory.DatabaseConnectionString, context);
+                using var scopedCodec = CreateCursorCodec();
+                var scopedCandidate = await Source(
+                        scopedDb,
+                        context,
+                        user,
+                        scopedAuthority,
+                        scopedCodec,
+                        scopedObserver)
+                    .SearchAuthorizedCandidatesAsync(Candidate(LocationOne, pageSize: 25));
+                Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Success, scopedCandidate.Outcome);
+                Assert.NotEmpty(scopedCandidate.Items);
+                Assert.Equal(2, scopedAuthority.Requests.Count);
+                Assert.All(scopedAuthority.Requests, request =>
+                    Assert.Equal(OrganizationLocationAuthorityAccessV1.Write, request.Access));
+                Assert.Equal(scopeOrigin, scopedAuthority.ScopeOrigin);
+            }
+
             var queriesBeforeCursorDrift = observer.Commands.Count;
             var cursorDrift = await source.SearchAuthorizedCandidatesAsync(
                 Candidate(LocationTwo, pageSize: 1) with { Cursor = first.NextCursor });
@@ -160,12 +186,30 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
             Assert.Empty(deniedDisplay.Items);
             Assert.Empty(displayScopeObserver.Commands);
 
+            var deniedCandidateAuthority = new MutableAuthority(
+                readLocations: new HashSet<Guid> { LocationOne },
+                writeLocations: new HashSet<Guid>());
+            var deniedCandidateObserver = new CapturingObserver();
+            await using var deniedCandidateDb = CreateDbContext(factory.DatabaseConnectionString, context);
+            using var deniedCandidateCodec = CreateCursorCodec();
+            var deniedCandidate = await Source(
+                    deniedCandidateDb,
+                    context,
+                    user,
+                    deniedCandidateAuthority,
+                    deniedCandidateCodec,
+                    deniedCandidateObserver)
+                .SearchAuthorizedCandidatesAsync(Candidate(LocationOne, pageSize: 25));
+            Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, deniedCandidate.Outcome);
+            Assert.Empty(deniedCandidate.Items);
+            Assert.Empty(deniedCandidateObserver.Commands);
+
             var driftingAuthority = new MutableAuthority(
                 readLocations: new HashSet<Guid> { LocationOne },
                 writeLocations: new HashSet<Guid> { LocationOne });
             var driftObserver = new CapturingObserver
             {
-                OnObserve = () => driftingAuthority.Revoke(ErpPermissions.OrganizationLocationsWrite),
+                OnObserve = () => driftingAuthority.Revoke(OrganizationLocationAuthorityAccessV1.Write),
             };
             await using var driftDb = CreateDbContext(factory.DatabaseConnectionString, context);
             using var driftCodec = CreateCursorCodec();
@@ -215,7 +259,7 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
         CounterpartyDbContext dbContext,
         ICompanyContext companyContext,
         ICurrentUser currentUser,
-        IErpAuthorityRevalidationService authority,
+        IOrganizationLocationAuthorityRevalidationV1 authority,
         ICounterpartyCursorCodec cursorCodec,
         ICounterpartyOrganizationLocationOperatorReadSqlObserver observer) =>
         new(dbContext, companyContext, currentUser, authority, cursorCodec, TimeProvider.System, observer);
@@ -317,39 +361,50 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSqlServerRelatio
         public void SetActor(string actor) => UserId = actor;
     }
 
+    private enum TestAuthorityScopeOrigin
+    {
+        Company = 1,
+        DirectLocation = 2,
+        Site = 3,
+        WorkCenter = 4,
+    }
+
     private sealed class MutableAuthority(
         IReadOnlySet<Guid> readLocations,
-        IReadOnlySet<Guid> writeLocations) : IErpAuthorityRevalidationService
+        IReadOnlySet<Guid> writeLocations,
+        TestAuthorityScopeOrigin scopeOrigin = TestAuthorityScopeOrigin.DirectLocation)
+        : IOrganizationLocationAuthorityRevalidationV1
     {
-        private readonly HashSet<string> revoked = new(StringComparer.Ordinal);
+        private readonly HashSet<OrganizationLocationAuthorityAccessV1> revoked = [];
 
-        public void Revoke(string permission) => revoked.Add(permission);
+        public TestAuthorityScopeOrigin ScopeOrigin { get; } = scopeOrigin;
+        public List<OrganizationLocationAuthorityRequestV1> Requests { get; } = [];
 
-        public Task<PermissionScope> RevalidatePermissionScopeAsync(
-            string permission,
-            Guid companyId,
+        public void Revoke(OrganizationLocationAuthorityAccessV1 access) => revoked.Add(access);
+
+        public Task<OrganizationLocationAuthorityOutcomeV1> RevalidateAsync(
+            OrganizationLocationAuthorityRequestV1 request,
             CancellationToken cancellationToken = default)
         {
-            if (companyId != TestCompanyIds.CompanyA || revoked.Contains(permission))
+            Requests.Add(request);
+            if (request.CompanyId != TestCompanyIds.CompanyA
+                || request.ActorId != Actor
+                || revoked.Contains(request.Access))
             {
-                return Task.FromResult(PermissionScope.Denied);
+                return Task.FromResult(OrganizationLocationAuthorityOutcomeV1.Denied);
             }
 
-            IReadOnlySet<Guid>? locations = permission switch
+            IReadOnlySet<Guid>? locations = request.Access switch
             {
-                ErpPermissions.OrganizationLocationsRead => readLocations,
-                ErpPermissions.OrganizationLocationsWrite => writeLocations,
+                OrganizationLocationAuthorityAccessV1.Read => readLocations,
+                OrganizationLocationAuthorityAccessV1.Write => writeLocations,
                 _ => null,
             };
-            return Task.FromResult(locations is null
-                ? PermissionScope.Denied
-                : new PermissionScope(
-                    true,
-                    false,
-                    new HashSet<string>(StringComparer.Ordinal),
-                    new HashSet<Guid>(),
-                    locations,
-                    new HashSet<Guid>()));
+            return Task.FromResult(locations is not null
+                && request.LocationIds.Count > 0
+                && request.LocationIds.All(locations.Contains)
+                    ? OrganizationLocationAuthorityOutcomeV1.Authorized
+                    : OrganizationLocationAuthorityOutcomeV1.Denied);
         }
     }
 

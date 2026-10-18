@@ -1,5 +1,5 @@
-using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Infrastructure;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using Microsoft.Extensions.Configuration;
@@ -33,7 +33,8 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
     {
         var context = new TestCompanyContext(Company);
         var user = new TestCurrentUser("organization-location-writer", new HashSet<Guid> { Company });
-        var source = Source(context, user);
+        var authority = new TestAuthority(OrganizationLocationAuthorityOutcomeV1.Authorized);
+        var source = Source(context, user, authority);
 
         var displayRequests = new CounterpartyOrganizationLocationOperatorDisplayRequestV1[]
         {
@@ -65,6 +66,8 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
             Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, answer.Outcome);
             Assert.Empty(answer.Items);
         }
+
+        Assert.Empty(authority.Requests);
     }
 
     [Fact]
@@ -72,7 +75,7 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
     {
         var context = new TestCompanyContext(Company);
         var user = new TestCurrentUser("organization-location-writer", new HashSet<Guid> { Company });
-        var authority = new TestAuthority(PermissionScope.Denied);
+        var authority = new TestAuthority(OrganizationLocationAuthorityOutcomeV1.Denied);
         var source = Source(context, user, authority);
         var requests = new CounterpartyOrganizationLocationOperatorDisplayRequestV1[]
         {
@@ -114,13 +117,7 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
     {
         var context = new TestCompanyContext(Company);
         var user = new TestCurrentUser("organization-location-writer", new HashSet<Guid> { Company });
-        var authority = new TestAuthority(new PermissionScope(
-            true,
-            false,
-            new HashSet<string>(StringComparer.Ordinal),
-            new HashSet<Guid>(),
-            new HashSet<Guid> { Guid.Parse("72000000-0000-4000-8000-000000000099") },
-            new HashSet<Guid>()));
+        var authority = new TestAuthority(OrganizationLocationAuthorityOutcomeV1.Denied);
         var source = Source(context, user, authority);
 
         var display = await source.ReadAuthorizedDisplaysAsync(
@@ -130,25 +127,19 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
         Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, display.Outcome);
         Assert.Equal(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied, candidates.Outcome);
         Assert.Equal(
-            [ErpPermissions.OrganizationLocationsRead, ErpPermissions.OrganizationLocationsWrite],
-            authority.Permissions);
+            [OrganizationLocationAuthorityAccessV1.Read, OrganizationLocationAuthorityAccessV1.Write],
+            authority.Requests.Select(request => request.Access));
     }
 
     private static CounterpartyOrganizationLocationOperatorReadSourceV1 Source(
         TestCompanyContext context,
         TestCurrentUser user,
-        IErpAuthorityRevalidationService? authority = null) =>
+        IOrganizationLocationAuthorityRevalidationV1? authority = null) =>
         new(
             null!,
             context,
             user,
-            authority ?? new TestAuthority(new PermissionScope(
-                true,
-                false,
-                new HashSet<string>(StringComparer.Ordinal),
-                new HashSet<Guid>(),
-                new HashSet<Guid> { Location },
-                new HashSet<Guid>())),
+            authority ?? new TestAuthority(OrganizationLocationAuthorityOutcomeV1.Authorized),
             new RejectingCursorCodec(),
             TimeProvider.System,
             null!);
@@ -167,17 +158,19 @@ public sealed class CounterpartyOrganizationLocationOperatorReadSourceV1Tests
         }
     }
 
-    private sealed class TestAuthority(PermissionScope scope) : IErpAuthorityRevalidationService
+    private sealed class TestAuthority(OrganizationLocationAuthorityOutcomeV1 outcome)
+        : IOrganizationLocationAuthorityRevalidationV1
     {
-        public List<string> Permissions { get; } = [];
+        public List<OrganizationLocationAuthorityRequestV1> Requests { get; } = [];
 
-        public Task<PermissionScope> RevalidatePermissionScopeAsync(
-            string permission,
-            Guid companyId,
+        public Task<OrganizationLocationAuthorityOutcomeV1> RevalidateAsync(
+            OrganizationLocationAuthorityRequestV1 request,
             CancellationToken cancellationToken = default)
         {
-            Permissions.Add(permission);
-            return Task.FromResult(companyId == Company ? scope : PermissionScope.Denied);
+            Requests.Add(request);
+            return Task.FromResult(request.CompanyId == Company
+                ? outcome
+                : OrganizationLocationAuthorityOutcomeV1.Denied);
         }
     }
 
