@@ -16,6 +16,7 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
     private static readonly Guid FamilyId = Guid.Parse("c6100000-0000-4000-8000-000000000201");
     private static readonly Guid TemplateId = Guid.Parse("c6200000-0000-4000-8000-000000000201");
     private static readonly ProductManufacturingTechnicalSnapshotSelectionV1 Selection = new(ProductId, StoredVersion, On);
+    private static readonly ProductManufacturingTechnicalSnapshotSelectionV2 SelectionV2 = new(ProductId, StoredVersion, On);
 
     [Fact]
     public async Task Accepted_real_revisions_and_kg_profile_produce_the_exact_technical_snapshot()
@@ -54,6 +55,83 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         Assert.Equal(2500.125m, snapshot.LengthMm);
         Assert.Equal((ProductId, StoredVersion, FamilyId, TemplateId),
             (snapshot.ProductId, snapshot.ProductVersion, snapshot.Family.FamilyId, snapshot.Template.TemplateId));
+    }
+
+    [Fact]
+    public async Task V2_preserves_the_legacy_flat_shape_without_changing_V1()
+    {
+        var world = World();
+        var service = Service(world);
+
+        var result = await service.ReadAsync(SelectionV2, default);
+
+        Assert.Empty(result.Errors);
+        var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(result.Snapshot);
+        Assert.Equal(new ProductManufacturingFlatGeometryV2(1.25m, 1250m, null), snapshot.Geometry);
+        Assert.Equal((ProductId, StoredVersion, FamilyId, TemplateId),
+            (snapshot.ProductId, snapshot.ProductVersion, snapshot.Family.FamilyId, snapshot.Template.TemplateId));
+    }
+
+    [Fact]
+    public async Task V2_round_pipe_publishes_exact_diameter_wall_and_length_without_flat_role_fallback()
+    {
+        var definition = ProductInitialTechnicalDefinitionV1.Definition();
+        var world = World(P013Record(
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
+            ("outside-diameter-mm", 60.3m), ("wall-thickness-mm", 1.5m), ("length-mm", 6000m)));
+
+        var result = await Service(world, new(definition)).ReadAsync(SelectionV2, default);
+
+        Assert.Empty(result.Errors);
+        var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(result.Snapshot);
+        Assert.Equal(new ProductManufacturingRoundPipeGeometryV2(60.3m, 1.5m, 6000m), snapshot.Geometry);
+        Assert.Equal((ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+                ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
+                ProductInitialTechnicalDefinitionV1.WeldedTubeProfileSourceRef),
+            (snapshot.Family.FamilyId, snapshot.Template.TemplateId, snapshot.Template.SourceRevision));
+    }
+
+    [Theory]
+    [InlineData(true, "40", "40")]
+    [InlineData(false, "60", "40")]
+    public async Task V2_profile_publishes_exact_section_wall_and_length(bool square, string width, string height)
+    {
+        var familyId = square
+            ? ProductInitialTechnicalDefinitionV1.WeldedSquareProfileFamilyId
+            : ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileFamilyId;
+        var templateId = square
+            ? ProductInitialTechnicalDefinitionV1.WeldedSquareProfileTemplateId
+            : ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileTemplateId;
+        var world = World(P013Record(familyId, templateId,
+            ("section-width-mm", decimal.Parse(width, System.Globalization.CultureInfo.InvariantCulture)),
+            ("section-height-mm", decimal.Parse(height, System.Globalization.CultureInfo.InvariantCulture)),
+            ("wall-thickness-mm", 1.4m), ("length-mm", 6000m)));
+
+        var result = await Service(world, new(ProductInitialTechnicalDefinitionV1.Definition()))
+            .ReadAsync(SelectionV2, default);
+
+        Assert.Empty(result.Errors);
+        var snapshot = Assert.IsType<ProductManufacturingTechnicalSnapshotV2>(result.Snapshot);
+        Assert.Equal(new ProductManufacturingProfileGeometryV2(
+            decimal.Parse(width, System.Globalization.CultureInfo.InvariantCulture),
+            decimal.Parse(height, System.Globalization.CultureInfo.InvariantCulture), 1.4m, 6000m), snapshot.Geometry);
+    }
+
+    [Fact]
+    public async Task V2_round_pipe_missing_diameter_is_rejected_on_the_exact_role_even_when_width_exists()
+    {
+        var world = World(P013Record(
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+            ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
+            ("width-mm", 60.3m), ("wall-thickness-mm", 1.5m), ("length-mm", 6000m)));
+
+        var result = await Service(world, new(ProductInitialTechnicalDefinitionV1.Definition()))
+            .ReadAsync(SelectionV2, default);
+
+        Assert.Null(result.Snapshot);
+        Assert.Contains(new ProductFieldError("references.attributes.outside-diameter-mm",
+            ProductFamilyPolicyCodesV1.Required), result.Errors);
     }
 
     [Theory]
@@ -157,11 +235,15 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         await using var provider = services.BuildServiceProvider();
 
         var port = provider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>();
+        var portV2 = provider.GetRequiredService<IProductManufacturingTechnicalSnapshotV2>();
         var error = await Assert.ThrowsAsync<ProductOperationException>(() => port.ReadAsync(Selection, default));
+        var errorV2 = await Assert.ThrowsAsync<ProductOperationException>(() => portV2.ReadAsync(SelectionV2, default));
 
         Assert.Equal((503, "product_runtime_unconfigured"), (error.StatusCode, error.Code));
+        Assert.Equal((503, "product_runtime_unconfigured"), (errorV2.StatusCode, errorV2.Code));
         Assert.Null(provider.GetService<ProductManufacturingTechnicalSnapshotService>());
         Assert.Single(provider.GetServices<IProductManufacturingTechnicalSnapshotV1>());
+        Assert.Single(provider.GetServices<IProductManufacturingTechnicalSnapshotV2>());
     }
 
     [Theory]
@@ -206,8 +288,11 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
 
         Assert.IsType<ProductManufacturingTechnicalSnapshotService>(
             scope.ServiceProvider.GetRequiredService<IProductManufacturingTechnicalSnapshotV1>());
+        Assert.IsType<ProductManufacturingTechnicalSnapshotService>(
+            scope.ServiceProvider.GetRequiredService<IProductManufacturingTechnicalSnapshotV2>());
         Assert.Null(scope.ServiceProvider.GetService<ProductManufacturingTechnicalSnapshotService>());
         Assert.Single(scope.ServiceProvider.GetServices<IProductManufacturingTechnicalSnapshotV1>());
+        Assert.Single(scope.ServiceProvider.GetServices<IProductManufacturingTechnicalSnapshotV2>());
     }
 
     [Theory]
@@ -316,6 +401,25 @@ public sealed class ProductManufacturingTechnicalSnapshotTests
         return StoredProduct(units: references.Units) with
         {
             FamilyId = FamilyId,
+            ReferencesJson = JsonSerializer.Serialize(references, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
+        };
+    }
+
+    private static ProductStoredRecord P013Record(
+        Guid familyId,
+        Guid templateId,
+        params (string Key, decimal Value)[] measures)
+    {
+        var attributes = measures.ToDictionary(
+            pair => pair.Key,
+            pair => JsonSerializer.SerializeToElement(pair.Value),
+            StringComparer.Ordinal);
+        attributes["steel-grade"] = JsonSerializer.SerializeToElement("S235JR");
+        attributes["coating"] = JsonSerializer.SerializeToElement("uncoated");
+        var references = new ProductReferences(templateId, "1", attributes, new(Stock: StockUnitId));
+        return StoredProduct(units: references.Units) with
+        {
+            FamilyId = familyId,
             ReferencesJson = JsonSerializer.Serialize(references, new JsonSerializerOptions(JsonSerializerDefaults.Web)),
         };
     }

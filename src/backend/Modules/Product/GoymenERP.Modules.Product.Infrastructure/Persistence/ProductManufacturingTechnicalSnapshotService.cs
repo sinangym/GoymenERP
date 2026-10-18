@@ -33,7 +33,7 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
     IProductManufacturingTechnicalRecordReader records,
     IProductFamilyDefinitionSourceV2 definitions,
     ProductUnitProfileAdapter unitProfiles)
-    : IProductManufacturingTechnicalSnapshotV1
+    : IProductManufacturingTechnicalSnapshotV1, IProductManufacturingTechnicalSnapshotV2
 {
     public const string UnavailableCode = "product_manufacturing_technical_snapshot_unavailable";
 
@@ -109,6 +109,113 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
             selection.EffectiveOn,
             length.Millimetres);
         return new(snapshot, []);
+    }
+
+    public async Task<ProductManufacturingTechnicalSnapshotResultV2> ReadAsync(
+        ProductManufacturingTechnicalSnapshotSelectionV2 selection,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var scope = await RequireScopeAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(selection);
+        if (selection.ProductId == Guid.Empty) return RejectedV2("productId", "invalid_reference");
+
+        var record = await FencedAsync(scope,
+            () => records.ReadForManufacturingTechnicalSnapshotAsync(scope, selection.ProductId, cancellationToken),
+            cancellationToken);
+        if (record is null) return RejectedV2("productId", "invalid_reference");
+
+        var card = Restore(record);
+        var local = ProductStockPreconditions.Check(card,
+            new ProductStockSelectionV1(selection.ProductId, selection.ExpectedProductVersion, selection.EffectiveOn));
+        if (local.Count > 0) return new(null, local);
+
+        var definition = await FencedAsync(scope, () => definitions.GetAsync(cancellationToken), cancellationToken);
+        ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
+
+        var family = card.Product.FamilyId is Guid familyId
+            ? definition.Families.SingleOrDefault(candidate => candidate.Id == familyId)
+            : null;
+        if (family is null)
+            throw new ProductOperationException(UnacceptedProductFamilyRequirementPolicyV1.UnavailableCode, 503);
+
+        var template = ProductFamilyDefinitionRulesV2.TemplateOf(definition, family.Id)
+            ?? throw new ProductOperationException(ProductFamilyDefinitionRulesV2.InvalidDefinitionCode, 503);
+        if (IsSynthetic(family.SourceRef) || IsSynthetic(template.SourceRef))
+            throw new ProductOperationException(UnavailableCode, 503);
+
+        var technicalErrors = ValidateTechnicalReferences(card.References, definition, template);
+        if (technicalErrors.Count > 0) return new(null, technicalErrors);
+        if (UsesSyntheticDictionaryValue(card.References, definition, template))
+            throw new ProductOperationException(UnavailableCode, 503);
+
+        var stockUnitId = card.References.Units!.Stock!.Value;
+        var unit = await FencedAsync(scope,
+            () => unitProfiles.ReadAsync(stockUnitId, selection.EffectiveOn, requiresKilogram: true, cancellationToken),
+            cancellationToken);
+        if (!unit.IsUsable) return RejectedV2("references.units.stock", "invalid_reference");
+
+        var geometry = ReadGeometryV2(card.References, family, template, out var measureErrors);
+        if (measureErrors.Count > 0) return new(null, measureErrors);
+
+        var profile = unit.Profile;
+        return new(new ProductManufacturingTechnicalSnapshotV2(
+            card.Product.Id,
+            card.Product.Version,
+            new(family.Id, family.Code, family.SourceRef),
+            new(template.Id, template.Version, template.Code, template.SourceRef),
+            geometry!,
+            new(profile.CompanyId, profile.UnitId, profile.UnitCode, profile.Profile.ProfileId,
+                profile.Profile.Version.ToString(CultureInfo.InvariantCulture)),
+            selection.EffectiveOn), []);
+    }
+
+    internal static ProductManufacturingGeometryV2? ReadGeometryV2(
+        ProductReferences references,
+        ProductFamilyV2 family,
+        ProductTemplateV2 template,
+        out IReadOnlyList<ProductFieldError> errors)
+    {
+        ProductManufacturingMeasureReadV1[] reads;
+        Func<ProductManufacturingMeasureReadV1[], ProductManufacturingGeometryV2> create;
+        switch (family.RuleSet)
+        {
+            case ProductFamilyRuleSetsV2.GdcBandCoil:
+                reads = [ReadMeasure(references, template, ProductTemplateFieldRolesV2.Thickness),
+                    ReadMeasure(references, template, ProductTemplateFieldRolesV2.Width)];
+                create = values => new ProductManufacturingFlatGeometryV2(
+                    values[0].Millimetres!.Value, values[1].Millimetres!.Value, null);
+                break;
+            case ProductFamilyRuleSetsV2.GdcCutSheetPlate:
+                reads = [ReadMeasure(references, template, ProductTemplateFieldRolesV2.Thickness),
+                    ReadMeasure(references, template, ProductTemplateFieldRolesV2.Width),
+                    ReadMeasure(references, template, ProductTemplateFieldRolesV2.Length)];
+                create = values => new ProductManufacturingFlatGeometryV2(
+                    values[0].Millimetres!.Value, values[1].Millimetres!.Value, values[2].Millimetres!.Value);
+                break;
+            case ProductFamilyRuleSetsV2.GdcWeldedRoundPipe:
+                reads = [ReadMeasure(references, template, ProductTemplateFieldRolesV2.OutsideDiameter),
+                    ReadMeasure(references, template, ProductTemplateFieldRolesV2.WallThickness),
+                    ReadMeasure(references, template, ProductTemplateFieldRolesV2.Length)];
+                create = values => new ProductManufacturingRoundPipeGeometryV2(
+                    values[0].Millimetres!.Value, values[1].Millimetres!.Value, values[2].Millimetres!.Value);
+                break;
+            case ProductFamilyRuleSetsV2.GdcWeldedSquareProfile:
+            case ProductFamilyRuleSetsV2.GdcWeldedRectangleProfile:
+                reads = [ReadMeasure(references, template, ProductTemplateFieldRolesV2.SectionWidth),
+                    ReadMeasure(references, template, ProductTemplateFieldRolesV2.SectionHeight),
+                    ReadMeasure(references, template, ProductTemplateFieldRolesV2.WallThickness),
+                    ReadMeasure(references, template, ProductTemplateFieldRolesV2.Length)];
+                create = values => new ProductManufacturingProfileGeometryV2(
+                    values[0].Millimetres!.Value, values[1].Millimetres!.Value,
+                    values[2].Millimetres!.Value, values[3].Millimetres!.Value);
+                break;
+            default:
+                throw new ProductOperationException(MeasureUndefinedCode, 503);
+        }
+
+        errors = reads.Select(read => read.Error).OfType<ProductFieldError>().ToArray();
+        return errors.Count == 0 ? create(reads) : null;
     }
 
     internal static List<ProductFieldError> ValidateTechnicalReferences(ProductReferences references,
@@ -232,5 +339,8 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
     }
 
     private static ProductManufacturingTechnicalSnapshotResultV1 Rejected(string field, string code) =>
+        new(null, [new(field, code)]);
+
+    private static ProductManufacturingTechnicalSnapshotResultV2 RejectedV2(string field, string code) =>
         new(null, [new(field, code)]);
 }

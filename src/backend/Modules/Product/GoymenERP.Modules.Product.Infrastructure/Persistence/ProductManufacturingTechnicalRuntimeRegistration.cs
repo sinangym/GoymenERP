@@ -25,11 +25,19 @@ public static class ProductManufacturingTechnicalRuntimeRegistration
             && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
                 ? ActivatorUtilities.CreateInstance<ProductManufacturingTechnicalSnapshotService>(provider)
                 : new UnavailableProductManufacturingTechnicalSnapshot());
+        services.AddScoped<IProductManufacturingTechnicalSnapshotV2>(provider =>
+            runtimeEnabled(provider)
+            && provider.GetService<ISettingsPrerequisiteProvider>() is not null
+            && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
+                ? ActivatorUtilities.CreateInstance<ProductManufacturingTechnicalSnapshotService>(provider)
+                : new UnavailableProductManufacturingTechnicalSnapshot());
         return services;
     }
 }
 
-internal sealed class UnavailableProductManufacturingTechnicalSnapshot : IProductManufacturingTechnicalSnapshotV1
+internal sealed class UnavailableProductManufacturingTechnicalSnapshot :
+    IProductManufacturingTechnicalSnapshotV1,
+    IProductManufacturingTechnicalSnapshotV2
 {
     public Task<ProductManufacturingTechnicalSnapshotResultV1> ReadAsync(
         ProductManufacturingTechnicalSnapshotSelectionV1 selection,
@@ -37,6 +45,15 @@ internal sealed class UnavailableProductManufacturingTechnicalSnapshot : IProduc
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromException<ProductManufacturingTechnicalSnapshotResultV1>(
+            new ProductOperationException("product_runtime_unconfigured", 503));
+    }
+
+    public Task<ProductManufacturingTechnicalSnapshotResultV2> ReadAsync(
+        ProductManufacturingTechnicalSnapshotSelectionV2 selection,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ProductManufacturingTechnicalSnapshotResultV2>(
             new ProductOperationException("product_runtime_unconfigured", 503));
     }
 }
