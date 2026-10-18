@@ -36,6 +36,11 @@ public sealed class SubcontractPhysicalContextV1
 
         MaterialOwnerKind = materialOwnerKind;
         MaterialOwnerId = Identity.Require(materialOwnerId, nameof(materialOwnerId));
+        if (materialOwnerKind == SubcontractMaterialOwnerKindV1.Company && MaterialOwnerId != CompanyId)
+        {
+            throw new ArgumentException("Company-owned material must name the context company as owner.", nameof(materialOwnerId));
+        }
+
         ExternalLocationId = Identity.Require(externalLocationId, nameof(externalLocationId));
         ExternalLocationVersion = RequireToken(externalLocationVersion, nameof(externalLocationVersion));
         OperatorPartyId = Identity.Require(operatorPartyId, nameof(operatorPartyId));

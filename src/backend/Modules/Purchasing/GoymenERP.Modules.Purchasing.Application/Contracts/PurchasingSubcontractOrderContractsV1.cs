@@ -14,14 +14,24 @@ public sealed record PurchasingSubcontractOrderV1
         Guid companyId,
         Guid supplierPartyId,
         Guid companyAccountId,
-        string expectedVersion,
+        string expectedOrderVersion,
+        string expectedSupplierPartyVersion,
+        string expectedCompanyAccountVersion,
         IReadOnlyList<PurchasingSubcontractOrderLineV1> lines)
     {
         OrderId = PurchasingSubcontractContractGuardV1.Identity(orderId, nameof(orderId));
         CompanyId = PurchasingSubcontractContractGuardV1.Identity(companyId, nameof(companyId));
         SupplierPartyId = PurchasingSubcontractContractGuardV1.Identity(supplierPartyId, nameof(supplierPartyId));
         CompanyAccountId = PurchasingSubcontractContractGuardV1.Identity(companyAccountId, nameof(companyAccountId));
-        ExpectedVersion = PurchasingSubcontractContractGuardV1.Token(expectedVersion, nameof(expectedVersion));
+        ExpectedOrderVersion = PurchasingSubcontractContractGuardV1.PositiveVersion(
+            expectedOrderVersion,
+            nameof(expectedOrderVersion));
+        ExpectedSupplierPartyVersion = PurchasingSubcontractContractGuardV1.PositiveVersion(
+            expectedSupplierPartyVersion,
+            nameof(expectedSupplierPartyVersion));
+        ExpectedCompanyAccountVersion = PurchasingSubcontractContractGuardV1.PositiveVersion(
+            expectedCompanyAccountVersion,
+            nameof(expectedCompanyAccountVersion));
         ArgumentNullException.ThrowIfNull(lines);
         if (lines.Count == 0 || lines.Any(line => line is null))
         {
@@ -33,14 +43,16 @@ public sealed record PurchasingSubcontractOrderV1
             throw new ArgumentException("Subcontract service line identities must be unique.", nameof(lines));
         }
 
-        Lines = lines.ToArray();
+        Lines = Array.AsReadOnly(lines.ToArray());
     }
 
     public Guid OrderId { get; }
     public Guid CompanyId { get; }
     public Guid SupplierPartyId { get; }
     public Guid CompanyAccountId { get; }
-    public string ExpectedVersion { get; }
+    public string ExpectedOrderVersion { get; }
+    public string ExpectedSupplierPartyVersion { get; }
+    public string ExpectedCompanyAccountVersion { get; }
     public IReadOnlyList<PurchasingSubcontractOrderLineV1> Lines { get; }
 }
 
@@ -96,6 +108,18 @@ internal static class PurchasingSubcontractContractGuardV1
             || value.Any(char.IsControl))
         {
             throw new ArgumentException("A canonical version token is required.", parameterName);
+        }
+
+        return value;
+    }
+
+    public static string PositiveVersion(string? value, string parameterName)
+    {
+        if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+            || parsed < 1
+            || parsed.ToString(CultureInfo.InvariantCulture) != value)
+        {
+            throw new ArgumentException("A canonical positive expected version is required.", parameterName);
         }
 
         return value;

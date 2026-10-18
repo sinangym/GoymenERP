@@ -25,11 +25,16 @@ public sealed class SubcontractPhysicalContextV1Tests
             CompanyId,
             SupplierPartyId,
             SupplierAccountId,
-            "order-v3",
+            "3",
+            "7",
+            "11",
             [line]);
 
         Assert.Equal(SupplierPartyId, order.SupplierPartyId);
         Assert.Equal(SupplierAccountId, order.CompanyAccountId);
+        Assert.Equal("3", order.ExpectedOrderVersion);
+        Assert.Equal("7", order.ExpectedSupplierPartyVersion);
+        Assert.Equal("11", order.ExpectedCompanyAccountVersion);
         Assert.Equal(ServiceId, line.ServiceId);
         Assert.Equal(UnitId, line.ServiceUnitId);
         Assert.Equal("25000.000", line.ServiceQuantity);
@@ -71,15 +76,54 @@ public sealed class SubcontractPhysicalContextV1Tests
     }
 
     [Fact]
-    public void Contract_refuses_empty_identities_blank_versions_nonpositive_quantity_and_duplicate_lines()
+    public void Contract_refuses_empty_identities_nonpositive_versions_nonpositive_quantity_and_duplicate_lines()
     {
         Assert.Throws<ArgumentException>(() => new PurchasingSubcontractOrderV1(
-            Guid.Empty, CompanyId, SupplierPartyId, SupplierAccountId, "order-v3", [ValidLine()]));
+            Guid.Empty, CompanyId, SupplierPartyId, SupplierAccountId, "3", "7", "11", [ValidLine()]));
         Assert.Throws<ArgumentException>(() => new PurchasingSubcontractOrderV1(
-            OrderId, CompanyId, SupplierPartyId, SupplierAccountId, " ", [ValidLine()]));
+            OrderId, CompanyId, SupplierPartyId, SupplierAccountId, "0", "7", "11", [ValidLine()]));
+        Assert.Throws<ArgumentException>(() => new PurchasingSubcontractOrderV1(
+            OrderId, CompanyId, SupplierPartyId, SupplierAccountId, "3", "", "11", [ValidLine()]));
+        Assert.Throws<ArgumentException>(() => new PurchasingSubcontractOrderV1(
+            OrderId, CompanyId, SupplierPartyId, SupplierAccountId, "3", "7", "01", [ValidLine()]));
         Assert.Throws<ArgumentException>(() => ValidLine(serviceQuantity: "0"));
         Assert.Throws<ArgumentException>(() => new PurchasingSubcontractOrderV1(
-            OrderId, CompanyId, SupplierPartyId, SupplierAccountId, "order-v3", [ValidLine(), ValidLine()]));
+            OrderId, CompanyId, SupplierPartyId, SupplierAccountId, "3", "7", "11", [ValidLine(), ValidLine()]));
+    }
+
+    [Fact]
+    public void Order_preserves_separate_expected_versions_at_the_stale_check_boundary()
+    {
+        var order = new PurchasingSubcontractOrderV1(
+            OrderId, CompanyId, SupplierPartyId, SupplierAccountId, "3", "7", "11", [ValidLine()]);
+
+        Assert.NotEqual(order.ExpectedOrderVersion, order.ExpectedSupplierPartyVersion);
+        Assert.NotEqual(order.ExpectedSupplierPartyVersion, order.ExpectedCompanyAccountVersion);
+        Assert.Equal(["3", "7", "11"],
+            [order.ExpectedOrderVersion, order.ExpectedSupplierPartyVersion, order.ExpectedCompanyAccountVersion]);
+    }
+
+    [Fact]
+    public void Lines_are_a_defensive_read_only_snapshot()
+    {
+        var first = ValidLine();
+        var input = new[] { first };
+        var order = new PurchasingSubcontractOrderV1(
+            OrderId, CompanyId, SupplierPartyId, SupplierAccountId, "3", "7", "11", input);
+
+        input[0] = new PurchasingSubcontractOrderLineV1(
+            Guid.Parse("50000000-0000-0000-0000-000000000002"),
+            ServiceId,
+            "service-v7",
+            UnitId,
+            "1",
+            PhysicalRequestId,
+            "request-v5");
+
+        Assert.Same(first, Assert.Single(order.Lines));
+        var exposed = Assert.IsAssignableFrom<IList<PurchasingSubcontractOrderLineV1>>(order.Lines);
+        Assert.Throws<NotSupportedException>(() => exposed[0] = input[0]);
+        Assert.Throws<NotSupportedException>(() => exposed.Add(input[0]));
     }
 
     [Fact]
@@ -98,6 +142,9 @@ public sealed class SubcontractPhysicalContextV1Tests
         Assert.Throws<ArgumentException>(() => SubcontractPhysicalContextV1.Create(
             CompanyId, SubcontractMaterialOwnerKindV1.Company, CompanyId, ExternalLocationId, "location-v2",
             OperatorPartyId, "party-v4", Guid.Empty, "request-v5"));
+        Assert.Throws<ArgumentException>(() => SubcontractPhysicalContextV1.Create(
+            CompanyId, SubcontractMaterialOwnerKindV1.Company, SupplierPartyId, ExternalLocationId, "location-v2",
+            OperatorPartyId, "party-v4", PhysicalRequestId, "request-v5"));
     }
 
     [Fact]
