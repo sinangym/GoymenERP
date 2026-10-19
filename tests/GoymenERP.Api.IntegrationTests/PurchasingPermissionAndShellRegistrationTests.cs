@@ -29,6 +29,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.OrdersRead, ErpPermissions.PurchasingOrdersRead)]
     [InlineData(PurchasingPermissionManifestV1.OrdersApprove, ErpPermissions.PurchasingOrdersApprove)]
     [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsRecord, ErpPermissions.PurchasingGoodsReceiptsRecord)]
+    [InlineData(PurchasingPermissionManifestV1.SubcontractsAdmit, ErpPermissions.PurchasingSubcontractsAdmit)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);

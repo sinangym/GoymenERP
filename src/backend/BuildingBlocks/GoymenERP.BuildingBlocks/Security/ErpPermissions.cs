@@ -537,6 +537,14 @@ public static class ErpPermissions
     public const string PurchasingGoodsReceiptsRecord = "purchasing.goods-receipts.record";
 
     /// <summary>
+    /// Admits a Purchasing subcontract draft through the owner manifest's exact technical name.
+    /// Registration grants nothing: no role, seed or user receives it here. Company-wide only because
+    /// the admission is resolved for the server-bound company and has no narrower approved scope
+    /// dimension. Not Critical: no approved source adds grant-time dual control for this permission.
+    /// </summary>
+    public const string PurchasingSubcontractsAdmit = "purchasing.subcontracts.admit";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -685,6 +693,7 @@ public static class ErpPermissions
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
             PurchasingGoodsReceiptsRecord,
+            PurchasingSubcontractsAdmit,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -806,6 +815,7 @@ public static class ErpPermissions
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
             PurchasingGoodsReceiptsRecord,
+            PurchasingSubcontractsAdmit,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
