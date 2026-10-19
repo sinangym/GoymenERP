@@ -18,23 +18,17 @@ public static class OperationalCostTraceCalculatorV1
         ArgumentNullException.ThrowIfNull(request);
         // Copy each caller-owned collection once; all validation, fingerprinting and calculation
         // below use only these private snapshots, never a second enumeration of mutable input.
-        if (request.Shares?.Count > OperationalCostTraceSerializationLimitsV1.MaxShareCount)
+        // Caller-provided Count is deliberately ignored: it may be stale, expensive or dishonest.
+        var shareSnapshot = SnapshotBounded(request.Shares,
+            OperationalCostTraceSerializationLimitsV1.MaxShareCount, out var shares);
+        var historySnapshot = SnapshotBounded(request.PriorApplications,
+            OperationalCostTraceSerializationLimitsV1.MaxPriorApplicationCount, out var priorApplications);
+        if (shareSnapshot == SnapshotStatus.TooMany || historySnapshot == SnapshotStatus.TooMany)
         {
             return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.NumericLimitExceeded);
         }
 
-        OperationalCostShareV1[]? shares;
-        OperationalCostApplicationV1[]? priorApplications;
-        try
-        {
-            shares = request.Shares?.ToArray();
-            priorApplications = request.PriorApplications?.ToArray();
-        }
-        catch (InvalidOperationException)
-        {
-            return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
-        }
-        catch (ArgumentException)
+        if (shareSnapshot != SnapshotStatus.Ready || historySnapshot != SnapshotStatus.Ready)
         {
             return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
         }
@@ -48,8 +42,7 @@ public static class OperationalCostTraceCalculatorV1
             || origin.AssetKind is not (OperationalCostAssetKindV1.CompanyOwned or OperationalCostAssetKindV1.CustomerOwned)
             || request.AdjustmentId == Guid.Empty || request.AdjustmentSourceFactId == Guid.Empty
             || request.SourceBusinessDate == default || !HasText(request.AdjustmentSourceKind)
-            || !HasText(request.AdjustmentSourceVersion) || shares is null
-            || priorApplications is null || request.QuantityBasis is null
+            || !HasText(request.AdjustmentSourceVersion) || request.QuantityBasis is null
             || request.QuantityBasis.UnitId == Guid.Empty
             || request.QuantityBasis.ApprovedProfileId == Guid.Empty
             || !HasText(request.QuantityBasis.ApprovedProfileVersion))
@@ -81,12 +74,24 @@ public static class OperationalCostTraceCalculatorV1
         }
 
         if (scale > OperationalCostTraceSerializationLimitsV1.MaxApprovedMoneyScale
-            || shares.Length > OperationalCostTraceSerializationLimitsV1.MaxShareCount
             || ExceedsNumericLimit(request.AdjustmentAmountText)
             || ExceedsNumericLimit(request.CurrentTotalAmountText)
             || ExceedsNumericLimit(request.TotalQuantityText)
+            || ExceedsMetadataLimit(origin.ProductVersion)
+            || ExceedsMetadataLimit(origin.SourceFactKind)
+            || ExceedsMetadataLimit(origin.SourceFactVersion)
+            || ExceedsMetadataLimit(request.AdjustmentSourceKind)
+            || ExceedsMetadataLimit(request.AdjustmentSourceVersion)
+            || ExceedsMetadataLimit(request.ApprovedProfileVersion)
+            || ExceedsMetadataLimit(request.QuantityBasis.ApprovedProfileVersion)
             || shares.Any(share => share is not null && (ExceedsNumericLimit(share.QuantityText)
-                || ExceedsNumericLimit(share.CurrentAmountText))))
+                || ExceedsNumericLimit(share.CurrentAmountText)
+                || ExceedsMetadataLimit(share.ProductVersion)
+                || ExceedsMetadataLimit(share.EvidenceProducer)
+                || ExceedsMetadataLimit(share.EvidenceFactKind)
+                || ExceedsMetadataLimit(share.EvidenceFactVersion)
+                || (share.QuantityBasis is not null
+                    && ExceedsMetadataLimit(share.QuantityBasis.ApprovedProfileVersion)))))
         {
             return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.NumericLimitExceeded);
         }
@@ -238,6 +243,43 @@ public static class OperationalCostTraceCalculatorV1
     private static bool ExceedsNumericLimit(string? value) =>
         value is { Length: > OperationalCostTraceSerializationLimitsV1.MaxNumericTextLength };
 
+    private static bool ExceedsMetadataLimit(string? value) =>
+        value is { Length: > OperationalCostTraceSerializationLimitsV1.MaxFingerprintMetadataTextLength };
+
+    private static SnapshotStatus SnapshotBounded<T>(IEnumerable<T>? source, int maxCount, out T[] snapshot)
+    {
+        snapshot = [];
+        if (source is null)
+        {
+            return SnapshotStatus.Missing;
+        }
+
+        try
+        {
+            var items = new List<T>();
+            foreach (var item in source)
+            {
+                if (items.Count == maxCount)
+                {
+                    return SnapshotStatus.TooMany;
+                }
+
+                items.Add(item);
+            }
+
+            snapshot = items.ToArray();
+            return SnapshotStatus.Ready;
+        }
+        catch (InvalidOperationException)
+        {
+            return SnapshotStatus.Invalid;
+        }
+        catch (ArgumentException)
+        {
+            return SnapshotStatus.Invalid;
+        }
+    }
+
     private static bool IsSha256(string? value) => value is { Length: 64 }
         && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
 
@@ -325,6 +367,14 @@ public static class OperationalCostTraceCalculatorV1
 
     private sealed record PreparedShare(OperationalCostShareV1 Share, Exact Quantity,
         Exact CurrentAmount, BigInteger CurrentMinor);
+
+    private enum SnapshotStatus
+    {
+        Ready,
+        Missing,
+        TooMany,
+        Invalid,
+    }
 
     private readonly record struct Exact(BigInteger Numerator, BigInteger Denominator)
     {

@@ -228,6 +228,83 @@ public sealed class OperationalCostTraceCalculatorV1Tests
     }
 
     [Fact]
+    public void Every_fingerprint_metadata_string_has_the_same_explicit_v1_bound()
+    {
+        var request = Standard();
+        var shares = request.Shares!;
+        var overLimit = new string('x',
+            OperationalCostTraceSerializationLimitsV1.MaxFingerprintMetadataTextLength + 1);
+        var variants = new[]
+        {
+            request with { Origin = request.Origin! with { ProductVersion = overLimit } },
+            request with { Origin = request.Origin! with { SourceFactKind = overLimit } },
+            request with { Origin = request.Origin! with { SourceFactVersion = overLimit } },
+            request with { AdjustmentSourceKind = overLimit },
+            request with { AdjustmentSourceVersion = overLimit },
+            request with { ApprovedProfileVersion = overLimit },
+            request with { QuantityBasis = request.QuantityBasis with { ApprovedProfileVersion = overLimit } },
+            request with { Shares = [shares[0] with { ProductVersion = overLimit }, shares[1], shares[2]] },
+            request with { Shares = [shares[0] with { EvidenceProducer = overLimit }, shares[1], shares[2]] },
+            request with { Shares = [shares[0] with { EvidenceFactKind = overLimit }, shares[1], shares[2]] },
+            request with { Shares = [shares[0] with { EvidenceFactVersion = overLimit }, shares[1], shares[2]] },
+            request with { Shares = [shares[0] with
+                { QuantityBasis = shares[0].QuantityBasis with { ApprovedProfileVersion = overLimit } },
+                shares[1], shares[2]] },
+        };
+
+        foreach (var variant in variants)
+        {
+            Refused(variant, OperationalCostTraceStatusV1.Conflict,
+                OperationalCostTraceCodesV1.NumericLimitExceeded);
+        }
+
+        var atLimit = new string('x',
+            OperationalCostTraceSerializationLimitsV1.MaxFingerprintMetadataTextLength);
+        var accepted = OperationalCostTraceCalculatorV1.Preview(request with { AdjustmentSourceKind = atLimit });
+        Assert.Equal(OperationalCostTraceStatusV1.Ready, accepted.Status);
+    }
+
+    [Fact]
+    public void Caller_Count_is_not_trusted_when_bounded_enumeration_is_valid()
+    {
+        var request = Standard();
+        var liar = new FixedCountReadOnlyList<OperationalCostShareV1>(request.Shares!, int.MaxValue);
+
+        var result = OperationalCostTraceCalculatorV1.Preview(request with { Shares = liar });
+
+        Assert.Equal(OperationalCostTraceStatusV1.Ready, result.Status);
+        Assert.Equal(1, liar.EnumerationCount);
+    }
+
+    [Fact]
+    public void Oversized_share_enumeration_is_refused_even_when_Count_lies()
+    {
+        var oversized = Enumerable.Range(1,
+                OperationalCostTraceSerializationLimitsV1.MaxShareCount + 1)
+            .Select(index => Share(10_000 + index, OperationalCostShareKindV1.OnHand, "1", "1"))
+            .ToArray();
+        var liar = new FixedCountReadOnlyList<OperationalCostShareV1>(oversized, 0);
+
+        Refused(Standard() with { Shares = liar }, OperationalCostTraceStatusV1.Conflict,
+            OperationalCostTraceCodesV1.NumericLimitExceeded);
+        Assert.Equal(1, liar.EnumerationCount);
+    }
+
+    [Fact]
+    public void Oversized_prior_application_history_is_refused_before_fingerprint_work()
+    {
+        var oversized = Enumerable.Range(1,
+                OperationalCostTraceSerializationLimitsV1.MaxPriorApplicationCount + 1)
+            .Select(index => new OperationalCostApplicationV1(Id(20_000 + index), new string('A', 64)))
+            .ToArray();
+        var liar = new FixedCountReadOnlyList<OperationalCostApplicationV1>(oversized, 0);
+
+        Refused(Standard() with { PriorApplications = liar }, OperationalCostTraceStatusV1.Conflict,
+            OperationalCostTraceCodesV1.NumericLimitExceeded);
+        Assert.Equal(1, liar.EnumerationCount);
+    }
+
+    [Fact]
     public void Caller_owned_share_and_history_collections_are_enumerated_once_then_frozen()
     {
         var request = Standard();
@@ -292,6 +369,22 @@ public sealed class OperationalCostTraceCalculatorV1Tests
         {
             EnumerationCount++;
             return (EnumerationCount == 1 ? first : later).GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed class FixedCountReadOnlyList<T>(IReadOnlyList<T> items, int reportedCount)
+        : IReadOnlyList<T>
+    {
+        public int EnumerationCount { get; private set; }
+        public int Count => reportedCount;
+        public T this[int index] => items[index];
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            EnumerationCount++;
+            return items.GetEnumerator();
         }
 
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();

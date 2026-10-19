@@ -31,8 +31,10 @@ public sealed record OperationalCostQuantityBasisV1(
 public static class OperationalCostTraceSerializationLimitsV1
 {
     public const int MaxNumericTextLength = 128;
+    public const int MaxFingerprintMetadataTextLength = 256;
     public const int MaxApprovedMoneyScale = 64;
     public const int MaxShareCount = 4096;
+    public const int MaxPriorApplicationCount = 4096;
 }
 
 /// <summary>
