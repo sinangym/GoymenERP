@@ -16,6 +16,26 @@ public enum OperationalCostAssetKindV1
 }
 
 /// <summary>
+/// Caller-proven canonical quantity unit and approved unit-profile snapshot. Every quantity in
+/// one preview must use this exact identity; this slice has no conversion or default unit.
+/// </summary>
+public sealed record OperationalCostQuantityBasisV1(
+    Guid UnitId,
+    Guid ApprovedProfileId,
+    string ApprovedProfileVersion);
+
+/// <summary>
+/// Technical preview serialization limits, not a money scale, rounding rule or business policy.
+/// Larger inputs require a versioned contract change and are refused, never clipped or rounded.
+/// </summary>
+public static class OperationalCostTraceSerializationLimitsV1
+{
+    public const int MaxNumericTextLength = 128;
+    public const int MaxApprovedMoneyScale = 64;
+    public const int MaxShareCount = 4096;
+}
+
+/// <summary>
 /// Immutable source identity for one operational cost origin. Its stock owner, product snapshot,
 /// lot and label are supplied by their owners; this contract does not discover or approve them.
 /// </summary>
@@ -48,9 +68,12 @@ public sealed record OperationalCostShareV1(
     Guid LotId,
     Guid LabelId,
     Guid CurrencyId,
+    string EvidenceProducer,
+    string EvidenceFactKind,
     Guid EvidenceFactId,
     string EvidenceFactVersion,
     OperationalCostShareKindV1 Kind,
+    OperationalCostQuantityBasisV1 QuantityBasis,
     string QuantityText,
     string? CurrentAmountText);
 
@@ -77,6 +100,7 @@ public sealed record OperationalCostTraceRequestV1(
     string ApprovedProfileVersion,
     int? ApprovedScale,
     bool SourcePeriodOpen,
+    OperationalCostQuantityBasisV1 QuantityBasis,
     string TotalQuantityText,
     string? CurrentTotalAmountText,
     IReadOnlyList<OperationalCostShareV1>? Shares,
@@ -98,12 +122,14 @@ public static class OperationalCostTraceCodesV1
     public const string InvalidReference = "operational_cost_invalid_reference";
     public const string SourceMismatch = "operational_cost_source_mismatch";
     public const string ShareTotalMismatch = "operational_cost_share_total_mismatch";
+    public const string QuantityBasisMismatch = "operational_cost_quantity_basis_mismatch";
     public const string AmountMismatch = "operational_cost_amount_mismatch";
     public const string AmountScaleExceeded = "operational_cost_amount_scale_exceeded";
     public const string NegativeValue = "operational_cost_negative_value";
     public const string AdjustmentConflict = "operational_cost_adjustment_conflict";
     public const string UnknownAmount = "operational_cost_unknown_amount";
     public const string ProfileUnavailable = "operational_cost_profile_unavailable";
+    public const string NumericLimitExceeded = "operational_cost_numeric_limit_exceeded";
     public const string CustomerMaterial = "operational_cost_customer_material_not_company_asset";
     public const string RoundingRequired = "operational_cost_rounding_required";
     public const string ForwardCorrectionRequired = "operational_cost_forward_correction_required";

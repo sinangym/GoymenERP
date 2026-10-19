@@ -16,6 +16,29 @@ public static class OperationalCostTraceCalculatorV1
     public static OperationalCostTraceResultV1 Preview(OperationalCostTraceRequestV1 request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        // Copy each caller-owned collection once; all validation, fingerprinting and calculation
+        // below use only these private snapshots, never a second enumeration of mutable input.
+        if (request.Shares?.Count > OperationalCostTraceSerializationLimitsV1.MaxShareCount)
+        {
+            return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.NumericLimitExceeded);
+        }
+
+        OperationalCostShareV1[]? shares;
+        OperationalCostApplicationV1[]? priorApplications;
+        try
+        {
+            shares = request.Shares?.ToArray();
+            priorApplications = request.PriorApplications?.ToArray();
+        }
+        catch (InvalidOperationException)
+        {
+            return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
+        }
+        catch (ArgumentException)
+        {
+            return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
+        }
+
         var origin = request.Origin;
         if (origin is null || origin.CostOriginId == Guid.Empty || origin.CompanyId == Guid.Empty
             || origin.StockOwnerId == Guid.Empty || origin.ProductId == Guid.Empty || origin.LotId == Guid.Empty
@@ -25,8 +48,11 @@ public static class OperationalCostTraceCalculatorV1
             || origin.AssetKind is not (OperationalCostAssetKindV1.CompanyOwned or OperationalCostAssetKindV1.CustomerOwned)
             || request.AdjustmentId == Guid.Empty || request.AdjustmentSourceFactId == Guid.Empty
             || request.SourceBusinessDate == default || !HasText(request.AdjustmentSourceKind)
-            || !HasText(request.AdjustmentSourceVersion) || request.Shares is null
-            || request.PriorApplications is null)
+            || !HasText(request.AdjustmentSourceVersion) || shares is null
+            || priorApplications is null || request.QuantityBasis is null
+            || request.QuantityBasis.UnitId == Guid.Empty
+            || request.QuantityBasis.ApprovedProfileId == Guid.Empty
+            || !HasText(request.QuantityBasis.ApprovedProfileVersion))
         {
             return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
         }
@@ -49,13 +75,24 @@ public static class OperationalCostTraceCalculatorV1
         }
 
         var scale = request.ApprovedScale.Value;
-        if (scale < 0 || request.Shares.Count == 0)
+        if (scale < 0 || shares.Length == 0)
         {
             return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
         }
 
+        if (scale > OperationalCostTraceSerializationLimitsV1.MaxApprovedMoneyScale
+            || shares.Length > OperationalCostTraceSerializationLimitsV1.MaxShareCount
+            || ExceedsNumericLimit(request.AdjustmentAmountText)
+            || ExceedsNumericLimit(request.CurrentTotalAmountText)
+            || ExceedsNumericLimit(request.TotalQuantityText)
+            || shares.Any(share => share is not null && (ExceedsNumericLimit(share.QuantityText)
+                || ExceedsNumericLimit(share.CurrentAmountText))))
+        {
+            return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.NumericLimitExceeded);
+        }
+
         if (request.AdjustmentAmountText is null || request.CurrentTotalAmountText is null
-            || request.Shares.Any(share => share is null || share.CurrentAmountText is null))
+            || shares.Any(share => share is null || share.CurrentAmountText is null))
         {
             return Refuse(OperationalCostTraceStatusV1.Unavailable, OperationalCostTraceCodesV1.UnknownAmount);
         }
@@ -79,15 +116,16 @@ public static class OperationalCostTraceCalculatorV1
             return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.NegativeValue);
         }
 
-        var prepared = new List<PreparedShare>(request.Shares.Count);
+        var prepared = new List<PreparedShare>(shares.Length);
         var seenShares = new HashSet<Guid>();
         var quantitySum = Exact.Zero;
         var amountSum = BigInteger.Zero;
-        foreach (var share in request.Shares)
+        foreach (var share in shares)
         {
             if (share is null || share.ShareId == Guid.Empty || !seenShares.Add(share.ShareId)
                 || share.LotId == Guid.Empty || share.LabelId == Guid.Empty || share.EvidenceFactId == Guid.Empty
-                || !HasText(share.EvidenceFactVersion)
+                || !HasText(share.EvidenceProducer) || !HasText(share.EvidenceFactKind)
+                || !HasText(share.EvidenceFactVersion) || share.QuantityBasis is null
                 || share.Kind is not (OperationalCostShareKindV1.OnHand or OperationalCostShareKindV1.Wip
                     or OperationalCostShareKindV1.SoldOrConsumed))
             {
@@ -100,6 +138,12 @@ public static class OperationalCostTraceCalculatorV1
                 || share.CurrencyId != origin.CurrencyId)
             {
                 return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.SourceMismatch);
+            }
+
+            if (share.QuantityBasis != request.QuantityBasis)
+            {
+                return Refuse(OperationalCostTraceStatusV1.Conflict,
+                    OperationalCostTraceCodesV1.QuantityBasisMismatch);
             }
 
             if (!Exact.TryParse(share.QuantityText, out var quantity) || quantity.Numerator <= 0
@@ -133,16 +177,16 @@ public static class OperationalCostTraceCalculatorV1
             return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.AmountMismatch);
         }
 
-        if (request.PriorApplications.Any(item => item is null || item.AdjustmentId == Guid.Empty
+        if (priorApplications.Any(item => item is null || item.AdjustmentId == Guid.Empty
                 || !IsSha256(item.Fingerprint))
-            || request.PriorApplications.Select(item => item.AdjustmentId).Distinct().Count()
-                != request.PriorApplications.Count)
+            || priorApplications.Select(item => item.AdjustmentId).Distinct().Count()
+                != priorApplications.Length)
         {
             return Refuse(OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
         }
 
         var fingerprint = Fingerprint(request, origin, adjustment, currentTotal, totalQuantity, prepared, scale);
-        var previous = request.PriorApplications.FirstOrDefault(item => item.AdjustmentId == request.AdjustmentId);
+        var previous = priorApplications.FirstOrDefault(item => item.AdjustmentId == request.AdjustmentId);
         if (previous is not null)
         {
             return string.Equals(previous.Fingerprint, fingerprint, StringComparison.OrdinalIgnoreCase)
@@ -190,6 +234,9 @@ public static class OperationalCostTraceCalculatorV1
 
     private static bool HasText(string? value) => !string.IsNullOrWhiteSpace(value)
         && string.Equals(value, value.Trim(), StringComparison.Ordinal);
+
+    private static bool ExceedsNumericLimit(string? value) =>
+        value is { Length: > OperationalCostTraceSerializationLimitsV1.MaxNumericTextLength };
 
     private static bool IsSha256(string? value) => value is { Length: 64 }
         && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
@@ -244,6 +291,9 @@ public static class OperationalCostTraceCalculatorV1
         Add(request.ApprovedProfileVersion);
         Add(scale.ToString(CultureInfo.InvariantCulture));
         Add(request.SourcePeriodOpen ? "open" : "closed");
+        Add(request.QuantityBasis.UnitId.ToString("D"));
+        Add(request.QuantityBasis.ApprovedProfileId.ToString("D"));
+        Add(request.QuantityBasis.ApprovedProfileVersion);
         Add(totalQuantity.Canonical);
         Add(currentTotal.Canonical);
         foreach (var item in shares.OrderBy(item => item.Share.ShareId))
@@ -258,9 +308,14 @@ public static class OperationalCostTraceCalculatorV1
             Add(share.LotId.ToString("D"));
             Add(share.LabelId.ToString("D"));
             Add(share.CurrencyId.ToString("D"));
+            Add(share.EvidenceProducer);
+            Add(share.EvidenceFactKind);
             Add(share.EvidenceFactId.ToString("D"));
             Add(share.EvidenceFactVersion);
             Add(((int)share.Kind).ToString(CultureInfo.InvariantCulture));
+            Add(share.QuantityBasis.UnitId.ToString("D"));
+            Add(share.QuantityBasis.ApprovedProfileId.ToString("D"));
+            Add(share.QuantityBasis.ApprovedProfileVersion);
             Add(item.Quantity.Canonical);
             Add(item.CurrentAmount.Canonical);
         }
@@ -302,7 +357,9 @@ public static class OperationalCostTraceCalculatorV1
         public static bool TryParse(string? text, out Exact value)
         {
             value = default;
-            if (string.IsNullOrEmpty(text) || text.Length != text.Trim().Length)
+            if (string.IsNullOrEmpty(text)
+                || text.Length > OperationalCostTraceSerializationLimitsV1.MaxNumericTextLength
+                || text.Length != text.Trim().Length)
             {
                 return false;
             }

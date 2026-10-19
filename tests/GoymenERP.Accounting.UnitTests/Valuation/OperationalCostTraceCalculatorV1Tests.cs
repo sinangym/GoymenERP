@@ -1,3 +1,4 @@
+using System.Collections;
 using GoymenERP.Modules.Accounting.Application.Valuation;
 
 namespace GoymenERP.Accounting.UnitTests.Valuation;
@@ -12,6 +13,8 @@ public sealed class OperationalCostTraceCalculatorV1Tests
     private static readonly Guid OriginId = Id(5);
     private static readonly Guid AdjustmentId = Id(6);
     private static readonly Guid ProfileId = Id(7);
+    private static readonly OperationalCostQuantityBasisV1 QuantityBasis =
+        new(Id(12), Id(13), "synthetic-unit-profile-v1");
 
     [Fact]
     public void Late_positive_cost_follows_exact_historical_lot_label_shares_once()
@@ -167,6 +170,87 @@ public sealed class OperationalCostTraceCalculatorV1Tests
             OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.AmountScaleExceeded);
     }
 
+    [Fact]
+    public void Every_share_must_use_the_totals_exact_unit_and_approved_profile_snapshot()
+    {
+        var request = Standard();
+        var shares = request.Shares!;
+        foreach (var mismatched in new[]
+        {
+            QuantityBasis with { UnitId = Id(14) },
+            QuantityBasis with { ApprovedProfileId = Id(15) },
+            QuantityBasis with { ApprovedProfileVersion = "synthetic-unit-profile-v2" },
+        })
+        {
+            Refused(request with { Shares = [shares[0] with { QuantityBasis = mismatched }, shares[1], shares[2]] },
+                OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.QuantityBasisMismatch);
+        }
+
+        Refused(request with { QuantityBasis = QuantityBasis with { UnitId = Id(16) } },
+            OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.QuantityBasisMismatch);
+        Refused(request with { QuantityBasis = QuantityBasis with { ApprovedProfileVersion = "" } },
+            OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
+    }
+
+    [Fact]
+    public void Evidence_producer_and_fact_kind_are_bound_into_the_replay_fingerprint()
+    {
+        var request = Standard();
+        var first = OperationalCostTraceCalculatorV1.Preview(request);
+        var shares = request.Shares!;
+        var otherKind = request with { Shares = [shares[0] with
+            { EvidenceFactKind = "synthetic.manufacturing-share.v1" }, shares[1], shares[2]] };
+        var otherProducer = request with { Shares = [shares[0] with
+            { EvidenceProducer = "synthetic.manufacturing" }, shares[1], shares[2]] };
+
+        Assert.NotEqual(first.Fingerprint, OperationalCostTraceCalculatorV1.Preview(otherKind).Fingerprint);
+        Assert.NotEqual(first.Fingerprint, OperationalCostTraceCalculatorV1.Preview(otherProducer).Fingerprint);
+        Refused(otherKind with { PriorApplications =
+                [new OperationalCostApplicationV1(AdjustmentId, first.Fingerprint!)] },
+            OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.AdjustmentConflict);
+        Refused(request with { Shares = [shares[0] with { EvidenceFactKind = "" }, shares[1], shares[2]] },
+            OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
+    }
+
+    [Fact]
+    public void Extreme_scale_and_numeric_text_refuse_before_unbounded_arithmetic()
+    {
+        Refused(Standard() with { ApprovedScale = int.MaxValue },
+            OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.NumericLimitExceeded);
+        Refused(Standard() with { AdjustmentAmountText = new string('9',
+                OperationalCostTraceSerializationLimitsV1.MaxNumericTextLength + 1) },
+            OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.NumericLimitExceeded);
+        Refused(Standard() with { TotalQuantityText = new string('9',
+                OperationalCostTraceSerializationLimitsV1.MaxNumericTextLength + 1) },
+            OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.NumericLimitExceeded);
+        Refused(Standard() with { AdjustmentAmountText = "1e1000000" },
+            OperationalCostTraceStatusV1.Conflict, OperationalCostTraceCodesV1.InvalidReference);
+    }
+
+    [Fact]
+    public void Caller_owned_share_and_history_collections_are_enumerated_once_then_frozen()
+    {
+        var request = Standard();
+        var firstShares = request.Shares!;
+        var changedShares = new[] { firstShares[0] with { CompanyId = Id(900) },
+            firstShares[1], firstShares[2] };
+        var volatileShares = new ChangingReadOnlyList<OperationalCostShareV1>(firstShares, changedShares);
+        var firstHistory = new[] { new OperationalCostApplicationV1(Id(99), new string('A', 64)) };
+        var changedHistory = new[] { new OperationalCostApplicationV1(AdjustmentId, new string('B', 64)) };
+        var volatileHistory = new ChangingReadOnlyList<OperationalCostApplicationV1>(firstHistory, changedHistory);
+
+        var result = OperationalCostTraceCalculatorV1.Preview(request with
+        {
+            Shares = volatileShares,
+            PriorApplications = volatileHistory,
+        });
+
+        Assert.Equal(OperationalCostTraceStatusV1.Ready, result.Status);
+        Assert.False(result.Replayed);
+        Assert.Equal(1, volatileShares.EnumerationCount);
+        Assert.Equal(1, volatileHistory.EnumerationCount);
+    }
+
     private static void Refused(OperationalCostTraceRequestV1 request,
         OperationalCostTraceStatusV1 status, string code)
     {
@@ -183,7 +267,7 @@ public sealed class OperationalCostTraceCalculatorV1Tests
             Id(8), Id(9), Currency, "synthetic.approved-cost.v1", Id(10), "source-v1",
             OperationalCostAssetKindV1.CompanyOwned),
         AdjustmentId, "synthetic.late-cost.v1", Id(11), "adjustment-v1", new DateOnly(2026, 10, 19),
-        "10000", ProfileId, "synthetic-profile-v1", 2, true, "100", "100000",
+        "10000", ProfileId, "synthetic-profile-v1", 2, true, QuantityBasis, "100", "100000",
         [Share(101, OperationalCostShareKindV1.OnHand, "40", "40000"),
             Share(102, OperationalCostShareKindV1.Wip, "20", "20000"),
             Share(103, OperationalCostShareKindV1.SoldOrConsumed, "40", "40000")],
@@ -191,8 +275,25 @@ public sealed class OperationalCostTraceCalculatorV1Tests
 
     private static OperationalCostShareV1 Share(int id, OperationalCostShareKindV1 kind,
         string quantity, string? currentAmount) => new(Id(id), OriginId, Company, Owner, Product,
-        "synthetic-product-v1", Id(id + 1000), Id(id + 2000), Currency, Id(id + 3000),
-        "synthetic-evidence-v1", kind, quantity, currentAmount);
+        "synthetic-product-v1", Id(id + 1000), Id(id + 2000), Currency,
+        "synthetic.inventory", "synthetic.inventory-share.v1", Id(id + 3000),
+        "synthetic-evidence-v1", kind, QuantityBasis, quantity, currentAmount);
 
     private static Guid Id(int number) => Guid.Parse($"00000000-0000-0000-0000-{number:D12}");
+
+    private sealed class ChangingReadOnlyList<T>(IReadOnlyList<T> first, IReadOnlyList<T> later)
+        : IReadOnlyList<T>
+    {
+        public int EnumerationCount { get; private set; }
+        public int Count => first.Count;
+        public T this[int index] => first[index];
+
+        public IEnumerator<T> GetEnumerator()
+        {
+            EnumerationCount++;
+            return (EnumerationCount == 1 ? first : later).GetEnumerator();
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 }
