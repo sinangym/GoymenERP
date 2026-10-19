@@ -23,7 +23,7 @@ namespace GoymenERP.Api.Endpoints;
 /// headers (§7). Problems carry <c>code</c>, <c>correlationId</c> and field <c>errors</c>; platform
 /// 401/403/404 and every 503 stay code-less. No receipt, kantar or stock route (PUR-4b + Inventory T09).
 /// </summary>
-public static class PurchasingEndpoints
+public static partial class PurchasingEndpoints
 {
     public const string RequestsPath = PurchasingApiV1.RequestsPath;
     public const string OrdersPath = PurchasingApiV1.OrdersPath;
@@ -38,6 +38,7 @@ public static class PurchasingEndpoints
     {
         MapRequests(endpoints);
         MapOrders(endpoints);
+        MapSubcontracts(endpoints);
         return endpoints;
     }
 
@@ -417,6 +418,7 @@ public static class PurchasingEndpoints
         PurchaseRequestResponse request => request.IsReplay,
         PurchaseOrderResponse order => order.IsReplay,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.IsReplay,
+        PurchasingSubcontractResponseV1 subcontract => subcontract.IsReplay,
         _ => false,
     };
 
@@ -425,6 +427,7 @@ public static class PurchasingEndpoints
         PurchaseRequestResponse request => request.OriginalCorrelationId,
         PurchaseOrderResponse order => order.OriginalCorrelationId,
         PurchaseGoodsReceiptResponseV1 receipt => receipt.OriginalCorrelationId,
+        PurchasingSubcontractResponseV1 subcontract => subcontract.OriginalCorrelationId,
         _ => throw new InvalidOperationException("Replay without its original correlation."),
     };
 

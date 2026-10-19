@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Purchasing.Application;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Application.Subcontracts;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -57,6 +58,11 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseSupplyReferencePortV1, PurchaseSupplyReferencePort>();
         // AT-025: the purchase section of the operations work list reads the approved lines awaiting receipt through this port only.
         services.AddScoped<IPurchaseOpenLineReadPortV1, PurchaseOpenLineReadPort>();
+        services.AddScoped<IPurchasingSubcontractStoreV1, PurchasingSubcontractStoreV1>();
+        services.TryAddScoped<IPurchasingSubcontractSubjectSourceV1, PurchasingSubcontractUnavailableSubjectSourceV1>();
+        services.TryAddScoped<IPurchasingSubcontractPhysicalContextSourceV1, PurchasingSubcontractUnavailablePhysicalContextSourceV1>();
+        services.AddScoped<PurchasingSubcontractAdmissionV1>();
+        services.AddScoped<IPurchasingSubcontractRuntimeServiceV1, PurchasingSubcontractRuntimeServiceV1>();
         return services;
     }
 

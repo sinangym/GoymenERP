@@ -43,6 +43,11 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
 
     internal DbSet<PurchaseAttemptRow> Attempts => Set<PurchaseAttemptRow>();
 
+    internal DbSet<PurchasingSubcontractOrderRow> SubcontractOrders => Set<PurchasingSubcontractOrderRow>();
+    internal DbSet<PurchasingSubcontractOrderLineRow> SubcontractOrderLines => Set<PurchasingSubcontractOrderLineRow>();
+    internal DbSet<PurchasingSubcontractAdmissionRow> SubcontractAdmissions => Set<PurchasingSubcontractAdmissionRow>();
+    internal DbSet<PurchasingSubcontractAttemptRow> SubcontractAttempts => Set<PurchasingSubcontractAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -57,6 +62,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         ConfigureOrderLines(modelBuilder);
         ConfigureAcceptances(modelBuilder);
         ConfigureAttempts(modelBuilder);
+        ConfigureSubcontracts(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -261,6 +267,56 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private void ConfigureSubcontracts(ModelBuilder modelBuilder)
+    {
+        var orders = modelBuilder.Entity<PurchasingSubcontractOrderRow>();
+        orders.ToTable("SubcontractOrders", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SubcontractOrders_Identity", $"[Id] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid} AND [SupplierPartyId] <> {EmptyGuid} AND [CompanyAccountId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_SubcontractOrders_Status", "[Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_SubcontractOrders_Version", "[Version] >= 1");
+        });
+        orders.HasKey(x => x.Id); orders.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        orders.Property(x => x.Id).ValueGeneratedNever(); orders.Property(x => x.Version).IsConcurrencyToken();
+        orders.Property(x => x.RowVersion).IsRowVersion();
+        foreach (var name in new[] { nameof(PurchasingSubcontractOrderRow.SupplierPartyVersion), nameof(PurchasingSubcontractOrderRow.CompanyAccountVersion) })
+            orders.Property<string>(name).HasMaxLength(64).IsRequired();
+        orders.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired(); orders.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        orders.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        orders.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var lines = modelBuilder.Entity<PurchasingSubcontractOrderLineRow>();
+        lines.ToTable("SubcontractOrderLines", Schema); lines.HasKey(x => new { x.CompanyId, x.OrderId, x.LineNo });
+        lines.HasAlternateKey(x => new { x.CompanyId, x.OrderId, x.LineId });
+        lines.Property(x => x.ServiceVersion).HasMaxLength(64).IsRequired(); lines.Property(x => x.ServiceQuantity).HasMaxLength(80).IsRequired();
+        lines.Property(x => x.SourcePhysicalRequestVersion).HasMaxLength(64).IsRequired();
+        lines.HasOne<PurchasingSubcontractOrderRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id }).OnDelete(DeleteBehavior.Restrict);
+        lines.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var admissions = modelBuilder.Entity<PurchasingSubcontractAdmissionRow>();
+        admissions.ToTable("SubcontractAdmissions", Schema); admissions.HasKey(x => new { x.CompanyId, x.OrderId, x.LineId });
+        foreach (var name in new[] { nameof(PurchasingSubcontractAdmissionRow.ServiceVersion), nameof(PurchasingSubcontractAdmissionRow.ExpectedOrderVersion),
+            nameof(PurchasingSubcontractAdmissionRow.ExternalLocationVersion), nameof(PurchasingSubcontractAdmissionRow.OperatorPartyVersion),
+            nameof(PurchasingSubcontractAdmissionRow.SourcePhysicalRequestVersion) }) admissions.Property<string>(name).HasMaxLength(64).IsRequired();
+        admissions.Property(x => x.ServiceCode).HasMaxLength(128).IsRequired(); admissions.Property(x => x.ServiceName).HasMaxLength(256).IsRequired();
+        admissions.HasOne<PurchasingSubcontractOrderLineRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.OrderId, x.LineId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.OrderId, x.LineId }).OnDelete(DeleteBehavior.Restrict);
+        admissions.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempts = modelBuilder.Entity<PurchasingSubcontractAttemptRow>();
+        attempts.ToTable("SubcontractAttempts", Schema); attempts.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempts.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempts.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempts.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempts.Property(x => x.ActorId).HasMaxLength(128).IsRequired(); attempts.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempts.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempts.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        attempts.HasOne<PurchasingSubcontractOrderRow>().WithMany().HasForeignKey(x => new { x.CompanyId, x.OrderId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id }).IsRequired(false).OnDelete(DeleteBehavior.Restrict);
+        attempts.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         PurchasingAuditEventTenantGuard.Validate(this, companyContext);
@@ -296,6 +352,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                     ],
                     PurchaseOrderRow => [nameof(PurchaseOrderRow.Status), nameof(PurchaseOrderRow.UpdatedAtUtc)],
                     PurchaseOrderLineRow => [nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted)],
+                    PurchasingSubcontractOrderRow => [nameof(PurchasingSubcontractOrderRow.Status), nameof(PurchasingSubcontractOrderRow.UpdatedAtUtc)],
                     _ => [],
                 };
                 var changed = entry.Properties

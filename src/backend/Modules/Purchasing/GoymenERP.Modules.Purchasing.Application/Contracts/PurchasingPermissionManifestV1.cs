@@ -26,5 +26,8 @@ public static class PurchasingPermissionManifestV1
     /// <summary>Record one physical goods receipt against an approved purchase-order line.</summary>
     public const string GoodsReceiptsRecord = "purchasing.goods-receipts.record";
 
-    public static readonly IReadOnlyList<string> Names = [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord];
+    /// <summary>Admit a persisted subcontract draft after fresh owner revalidation; this name grants no role.</summary>
+    public const string SubcontractsAdmit = "purchasing.subcontracts.admit";
+
+    public static readonly IReadOnlyList<string> Names = [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, SubcontractsAdmit];
 }

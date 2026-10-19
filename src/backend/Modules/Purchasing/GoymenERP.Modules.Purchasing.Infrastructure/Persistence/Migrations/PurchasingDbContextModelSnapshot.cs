@@ -22,6 +22,55 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchasingSubcontractOrderRow", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedNever().HasColumnType("uniqueidentifier");
+                    b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier");
+                    b.Property<Guid>("SupplierPartyId").HasColumnType("uniqueidentifier");
+                    b.Property<string>("SupplierPartyVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
+                    b.Property<Guid>("CompanyAccountId").HasColumnType("uniqueidentifier");
+                    b.Property<string>("CompanyAccountVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
+                    b.Property<int>("Status").HasColumnType("int"); b.Property<long>("Version").IsConcurrencyToken().HasColumnType("bigint");
+                    b.Property<byte[]>("RowVersion").IsConcurrencyToken().ValueGeneratedOnAddOrUpdate().HasColumnType("rowversion");
+                    b.Property<DateTimeOffset>("CreatedAtUtc").HasColumnType("datetimeoffset"); b.Property<DateTimeOffset>("UpdatedAtUtc").HasColumnType("datetimeoffset");
+                    b.Property<string>("CreatedBy").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
+                    b.Property<string>("CorrelationId").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
+                    b.HasKey("Id"); b.HasAlternateKey("CompanyId", "Id"); b.ToTable("SubcontractOrders", "purchasing");
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchasingSubcontractOrderLineRow", b =>
+                {
+                    b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier"); b.Property<Guid>("OrderId").HasColumnType("uniqueidentifier");
+                    b.Property<int>("LineNo").HasColumnType("int"); b.Property<Guid>("LineId").HasColumnType("uniqueidentifier");
+                    b.Property<Guid>("ServiceId").HasColumnType("uniqueidentifier"); b.Property<string>("ServiceVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
+                    b.Property<Guid>("ServiceUnitId").HasColumnType("uniqueidentifier"); b.Property<string>("ServiceQuantity").IsRequired().HasMaxLength(80).HasColumnType("nvarchar(80)");
+                    b.Property<Guid>("SourcePhysicalRequestId").HasColumnType("uniqueidentifier"); b.Property<string>("SourcePhysicalRequestVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
+                    b.HasKey("CompanyId", "OrderId", "LineNo"); b.HasAlternateKey("CompanyId", "OrderId", "LineId"); b.ToTable("SubcontractOrderLines", "purchasing");
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchasingSubcontractAdmissionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier"); b.Property<Guid>("OrderId").HasColumnType("uniqueidentifier"); b.Property<Guid>("LineId").HasColumnType("uniqueidentifier");
+                    b.Property<Guid>("ServiceId").HasColumnType("uniqueidentifier"); b.Property<string>("ServiceVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)");
+                    b.Property<string>("ServiceCode").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)"); b.Property<string>("ServiceName").IsRequired().HasMaxLength(256).HasColumnType("nvarchar(256)");
+                    b.Property<string>("ExpectedOrderVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)"); b.Property<int>("MaterialOwnerKind").HasColumnType("int");
+                    b.Property<Guid>("MaterialOwnerId").HasColumnType("uniqueidentifier"); b.Property<Guid>("ExternalLocationId").HasColumnType("uniqueidentifier");
+                    b.Property<string>("ExternalLocationVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)"); b.Property<Guid>("OperatorPartyId").HasColumnType("uniqueidentifier");
+                    b.Property<string>("OperatorPartyVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)"); b.Property<Guid>("SourcePhysicalRequestId").HasColumnType("uniqueidentifier");
+                    b.Property<string>("SourcePhysicalRequestVersion").IsRequired().HasMaxLength(64).HasColumnType("nvarchar(64)"); b.Property<DateTimeOffset>("AdmittedAtUtc").HasColumnType("datetimeoffset");
+                    b.HasKey("CompanyId", "OrderId", "LineId"); b.ToTable("SubcontractAdmissions", "purchasing");
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchasingSubcontractAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId").HasColumnType("uniqueidentifier"); b.Property<string>("CommandName").IsRequired().HasMaxLength(160).HasColumnType("nvarchar(160)").UseCollation("Latin1_General_100_BIN2");
+                    b.Property<string>("IdempotencyKeyHash").IsRequired().HasMaxLength(64).IsUnicode(false).HasColumnType("varchar(64)").UseCollation("Latin1_General_100_BIN2");
+                    b.Property<string>("RequestHash").IsRequired().HasMaxLength(64).IsUnicode(false).HasColumnType("varchar(64)"); b.Property<string>("ActorId").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)");
+                    b.Property<int>("Outcome").HasColumnType("int"); b.Property<Guid?>("OrderId").HasColumnType("uniqueidentifier"); b.Property<string>("RefusalJson").HasColumnType("nvarchar(max)");
+                    b.Property<string>("CorrelationId").IsRequired().HasMaxLength(128).HasColumnType("nvarchar(128)"); b.Property<DateTimeOffset>("RecordedAtUtc").HasColumnType("datetimeoffset");
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash"); b.ToTable("SubcontractAttempts", "purchasing");
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Audit.Domain.Events.AuditEvent", b =>
                 {
                     b.Property<Guid>("Id")
