@@ -91,7 +91,7 @@ internal static class InventoryGoodsReceiptSourceProjection
             result = JsonSerializer.Deserialize<InventoryGoodsReceiptResultV1>(command.ResultJson, Json)
                 ?? throw Unavailable();
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InventoryGoodsReceiptException)
         {
             throw Unavailable();
         }
@@ -137,6 +137,7 @@ internal static class InventoryGoodsReceiptSourceProjection
             || result.LotId != lot.Id || result.LabelId != label.Id || result.MovementId != movement.Id
             || result.ProductId != lot.ProductId || result.ProductId != label.ProductId
             || result.ProductId != line.ProductId || result.IsReplay
+            || !string.Equals(result.ProductVersion, label.ProductVersion, StringComparison.Ordinal)
             || !string.Equals(result.OriginalCorrelationId, command.CorrelationId, StringComparison.Ordinal)
             || movement.SourceLineId is not null || movement.SourceGrain != (int)StockSourceGrain.Whole
             || movement.OccurredAtUtc.Offset != TimeSpan.Zero
@@ -200,6 +201,8 @@ internal static class InventoryGoodsReceiptSourceProjection
         {
             throw Unavailable();
         }
+
+        InventoryGoodsReceiptQuantityV2.BindStored(result.StockItemQuantity, request, result);
 
         return new InventoryGoodsReceiptSourceV1(request, result);
     }
