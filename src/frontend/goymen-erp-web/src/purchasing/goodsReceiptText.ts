@@ -43,4 +43,14 @@ export const GOODS_RECEIPT_TEXT = {
   detailInitial: 'İlk kayıt durumu',
   detailFree: 'Serbest',
   detailBlocked: 'Blokeli',
+  // P05.1D: the stock quantity Inventory froze for the receipt — not the order-unit acceptance, not a new weighing.
+  stockHeading: 'Stok miktarı',
+  stockValue: (value: string) => `${value} kg`,
+  stockNote: 'Stoğa kabul anında kaydedilen miktardır; güncel ürün veya birim ayarlarından yeniden hesaplanmaz.',
+  stockSource: (orderVersion: string) => `Kaynak: bu mal kabulü, sipariş sürümü ${orderVersion}`,
+  stockProfile: (profileVersion: string) => `Birim profili: kabul anındaki sürüm ${profileVersion}`,
+  stockScale: (scale: number) => (scale === 0 ? 'Ondalık basamak: yok' : `Ondalık basamak: en fazla ${scale}`),
+  stockAlternate: 'Başka birime dönüştürülmüş miktar: yok (bu kayıtta dönüşüm yapılmadı)',
+  stockLegacy: 'Bu eski kabulde stok miktarı bilgisi saklanmamış. Sıfır kabul edilmez, güncel ayarlardan da doldurulmaz.',
+  stockUnreadable: 'Stok miktarı bilgisi okunamadı.',
 } as const
