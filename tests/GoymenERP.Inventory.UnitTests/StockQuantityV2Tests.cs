@@ -1,3 +1,4 @@
+using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 
 namespace GoymenERP.Inventory.UnitTests;
