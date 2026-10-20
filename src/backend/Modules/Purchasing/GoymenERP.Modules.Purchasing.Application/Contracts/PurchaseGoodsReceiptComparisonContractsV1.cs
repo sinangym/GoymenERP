@@ -1,4 +1,5 @@
 using System.Globalization;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
@@ -73,13 +74,42 @@ public static class PurchaseGoodsReceiptQuantityComparisonFactoryV1
             throw new ArgumentException("Receipt comparison source facts are inconsistent.", nameof(receipt));
         }
 
+        var measuredQuantityKg = receipt.MeasuredQuantityKg;
+        var quantity = receipt.StockItemQuantity;
+        if (quantity is not null)
+        {
+            if (quantity.Subject is null || quantity.Source is null || quantity.BaseQuantity is null
+                || quantity.CompanyId != storedCompanyId
+                || quantity.Subject.Kind != PurchaseGoodsReceiptApiV1.QuantitySubjectKind
+                || quantity.Subject.Id != storedProductId
+                || quantity.Source.Kind != PurchaseGoodsReceiptApiV1.QuantitySourceKind
+                || quantity.Source.Id != storedAcceptanceId
+                || quantity.Source.Version != receipt.PurchaseOrderVersion
+                || !TryCanonicalPositive(quantity.BaseQuantity.Value, out _)
+                || quantity.BaseQuantity.Value != receipt.MeasuredQuantityKg
+                || quantity.BaseQuantity.UnitId != SettingsUnitIdentitiesV1.Kilogram
+                || quantity.BaseQuantity.ProfileId == Guid.Empty
+                || !TryVersion(quantity.BaseQuantity.ProfileVersion, out _)
+                || quantity.BaseQuantity.Dimension != PurchaseGoodsReceiptApiV1.QuantityDimension
+                || quantity.BaseQuantity.Scale is < 0 or > PurchaseGoodsReceiptApiV1.MaximumKilogramScale
+                || quantity.AlternateQuantity is not null)
+            {
+                throw new ArgumentException("Receipt comparison source facts are inconsistent.", nameof(receipt));
+            }
+
+            measuredQuantityKg = quantity.BaseQuantity.Value;
+            measured = decimal.Parse(measuredQuantityKg, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+        }
+
         if (!storedUnitIsKilogram)
         {
-            return View(receipt, PurchaseGoodsReceiptQuantityComparisonStatusesV1.Unavailable, null, null);
+            return View(receipt, measuredQuantityKg,
+                PurchaseGoodsReceiptQuantityComparisonStatusesV1.Unavailable, null, null);
         }
 
         return View(
             receipt,
+            measuredQuantityKg,
             PurchaseGoodsReceiptQuantityComparisonStatusesV1.SameKilogramUnit,
             Canonical(accepted),
             Canonical(measured - accepted));
@@ -87,6 +117,7 @@ public static class PurchaseGoodsReceiptQuantityComparisonFactoryV1
 
     private static PurchaseGoodsReceiptQuantityComparisonV1 View(
         PurchaseGoodsReceiptViewV1 receipt,
+        string measuredQuantityKg,
         string status,
         string? acceptedQuantityKg,
         string? measuredMinusAcceptedKg) =>
@@ -100,7 +131,7 @@ public static class PurchaseGoodsReceiptQuantityComparisonFactoryV1
             receipt.ProductVersion,
             receipt.UnitId,
             receipt.AcceptedQuantity,
-            receipt.MeasuredQuantityKg,
+            measuredQuantityKg,
             status,
             acceptedQuantityKg,
             measuredMinusAcceptedKg);
