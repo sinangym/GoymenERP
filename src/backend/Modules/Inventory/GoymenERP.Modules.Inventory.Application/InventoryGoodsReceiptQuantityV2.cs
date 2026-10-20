@@ -24,9 +24,12 @@ public sealed record InventoryGoodsReceiptQuantityV2
         StockQuantityDimensionV2 dimension,
         int scale)
     {
-        if (itemKind != InventoryStockItemKindV2.Product)
+        if (itemKind != InventoryStockItemKindV2.Product
+            || unitId != SettingsUnitIdentitiesV1.Kilogram
+            || dimension != StockQuantityDimensionV2.Mass
+            || scale is < 0 or > Kilograms.MaximumDecimals)
         {
-            throw InventoryGoodsReceiptException.Refused(400, InventoryGoodsReceiptCodesV1.InvalidRequest);
+            throw Unavailable();
         }
 
         InventoryStockItemQuantityV2 accepted;
@@ -152,4 +155,68 @@ public sealed record InventoryGoodsReceiptQuantityV2
                 503, InventoryGoodsReceiptCodesV1.QuantityProfileUnavailable);
         }
     }
+
+    /// <summary>
+    /// Binds a non-legacy stored snapshot back to the authoritative receipt request and outer result.
+    /// The stored Settings profile identity/version stays immutable and is validated structurally;
+    /// this method never reads Settings or replaces the committed tuple with current data.
+    /// </summary>
+    public static void BindStored(
+        InventoryGoodsReceiptQuantityV2? snapshot,
+        InventoryGoodsReceiptRequestV1 request,
+        InventoryGoodsReceiptResultV1 result)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(result);
+        if (snapshot is null) return;
+
+        try
+        {
+            _ = snapshot.Contract;
+        }
+        catch (Exception exception) when (exception is StockQuantityRuleExceptionV2
+            or InventoryStockItemQuantityContractExceptionV2)
+        {
+            throw Unavailable();
+        }
+
+        if (request.CompanyId == Guid.Empty
+            || request.ProductId == Guid.Empty
+            || request.AcceptanceId == Guid.Empty
+            || result.CompanyId != request.CompanyId
+            || result.AcceptanceId != request.AcceptanceId
+            || result.PurchaseOrderId != request.PurchaseOrderId
+            || result.PurchaseOrderLineId != request.PurchaseOrderLineId
+            || result.ProductId != request.ProductId
+            || !string.Equals(result.ProductVersion, request.ExpectedProductVersion, StringComparison.Ordinal)
+            || result.PurchaseUnitId != request.PurchaseUnitId
+            || snapshot.CompanyId != request.CompanyId
+            || snapshot.CompanyId != result.CompanyId
+            || snapshot.ItemKind != InventoryStockItemKindV2.Product
+            || snapshot.ItemId != request.ProductId
+            || snapshot.ItemId != result.ProductId
+            || !string.Equals(snapshot.SourceKind, InventoryGoodsReceiptContractV1.SourceKind,
+                StringComparison.Ordinal)
+            || snapshot.SourceId != request.AcceptanceId
+            || snapshot.SourceId != result.AcceptanceId
+            || !string.Equals(snapshot.SourceVersion, request.PurchaseOrderVersionAfter,
+                StringComparison.Ordinal)
+            || !string.Equals(snapshot.SourceVersion, result.PurchaseOrderVersion,
+                StringComparison.Ordinal)
+            || !string.Equals(result.QuantityKg, request.QuantityKg, StringComparison.Ordinal)
+            || !string.Equals(snapshot.Value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                request.QuantityKg, StringComparison.Ordinal)
+            || snapshot.UnitId != SettingsUnitIdentitiesV1.Kilogram
+            || snapshot.ProfileId == Guid.Empty
+            || snapshot.ProfileVersion <= 0
+            || snapshot.Dimension != StockQuantityDimensionV2.Mass
+            || snapshot.Scale is < 0 or > Kilograms.MaximumDecimals
+            || snapshot.AlternateQuantity is not null)
+        {
+            throw Unavailable();
+        }
+    }
+
+    private static InventoryGoodsReceiptException Unavailable() =>
+        InventoryGoodsReceiptException.Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
 }

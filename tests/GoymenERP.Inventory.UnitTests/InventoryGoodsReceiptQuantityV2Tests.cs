@@ -108,8 +108,96 @@ public sealed class InventoryGoodsReceiptQuantityV2Tests
         Assert.DoesNotContain(Enum.GetNames<InventoryStockItemKindV2>(), name => name == "Service");
     }
 
+    [Fact]
+    public void Stored_binding_accepts_the_exact_tuple_and_preserves_legacy_null()
+    {
+        var snapshot = InventoryGoodsReceiptQuantityV2.Create(
+            Request(), Kilograms.Positive(12.125m), Profile());
+        var result = Result(snapshot);
+
+        InventoryGoodsReceiptQuantityV2.BindStored(snapshot, Request(), result);
+        InventoryGoodsReceiptQuantityV2.BindStored(null, Request(), result with { StockItemQuantity = null });
+    }
+
+    [Theory]
+    [InlineData("company")]
+    [InlineData("product")]
+    [InlineData("source-kind")]
+    [InlineData("source-id")]
+    [InlineData("source-version")]
+    [InlineData("value")]
+    public void Stored_binding_rejects_a_well_formed_tuple_that_does_not_match_the_receipt(string fault)
+    {
+        var snapshot = Snapshot(
+            companyId: fault == "company" ? Guid.NewGuid() : null,
+            itemId: fault == "product" ? Guid.NewGuid() : null,
+            sourceKind: fault == "source-kind" ? "inventory.other-source" : null,
+            sourceId: fault == "source-id" ? Guid.NewGuid() : null,
+            sourceVersion: fault == "source-version" ? "8" : null,
+            value: fault == "value" ? 12m : null);
+
+        AssertRefused(503, InventoryGoodsReceiptCodesV1.Unavailable,
+            () => InventoryGoodsReceiptQuantityV2.BindStored(snapshot, Request(), Result(snapshot)));
+    }
+
+    [Theory]
+    [InlineData("consumable")]
+    [InlineData("unit")]
+    [InlineData("dimension")]
+    [InlineData("scale")]
+    public void Stored_snapshot_rejects_non_product_or_non_kilogram_structure(string fault)
+    {
+        AssertRefused(503, InventoryGoodsReceiptCodesV1.Unavailable, () => Snapshot(
+            itemKind: fault == "consumable" ? InventoryStockItemKindV2.Consumable : null,
+            unitId: fault == "unit" ? Guid.NewGuid() : null,
+            dimension: fault == "dimension" ? StockQuantityDimensionV2.Volume : null,
+            scale: fault == "scale" ? 4 : null));
+    }
+
     private static InventoryKilogramProfile Profile() => new(
         CompanyId, SettingsUnitIdentitiesV1.Kilogram, ProfileId, 4, 3);
+
+    private static InventoryGoodsReceiptQuantityV2 Snapshot(
+        Guid? companyId = null,
+        InventoryStockItemKindV2? itemKind = null,
+        Guid? itemId = null,
+        string? sourceKind = null,
+        Guid? sourceId = null,
+        string? sourceVersion = null,
+        decimal? value = null,
+        Guid? unitId = null,
+        StockQuantityDimensionV2? dimension = null,
+        int? scale = null) => new(
+        companyId ?? CompanyId,
+        itemKind ?? InventoryStockItemKindV2.Product,
+        itemId ?? ProductId,
+        sourceKind ?? InventoryGoodsReceiptContractV1.SourceKind,
+        sourceId ?? AcceptanceId,
+        sourceVersion ?? "7",
+        value ?? 12.125m,
+        unitId ?? SettingsUnitIdentitiesV1.Kilogram,
+        ProfileId,
+        4,
+        dimension ?? StockQuantityDimensionV2.Mass,
+        scale ?? 3);
+
+    private static InventoryGoodsReceiptResultV1 Result(InventoryGoodsReceiptQuantityV2? snapshot) => new(
+        CompanyId,
+        AcceptanceId,
+        Request().PurchaseOrderId,
+        Request().PurchaseOrderLineId,
+        "7",
+        ProductId,
+        "product-v1",
+        SettingsUnitIdentitiesV1.Kilogram,
+        Request().LotId,
+        Request().LabelId,
+        "2",
+        Request().MovementId,
+        "12.125",
+        snapshot,
+        false,
+        "corr-p051b");
 
     private static InventoryGoodsReceiptRequestV1 Request() => new(
         CompanyId,

@@ -116,8 +116,18 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
                 throw Refused(409, InventoryGoodsReceiptCodesV1.IdempotencyConflict);
             }
 
-            var replay = JsonSerializer.Deserialize<InventoryGoodsReceiptResultV1>(existing.ResultJson, Json)
-                ?? throw Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            InventoryGoodsReceiptResultV1 replay;
+            try
+            {
+                replay = JsonSerializer.Deserialize<InventoryGoodsReceiptResultV1>(existing.ResultJson, Json)
+                    ?? throw Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            }
+            catch (Exception exception) when (exception is JsonException or InventoryGoodsReceiptException)
+            {
+                throw Refused(503, InventoryGoodsReceiptCodesV1.Unavailable);
+            }
+
+            InventoryGoodsReceiptQuantityV2.BindStored(replay.StockItemQuantity, request, replay);
             return replay with { IsReplay = true, OriginalCorrelationId = existing.CorrelationId };
         }
 

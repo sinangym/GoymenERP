@@ -180,6 +180,73 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Goods_receipt_stored_quantity_tamper_fails_closed_for_replay_and_reopen()
+    {
+        await using var run = await Run.StartAsync();
+        var location = await run.LocationOfAsync(CompanyA);
+        var seed = await SeedGoodsReceiptPurchaseOrderAsync(run);
+        var acceptanceId = Guid.NewGuid();
+        var key = $"goods-receipt-binding-{Guid.NewGuid():N}";
+        var correlation = $"goods-receipt-binding-{Guid.NewGuid():N}";
+        var receipt = await StageGoodsReceiptAndCommitAsync(
+            run, seed, Receipt(seed, acceptanceId, "2", location), "2", key, correlation);
+        var original = await run.ScalarAsync<string>(
+            "SELECT ResultJson FROM inventory.Commands WHERE CompanyId = @company "
+            + "AND CommandName = @command AND TargetId = @acceptance",
+            ("@company", CompanyA), ("@command", InventoryGoodsReceiptContractV1.CommandName),
+            ("@acceptance", acceptanceId));
+        var tamperCases = new StoredQuantityTamper[]
+        {
+            new("$.stockItemQuantity.companyId", Guid.NewGuid().ToString("D")),
+            new("$.stockItemQuantity.itemId", Guid.NewGuid().ToString("D")),
+            new("$.stockItemQuantity.sourceKind", "inventory.other-source"),
+            new("$.stockItemQuantity.sourceId", Guid.NewGuid().ToString("D")),
+            new("$.stockItemQuantity.sourceVersion", "999"),
+            new("$.stockItemQuantity.value", 3.5m),
+            new("$.stockItemQuantity.unitId", Guid.NewGuid().ToString("D")),
+            new("$.stockItemQuantity.dimension", (int)StockQuantityDimensionV2.Volume),
+        };
+
+        foreach (var tamper in tamperCases)
+        {
+            try
+            {
+                await run.ExecuteAsync(
+                    "UPDATE inventory.Commands SET ResultJson = JSON_MODIFY(ResultJson, @path, @value) "
+                    + "WHERE CompanyId = @company AND CommandName = @command AND TargetId = @acceptance",
+                    ("@path", tamper.Path), ("@value", tamper.Value), ("@company", CompanyA),
+                    ("@command", InventoryGoodsReceiptContractV1.CommandName), ("@acceptance", acceptanceId));
+
+                var reopen = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
+                    ReadGoodsReceiptSourceAsync(run, CompanyA, acceptanceId));
+                Assert.Equal((503, InventoryGoodsReceiptCodesV1.Unavailable), (reopen.Status, reopen.Code));
+
+                await using var connection = new SqlConnection(run.Factory.DatabaseConnectionString);
+                await connection.OpenAsync();
+                await using var transaction = (DbTransaction)await connection.BeginTransactionAsync();
+                await using var participant = await InventoryGoodsReceiptParticipant.EnlistAsync(
+                    connection, transaction, CompanyA, new UnavailableGoodsReceiptSettings());
+                var replay = await Assert.ThrowsAsync<InventoryGoodsReceiptException>(() =>
+                    participant.StageAsync(receipt, ReceiptMetadata(run, key, "goods-receipt-binding-replay")));
+                Assert.Equal((503, InventoryGoodsReceiptCodesV1.Unavailable), (replay.Status, replay.Code));
+                await transaction.RollbackAsync();
+            }
+            finally
+            {
+                await run.ExecuteAsync(
+                    "UPDATE inventory.Commands SET ResultJson = @result WHERE CompanyId = @company "
+                    + "AND CommandName = @command AND TargetId = @acceptance",
+                    ("@result", original), ("@company", CompanyA),
+                    ("@command", InventoryGoodsReceiptContractV1.CommandName), ("@acceptance", acceptanceId));
+            }
+        }
+
+        var valid = await ReadGoodsReceiptSourceAsync(run, CompanyA, acceptanceId);
+        Assert.NotNull(valid);
+        AssertGoodsReceiptQuantity(receipt, valid.OriginalResult);
+    }
+
+    [SqlServerFact]
     public async Task Goods_receipt_payload_or_company_mismatch_writes_no_partial_effect()
     {
         await using var run = await Run.StartAsync();
@@ -722,6 +789,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         int PurchasingAuditEvents);
 
     private sealed record GoodsReceiptAcceptanceSeed(Guid OrderId, Guid LineId, long Version);
+
+    private sealed record StoredQuantityTamper(string Path, object Value);
 
     private sealed class UnavailableGoodsReceiptSettings : ISettingsPrerequisiteProvider
     {
