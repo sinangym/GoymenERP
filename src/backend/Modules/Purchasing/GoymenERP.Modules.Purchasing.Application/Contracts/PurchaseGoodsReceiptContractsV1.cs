@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -15,7 +16,27 @@ public sealed record PurchaseGoodsReceiptViewV1(
     Guid CompanyId, Guid AcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId, string PurchaseOrderVersion,
     Guid ProductId, string ProductVersion, Guid UnitId, string AcceptedQuantity, string RemainingQuantity,
     Guid LotId, Guid LabelId, string LabelCode, string LabelVersion, Guid MovementId, Guid LocationId,
-    string MeasuredQuantityKg, string InitialBlock, DateTimeOffset OccurredAtUtc);
+    string MeasuredQuantityKg, string InitialBlock, DateTimeOffset OccurredAtUtc,
+    [property: JsonRequired] PurchaseGoodsReceiptQuantityV2? StockItemQuantity = null);
+
+/// <summary>
+/// Immutable Purchasing read projection of Inventory's stored quantity-v2 receipt snapshot.
+/// It is historical context, never a conversion request or a reread of current Product/Settings masters.
+/// </summary>
+public sealed record PurchaseGoodsReceiptQuantityV2(
+    Guid CompanyId,
+    PurchaseGoodsReceiptQuantitySubjectV2 Subject,
+    PurchaseGoodsReceiptQuantitySourceV2 Source,
+    PurchaseGoodsReceiptQuantityValueV2 BaseQuantity,
+    PurchaseGoodsReceiptAlternateQuantityV2? AlternateQuantity);
+
+public sealed record PurchaseGoodsReceiptQuantitySubjectV2(string Kind, Guid Id);
+public sealed record PurchaseGoodsReceiptQuantitySourceV2(string Kind, Guid Id, string Version);
+public sealed record PurchaseGoodsReceiptQuantityValueV2(
+    string Value, Guid UnitId, Guid ProfileId, string ProfileVersion, string Dimension, int Scale);
+public sealed record PurchaseGoodsReceiptAlternateQuantityV2(
+    PurchaseGoodsReceiptQuantityValueV2 Quantity,
+    PurchaseGoodsReceiptQuantitySourceV2 ConversionSource);
 
 public sealed record PurchaseGoodsReceiptResponseV1(PurchaseGoodsReceiptViewV1 Receipt, bool IsReplay, string OriginalCorrelationId);
 public sealed record PurchaseGoodsReceiptDetailV1(PurchaseGoodsReceiptViewV1 Receipt);
@@ -43,6 +64,10 @@ public static class PurchaseGoodsReceiptApiV1
     public const string ReceiptsPath = PurchasingApiV1.OrderDetailPath + "/goods-receipts";
     public const string ReceiptDetailPath = ReceiptsPath + "/{acceptanceId}";
     public const string InitialBlock = "Free";
+    public const string QuantitySubjectKind = "Product";
+    public const string QuantitySourceKind = "purchasing.goods-acceptance";
+    public const string QuantityDimension = "Mass";
+    public const int MaximumKilogramScale = 3;
 }
 
 public static class PurchaseGoodsReceiptCodesV1
@@ -126,7 +151,8 @@ public sealed record PurchaseReceiptStockRequestV1(Guid CompanyId, Guid Acceptan
 
 public sealed record PurchaseReceiptStockResultV1(Guid CompanyId, Guid AcceptanceId, Guid PurchaseOrderId, Guid PurchaseOrderLineId,
     string PurchaseOrderVersion, Guid ProductId, string ProductVersion, Guid PurchaseUnitId, Guid LotId, Guid LabelId,
-    string LabelVersion, Guid MovementId, string QuantityKg, bool IsReplay, string OriginalCorrelationId);
+    string LabelVersion, Guid MovementId, string QuantityKg, bool IsReplay, string OriginalCorrelationId,
+    PurchaseGoodsReceiptQuantityV2? StockItemQuantity);
 
 public static class PurchaseGoodsReceiptJsonV1
 {

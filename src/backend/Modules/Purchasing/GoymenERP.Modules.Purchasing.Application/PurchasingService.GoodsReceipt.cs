@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Purchasing.Application;
 
@@ -81,11 +82,13 @@ public sealed partial class PurchasingService
                     throw ReceiptSourceInvalid();
                 }
 
-                return new PurchaseGoodsReceiptResponseV1(new(scope.CompanyId, request.AcceptanceId, orderId, lineId,
+                var receipt = new PurchaseGoodsReceiptViewV1(scope.CompanyId, request.AcceptanceId, orderId, lineId,
                     purchase.PurchaseOrderVersion, source.ProductId, inventory.ProductVersion, source.UnitId,
                     purchase.AcceptedQuantity, purchase.RemainingQuantity, inventory.LotId, inventory.LabelId,
                     request.LabelCode, inventory.LabelVersion, inventory.MovementId, request.LocationId,
-                    inventory.QuantityKg, stockRequest.InitialBlock, request.OccurredAtUtc), purchase.IsReplay, purchase.OriginalCorrelationId);
+                    inventory.QuantityKg, stockRequest.InitialBlock, request.OccurredAtUtc, inventory.StockItemQuantity);
+                RequireQuantityProjection(receipt);
+                return new PurchaseGoodsReceiptResponseV1(receipt, purchase.IsReplay, purchase.OriginalCorrelationId);
             }, token => RequireStillAsync(scope, permission, token), cancellationToken);
         }
         catch (PurchaseAcceptanceParticipantException exception)
@@ -163,6 +166,7 @@ public sealed partial class PurchasingService
         {
             throw ReceiptSourceInvalid();
         }
+        RequireQuantityProjection(receipt);
 
         return new(receipt);
     }
@@ -189,6 +193,28 @@ public sealed partial class PurchasingService
             {
                 throw ReceiptSourceInvalid();
             }
+            var line = order.Order.Lines.SingleOrDefault(candidate => candidate.Id == acceptance.LineId)
+                ?? throw ReceiptSourceInvalid();
+            try
+            {
+                _ = PurchaseGoodsReceiptQuantityComparisonFactoryV1.Create(
+                    receipt,
+                    scope.CompanyId,
+                    orderId,
+                    acceptance.AcceptanceId,
+                    acceptance.LineId,
+                    line.ProductId,
+                    VersionOf(order.ProductVersionsByLineId, line.Id),
+                    line.UnitId,
+                    Text(acceptance.Quantity),
+                    storedUnitIsKilogram: false,
+                    currentPurchaseOrderVersion: order.Order.Version.ToString(CultureInfo.InvariantCulture));
+            }
+            catch (ArgumentException)
+            {
+                throw ReceiptSourceInvalid();
+            }
+            RequireQuantityProjection(receipt);
             receipts.Add(receipt);
         }
         return new(receipts, order.Order.Acceptances.Count > limit);
@@ -241,6 +267,30 @@ public sealed partial class PurchasingService
         && quantity >= 0m && value == PurchaseAcceptanceParticipantContractV1.FormatQuantity(quantity);
     private static bool ReceiptToken(string value) => !string.IsNullOrWhiteSpace(value) && value.Length <= 64
         && value == value.Trim() && !value.Any(char.IsControl);
+
+    private static void RequireQuantityProjection(PurchaseGoodsReceiptViewV1 receipt)
+    {
+        var quantity = receipt.StockItemQuantity;
+        if (quantity is null) return;
+        if (quantity.Subject is null || quantity.Source is null || quantity.BaseQuantity is null
+            || quantity.CompanyId != receipt.CompanyId
+            || quantity.Subject.Kind != PurchaseGoodsReceiptApiV1.QuantitySubjectKind
+            || quantity.Subject.Id != receipt.ProductId
+            || quantity.Source.Kind != PurchaseGoodsReceiptApiV1.QuantitySourceKind
+            || quantity.Source.Id != receipt.AcceptanceId
+            || quantity.Source.Version != receipt.PurchaseOrderVersion
+            || quantity.BaseQuantity.Value != receipt.MeasuredQuantityKg
+            || quantity.BaseQuantity.UnitId != SettingsUnitIdentitiesV1.Kilogram
+            || quantity.BaseQuantity.ProfileId == Guid.Empty
+            || !ReceiptVersion(quantity.BaseQuantity.ProfileVersion)
+            || quantity.BaseQuantity.Dimension != PurchaseGoodsReceiptApiV1.QuantityDimension
+            || quantity.BaseQuantity.Scale is < 0 or > PurchaseGoodsReceiptApiV1.MaximumKilogramScale
+            || quantity.AlternateQuantity is not null)
+        {
+            throw ReceiptSourceInvalid();
+        }
+    }
+
     private static PurchasingServiceException ReceiptUnavailable() => new(503, PurchaseGoodsReceiptCodesV1.Unavailable);
     private static PurchasingServiceException ReceiptSourceInvalid() => new(503, PurchaseGoodsReceiptCodesV1.SourceInvalid);
 }

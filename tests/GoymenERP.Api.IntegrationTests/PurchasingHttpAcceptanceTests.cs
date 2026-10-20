@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -457,8 +458,37 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         AssertPrivateNoStore(response);
         var actual = await response.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>();
         Assert.Equal(receipt, actual?.Receipt);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var quantity = json.RootElement.GetProperty("receipt").GetProperty("stockItemQuantity");
+        Assert.Equal(CompanyA, quantity.GetProperty("companyId").GetGuid());
+        Assert.Equal("Product", quantity.GetProperty("subject").GetProperty("kind").GetString());
+        Assert.Equal(ProductId, quantity.GetProperty("subject").GetProperty("id").GetGuid());
+        Assert.Equal("purchasing.goods-acceptance", quantity.GetProperty("source").GetProperty("kind").GetString());
+        Assert.Equal(AcceptanceId, quantity.GetProperty("source").GetProperty("id").GetGuid());
+        Assert.Equal("7", quantity.GetProperty("source").GetProperty("version").GetString());
+        Assert.Equal("101.75", quantity.GetProperty("baseQuantity").GetProperty("value").GetString());
+        Assert.Equal(JsonValueKind.Null, quantity.GetProperty("alternateQuantity").ValueKind);
         Assert.Equal(1, service.Calls);
         Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+    }
+
+    [Fact]
+    public async Task Goods_receipt_detail_serializes_legacy_quantity_snapshot_as_explicit_null()
+    {
+        var receipt = ReceiptDetail() with { StockItemQuantity = null };
+        var service = new StubService
+        {
+            Receipt = (_, _) => Task.FromResult(new PurchaseGoodsReceiptDetailV1(receipt))
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        using var response = await client.GetAsync(ReceiptPath(PurchaseOrderId, AcceptanceId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivateNoStore(response);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(JsonValueKind.Null,
+            json.RootElement.GetProperty("receipt").GetProperty("stockItemQuantity").ValueKind);
     }
 
     [Theory]
@@ -505,7 +535,15 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     private static PurchaseGoodsReceiptViewV1 ReceiptDetail() => new(
         CompanyA, AcceptanceId, PurchaseOrderId, PurchaseOrderLineId, "7", ProductId, "3", UnitId,
         "100.25", "400.75", Guid.NewGuid(), Guid.NewGuid(), "SENTETIK-RECEIPT-DETAIL", "1",
-        Guid.NewGuid(), Guid.NewGuid(), "101.75", "Blocked", DateTimeOffset.Parse("2026-10-13T00:00:00Z"));
+        Guid.NewGuid(), Guid.NewGuid(), "101.75", "Blocked", DateTimeOffset.Parse("2026-10-13T00:00:00Z"),
+        new PurchaseGoodsReceiptQuantityV2(
+            CompanyA,
+            new(PurchaseGoodsReceiptApiV1.QuantitySubjectKind, ProductId),
+            new(PurchaseGoodsReceiptApiV1.QuantitySourceKind, AcceptanceId, "7"),
+            new("101.75", SettingsUnitIdentitiesV1.Kilogram,
+                Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), "3",
+                PurchaseGoodsReceiptApiV1.QuantityDimension, PurchaseGoodsReceiptApiV1.MaximumKilogramScale),
+            null));
 
     private static string OrderBody(bool sourceRequest = true, bool boundLine = true)
     {

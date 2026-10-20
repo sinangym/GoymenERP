@@ -188,6 +188,7 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             var recorded = (await recordedResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptResponseV1>())!;
             Assert.False(recorded.IsReplay);
             AssertReceiptIdentity(recorded.Receipt, receipt, active.Card.Product.Id, active.Card.Product.Version);
+            AssertReceiptQuantity(recorded.Receipt);
             var stored = await StoredEffectsAsync(factory.DatabaseConnectionString, receipt);
             Assert.Equal(new StoredEffects(1, 1, 1, 1, 1), stored);
 
@@ -214,6 +215,30 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             var reopenedDetail = (await reopenedDetailResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>())!;
             Assert.Equal(recorded.Receipt, reopenedDetail.Receipt);
             Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
+
+            using var listResponse = await freshA.GetAsync(
+                $"/api/v1/purchasing/orders/{approved.Detail.Order.Id:D}/goods-receipts?limit=100");
+            Assert.Equal(HttpStatusCode.OK, listResponse.StatusCode);
+            var listed = (await listResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptPageV1>())!;
+            Assert.Equal(recorded.Receipt, Assert.Single(listed.Items));
+
+            var storedResultJson = await ReceiptResultJsonAsync(
+                factory.DatabaseConnectionString, receipt.AcceptanceId);
+            try
+            {
+                await SetLegacyReceiptQuantityAsync(factory.DatabaseConnectionString, receipt.AcceptanceId);
+                using var legacyResponse = await freshA.GetAsync(receiptDetailPath);
+                Assert.Equal(HttpStatusCode.OK, legacyResponse.StatusCode);
+                var legacy = (await legacyResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>())!;
+                Assert.Null(legacy.Receipt.StockItemQuantity);
+                Assert.Equal(recorded.Receipt.MeasuredQuantityKg, legacy.Receipt.MeasuredQuantityKg);
+                Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
+            }
+            finally
+            {
+                await RestoreReceiptResultJsonAsync(
+                    factory.DatabaseConnectionString, receipt.AcceptanceId, storedResultJson);
+            }
 
             freshA.DefaultRequestHeaders.Add(InventoryStockPositionApiV1.ProductDisplayContractHeader,
                 InventoryStockPositionApiV1.ProductDisplayContractVersion);
@@ -257,6 +282,11 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             Assert.Equal(HttpStatusCode.OK, foreignTimelineResponse.StatusCode);
             var foreignTimeline = (await foreignTimelineResponse.Content.ReadFromJsonAsync<InventoryMovementTimelinePageV1>())!;
             Assert.DoesNotContain(foreignTimeline.Items, item => item.MovementId == receipt.MovementId);
+            using var foreignReceipt = await companyB.GetAsync(receiptDetailPath);
+            Assert.Equal(HttpStatusCode.NotFound, foreignReceipt.StatusCode);
+            using var foreignReceiptList = await companyB.GetAsync(
+                $"/api/v1/purchasing/orders/{approved.Detail.Order.Id:D}/goods-receipts?limit=100");
+            Assert.Equal(HttpStatusCode.NotFound, foreignReceiptList.StatusCode);
         }
         finally
         {
@@ -317,6 +347,7 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             "Disposable Company B Inventory reader for tenant non-disclosure proof", true);
         foreignReaderRole.AddPermission(ErpPermissions.InventoryLabelsRead);
         foreignReaderRole.AddPermission(ErpPermissions.InventoryBalancesRead);
+        foreignReaderRole.AddPermission(PurchasingPermissionManifestV1.OrdersRead);
         var foreignReaderAssignment = new RoleAssignment(Guid.NewGuid(), CompanyBActorId,
             foreignReaderRoleId, CompanyB, DateTimeOffset.UtcNow.AddMinutes(-1), null,
             approvedByUserId: null);
@@ -360,6 +391,24 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
                 actual.MovementId, actual.LocationId, actual.MeasuredQuantityKg));
     }
 
+    private static void AssertReceiptQuantity(PurchaseGoodsReceiptViewV1 receipt)
+    {
+        var quantity = Assert.IsType<PurchaseGoodsReceiptQuantityV2>(receipt.StockItemQuantity);
+        Assert.Equal((receipt.CompanyId, PurchaseGoodsReceiptApiV1.QuantitySubjectKind, receipt.ProductId),
+            (quantity.CompanyId, quantity.Subject.Kind, quantity.Subject.Id));
+        Assert.Equal((PurchaseGoodsReceiptApiV1.QuantitySourceKind, receipt.AcceptanceId,
+                receipt.PurchaseOrderVersion),
+            (quantity.Source.Kind, quantity.Source.Id, quantity.Source.Version));
+        Assert.Equal((receipt.MeasuredQuantityKg, SettingsUnitIdentitiesV1.Kilogram,
+                PurchaseGoodsReceiptApiV1.QuantityDimension),
+            (quantity.BaseQuantity.Value, quantity.BaseQuantity.UnitId, quantity.BaseQuantity.Dimension));
+        Assert.NotEqual(Guid.Empty, quantity.BaseQuantity.ProfileId);
+        Assert.True(long.TryParse(quantity.BaseQuantity.ProfileVersion, out var profileVersion));
+        Assert.True(profileVersion > 0);
+        Assert.InRange(quantity.BaseQuantity.Scale, 0, PurchaseGoodsReceiptApiV1.MaximumKilogramScale);
+        Assert.Null(quantity.AlternateQuantity);
+    }
+
     private static async Task<StoredEffects> StoredEffectsAsync(string connectionString,
         RecordPurchaseGoodsReceiptV1 receipt)
     {
@@ -380,6 +429,48 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
         command.CommandText = $"SELECT COUNT_BIG(*) FROM {table} WHERE {column} = @id;";
         command.Parameters.AddWithValue("@id", id);
         return checked((int)(long)(await command.ExecuteScalarAsync())!);
+    }
+
+    private static async Task<string> ReceiptResultJsonAsync(string connectionString, Guid acceptanceId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT ResultJson FROM inventory.Commands WHERE CompanyId = @company "
+            + "AND CommandName = @command AND TargetId = @acceptance;";
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@command", InventoryGoodsReceiptContractV1.CommandName);
+        command.Parameters.AddWithValue("@acceptance", acceptanceId);
+        return Assert.IsType<string>(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task SetLegacyReceiptQuantityAsync(string connectionString, Guid acceptanceId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE inventory.Commands "
+            + "SET ResultJson = JSON_MODIFY(ResultJson, '$.stockItemQuantity', NULL) "
+            + "WHERE CompanyId = @company AND CommandName = @command AND TargetId = @acceptance;";
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@command", InventoryGoodsReceiptContractV1.CommandName);
+        command.Parameters.AddWithValue("@acceptance", acceptanceId);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task RestoreReceiptResultJsonAsync(string connectionString, Guid acceptanceId,
+        string resultJson)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE inventory.Commands SET ResultJson = @result "
+            + "WHERE CompanyId = @company AND CommandName = @command AND TargetId = @acceptance;";
+        command.Parameters.AddWithValue("@result", resultJson);
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@command", InventoryGoodsReceiptContractV1.CommandName);
+        command.Parameters.AddWithValue("@acceptance", acceptanceId);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
     }
 
     private static async Task DropDatabaseAsync(string baseConnection, string databaseName)
