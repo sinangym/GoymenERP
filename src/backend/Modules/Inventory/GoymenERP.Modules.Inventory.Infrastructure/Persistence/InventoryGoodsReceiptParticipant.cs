@@ -30,6 +30,7 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
     private readonly InventoryDbContext context;
     private readonly InventoryStore store;
+    private readonly InventoryKilogramProfileCapture quantityProfile;
     private readonly DbConnection connection;
     private readonly DbTransaction transaction;
     private readonly Guid companyId;
@@ -39,11 +40,13 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
     private bool disposed;
 
     private InventoryGoodsReceiptParticipant(InventoryDbContext context, InventoryStore store,
+        InventoryKilogramProfileCapture quantityProfile,
         DbConnection connection, DbTransaction transaction, Guid companyId, TimeProvider clock,
         Func<CancellationToken, Task>? onStaged)
     {
         this.context = context;
         this.store = store;
+        this.quantityProfile = quantityProfile;
         this.connection = connection;
         this.transaction = transaction;
         this.companyId = companyId;
@@ -77,10 +80,11 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
         {
             await context.Database.UseTransactionAsync(transaction, cancellationToken);
             var effectiveClock = clock ?? TimeProvider.System;
-            var store = new InventoryStore(context, company, audit,
-                new InventoryKilogramScale(settings), effectiveClock);
+            var quantityProfile = new InventoryKilogramProfileCapture();
+            var scale = new InventoryKilogramScale(settings, quantityProfile.Record);
+            var store = new InventoryStore(context, company, audit, scale, effectiveClock);
             return new InventoryGoodsReceiptParticipant(
-                context, store, connection, transaction, companyId, effectiveClock, onStaged);
+                context, store, quantityProfile, connection, transaction, companyId, effectiveClock, onStaged);
         }
         catch
         {
@@ -186,10 +190,13 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
             .Where(row => row.Id == label.Id)
             .Select(row => row.Version)
             .SingleAsync(cancellationToken);
+        var stockItemQuantity = InventoryGoodsReceiptQuantityV2.Create(
+            request, quantity, quantityProfile.Profile);
         var result = new InventoryGoodsReceiptResultV1(companyId, request.AcceptanceId,
             request.PurchaseOrderId, request.PurchaseOrderLineId, request.PurchaseOrderVersionAfter,
             request.ProductId, request.ExpectedProductVersion, request.PurchaseUnitId, lot.Id, label.Id,
-            labelVersion.ToString(CultureInfo.InvariantCulture), movement.Id, quantity.ToString(), IsReplay: false,
+            labelVersion.ToString(CultureInfo.InvariantCulture), movement.Id, quantity.ToString(), stockItemQuantity,
+            IsReplay: false,
             OriginalCorrelationId: metadata.CorrelationId);
         context.Commands.Add(new InventoryCommandRow
         {
@@ -301,6 +308,16 @@ public sealed class InventoryGoodsReceiptParticipant : IInventoryGoodsReceiptPar
 
     private static InventoryGoodsReceiptException Refused(int status, string code) =>
         InventoryGoodsReceiptException.Refused(status, code);
+
+    private sealed class InventoryKilogramProfileCapture
+    {
+        public InventoryKilogramProfile? Profile { get; private set; }
+
+        public void Record(InventoryKilogramScaleCheck check)
+        {
+            Profile = check.Profile;
+        }
+    }
 
     public async ValueTask DisposeAsync()
     {

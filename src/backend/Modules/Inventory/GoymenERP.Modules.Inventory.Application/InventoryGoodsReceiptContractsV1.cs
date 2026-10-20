@@ -98,6 +98,7 @@ public sealed record InventoryGoodsReceiptResultV1(
     string LabelVersion,
     Guid MovementId,
     string QuantityKg,
+    InventoryStockItemQuantityV2? StockItemQuantity,
     bool IsReplay,
     string OriginalCorrelationId);
 

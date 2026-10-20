@@ -13,8 +13,20 @@ public static class InventoryScaleCodes
     public const string ScaleExceeded = "inventory_kg_scale_exceeded";
 }
 
-/// <summary>The approved kilogram scale for one company on one date, as the Settings owner published it.</summary>
-public sealed record InventoryKilogramProfile(Guid CompanyId, Guid ProfileId, long ProfileVersion, int Scale);
+/// <summary>The approved kilogram unit/profile for one company on one date, as the Settings owner published it.</summary>
+public sealed record InventoryKilogramProfile(
+    Guid CompanyId,
+    Guid UnitId,
+    Guid ProfileId,
+    long ProfileVersion,
+    int Scale)
+{
+    /// <summary>Compatibility constructor for existing kilogram-only callers.</summary>
+    public InventoryKilogramProfile(Guid companyId, Guid profileId, long profileVersion, int scale)
+        : this(companyId, SettingsUnitIdentitiesV1.Kilogram, profileId, profileVersion, scale)
+    {
+    }
+}
 
 /// <summary>Either the approved kilogram profile or a stable refusal code; never a default scale.</summary>
 public sealed record InventoryKilogramScaleCheck(InventoryKilogramProfile? Profile, string? Code)
@@ -40,7 +52,9 @@ public sealed record InventoryKilogramScaleCheck(InventoryKilogramProfile? Profi
 /// </list>
 /// Which Product's stock unit is kilogram is Product's binding, not checked here.
 /// </summary>
-public sealed class InventoryKilogramScale(ISettingsPrerequisiteProvider settings)
+public sealed class InventoryKilogramScale(
+    ISettingsPrerequisiteProvider settings,
+    Action<InventoryKilogramScaleCheck>? onChecked = null)
 {
     public async Task<InventoryKilogramScaleCheck> CheckAsync(Guid companyId, DateOnly effectiveOn,
         IEnumerable<Kilograms> quantities, CancellationToken cancellationToken = default)
@@ -49,7 +63,7 @@ public sealed class InventoryKilogramScale(ISettingsPrerequisiteProvider setting
         var values = quantities.ToArray();
         if (companyId == Guid.Empty)
         {
-            return new(null, InventoryScaleCodes.ProfileUnusable);
+            return Publish(new(null, InventoryScaleCodes.ProfileUnusable));
         }
 
         UnitProfileV1 profile;
@@ -59,7 +73,7 @@ public sealed class InventoryKilogramScale(ISettingsPrerequisiteProvider setting
         }
         catch (SettingsPrerequisiteException exception)
         {
-            return new(null, exception.Code);
+            return Publish(new(null, exception.Code));
         }
 
         if (profile is null || profile.CompanyId != companyId || profile.UnitId != SettingsUnitIdentitiesV1.Kilogram
@@ -68,16 +82,23 @@ public sealed class InventoryKilogramScale(ISettingsPrerequisiteProvider setting
             || effectiveOn < profile.EffectiveFrom
             || (profile.EffectiveThrough is { } through && effectiveOn > through))
         {
-            return new(null, InventoryScaleCodes.ProfileUnusable);
+            return Publish(new(null, InventoryScaleCodes.ProfileUnusable));
         }
 
         var applied = Math.Min(profile.Scale, Kilograms.MaximumDecimals);
         if (values.Any(quantity => Decimals(quantity.Value) > applied))
         {
-            return new(null, InventoryScaleCodes.ScaleExceeded);
+            return Publish(new(null, InventoryScaleCodes.ScaleExceeded));
         }
 
-        return new(new InventoryKilogramProfile(companyId, profile.Profile.ProfileId, profile.Profile.Version, applied), null);
+        return Publish(new(new InventoryKilogramProfile(
+            companyId, profile.UnitId, profile.Profile.ProfileId, profile.Profile.Version, applied), null));
+    }
+
+    private InventoryKilogramScaleCheck Publish(InventoryKilogramScaleCheck check)
+    {
+        onChecked?.Invoke(check);
+        return check;
     }
 
     /// <summary>Decimals that carry a digit: <see cref="Kilograms"/> already drops trailing zeros.</summary>
