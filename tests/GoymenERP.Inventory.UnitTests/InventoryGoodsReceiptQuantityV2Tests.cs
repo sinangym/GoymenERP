@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
@@ -20,15 +21,15 @@ public sealed class InventoryGoodsReceiptQuantityV2Tests
 
         Assert.Equal(CompanyId, quantity.CompanyId);
         Assert.Equal((InventoryStockItemKindV2.Product, ProductId),
-            (quantity.Item.Kind, quantity.Item.Id));
+            (quantity.ItemKind, quantity.ItemId));
         Assert.Equal((InventoryGoodsReceiptContractV1.SourceKind, AcceptanceId, "7"),
-            (quantity.Source.Kind, quantity.Source.Id, quantity.Source.Version));
+            (quantity.SourceKind, quantity.SourceId, quantity.SourceVersion));
         Assert.Equal((12.125m, SettingsUnitIdentitiesV1.Kilogram, ProfileId, 4L,
                 StockQuantityDimensionV2.Mass, 3),
-            (quantity.BaseQuantity.Value, quantity.BaseQuantity.UnitId,
-                quantity.BaseQuantity.ProfileId, quantity.BaseQuantity.ProfileVersion,
-                quantity.BaseQuantity.Dimension, quantity.BaseQuantity.Scale));
+            (quantity.Value, quantity.UnitId, quantity.ProfileId, quantity.ProfileVersion,
+                quantity.Dimension, quantity.Scale));
         Assert.Null(quantity.AlternateQuantity);
+        Assert.Equal(quantity.Value, quantity.Contract.BaseQuantity.Value);
     }
 
     [Fact]
@@ -39,7 +40,22 @@ public sealed class InventoryGoodsReceiptQuantityV2Tests
             Kilograms.Positive(1m),
             Profile());
 
-        Assert.Equal("19", quantity.Source.Version);
+        Assert.Equal("19", quantity.SourceVersion);
+    }
+
+    [Fact]
+    public void Stored_snapshot_round_trips_without_private_domain_constructors_or_an_alternate_default()
+    {
+        var expected = InventoryGoodsReceiptQuantityV2.Create(
+            Request(), Kilograms.Positive(12.125m), Profile());
+        var json = JsonSerializer.Serialize(expected, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        var actual = JsonSerializer.Deserialize<InventoryGoodsReceiptQuantityV2>(
+            json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.Equal(expected, actual);
+        Assert.Contains("\"alternateQuantity\":null", json, StringComparison.Ordinal);
+        Assert.Equal(expected.Value, actual!.Contract.BaseQuantity.Value);
     }
 
     [Fact]
@@ -86,9 +102,9 @@ public sealed class InventoryGoodsReceiptQuantityV2Tests
         var quantity = InventoryGoodsReceiptQuantityV2.Create(
             Request(), Kilograms.Positive(1m), Profile());
 
-        Assert.Equal(InventoryStockItemKindV2.Product, quantity.Item.Kind);
-        Assert.Equal(ProductId, quantity.Item.Id);
-        Assert.NotEqual(InventoryStockItemKindV2.Consumable, quantity.Item.Kind);
+        Assert.Equal(InventoryStockItemKindV2.Product, quantity.ItemKind);
+        Assert.Equal(ProductId, quantity.ItemId);
+        Assert.NotEqual(InventoryStockItemKindV2.Consumable, quantity.ItemKind);
         Assert.DoesNotContain(Enum.GetNames<InventoryStockItemKindV2>(), name => name == "Service");
     }
 

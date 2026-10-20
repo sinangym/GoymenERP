@@ -390,20 +390,20 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         InventoryGoodsReceiptRequestV1 expectedRequest,
         InventoryGoodsReceiptResultV1 actual)
     {
-        var quantity = Assert.IsType<InventoryStockItemQuantityV2>(actual.StockItemQuantity);
+        var quantity = Assert.IsType<InventoryGoodsReceiptQuantityV2>(actual.StockItemQuantity);
         Assert.Equal(expectedRequest.CompanyId, quantity.CompanyId);
         Assert.Equal((InventoryStockItemKindV2.Product, expectedRequest.ProductId),
-            (quantity.Item.Kind, quantity.Item.Id));
+            (quantity.ItemKind, quantity.ItemId));
         Assert.Equal((InventoryGoodsReceiptContractV1.SourceKind, expectedRequest.AcceptanceId,
                 expectedRequest.PurchaseOrderVersionAfter),
-            (quantity.Source.Kind, quantity.Source.Id, quantity.Source.Version));
+            (quantity.SourceKind, quantity.SourceId, quantity.SourceVersion));
         Assert.Equal(decimal.Parse(expectedRequest.QuantityKg, System.Globalization.CultureInfo.InvariantCulture),
-            quantity.BaseQuantity.Value);
-        Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, quantity.BaseQuantity.UnitId);
-        Assert.NotEqual(Guid.Empty, quantity.BaseQuantity.ProfileId);
-        Assert.True(quantity.BaseQuantity.ProfileVersion > 0);
-        Assert.InRange(quantity.BaseQuantity.Scale, 0, 3);
-        Assert.Equal(StockQuantityDimensionV2.Mass, quantity.BaseQuantity.Dimension);
+            quantity.Value);
+        Assert.Equal(SettingsUnitIdentitiesV1.Kilogram, quantity.UnitId);
+        Assert.NotEqual(Guid.Empty, quantity.ProfileId);
+        Assert.True(quantity.ProfileVersion > 0);
+        Assert.InRange(quantity.Scale, 0, 3);
+        Assert.Equal(StockQuantityDimensionV2.Mass, quantity.Dimension);
         Assert.Null(quantity.AlternateQuantity);
     }
 
@@ -576,17 +576,17 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             + "AND JSON_VALUE(ResultJson, '$.labelVersion') = N'2' "
             + "AND JSON_VALUE(ResultJson, '$.movementId') = @movement "
             + "AND JSON_VALUE(ResultJson, '$.quantityKg') = @quantity "
-            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.item.kind') = N'1' "
-            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.item.id') = @product "
-            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.source.kind') = @sourceKind "
-            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.source.id') = @acceptanceText "
-            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.source.version') = @purchaseVersion "
-            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.baseQuantity.value') = @quantity "
-            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.baseQuantity.unitId') = @kgUnit "
-            + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE(ResultJson, '$.stockItemQuantity.baseQuantity.profileId')) IS NOT NULL "
-            + "AND TRY_CONVERT(bigint, JSON_VALUE(ResultJson, '$.stockItemQuantity.baseQuantity.profileVersion')) > 0 "
-            + "AND TRY_CONVERT(int, JSON_VALUE(ResultJson, '$.stockItemQuantity.baseQuantity.scale')) BETWEEN 0 AND 3 "
-            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.baseQuantity.dimension') = N'1' "
+            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.itemKind') = N'1' "
+            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.itemId') = @product "
+            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.sourceKind') = @sourceKind "
+            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.sourceId') = @acceptanceText "
+            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.sourceVersion') = @purchaseVersion "
+            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.value') = @quantity "
+            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.unitId') = @kgUnit "
+            + "AND TRY_CONVERT(uniqueidentifier, JSON_VALUE(ResultJson, '$.stockItemQuantity.profileId')) IS NOT NULL "
+            + "AND TRY_CONVERT(bigint, JSON_VALUE(ResultJson, '$.stockItemQuantity.profileVersion')) > 0 "
+            + "AND TRY_CONVERT(int, JSON_VALUE(ResultJson, '$.stockItemQuantity.scale')) BETWEEN 0 AND 3 "
+            + "AND JSON_VALUE(ResultJson, '$.stockItemQuantity.dimension') = N'1' "
             + "AND JSON_QUERY(ResultJson, '$.stockItemQuantity.alternateQuantity') IS NULL",
             ("@company", CompanyA), ("@command", InventoryGoodsReceiptContractV1.CommandName),
             ("@acceptance", receipt.AcceptanceId), ("@actor", actor), ("@correlation", correlation),
