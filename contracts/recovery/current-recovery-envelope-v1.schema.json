@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sinangym/GoymenERP/contracts/recovery/current-recovery-envelope-v1.schema.json",
+  "title": "Source-only current recovery envelope v1",
+  "description": "D-RESTORE=A preparation contract. Contract/byte consistency is not source admission, runtime isolation, a backup, a consistent recovery point or rehearsal evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "envelopeMode",
+    "decision",
+    "source",
+    "database",
+    "durableStores",
+    "documents",
+    "externalEffects",
+    "recoveryObjectives",
+    "evidence",
+    "rehearsal",
+    "result",
+    "deployable",
+    "recoveryEligible",
+    "assertions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "goymenerp.current-recovery-envelope.v1"
+    },
+    "envelopeMode": {
+      "const": "SOURCE_ONLY"
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "package",
+        "record"
+      ],
+      "properties": {
+        "code": {
+          "const": "D-RESTORE=A"
+        },
+        "package": {
+          "const": "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6207345638"
+        },
+        "record": {
+          "const": "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6210091477"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "tree",
+        "releaseManifestVersion",
+        "releaseManifestSha256",
+        "recoveryInventorySha256"
+      ],
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "tree": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "releaseManifestVersion": {
+          "const": "goymenerp.release-manifest.v1"
+        },
+        "releaseManifestSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "recoveryInventorySha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dbContexts",
+        "migrationCount",
+        "migrationDeclarationSha256",
+        "restoreTarget"
+      ],
+      "properties": {
+        "dbContexts": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[A-Za-z][A-Za-z0-9]*DbContext$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^src/backend/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*DbContext\\.cs$"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "migrationCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "migrationDeclarationSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "restoreTarget": {
+          "const": "UNIQUE_ISOLATED_TARGET_REQUIRED"
+        }
+      }
+    },
+    "durableStores": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "module",
+          "kind",
+          "dbContext",
+          "entityType",
+          "schema",
+          "table",
+          "contracts",
+          "sourceFiles",
+          "recoveryRule",
+          "reconciliation"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9.-]+$"
+          },
+          "module": {
+            "enum": [
+              "Accounting",
+              "Documents",
+              "Finance",
+              "Idempotency",
+              "Inventory",
+              "Logistics",
+              "Manufacturing",
+              "Product",
+              "Purchasing",
+              "Sales",
+              "Work"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "delivery",
+              "idempotency",
+              "inbox",
+              "outbox"
+            ]
+          },
+          "dbContext": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9]*DbContext$"
+          },
+          "entityType": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+          },
+          "schema": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "table": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+          },
+          "contracts": {
+            "type": "array",
+            "maxItems": 2,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9]*V1$"
+            }
+          },
+          "sourceFiles": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^src/backend/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*\\.cs$"
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          },
+          "recoveryRule": {
+            "enum": [
+              "RESTORE_WITH_DATABASE_REPLAY_NOT_REEXECUTE",
+              "RESTORE_AND_HOLD_UNDISPATCHED",
+              "RESTORE_AND_KEEP_DEDUP",
+              "RESTORE_AND_RECONCILE_DELIVERY"
+            ]
+          },
+          "reconciliation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "highWaterMark",
+              "keySetSha256"
+            ],
+            "properties": {
+              "status": {
+                "const": "NOT_CAPTURED"
+              },
+              "highWaterMark": {
+                "const": null
+              },
+              "keySetSha256": {
+                "const": null
+              }
+            }
+          }
+        }
+      }
+    },
+    "documents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "configurationKeys",
+        "objectKeyPattern",
+        "pathClassifications",
+        "objectInventory"
+      ],
+      "properties": {
+        "configurationKeys": {
+          "type": "array",
+          "const": [
+            "Documents:MaximumUploadBytes",
+            "Documents:ObjectStore:RootPath",
+            "Documents:Scanner:Defender:ExecutablePath",
+            "Documents:Scanner:Defender:MaximumConcurrentScans",
+            "Documents:Scanner:Defender:QuarantinePath",
+            "Documents:Scanner:Defender:TimeoutSeconds",
+            "Documents:Scanner:Mode"
+          ],
+          "minItems": 7,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^Documents:[A-Za-z:]+$"
+          }
+        },
+        "objectKeyPattern": {
+          "const": "^companies/[0-9a-f]{32}/sha256/[0-9a-f]{64}$"
+        },
+        "pathClassifications": {
+          "type": "array",
+          "const": [
+            {
+              "configurationKey": "Documents:ObjectStore:RootPath",
+              "classification": "RECOVERY_SET_CONTENT"
+            },
+            {
+              "configurationKey": "Documents:Scanner:Defender:QuarantinePath",
+              "classification": "TRANSIENT_EXCLUDED"
+            }
+          ],
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "configurationKey",
+              "classification"
+            ],
+            "properties": {
+              "configurationKey": {
+                "type": "string",
+                "pattern": "^Documents:[A-Za-z:]+$"
+              },
+              "classification": {
+                "enum": [
+                  "RECOVERY_SET_CONTENT",
+                  "TRANSIENT_EXCLUDED"
+                ]
+              }
+            }
+          }
+        },
+        "objectInventory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "manifestSha256"
+          ],
+          "properties": {
+            "status": {
+              "const": "NOT_CAPTURED"
+            },
+            "manifestSha256": {
+              "const": null
+            }
+          }
+        }
+      }
+    },
+    "externalEffects": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scheduledWorkers",
+        "dispatcher",
+        "email",
+        "webhook",
+        "bankOrEDocument",
+        "objectCallbacks",
+        "otherEgress"
+      ],
+      "properties": {
+        "scheduledWorkers": {
+          "const": "REQUIRED_DISABLED_NOT_VERIFIED"
+        },
+        "dispatcher": {
+          "const": "REQUIRED_DISABLED_NOT_VERIFIED"
+        },
+        "email": {
+          "const": "REQUIRED_DISABLED_NOT_VERIFIED"
+        },
+        "webhook": {
+          "const": "REQUIRED_DISABLED_NOT_VERIFIED"
+        },
+        "bankOrEDocument": {
+          "const": "REQUIRED_DISABLED_NOT_VERIFIED"
+        },
+        "objectCallbacks": {
+          "const": "REQUIRED_DISABLED_NOT_VERIFIED"
+        },
+        "otherEgress": {
+          "const": "REQUIRED_DISABLED_NOT_VERIFIED"
+        }
+      }
+    },
+    "recoveryObjectives": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "status"
+      ],
+      "properties": {
+        "source": {
+          "const": "OPEN-017"
+        },
+        "status": {
+          "const": "UNMEASURED_NOT_ACCEPTED"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputValidation",
+        "sourceAdmission",
+        "runtimeIsolation",
+        "backupSet",
+        "consistentRecoveryPoint"
+      ],
+      "properties": {
+        "inputValidation": {
+          "const": "CONTRACTS_AND_BYTE_LINKS_ONLY"
+        },
+        "sourceAdmission": {
+          "const": "NOT_VERIFIED"
+        },
+        "runtimeIsolation": {
+          "const": "NOT_VERIFIED"
+        },
+        "backupSet": {
+          "const": "NOT_CAPTURED"
+        },
+        "consistentRecoveryPoint": {
+          "const": "NOT_VERIFIED"
+        }
+      }
+    },
+    "rehearsal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "plan"
+      ],
+      "properties": {
+        "status": {
+          "const": "NOT_REHEARSED"
+        },
+        "plan": {
+          "const": "docs/operations/CURRENT_RECOVERY_ENVELOPE_V1.md"
+        }
+      }
+    },
+    "result": {
+      "const": "SOURCE_ONLY_NOT_REHEARSED"
+    },
+    "deployable": {
+      "type": "boolean",
+      "const": false
+    },
+    "recoveryEligible": {
+      "type": "boolean",
+      "const": false
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "containsBusinessData",
+        "containsConfigurationValues",
+        "containsSecrets",
+        "selectsProvider",
+        "performsBackupOrRestore",
+        "mutatesData",
+        "deploys"
+      ],
+      "properties": {
+        "containsBusinessData": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsConfigurationValues": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsSecrets": {
+          "type": "boolean",
+          "const": false
+        },
+        "selectsProvider": {
+          "type": "boolean",
+          "const": false
+        },
+        "performsBackupOrRestore": {
+          "type": "boolean",
+          "const": false
+        },
+        "mutatesData": {
+          "type": "boolean",
+          "const": false
+        },
+        "deploys": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    }
+  }
+}
