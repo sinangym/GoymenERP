@@ -1,0 +1,456 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sinangym/GoymenERP/contracts/governance/data-owner-register-v1.schema.json",
+  "title": "Göymen ERP named data and activation owner register v1",
+  "description": "Tracks real people named by Sinan for data and activation gates. It grants no permission, authorizes no deployment and holds no PartyId, credential or business data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "register",
+    "gates",
+    "environmentOwners",
+    "assertions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "goymenerp.data-owner-register.v1"
+    },
+    "register": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ownerMatrix",
+        "productPackage",
+        "environmentPackage",
+        "assignmentAccountable",
+        "technicalTracking"
+      ],
+      "properties": {
+        "ownerMatrix": {
+          "const": "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6207373183"
+        },
+        "productPackage": {
+          "const": "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6207285823"
+        },
+        "environmentPackage": {
+          "const": "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6209522696"
+        },
+        "assignmentAccountable": {
+          "const": "Sinan Göymen"
+        },
+        "technicalTracking": {
+          "const": "CODEX-ORCHESTRATOR"
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "responsibility",
+          "unlocks",
+          "blocksSourceDevelopment",
+          "status",
+          "primary",
+          "backup",
+          "sourceCustodian",
+          "targetDate",
+          "sameAs",
+          "decisionRecord",
+          "confirmationRecord"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "DATA-OWNERS",
+              "DATA-FINANCE",
+              "DATA-IDP",
+              "DATA-KG-M",
+              "DATA-MFG",
+              "DATA-LEGACY",
+              "DATA-PARTY",
+              "DATA-OPS",
+              "DATA-DEMO",
+              "DATA-UAT",
+              "DATA-PRODUCT"
+            ]
+          },
+          "responsibility": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "unlocks": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "item",
+                "scope"
+              ],
+              "properties": {
+                "item": {
+                  "type": "string",
+                  "pattern": "^[A-Z][0-9]{2}\\.[0-9]+$"
+                },
+                "scope": {
+                  "enum": [
+                    "DATA_ACTIVATION",
+                    "REAL_INPUT",
+                    "UAT"
+                  ]
+                }
+              }
+            }
+          },
+          "blocksSourceDevelopment": {
+            "type": "boolean",
+            "const": false
+          },
+          "status": {
+            "enum": [
+              "PENDING",
+              "RECORDED",
+              "CONFIRMED"
+            ]
+          },
+          "primary": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 120
+              }
+            }
+          },
+          "backup": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 120
+              }
+            }
+          },
+          "sourceCustodian": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "sourceName",
+              "sourceIdentityRoute"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 120
+              },
+              "sourceName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "sourceIdentityRoute": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              }
+            }
+          },
+          "targetDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "sameAs": {
+            "enum": [
+              null,
+              "DATA-PRODUCT",
+              "DATA-LEGACY",
+              "DATA-OPS"
+            ]
+          },
+          "decisionRecord": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^https://github\\.com/sinangym/GoymenERP/issues/66#issuecomment-[0-9]+$"
+          },
+          "confirmationRecord": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^https://github\\.com/sinangym/GoymenERP/issues/66#issuecomment-[0-9]+$"
+          }
+        }
+      }
+    },
+    "environmentOwners": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "status",
+        "opsPrimary",
+        "opsBackup",
+        "infraCustodian",
+        "artifactCustodian",
+        "secretCustodian",
+        "dataCustodian",
+        "costOwner",
+        "targetDate",
+        "decisionRecord"
+      ],
+      "properties": {
+        "decision": {
+          "const": "D-ENVIRONMENT=A"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "RECORDED"
+          ]
+        },
+        "opsPrimary": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 120
+            }
+          }
+        },
+        "opsBackup": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 120
+            }
+          }
+        },
+        "infraCustodian": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "reference"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 120
+            },
+            "reference": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          }
+        },
+        "artifactCustodian": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "reference"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 120
+            },
+            "reference": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          }
+        },
+        "secretCustodian": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "reference"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 120
+            },
+            "reference": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          }
+        },
+        "dataCustodian": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "packId",
+            "packVersion",
+            "packSha256"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 120
+            },
+            "packId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$"
+            },
+            "packVersion": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$"
+            },
+            "packSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        },
+        "costOwner": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "reference"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 120
+            },
+            "reference": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            }
+          }
+        },
+        "targetDate": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "decisionRecord": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^https://github\\.com/sinangym/GoymenERP/issues/66#issuecomment-[0-9]+$"
+        }
+      }
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grantsPermissions",
+        "authorizesDeployment",
+        "containsPartyIds",
+        "containsCredentials",
+        "isHumanApproval"
+      ],
+      "properties": {
+        "grantsPermissions": {
+          "type": "boolean",
+          "const": false
+        },
+        "authorizesDeployment": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsPartyIds": {
+          "type": "boolean",
+          "const": false
+        },
+        "containsCredentials": {
+          "type": "boolean",
+          "const": false
+        },
+        "isHumanApproval": {
+          "type": "boolean",
+          "const": false
+        }
+      }
+    }
+  }
+}
