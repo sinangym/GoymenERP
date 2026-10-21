@@ -2,6 +2,7 @@ using System.Globalization;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -11,8 +12,54 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 /// are re-read before the result is released so a mixed-time response fails closed.
 /// </summary>
 internal sealed class SqlInventoryPhysicalAllocationReader(InventoryDbContext db)
-    : IInventoryPhysicalAllocationReader
+    : IInventoryPhysicalAllocationReader, IInventoryPhysicalAllocationExactReader
 {
+    public async Task<InventoryPhysicalAllocationExactReadV1?> ReadExactAsync(
+        Guid companyId,
+        Guid allocationId,
+        CancellationToken cancellationToken)
+    {
+        var query = db.Allocations.AsNoTracking().Where(row => row.CompanyId == companyId && row.Id == allocationId
+            && row.DemandKind == InventoryAllocationDemandKindsV1.SalesOrderLine);
+        var row = await query.SingleOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var label = await LabelVersionAsync(companyId, row.LabelId, cancellationToken);
+        if (label is null)
+        {
+            throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
+        }
+
+        var captured = ExactStamp(row);
+        var after = await query.SingleOrDefaultAsync(cancellationToken);
+        var labelAfter = await LabelVersionAsync(companyId, row.LabelId, cancellationToken);
+        if (after is null || ExactStamp(after) != captured || labelAfter != label)
+        {
+            throw Error(409, InventoryPhysicalAllocationReadCodesV1.ReadConflict);
+        }
+
+        var item = Capture(row, new Dictionary<Guid, LabelCapture> { [label.Id] = label });
+        return new(item.Allocation, label.Version.ToString(CultureInfo.InvariantCulture),
+            ((StockPartyKind)row.OwnerKind).ToString(), row.OwnerId,
+            ((StockPartyKind)row.CustodianKind).ToString(), row.CustodianId, row.LocationId,
+            row.ReleasedAtUtc, row.ReleaseReason);
+    }
+
+    private static ExactAllocationCapture ExactStamp(AllocationRow row) => new(
+        row.Id, row.CompanyId, row.Version, row.LabelId, row.OwnerKind, row.OwnerId, row.CustodianKind, row.CustodianId,
+        row.LocationId, row.DemandId, row.DemandLineId, row.DemandProductId, row.DemandProductVersion, row.Reason,
+        row.AllocatedKg, row.RemainingKg, row.Status, row.ReservedUntilUtc, row.CreatedAtUtc, row.UpdatedAtUtc,
+        row.ReleasedAtUtc, row.ReleaseReason);
+
+    private sealed record ExactAllocationCapture(
+        Guid Id, Guid CompanyId, long Version, Guid LabelId, int OwnerKind, Guid OwnerId, int CustodianKind, Guid CustodianId,
+        Guid LocationId, Guid? DemandId, Guid? DemandLineId, Guid? DemandProductId, string? DemandProductVersion, string? Reason,
+        decimal AllocatedKg, decimal RemainingKg, int Status, DateTimeOffset? ReservedUntilUtc, DateTimeOffset CreatedAtUtc,
+        DateTimeOffset UpdatedAtUtc, DateTimeOffset? ReleasedAtUtc, string? ReleaseReason);
+
     public async Task<InventoryPhysicalAllocationReadWindow> SearchAsync(
         Guid companyId,
         Guid salesOrderId,

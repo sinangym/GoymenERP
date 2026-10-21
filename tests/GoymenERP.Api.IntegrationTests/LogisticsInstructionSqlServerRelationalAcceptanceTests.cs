@@ -707,6 +707,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
                 services.AddSingleton<ISalesOrderLineReferencePortV1>(new HostedSalesLine(fixture));
                 services.RemoveAll<IInventoryPhysicalAllocationReadsV1>();
                 services.AddSingleton<IInventoryPhysicalAllocationReadsV1>(reads);
+                services.RemoveAll<IInventoryPhysicalAllocationExactReadsV1>();
+                services.AddSingleton<IInventoryPhysicalAllocationExactReadsV1>(reads);
                 if (observer is not null)
                 {
                     services.AddSingleton(observer);
@@ -818,7 +820,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     }
 
     private sealed class HostedAllocationReads(HostedShipmentFixture fixture, Func<Task>? afterRead = null)
-        : IInventoryPhysicalAllocationReadsV1
+        : IInventoryPhysicalAllocationReadsV1, IInventoryPhysicalAllocationExactReadsV1
     {
         private int read;
 
@@ -831,16 +833,32 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             CancellationToken cancellationToken = default)
         {
             Assert.Equal((fixture.Owners.Order, fixture.OrderLineId), (query.SalesOrderId, query.SalesOrderLineId));
+            var allocation = await CaptureAsync();
+            return new([new InventoryPhysicalAllocationReadItemV1(allocation, "1")], false);
+        }
+
+        public async Task<InventoryPhysicalAllocationExactReadV1> ReadAsync(
+            Guid allocationId,
+            CancellationToken cancellationToken = default)
+        {
+            Assert.Equal(fixture.AllocationId, allocationId);
+            var allocation = await CaptureAsync();
+            return new(allocation, "1", "Company", CompanyA, "Company", CompanyA, fixture.LocationId, null, null);
+        }
+
+        private async Task<InventoryPhysicalAllocationViewV1> CaptureAsync()
+        {
+            // The existing after-read Identity revocation is still fired once,
+            // including when the production consumer enters through the exact port.
             if (afterRead is not null && Interlocked.Exchange(ref read, 1) == 0)
             {
                 await afterRead();
             }
 
-            var allocation = new InventoryPhysicalAllocationViewV1(
+            return new InventoryPhysicalAllocationViewV1(
                 fixture.AllocationId, CompanyA, "1", "Active", fixture.LabelId, fixture.ProductId,
                 InventoryAllocationDemandKindsV1.SalesOrderLine, fixture.Owners.Order, fixture.OrderLineId,
                 "7", "5", "5", "Hosted Logistics authority rollback acceptance.", null, T0, T0);
-            return new([new InventoryPhysicalAllocationReadItemV1(allocation, "1")], false);
         }
     }
 

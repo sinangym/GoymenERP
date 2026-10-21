@@ -67,6 +67,32 @@ public sealed record InventoryPhysicalAllocationReadItemV1(
     InventoryPhysicalAllocationViewV1 Allocation,
     string LabelVersion);
 
+/// <summary>
+/// Company-scoped exact-ID sales-line allocation truth under the existing physical-allocation-write authority.
+/// This port does not scan or enlarge the line/label windows. Unknown/foreign IDs are 404.
+/// </summary>
+public interface IInventoryPhysicalAllocationExactReadsV1
+{
+    Task<InventoryPhysicalAllocationExactReadV1> ReadAsync(
+        Guid allocationId,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Captured allocation, label version and persisted stock-position/release facts. No loading-hold
+/// or binding value is inferred; those facts are outside the current Inventory source contract.
+/// </summary>
+public sealed record InventoryPhysicalAllocationExactReadV1(
+    InventoryPhysicalAllocationViewV1 Allocation,
+    string LabelVersion,
+    string OwnerKind,
+    Guid OwnerId,
+    string CustodianKind,
+    Guid CustodianId,
+    Guid LocationId,
+    DateTimeOffset? ReleasedAtUtc,
+    string? ReleaseReason);
+
 public static class InventoryPhysicalAllocationReadCodesV1
 {
     public const string Unauthenticated = "inventory_physical_allocation_read_unauthenticated";

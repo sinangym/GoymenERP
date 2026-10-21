@@ -19,6 +19,10 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
     public const string StockPositionsScreenId = "ST-01";
     public const string PhysicalAllocationCapabilityId = ErpPermissions.InventoryPhysicalAllocationWrite;
 
+    // R03.3 exact-ID reads reuse this existing control's company-wide permission.
+    // AL-04 frontend route/capability publication is a separate owner gate: the
+    // backend read port does not advertise a new available React workspace here.
+
     /// <summary>
     /// R19 split/merge: a CONTROL of the label detail reached from ST-01 (no route of its own). It keeps the
     /// parent's route, context and scope and adds only the command name, which the API re-measures on every
