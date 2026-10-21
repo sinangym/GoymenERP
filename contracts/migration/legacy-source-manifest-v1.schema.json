@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sinangym/GoymenERP/contracts/migration/legacy-source-manifest-v1.schema.json",
+  "title": "Göymen ERP legacy source extract manifest v1",
+  "description": "Names a source snapshot, version, UTC cutoff and CSV hashes/counts. This contract authorizes no read or import and holds no row data. At main b6ed7ca5 the R04.1 tool accepts only explicitly synthetic fixtures; LEGACY_EXTRACT is reserved and fails closed until separately reviewed E03.1 owner validation exists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "sourceClass",
+    "sourceSystem",
+    "snapshotId",
+    "sourceVersion",
+    "cutoffUtc",
+    "dataOwnerRegisterSha256",
+    "extracts"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "goymenerp.legacy-source-manifest.v1"
+    },
+    "sourceClass": {
+      "enum": [
+        "LEGACY_EXTRACT",
+        "SYNTHETIC_FIXTURE"
+      ]
+    },
+    "sourceSystem": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "snapshotId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "sourceVersion": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "cutoffUtc": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "dataOwnerRegisterSha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "extracts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "fileName",
+          "sha256",
+          "rowCount",
+          "delimiter",
+          "decimalSeparator"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,39}$"
+          },
+          "fileName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,123}\\.csv$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "rowCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "delimiter": {
+            "enum": [
+              ",",
+              ";",
+              "\t"
+            ]
+          },
+          "decimalSeparator": {
+            "enum": [
+              ".",
+              ","
+            ]
+          }
+        }
+      }
+    }
+  }
+}

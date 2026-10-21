@@ -1,0 +1,311 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sinangym/GoymenERP/contracts/migration/legacy-mapping-profile-v1.schema.json",
+  "title": "Göymen ERP legacy mapping profile v1",
+  "description": "Declared source identity/version columns, owner module, lifecycle/value maps, references and measures. A scale is supplied with a Settings profile reference; this contract alone does not verify that reference or authorize real data access. Missing scales keep the dry-run NOT_READY. Only synthetic fixtures are readable before separate E03.1 integration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "mappingId",
+    "mappingVersion",
+    "valueMaps",
+    "entities"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "goymenerp.legacy-mapping-profile.v1"
+    },
+    "mappingId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "mappingVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "valueMaps": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "fileName",
+          "sha256"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,39}$"
+          },
+          "fileName": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,123}\\.csv$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "entities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "entity",
+          "extract",
+          "ownerModule",
+          "dataGate",
+          "sourceIdColumn",
+          "sourceVersionColumn",
+          "requiredColumns",
+          "lifecycle",
+          "valueColumns",
+          "references",
+          "measures"
+        ],
+        "properties": {
+          "entity": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,39}$"
+          },
+          "extract": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,39}$"
+          },
+          "ownerModule": {
+            "enum": [
+              "accounting",
+              "counterparty",
+              "documents",
+              "finance",
+              "inventory",
+              "logistics",
+              "manufacturing",
+              "organization",
+              "product",
+              "purchasing",
+              "sales",
+              "settings"
+            ]
+          },
+          "dataGate": {
+            "enum": [
+              "DATA-LEGACY",
+              "DATA-PARTY",
+              "DATA-PRODUCT"
+            ]
+          },
+          "sourceIdColumn": {
+            "type": "string",
+            "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+          },
+          "sourceVersionColumn": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+          },
+          "requiredColumns": {
+            "type": "array",
+            "maxItems": 128,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+            }
+          },
+          "lifecycle": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "column",
+              "values"
+            ],
+            "properties": {
+              "column": {
+                "type": "string",
+                "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "uniqueItems": true,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sourceValue",
+                    "state"
+                  ],
+                  "properties": {
+                    "sourceValue": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "state": {
+                      "enum": [
+                        "ACTIVE",
+                        "INACTIVE",
+                        "CANCELLED"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "valueColumns": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "column",
+                "valueMap",
+                "required"
+              ],
+              "properties": {
+                "column": {
+                  "type": "string",
+                  "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+                },
+                "valueMap": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "required": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "references": {
+            "type": "array",
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "column",
+                "entity",
+                "required"
+              ],
+              "properties": {
+                "column": {
+                  "type": "string",
+                  "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+                },
+                "entity": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "required": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "measures": {
+            "type": "array",
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "column",
+                "kind",
+                "unitCode",
+                "unitColumn",
+                "unitValueMap",
+                "required",
+                "scales"
+              ],
+              "properties": {
+                "column": {
+                  "type": "string",
+                  "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+                },
+                "kind": {
+                  "enum": [
+                    "QUANTITY",
+                    "AMOUNT"
+                  ]
+                },
+                "unitCode": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,31}$"
+                },
+                "unitColumn": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+                },
+                "unitValueMap": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "scales": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "unitCode",
+                      "approvedScale",
+                      "scaleSource"
+                    ],
+                    "properties": {
+                      "unitCode": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z][A-Za-z0-9._-]{0,31}$"
+                      },
+                      "approvedScale": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 28
+                      },
+                      "scaleSource": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
