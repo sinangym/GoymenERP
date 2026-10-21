@@ -12,12 +12,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(9, declarations.Count);
+        Assert.Equal(10, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.7", provider.ContractVersion);
+        Assert.Equal("1.8", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);
@@ -91,6 +91,50 @@ public sealed class InventoryShellCapabilityProviderTests
             declaration.RequiredPermissions);
         Assert.True(declaration.ImplementationAvailable);
         Assert.Equal(InventoryShellCapabilityProvider.StockPositionsCapabilityId, declaration.ParentCapabilityId);
+    }
+
+    [Fact]
+    public void Allocation_detail_is_a_dormant_top_level_route_over_only_existing_company_wide_write()
+    {
+        var declaration = Assert.Single(new InventoryShellCapabilityProvider().GetDeclarations(),
+            item => item.CapabilityId == InventoryShellCapabilityProvider.AllocationDetailCapabilityId);
+
+        Assert.Equal("inventory.allocations.detail", declaration.CapabilityId);
+        Assert.Equal("inventory.allocations.detail", declaration.RouteId);
+        Assert.Equal("/stok/tahsisler/:allocationId", declaration.RoutePath);
+        Assert.Equal("AL-04", declaration.ScreenId);
+        Assert.Equal(ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, declaration.RoutePrecedence);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+        Assert.Equal([ErpPermissions.InventoryPhysicalAllocationWrite], declaration.RequiredPermissions);
+        Assert.False(declaration.ImplementationAvailable);
+        Assert.Null(declaration.ParentCapabilityId);
+        Assert.Null(declaration.GlobalProductOperation);
+    }
+
+    [Fact]
+    public void Allocation_detail_does_not_change_the_existing_available_capability_set()
+    {
+        var available = new InventoryShellCapabilityProvider().GetDeclarations()
+            .Where(item => item.ImplementationAvailable)
+            .Select(item => item.CapabilityId)
+            .OrderBy(id => id, StringComparer.Ordinal)
+            .ToArray();
+        string[] expected =
+        [
+            InventoryShellCapabilityProvider.StockPositionsCapabilityId,
+            InventoryShellCapabilityProvider.PhysicalAllocationCapabilityId,
+            InventoryShellCapabilityProvider.LabelTransformationCapabilityId,
+            InventoryShellCapabilityProvider.LabelClassificationCapabilityId,
+            InventoryShellCapabilityProvider.StockCountRecordCapabilityId,
+            InventoryShellCapabilityProvider.StockCountApproveCapabilityId,
+            InventoryShellCapabilityProvider.StockScrapRecordCapabilityId,
+            InventoryShellCapabilityProvider.StockScrapApproveCapabilityId,
+            InventoryShellCapabilityProvider.OpeningStockCapabilityId,
+        ];
+
+        Assert.Equal(expected.OrderBy(id => id, StringComparer.Ordinal).ToArray(), available);
+        Assert.DoesNotContain(InventoryShellCapabilityProvider.AllocationDetailCapabilityId, available);
     }
 
     [Fact]
