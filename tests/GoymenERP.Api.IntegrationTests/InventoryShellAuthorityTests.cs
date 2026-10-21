@@ -3,6 +3,7 @@ using GoymenERP.BuildingBlocks.Shell;
 using GoymenERP.Modules.Accounting.Infrastructure.Shell;
 using GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 using GoymenERP.Modules.Finance.Infrastructure.Shell;
+using GoymenERP.Modules.Identity.Infrastructure.Shell;
 using GoymenERP.Modules.Inventory.Infrastructure.Shell;
 using GoymenERP.Modules.Logistics.Infrastructure.Shell;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Shell;
@@ -34,9 +35,34 @@ public sealed class InventoryShellAuthorityTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
 
         Assert.True(string.Equals(
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17,
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndInventoryV18WithDormantAllocationDetail,
                 actual,
                 StringComparison.Ordinal),
             $"Inventory normal-host authority drifted. Actual: {actual}");
+    }
+
+    internal static IShellCapabilityProvider[] CreateNormalHostProviders(int providerCount)
+    {
+        if (providerCount is < 10 or > 12)
+        {
+            throw new ArgumentOutOfRangeException(nameof(providerCount));
+        }
+
+        IShellCapabilityProvider[] providers =
+        [
+            new CounterpartyShellCapabilityProvider(),
+            new OrganizationShellCapabilityProvider(),
+            new ProductShellCapabilityProvider(),
+            new SalesShellCapabilityProvider(),
+            new FinanceShellCapabilityProvider(),
+            new ManufacturingShellCapabilityProvider(),
+            new LogisticsShellCapabilityProvider(),
+            new PurchasingShellCapabilityProvider(),
+            new AccountingShellCapabilityProvider(),
+            new InventoryShellCapabilityProvider(),
+            new IdentityShellCapabilityProvider(),
+            new ProductPriceListShellCapabilityProvider(),
+        ];
+        return providers.Take(providerCount).ToArray();
     }
 }

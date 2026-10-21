@@ -38,7 +38,7 @@ public sealed class ProductPriceListShellAuthorityTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
 
         Assert.True(string.Equals(
-                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsAndSalesFloorApproval,
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesFloorApprovalAndInventoryV18WithDormantAllocationDetail,
                 actual,
                 StringComparison.Ordinal),
             $"Price-list normal-host authority drifted. Actual: {actual}");
