@@ -2,9 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { GoodsReceiptDetail, GoodsReceiptDetailRow } from './GoodsReceiptDetail'
-import { decodeGoodsReceiptDetail, type GoodsReceipt } from './goodsReceiptContract'
+import { decodeGoodsReceiptDetail, type GoodsReceipt, type GoodsReceiptStockQuantity } from './goodsReceiptContract'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail } from './contract'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
@@ -141,6 +141,16 @@ describe('decodeGoodsReceiptDetail — P05.1D stored stock quantity', () => {
 
   it('refuses a receipt without the key — it is not a legacy receipt', () => {
     expect(decodeGoodsReceiptDetail({ receipt: withoutStock() }, order, ACCEPTANCE)).toBeNull()
+  })
+
+  it('keeps the key required in the static type too: explicit null is the only legacy form', () => {
+    // Checked by the type checker (tsc -b): an optional member would widen this to include undefined.
+    expectTypeOf<GoodsReceipt['stockItemQuantity']>().toEqualTypeOf<GoodsReceiptStockQuantity | null>()
+    const omitted: Omit<GoodsReceipt, 'stockItemQuantity'> = receipt()
+    // @ts-expect-error a receipt without `stockItemQuantity` is not a GoodsReceipt (missing is not legacy)
+    const missing: GoodsReceipt = omitted
+    expect(missing).toBe(omitted)
+    expect(receipt({ stockItemQuantity: null }).stockItemQuantity).toBeNull()
   })
 
   it.each([

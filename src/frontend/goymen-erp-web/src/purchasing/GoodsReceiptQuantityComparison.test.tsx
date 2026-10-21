@@ -25,6 +25,8 @@ const receipt: GoodsReceipt = {
   measuredQuantityKg: '101.75',
   initialBlock: 'Free',
   occurredAtUtc: '2026-10-05T08:00:00Z',
+  // P05.1D: the key is required; this fixture is an explicit legacy receipt (no stored stock quantity snapshot).
+  stockItemQuantity: null,
 }
 
 const comparison = {

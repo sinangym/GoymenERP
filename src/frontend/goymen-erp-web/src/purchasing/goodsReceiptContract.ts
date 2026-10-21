@@ -44,10 +44,10 @@ export interface GoodsReceipt {
    * P05.1D (`PurchaseGoodsReceiptViewV1.stockItemQuantity`, backend #774 6f6968d6): the stock quantity Inventory froze
    * for this receipt. The key is REQUIRED on the wire and every decoded receipt carries it: `null` is a legacy receipt
    * recorded before the snapshot existed (never zero, never today's settings); an object is the validated snapshot.
-   * It is optional only in this static type so earlier hand-written fixtures still compile; a receipt without the key
-   * is never produced by the decoders below.
+   * Required in this static type as well: a receipt without the key is not a GoodsReceipt and is never produced by the
+   * decoders below.
    */
-  readonly stockItemQuantity?: GoodsReceiptStockQuantity | null
+  readonly stockItemQuantity: GoodsReceiptStockQuantity | null
 }
 
 /** `PurchaseGoodsReceiptQuantityValueV2`: a stored quantity with the unit profile it was recorded under. */
@@ -176,7 +176,8 @@ export function decodeGoodsReceipt(value: unknown, detail: PurchaseOrderDetail):
 
 /**
  * What the screen may say about a decoded receipt's stock quantity: the stored snapshot, a legacy receipt that has none,
- * or — for a value that did not come through the decoder — unreadable. A missing value is never shown as legacy.
+ * or — for a value that bypassed the decoder through an unchecked cast — unreadable. A missing value is never shown as
+ * legacy.
  */
 export function stockQuantityOf(receipt: GoodsReceipt):
   | { readonly kind: 'snapshot'; readonly quantity: GoodsReceiptStockQuantity }
