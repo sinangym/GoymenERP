@@ -170,12 +170,12 @@ public sealed class OrganizationLocationOperatorReadHostTests
     {
         var owner = new StubOwner();
         var unknown = await Host(
-                new StubOrganization(null),
+                new StubOrganization((LocationSummary?)null),
                 new StubLocationStatus { Resource = null },
                 owner)
             .SearchCandidatesAsync(Location, new(null, 25, null), "server-session");
         var invalidSession = await Host(
-                new StubOrganization(null),
+                new StubOrganization((LocationSummary?)null),
                 new StubLocationStatus(),
                 owner)
             .SearchCandidatesAsync(Location, new(null, 25, null), " ");
