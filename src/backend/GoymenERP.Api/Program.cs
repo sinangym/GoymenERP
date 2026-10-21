@@ -251,6 +251,9 @@ builder.Services.AddCounterpartyModule(
 builder.Services.AddScoped<
     IOrganizationLocationOperatorEligibilityPortV1,
     CounterpartyOrganizationLocationOperatorEligibilityPortV1>();
+builder.Services.AddScoped<
+    IOrganizationLocationOperatorReadHostV1,
+    OrganizationLocationOperatorReadHostV1>();
 builder.Services.AddInventoryModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(
