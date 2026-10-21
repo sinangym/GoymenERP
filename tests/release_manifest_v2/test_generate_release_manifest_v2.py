@@ -241,8 +241,14 @@ class ManifestV2UnitSourceTests(unittest.TestCase):
                 check(schema["items"])
         check(self.schema)
         item = self.schema["properties"]["apiContract"]
-        with self.assertRaises(self.recovery.InventoryError):
-            self.recovery._validate_against_schema({"secret": "synthetic"}, item)
+        valid = {"path": tool.API, "gitBlob": "1" * 40, "sha256": "a" * 64,
+                 "openapiVersion": "3.1.1", "documentVersion": "v1",
+                 "operationCount": 1, "operationIdsSha256": "b" * 64}
+        self.recovery._validate_against_schema(valid, item)
+        with self.assertRaisesRegex(self.recovery.InventoryError, "extra fields"):
+            self.recovery._validate_against_schema({**valid, "secret": "synthetic"}, item)
+        with self.assertRaisesRegex(self.recovery.InventoryError, "wrong type"):
+            self.recovery._validate_against_schema({**valid, "operationCount": True}, item)
 
     def test_readonly_v1_sources_are_exactly_the_accepted_bytes(self):
         for path, sha in tool.PINS.items():
