@@ -237,12 +237,34 @@ class RegisterTests(unittest.TestCase):
             with self.assertRaises(tool.RegisterViolation):
                 tool.validate_register(register, SCHEMA)
 
+    def test_sources_and_environment_references_reject_guid_n_form(self) -> None:
+        for text in ("party b2000000000040008000000000000301",
+                     "PartyId=B2000000000040008000000000000301"):
+            with self.subTest(text=text):
+                register = copy.deepcopy(REGISTER)
+                gate = _gate(register, "DATA-LEGACY")
+                _named(gate)
+                gate["sourceCustodian"]["sourceIdentityRoute"] = text
+                self.assertViolation(register, "must not contain a GUID")
+                register = copy.deepcopy(REGISTER)
+                owners = register["environmentOwners"]
+                person = {"name": "Deneme Dördüncü"}
+                owners.update(status="RECORDED", decisionRecord=NAMING_RECORD, targetDate="2026-11-30",
+                              opsPrimary={"name": "Deneme Beşinci"}, opsBackup={"name": "Deneme Altıncı"},
+                              infraCustodian={**person, "reference": text},
+                              artifactCustodian={**person, "reference": "imaj kaynağı kayıt yeri"},
+                              secretCustodian={**person, "reference": "secret store kayıt yeri"},
+                              dataCustodian={**person, "packId": "synthetic-pack", "packVersion": "1", "packSha256": "0" * 64},
+                              costOwner={**person, "reference": "onaylı kapasite kaydı"})
+                self.assertViolation(register, "must not contain a GUID")
+
     def test_hex_source_digest_is_metadata_but_opaque_credentials_are_refused(self) -> None:
         register = copy.deepcopy(REGISTER)
         gate = _gate(register, "DATA-LEGACY")
         _named(gate)
-        gate["sourceCustodian"]["sourceIdentityRoute"] = "SHA256 " + "a" * 64
-        self.assertEqual("NOT_CLOSED", tool.validate_register(register, SCHEMA)["e031"])
+        for length in (40, 64):
+            gate["sourceCustodian"]["sourceIdentityRoute"] = "digest " + "a" * length
+            self.assertEqual("NOT_CLOSED", tool.validate_register(register, SCHEMA)["e031"])
         gate["sourceCustodian"]["sourceIdentityRoute"] = "opaque " + "xyzXYZ+/" * 6
         self.assertViolation(register, "looks like a secret")
 

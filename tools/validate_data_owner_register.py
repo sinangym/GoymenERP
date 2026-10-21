@@ -106,6 +106,7 @@ PLACEHOLDER_NAMES = frozenset(
 AGENT_WORDS = frozenset({"codex", "claude", "chatgpt", "orchestrator", "copilot", "agent", "bot", "sentetik", "synthetic"})
 NAME_SEPARATORS = re.compile(r"[ '.-]")
 GUID_PATTERN = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+GUID_N_PATTERN = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])")
 IDENTIFIER_DIGITS_PATTERN = re.compile(r"(?<!\d)\d{10,11}(?!\d)")
 RECORD_PATTERN = re.compile(r"https://github\.com/sinangym/GoymenERP/issues/66#issuecomment-[1-9][0-9]*")
 SECRET_PATTERNS = (
@@ -140,6 +141,7 @@ def _check_free_text(value: str, label: str) -> None:
     _require(isinstance(value, str) and value.strip() and value == value.strip(), f"{label} is blank or untrimmed")
     _require(not any(ord(char) < 32 or ord(char) == 127 for char in value), f"{label} contains control characters")
     _require(GUID_PATTERN.search(value) is None, f"{label} must not contain a GUID (no PartyId)")
+    _require(GUID_N_PATTERN.search(value) is None, f"{label} must not contain a GUID (no PartyId)")
     _require(IDENTIFIER_DIGITS_PATTERN.search(value) is None, f"{label} must not contain a VKN/TCKN-like number")
     _require(not any(pattern.search(value) for pattern in SECRET_PATTERNS), f"{label} looks like a secret")
     # Plain commit/SHA digests are useful source references. Long non-hex opaque
