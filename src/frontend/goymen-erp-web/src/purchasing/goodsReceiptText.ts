@@ -53,4 +53,7 @@ export const GOODS_RECEIPT_TEXT = {
   stockAlternate: 'Başka birime dönüştürülmüş miktar: yok (bu kayıtta dönüşüm yapılmadı)',
   stockLegacy: 'Bu eski kabulde stok miktarı bilgisi saklanmamış. Sıfır kabul edilmez, güncel ayarlardan da doldurulmaz.',
   stockUnreadable: 'Stok miktarı bilgisi okunamadı.',
+  // P05.1D panel: the same stored value in one line, in the save message and in each history item.
+  stockSummary: (value: string) => `Stok miktarı: ${value} kg`,
+  stockSummaryLegacy: 'Stok miktarı: bu eski kabulde saklanmamış (sıfır değildir).',
 } as const

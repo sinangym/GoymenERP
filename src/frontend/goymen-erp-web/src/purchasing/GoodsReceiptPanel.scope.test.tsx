@@ -167,7 +167,33 @@ describe('Goods receipt scope and late-result protection, synthetic NOT_ENV', ()
     await act(async () => { oldHistory.resolve(json({ items: [receipt()], searchWindowFull: false })) })
     expect(screen.queryByText('PRIVATE-LABEL')).toBeNull()
     expect(screen.queryByTestId(`goods-receipt-${LOCATION}`)).toBeNull()
+    expect(screen.queryByText(T.stockSummary('1.9'))).toBeNull()
     expect(page.onRecorded).not.toHaveBeenCalled()
+  })
+
+  it.each<[string, Partial<ComponentProps<typeof GoodsReceiptPanel>>]>([
+    ['another actor/session of the same company', { binding: ACTOR_B }],
+    ['another company', { binding: `actor-a:session-a:${OTHER_COMPANY}`, detail: { ...detail,
+      order: { ...detail.order, id: OTHER_ORDER, companyId: OTHER_COMPANY }, lines: [{ ...detail.lines[0], lineId: OTHER_LINE }] } }],
+  ])('P05.1D: a shown save message with its stock quantity disappears when the scope changes to %s', async (_name, next) => {
+    const posts: GoodsReceiptRequest[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method !== 'POST') {
+        if (url.includes(OTHER_ORDER)) return json(url.endsWith('goods-receipt-options') ? options(next.detail ?? detail) : { items: [], searchWindowFull: false })
+        return reads(url)
+      }
+      const payload = JSON.parse(init.body as string) as GoodsReceiptRequest
+      posts.push(payload)
+      return json({ receipt: receipt(payload), isReplay: false, originalCorrelationId: 'original' }, 201)
+    }))
+    const page = mount()
+    await fill()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    expect(await screen.findByText(T.stockSummary('1.9'))).toBeTruthy()
+    page.change(next)
+    await waitFor(() => expect(screen.queryByText(T.stockSummary('1.9'))).toBeNull())
+    expect(screen.queryByText(new RegExp(T.saved))).toBeNull()
+    expect(posts).toHaveLength(1)
   })
 
   it('does not publish a late comparison after the actor binding changes and the fresh read is denied', async () => {

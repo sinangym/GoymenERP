@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
@@ -48,7 +48,7 @@ function comparison(source: GoodsReceipt) {
     acceptedQuantity: source.acceptedQuantity, measuredQuantityKg: source.measuredQuantityKg,
     comparisonStatus: 'SameKilogramUnit', acceptedQuantityKg: source.acceptedQuantity, measuredMinusAcceptedKg: '-0.1' }
 }
-function fixture(unknownFirst = false) {
+function fixture(unknownFirst = false, legacy = false) {
   const posts: { key: string; body: string }[] = []
   const receipts: GoodsReceipt[] = []
   const comparisonReads: string[] = []
@@ -56,7 +56,7 @@ function fixture(unknownFirst = false) {
     if (init?.method === 'POST') {
       posts.push({ key: (init.headers as Record<string, string>)['Idempotency-Key'], body: init.body as string })
       const payload = JSON.parse(init.body as string) as GoodsReceiptRequest
-      if (receipts.length === 0) receipts.push(recorded(payload))
+      if (receipts.length === 0) receipts.push(legacy ? { ...recorded(payload), stockItemQuantity: null } : recorded(payload))
       if (unknownFirst && posts.length === 1) return json({}, 503)
       return json({ receipt: receipts[0], isReplay: posts.length > 1, originalCorrelationId: 'original' }, 201, posts.length > 1)
     }
@@ -244,5 +244,36 @@ describe('P05.1D stored stock quantity on the POST answer and the receipt histor
     await waitFor(() => expect(screen.queryByTestId(`goods-receipt-${LOCATION}`)).toBeNull())
     expect(screen.queryByText(/SYNTHETIC/)).toBeNull()
     expect(posts).toHaveLength(0)
+  })
+
+  it('screen: the save message and the history item show the stored stock quantity exactly as the server sent it', async () => {
+    const server = fixture()
+    mount()
+    await fill()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    await waitFor(() => expect(server.posts).toHaveLength(1))
+    const id = server.receipts[0].acceptanceId
+    const saved = await screen.findByText(new RegExp(T.saved))
+    expect(saved.getAttribute('role')).toBe('status')
+    expect(within(saved).getByText(T.stockSummary('1.9')).getAttribute('data-stock-quantity')).toBe('snapshot')
+    const item = await screen.findByTestId(`goods-receipt-${id}`)
+    expect(within(item).getByText(T.stockSummary('1.9')).getAttribute('data-stock-quantity')).toBe('snapshot')
+    // The stored value is not reformatted, recomputed or converted: no padded or other-unit variant appears.
+    expect(screen.queryByText(T.stockSummary('1.900'))).toBeNull()
+    expect(screen.queryByText(T.stockSummaryLegacy)).toBeNull()
+  })
+
+  it('screen: an explicit null is shown as a legacy receipt in the save message and the history — never as zero', async () => {
+    const server = fixture(false, true)
+    mount()
+    await fill()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    await waitFor(() => expect(server.posts).toHaveLength(1))
+    const saved = await screen.findByText(new RegExp(T.saved))
+    expect(within(saved).getByText(T.stockSummaryLegacy).getAttribute('data-stock-quantity')).toBe('legacy')
+    const item = await screen.findByTestId(`goods-receipt-${server.receipts[0].acceptanceId}`)
+    expect(within(item).getByText(T.stockSummaryLegacy)).toBeTruthy()
+    expect(screen.queryByText(T.stockSummary('0'))).toBeNull()
+    expect(screen.queryByText(T.stockSummary('1.9'))).toBeNull()
   })
 })
