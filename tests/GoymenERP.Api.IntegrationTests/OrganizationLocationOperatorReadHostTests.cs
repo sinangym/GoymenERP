@@ -51,7 +51,49 @@ public sealed class OrganizationLocationOperatorReadHostTests
         Assert.Equal(OrganizationLocationOperatorReadOutcomeV1.Success, result.Outcome);
         Assert.Null(result.Resource!.Operator);
         Assert.Empty(owner.DisplayRequests);
-        Assert.Equal(1, organization.LocationReads);
+        Assert.Equal(2, organization.LocationReads);
+    }
+
+    [Fact]
+    public async Task Display_without_assignment_refuses_a_new_assignment_between_reads()
+    {
+        var organization = new StubOrganization(LocationRow(null), LocationRow(Party));
+        var owner = new StubOwner();
+
+        var result = await Host(organization, new StubLocationStatus(), owner).ReadDisplayAsync(Location);
+
+        Assert.Equal(OrganizationLocationOperatorReadOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Empty(owner.DisplayRequests);
+        Assert.Equal(2, organization.LocationReads);
+    }
+
+    [Fact]
+    public async Task Display_without_assignment_refuses_version_drift_between_reads()
+    {
+        var organization = new StubOrganization(LocationRow(null), LocationRow(null, 5));
+        var owner = new StubOwner();
+
+        var result = await Host(organization, new StubLocationStatus(), owner).ReadDisplayAsync(Location);
+
+        Assert.Equal(OrganizationLocationOperatorReadOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Empty(owner.DisplayRequests);
+        Assert.Equal(2, organization.LocationReads);
+    }
+
+    [Fact]
+    public async Task Display_without_assignment_maps_disappearance_between_reads_to_not_found()
+    {
+        var organization = new StubOrganization(LocationRow(null), null);
+        var owner = new StubOwner();
+
+        var result = await Host(organization, new StubLocationStatus(), owner).ReadDisplayAsync(Location);
+
+        Assert.Equal(OrganizationLocationOperatorReadOutcomeV1.NotFound, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Empty(owner.DisplayRequests);
+        Assert.Equal(2, organization.LocationReads);
     }
 
     [Theory]
@@ -149,16 +191,24 @@ public sealed class OrganizationLocationOperatorReadHostTests
         StubOwner owner) =>
         new(organization, status, owner, new CompanyContext(Company), new UserContext("actor-1", Company));
 
-    private static LocationSummary LocationRow(Guid? partyId) =>
-        new(Location, Guid.NewGuid(), "LOC-1", "Harici Depo", true, true, 4, partyId);
+    private static LocationSummary LocationRow(Guid? partyId, long version = 4) =>
+        new(Location, Guid.NewGuid(), "LOC-1", "Harici Depo", true, true, version, partyId);
 
-    private sealed class StubOrganization(LocationSummary? location) : IOrganizationService
+    private sealed class StubOrganization : IOrganizationService
     {
+        private readonly Queue<LocationSummary?> locations;
+
+        public StubOrganization(params LocationSummary?[] locations)
+        {
+            this.locations = new Queue<LocationSummary?>(locations);
+        }
+
         public int LocationReads { get; private set; }
 
         public Task<LocationSummary?> GetLocationAsync(Guid id, CancellationToken cancellationToken)
         {
             LocationReads++;
+            var location = locations.Count > 1 ? locations.Dequeue() : locations.Peek();
             return Task.FromResult(id == Location ? location : null);
         }
 

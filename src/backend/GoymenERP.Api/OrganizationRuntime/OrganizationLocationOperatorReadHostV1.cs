@@ -34,6 +34,17 @@ internal sealed class OrganizationLocationOperatorReadHostV1(
 
             if (before.OperatorPartyId is not { } partyId)
             {
+                var after = await organization.GetLocationAsync(locationId, cancellationToken);
+                if (after is null)
+                {
+                    return NotFound<OrganizationLocationOperatorContextV1>();
+                }
+
+                if (after.Version != before.Version || after.OperatorPartyId is not null)
+                {
+                    return Unavailable<OrganizationLocationOperatorContextV1>();
+                }
+
                 return Success(new OrganizationLocationOperatorContextV1(locationId, null));
             }
 
