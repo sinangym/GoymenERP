@@ -24,6 +24,13 @@ ACCEPTANCE_PATH = Path("docs/acceptance/ACCEPTANCE_70.md")
 SCREEN_CATALOG_PATH = Path("docs/ui/CANONICAL_SCREEN_STATUS.csv")
 
 DECISION_PATTERN = re.compile(r"\bDEC-[A-Z]+-[0-9]{3}\b")
+REGISTRY_PATTERN = re.compile(r"(?:DEC-[A-Z]+-[0-9]{3}|DELEGE-[0-9]{8}-[1-9][0-9]*)")
+DELEGATED_SOURCE_PATH = Path("docs/decisions/SINAN_KARARLARI_2026-10-21.md")
+EXPECTED_DELEGATED_COUNT = 96
+EXPECTED_DELEGATED_SOURCE_SHA256 = "acb180768b01402a520216564f7ef615077da6c45917e2034b054698fc7ed674"
+EXPECTED_REGISTRY_ROWS_SHA256 = "90742638160e681618ed4008d93f5ebbf4495e761078d54f66fe16818da2259c"
+EXPECTED_REGISTRY_ORDER_SHA256 = "6681913f63c339f913a6882a23d4d91440f67e3284ead64123f988ea6473e3cd"
+EXPECTED_DELEGATED_ORDER_SHA256 = "535081bccd044dfaa41a10cbcbb832811e10e9e1374a231eb38cba52069d282d"
 OPEN_PATTERN = re.compile(r"\bOPEN-[0-9]{3}\b")
 ACCEPTANCE_PATTERN = re.compile(r"\bAT-[0-9]{3}\b")
 
@@ -35,7 +42,7 @@ EXPECTED_DECISION_COUNT = 117
 EXPECTED_LOCKED_DECISION_COUNT = 114
 EXPECTED_TEMPORARY_DECISION_COUNT = 3
 EXPECTED_DECISION_ROWS_SHA256 = (
-    "af615a1f2b3d01e8b07c8d63643e52c3a6c452b1eea8e5c4aa4bedea62bac1c9"
+    "97be4cad7d4ffe9a4c5cebedf797c32a4fca6d983cee98831350c881ccf9a8d2"
 )
 EXPECTED_DECISION_ORDER_SHA256 = (
     "94c1b852e421288bb110f005bdf5e77a35046c3e9729f8eb6a044440d7da085f"
@@ -212,6 +219,8 @@ class BacklogStatistics(NamedTuple):
     acceptance_count: int
     screen_count: int
     manifest_task_count: int
+    registry_record_count: int
+    delegated_record_count: int
 
     @property
     def resolved_open_history_count(self) -> int:
@@ -274,6 +283,19 @@ def _load_json(path: Path, label: str, errors: list[str]) -> dict[str, Any] | No
     return value
 
 
+def _has_raw_markup(line: str) -> bool:
+    # Exact literal notation in the reviewed source; no general HTML exemption.
+    for literal in (
+        "fark < blok", "`DELEGE-20261021-<No>`", "`EK-38: <Karar>`",
+        "`Karar=<tam kalan metin>`",
+    ):
+        if literal.startswith("`"):
+            line = re.sub(r"(?<!`)" + re.escape(literal) + r"(?!`)", "", line)
+        else:
+            line = line.replace(literal, "")
+    return "<" in line
+
+
 def _is_in_inactive_markdown_context(lines: list[str], line_index: int) -> bool:
     fence_char: str | None = None
     fence_length = 0
@@ -283,7 +305,7 @@ def _is_in_inactive_markdown_context(lines: list[str], line_index: int) -> bool:
     # These two governance catalogs intentionally contain no raw HTML. Reject
     # every literal '<' before the canonical table, which fail-closes all
     # CommonMark raw HTML/comment block types without a partial HTML parser.
-    if any("<" in line for line in prefix):
+    if any(_has_raw_markup(line) for line in prefix):
         return True
     for line in prefix:
         if fence_char is not None:
@@ -333,7 +355,7 @@ def _extract_canonical_markdown_table(
     label: str,
     errors: list[str],
 ) -> tuple[list[list[str]], list[str]]:
-    raw_html_lines = [index + 1 for index, line in enumerate(lines) if "<" in line]
+    raw_html_lines = [index + 1 for index, line in enumerate(lines) if _has_raw_markup(line)]
     if raw_html_lines:
         errors.append(
             f"{label.capitalize()} raw HTML/comment markup is not allowed at lines "
@@ -422,7 +444,7 @@ def _read_markdown_decision_records(
         lines,
         header=DECISION_MARKDOWN_HEADER,
         separator=DECISION_MARKDOWN_SEPARATOR,
-        pattern=DECISION_PATTERN,
+        pattern=REGISTRY_PATTERN,
         expected_columns=len(DECISION_FIELDS),
         label="decision registry",
         errors=errors,
@@ -449,7 +471,7 @@ def _read_csv_decision_records(path: Path, errors: list[str]) -> list[dict[str, 
                 values = [(row.get(header) or "").strip() for header in DECISION_CSV_HEADERS]
                 if not any(values):
                     continue
-                if DECISION_PATTERN.fullmatch(values[0]) is None:
+                if REGISTRY_PATTERN.fullmatch(values[0]) is None:
                     errors.append(
                         f"Decision registry CSV row {row_number} has invalid id {values[0]!r}"
                     )
@@ -461,11 +483,76 @@ def _read_csv_decision_records(path: Path, errors: list[str]) -> list[dict[str, 
         return []
 
 
-def _read_decision_ids(path: Path, csv_path: Path, errors: list[str]) -> set[str]:
-    records, decision_rows = _read_markdown_decision_records(path, errors)
+def _read_delegated_source(path: Path, errors: list[str]) -> list[dict[str, str]]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        errors.append(f"Delegated decision source unavailable: {exc}")
+        return []
+    if hashlib.sha256(text.encode("utf-8")).hexdigest() != EXPECTED_DELEGATED_SOURCE_SHA256:
+        errors.append("Delegated decision source baseline hash drift")
+    section = text.partition("\n## 3.")[2].partition("\n## 4.")[0]
+    records = []
+    for line in section.splitlines():
+        if not line.startswith("| "):
+            continue
+        cells = [cell.strip() for cell in line.split("|")[1:-1]]
+        if not cells or re.fullmatch(r"[1-9][0-9]*", cells[0]) is None:
+            continue
+        number = cells[0]
+        if number == "133" and len(cells) == 2:
+            area, delimiter, decision = cells[1].partition(": ")
+            if area != "EK-38" or not delimiter or f"{area}: {decision}" != cells[1]:
+                errors.append("Delegated source No133 must have its lossless EK-38 form")
+                continue
+        elif len(cells) == 4:
+            area, decision = cells[1:3]
+        else:
+            errors.append(f"Delegated source No{number} has an invalid row shape")
+            continue
+        records.append(dict(zip(DECISION_FIELDS, (
+            f"DELEGE-20261021-{number}", area, decision, "GECICI_VARSAYIM", "-",
+            f"[2026-10-21 §3 No {number}](SINAN_KARARLARI_2026-10-21.md) + "
+            "[2026-10-22 uzlaştırması](SINAN_KARARLARI_2026-10-22.md)",
+            "Sinan Göymen",
+            "Kaynak kaydıdır; kullanıcı tarafından geri alınabilir ve geçicidir; "
+            "runtime/CI/grant/production kabulü değildir.",
+        ), strict=True)))
     ids = [record["id"] for record in records]
-    statuses = Counter(record["status"] for record in records)
-    _report_duplicate_ids(ids, "decision registry", errors)
+    _report_duplicate_ids(ids, "delegated source", errors)
+    if len(ids) != EXPECTED_DELEGATED_COUNT or hashlib.sha256(
+        "\n".join(ids).encode("utf-8")
+    ).hexdigest() != EXPECTED_DELEGATED_ORDER_SHA256:
+        errors.append("Delegated source exact identity/order baseline drift")
+    return records
+
+
+class DecisionCatalog(NamedTuple):
+    delivery_ids: set[str]
+    registry_count: int
+    delegated_count: int
+
+
+def _read_decision_ids(path: Path, csv_path: Path, errors: list[str]) -> DecisionCatalog:
+    records, decision_rows = _read_markdown_decision_records(path, errors)
+    all_ids = [record["id"] for record in records]
+    core = [record for record in records if DECISION_PATTERN.fullmatch(record["id"])]
+    delegated = [record for record in records if record not in core]
+    ids = [record["id"] for record in core]
+    statuses = Counter(record["status"] for record in core)
+    _report_duplicate_ids(all_ids, "decision registry", errors)
+    if EXPECTED_DELEGATED_COUNT:
+        source = _read_delegated_source(path.parents[2] / DELEGATED_SOURCE_PATH, errors)
+        if delegated != source:
+            errors.append("Delegated registry source/identity/order/status/field drift")
+        if all_ids != ids + [record["id"] for record in source]:
+            errors.append("Decision registry family order drift")
+        if hashlib.sha256("\n".join(sorted(decision_rows)).encode("utf-8")).hexdigest() != EXPECTED_REGISTRY_ROWS_SHA256:
+            errors.append("Combined registry row baseline hash drift")
+        if hashlib.sha256("\n".join(all_ids).encode("utf-8")).hexdigest() != EXPECTED_REGISTRY_ORDER_SHA256:
+            errors.append("Combined registry order baseline hash drift")
+    elif delegated:
+        errors.append("Unexpected delegated registry records")
     if len(ids) != EXPECTED_DECISION_COUNT:
         errors.append(
             f"Decision registry baseline drift: expected {EXPECTED_DECISION_COUNT}, got {len(ids)}"
@@ -486,7 +573,7 @@ def _read_decision_ids(path: Path, csv_path: Path, errors: list[str]) -> set[str
     if unexpected_statuses:
         errors.append(f"Decision registry has unsupported statuses: {', '.join(unexpected_statuses)}")
     rows_digest = hashlib.sha256(
-        "\n".join(sorted(decision_rows)).encode("utf-8")
+        "\n".join(sorted(row for row in decision_rows if row.startswith("| DEC-"))).encode("utf-8")
     ).hexdigest()
     if rows_digest != EXPECTED_DECISION_ROWS_SHA256:
         errors.append(
@@ -504,7 +591,7 @@ def _read_decision_ids(path: Path, csv_path: Path, errors: list[str]) -> set[str
     csv_records = _read_csv_decision_records(csv_path, errors)
     csv_ids = [record["id"] for record in csv_records]
     _report_duplicate_ids(csv_ids, "decision registry CSV", errors)
-    markdown_id_set = set(ids)
+    markdown_id_set = set(all_ids)
     csv_id_set = set(csv_ids)
     missing_in_csv = sorted(markdown_id_set - csv_id_set)
     extra_in_csv = sorted(csv_id_set - markdown_id_set)
@@ -513,7 +600,7 @@ def _read_decision_ids(path: Path, csv_path: Path, errors: list[str]) -> set[str
             "Decision registry Markdown/CSV id drift: "
             f"missing_in_csv={missing_in_csv}, extra_in_csv={extra_in_csv}"
         )
-    if ids != csv_ids:
+    if all_ids != csv_ids:
         errors.append("Decision registry Markdown/CSV row order drift")
 
     markdown_by_id: dict[str, dict[str, str]] = {}
@@ -533,7 +620,8 @@ def _read_decision_ids(path: Path, csv_path: Path, errors: list[str]) -> set[str
                 f"Decision registry Markdown/CSV semantic drift for {decision_id!r}: "
                 + ", ".join(mismatched_fields)
             )
-    return set(ids)
+    # Delegated source admission does not invent delivery mappings or task authority.
+    return DecisionCatalog(set(ids), len(all_ids), len(delegated))
 
 
 def _read_open_ids(path: Path, errors: list[str]) -> OpenDecisionCatalog:
@@ -788,11 +876,12 @@ def validate_repository_with_statistics(
                     f"Delivery backlog lane {lane_key!r} must have a non-empty trimmed description"
                 )
 
-    canonical_decisions = _read_decision_ids(
+    decision_catalog = _read_decision_ids(
         root / DECISION_REGISTRY_PATH,
         root / DECISION_REGISTRY_CSV_PATH,
         errors,
     )
+    canonical_decisions = decision_catalog.delivery_ids
     open_catalog = _read_open_ids(root / OPEN_DECISIONS_PATH, errors)
     canonical_open = open_catalog.active_ids
     canonical_resolved_open = open_catalog.resolved_ids
@@ -1237,6 +1326,8 @@ def validate_repository_with_statistics(
         acceptance_count=len(used_acceptance),
         screen_count=len(used_screens),
         manifest_task_count=manifest_slice_count,
+        registry_record_count=decision_catalog.registry_count,
+        delegated_record_count=decision_catalog.delegated_count,
     )
 
 
@@ -1268,6 +1359,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"- slices: {statistics.slice_count}")
     print(f"- dependency edges: {statistics.dependency_count}")
     print(f"- decisions covered: {statistics.decision_count}")
+    print(f"- registry source records: {statistics.registry_record_count}")
+    print(f"- provisional delegated source records: {statistics.delegated_record_count}")
     print(f"- open decisions covered: {statistics.open_count}")
     print(f"- resolved open history covered: {statistics.resolved_open_count}")
     print(f"- acceptance ids covered: {statistics.acceptance_count}")

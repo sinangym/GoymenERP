@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-DECISION_PATTERN = re.compile(r"DEC-[A-Z]+-[0-9]{3}")
+DECISION_PATTERN = re.compile(r"(?:DEC-[A-Z]+-[0-9]{3}|DELEGE-[0-9]{8}-[1-9][0-9]*)")
 OPEN_PATTERN = re.compile(r"OPEN-[0-9]{3}")
 DECISION_FIELDS = (
     "id",
@@ -114,13 +114,26 @@ def _duplicates(values: list[str]) -> list[str]:
     return sorted(value for value, count in Counter(values).items() if count > 1)
 
 
+def _contains_markup(line: str) -> bool:
+    # Only the reviewed literal notation is outside the raw-markup prohibition.
+    notation = ("`Karar=<tam kalan metin>`", "`EK-38: <Karar>`",
+                "`DELEGE-20261021-<No>`", "fark < blok")
+    remainder = line
+    for token in notation:
+        if token[0] == "`":
+            remainder = re.sub("(?<!`)" + re.escape(token) + "(?!`)", "", remainder)
+        else:
+            remainder = remainder.replace(token, "")
+    return "<" in remainder
+
+
 def _is_in_inactive_markdown_context(lines: list[str], line_index: int) -> bool:
     fence_char: str | None = None
     fence_length = 0
     opening_fence = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
     closing_fence = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
     prefix = lines[:line_index]
-    if any("<" in line for line in prefix):
+    if any(_contains_markup(line) for line in prefix):
         return True
     for line in prefix:
         if fence_char is not None:
@@ -169,7 +182,7 @@ def _read_active_markdown_table(
     expected_columns: int,
 ) -> tuple[list[list[str]], list[str]]:
     lines = path.read_text(encoding="utf-8").splitlines()
-    raw_html_lines = [index + 1 for index, line in enumerate(lines) if "<" in line]
+    raw_html_lines = [index + 1 for index, line in enumerate(lines) if _contains_markup(line)]
     if raw_html_lines:
         raise ValueError(
             f"{path} raw HTML/comment markup is not allowed at lines "
@@ -351,11 +364,59 @@ def _records_by_id(records: list[dict[str, str]]) -> dict[str, dict[str, str]]:
     return result
 
 
+def _delegation_source(root: Path) -> tuple[list[dict[str, str]], str]:
+    document = (root / "docs/decisions/SINAN_KARARLARI_2026-10-21.md").read_text(encoding="utf-8")
+    digest = _sha256(document.encode("utf-8"))
+    if digest != "acb180768b01402a520216564f7ef615077da6c45917e2034b054698fc7ed674":
+        raise ValueError("Delegation authority source digest changed")
+    start = document.index("\n## 3.")
+    end = document.index("\n## 4.", start)
+    parsed = []
+    for match in re.finditer(r"(?m)^\| ([1-9][0-9]*) \| (.+) \|$", document[start:end]):
+        number, tail = match.groups()
+        columns = tail.split(" | ")
+        if number == "133":
+            if len(columns) != 1 or not columns[0].startswith("EK-38: "):
+                raise ValueError("No133 delegation representation is not reversible")
+            area, decision = "EK-38", columns[0][7:]
+            if area + ": " + decision != columns[0]:
+                raise ValueError("No133 delegation normalization lost source bytes")
+        elif len(columns) == 3:
+            area, decision, _place = columns
+        else:
+            raise ValueError(f"Invalid delegated source row: {number}")
+        values = (
+            "DELEGE-20261021-" + number, area, decision, "GECICI_VARSAYIM", "-",
+            "[2026-10-21 §3 No " + number + "](SINAN_KARARLARI_2026-10-21.md) + "
+            "[2026-10-22 uzlaştırması](SINAN_KARARLARI_2026-10-22.md)",
+            "Sinan Göymen", "Kaynak kaydıdır; kullanıcı tarafından geri alınabilir ve geçicidir; "
+            "runtime/CI/grant/production kabulü değildir.",
+        )
+        parsed.append(dict(zip(DECISION_FIELDS, values, strict=True)))
+    ordered = [row["id"] for row in parsed]
+    if len(ordered) != 96 or _duplicates(ordered) or _sha256("\n".join(ordered).encode()) != (
+        "535081bccd044dfaa41a10cbcbb832811e10e9e1374a231eb38cba52069d282d"
+    ):
+        raise ValueError("Delegation source identity/order changed")
+    return parsed, digest
+
+
 def recompute(root: Path) -> dict[str, Any]:
     decision_md, decision_rows = _read_markdown_decisions(
         root / "docs/decisions/KARAR_SICILI.md"
     )
     decision_csv = _read_csv_decisions(root / "docs/decisions/KARAR_SICILI.csv")
+    source_delegations, delegation_digest = _delegation_source(root)
+    legacy_records = [row for row in decision_md if row["id"].startswith("DEC-")]
+    delegation_records = [row for row in decision_md if row["id"].startswith("DELEGE-")]
+    legacy_ids = [row["id"] for row in legacy_records]
+    legacy_rows = [row for row in decision_rows if row.startswith("| DEC-")]
+    reviewed_legacy = (
+        len(legacy_ids) == 117
+        and Counter(row["status"] for row in legacy_records) == {"KILITLI": 114, "GECICI_VARSAYIM": 3}
+        and _sha256(_canonical_row_bytes(legacy_rows)) == "97be4cad7d4ffe9a4c5cebedf797c32a4fca6d983cee98831350c881ccf9a8d2"
+        and _sha256("\n".join(legacy_ids).encode()) == "94c1b852e421288bb110f005bdf5e77a35046c3e9729f8eb6a044440d7da085f"
+    )
     open_ids, open_rows, open_statuses, active_open_ids, resolved_open_ids = _read_open_rows(
         root / "docs/decisions/ACIK_KARARLAR.md"
     )
@@ -409,6 +470,20 @@ def recompute(root: Path) -> dict[str, Any]:
 
     return {
         "sourceTree": "repository-root",
+        "legacyDecisionRegistry": {
+            "count": len(legacy_ids),
+            "orderedIds": legacy_ids,
+            "statusHistogram": dict(sorted(Counter(row["status"] for row in legacy_records).items())),
+            "canonicalRowsSha256": _sha256(_canonical_row_bytes(legacy_rows)),
+            "isReviewed": reviewed_legacy,
+        },
+        "delegatedSourceAdmission": {
+            "count": len(delegation_records),
+            "orderedIds": [row["id"] for row in delegation_records],
+            "sourceSha256": delegation_digest,
+            "isExact": delegation_records == source_delegations
+            and md_ids == legacy_ids + [row["id"] for row in source_delegations],
+        },
         "decisionRegistry": {
             "orderedIds": md_ids,
             "sortedUniqueIds": sorted(canonical_decisions),
@@ -474,8 +549,8 @@ def recompute(root: Path) -> dict[str, Any]:
             "usedDecisionIds": sorted(used_decisions),
             "usedActiveOpenIds": sorted(used_active_open),
             "usedResolvedOpenHistoryIds": sorted(used_resolved_open_history),
-            "missingDecisionIds": sorted(canonical_decisions - used_decisions),
-            "extraDecisionIds": sorted(used_decisions - canonical_decisions),
+            "missingDecisionIds": sorted(set(legacy_ids) - used_decisions),
+            "extraDecisionIds": sorted(used_decisions - set(legacy_ids)),
             "missingActiveOpenIds": sorted(active_open_ids - used_active_open),
             "extraActiveOpenIds": sorted(used_active_open - active_open_ids),
             "missingResolvedOpenHistoryIds": sorted(
@@ -514,6 +589,8 @@ def main(argv: list[str] | None = None) -> int:
     _write_utf8(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     assertions_hold = (
         result["decisionRegistryParity"]["isExact"]
+        and result["legacyDecisionRegistry"]["isReviewed"]
+        and result["delegatedSourceAdmission"]["isExact"]
         and not result["decisionRoundParity"]["missingInMarkdown"]
         and not result["decisionRoundParity"]["missingInCsv"]
         and not result["decisionRoundParity"]["semanticMismatches"]
