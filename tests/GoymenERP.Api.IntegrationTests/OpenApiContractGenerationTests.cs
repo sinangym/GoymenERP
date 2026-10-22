@@ -2127,12 +2127,12 @@ public sealed partial class OpenApiContractGenerationTests
             ["SetOrganizationLocationOperatorV1:503"] =
                 [OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable],
             ["GetOrganizationLocationOperatorV1:503"] =
-                [OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable],
+                ["service_unavailable"],
             ["GetOrganizationLocationOperatorCandidatesV1:400"] =
                 [OrganizationLocationOperatorReadCodesV1.InvalidCursor,
                     OrganizationLocationOperatorReadCodesV1.ValidationFailed],
             ["GetOrganizationLocationOperatorCandidatesV1:503"] =
-                [OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable],
+                ["service_unavailable"],
             ["CreateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             ["UpdateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             ["CreateOrganizationLocationV1:422"] = [OrganizationProblemCodesV1.CodeInUse],

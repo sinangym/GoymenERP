@@ -2,6 +2,8 @@ using System.Net;
 using System.Text.Json;
 using GoymenERP.Api.OrganizationRuntime;
 using GoymenERP.Api.Shell;
+using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Organization.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,11 +62,11 @@ public sealed class OrganizationLocationOperatorReadHttpAcceptanceTests(GoymenEr
     [Theory]
     [InlineData("display", (int)OrganizationLocationOperatorReadOutcomeV1.NotFound, 404, null)]
     [InlineData("display", (int)OrganizationLocationOperatorReadOutcomeV1.Unavailable, 503,
-        "organization_location_operator_dependency_unavailable")]
+        "service_unavailable")]
     [InlineData("candidates", (int)OrganizationLocationOperatorReadOutcomeV1.NotFound, 404, null)]
     [InlineData("candidates", (int)OrganizationLocationOperatorReadOutcomeV1.InvalidCursor, 400, "invalid_cursor")]
     [InlineData("candidates", (int)OrganizationLocationOperatorReadOutcomeV1.Unavailable, 503,
-        "organization_location_operator_dependency_unavailable")]
+        "service_unavailable")]
     public async Task Closed_host_outcomes_have_the_frozen_HTTP_mapping(
         string route,
         int outcome,
@@ -127,7 +129,7 @@ public sealed class OrganizationLocationOperatorReadHttpAcceptanceTests(GoymenEr
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        Assert.Equal("organization_location_operator_dependency_unavailable",
+        Assert.Equal("service_unavailable",
             body.RootElement.GetProperty("code").GetString());
         Assert.Empty(host.CandidateCalls);
     }
@@ -139,6 +141,8 @@ public sealed class OrganizationLocationOperatorReadHttpAcceptanceTests(GoymenEr
             services.AddSingleton<IOrganizationLocationOperatorReadHostV1>(host);
             services.RemoveAll<IActorSessionBindingResolver>();
             services.AddSingleton<IActorSessionBindingResolver>(new StubSession(sessionBinding));
+            services.RemoveAll<IErpAuthorizationService>();
+            services.AddSingleton<IErpAuthorizationService>(new ControlledAuthority());
         }));
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> application)
@@ -160,6 +164,55 @@ public sealed class OrganizationLocationOperatorReadHttpAcceptanceTests(GoymenEr
     {
         public Task<string?> ResolveAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(value);
+    }
+
+    private sealed class ControlledAuthority : IErpAuthorizationService
+    {
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(
+            Guid companyId,
+            IReadOnlyCollection<string> permissions,
+            CancellationToken cancellationToken = default)
+        {
+            var allowedCompanyIds = companyId == TestCompanyIds.CompanyA
+                ? new HashSet<Guid> { companyId }
+                : [];
+            return Task.FromResult(new AuthorizationSnapshot(
+                "controlled-location-operator-http",
+                allowedCompanyIds,
+                permissions.ToDictionary(
+                    permission => permission,
+                    permission => Scope(permission, companyId))));
+        }
+
+        public Task<bool> HasPermissionAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scope(permission, companyId).IsGranted);
+
+        public Task<PermissionScope> GetPermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Scope(permission, companyId));
+
+        private static PermissionScope Scope(string permission, Guid companyId)
+        {
+            if (companyId != TestCompanyIds.CompanyA
+                || permission != ErpPermissions.OrganizationLocationsRead
+                && permission != OrganizationPermissionManifestV1.LocationsWrite)
+            {
+                return PermissionScope.Denied;
+            }
+
+            return new PermissionScope(
+                true,
+                true,
+                new HashSet<string>(),
+                new HashSet<Guid>(),
+                new HashSet<Guid>(),
+                new HashSet<Guid>());
+        }
     }
 
     private sealed class StubHost : IOrganizationLocationOperatorReadHostV1

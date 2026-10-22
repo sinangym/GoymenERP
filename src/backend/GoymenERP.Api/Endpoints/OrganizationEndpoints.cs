@@ -112,7 +112,7 @@ public static class OrganizationEndpoints
             .Produces<OrganizationLocationOperatorContextV1>(StatusCodes.Status200OK)
             .ProducesErpBadRequest()
             .ProducesErpCodeLessNotFound()
-            .ProducesErpServiceUnavailable(OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable)
+            .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
         group.MapGet("/locations/{id:guid}/operator-candidates", async (
@@ -175,7 +175,7 @@ public static class OrganizationEndpoints
                 OrganizationLocationOperatorReadCodesV1.ValidationFailed,
                 OrganizationLocationOperatorReadCodesV1.InvalidCursor)
             .ProducesErpCodeLessNotFound()
-            .ProducesErpServiceUnavailable(OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable)
+            .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
         group.MapPut("/locations/{id:guid}/active-state", async (
@@ -702,14 +702,7 @@ public static class OrganizationEndpoints
             extensions: new Dictionary<string, object?> { ["code"] = code });
 
     private static IResult LocationOperatorUnavailable() =>
-        Results.Problem(
-            title: "Lokasyon operatörü bilgisi kullanılamıyor.",
-            detail: "Cari operatör kaynağı şu anda güvenli bir yanıt üretemiyor.",
-            statusCode: StatusCodes.Status503ServiceUnavailable,
-            extensions: new Dictionary<string, object?>
-            {
-                ["code"] = OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable,
-            });
+        Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
 
     private static void SetPrivateNoStore(IHeaderDictionary headers)
     {
