@@ -91,7 +91,11 @@ jobs:
           }
 
           New-Item -ItemType Directory -Path $env:C006_EVIDENCE_ROOT -Force | Out-Null
-          $evidenceRoot = (Resolve-Path -LiteralPath $env:C006_EVIDENCE_ROOT).Path.TrimEnd('\')
+          $evidenceRootInfo = Get-Item -LiteralPath $env:C006_EVIDENCE_ROOT -Force
+          if (($evidenceRootInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "C006 evidence root is a reparse point: $($evidenceRootInfo.FullName)"
+          }
+          $evidenceRoot = $evidenceRootInfo.FullName.TrimEnd('\')
           $rootPrefix = "$evidenceRoot\"
           $sha7 = $commitSha.Substring(0, 7)
           $directoryName = "gh-$($env:C006_WORKFLOW)-$($env:GITHUB_RUN_ID)-$runAttempt-$sha7"
