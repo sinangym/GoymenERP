@@ -32,7 +32,7 @@ P0/P1 bulunmaması şartlarıyla koordinatör merge edebilir. Bu yetki otomatik 
 | K3'te de aynı | **Değişmez:** K3'te delta review uygulanmaz; her yeni head için iki bağımsız tam exact-head review yeniden alınır. Review dondurma (aynı anda tek aday head) K3'te de uygulanır. |
 | NEEDS-SINAN → bekleme | **P8 delegasyonu** (`SINAN_KARARLARI_2026-10-21.md` §1): bir karardan veya P1–P7'den doğrudan türeyen soruyu koordinatör `DELEGE-*` olarak cevaplar (GECICI_VARSAYIM; registry v1 değeri; Sinan geri alabilir), devam eder; sicile KILITLI yalnız Sinan'ın açık onayıyla — sessizlik onay değildir. Politika/`OPEN-*` sorusu `NEEDS-SINAN` kalır, haftalık listede Sinan'a gider. |
 | Hosted CI / bütçe tartışması | `CI_SIFIR_MALIYET_MODELI_20261021.md`: self-hosted, artifact/cache yok, bütçe `$0`. `.github/**` PR'ında Sinan `MERGE-OK` aranmaz; koordinatör iki bağımsız exact-head review'un bütün `runs-on` değerlerinin self-hosted kaldığını, hosted fallback ile artifact/cache/Packages/secret/environment/deploy yüzeyi açılmadığını doğrulamasından sonra merge edebilir. |
-| Her komut için izin onayı | Repo `.claude/settings.json` izin listesi (Ek A; koordinatör ayrı dar PR ile ekler); cloud oturumlarında Auto modu. |
+| Her komut için izin onayı | Repo `.claude/settings.json` izin listesi (Ek A; koordinatör ayrı dar PR ile hazırlar); bu dosyanın PR'ı genel koordinatör merge yetkisinin dar istisnasıdır ve Sinan'ın Issue #66'daki açık tek satırlık onayı olmadan merge edilmez. Cloud oturumlarında Auto modu kullanıcı seçimi olarak kalır. |
 
 ## 2. Dur koşulları (değişmedi, 3 tane)
 
@@ -77,7 +77,13 @@ yoktur:
 > bağımsız review" şartını sağlar. Çelişkide v4 süreç tarafında, v2/v3 güvenlik tarafında
 > üstündür.
 
-## Ek A — `.claude/settings.json` önerilen izin listesi (koordinatör ayrı PR ile ekler)
+## Ek A — `.claude/settings.json` önerilen izin listesi
+
+Koordinatör bu listeyi ayrı dar PR ile hazırlayabilir; PR'ın merge'i için iki bağımsız
+exact-head review ve P0/P1=0 kapılarına ek olarak Sinan'ın Issue #66'da açık tek satırlık
+onayı gerekir. Bu, 22 Ekim genel `.claude/**` koordinatör merge yetkisinin dar
+`.claude/settings.json` istisnasıdır. `config.toml`, Power modu ve Settings → Actions
+aktivasyonu kullanıcı kapısında kalır; bu ek onların yetkisini değiştirmez.
 
 Claude Code'un ajan oturumlarında her komut için izin sormasını keser. Cloud oturumlarında
 ayrıca mod menüsünden **Auto** seçilir.

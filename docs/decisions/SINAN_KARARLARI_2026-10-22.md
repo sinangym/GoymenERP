@@ -14,6 +14,10 @@ Kaynakların üçü de `sinangym` hesabından 22 Ekim 2026 tarihinde yayımlanm�
 - `AGENTS.md`, `docs/governance/**`, `docs/decisions/**`, `.claude/**` ve `.github/**` kalite
   kapısı değişikliklerini koordinatör merge edebilir; Sinan'ın tıklaması veya `MERGE-OK`
   makbuzu aranmaz. Bu yetki otomatik merge değildir.
+- **Dar istisna — `.claude/settings.json`:** 2026-10-22 doğrudan kullanıcı eki r2 §0/E7
+  uyarınca bu dosyayı değiştiren PR, aşağıdaki review kapılarına ek olarak Sinan'ın Issue
+  #66'da vereceği açık tek satırlık onayı gerektirir. Genel `.claude/**` koordinatör merge
+  yetkisi bu özel dosya için insan onayının yerine geçmez.
 - Yazar koordinatör olamaz. Aday exact head'de iki bağımsız review ve açık P0/P1 bulunmaması
   zorunludur.
 - Yalnız doküman/governance/karar/ayar dosyası değiştiren PR'da CI koşumu zorunlu değildir;
@@ -53,8 +57,10 @@ Kaynakların üçü de `sinangym` hesabından 22 Ekim 2026 tarihinde yayımlanm�
 
 Production aktivasyonu, deployment, environment, secret, gerçek provider, gerçek grant/rol,
 `Critical` sınıflaması, Settings → Actions workflow aktivasyonu, bütçe/ücretli hizmet ve
-`OPEN-*` kapatma somut kullanıcı kararında kalır. Bu belge permission adı, persona, model,
-tool, işletme formülü, tolerans, tutar veya saklama politikası üretmez.
+`OPEN-*` kapatma somut kullanıcı kararında kalır. `.claude/settings.json` PR'ı
+Sinan'ın Issue #66'da vereceği açık tek satırlık onayı gerektirir; `config.toml`, Power modu
+ve Settings → Actions aktivasyonu da kullanıcı kapısında kalır. Bu belge permission adı, persona, model, tool,
+işletme formülü, tolerans, tutar veya saklama politikası üretmez.
 
 ## 4. Sicil ve açık karar etkisi
 
