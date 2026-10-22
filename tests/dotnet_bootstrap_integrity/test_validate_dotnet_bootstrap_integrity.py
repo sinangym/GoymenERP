@@ -1055,25 +1055,25 @@ class WorkflowOrderingTests(unittest.TestCase):
 
     def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
         expected_job_fingerprints = {
-            "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
-            "backend-test-group": "4138b2c1aa82cb51ccbaf6cbe3a42a54416a93b61b598ca776a0a9207272be58",
+            "backend-build": "641b61cfa11ebac1105f1e259c12e5d053c16027c83a0a94c7f972a068679f66",
+            "backend-test-group": "3566ea60fc73bd77bc94bd4efbaafd9c6b50dea6b65ab9ce93751faf8edb79a7",
             "backend": (
-                "05bb62fbf78799a5700b3f0ba221b307cd9cd9908399641c151ed157362a0172"
+                "234a8fb95d086d8c8e4a5981ad6d3f92adbdbfa4a900e8ea2e0fb34826afc6f7"
             ),
             "frontend": (
-                "35f367ca26c395da8b82562519f4532ed750792a453d5840584ec082917f0895"
+                "e9c3e81fab8292129ef6889eab3cc426dece83c2d5f40acbf8e78d1a91a48b6f"
             ),
             "relational-shard": (
-                "83e78c46fff384d3d3f42f75d5fe42ac06a8c59387b84d7e5c1532228c7aacb6"
+                "47327ffd439f6308051591a7feb4dc1c3d1893fa4e997491a9518bbcd76cab79"
             ),
             "relational-rcsi": (
-                "54511265ef8c5306a868e698b9aacaffa784a8e8c8e7540366c532eb8425af77"
+                "146acd198b1bf61ba9314a5ab675033972ddbba8801570b62c9613f1a5ef5bb7"
             ),
             "relational": (
-                "0e13b8a66d7f02d8e5ea545d028ea37daffe5a5d5d31bbc4be6b4ff67dd47412"
+                "cca5d1491c5951a2ebe2adf7580a424dea027ae0e7d102c84a5c3c53a7cd7d63"
             ),
             "contract-drift": (
-                "067e1d19ce60a40f11e34e4dba7bae591e33c3ef06d271a8a557ca9226fffcea"
+                "9411969b92693589ca31561dff55eefeff4eeed2332355e4b68a92b08dfad494"
             ),
         }
 
@@ -1156,7 +1156,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", build, re.M),
             ["    name: Backend full build, vulnerability and migrations",
-             "    runs-on: ubuntu-latest", "    steps:"],
+             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    steps:"],
         )
         self.assertIn("dotnet build GoymenERP.slnx -noAutoResponse", build)
         self.assertIn(
@@ -1176,7 +1176,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", worker, re.M),
             ["    name: Backend test group (${{ matrix.group }})",
-             "    runs-on: ubuntu-latest", "    strategy:", "    steps:"],
+             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    strategy:", "    steps:"],
         )
         self.assertIn(
             "    strategy:\n      fail-fast: false\n      matrix:\n"
@@ -1210,23 +1210,20 @@ class WorkflowOrderingTests(unittest.TestCase):
                 '--tested-commit "$(git rev-parse HEAD)"',
             ],
         )
-        self.assertEqual(
-            self.read_step_lines(self.step_body(worker, "Upload exact backend group proof")),
-            [
-                "uses: actions/upload-artifact@v7",
-                "with:",
-                f"name: ci-backend-test-group-proof-{group_ref}",
-                f"path: artifacts/ci-backend-group-proofs/proof-{group_ref}.json",
-                "if-no-files-found: error",
-                "retention-days: 7",
-            ],
+        local_backend_proof = self.step_body(worker, "Preserve exact backend group proof locally")
+        self.assertIn("shell: bash", local_backend_proof)
+        self.assertIn(f"LOCAL_EVIDENCE_SCOPE: backend-proof-{group_ref}", local_backend_proof)
+        self.assertIn(
+            f"LOCAL_EVIDENCE_FILE: artifacts/ci-backend-group-proofs/proof-{group_ref}.json",
+            local_backend_proof,
         )
+        self.assertIn("run: *publish-local-evidence", local_backend_proof)
         self.assertEqual(
             re.findall(r"^    \S.*$", aggregate, re.M),
             ["    name: Backend build, test and migration",
              "    needs: [backend-build, backend-test-group]",
              "    if: ${{ always() }}",
-             "    runs-on: ubuntu-latest", "    steps:"],
+             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    steps:"],
         )
         self.assertNotIn("continue-on-error:", aggregate)
         self.assertNotIn("dotnet ", aggregate)
@@ -1234,7 +1231,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             re.findall(r"^      - name: (.+)$", aggregate, re.M),
             [
                 "Verify backend group proof parser",
-                "Download exact backend group proofs",
+                "Restore exact backend group proofs from local evidence",
                 "Verify complete backend build and test groups",
             ],
         )
@@ -1248,17 +1245,18 @@ class WorkflowOrderingTests(unittest.TestCase):
                 '-s tests/backend_test_group_verifier -p "test_*.py" -v',
             ],
         )
-        self.assertEqual(
-            self.read_step_lines(
-                self.step_body(aggregate, "Download exact backend group proofs")
-            ),
-            [
-                "uses: actions/download-artifact@v8",
-                "with:",
-                "pattern: ci-backend-test-group-proof-*",
-                "path: artifacts/ci-backend-group-proofs",
-            ],
+        local_backend_restore = self.step_body(
+            aggregate, "Restore exact backend group proofs from local evidence"
         )
+        for required in (
+            "LOCAL_PROOF_IDS: api,architecture,modules",
+            "LOCAL_PROOF_SCOPE_PREFIX: backend-proof-",
+            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-proof-",
+            "runnerName=$RUNNER_NAME",
+            "sha256sum",
+            "run: &restore-local-proofs |",
+        ):
+            self.assertIn(required, local_backend_restore)
         self.assertEqual(
             self.read_step_lines(
                 self.step_body(aggregate, "Verify complete backend build and test groups")
@@ -1405,7 +1403,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "    name: SQL Server relational acceptance",
                 "    needs: [relational-shard, relational-rcsi]",
                 "    if: ${{ always() }}",
-                "    runs-on: ubuntu-latest",
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]",
                 "    steps:",
             ],
         )
@@ -1416,7 +1414,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             re.findall(r"^      - name: (.+)$", aggregate, re.M),
             [
                 "Verify relational shard proof parser",
-                "Download exact SQL shard proofs",
+                "Restore exact SQL shard proofs from local evidence",
                 "Verify complete SQL Server relational acceptance",
             ],
         )
@@ -1430,17 +1428,17 @@ class WorkflowOrderingTests(unittest.TestCase):
                 '-s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v',
             ],
         )
-        self.assertEqual(
-            self.read_step_lines(
-                self.step_body(aggregate, "Download exact SQL shard proofs")
-            ),
-            [
-                "uses: actions/download-artifact@v8",
-                "with:",
-                "pattern: ci-relational-shard-proof-*",
-                "path: artifacts/ci-relational-proofs",
-            ],
+        local_sql_restore = self.step_body(
+            aggregate, "Restore exact SQL shard proofs from local evidence"
         )
+        for required in (
+            "LOCAL_PROOF_IDS: A,B,C",
+            "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
+            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
+            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
+            "run: *restore-local-proofs",
+        ):
+            self.assertIn(required, local_sql_restore)
         self.assertEqual(
             self.read_step_lines(
                 self.step_body(
@@ -1537,7 +1535,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                         self.assert_relational_execution_and_aggregate_boundaries()
 
         aggregate = self.job_body("relational")
-        download_marker = "      - name: Download exact SQL shard proofs\n"
+        download_marker = "      - name: Restore exact SQL shard proofs from local evidence\n"
         verify_marker = "      - name: Verify complete SQL Server relational acceptance\n"
         prefix, remainder = aggregate.split(download_marker, 1)
         download, verify = remainder.split(verify_marker, 1)
@@ -1570,7 +1568,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "      - frontend\n"
                 "      - relational\n"
                 "      - contract-drift\n"
-                "    runs-on: ubuntu-latest\n"
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
                 "    env:\n"
                 "      MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!\n"
                 "    steps:\n"
@@ -1602,7 +1600,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "    name: Container build",
                 "    needs:",
-                "    runs-on: ubuntu-latest",
+                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]",
                 "    env:",
                 "    steps:",
             ],
