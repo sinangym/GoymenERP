@@ -6756,17 +6756,22 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         {
             "- name: Preserve exact SQL shard proof locally",
             "shell: bash",
+            "env:",
             "LOCAL_EVIDENCE_SCOPE: relational-proof-${{ matrix.shard }}",
             "LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
             "run: *publish-local-evidence",
         };
         var expectedProofDownloadStepLines = new[]
         {
             "- name: Restore exact SQL shard proofs from local evidence",
             "shell: bash",
+            "env:",
+            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
             "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
             "LOCAL_PROOF_IDS: A,B,C",
             "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
+            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
             "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
             "run: *restore-local-proofs",
         };
@@ -6786,15 +6791,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 expectedRcsiStepLines, StringComparer.Ordinal)
             || !ReadActiveYamlLines(aggregateStep).SequenceEqual(
                 expectedAggregateStepLines, StringComparer.Ordinal)
-            || !expectedProofUploadStepLines.All(expectedLine =>
-                ReadActiveYamlLines(proofUploadStep).Contains(
-                    expectedLine, StringComparer.Ordinal))
-            || !expectedProofDownloadStepLines.All(expectedLine =>
-                ReadActiveYamlLines(proofDownloadStep).Contains(
-                    expectedLine, StringComparer.Ordinal))
+            || !ReadActiveYamlLines(proofUploadStep).SequenceEqual(
+                expectedProofUploadStepLines, StringComparer.Ordinal)
+            || !ReadActiveYamlLines(proofDownloadStep).SequenceEqual(
+                expectedProofDownloadStepLines, StringComparer.Ordinal)
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(shardStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(rcsiStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(aggregateStep))
+            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(proofUploadStep))
+            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(proofDownloadStep))
             || aggregateLines.Count(line => line.StartsWith("if:", StringComparison.Ordinal)) != 1
             || aggregateLines.Any(line => line.StartsWith("continue-on-error:", StringComparison.Ordinal)))
         {

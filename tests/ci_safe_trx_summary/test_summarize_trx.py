@@ -910,7 +910,9 @@ class SafeTrxSummaryTests(unittest.TestCase):
                     self.assertIn("run: &publish-local-evidence |", local_step)
                     for required in (
                         'tested="$(git rev-parse HEAD)"',
-                        'testedCommit=%s',
+                        "printf 'schemaVersion=1\\nworkflow=ci\\nscope=%s\\nrunId=%s\\n"
+                        "runAttempt=%s\\nsourceHead=%s\\ntestedCommit=%s\\nrunnerName=%s\\n"
+                        "file=%s\\nbytes=%s\\nsha256=%s\\n' \\",
                         'mv -T --no-clobber -- "$temporary" "$destination"',
                         'if [[ "$lock_acquired" = true ]]',
                         'test ! -e "$temporary"',
