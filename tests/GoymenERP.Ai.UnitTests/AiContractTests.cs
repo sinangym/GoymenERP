@@ -202,9 +202,9 @@ public sealed class AiContractTests
     {
         var request = Request();
         var unknown = new AiCommandResultV1(AiCommandOutcomeV1.Unknown);
-        Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request).Outcome);
+        Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request).ReadFor(request).Outcome);
         Assert.Equal(AiCommandOutcomeV1.Unknown,
-            new AiOwnerLookupResultV1(request, new AiOwnerRecordedResultV1(request, SyntheticBinding(request), unknown)).Outcome);
+            new AiOwnerLookupResultV1(request, new AiOwnerRecordedResultV1(request, SyntheticBinding(request), unknown)).ReadFor(request).Outcome);
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.NotRecorded));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Unknown, resultVersion: "v1"));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Unknown, isReplay: true));
@@ -225,15 +225,15 @@ public sealed class AiContractTests
         foreach (var result in results)
         {
             var envelope = new AiOwnerRecordedResultV1(request, SyntheticBinding(request), result);
-            var lookup = new AiOwnerLookupResultV1(request, envelope);
+            var lookup = new AiOwnerLookupResultV1(request, envelope).ReadFor(request);
             Assert.Equal(result.Outcome, lookup.Outcome);
-            Assert.Same(envelope, lookup.RecordedResult);
-            var captured = Assert.IsType<AiOwnerRecordedResultV1>(lookup.RecordedResult);
+            var captured = Assert.IsType<AiOwnerRecordedResultViewV1>(lookup.RecordedResult);
+            Assert.Same(result, captured.Result);
             Assert.Equal(result.ResultVersion, captured.Result.ResultVersion);
             Assert.Equal(result.RefusalCode, captured.Result.RefusalCode);
             Assert.Equal(result.IsReplay, captured.Result.IsReplay);
-            Assert.Equal(request.RequestIdentityJson, envelope.Binding.RequestIdentityJson);
-            Assert.Equal(request.CommandContext.IdempotencyKey, envelope.Binding.IdempotencyKey);
+            Assert.Equal(request.RequestIdentityJson, captured.Binding.RequestIdentityJson);
+            Assert.Equal(request.CommandContext.IdempotencyKey, captured.Binding.IdempotencyKey);
         }
     }
 
@@ -263,7 +263,7 @@ public sealed class AiContractTests
         };
         foreach (var result in results)
         {
-            var response = new AiOwnerRecordedResultV1(request, binding, result);
+            var response = new AiOwnerRecordedResultV1(request, binding, result).ReadFor(request);
             Assert.Same(binding, response.Binding);
             Assert.Same(result, response.Result);
             Assert.Equal(request.RequestIdentityJson, response.Binding.RequestIdentityJson);
@@ -272,6 +272,78 @@ public sealed class AiContractTests
         Assert.Throws<ArgumentNullException>(() => new AiOwnerRecordedResultV1(null!, binding, results[0]));
         Assert.Throws<ArgumentNullException>(() => new AiOwnerRecordedResultV1(request, null!, results[0]));
         Assert.Throws<ArgumentNullException>(() => new AiOwnerRecordedResultV1(request, binding, null!));
+    }
+
+    [Fact]
+    public async Task A_preexisting_B_execute_response_returned_for_A_cannot_be_consumed_by_A()
+    {
+        var requestB = Request(context: Context() with { ActorId = "actor-B" });
+        var cachedB = new AiOwnerRecordedResultV1(requestB, SyntheticBinding(requestB),
+            new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-B-version"));
+        var faultyCache = new AdversarialCachedResponses(cachedB, new AiOwnerLookupResultV1(requestB, cachedB));
+        // B is valid and cached BEFORE the actual A call. No constructor is invoked for A by the test double.
+        var requestA = Request();
+        var returned = await faultyCache.ExecuteAsync(requestA);
+        Assert.Same(cachedB, returned);
+        Assert.Throws<ArgumentException>(() => returned.ReadFor(requestA));
+        Assert.Throws<ArgumentNullException>(() => returned.ReadFor(null!));
+        Assert.Equal("{}", JsonSerializer.Serialize(returned)); // No raw payload OR full-binding property escape.
+        var reopenedB = Request(context: Context() with { ActorId = "actor-B" });
+        Assert.NotSame(requestB, reopenedB);
+        Assert.Equal("SENTETIK-B-version", returned.ReadFor(reopenedB).Result.ResultVersion);
+    }
+
+    [Fact]
+    public async Task A_matching_cached_execute_response_can_be_consumed_after_equivalent_request_reopen()
+    {
+        var requestA = Request();
+        var result = new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-A-version", isReplay: true);
+        var cachedA = new AiOwnerRecordedResultV1(requestA, SyntheticBinding(requestA), result);
+        var cache = new AdversarialCachedResponses(cachedA, new AiOwnerLookupResultV1(requestA, cachedA));
+        var reopenedA = Request();
+        Assert.NotSame(requestA, reopenedA);
+        var response = await cache.ExecuteAsync(reopenedA);
+        var view = response.ReadFor(reopenedA);
+        Assert.Same(result, view.Result);
+        Assert.True(view.Result.IsReplay);
+        Assert.Equal(requestA.RequestIdentityJson, view.Binding.RequestIdentityJson);
+        Assert.Equal(AiCommandOutcomeV1.Applied, (await cache.FindResultAsync(reopenedA)).ReadFor(reopenedA).Outcome);
+    }
+
+    [Fact]
+    public async Task Cached_B_lookup_cannot_disclose_recorded_no_effect_or_unknown_state_to_A()
+    {
+        var requestB = Request(context: Context() with { ActorId = "actor-B" });
+        var bindingB = SyntheticBinding(requestB);
+        var recordedB = new AiOwnerRecordedResultV1(requestB, bindingB,
+            new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-B-version"));
+        var cases = new (AiOwnerLookupResultV1 Envelope, AiCommandOutcomeV1 Outcome)[]
+        {
+            (new(requestB, recordedB), AiCommandOutcomeV1.Applied),
+            (new(requestB, definitiveNoEffect: SyntheticDefinitiveNoEffect(bindingB)), AiCommandOutcomeV1.NotRecorded),
+            (new(requestB), AiCommandOutcomeV1.Unknown),
+            (new(requestB, observation: new AiOwnerLookupObservationV1(bindingB, AiOwnerObservationStateV1.InFlight)),
+                AiCommandOutcomeV1.Unknown),
+        };
+        // Every cached response is a valid B response constructed before A is passed to the port.
+        var requestA = Request();
+        foreach (var (cached, expected) in cases)
+        {
+            var faultyCache = new AdversarialCachedResponses(recordedB, cached);
+            var returned = await faultyCache.FindResultAsync(requestA);
+            Assert.Same(cached, returned);
+            Assert.Throws<ArgumentException>(() => returned.ReadFor(requestA));
+            Assert.Throws<ArgumentNullException>(() => returned.ReadFor(null!));
+            Assert.Equal("{}", JsonSerializer.Serialize(returned));
+            var reopenedB = Request(context: Context() with { ActorId = "actor-B" });
+            Assert.NotSame(requestB, reopenedB);
+            var matched = returned.ReadFor(reopenedB);
+            Assert.Equal(expected, matched.Outcome);
+            if (expected == AiCommandOutcomeV1.NotRecorded)
+                Assert.Same(bindingB, Assert.IsType<AiOwnerDefinitiveNoEffectEvidenceV1>(matched.DefinitiveNoEffect).Binding);
+            if (expected == AiCommandOutcomeV1.Applied)
+                Assert.Equal("SENTETIK-B-version", Assert.IsType<AiOwnerRecordedResultViewV1>(matched.RecordedResult).Result.ResultVersion);
+        }
     }
 
     [Fact]
@@ -343,7 +415,7 @@ public sealed class AiContractTests
     {
         var request = Request();
         var observation = new AiOwnerLookupObservationV1(SyntheticBinding(request, observed: Created.AddDays(7)), state);
-        var lookup = new AiOwnerLookupResultV1(request, observation: observation);
+        var lookup = new AiOwnerLookupResultV1(request, observation: observation).ReadFor(request);
         Assert.Equal(AiCommandOutcomeV1.Unknown, lookup.Outcome);
         Assert.Null(lookup.RecordedResult);
         Assert.Null(lookup.DefinitiveNoEffect);
@@ -357,7 +429,7 @@ public sealed class AiContractTests
         var request = Request();
         // SENTETIK: a typed owner conclusion, not fabricated evidence that a real command was queried.
         var finality = SyntheticDefinitiveNoEffect(SyntheticBinding(request));
-        var lookup = new AiOwnerLookupResultV1(request, definitiveNoEffect: finality);
+        var lookup = new AiOwnerLookupResultV1(request, definitiveNoEffect: finality).ReadFor(request);
         Assert.Equal(AiCommandOutcomeV1.NotRecorded, lookup.Outcome);
         Assert.Same(finality, lookup.DefinitiveNoEffect);
         Assert.Null(lookup.RecordedResult); Assert.Null(lookup.Observation);
@@ -377,12 +449,12 @@ public sealed class AiContractTests
     {
         var request = Request();
         var absent = new AiOwnerLookupObservationV1(SyntheticBinding(request), AiOwnerObservationStateV1.Absent);
-        Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request, observation: absent).Outcome);
+        Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request, observation: absent).ReadFor(request).Outcome);
         var laterRecorded = new AiOwnerRecordedResultV1(request, SyntheticBinding(request, observed: Created.AddMinutes(3)),
             new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-later-commit"));
-        Assert.Equal(AiCommandOutcomeV1.Applied, new AiOwnerLookupResultV1(request, laterRecorded).Outcome);
-        Assert.Equal(absent.Binding.IdempotencyKey, laterRecorded.Binding.IdempotencyKey);
-        Assert.Equal(absent.Binding.RequestIdentityJson, laterRecorded.Binding.RequestIdentityJson);
+        Assert.Equal(AiCommandOutcomeV1.Applied, new AiOwnerLookupResultV1(request, laterRecorded).ReadFor(request).Outcome);
+        Assert.Equal(absent.Binding.IdempotencyKey, laterRecorded.ReadFor(request).Binding.IdempotencyKey);
+        Assert.Equal(absent.Binding.RequestIdentityJson, laterRecorded.ReadFor(request).Binding.RequestIdentityJson);
     }
 
     [Fact]
@@ -490,6 +562,21 @@ public sealed class AiContractTests
             "SENTETIK-owner-result-reference", observed ?? Created.AddMinutes(2));
     private static AiOwnerDefinitiveNoEffectEvidenceV1 SyntheticDefinitiveNoEffect(AiOwnerEvidenceBindingV1 binding) =>
         new(binding, AiOwnerNoEffectConclusionV1.DefinitivelyNotAdmittedAndCannotTakeEffect, "SENTETIK-definitive-no-effect");
+
+    // Deliberately broken UNIT-ONLY cache: ignores the actual port request and returns existing envelopes.
+    // No shipped owner/gateway implementation, real command, provider or definitive-evidence producer.
+    private sealed class AdversarialCachedResponses(AiOwnerRecordedResultV1 recorded, AiOwnerLookupResultV1 lookup)
+        : IAiOwnerCommandToolV1
+    {
+        public AiToolDescriptorV1 Descriptor => Tool();
+        public Task<AiOwnerRecordedResultV1> ExecuteAsync(AiOwnerCommandRequestV1 request,
+            CancellationToken cancellationToken = default) => Task.FromResult(recorded);
+        public Task<AiOwnerLookupResultV1> FindResultAsync(AiOwnerCommandRequestV1 request,
+            CancellationToken cancellationToken = default) => Task.FromResult(lookup);
+        public Task<AiPreviewResultV1> PreviewAsync(AiToolInputV1 input, AiServerContextV1 context,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException("Not part of this adversarial cache test.");
+    }
+
     private static AiOwnerCommandRequestV1 Request(AiServerContextV1? context = null,
         AiPreviewV1? preview = null, Guid? approvalId = null)
     {
