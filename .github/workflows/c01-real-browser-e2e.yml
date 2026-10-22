@@ -1,10 +1,6 @@
 name: C-01 real-browser E2E
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -362,44 +358,188 @@ jobs:
           test -z "$(docker network ls -q --filter "label=com.docker.compose.project=$C01_E2E_COMPOSE_PROJECT")"
           test -z "$(docker volume ls -q --filter "label=com.docker.compose.project=$C01_E2E_COMPOSE_PROJECT")"
 
-      - name: Upload exact-head C-01 evidence
+      - name: Preserve exact-head evidence locally
         if: always() && steps.artifact_privacy.outcome == 'success'
-        uses: actions/upload-artifact@v7
-        with:
-          name: c01-e2e-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            artifacts/c01-e2e-api-preflight.json
-            artifacts/c01-e2e-evidence.json
-            artifacts/c01-e2e-fixture-evidence.json
-            artifacts/c01-e2e-junit.xml
-            artifacts/c01-e2e-network-summary.json
-            artifacts/c01-e2e-post-browser-sql-evidence.json
-            artifacts/c01-e2e-html-report/index.html
-            artifacts/container-logs/compose-ps.txt
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          C01_EVIDENCE_ROOT: /home/ci/local-ci-evidence
+          C01_ACTIVATION_ENABLED: ${{ steps.activation_gate.outputs.enabled }}
+          C01_SAB_ENABLED: ${{ steps.sab_gate.outputs.enabled }}
+        run: |
+          set -euo pipefail
 
-      - name: Upload exact-head activation evidence
-        # Its own step, mirroring the SAB one, because each upload step must map to
-        # exactly ONE allowlist. Stuffing this into the C-01 step broke the guard
-        # that pins that step to C01_ARTIFACT_UPLOAD_ALLOWLIST -- the guard was
-        # right and the first attempt was sloppy.
-        if: always() && steps.activation_gate.outputs.enabled == 'true' && steps.artifact_privacy.outcome == 'success'
-        uses: actions/upload-artifact@v7
-        with:
-          name: activation-e2e-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            artifacts/activation-junit.xml
-          if-no-files-found: error
-          retention-days: 7
+          workflow="c01-real-browser-e2e"
+          run_id="$GITHUB_RUN_ID"
+          run_attempt="$GITHUB_RUN_ATTEMPT"
+          commit_sha="${GITHUB_SHA,,}"
+          [[ "$run_id" =~ ^[1-9][0-9]*$ ]] || {
+            echo "::error::C01_EVIDENCE_RUN_ID_INVALID"; exit 1;
+          }
+          [[ "$run_attempt" =~ ^[1-9][0-9]*$ ]] || {
+            echo "::error::C01_EVIDENCE_RUN_ATTEMPT_INVALID"; exit 1;
+          }
+          [[ "$commit_sha" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::C01_EVIDENCE_COMMIT_INVALID"; exit 1;
+          }
+          [[ "$C01_ACTIVATION_ENABLED" == "true" || "$C01_ACTIVATION_ENABLED" == "false" ]] || {
+            echo "::error::C01_ACTIVATION_GATE_INVALID"; exit 1;
+          }
+          [[ "$C01_SAB_ENABLED" == "true" || "$C01_SAB_ENABLED" == "false" ]] || {
+            echo "::error::C01_SAB_GATE_INVALID"; exit 1;
+          }
 
-      - name: Upload exact-head SAB evidence
-        if: always() && steps.sab_gate.outputs.enabled == 'true' && steps.artifact_privacy.outcome == 'success'
-        uses: actions/upload-artifact@v7
-        with:
-          name: sab-e2e-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            artifacts/sab-junit.xml
-            artifacts/sab-html-report/index.html
-          if-no-files-found: error
-          retention-days: 7
+          source_root="$(realpath -e "$GITHUB_WORKSPACE/artifacts")"
+          root_input="$C01_EVIDENCE_ROOT"
+          [[ "$root_input" == "/home/ci/local-ci-evidence" ]] || {
+            echo "::error::C01_EVIDENCE_ROOT_INVALID"; exit 1;
+          }
+          mkdir -p -- "$root_input"
+          [[ ! -L "$root_input" ]] || {
+            echo "::error::C01_EVIDENCE_ROOT_SYMLINK"; exit 1;
+          }
+          evidence_root="$(realpath -e "$root_input")"
+          [[ "$evidence_root" == "$root_input" && -d "$evidence_root" ]] || {
+            echo "::error::C01_EVIDENCE_ROOT_UNSAFE"; exit 1;
+          }
+
+          sha7="${commit_sha:0:7}"
+          directory_name="gh-${workflow}-${run_id}-${run_attempt}-${sha7}"
+          destination="$(realpath -m "$evidence_root/$directory_name")"
+          temporary="$(realpath -m "$evidence_root/.tmp-${directory_name}-$$-$RANDOM")"
+          for owned_target in "$destination" "$temporary"; do
+            [[ "$owned_target" == "$evidence_root/"* ]] || {
+              echo "::error::C01_EVIDENCE_TARGET_ESCAPE"; exit 1;
+            }
+          done
+          [[ ! -e "$destination" && ! -L "$destination" ]] || {
+            echo "::error::C01_EVIDENCE_DESTINATION_EXISTS"; exit 1;
+          }
+
+          c01_files=(
+            "c01-e2e-api-preflight.json"
+            "c01-e2e-evidence.json"
+            "c01-e2e-fixture-evidence.json"
+            "c01-e2e-junit.xml"
+            "c01-e2e-network-summary.json"
+            "c01-e2e-post-browser-sql-evidence.json"
+            "c01-e2e-html-report/index.html"
+            "container-logs/compose-ps.txt"
+          )
+          activation_files=(
+            "activation-junit.xml"
+          )
+          sab_files=(
+            "sab-junit.xml"
+            "sab-html-report/index.html"
+          )
+          selected_files=("${c01_files[@]}")
+          if [[ "$C01_ACTIVATION_ENABLED" == "true" ]]; then
+            selected_files+=("${activation_files[@]}")
+          fi
+          if [[ "$C01_SAB_ENABLED" == "true" ]]; then
+            selected_files+=("${sab_files[@]}")
+          fi
+
+          cleanup_temporary() {
+            if [[ -n "${temporary:-}" && -e "$temporary" ]]; then
+              rm -rf -- "$temporary"
+            fi
+          }
+          trap cleanup_temporary EXIT
+          mkdir -- "$temporary"
+
+          for relative in "${selected_files[@]}"; do
+            [[ "$relative" != /* && "$relative" != *".."* ]] || {
+              echo "::error::C01_EVIDENCE_RELATIVE_PATH_INVALID"; exit 1;
+            }
+            source_file="$source_root/$relative"
+            [[ -e "$source_file" && -f "$source_file" && ! -L "$source_file" ]] || {
+              echo "::error::C01_EVIDENCE_SELECTED_FILE_INVALID: $relative"; exit 1;
+            }
+            resolved_source="$(realpath -e "$source_file")"
+            [[ "$resolved_source" == "$source_file" && "$resolved_source" == "$source_root/"* ]] || {
+              echo "::error::C01_EVIDENCE_SELECTED_FILE_ESCAPE: $relative"; exit 1;
+            }
+            install -D -m 0644 -- "$resolved_source" "$temporary/$relative"
+          done
+
+          python3 -I -S -B - \
+            "$temporary" "$workflow" "$run_id" "$run_attempt" "$commit_sha" "$sha7" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          files = []
+          for path in sorted(item for item in root.rglob("*") if item.is_file()):
+              relative = path.relative_to(root).as_posix()
+              payload = path.read_bytes()
+              files.append(
+                  {
+                      "path": relative,
+                      "bytes": len(payload),
+                      "sha256": hashlib.sha256(payload).hexdigest(),
+                  }
+              )
+          manifest = {
+              "schemaVersion": 1,
+              "workflow": sys.argv[2],
+              "runId": sys.argv[3],
+              "runAttempt": sys.argv[4],
+              "commitSha": sys.argv[5],
+              "commitSha7": sys.argv[6],
+              "files": files,
+          }
+          (root / "manifest.json").write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+          manifest="$temporary/manifest.json"
+          python3 -I -S -B - "$temporary" "$manifest" "$workflow" "$run_id" "$run_attempt" "$commit_sha" "$sha7" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          manifest_path = pathlib.Path(sys.argv[2])
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          expected_identity = (1, sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7])
+          actual_identity = (
+              manifest.get("schemaVersion"),
+              manifest.get("workflow"),
+              manifest.get("runId"),
+              manifest.get("runAttempt"),
+              manifest.get("commitSha"),
+              manifest.get("commitSha7"),
+          )
+          if actual_identity != expected_identity:
+              raise SystemExit("C01_EVIDENCE_MANIFEST_IDENTITY_MISMATCH")
+          entries = manifest.get("files")
+          if not isinstance(entries, list) or entries != sorted(entries, key=lambda item: item["path"]):
+              raise SystemExit("C01_EVIDENCE_MANIFEST_ORDER_INVALID")
+          for entry in entries:
+              path = root / entry["path"]
+              payload = path.read_bytes()
+              if entry != {
+                  "path": entry["path"],
+                  "bytes": len(payload),
+                  "sha256": hashlib.sha256(payload).hexdigest(),
+              }:
+                  raise SystemExit("C01_EVIDENCE_MANIFEST_FILE_MISMATCH")
+          PY
+
+          manifest_hash="$(sha256sum "$manifest" | awk '{print $1}')"
+          mv -- "$temporary" "$destination"
+          trap - EXIT
+          final_manifest="$destination/manifest.json"
+          final_manifest_hash="$(sha256sum "$final_manifest" | awk '{print $1}')"
+          [[ "$final_manifest_hash" == "$manifest_hash" ]] || {
+            echo "::error::C01_EVIDENCE_MANIFEST_PUBLICATION_DRIFT"; exit 1;
+          }
+          echo "C01 evidence preserved at $destination"
+          echo "C01 manifest: $final_manifest"
+          echo "C01 manifest SHA256: $final_manifest_hash"

@@ -330,7 +330,9 @@ class ComposeContractTests(unittest.TestCase):
             "C01_E2E_BASELINE_EVIDENCE",
             "C01_E2E_DATABASE_NAME",
             "GOYMEN_ERP_C01_E2E_DISPOSABLE=CONFIRMED",
-            "actions/upload-artifact@v7",
+            "name: Preserve exact-head evidence locally",
+            "C01_EVIDENCE_ROOT: /home/ci/local-ci-evidence",
+            "C01 manifest SHA256:",
             "id: artifact_privacy",
             "steps.artifact_privacy.outcome == 'success'",
             "tools/validate_sab_e2e_contract.py preflight",
@@ -345,6 +347,9 @@ class ComposeContractTests(unittest.TestCase):
             "python3 -I -S -B tools/configure_dockerhub_mirror.py verify",
         ):
             self.assertIn(required, workflow)
+        trigger = workflow.split("on:\n", 1)[1].split("\npermissions:", 1)[0]
+        self.assertEqual(trigger.strip(), "workflow_dispatch:")
+        self.assertNotIn("actions/upload-artifact", workflow)
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("secrets.", workflow)
         self.assertNotIn("compose.log", workflow)
@@ -372,31 +377,42 @@ class ComposeContractTests(unittest.TestCase):
         self.assertLess(
             sab_run, workflow.index("tools/validate_sab_e2e_contract.py evidence")
         )
-        for relative in validator.ARTIFACT_UPLOAD_ALLOWLIST:
-            self.assertIn(f"artifacts/{relative}", workflow)
-        upload = workflow.split("      - name: Upload exact-head C-01 evidence", 1)[1]
-        path_block = upload.split("          path: |", 1)[1].split(
-            "          if-no-files-found:", 1
-        )[0]
-        uploaded = {
-            line.strip().removeprefix("artifacts/")
-            for line in path_block.splitlines()
-            if line.strip()
-        }
-        self.assertEqual(uploaded, set(validator.C01_ARTIFACT_UPLOAD_ALLOWLIST))
+        preservation = workflow.split(
+            "      - name: Preserve exact-head evidence locally", 1
+        )[1]
 
-        sab_upload = workflow.split("      - name: Upload exact-head SAB evidence", 1)[1]
-        sab_condition = sab_upload.splitlines()[1]
-        self.assertIn("steps.sab_gate.outputs.enabled == 'true'", sab_condition)
-        sab_path_block = sab_upload.split("          path: |", 1)[1].split(
-            "          if-no-files-found:", 1
-        )[0]
-        sab_uploaded = {
-            line.strip().removeprefix("artifacts/")
-            for line in sab_path_block.splitlines()
-            if line.strip()
-        }
-        self.assertEqual(sab_uploaded, set(validator.SAB_ARTIFACT_UPLOAD_ALLOWLIST))
+        def shell_array(name):
+            block = preservation.split(f"          {name}=(\n", 1)[1].split(
+                "          )", 1
+            )[0]
+            return tuple(
+                line.strip().strip('"')
+                for line in block.splitlines()
+                if line.strip()
+            )
+
+        self.assertEqual(shell_array("c01_files"), validator.C01_ARTIFACT_UPLOAD_ALLOWLIST)
+        self.assertEqual(
+            shell_array("activation_files"),
+            validator.ACTIVATION_ARTIFACT_UPLOAD_ALLOWLIST,
+        )
+        self.assertEqual(shell_array("sab_files"), validator.SAB_ARTIFACT_UPLOAD_ALLOWLIST)
+        for required in (
+            "steps.artifact_privacy.outcome == 'success'",
+            "steps.activation_gate.outputs.enabled",
+            "steps.sab_gate.outputs.enabled",
+            "GITHUB_RUN_ATTEMPT",
+            "gh-${workflow}-${run_id}-${run_attempt}-${sha7}",
+            "C01_EVIDENCE_DESTINATION_EXISTS",
+            "C01_EVIDENCE_ROOT_INVALID",
+            "C01_EVIDENCE_ROOT_SYMLINK",
+            "C01_EVIDENCE_SELECTED_FILE_ESCAPE",
+            '"schemaVersion": 1',
+            '"files": files',
+            "C01_EVIDENCE_MANIFEST_IDENTITY_MISMATCH",
+            "C01_EVIDENCE_MANIFEST_PUBLICATION_DRIFT",
+        ):
+            self.assertIn(required, preservation)
 
     def test_api_start_failure_diagnostics_are_masked_job_log_only(self):
         workflow = (ROOT / ".github" / "workflows" / "c01-real-browser-e2e.yml").read_text(
