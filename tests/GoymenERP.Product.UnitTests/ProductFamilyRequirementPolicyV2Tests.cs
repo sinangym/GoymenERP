@@ -306,8 +306,10 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
     }
 
     [Fact]
-    public async Task A_field_that_takes_candidates_holds_one_under_its_own_parent_only()
+    public async Task A_dependent_candidate_needs_its_declared_parent_while_independent_parentless_values_remain_valid()
     {
+        Assert.Empty(await Policy().ValidateAsync(Card(ValidAttributes()), default));
+
         var own = ValidAttributes();
         own[SubGrade] = SubGradeOfA;
         Assert.Empty(await Policy().ValidateAsync(Card(own), default));
@@ -315,6 +317,16 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
         var other = ValidAttributes();
         other[SubGrade] = SubGradeOfB;
         var error = Assert.Single(await Policy().ValidateAsync(Card(other), default));
+        Assert.Equal(($"references.attributes.{SubGrade}", ProductFamilyPolicyCodesV1.ParentMismatch), (error.Field, error.Code));
+
+        var definition = Definition();
+        var missingParentDefinition = definition with
+        {
+            Entries = [.. definition.Entries.Select(entry => entry.Code == SubGradeOfA
+                ? entry with { ParentCode = null }
+                : entry)],
+        };
+        error = Assert.Single(await Policy(missingParentDefinition).ValidateAsync(Card(own), default));
         Assert.Equal(($"references.attributes.{SubGrade}", ProductFamilyPolicyCodesV1.ParentMismatch), (error.Field, error.Code));
     }
 

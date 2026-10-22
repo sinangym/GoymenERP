@@ -131,9 +131,10 @@ public static class ProductFamilyDefinitionRulesV2
             return ProductFamilyPolicyCodesV1.ValueCandidate;
         }
 
-        if (field.ParentField is { } parentField && entry.ParentCode is { } parentCode
-            && !(TryGet(attributes, parentField, out var parent) && parent.ValueKind == JsonValueKind.String
-                && string.Equals(parent.GetString(), parentCode, StringComparison.Ordinal)))
+        if (field.ParentField is { } parentField
+            && (entry.ParentCode is not { } parentCode
+                || !(TryGet(attributes, parentField, out var parent) && parent.ValueKind == JsonValueKind.String
+                    && string.Equals(parent.GetString(), parentCode, StringComparison.Ordinal))))
         {
             return ProductFamilyPolicyCodesV1.ParentMismatch;
         }
