@@ -85,12 +85,16 @@ jobs:
           if ($commitSha -notmatch '^[0-9a-f]{40}$') {
             throw "GITHUB_SHA is not canonical: $($env:GITHUB_SHA)"
           }
+          $runAttempt = $env:GITHUB_RUN_ATTEMPT
+          if ($runAttempt -notmatch '^[1-9][0-9]*$') {
+            throw "GITHUB_RUN_ATTEMPT is not canonical: $($env:GITHUB_RUN_ATTEMPT)"
+          }
 
           New-Item -ItemType Directory -Path $env:C006_EVIDENCE_ROOT -Force | Out-Null
           $evidenceRoot = (Resolve-Path -LiteralPath $env:C006_EVIDENCE_ROOT).Path.TrimEnd('\')
           $rootPrefix = "$evidenceRoot\"
           $sha7 = $commitSha.Substring(0, 7)
-          $directoryName = "gh-$($env:C006_WORKFLOW)-$($env:GITHUB_RUN_ID)-$sha7"
+          $directoryName = "gh-$($env:C006_WORKFLOW)-$($env:GITHUB_RUN_ID)-$runAttempt-$sha7"
           $destination = [IO.Path]::GetFullPath((Join-Path $evidenceRoot $directoryName))
           $temporary = [IO.Path]::GetFullPath((Join-Path $evidenceRoot ".tmp-$directoryName-$([Guid]::NewGuid().ToString('N'))"))
           foreach ($ownedTarget in @($destination, $temporary)) {
@@ -136,7 +140,7 @@ jobs:
               schemaVersion = 1
               workflow = $env:C006_WORKFLOW
               runId = $env:GITHUB_RUN_ID
-              runAttempt = $env:GITHUB_RUN_ATTEMPT
+              runAttempt = $runAttempt
               commitSha = $commitSha
               commitSha7 = $sha7
               files = $files
@@ -168,8 +172,7 @@ jobs:
           }
           '@
 
-          & 'C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe' \
-            -NoLogo -NoProfile -NonInteractive -Command $innerScript
+          & 'C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe' -NoLogo -NoProfile -NonInteractive -Command $innerScript
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
