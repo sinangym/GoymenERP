@@ -2257,7 +2257,26 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1075, len(source_paths))
+        self.assertEqual(1078, len(source_paths))
+        ai_source_paths = (
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Ai/AiAuditContextV1.cs",
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Ai/AiCanonicalJson.cs",
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Ai/AiToolContractsV1.cs",
+        )
+        for ai_source_path in ai_source_paths:
+            self.assertIn(ai_source_path, source_paths)
+        files_without_ai_source = dict(self.snapshot.files)
+        files_without_ai_source.pop(ai_source_paths[0])
+        snapshot_without_ai_source = generator.SourceSnapshot(
+            self.snapshot.repository_root,
+            self.snapshot.source_commit,
+            files_without_ai_source,
+        )
+        with self.assertRaisesRegex(
+            generator.InventoryError,
+            "compilation source surface drifted",
+        ):
+            generator._build_inventory_from_snapshot(snapshot_without_ai_source)
         self.assertIn(
             "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/"
             "Contracts/V1/ManufacturingToleranceProfileLifecycleV1.cs",
