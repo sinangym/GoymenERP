@@ -749,6 +749,7 @@ jobs:
 
       - name: Build application images
         run: docker compose -f infra/docker-compose.yml build api web
+
   validate-ui-catalog:
     name: UI catalog structure, references and hashes
     runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
@@ -769,6 +770,7 @@ jobs:
 
       - name: Validate UI catalog golden state
         run: python tools/validate_ui_catalog.py
+
   cari-c006-backend:
     name: Cari C006 backend envelope
     runs-on: [self-hosted, Windows, X64, goymen-ci-windows]
