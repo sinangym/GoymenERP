@@ -17,7 +17,7 @@ public sealed class BusinessConsumableCardV1Tests
     public void Card_preserves_only_supported_inventory_representations(
         BusinessConsumableInventoryRepresentationV1 representation)
     {
-        var card = CreateCard(representation);
+        var card = CreateCard(representation: representation);
 
         Assert.Equal(CompanyId, card.CompanyId);
         Assert.Equal(ConsumableId, card.ConsumableId);
