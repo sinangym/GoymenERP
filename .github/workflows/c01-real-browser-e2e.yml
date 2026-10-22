@@ -17,7 +17,7 @@ concurrency:
 jobs:
   c01-real-browser-e2e:
     name: C-01 real-browser E2E
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     timeout-minutes: 60
     env:
       C01_E2E_COMPOSE_FILE: infra/docker-compose.c01-e2e.yml
