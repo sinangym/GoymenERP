@@ -72,14 +72,55 @@ jobs:
           --job backend-build \
           --phase test-suite
 
-      - name: Upload secret-free backend test summary
+      - name: Preserve secret-free backend test summary locally
         if: always() && hashFiles('artifacts/ci-safe-test-summary/backend.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-test-summary-backend-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/backend.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-build-summary
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: &publish-local-evidence |
+          set -euo pipefail
+          root=/home/ci/local-ci-evidence
+          head="${LOCAL_EVIDENCE_SOURCE_HEAD,,}"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$(git rev-parse HEAD)" = "$head"
+          for ancestor in /home /home/ci "$root"; do test ! -L "$ancestor"; done
+          mkdir -p "$root"
+          test "$(realpath -e "$root")" = "$root"
+          run_root="$root/gh-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${head:0:7}"
+          destination="$run_root/$LOCAL_EVIDENCE_SCOPE"
+          mkdir -p "$run_root"
+          test "$(realpath -e "$run_root")" = "$run_root"
+          test ! -e "$destination"
+          test ! -L "$destination"
+          test -f "$LOCAL_EVIDENCE_FILE"
+          test ! -L "$LOCAL_EVIDENCE_FILE"
+          temporary="$(mktemp -d "$root/.tmp-${LOCAL_EVIDENCE_SCOPE}-XXXXXX")"
+          lock="$destination.lock"
+          cleanup() { rm -rf -- "$temporary"; rmdir -- "$lock" 2>/dev/null || true; }
+          trap cleanup EXIT
+          mkdir -p "$temporary/files/$(dirname "$LOCAL_EVIDENCE_FILE")"
+          cp -- "$LOCAL_EVIDENCE_FILE" "$temporary/files/$LOCAL_EVIDENCE_FILE"
+          bytes="$(wc -c < "$temporary/files/$LOCAL_EVIDENCE_FILE" | tr -d '[:space:]')"
+          digest="$(sha256sum "$temporary/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)"
+          printf 'schemaVersion=1\nworkflow=ci\nscope=%s\nrunId=%s\nrunAttempt=%s\nsourceHead=%s\ntestedCommit=%s\nrunnerName=%s\nfile=%s\nbytes=%s\nsha256=%s\n' \
+            "$LOCAL_EVIDENCE_SCOPE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$head" "$head" "$RUNNER_NAME" \
+            "$LOCAL_EVIDENCE_FILE" "$bytes" "$digest" > "$temporary/manifest.txt"
+          manifest_digest="$(sha256sum "$temporary/manifest.txt" | cut -d ' ' -f 1)"
+          test "$(sha256sum "$temporary/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)" = "$digest"
+          mkdir -- "$lock"
+          test ! -e "$destination"
+          mv -- "$temporary" "$destination"
+          test ! -e "$temporary"
+          test ! -L "$destination"
+          test "$(realpath -e "$destination")" = "$destination"
+          test "$(sha256sum "$destination/manifest.txt" | cut -d ' ' -f 1)" = "$manifest_digest"
+          test "$(wc -c < "$destination/files/$LOCAL_EVIDENCE_FILE" | tr -d '[:space:]')" = "$bytes"
+          test "$(sha256sum "$destination/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)" = "$digest"
+          printf 'local_evidence=%s\nmanifest_sha256=%s\n' "$destination" "$manifest_digest"
 
       - name: Check vulnerable dependencies
         run: |
@@ -170,13 +211,13 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)"
 
-      - name: Upload exact backend group proof
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-backend-test-group-proof-${{ matrix.group }}
-          path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
-          if-no-files-found: error
-          retention-days: 7
+      - name: Preserve exact backend group proof locally
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-proof-${{ matrix.group }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
       - name: Produce secret-free backend group summary
         if: always() && hashFiles('artifacts/ci-test-results/backend-groups/*/*.trx') != ''
@@ -189,14 +230,14 @@ jobs:
           --job backend-test-group \
           --phase test-suite
 
-      - name: Upload secret-free backend group summary
+      - name: Preserve secret-free backend group summary locally
         if: always() && hashFiles('artifacts/ci-safe-test-summary/backend-*.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-test-summary-backend-group-${{ matrix.group }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-summary-${{ matrix.group }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
   backend:
     name: Backend build, test and migration
@@ -210,12 +251,54 @@ jobs:
         run: |
           python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
 
-      - name: Download exact backend group proofs
-        uses: actions/download-artifact@v8
-        with:
-          pattern: ci-backend-test-group-proof-*
-          path: artifacts/ci-backend-group-proofs
-
+      - name: Restore exact backend group proofs from local evidence
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: backend-proof-
+          LOCAL_PROOF_IDS: api,architecture,modules
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-backend-group-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-backend-group-proofs
+        run: &restore-local-proofs |
+          set -euo pipefail
+          root=/home/ci/local-ci-evidence
+          head="${LOCAL_EVIDENCE_SOURCE_HEAD,,}"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          test "$(git rev-parse HEAD)" = "$head"
+          test ! -L "$root"
+          test "$(realpath -e "$root")" = "$root"
+          run_root="$root/gh-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${head:0:7}"
+          test ! -L "$run_root"
+          test "$(realpath -e "$run_root")" = "$run_root"
+          rm -rf -- "$LOCAL_PROOF_OUTPUT"
+          mkdir -p "$LOCAL_PROOF_OUTPUT"
+          IFS=',' read -r -a ids <<< "$LOCAL_PROOF_IDS"
+          for id in "${ids[@]}"; do
+            scope="${LOCAL_PROOF_SCOPE_PREFIX}${id}"
+            source="$run_root/$scope"
+            relative="${LOCAL_PROOF_RELATIVE_PREFIX}${id}.json"
+            manifest="$source/manifest.txt"
+            test -f "$manifest"
+            test ! -L "$source"
+            test "$(realpath -e "$source")" = "$source"
+            grep -Fx "schemaVersion=1" "$manifest"
+            grep -Fx "workflow=ci" "$manifest"
+            grep -Fx "scope=$scope" "$manifest"
+            grep -Fx "runId=$GITHUB_RUN_ID" "$manifest"
+            grep -Fx "runAttempt=$GITHUB_RUN_ATTEMPT" "$manifest"
+            grep -Fx "sourceHead=$head" "$manifest"
+            grep -Fx "testedCommit=$head" "$manifest"
+            grep -Fx "runnerName=$RUNNER_NAME" "$manifest"
+            grep -Fx "file=$relative" "$manifest"
+            bytes="$(sed -n 's/^bytes=//p' "$manifest")"
+            digest="$(sed -n 's/^sha256=//p' "$manifest")"
+            test "$(wc -c < "$source/files/$relative" | tr -d '[:space:]')" = "$bytes"
+            test "$(sha256sum "$source/files/$relative" | cut -d ' ' -f 1)" = "$digest"
+            cp -- "$source/files/$relative" "$LOCAL_PROOF_OUTPUT/proof-$id.json"
+          done
+          test "$(find "$LOCAL_PROOF_OUTPUT" -maxdepth 1 -type f -name 'proof-*.json' | wc -l | tr -d '[:space:]')" = "${#ids[@]}"
       - name: Verify complete backend build and test groups
         run: |
           python3 -I -S -B tools/verify_backend_test_groups.py \
@@ -465,13 +548,13 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)"
 
-      - name: Upload exact SQL shard proof
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-relational-shard-proof-${{ matrix.shard }}
-          path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json
-          if-no-files-found: error
-          retention-days: 7
+      - name: Preserve exact SQL shard proof locally
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-proof-${{ matrix.shard }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
       - name: Produce secret-free relational shard summary
         if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
@@ -484,14 +567,14 @@ jobs:
           --job relational-shard \
           --phase sql-acceptance
 
-      - name: Upload secret-free relational shard summary
+      - name: Preserve secret-free relational shard summary locally
         if: always() && hashFiles('artifacts/ci-safe-test-summary/shard-*.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-test-summary-relational-shard-${{ matrix.shard }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-summary-${{ matrix.shard }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
   relational-rcsi:
     name: Exact RCSI relational acceptance
@@ -553,14 +636,14 @@ jobs:
           --job relational-rcsi \
           --phase sql-acceptance
 
-      - name: Upload secret-free RCSI test summary
+      - name: Preserve secret-free RCSI test summary locally
         if: always() && hashFiles('artifacts/ci-safe-test-summary/relational.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-test-summary-relational-rcsi-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/relational.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-rcsi-summary
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/relational.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
   relational:
     name: SQL Server relational acceptance
@@ -574,11 +657,15 @@ jobs:
         run: |
           python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
 
-      - name: Download exact SQL shard proofs
-        uses: actions/download-artifact@v8
-        with:
-          pattern: ci-relational-shard-proof-*
-          path: artifacts/ci-relational-proofs
+      - name: Restore exact SQL shard proofs from local evidence
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: relational-proof-
+          LOCAL_PROOF_IDS: A,B,C
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs
+        run: *restore-local-proofs
 
       - name: Verify complete SQL Server relational acceptance
         run: |

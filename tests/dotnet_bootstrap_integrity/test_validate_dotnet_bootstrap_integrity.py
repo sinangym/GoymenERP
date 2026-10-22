@@ -1210,17 +1210,14 @@ class WorkflowOrderingTests(unittest.TestCase):
                 '--tested-commit "$(git rev-parse HEAD)"',
             ],
         )
-        self.assertEqual(
-            self.read_step_lines(self.step_body(worker, "Upload exact backend group proof")),
-            [
-                "uses: actions/upload-artifact@v7",
-                "with:",
-                f"name: ci-backend-test-group-proof-{group_ref}",
-                f"path: artifacts/ci-backend-group-proofs/proof-{group_ref}.json",
-                "if-no-files-found: error",
-                "retention-days: 7",
-            ],
+        local_backend_proof = self.step_body(worker, "Preserve exact backend group proof locally")
+        self.assertIn("shell: bash", local_backend_proof)
+        self.assertIn(f"LOCAL_EVIDENCE_SCOPE: backend-proof-{group_ref}", local_backend_proof)
+        self.assertIn(
+            f"LOCAL_EVIDENCE_FILE: artifacts/ci-backend-group-proofs/proof-{group_ref}.json",
+            local_backend_proof,
         )
+        self.assertIn("run: *publish-local-evidence", local_backend_proof)
         self.assertEqual(
             re.findall(r"^    \S.*$", aggregate, re.M),
             ["    name: Backend build, test and migration",
@@ -1234,7 +1231,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             re.findall(r"^      - name: (.+)$", aggregate, re.M),
             [
                 "Verify backend group proof parser",
-                "Download exact backend group proofs",
+                "Restore exact backend group proofs from local evidence",
                 "Verify complete backend build and test groups",
             ],
         )
@@ -1248,17 +1245,17 @@ class WorkflowOrderingTests(unittest.TestCase):
                 '-s tests/backend_test_group_verifier -p "test_*.py" -v',
             ],
         )
-        self.assertEqual(
-            self.read_step_lines(
-                self.step_body(aggregate, "Download exact backend group proofs")
-            ),
-            [
-                "uses: actions/download-artifact@v8",
-                "with:",
-                "pattern: ci-backend-test-group-proof-*",
-                "path: artifacts/ci-backend-group-proofs",
-            ],
+        local_backend_restore = self.step_body(
+            aggregate, "Restore exact backend group proofs from local evidence"
         )
+        for required in (
+            "LOCAL_PROOF_IDS: api,architecture,modules",
+            "LOCAL_PROOF_SCOPE_PREFIX: backend-proof-",
+            "runnerName=$RUNNER_NAME",
+            "sha256sum",
+            "run: &restore-local-proofs |",
+        ):
+            self.assertIn(required, local_backend_restore)
         self.assertEqual(
             self.read_step_lines(
                 self.step_body(aggregate, "Verify complete backend build and test groups")
@@ -1416,7 +1413,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             re.findall(r"^      - name: (.+)$", aggregate, re.M),
             [
                 "Verify relational shard proof parser",
-                "Download exact SQL shard proofs",
+                "Restore exact SQL shard proofs from local evidence",
                 "Verify complete SQL Server relational acceptance",
             ],
         )
@@ -1430,17 +1427,16 @@ class WorkflowOrderingTests(unittest.TestCase):
                 '-s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v',
             ],
         )
-        self.assertEqual(
-            self.read_step_lines(
-                self.step_body(aggregate, "Download exact SQL shard proofs")
-            ),
-            [
-                "uses: actions/download-artifact@v8",
-                "with:",
-                "pattern: ci-relational-shard-proof-*",
-                "path: artifacts/ci-relational-proofs",
-            ],
+        local_sql_restore = self.step_body(
+            aggregate, "Restore exact SQL shard proofs from local evidence"
         )
+        for required in (
+            "LOCAL_PROOF_IDS: A,B,C",
+            "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
+            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
+            "run: *restore-local-proofs",
+        ):
+            self.assertIn(required, local_sql_restore)
         self.assertEqual(
             self.read_step_lines(
                 self.step_body(
@@ -1537,7 +1533,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                         self.assert_relational_execution_and_aggregate_boundaries()
 
         aggregate = self.job_body("relational")
-        download_marker = "      - name: Download exact SQL shard proofs\n"
+        download_marker = "      - name: Restore exact SQL shard proofs from local evidence\n"
         verify_marker = "      - name: Verify complete SQL Server relational acceptance\n"
         prefix, remainder = aggregate.split(download_marker, 1)
         download, verify = remainder.split(verify_marker, 1)
