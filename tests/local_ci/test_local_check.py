@@ -52,6 +52,27 @@ class LocalCheckTests(unittest.TestCase):
         self.assertEqual(["npm ci", "npm audit --audit-level=high", "npm run lint",
                           "npm test -- --maxWorkers=1", "npm run build"], [item["run"] for item in steps])
 
+    def test_frontend_node_setup_avoids_hosted_cache_in_both_workflows(self):
+        frontend_jobs = []
+        for relative in (".github/workflows/ci.yml",
+                         ".github/workflows/local-ci-bootstrap.yml.disabled"):
+            with self.subTest(workflow=relative):
+                frontend = module.workflow(ROOT, relative)["jobs"]["frontend"]
+                frontend_jobs.append(frontend)
+                setup = [step for step in frontend["steps"]
+                         if step.get("uses", "").startswith("actions/setup-node@")]
+                self.assertEqual(1, len(setup))
+                self.assertEqual(24, setup[0]["with"]["node-version"])
+                self.assertNotIn("cache", setup[0]["with"])
+                self.assertNotIn("cache-dependency-path", setup[0]["with"])
+                self.assertEqual(
+                    ["npm ci", "npm audit --audit-level=high", "npm run lint",
+                     "npm test", "npm run build"],
+                    [step["run"] for step in frontend["steps"] if "run" in step],
+                )
+        self.assertEqual(frontend_jobs[0], frontend_jobs[1])
+        self.assertFalse((ROOT / ".github/workflows/local-ci-bootstrap.yml").exists())
+
     def test_catalog_retains_negative_tests_and_golden_validation(self):
         steps = module.selected_steps(ROOT, "catalog")
         self.assertEqual(2, len(steps))
