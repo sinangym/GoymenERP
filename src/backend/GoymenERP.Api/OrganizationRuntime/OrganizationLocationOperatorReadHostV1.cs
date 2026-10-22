@@ -34,13 +34,13 @@ internal sealed class OrganizationLocationOperatorReadHostV1(
 
             if (before.OperatorPartyId is not { } partyId)
             {
-                var after = await organization.GetLocationAsync(locationId, cancellationToken);
-                if (after is null)
+                var nullAfter = await organization.GetLocationAsync(locationId, cancellationToken);
+                if (nullAfter is null)
                 {
                     return NotFound<OrganizationLocationOperatorContextV1>();
                 }
 
-                if (after.Version != before.Version || after.OperatorPartyId is not null)
+                if (nullAfter.Version != before.Version || nullAfter.OperatorPartyId is not null)
                 {
                     return Unavailable<OrganizationLocationOperatorContextV1>();
                 }
