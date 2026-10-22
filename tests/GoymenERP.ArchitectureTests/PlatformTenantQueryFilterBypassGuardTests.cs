@@ -313,9 +313,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "7b5999d3529adaccd72c13d3c3412f6f4acae56616839f8ede77732150806f76";
+        "cb48fc1b5057d9858999da6d1c3200d1ba3eba0528db6159ef8a40775a19d286";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "95abaadfa075a9f6077670a2e15660629e6b1073ade36b64e45d74404fd3f4cb";
+        "e025e1ebf8b9d2cd8b42d57b61f43b475a9912d668e76e6158805d8eb901fe05";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
