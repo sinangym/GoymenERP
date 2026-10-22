@@ -98,19 +98,19 @@ public sealed class OrganizationLocationOperatorReadHostTests
 
     [Theory]
     [InlineData(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied,
-        OrganizationLocationOperatorReadOutcomeV1.NotFound)]
+        (int)OrganizationLocationOperatorReadOutcomeV1.NotFound)]
     [InlineData(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable,
-        OrganizationLocationOperatorReadOutcomeV1.Unavailable)]
+        (int)OrganizationLocationOperatorReadOutcomeV1.Unavailable)]
     public async Task Display_maps_owner_refusals_without_disclosing_owner_payload(
         CounterpartyOrganizationLocationOperatorReadOutcomeV1 ownerOutcome,
-        OrganizationLocationOperatorReadOutcomeV1 expected)
+        int expected)
     {
         var owner = new StubOwner { Display = new(ownerOutcome, []) };
 
         var result = await Host(new StubOrganization(LocationRow(Party)), new StubLocationStatus(), owner)
             .ReadDisplayAsync(Location);
 
-        Assert.Equal(expected, result.Outcome);
+        Assert.Equal((OrganizationLocationOperatorReadOutcomeV1)expected, result.Outcome);
         Assert.Null(result.Resource);
     }
 
@@ -147,21 +147,21 @@ public sealed class OrganizationLocationOperatorReadHostTests
 
     [Theory]
     [InlineData(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied,
-        OrganizationLocationOperatorReadOutcomeV1.NotFound)]
+        (int)OrganizationLocationOperatorReadOutcomeV1.NotFound)]
     [InlineData(CounterpartyOrganizationLocationOperatorReadOutcomeV1.InvalidCursor,
-        OrganizationLocationOperatorReadOutcomeV1.InvalidCursor)]
+        (int)OrganizationLocationOperatorReadOutcomeV1.InvalidCursor)]
     [InlineData(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Unavailable,
-        OrganizationLocationOperatorReadOutcomeV1.Unavailable)]
+        (int)OrganizationLocationOperatorReadOutcomeV1.Unavailable)]
     public async Task Candidate_search_maps_closed_owner_outcomes(
         CounterpartyOrganizationLocationOperatorReadOutcomeV1 ownerOutcome,
-        OrganizationLocationOperatorReadOutcomeV1 expected)
+        int expected)
     {
         var owner = new StubOwner { Candidates = new(ownerOutcome, [], null, false) };
 
         var result = await Host(new StubOrganization(LocationRow(null)), new StubLocationStatus(), owner)
             .SearchCandidatesAsync(Location, new(null, 25, null), "server-session");
 
-        Assert.Equal(expected, result.Outcome);
+        Assert.Equal((OrganizationLocationOperatorReadOutcomeV1)expected, result.Outcome);
         Assert.Null(result.Resource);
     }
 

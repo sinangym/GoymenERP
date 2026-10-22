@@ -58,23 +58,23 @@ public sealed class OrganizationLocationOperatorReadHttpAcceptanceTests(GoymenEr
     }
 
     [Theory]
-    [InlineData("display", OrganizationLocationOperatorReadOutcomeV1.NotFound, 404, null)]
-    [InlineData("display", OrganizationLocationOperatorReadOutcomeV1.Unavailable, 503,
+    [InlineData("display", (int)OrganizationLocationOperatorReadOutcomeV1.NotFound, 404, null)]
+    [InlineData("display", (int)OrganizationLocationOperatorReadOutcomeV1.Unavailable, 503,
         "organization_location_operator_dependency_unavailable")]
-    [InlineData("candidates", OrganizationLocationOperatorReadOutcomeV1.NotFound, 404, null)]
-    [InlineData("candidates", OrganizationLocationOperatorReadOutcomeV1.InvalidCursor, 400, "invalid_cursor")]
-    [InlineData("candidates", OrganizationLocationOperatorReadOutcomeV1.Unavailable, 503,
+    [InlineData("candidates", (int)OrganizationLocationOperatorReadOutcomeV1.NotFound, 404, null)]
+    [InlineData("candidates", (int)OrganizationLocationOperatorReadOutcomeV1.InvalidCursor, 400, "invalid_cursor")]
+    [InlineData("candidates", (int)OrganizationLocationOperatorReadOutcomeV1.Unavailable, 503,
         "organization_location_operator_dependency_unavailable")]
     public async Task Closed_host_outcomes_have_the_frozen_HTTP_mapping(
         string route,
-        OrganizationLocationOperatorReadOutcomeV1 outcome,
+        int outcome,
         int status,
         string? code)
     {
         var host = new StubHost
         {
-            Display = new(outcome, null),
-            Candidates = new(outcome, null),
+            Display = new((OrganizationLocationOperatorReadOutcomeV1)outcome, null),
+            Candidates = new((OrganizationLocationOperatorReadOutcomeV1)outcome, null),
         };
         using var application = CreateHost(host);
         using var client = CreateClient(application);
