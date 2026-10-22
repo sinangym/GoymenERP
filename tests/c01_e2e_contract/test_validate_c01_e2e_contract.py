@@ -111,6 +111,7 @@ class ComposeContractTests(unittest.TestCase):
         self.assertEqual("  workflow_dispatch:\n", trigger)
 
         required_fragments = (
+            "shell: '\"C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\\pwsh.exe\" -NoLogo -NoProfile -NonInteractive -File {0}'",
             "$actualHead = (& git rev-parse HEAD).Trim().ToLowerInvariant()",
             "$runId -notmatch '^[1-9][0-9]*$'",
             "Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $false",
@@ -128,6 +129,7 @@ class ComposeContractTests(unittest.TestCase):
         )
         positions = [workflow.index(fragment) for fragment in required_fragments]
         self.assertEqual(sorted(positions), positions)
+        self.assertNotIn("shell: pwsh", workflow)
         self.assertNotIn("Move-Item -LiteralPath $temporary", workflow)
 
     def test_public_port_fails(self):
