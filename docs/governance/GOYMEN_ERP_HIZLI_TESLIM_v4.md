@@ -76,6 +76,12 @@ merge'idir (AGENTS.md: teknik koruma yokken lane self-merge kapalı). Gerçek se
 ajan çalışma ağacında ve runner'da `.env`/`*.pfx`/`secrets/` tutulmaz; gerçek değerler yalnız
 runner ortam değişkenindedir. Secret/production yüzeyi kararı insanda kalır.
 
+Kaynak incelemesi düzeltmesi: `git push` otomatik allow listesinde değildir; tüm standart
+push çağrıları `ask` ile değerlendirilir. Böylece argüman sonundaki `--force` veya farklı
+refspec yazımları otomatik izin kazanmaz. Hassas yollar için açık `Edit` deny kuralları da
+vardır; yalnız `Read` deny'nin sürüme bağlı Write davranışına güvenilmez. Bunlar programın
+her çağrı biçimini kapsayan bir işletim sistemi güvenlik sınırı değildir.
+
 ```json
 {
   "permissions": {
@@ -83,7 +89,7 @@ runner ortam değişkenindedir. Secret/production yüzeyi kararı insanda kalır
       "Read", "Glob", "Grep", "Edit", "Write",
       "Bash(git status:*)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git show:*)",
       "Bash(git branch:*)", "Bash(git fetch:*)", "Bash(git rev-parse:*)", "Bash(git ls-files:*)",
-      "Bash(git add:*)", "Bash(git commit:*)", "Bash(git push -u origin:*)",
+      "Bash(git add:*)", "Bash(git commit:*)",
       "Bash(git checkout -b:*)", "Bash(git switch -c:*)",
       "Bash(dotnet restore:*)", "Bash(dotnet build:*)", "Bash(dotnet test:*)",
       "Bash(dotnet format:*)", "Bash(dotnet ef migrations:*)",
@@ -96,12 +102,14 @@ runner ortam değişkenindedir. Secret/production yüzeyi kararı insanda kalır
       "WebFetch(domain:github.com)", "WebFetch(domain:docs.github.com)",
       "WebFetch(domain:learn.microsoft.com)"
     ],
+    "ask": ["Bash(git push:*)"],
     "deny": [
       "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(git push --force-with-lease:*)",
       "Bash(git push origin main:*)", "Bash(git push -u origin main:*)",
       "Bash(git push origin HEAD:main:*)", "Bash(git push -u origin HEAD:main:*)",
       "Bash(git reset --hard:*)", "Bash(git clean:*)", "Bash(git rebase:*)", "Bash(rm -rf:*)",
-      "Read(.env)", "Read(**/.env)", "Read(**/*.pfx)", "Read(**/secrets/**)"
+      "Read(.env)", "Read(**/.env)", "Read(**/*.pfx)", "Read(**/secrets/**)",
+      "Edit(.env)", "Edit(**/.env)", "Edit(**/*.pfx)", "Edit(**/secrets/**)"
     ]
   }
 }
