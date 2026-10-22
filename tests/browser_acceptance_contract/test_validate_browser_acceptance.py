@@ -1469,9 +1469,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(uploaded, expected)
         self.assertNotIn("actions/upload-artifact@", self.workflow)
         for required in (
-            'test "$(git rev-parse HEAD)" = "$head"',
             'test ! -L "$ancestor"',
             'test ! -e "$destination"',
+            'tested="$(git rev-parse HEAD)"',
+            'if [[ "$lock_acquired" = true ]]',
+            'mv -T --no-clobber -- "$temporary" "$destination"',
+            'test ! -e "$temporary"',
             'test "$(grep -c \'^file=\' "$temporary/manifest.txt")" = 6',
             'manifest_sha256=',
         ):

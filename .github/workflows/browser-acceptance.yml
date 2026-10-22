@@ -514,7 +514,8 @@ jobs:
           [[ "$head" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
-          test "$(git rev-parse HEAD)" = "$head"
+          tested="$(git rev-parse HEAD)"
+          [[ "$tested" =~ ^[0-9a-f]{40}$ ]]
           for ancestor in /home /home/ci "$root"; do test ! -L "$ancestor"; done
           mkdir -p "$root"
           test "$(realpath -e "$root")" = "$root"
@@ -526,10 +527,14 @@ jobs:
           test ! -L "$destination"
           temporary="$(mktemp -d "$root/.tmp-${LOCAL_EVIDENCE_SCOPE}-XXXXXX")"
           lock="$destination.lock"
-          cleanup() { rm -rf -- "$temporary"; rmdir -- "$lock" 2>/dev/null || true; }
+          lock_acquired=false
+          cleanup() {
+            rm -rf -- "$temporary"
+            if [[ "$lock_acquired" = true ]]; then rmdir -- "$lock" 2>/dev/null || true; fi
+          }
           trap cleanup EXIT
           printf 'schemaVersion=1\nworkflow=browser-acceptance\nscope=%s\nrunId=%s\nrunAttempt=%s\nsourceHead=%s\ntestedCommit=%s\nrunnerName=%s\n' \
-            "$LOCAL_EVIDENCE_SCOPE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$head" "$head" "$RUNNER_NAME" > "$temporary/manifest.txt"
+            "$LOCAL_EVIDENCE_SCOPE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$head" "$tested" "$RUNNER_NAME" > "$temporary/manifest.txt"
           while IFS= read -r relative; do
             test -n "$relative" || continue
             test -f "$relative"
@@ -550,8 +555,9 @@ jobs:
           done < <(grep '^file=' "$temporary/manifest.txt")
           manifest_digest="$(sha256sum "$temporary/manifest.txt" | cut -d ' ' -f 1)"
           mkdir -- "$lock"
+          lock_acquired=true
           test ! -e "$destination"
-          mv -- "$temporary" "$destination"
+          mv -T --no-clobber -- "$temporary" "$destination"
           test ! -e "$temporary"
           test ! -L "$destination"
           test "$(realpath -e "$destination")" = "$destination"

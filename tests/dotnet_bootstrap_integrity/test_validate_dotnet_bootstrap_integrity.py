@@ -1251,6 +1251,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         for required in (
             "LOCAL_PROOF_IDS: api,architecture,modules",
             "LOCAL_PROOF_SCOPE_PREFIX: backend-proof-",
+            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-proof-",
             "runnerName=$RUNNER_NAME",
             "sha256sum",
             "run: &restore-local-proofs |",
@@ -1433,6 +1434,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         for required in (
             "LOCAL_PROOF_IDS: A,B,C",
             "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
+            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
             "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
             "run: *restore-local-proofs",
         ):

@@ -318,7 +318,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "eeb7dc7b1526251bf98602caadb10f2defe0789ca47d51ce827f589693a60837";
+        "da02936a6fe108b1c7ee0ecf38f8bdc276b606fd55f03e6cadf313a2be8d8051";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -6766,6 +6766,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             "shell: bash",
             "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
             "LOCAL_PROOF_IDS: A,B,C",
+            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
             "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
             "run: *restore-local-proofs",
         };

@@ -24,7 +24,7 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "145e65fcc543e614143d24e4d5388ac7cd625e2dc1d4b493ab4d8b59b81dec6a"
+    "da02936a6fe108b1c7ee0ecf38f8bdc276b606fd55f03e6cadf313a2be8d8051"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
     "5a37d122520aee8e55e2a2c79570dfc9df131b6737d179d8acff001145b0490d"
@@ -906,7 +906,18 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 local_step = self._workflow_step_lines(body, upload_name)
                 self.assertIn(f"if: always() && hashFiles('{upload_glob}') != ''", local_step)
                 self.assertIn(f"LOCAL_EVIDENCE_FILE: {upload_path}", local_step)
-                self.assertIn("run: *publish-local-evidence", local_step)
+                if job_name == "backend-build":
+                    self.assertIn("run: &publish-local-evidence |", local_step)
+                    for required in (
+                        'tested="$(git rev-parse HEAD)"',
+                        'testedCommit=%s',
+                        'mv -T --no-clobber -- "$temporary" "$destination"',
+                        'if [[ "$lock_acquired" = true ]]',
+                        'test ! -e "$temporary"',
+                    ):
+                        self.assertIn(required, local_step)
+                else:
+                    self.assertIn("run: *publish-local-evidence", local_step)
                 self.assertNotIn("actions/upload-artifact@v7", body)
             except AssertionError as error:
                 raise AssertionError(f"{job_name}: {error}") from error
@@ -974,6 +985,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
                 "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
                 "LOCAL_PROOF_IDS: A,B,C",
+                "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
                 "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
                 "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
                 "run: *restore-local-proofs",

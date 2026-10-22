@@ -86,7 +86,8 @@ jobs:
           [[ "$head" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
-          test "$(git rev-parse HEAD)" = "$head"
+          tested="$(git rev-parse HEAD)"
+          [[ "$tested" =~ ^[0-9a-f]{40}$ ]]
           for ancestor in /home /home/ci "$root"; do test ! -L "$ancestor"; done
           mkdir -p "$root"
           test "$(realpath -e "$root")" = "$root"
@@ -100,20 +101,25 @@ jobs:
           test ! -L "$LOCAL_EVIDENCE_FILE"
           temporary="$(mktemp -d "$root/.tmp-${LOCAL_EVIDENCE_SCOPE}-XXXXXX")"
           lock="$destination.lock"
-          cleanup() { rm -rf -- "$temporary"; rmdir -- "$lock" 2>/dev/null || true; }
+          lock_acquired=false
+          cleanup() {
+            rm -rf -- "$temporary"
+            if [[ "$lock_acquired" = true ]]; then rmdir -- "$lock" 2>/dev/null || true; fi
+          }
           trap cleanup EXIT
           mkdir -p "$temporary/files/$(dirname "$LOCAL_EVIDENCE_FILE")"
           cp -- "$LOCAL_EVIDENCE_FILE" "$temporary/files/$LOCAL_EVIDENCE_FILE"
           bytes="$(wc -c < "$temporary/files/$LOCAL_EVIDENCE_FILE" | tr -d '[:space:]')"
           digest="$(sha256sum "$temporary/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)"
           printf 'schemaVersion=1\nworkflow=ci\nscope=%s\nrunId=%s\nrunAttempt=%s\nsourceHead=%s\ntestedCommit=%s\nrunnerName=%s\nfile=%s\nbytes=%s\nsha256=%s\n' \
-            "$LOCAL_EVIDENCE_SCOPE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$head" "$head" "$RUNNER_NAME" \
+            "$LOCAL_EVIDENCE_SCOPE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$head" "$tested" "$RUNNER_NAME" \
             "$LOCAL_EVIDENCE_FILE" "$bytes" "$digest" > "$temporary/manifest.txt"
           manifest_digest="$(sha256sum "$temporary/manifest.txt" | cut -d ' ' -f 1)"
           test "$(sha256sum "$temporary/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)" = "$digest"
           mkdir -- "$lock"
+          lock_acquired=true
           test ! -e "$destination"
-          mv -- "$temporary" "$destination"
+          mv -T --no-clobber -- "$temporary" "$destination"
           test ! -e "$temporary"
           test ! -L "$destination"
           test "$(realpath -e "$destination")" = "$destination"
@@ -257,6 +263,7 @@ jobs:
           LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           LOCAL_PROOF_SCOPE_PREFIX: backend-proof-
           LOCAL_PROOF_IDS: api,architecture,modules
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-proof-
           LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-backend-group-proofs/proof-
           LOCAL_PROOF_OUTPUT: artifacts/ci-backend-group-proofs
         run: &restore-local-proofs |
@@ -266,7 +273,8 @@ jobs:
           [[ "$head" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
-          test "$(git rev-parse HEAD)" = "$head"
+          tested="$(git rev-parse HEAD)"
+          [[ "$tested" =~ ^[0-9a-f]{40}$ ]]
           test ! -L "$root"
           test "$(realpath -e "$root")" = "$root"
           run_root="$root/gh-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${head:0:7}"
@@ -289,16 +297,18 @@ jobs:
             grep -Fx "runId=$GITHUB_RUN_ID" "$manifest"
             grep -Fx "runAttempt=$GITHUB_RUN_ATTEMPT" "$manifest"
             grep -Fx "sourceHead=$head" "$manifest"
-            grep -Fx "testedCommit=$head" "$manifest"
+            grep -Fx "testedCommit=$tested" "$manifest"
             grep -Fx "runnerName=$RUNNER_NAME" "$manifest"
             grep -Fx "file=$relative" "$manifest"
             bytes="$(sed -n 's/^bytes=//p' "$manifest")"
             digest="$(sed -n 's/^sha256=//p' "$manifest")"
             test "$(wc -c < "$source/files/$relative" | tr -d '[:space:]')" = "$bytes"
             test "$(sha256sum "$source/files/$relative" | cut -d ' ' -f 1)" = "$digest"
-            cp -- "$source/files/$relative" "$LOCAL_PROOF_OUTPUT/proof-$id.json"
+            artifact_directory="$LOCAL_PROOF_OUTPUT/${LOCAL_PROOF_ARTIFACT_PREFIX}${id}"
+            mkdir -- "$artifact_directory"
+            cp -- "$source/files/$relative" "$artifact_directory/proof-$id.json"
           done
-          test "$(find "$LOCAL_PROOF_OUTPUT" -maxdepth 1 -type f -name 'proof-*.json' | wc -l | tr -d '[:space:]')" = "${#ids[@]}"
+          test "$(find "$LOCAL_PROOF_OUTPUT" -mindepth 2 -maxdepth 2 -type f -name 'proof-*.json' | wc -l | tr -d '[:space:]')" = "${#ids[@]}"
       - name: Verify complete backend build and test groups
         run: |
           python3 -I -S -B tools/verify_backend_test_groups.py \
@@ -663,6 +673,7 @@ jobs:
           LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
           LOCAL_PROOF_SCOPE_PREFIX: relational-proof-
           LOCAL_PROOF_IDS: A,B,C
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-
           LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-
           LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs
         run: *restore-local-proofs
