@@ -95,6 +95,31 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
             "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'product-source-40eb0b82' WHERE [Dictionary] = 'gdc-steel-grades' AND [Code] = N'S235JR';");
         await MigrateAsync(run.Factory);
 
+        await AssertWeldedChangedFootprintRefusesRollbackAsync(run.Factory,
+            "UPDATE [product].[Families] SET [Name] = N'kaynaklı Yuvarlak Boru' WHERE [Id] = 'b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99';",
+            "UPDATE [product].[Families] SET [Name] = N'Kaynaklı Yuvarlak Boru' WHERE [Id] = 'b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99';");
+        await AssertWeldedChangedFootprintRefusesRollbackAsync(run.Factory,
+            "UPDATE [product].[Families] SET [Cins] = N'Boru ' WHERE [Id] = 'b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99';",
+            "UPDATE [product].[Families] SET [Cins] = N'Boru' WHERE [Id] = 'b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99';");
+        await AssertWeldedChangedFootprintRefusesRollbackAsync(run.Factory,
+            "UPDATE [product].[Families] SET [SourceRef] = 'issue66-6210091477-p013-a ' WHERE [Id] = 'b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99';",
+            "UPDATE [product].[Families] SET [SourceRef] = 'issue66-6210091477-p013-a' WHERE [Id] = 'b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99';");
+        await AssertWeldedChangedFootprintRefusesRollbackAsync(run.Factory,
+            "UPDATE [product].[Templates] SET [Name] = N'gdc Kaynaklı Yuvarlak Boru Teknik Kartı' WHERE [Id] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [Version] = 1;",
+            "UPDATE [product].[Templates] SET [Name] = N'GDC Kaynaklı Yuvarlak Boru Teknik Kartı' WHERE [Id] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [Version] = 1;");
+        await AssertWeldedChangedFootprintRefusesRollbackAsync(run.Factory,
+            "UPDATE [product].[Templates] SET [SourceRef] = 'ISSUE66-6210091477-P013-A' WHERE [Id] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [Version] = 1;",
+            "UPDATE [product].[Templates] SET [SourceRef] = 'issue66-6210091477-p013-a' WHERE [Id] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [Version] = 1;");
+        await AssertWeldedChangedFootprintRefusesRollbackAsync(run.Factory,
+            "UPDATE [product].[TemplateFields] SET [Role] = 'outside-diameter ' WHERE [TemplateId] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [TemplateVersion] = 1 AND [Key] = 'outside-diameter-mm';",
+            "UPDATE [product].[TemplateFields] SET [Role] = 'outside-diameter' WHERE [TemplateId] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [TemplateVersion] = 1 AND [Key] = 'outside-diameter-mm';");
+        await AssertWeldedChangedFootprintRefusesRollbackAsync(run.Factory,
+            "UPDATE [product].[TemplateFields] SET [Dictionary] = 'gdc-steel-grades ' WHERE [TemplateId] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [TemplateVersion] = 1 AND [Key] = 'steel-grade';",
+            "UPDATE [product].[TemplateFields] SET [Dictionary] = 'gdc-steel-grades' WHERE [TemplateId] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [TemplateVersion] = 1 AND [Key] = 'steel-grade';");
+        await AssertWeldedChangedFootprintRefusesRollbackAsync(run.Factory,
+            "UPDATE [product].[TemplateFields] SET [Key] = 'outside-diameter-mm ' WHERE [TemplateId] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [TemplateVersion] = 1 AND [Key] = 'outside-diameter-mm';",
+            "UPDATE [product].[TemplateFields] SET [Key] = 'outside-diameter-mm' WHERE [TemplateId] = 'f944d764-56f6-4a04-9a31-65074b2c06c1' AND [TemplateVersion] = 1 AND [Key] = 'outside-diameter-mm ';");
+
         await ExecuteAsync(run.Factory.DatabaseConnectionString, """
             UPDATE [product].[TemplateFields]
                SET [Role] = 'outside-diameter-changed'
@@ -219,7 +244,6 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
             await AssertChangedFootprintRefusesRollbackAsync(run.Factory,
             "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'changed-source' WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237';",
             "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'erdemir-flat-2021-p16' WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237';");
-
             failurePhase = RollbackCardReferencePhase;
             await ExecuteAsync(run.Factory.DatabaseConnectionString, """
             INSERT INTO [product].[CodeGroups] ([Id], [Name], [Prefix])
@@ -389,6 +413,25 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
         await ExecuteAsync(factory.DatabaseConnectionString, restore);
     }
 
+    private static async Task AssertWeldedChangedFootprintRefusesRollbackAsync(
+        SqlServerRelationalApiFactory factory, string mutate, string restore)
+    {
+        Assert.Equal(1, await ExecuteCountAsync(factory.DatabaseConnectionString, mutate));
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(factory,
+            ReleaseHotRolledCutSheetPlateTechnicalDefinition.MigrationId));
+        Assert.Equal(51045, refusal.Number);
+        Assert.Contains("partial or changed", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(3, await ScalarAsync<int>(factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Families] WHERE [Id] IN ('b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99', 'b5d078ba-dbb8-4ada-9b6f-28a5ecdeac54', 'f3ebc5b8-d55c-44dd-af7c-bfe2285f44df')"));
+        Assert.Equal(3, await ScalarAsync<int>(factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Templates] WHERE [Id] IN ('f944d764-56f6-4a04-9a31-65074b2c06c1', '93772f5f-5be9-4dba-8c61-f9942f4e523d', 'b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2')"));
+        Assert.Equal(3, await ScalarAsync<int>(factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[TemplateFamilies] WHERE [TemplateId] IN ('f944d764-56f6-4a04-9a31-65074b2c06c1', '93772f5f-5be9-4dba-8c61-f9942f4e523d', 'b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2')"));
+        Assert.Equal(20, await ScalarAsync<int>(factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[TemplateFields] WHERE [TemplateId] IN ('f944d764-56f6-4a04-9a31-65074b2c06c1', '93772f5f-5be9-4dba-8c61-f9942f4e523d', 'b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2')"));
+        Assert.Equal(1, await ExecuteCountAsync(factory.DatabaseConnectionString, restore));
+    }
+
     private static async Task AssertWeldedPrerequisiteDriftRefusesPublicationAsync(
         SqlServerRelationalApiFactory factory, string mutate, string restore)
     {
@@ -489,6 +532,15 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task<int> ExecuteCountAsync(string connectionString, string sql)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return await command.ExecuteNonQueryAsync();
     }
 
     private static async Task<T> ScalarAsync<T>(string connectionString, string sql)
