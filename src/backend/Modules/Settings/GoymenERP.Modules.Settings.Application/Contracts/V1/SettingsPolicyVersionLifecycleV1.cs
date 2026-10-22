@@ -56,6 +56,20 @@ public sealed record SettingsPolicyValueRevisionV1(
     IReadOnlyCollection<SettingsPolicySnapshotEntryV1> Values,
     DateOnly EffectiveFrom);
 
+public sealed class SettingsPolicyValueSnapshotV1
+{
+    internal SettingsPolicyValueSnapshotV1(
+        Guid valueSnapshotId,
+        ImmutableArray<SettingsPolicySnapshotEntryV1> values)
+    {
+        ValueSnapshotId = valueSnapshotId;
+        Values = values;
+    }
+
+    public Guid ValueSnapshotId { get; }
+    public ImmutableArray<SettingsPolicySnapshotEntryV1> Values { get; }
+}
+
 public sealed record PrepareSettingsPolicyVersionV1(
     SettingsPolicySnapshotInputV1 Snapshot,
     SettingsPolicyCommandContextV1 Context);
@@ -96,6 +110,7 @@ public sealed class SettingsPolicyVersionLifecycleV1
         SettingsPolicyVersionStatusV1 status,
         Guid valueSnapshotId,
         ImmutableArray<SettingsPolicySnapshotEntryV1> values,
+        ImmutableArray<SettingsPolicyValueSnapshotV1> valueSnapshotHistory,
         DateOnly effectiveFrom,
         string preparedBy,
         ImmutableArray<string> makerHistory,
@@ -123,6 +138,7 @@ public sealed class SettingsPolicyVersionLifecycleV1
         Status = status;
         ValueSnapshotId = valueSnapshotId;
         Values = values;
+        ValueSnapshotHistory = valueSnapshotHistory;
         EffectiveFrom = effectiveFrom;
         PreparedBy = preparedBy;
         MakerHistory = makerHistory;
@@ -151,6 +167,7 @@ public sealed class SettingsPolicyVersionLifecycleV1
     public SettingsPolicyVersionStatusV1 Status { get; }
     public Guid ValueSnapshotId { get; }
     public ImmutableArray<SettingsPolicySnapshotEntryV1> Values { get; }
+    public ImmutableArray<SettingsPolicyValueSnapshotV1> ValueSnapshotHistory { get; }
     public DateOnly EffectiveFrom { get; }
     public string PreparedBy { get; }
     public ImmutableArray<string> MakerHistory { get; }

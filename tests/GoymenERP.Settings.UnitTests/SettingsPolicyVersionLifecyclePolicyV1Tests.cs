@@ -270,7 +270,16 @@ public sealed class SettingsPolicyVersionLifecyclePolicyV1Tests
 
         Assert.Equal("synthetic-scope-value", Assert.Single(draft.ExactScope).Value);
         Assert.Equal("synthetic-value", Assert.Single(draft.Values).Value);
+        var firstSnapshot = Assert.Single(draft.ValueSnapshotHistory);
+        Assert.Equal(Snapshot, firstSnapshot.ValueSnapshotId);
+        Assert.Equal("synthetic-value", Assert.Single(firstSnapshot.Values).Value);
+        Assert.Empty(draft.ValueSnapshotHistory.Clear());
+        Assert.Single(draft.ValueSnapshotHistory);
+        Assert.Empty(firstSnapshot.Values.Clear());
+        Assert.Equal("synthetic-value", Assert.Single(firstSnapshot.Values).Value);
         Assert.All(typeof(SettingsPolicyVersionLifecycleV1).GetProperties(),
+            property => Assert.False(property.SetMethod?.IsPublic ?? false));
+        Assert.All(typeof(SettingsPolicyValueSnapshotV1).GetProperties(),
             property => Assert.False(property.SetMethod?.IsPublic ?? false));
     }
 
@@ -293,6 +302,82 @@ public sealed class SettingsPolicyVersionLifecyclePolicyV1Tests
                     NextVersion,
                     Revision(Snapshot, "different-successor-value", BusinessDate.AddDays(1)),
                     Context("second-maker", published, 3))));
+    }
+
+    [Fact]
+    public void Historical_snapshot_identity_rejects_nonadjacent_content_change_but_allows_equal_content()
+    {
+        var draft = Prepare(BusinessDate);
+        var second = SettingsPolicyVersionLifecyclePolicyV1.Revise(
+            draft,
+            new ReviseSettingsPolicyVersionV1(
+                Revision(NextSnapshot, "second-value", BusinessDate.AddDays(1)),
+                Context("second-maker", draft, 1)));
+
+        AssertCode(SettingsPolicyVersionLifecycleCodesV1.Invalid,
+            () => SettingsPolicyVersionLifecyclePolicyV1.Revise(
+                second,
+                new ReviseSettingsPolicyVersionV1(
+                    Revision(Snapshot, "changed-original-value", BusinessDate.AddDays(2)),
+                    Context("third-maker", second, 2))));
+
+        var reused = SettingsPolicyVersionLifecyclePolicyV1.Revise(
+            second,
+            new ReviseSettingsPolicyVersionV1(
+                Revision(Snapshot, "synthetic-value", BusinessDate.AddDays(2)),
+                Context("third-maker", second, 2)));
+
+        Assert.Equal(Snapshot, reused.ValueSnapshotId);
+        Assert.Equal("synthetic-value", Assert.Single(reused.Values).Value);
+        Assert.Equal(new[] { Snapshot, NextSnapshot, Snapshot },
+            reused.ValueSnapshotHistory.Select(snapshot => snapshot.ValueSnapshotId).ToArray());
+        Assert.All(
+            reused.ValueSnapshotHistory.Where(snapshot => snapshot.ValueSnapshotId == Snapshot),
+            snapshot => Assert.Equal("synthetic-value", Assert.Single(snapshot.Values).Value));
+        Assert.Equal(3, reused.ValueSnapshotHistory.Length);
+        Assert.Equal(2, reused.ValueSnapshotHistory.RemoveAt(0).Length);
+        Assert.Equal(3, reused.ValueSnapshotHistory.Length);
+    }
+
+    [Fact]
+    public void Successor_carries_snapshot_identity_history_while_starting_fresh_maker_history()
+    {
+        var firstDraft = Prepare(BusinessDate);
+        var revisedFirst = SettingsPolicyVersionLifecyclePolicyV1.Revise(
+            firstDraft,
+            new ReviseSettingsPolicyVersionV1(
+                Revision(NextSnapshot, "second-value", BusinessDate.AddDays(1)),
+                Context("second-maker", firstDraft, 1)));
+        var publishedFirst = Publish(
+            Approve(revisedFirst, "checker", 2),
+            "checker",
+            BusinessDate,
+            3);
+        var successor = SettingsPolicyVersionLifecyclePolicyV1.PrepareNextVersion(
+            publishedFirst,
+            new PrepareNextSettingsPolicyVersionV1(
+                NextVersion,
+                Revision(ThirdSnapshot, "successor-value", BusinessDate.AddDays(2)),
+                Context("successor-maker", publishedFirst, 4)));
+
+        Assert.Equal(new[] { Snapshot, NextSnapshot, ThirdSnapshot },
+            successor.ValueSnapshotHistory.Select(snapshot => snapshot.ValueSnapshotId).ToArray());
+        Assert.Equal(new[] { "successor-maker" }, successor.MakerHistory);
+        AssertCode(SettingsPolicyVersionLifecycleCodesV1.Invalid,
+            () => SettingsPolicyVersionLifecyclePolicyV1.Revise(
+                successor,
+                new ReviseSettingsPolicyVersionV1(
+                    Revision(Snapshot, "changed-across-version", BusinessDate.AddDays(3)),
+                    Context("successor-reviser", successor, 1))));
+
+        var equalReuse = SettingsPolicyVersionLifecyclePolicyV1.Revise(
+            successor,
+            new ReviseSettingsPolicyVersionV1(
+                Revision(Snapshot, "synthetic-value", BusinessDate.AddDays(3)),
+                Context("successor-reviser", successor, 1)));
+        Assert.Equal(new[] { Snapshot, NextSnapshot, ThirdSnapshot, Snapshot },
+            equalReuse.ValueSnapshotHistory.Select(snapshot => snapshot.ValueSnapshotId).ToArray());
+        Assert.Equal(new[] { "successor-maker", "successor-reviser" }, equalReuse.MakerHistory);
     }
 
     private static SettingsPolicyVersionLifecycleV1 Prepare(DateOnly effectiveFrom) =>

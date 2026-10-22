@@ -37,6 +37,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             policyVersion: 1,
             snapshot.ValueSnapshotId,
             snapshot.Values,
+            InitialSnapshotHistory(snapshot.ValueSnapshotId, snapshot.Values),
             snapshot.EffectiveFrom,
             request.Context);
     }
@@ -50,6 +51,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
         RequireStatus(current, SettingsPolicyVersionStatusV1.Draft);
         var revision = Capture(request.Revision);
         RequireConsistentSnapshotIdentity(current, revision);
+        var snapshotHistory = AppendSnapshotHistory(current.ValueSnapshotHistory, revision);
 
         return new SettingsPolicyVersionLifecycleV1(
             current.CompanyId,
@@ -64,6 +66,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             SettingsPolicyVersionStatusV1.Draft,
             revision.ValueSnapshotId,
             revision.Values,
+            snapshotHistory,
             revision.EffectiveFrom,
             request.Context.ActorId,
             current.MakerHistory.Add(request.Context.ActorId),
@@ -143,6 +146,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
 
         var revision = Capture(request.Revision);
         RequireConsistentSnapshotIdentity(current, revision);
+        var snapshotHistory = AppendSnapshotHistory(current.ValueSnapshotHistory, revision);
         return Draft(
             current.CompanyId,
             current.PolicyId,
@@ -154,6 +158,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             Next(current.PolicyVersion),
             revision.ValueSnapshotId,
             revision.Values,
+            snapshotHistory,
             revision.EffectiveFrom,
             request.Context);
     }
@@ -169,6 +174,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
         long policyVersion,
         Guid valueSnapshotId,
         ImmutableArray<SettingsPolicySnapshotEntryV1> values,
+        ImmutableArray<SettingsPolicyValueSnapshotV1> valueSnapshotHistory,
         DateOnly effectiveFrom,
         SettingsPolicyCommandContextV1 context) =>
         new(
@@ -184,6 +190,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             SettingsPolicyVersionStatusV1.Draft,
             valueSnapshotId,
             values,
+            valueSnapshotHistory,
             effectiveFrom,
             context.ActorId,
             [context.ActorId],
@@ -224,6 +231,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             status,
             current.ValueSnapshotId,
             current.Values,
+            current.ValueSnapshotHistory,
             current.EffectiveFrom,
             current.PreparedBy,
             current.MakerHistory,
@@ -278,6 +286,10 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             && current.ValueSnapshotId != Guid.Empty
             && !current.Values.IsDefaultOrEmpty
             && ValidEntries(current.Values, requireValue: true)
+            && ValidSnapshotHistory(
+                current.ValueSnapshotHistory,
+                current.ValueSnapshotId,
+                current.Values)
             && current.EffectiveFrom != default
             && ValidText(current.PreparedBy, ActorMaximumLength)
             && ValidMakerHistory(current.MakerHistory, current.PreparedBy)
@@ -448,11 +460,61 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
         SettingsPolicyVersionLifecycleV1 current,
         CapturedRevision revision)
     {
-        if (revision.ValueSnapshotId == current.ValueSnapshotId
-            && !revision.Values.SequenceEqual(current.Values))
+        if (current.ValueSnapshotHistory.Any(snapshot =>
+                snapshot.ValueSnapshotId == revision.ValueSnapshotId
+                && !snapshot.Values.SequenceEqual(revision.Values)))
         {
             throw Failure(SettingsPolicyVersionLifecycleCodesV1.Invalid);
         }
+    }
+
+    private static ImmutableArray<SettingsPolicyValueSnapshotV1> InitialSnapshotHistory(
+        Guid valueSnapshotId,
+        ImmutableArray<SettingsPolicySnapshotEntryV1> values) =>
+        [new SettingsPolicyValueSnapshotV1(valueSnapshotId, values)];
+
+    private static ImmutableArray<SettingsPolicyValueSnapshotV1> AppendSnapshotHistory(
+        ImmutableArray<SettingsPolicyValueSnapshotV1> history,
+        CapturedRevision revision) =>
+        history.Add(new SettingsPolicyValueSnapshotV1(revision.ValueSnapshotId, revision.Values));
+
+    private static bool ValidSnapshotHistory(
+        ImmutableArray<SettingsPolicyValueSnapshotV1> history,
+        Guid currentSnapshotId,
+        ImmutableArray<SettingsPolicySnapshotEntryV1> currentValues)
+    {
+        if (history.IsDefaultOrEmpty)
+        {
+            return false;
+        }
+
+        var known = new Dictionary<Guid, ImmutableArray<SettingsPolicySnapshotEntryV1>>();
+        foreach (var snapshot in history)
+        {
+            if (snapshot is null
+                || snapshot.ValueSnapshotId == Guid.Empty
+                || snapshot.Values.IsDefaultOrEmpty
+                || !ValidEntries(snapshot.Values, requireValue: true))
+            {
+                return false;
+            }
+
+            if (known.TryGetValue(snapshot.ValueSnapshotId, out var knownValues))
+            {
+                if (!knownValues.SequenceEqual(snapshot.Values))
+                {
+                    return false;
+                }
+            }
+            else
+            {
+                known.Add(snapshot.ValueSnapshotId, snapshot.Values);
+            }
+        }
+
+        var latest = history[^1];
+        return latest.ValueSnapshotId == currentSnapshotId
+            && latest.Values.SequenceEqual(currentValues);
     }
 
     private static bool SameActor(string? left, string? right) =>
