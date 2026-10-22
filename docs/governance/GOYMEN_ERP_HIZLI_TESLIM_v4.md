@@ -46,8 +46,8 @@ arkaya 2 davranışsız tur.
 [22 Ekim kullanıcı kararı](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342843156)
 uyarınca ağır testler (SQL, browser, full, container) saat bağımsız her zaman, mevcut
 tek ağır-iş kilidi altında sırayla koşar. Anlık 2 GiB boş RAM kapısı korunur; eşik
-tutmazsa koşu reddedilir ve neden kaydedilir, ilk uygun anda aynı kapılarla yeniden
-denenir. Sonuç koşu tamamlandığında kanıt klasöründedir; gece veya sabah beklenmez.
+tutmazsa koşu reddedilir ve ret gerekçesi makbuza yazılır; koşu ilk boş fırsatta aynı
+kapılarla otomatik yeniden denenir. Sonuç koşu tamamlandığında kanıt klasöründedir; gece veya sabah beklenmez.
 Bu karar scheduler, servis, config veya yeni watcher eklemez.
 
 ## 5. Bu belgenin kuralı ve AGENTS.md işaretçisi

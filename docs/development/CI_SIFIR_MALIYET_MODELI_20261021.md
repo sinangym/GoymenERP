@@ -72,8 +72,8 @@ hizmet, hesap, lisans yok.
 5. **Her zaman, sıralı koşu:** [22 Ekim kullanıcı kararı](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342843156)
    uyarınca ağır koşular saat bağımsız her zaman, mevcut tek ağır-iş kilidi altında
    sırayla yürür; gece saatine bırakılmaz. Anlık 2 GiB boş RAM kapısı her koşuda korunur.
-   Eşik tutmazsa koşu reddedilir, neden kaydedilir ve ilk uygun anda aynı kapılarla yeniden
-   denenir. Scheduler, servis, config veya yeni watcher eklenmez; Windows Görev Zamanlayıcı
+   Eşik tutmazsa koşu reddedilir, ret gerekçesi makbuza yazılır ve koşu ilk boş fırsatta
+   aynı kapılarla otomatik yeniden denenir. Scheduler, servis, config veya yeni watcher eklenmez; Windows Görev Zamanlayıcı
    22:00 işi ya da yeni `schedule` tetikleyicisi kurulmaz. LOCAL_FULL kilidinin üç blokeri
    kabul edildikten sonra açılır; öncesinde `--plan`.
 6. **Kabul kanıtı:** aday head'de bütün zorunlu job'lar tamam (cancelled/skipped/sıfır test
@@ -108,8 +108,8 @@ oturumu) açık olduğu sürece PR'da yalnız hafif check'ler otomatik koşar.
 ## 5. Kaynak sorunu (RAM < 2 GiB)
 
 Anlık 2 GiB boş RAM eşiği değişmez; bu bir saat kapısı değildir. Ağır koşular her zaman,
-mevcut tek ağır-iş kilidi altında sırayla yürür. Eşik tutmazsa koşu reddedilir, neden
-kaydedilir ve ilk uygun anda aynı kapılarla yeniden denenir; eşik aşılmaz veya test
+mevcut tek ağır-iş kilidi altında sırayla yürür. Eşik tutmazsa koşu reddedilir, ret gerekçesi
+makbuza yazılır ve koşu ilk boş fırsatta aynı kapılarla otomatik yeniden denenir; eşik aşılmaz veya test
 başarılı sayılmaz. Sonuç koşu tamamlandığında kanıt klasörüne yazılır. Bu düzenleme
 scheduler, servis, config veya yeni watcher eklemez.
 
