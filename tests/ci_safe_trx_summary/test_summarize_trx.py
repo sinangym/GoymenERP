@@ -914,7 +914,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
                         "runAttempt=%s\\nsourceHead=%s\\ntestedCommit=%s\\nrunnerName=%s\\n"
                         "file=%s\\nbytes=%s\\nsha256=%s\\n' \\",
                         'mv -T --no-clobber -- "$temporary" "$destination"',
-                        'if [[ "$lock_acquired" = true ]]',
+                        'if [[ "$lock_acquired" = true ]]; then rmdir -- "$lock" 2>/dev/null || true; fi',
                         'test ! -e "$temporary"',
                     ):
                         self.assertIn(required, local_step)
