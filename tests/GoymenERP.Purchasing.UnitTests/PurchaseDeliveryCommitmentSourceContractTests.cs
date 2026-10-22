@@ -49,7 +49,7 @@ public sealed class PurchaseDeliveryCommitmentSourceContractTests
             method.GetParameters().Select(parameter => parameter.ParameterType).ToArray());
         Assert.Equal(
             ["purchaseOrderId", "purchaseOrderLineId", "cancellationToken"],
-            method.GetParameters().Select(parameter => parameter.Name).ToArray());
+            method.GetParameters().Select(parameter => parameter.Name!).ToArray());
 
         var nullability = new NullabilityInfoContext();
         var returnNullability = nullability.Create(method.ReturnParameter);
