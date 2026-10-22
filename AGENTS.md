@@ -42,6 +42,15 @@ güvenlik değişmezleri (bu dosyanın "Mimari değişmezler" ve "Yasaklar" böl
 `KARAR_SICILI.md` önceliği, production aktivasyonunun insanda kalması) aynen korunur.
 Çelişkide v3 süreç tarafında, v2 güvenlik tarafında üstündür.
 
+`docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v4.md` merge edilmişse v3'ten **önce** okunur ve
+uygulanır. v4 (2026-10-21 kullanıcı kararı §2), v3'ün tören seviyesini ve karar akışını
+günceller (dalga START-GO, review dondurma + K1/K2 delta review `DELTA-OK`, P8 `DELEGE-*`
+delegasyonu, yorum disiplini); güvenlik değişmezleri, K3 tanımı ve K3'teki iki bağımsız
+exact-head review aynen korunur. K1/K2'de dondurulmuş `REVIEW-READY <sha>` üzerindeki tam
+karşı-ajan review + merge edilecek son head için `DELTA-OK <sha>` imzası "exact-head
+bağımsız review" şartını sağlar. Çelişkide v4 süreç tarafında, v2/v3 güvenlik tarafında
+üstündür.
+
 - Pre-production PR'ı tek karşı-ajan review + fresh zorunlu CI ile coordinator merge edilir.
   Yalnız doküman/governance/ayar dosyası değiştiren PR'da fresh CI şartı yoktur (yukarıdaki
   22 Ekim kuralı).
