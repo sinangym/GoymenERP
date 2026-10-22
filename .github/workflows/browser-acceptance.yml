@@ -52,7 +52,7 @@ jobs:
   resolve:
     name: Resolve suite and exact head
     if: github.event_name == 'workflow_dispatch' || startsWith(github.event.label.name, 'browser:')
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     timeout-minutes: 5
     outputs:
       suite: ${{ steps.target.outputs.suite }}
@@ -120,7 +120,7 @@ jobs:
   browser:
     name: "Browser suite ${{ needs.resolve.outputs.suite }} on PR ${{ needs.resolve.outputs.pr }}"
     needs: resolve
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     timeout-minutes: 45
     env:
       C01_E2E_COMPOSE_FILE: infra/docker-compose.c01-e2e.yml
