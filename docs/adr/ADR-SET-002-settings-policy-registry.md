@@ -1,10 +1,11 @@
 # ADR-SET-002 — Settings politika kaydı: tek saklama sahibi, tüketici sahipli aile şeması
 
 - Tarih: 2026-10-21
-- Durum: Taslak; K3 iki bağımsız exact-head review ve insan review bekliyor.
+- Durum: Taslak; K3 iki bağımsız exact-head review ve koordinatörün expected-head merge kapısını bekliyor.
 - Kapsam: EK-38 / `W1-SETTINGS` için yalnız mimari tasarım; tüketiciler EK-03, EK-08, EK-36, EK-43.
-- Kaynak tabanı: `main@b6ed7ca5496f8f34314a0a4b2d3f13467bb5ffe7`.
+- İlk kaynak tabanı: `main@b6ed7ca5496f8f34314a0a4b2d3f13467bb5ffe7`; güncel entegrasyon tabanı: `main@c07857755c4634775544a621d0b0b8cd3f220f31`.
 - Kaynak izni: [Issue #66 / 6314255220](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6314255220), yalnız bu ADR.
+- Güncel süreç ve dalga kararları: [22 Ekim merge kuralı](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6340316262) ve [bütün dalgalar açık](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342711040). Finance STOP kaldırılmıştır; AI W05.1 → W05.2 → W06 açıktır. Bu ADR'nin dosya kapsamı yine yalnız tasarımdır; dalga açılışı kendi başına bu ADR'ye runtime uygulama eklemez.
 
 ## Bağlam ve dayanak
 
@@ -123,10 +124,10 @@ Review, eksik insan kararının yerine geçmez. Dayanağı olmayan davranış a�
 | K4 | Sınır karşılaştırması `Exceeds`/`AtOrAbove` varsayılmaz; onaylı sürüm/şema yoksa `Unavailable`. |
 | K5 | Kantar iş tarihi `OccurredAtUtc`'den türetilmez; tüketici owner'ının tarih sözleşmesi gerekir. |
 | K6 | Risk azaltımı şirket kapsamına daraltılmaz; tür/banka/vade ve çakışma önceliği kararı bekler. |
-| K7 | Risk yüzdelerine 100 veya başka bir üst sınır atanmaz; Finance anlam kontrolü ve mevcut STOP korunur. |
+| K7 | Risk yüzdelerine 100 veya başka bir üst sınır atanmaz; aile şeması Finance anlam kontrolü ve güncel karar/delegasyon dayanağıyla gelir. Finance dalgası açıktır; bu ADR bir değer seçmez. |
 | K8 | `NetOfVat`/`WithVat` maruziyet bazı seçilmez; onaylı Finance sözleşmesi olmadan `Unavailable`. |
 | K9 | Yeni saklama revizyonu eski kayıtlara topluca uygulanmaz; kayıt/değerlendirme tarihi seçimi açık kalır, imha uygunluğu üretilmez. |
-| K10 | AI geri bildirim saklaması genel saklama ailesiyle birleştirilmez; farklı tarih anlamı ve AI A-contract-only sınırı korunur. |
+| K10 | AI geri bildirim saklaması genel saklama ailesiyle birleştirilmez; farklı tarih anlamı korunur. AI dalgaları açıktır; AI yalnız şemalı backend tools kullanır, ham SQL/DB erişimi açılmaz. |
 | K11 | Saklama başlangıcı olarak takvim yıl sonu/31 Aralık seçilmez; OPEN-018/021 açık kalır. |
 | K12 | Yasal alt sınır veya onu zorlayan onay kancası etkinleştirilmez; süre matrisi ve insan sorusu korunur. |
 | K13 | Tahsis “yaklaşıyor” eşiği veya `warningDays ≥ 1` seçilmez; ilgili gösterim `Unavailable` kalır, mevcut tahsis kuralı değişmez. |
@@ -173,15 +174,19 @@ sıraya almak, açık anlamlar için `Unavailable` durumunu görünür bırakır
 
 Bu değişiklik yalnız bu ADR dosyasıdır. Uygulama kodu, migration, route, grant,
 gerçek değer, çalışma zamanı, Finance posting/persistence, AI fazı veya production
-değişikliği içermez. Finance STOP ve AI A-contract-only sürer.
+değişikliği içermez. Finance ve AI dalgaları güncel kullanıcı kararıyla açıktır;
+production/deploy/environment/secret, grant/rol/Critical, workflow aktivasyonu ve
+`OPEN-*` kapatma insan kapısında kalır.
 
 Bu kaynak tesliminde belge referansları/hash'leri, tek dosyalık diff ve whitespace
 kontrolü doğrulanır. Build/restore, unit/integration, SQL, browser, scanner ve CI
-çalıştırması `NOT_RUN`; iki bağımsız exact-head K3 review ve insan review açıktır.
+çalıştırması yapılmamıştır; iki bağımsız exact-head K3 review ve koordinatör merge kapısı açıktır.
 ADR kabulü runtime/SQL kabulü değildir. Sonraki uygulama diliminde kendi slotunda
 şirket izolasyonu, yetki/replay, atomik audit/idempotency, sürüm yarışı, exact-scope
 bulunamama/çakışma ve yayın–provider ayrımı kanıtlanır; ilişkisel kanıt gerçek SQL
-Server'da skip0 olmalıdır. Zorunlu CI #765/LOCAL_FULL kabulüne bağlı kalır.
+Server'da skip0 olmalıdır. Bu yalnız belge PR'ında 22 Ekim merge kuralına göre
+CI koşumu aranmaz; sonraki uygulama dilimlerinin zorunlu CI ve gerçek kabul
+kapıları kendi exact head'lerinde tamamlanır.
 
 Belgeyi geri almak çalışan veri veya şema değiştirmez. Sonraki uygulamanın geri
 alma planı kendi diliminde incelenir; bu ADR geçmiş snapshot'ları, audit'i veya
