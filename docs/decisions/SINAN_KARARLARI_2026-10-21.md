@@ -12,6 +12,14 @@ kullanıcı ifadesi: *"5 benim onayımı bekleyendede sisteme uyumlu göymenerp 
 r2: ilk taslak 146 ajanlık bağımsız doğrulamadan geçirildi (6 boyut, bulgu başına iki karşı
 kontrol); 55 onaylı bulgu bu sürüme işlendi.
 
+> **22 Ekim sonraki karar notu:** Bu belge 21 Ekim tarihsel kararlarını korur. Daha yeni
+> [bütün dalgalar kararı](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342711040)
+> Finance STOP'u ve AI `A-contract-only` sınırını development için kaldırdı; Finance Dalga D
+> ile W05.2/W06 geliştirmesi açıldı. Production, provider, grant/rol/`Critical`, secret,
+> deployment, workflow aktivasyonu ve `OPEN-*` kapatma insanda kalır. Saat kuralı zaten
+> [gece slotunu kaldıran kararla](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342843156)
+> §2'ye işlendi; burada tekrar tanımlanmaz.
+
 ## 0. Bu belgenin yetkisi ve sınırı
 
 - **Yetki katmanı (2026-08-31 belgesiyle aynı):** yalnız yukarıdaki doğrudan Sinan ifadesi
@@ -28,8 +36,9 @@ kontrol); 55 onaylı bulgu bu sürüme işlendi.
 - Her değer **Settings/Politika Registry'de başlangıç sürümü (v1)** olarak girilir; koda
   gömülmez (`DEC-SET-001`). Sinan herhangi bir satırı tek satırlık Issue #66 yorumuyla geri
   alabilir; geri alma, o satırla üretilmiş para/stok/üretim kaydını geriye dönük değiştirmez.
-- **Değişmeyenler:** Finance STOP (Dalga D yalnız yetkili source-first; §3.4 tasarım kararıdır,
-  aktivasyon değildir). AI yalnız `A-contract-only`. Production, deploy, secret, e-posta
+- **21 Ekim tarihsel sınırı (22 Ekim notuyla development için superseded):** Finance STOP
+  (Dalga D yalnız yetkili source-first; §3.4 tasarım kararıdır, aktivasyon değildir). AI
+  yalnız `A-contract-only`. Production, deploy, secret, e-posta
   sağlayıcı ve workflow aktivasyonu insanda. `Critical` kümesine (grant-time çift kontrol) yeni
   ad eklenmez; katalog kaydı ≠ Critical sınıflaması ≠ grant. Fiziksel silme yalnız en yüksek
   yetkili (OPEN-021, DEC-DATA-001).
@@ -242,7 +251,10 @@ review'uyla gelir (T5).
   `platform.events.redrive.request/approve`, `organization.companies.change.prepare/approve`)
   Critical bayrağı **olmadan**, yalnız katalog kaydı olarak girilir (grant yok, K3 iki
   bağımsız review); ilgili komutlar grant'e kadar `Unavailable`/default-deny çalışır.
-- Finance STOP: kalkmadı.
+- **21 Ekim durum kaydı:** Finance STOP bu belge tarihinde kalkmamıştı. Daha yeni
+  [22 Ekim kararı](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342711040)
+  development için bu kapıyı kaldırdı; açık işletme kararlarını veya production kapılarını
+  kapatmadı.
 
 ## 5. Uygulama
 

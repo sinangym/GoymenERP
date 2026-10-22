@@ -5,9 +5,15 @@ kaldıralım") · Makbuz: Sinan'ın bu PR'ı merge etmesi · Durum: insan review
 
 v4, v3'ün **rol dağılımını ve dilim sırasını korur**; yalnız tören seviyesini düşürür ve
 karar akışını değiştirir. `AGENTS.md` mimari değişmezleri ve yasakları, `KARAR_SICILI`
-önceliği, production aktivasyonunun insanda kalması, Finance STOP, AI `A-contract-only`,
-K3 tanımı ve K3'teki iki bağımsız exact-head review aynen korunur. Çelişkide v4 süreç
-tarafında, v2/v3 güvenlik tarafında üstündür.
+önceliği, production/deployment/environment/secret/grant/`OPEN-*` kapılarının insanda
+kalması, K3 tanımı ve K3'teki iki bağımsız exact-head review aynen korunur. Çelişkide v4
+süreç tarafında, v2/v3 güvenlik tarafında üstündür.
+
+**22 Ekim sonraki karar eki:** [Issue #66 comment 6342711040](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342711040)
+bütün 0–G dalgalarını geliştirme için açtı; Finance STOP ile AI `A-contract-only` artık
+development engeli değildir. Finance Dalga D ve AI W05.2/W06 mevcut bağımlılık, sahiplik ve
+kabul kapılarıyla ilerler. Bu açılış production, provider, grant, yeni politika veya `OPEN-*`
+kapatma yetkisi vermez; ayrıntı `docs/decisions/SINAN_KARARLARI_2026-10-22.md` içindedir.
 
 **Yürürlük:** v4, `AGENTS.md` "Çalışma orkestrasyonu" bölümüne §5'teki işaretçi Sinan
 tarafından merge edilene kadar yürürlükte değildir; o güne kadar v3, Issue #66'daki dilim
