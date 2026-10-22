@@ -81,27 +81,18 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
         await using var run = await Run.StartAsync();
 
         await MigrateAsync(run.Factory, ReleaseHotRolledCutSheetPlateTechnicalDefinition.MigrationId);
-        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
-            UPDATE [product].[DictionaryEntries]
-               SET [ParentCode] = N'changed-parent'
-             WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237';
-            """);
-        var prerequisite = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(run.Factory));
-        Assert.Equal(51045, prerequisite.Number);
-        Assert.Contains("prerequisite is unavailable", prerequisite.Message, StringComparison.Ordinal);
-        Assert.Equal(5, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
-            "SELECT COUNT(*) FROM [product].[Families]"));
-        Assert.Equal(2, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
-            "SELECT COUNT(*) FROM [product].[Templates]"));
-        Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
-            "SELECT COUNT(*) FROM [product].[Families] WHERE [SourceRef] = 'issue66-6210091477-p013-a'"));
-        Assert.Equal(0, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
-            "SELECT COUNT(*) FROM [product].[Templates] WHERE [SourceRef] = 'issue66-6210091477-p013-a'"));
-        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
-            UPDATE [product].[DictionaryEntries]
-               SET [ParentCode] = N'S235JR'
-             WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237';
-            """);
+        await AssertWeldedPrerequisiteDriftRefusesPublicationAsync(run.Factory,
+            "UPDATE [product].[DictionaryEntries] SET [ParentCode] = N'changed-parent' WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237';",
+            "UPDATE [product].[DictionaryEntries] SET [ParentCode] = N'S235JR' WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237';");
+        await AssertWeldedPrerequisiteDriftRefusesPublicationAsync(run.Factory,
+            "UPDATE [product].[DictionaryEntries] SET [DisplayName] = N's235jr' WHERE [Dictionary] = 'gdc-steel-grades' AND [Code] = N'S235JR';",
+            "UPDATE [product].[DictionaryEntries] SET [DisplayName] = N'S235JR' WHERE [Dictionary] = 'gdc-steel-grades' AND [Code] = N'S235JR';");
+        await AssertWeldedPrerequisiteDriftRefusesPublicationAsync(run.Factory,
+            "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'PRODUCT-SOURCE-40EB0B82' WHERE [Dictionary] = 'gdc-steel-grades' AND [Code] = N'S235JR';",
+            "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'product-source-40eb0b82' WHERE [Dictionary] = 'gdc-steel-grades' AND [Code] = N'S235JR';");
+        await AssertWeldedPrerequisiteDriftRefusesPublicationAsync(run.Factory,
+            "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'product-source-40eb0b82 ' WHERE [Dictionary] = 'gdc-steel-grades' AND [Code] = N'S235JR';",
+            "UPDATE [product].[DictionaryEntries] SET [SourceRef] = 'product-source-40eb0b82' WHERE [Dictionary] = 'gdc-steel-grades' AND [Code] = N'S235JR';");
         await MigrateAsync(run.Factory);
 
         await ExecuteAsync(run.Factory.DatabaseConnectionString, """
@@ -395,6 +386,24 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
         var refusal = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(factory, PreviousMigration));
         Assert.Equal(51044, refusal.Number);
         Assert.Contains("partial or changed", refusal.Message, StringComparison.Ordinal);
+        await ExecuteAsync(factory.DatabaseConnectionString, restore);
+    }
+
+    private static async Task AssertWeldedPrerequisiteDriftRefusesPublicationAsync(
+        SqlServerRelationalApiFactory factory, string mutate, string restore)
+    {
+        await ExecuteAsync(factory.DatabaseConnectionString, mutate);
+        var refusal = await Assert.ThrowsAsync<SqlException>(() => MigrateAsync(factory));
+        Assert.Equal(51045, refusal.Number);
+        Assert.Contains("prerequisite is unavailable", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(5, await ScalarAsync<int>(factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Families]"));
+        Assert.Equal(2, await ScalarAsync<int>(factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Templates]"));
+        Assert.Equal(0, await ScalarAsync<int>(factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Families] WHERE [SourceRef] = 'issue66-6210091477-p013-a'"));
+        Assert.Equal(0, await ScalarAsync<int>(factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Templates] WHERE [SourceRef] = 'issue66-6210091477-p013-a'"));
         await ExecuteAsync(factory.DatabaseConnectionString, restore);
     }
 
