@@ -129,6 +129,18 @@ class ComposeContractTests(unittest.TestCase):
         )
         positions = [workflow.index(fragment) for fragment in required_fragments]
         self.assertEqual(sorted(positions), positions)
+        self.assertEqual(
+            2,
+            workflow.count(
+                "Get-ChildItem -LiteralPath $temporary -File -Recurse -Force"
+            ),
+        )
+        self.assertEqual(
+            1,
+            workflow.count(
+                "Get-ChildItem -LiteralPath $destination -File -Recurse -Force"
+            ),
+        )
         self.assertNotIn("shell: pwsh", workflow)
         self.assertNotIn("Move-Item -LiteralPath $temporary", workflow)
 

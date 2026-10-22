@@ -844,7 +844,7 @@ jobs:
               Set-Content -LiteralPath $runtimeLogPath -Encoding UTF8
 
             $files = @(
-              Get-ChildItem -LiteralPath $temporary -File -Recurse |
+              Get-ChildItem -LiteralPath $temporary -File -Recurse -Force |
                 Sort-Object { $_.FullName.Substring($temporary.Length + 1) } |
                 ForEach-Object {
                   [ordered]@{
@@ -885,7 +885,7 @@ jobs:
               throw "C006 evidence manifest paths are not sorted and unique: $manifestPath"
             }
             $copiedPaths = @(
-              Get-ChildItem -LiteralPath $temporary -File -Recurse |
+              Get-ChildItem -LiteralPath $temporary -File -Recurse -Force |
                 ForEach-Object { $_.FullName.Substring($temporary.Length + 1).Replace('\', '/') } |
                 Where-Object { $_ -cne 'manifest.json' } |
                 Sort-Object -Unique
@@ -934,7 +934,7 @@ jobs:
               }
             }
             $publishedPaths = @(
-              Get-ChildItem -LiteralPath $destination -File -Recurse |
+              Get-ChildItem -LiteralPath $destination -File -Recurse -Force |
                 ForEach-Object { $_.FullName.Substring($destination.Length + 1).Replace('\', '/') } |
                 Where-Object { $_ -cne 'manifest.json' } |
                 Sort-Object -Unique
