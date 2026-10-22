@@ -1,16 +1,28 @@
 # Sinan Kararları — 2026-10-22 (geliştirme dalgaları ve ağır doğrulama)
 
-Bu belge 21 Ekim kararlarını silmez veya yeniden yorumlamaz. Aşağıdaki iki daha yeni süreç
+Bu belge 21 Ekim kararlarını silmez veya yeniden yorumlamaz. Aşağıdaki üç daha yeni süreç
 kararının kanonik ekidir:
 
+- [Issue #66 comment 6340316262 — koordinatör merge yetkisi](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6340316262)
 - [Issue #66 comment 6342711040 — bütün dalgalar açık](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342711040)
 - [Issue #66 comment 6342843156 — gece slotu kaldırıldı](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342843156)
 
-Kaynakların ikisi de `sinangym` hesabından 22 Ekim 2026 tarihinde yayımlanmıştır. Bu sicil
-diliminin hazırlanması için aynı mevcut kullanıcı ayrıca doğrudan şu sınırı vermiştir:
-doküman PR'ı iki bağımsız exact-head review ve 22 Ekim docs exception ile koordinatör
-tarafından merge edilebilir; yazar kendi PR'ını review veya merge etmez. Bu ek, eksik CI
-sonucunu PASS saymaz.
+Kaynakların üçü de `sinangym` hesabından 22 Ekim 2026 tarihinde yayımlanmıştır.
+
+## 0. Governance ve karar PR'ı merge sınırı
+
+- `AGENTS.md`, `docs/governance/**`, `docs/decisions/**`, `.claude/**` ve `.github/**` kalite
+  kapısı değişikliklerini koordinatör merge edebilir; Sinan'ın tıklaması veya `MERGE-OK`
+  makbuzu aranmaz. Bu yetki otomatik merge değildir.
+- Yazar koordinatör olamaz. Aday exact head'de iki bağımsız review ve açık P0/P1 bulunmaması
+  zorunludur.
+- Yalnız doküman/governance/karar/ayar dosyası değiştiren PR'da CI koşumu zorunlu değildir;
+  çalışmamış veya eksik CI PASS sayılmaz.
+- `.github/**` değişikliğinde iki review ayrıca bütün `runs-on` değerlerinin self-hosted
+  kaldığını; hosted fallback ile artifact/cache/Packages/secret/environment/deploy yüzeyi
+  açılmadığını doğrular.
+- Merge sonrası Issue #66'ya PR, merge SHA ve iki review bağlantısını içeren makbuzu
+  koordinatör yazar. Sinan bu yetkiyi tek satırla geri alabilir.
 
 ## 1. Geliştirme kapsamı
 

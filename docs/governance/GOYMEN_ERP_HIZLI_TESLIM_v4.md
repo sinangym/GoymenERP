@@ -1,7 +1,8 @@
 # Göymen ERP — Hızlı Teslim Planı v4.0 (v3 üstüne tören azaltma, r2)
 
 Tarih: 2026-10-21 · Kaynak: Sinan'ın 21 Ekim talimatı ("6 yavaşlatma nedenini ortadan
-kaldıralım") · Makbuz: Sinan'ın bu PR'ı merge etmesi · Durum: insan review kapısında.
+kaldıralım") · 21 Ekim tarihsel makbuzu: Sinan merge eder · 22 Ekim yürürlük kuralı:
+[koordinatör merge yetkisi](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6340316262).
 
 v4, v3'ün **rol dağılımını ve dilim sırasını korur**; yalnız tören seviyesini düşürür ve
 karar akışını değiştirir. `AGENTS.md` mimari değişmezleri ve yasakları, `KARAR_SICILI`
@@ -15,9 +16,10 @@ development engeli değildir. Finance Dalga D ve AI W05.2/W06 mevcut bağımlıl
 kabul kapılarıyla ilerler. Bu açılış production, provider, grant, yeni politika veya `OPEN-*`
 kapatma yetkisi vermez; ayrıntı `docs/decisions/SINAN_KARARLARI_2026-10-22.md` içindedir.
 
-**Yürürlük:** v4, `AGENTS.md` "Çalışma orkestrasyonu" bölümüne §5'teki işaretçi Sinan
-tarafından merge edilene kadar yürürlükte değildir; o güne kadar v3, Issue #66'daki dilim
-başına START-GO pratiği ve her push'ta exact-head review kuralı geçerlidir.
+**Yürürlük:** v4'ün `AGENTS.md` "Çalışma orkestrasyonu" işaretçisi ayrı kaynak bağlantısıdır.
+Bu governance/karar değişikliğinin merge'i Sinan'ın tıklamasına veya `MERGE-OK` makbuzuna
+bağlı değildir: 22 Ekim kuralıyla yazar ≠ koordinatör, iki bağımsız exact-head review ve açık
+P0/P1 bulunmaması şartlarıyla koordinatör merge edebilir. Bu yetki otomatik merge değildir.
 
 ## 1. Bırakılanlar → yerine gelenler
 
@@ -29,7 +31,7 @@ başına START-GO pratiği ve her push'ta exact-head review kuralı geçerlidir.
 | K1/K2'de her push'ta tam yeniden review | **Review dondurma + delta review:** yazar `REVIEW-READY <sha>` yazar, review gelene kadar push yapmaz; bulgular yeni commit'le kapanır; reviewer `git diff <REVIEW-READY sha>..<yeni head>` deltasını okur ve `DELTA-OK <yeni-sha>` yazar. `DELTA-OK <sha>` o head için **exact-head imzasıdır**: koordinatörün expected-head'i = son DELTA-OK sha'sı; DELTA-OK'tan sonraki her push yeni `REVIEW-READY` ister; delta `origin/main` merge'i veya REVIEW-READY diff'i dışındaki dosyayı içeriyorsa delta modu düşer, tam review gerekir. |
 | K3'te de aynı | **Değişmez:** K3'te delta review uygulanmaz; her yeni head için iki bağımsız tam exact-head review yeniden alınır. Review dondurma (aynı anda tek aday head) K3'te de uygulanır. |
 | NEEDS-SINAN → bekleme | **P8 delegasyonu** (`SINAN_KARARLARI_2026-10-21.md` §1): bir karardan veya P1–P7'den doğrudan türeyen soruyu koordinatör `DELEGE-*` olarak cevaplar (GECICI_VARSAYIM; registry v1 değeri; Sinan geri alabilir), devam eder; sicile KILITLI yalnız Sinan'ın açık onayıyla — sessizlik onay değildir. Politika/`OPEN-*` sorusu `NEEDS-SINAN` kalır, haftalık listede Sinan'a gider. |
-| Hosted CI / bütçe tartışması | `CI_SIFIR_MALIYET_MODELI_20261021.md`: self-hosted, artifact/cache yok, bütçe `$0`; `.github/**` PR'ında Sinan `MERGE-OK` makbuzu şart. |
+| Hosted CI / bütçe tartışması | `CI_SIFIR_MALIYET_MODELI_20261021.md`: self-hosted, artifact/cache yok, bütçe `$0`. `.github/**` PR'ında Sinan `MERGE-OK` aranmaz; koordinatör iki bağımsız exact-head review'un bütün `runs-on` değerlerinin self-hosted kaldığını, hosted fallback ile artifact/cache/Packages/secret/environment/deploy yüzeyi açılmadığını doğrulamasından sonra merge edebilir. |
 | Her komut için izin onayı | Repo `.claude/settings.json` izin listesi (Ek A; koordinatör ayrı dar PR ile ekler); cloud oturumlarında Auto modu. |
 
 ## 2. Dur koşulları (değişmedi, 3 tane)
@@ -39,12 +41,15 @@ arkaya 2 davranışsız tur.
 
 ## 3. Merge treni kuralı
 
-- Aynı anda en fazla 5 aday PR; FIFO: `#765 (CI; Sinan MERGE-OK ile) → #749 → #752 → #750 →
+- Aynı anda en fazla 5 aday PR; FIFO: `#765 (CI; 22 Ekim iki-review kuralıyla) → #749 → #752 → #750 →
   #748 → #755`, sonra TAKIP_TABLOSU sırası.
 - Yeni PR açmadan önce yazarın açık aday PR'ı en fazla 1 (+1 remediation).
 - Merge ön şartı: zorunlu job'lar aday head'de tam; K1/K2 tek review (`REVIEW-READY <sha>`
-  veya sonraki `DELTA-OK <sha>` = aday head); K3 iki tam review; `.github/**` PR'ında Sinan
-  `MERGE-OK <sha>`; P0/P1 yok. Koordinatör expected-head squash merge; expected-head ≠ son
+  veya sonraki `DELTA-OK <sha>` = aday head); K3 iki tam review; P0/P1 yok. Yalnız
+  doküman/governance/karar/ayar dosyası değiştiren PR'da fresh CI aranmaz; `NOT_RUN` PASS
+  değildir. `.github/**` değişikliğinde iki review ayrıca bütün `runs-on` değerlerinin
+  self-hosted kaldığını ve hosted fallback ile artifact/cache/Packages/secret/environment/deploy
+  yüzeyi açılmadığını doğrular. Koordinatör expected-head squash merge; expected-head ≠ son
   imzalı sha ise merge yok.
 
 ## 4. Her zaman, sıralı ağır koşular
@@ -59,8 +64,9 @@ Bu karar scheduler, servis, config veya yeni watcher eklemez.
 ## 5. Bu belgenin kuralı ve AGENTS.md işaretçisi
 
 v4 bir kez yazılır. Aynı governance PR'ında `AGENTS.md` "Çalışma orkestrasyonu" bölümüne, v3
-satırının hemen altına şu paragraf eklenir (insan review, Sinan merge eder; otomatik merge
-yok):
+satırının hemen altına şu paragraf eklenir. 22 Ekim kuralıyla yazar ≠ koordinatör, iki bağımsız
+exact-head review ve açık P0/P1 bulunmaması şartlarıyla koordinatör merge eder; otomatik merge
+yoktur:
 
 > `docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v4.md` merge edilmişse v3'ten **önce** okunur ve
 > uygulanır. v4 (2026-10-21 kullanıcı kararı §2), v3'ün tören seviyesini ve karar akışını
