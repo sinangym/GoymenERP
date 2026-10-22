@@ -533,13 +533,19 @@ jobs:
           PY
 
           manifest_hash="$(sha256sum "$manifest" | awk '{print $1}')"
-          mv -- "$temporary" "$destination"
-          trap - EXIT
+          mv -T --no-clobber -- "$temporary" "$destination"
+          [[ ! -e "$temporary" && ! -L "$temporary" ]] || {
+            echo "::error::C01_EVIDENCE_PUBLICATION_REFUSED"; exit 1;
+          }
+          [[ -d "$destination" && ! -L "$destination" ]] || {
+            echo "::error::C01_EVIDENCE_PUBLICATION_INVALID"; exit 1;
+          }
           final_manifest="$destination/manifest.json"
           final_manifest_hash="$(sha256sum "$final_manifest" | awk '{print $1}')"
           [[ "$final_manifest_hash" == "$manifest_hash" ]] || {
             echo "::error::C01_EVIDENCE_MANIFEST_PUBLICATION_DRIFT"; exit 1;
           }
+          trap - EXIT
           echo "C01 evidence preserved at $destination"
           echo "C01 manifest: $final_manifest"
           echo "C01 manifest SHA256: $final_manifest_hash"

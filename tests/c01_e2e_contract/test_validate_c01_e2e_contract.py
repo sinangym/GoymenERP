@@ -407,12 +407,24 @@ class ComposeContractTests(unittest.TestCase):
             "C01_EVIDENCE_ROOT_INVALID",
             "C01_EVIDENCE_ROOT_SYMLINK",
             "C01_EVIDENCE_SELECTED_FILE_ESCAPE",
+            "mv -T --no-clobber",
+            "C01_EVIDENCE_PUBLICATION_REFUSED",
+            "C01_EVIDENCE_PUBLICATION_INVALID",
             '"schemaVersion": 1',
             '"files": files',
             "C01_EVIDENCE_MANIFEST_IDENTITY_MISMATCH",
             "C01_EVIDENCE_MANIFEST_PUBLICATION_DRIFT",
         ):
             self.assertIn(required, preservation)
+        publish = preservation.index('mv -T --no-clobber -- "$temporary" "$destination"')
+        temp_gone = preservation.index('[[ ! -e "$temporary" && ! -L "$temporary" ]]')
+        final_directory = preservation.index('[[ -d "$destination" && ! -L "$destination" ]]')
+        final_hash = preservation.index('[[ "$final_manifest_hash" == "$manifest_hash" ]]')
+        clear_trap = preservation.index("trap - EXIT")
+        self.assertLess(publish, temp_gone)
+        self.assertLess(temp_gone, final_directory)
+        self.assertLess(final_directory, final_hash)
+        self.assertLess(final_hash, clear_trap)
 
     def test_api_start_failure_diagnostics_are_masked_job_log_only(self):
         workflow = (ROOT / ".github" / "workflows" / "c01-real-browser-e2e.yml").read_text(
