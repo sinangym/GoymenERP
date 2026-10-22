@@ -246,14 +246,38 @@ public sealed record AiOwnerEvidenceBindingV1
     }
 }
 
-public sealed record AiOwnerRecordedResultV1
+/// <summary>
+/// A direct execute response is checked at construction AND consumption: an adapter may return an
+/// already constructed response from the wrong cache entry. Neither payload nor binding is public.
+/// This structural check does not authenticate the owner or establish a real execution producer.
+/// </summary>
+public sealed class AiOwnerRecordedResultV1
+{
+    private readonly AiOwnerEvidenceBindingV1 binding;
+    private readonly AiCommandResultV1 result;
+    public AiOwnerRecordedResultV1(AiOwnerCommandRequestV1 request, AiOwnerEvidenceBindingV1 binding, AiCommandResultV1 result)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        this.binding = binding ?? throw new ArgumentNullException(nameof(binding));
+        this.binding.RequireMatches(request);
+        this.result = result ?? throw new ArgumentNullException(nameof(result));
+    }
+
+    public AiOwnerRecordedResultViewV1 ReadFor(AiOwnerCommandRequestV1 actualRequest)
+    {
+        binding.RequireMatches(actualRequest);
+        return new(binding, result);
+    }
+}
+
+/// <summary>Immutable values released only after the response's request-bound consumption check.</summary>
+public sealed class AiOwnerRecordedResultViewV1
 {
     public AiOwnerEvidenceBindingV1 Binding { get; }
     public AiCommandResultV1 Result { get; }
-    public AiOwnerRecordedResultV1(AiOwnerEvidenceBindingV1 binding, AiCommandResultV1 result)
+    internal AiOwnerRecordedResultViewV1(AiOwnerEvidenceBindingV1 binding, AiCommandResultV1 result)
     {
-        Binding = binding ?? throw new ArgumentNullException(nameof(binding));
-        Result = result ?? throw new ArgumentNullException(nameof(result));
+        Binding = binding; Result = result;
     }
 }
 
@@ -295,24 +319,52 @@ public sealed record AiOwnerDefinitiveNoEffectEvidenceV1
     }
 }
 
-public sealed record AiOwnerLookupResultV1
+/// <summary>Cached lookup state, including authoritative no-effect evidence, requires caller-bound consumption.</summary>
+public sealed class AiOwnerLookupResultV1
 {
-    public AiCommandOutcomeV1 Outcome { get; }
-    public AiOwnerRecordedResultV1? RecordedResult { get; }
-    public AiOwnerLookupObservationV1? Observation { get; }
-    public AiOwnerDefinitiveNoEffectEvidenceV1? DefinitiveNoEffect { get; }
+    private readonly string requestIdentityJson;
+    private readonly string idempotencyKey;
+    private readonly AiOwnerRecordedResultV1? recordedResult;
+    private readonly AiOwnerLookupObservationV1? observation;
+    private readonly AiOwnerDefinitiveNoEffectEvidenceV1? definitiveNoEffect;
     public AiOwnerLookupResultV1(AiOwnerCommandRequestV1 request, AiOwnerRecordedResultV1? recordedResult = null,
         AiOwnerLookupObservationV1? observation = null, AiOwnerDefinitiveNoEffectEvidenceV1? definitiveNoEffect = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         if ((recordedResult is null ? 0 : 1) + (observation is null ? 0 : 1) + (definitiveNoEffect is null ? 0 : 1) > 1)
             throw new ArgumentException("Ambiguous owner evidence.");
-        recordedResult?.Binding.RequireMatches(request);
+        recordedResult?.ReadFor(request);
         observation?.Binding.RequireMatches(request);
         definitiveNoEffect?.Binding.RequireMatches(request);
-        Outcome = recordedResult?.Result.Outcome
+        requestIdentityJson = request.RequestIdentityJson; idempotencyKey = request.CommandContext.IdempotencyKey;
+        this.recordedResult = recordedResult; this.observation = observation; this.definitiveNoEffect = definitiveNoEffect;
+    }
+
+    public AiOwnerLookupViewV1 ReadFor(AiOwnerCommandRequestV1 actualRequest)
+    {
+        ArgumentNullException.ThrowIfNull(actualRequest);
+        if (requestIdentityJson != actualRequest.RequestIdentityJson || idempotencyKey != actualRequest.CommandContext.IdempotencyKey)
+            throw new ArgumentException("Cached lookup does not bind this frozen request.");
+        var recorded = recordedResult?.ReadFor(actualRequest);
+        observation?.Binding.RequireMatches(actualRequest);
+        definitiveNoEffect?.Binding.RequireMatches(actualRequest);
+        var outcome = recorded?.Result.Outcome
             ?? (definitiveNoEffect is null ? AiCommandOutcomeV1.Unknown : AiCommandOutcomeV1.NotRecorded);
-        RecordedResult = recordedResult; Observation = observation; DefinitiveNoEffect = definitiveNoEffect;
+        return new(outcome, recorded, observation, definitiveNoEffect);
+    }
+}
+
+/// <summary>Lookup values are exposed only by ReadFor after matching the actual caller request.</summary>
+public sealed class AiOwnerLookupViewV1
+{
+    public AiCommandOutcomeV1 Outcome { get; }
+    public AiOwnerRecordedResultViewV1? RecordedResult { get; }
+    public AiOwnerLookupObservationV1? Observation { get; }
+    public AiOwnerDefinitiveNoEffectEvidenceV1? DefinitiveNoEffect { get; }
+    internal AiOwnerLookupViewV1(AiCommandOutcomeV1 outcome, AiOwnerRecordedResultViewV1? recordedResult,
+        AiOwnerLookupObservationV1? observation, AiOwnerDefinitiveNoEffectEvidenceV1? definitiveNoEffect)
+    {
+        Outcome = outcome; RecordedResult = recordedResult; Observation = observation; DefinitiveNoEffect = definitiveNoEffect;
     }
 }
 
