@@ -115,6 +115,7 @@ public sealed class BusinessConsumableCardV1Tests
     [InlineData("profileCompany")]
     [InlineData("profile")]
     [InlineData("profileVersion")]
+    [InlineData("nullProfile")]
     [InlineData("inactive")]
     [InlineData("before")]
     [InlineData("after")]
@@ -136,6 +137,8 @@ public sealed class BusinessConsumableCardV1Tests
             profileId: mismatch == "profile" ? Guid.NewGuid() : ProfileId,
             profileVersion: mismatch == "profileVersion" ? 5 : 4,
             isActive: mismatch != "inactive");
+        if (mismatch == "nullProfile")
+            profile = profile with { Profile = null! };
 
         Assert.Throws<InvalidOperationException>(() =>
             new BusinessConsumableProfileSnapshotV1(selection, CreateCard(), profile));

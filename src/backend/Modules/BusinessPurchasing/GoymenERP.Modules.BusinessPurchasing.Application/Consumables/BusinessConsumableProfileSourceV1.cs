@@ -66,7 +66,8 @@ public sealed record BusinessConsumableProfileSnapshotV1
             throw SourceMismatch("The consumable card version is stale.");
         if (unitProfile.CompanyId != selection.CompanyId)
             throw SourceMismatch("The Settings unit profile belongs to another company.");
-        if (unitProfile.UnitId != card.UnitProfile.UnitId
+        if (unitProfile.Profile is null
+            || unitProfile.UnitId != card.UnitProfile.UnitId
             || unitProfile.Profile.ProfileId != card.UnitProfile.ProfileId
             || unitProfile.Profile.Version != card.UnitProfile.ProfileVersion)
         {
