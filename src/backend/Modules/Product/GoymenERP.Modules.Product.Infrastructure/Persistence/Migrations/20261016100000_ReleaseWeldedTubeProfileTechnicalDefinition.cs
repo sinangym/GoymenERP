@@ -129,15 +129,31 @@ public sealed class ReleaseWeldedTubeProfileTechnicalDefinition : Migration
                 ('b5d078ba-dbb8-4ada-9b6f-28a5ecdeac54', 'welded-square-profile', N'Kaynaklı Kare Profil', N'Profil', N'Kaynaklı', N'Kare', 'gdc-welded-square-profile', 'issue66-6210091477-p013-a'),
                 ('f3ebc5b8-d55c-44dd-af7c-bfe2285f44df', 'welded-rectangle-profile', N'Kaynaklı Dikdörtgen Profil', N'Profil', N'Kaynaklı', N'Dikdörtgen', 'gdc-welded-rectangle-profile', 'issue66-6210091477-p013-a');
 
-            IF EXISTS (SELECT * FROM @ExpectedFamilies EXCEPT
-                       SELECT [Id], [Code], [Name], [Cins], [Tur], [Tip], [RuleSet], [SourceRef]
+            IF EXISTS (SELECT [Id], CONVERT(varbinary(max), [Code]), CONVERT(varbinary(max), [Name]),
+                              CONVERT(varbinary(max), [Cins]), CONVERT(varbinary(max), [Tur]),
+                              CONVERT(varbinary(max), [Tip]), CONVERT(varbinary(max), [RuleSet]),
+                              CONVERT(varbinary(max), [SourceRef])
+                         FROM @ExpectedFamilies
+                       EXCEPT
+                       SELECT [Id], CONVERT(varbinary(max), [Code]), CONVERT(varbinary(max), [Name]),
+                              CONVERT(varbinary(max), [Cins]), CONVERT(varbinary(max), [Tur]),
+                              CONVERT(varbinary(max), [Tip]), CONVERT(varbinary(max), [RuleSet]),
+                              CONVERT(varbinary(max), [SourceRef])
                          FROM [product].[Families] WHERE [SourceRef] = 'issue66-6210091477-p013-a')
-                OR EXISTS (SELECT [Id], [Code], [Name], [Cins], [Tur], [Tip], [RuleSet], [SourceRef]
+                OR EXISTS (SELECT [Id], CONVERT(varbinary(max), [Code]), CONVERT(varbinary(max), [Name]),
+                                  CONVERT(varbinary(max), [Cins]), CONVERT(varbinary(max), [Tur]),
+                                  CONVERT(varbinary(max), [Tip]), CONVERT(varbinary(max), [RuleSet]),
+                                  CONVERT(varbinary(max), [SourceRef])
                          FROM [product].[Families]
                         WHERE [Id] IN ('b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99', 'b5d078ba-dbb8-4ada-9b6f-28a5ecdeac54', 'f3ebc5b8-d55c-44dd-af7c-bfe2285f44df')
                            OR [Code] IN ('welded-round-pipe', 'welded-square-profile', 'welded-rectangle-profile')
                            OR [SourceRef] = 'issue66-6210091477-p013-a'
-                       EXCEPT SELECT * FROM @ExpectedFamilies)
+                       EXCEPT
+                       SELECT [Id], CONVERT(varbinary(max), [Code]), CONVERT(varbinary(max), [Name]),
+                              CONVERT(varbinary(max), [Cins]), CONVERT(varbinary(max), [Tur]),
+                              CONVERT(varbinary(max), [Tip]), CONVERT(varbinary(max), [RuleSet]),
+                              CONVERT(varbinary(max), [SourceRef])
+                         FROM @ExpectedFamilies)
                 THROW 51045, 'The welded tube/profile family release is partial or changed; use a reviewed forward fix.', 1;
 
             DECLARE @ExpectedTemplates TABLE
@@ -149,15 +165,23 @@ public sealed class ReleaseWeldedTubeProfileTechnicalDefinition : Migration
                 ('93772f5f-5be9-4dba-8c61-f9942f4e523d', 1, 'gdc-welded-square-profile-v1', N'GDC Kaynaklı Kare Profil Teknik Kartı', 'issue66-6210091477-p013-a'),
                 ('b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2', 1, 'gdc-welded-rectangle-profile-v1', N'GDC Kaynaklı Dikdörtgen Profil Teknik Kartı', 'issue66-6210091477-p013-a');
 
-            IF EXISTS (SELECT * FROM @ExpectedTemplates EXCEPT
-                       SELECT [Id], [Version], [Code], [Name], [SourceRef]
+            IF EXISTS (SELECT [Id], [Version], CONVERT(varbinary(max), [Code]),
+                              CONVERT(varbinary(max), [Name]), CONVERT(varbinary(max), [SourceRef])
+                         FROM @ExpectedTemplates
+                       EXCEPT
+                       SELECT [Id], [Version], CONVERT(varbinary(max), [Code]),
+                              CONVERT(varbinary(max), [Name]), CONVERT(varbinary(max), [SourceRef])
                          FROM [product].[Templates] WHERE [SourceRef] = 'issue66-6210091477-p013-a')
-                OR EXISTS (SELECT [Id], [Version], [Code], [Name], [SourceRef]
+                OR EXISTS (SELECT [Id], [Version], CONVERT(varbinary(max), [Code]),
+                                  CONVERT(varbinary(max), [Name]), CONVERT(varbinary(max), [SourceRef])
                          FROM [product].[Templates]
                         WHERE [Id] IN ('f944d764-56f6-4a04-9a31-65074b2c06c1', '93772f5f-5be9-4dba-8c61-f9942f4e523d', 'b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2')
                            OR [Code] IN ('gdc-welded-round-pipe-v1', 'gdc-welded-square-profile-v1', 'gdc-welded-rectangle-profile-v1')
                            OR [SourceRef] = 'issue66-6210091477-p013-a'
-                       EXCEPT SELECT * FROM @ExpectedTemplates)
+                       EXCEPT
+                       SELECT [Id], [Version], CONVERT(varbinary(max), [Code]),
+                              CONVERT(varbinary(max), [Name]), CONVERT(varbinary(max), [SourceRef])
+                         FROM @ExpectedTemplates)
                 THROW 51045, 'The welded tube/profile template release is partial or changed; use a reviewed forward fix.', 1;
 
             DECLARE @ExpectedLinks TABLE ([TemplateId] uniqueidentifier, [TemplateVersion] bigint, [FamilyId] uniqueidentifier);
@@ -205,16 +229,38 @@ public sealed class ReleaseWeldedTubeProfileTechnicalDefinition : Migration
                 ('b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2',1,'coating',6,2,'coating',1,'gdc-coatings',0,NULL,NULL,NULL),
                 ('b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2',1,'producer-grade',7,2,NULL,0,'gdc-producer-grades',1,NULL,NULL,'steel-grade');
 
-            IF EXISTS (SELECT * FROM @ExpectedFields EXCEPT
-                       SELECT [TemplateId], [TemplateVersion], [Key], [Position], [Kind], [Role], [Required],
-                              [Dictionary], [AllowsCandidate], [AppliesWhenField], [AppliesWhenCode], [ParentField]
+            IF EXISTS (SELECT [TemplateId], [TemplateVersion], CONVERT(varbinary(max), [Key]),
+                              [Position], [Kind], CONVERT(varbinary(max), [Role]), [Required],
+                              CONVERT(varbinary(max), [Dictionary]), [AllowsCandidate],
+                              CONVERT(varbinary(max), [AppliesWhenField]),
+                              CONVERT(varbinary(max), [AppliesWhenCode]),
+                              CONVERT(varbinary(max), [ParentField])
+                         FROM @ExpectedFields
+                       EXCEPT
+                       SELECT [TemplateId], [TemplateVersion], CONVERT(varbinary(max), [Key]),
+                              [Position], [Kind], CONVERT(varbinary(max), [Role]), [Required],
+                              CONVERT(varbinary(max), [Dictionary]), [AllowsCandidate],
+                              CONVERT(varbinary(max), [AppliesWhenField]),
+                              CONVERT(varbinary(max), [AppliesWhenCode]),
+                              CONVERT(varbinary(max), [ParentField])
                          FROM [product].[TemplateFields]
                         WHERE [TemplateId] IN ('f944d764-56f6-4a04-9a31-65074b2c06c1', '93772f5f-5be9-4dba-8c61-f9942f4e523d', 'b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2'))
-                OR EXISTS (SELECT [TemplateId], [TemplateVersion], [Key], [Position], [Kind], [Role], [Required],
-                                  [Dictionary], [AllowsCandidate], [AppliesWhenField], [AppliesWhenCode], [ParentField]
+                OR EXISTS (SELECT [TemplateId], [TemplateVersion], CONVERT(varbinary(max), [Key]),
+                                  [Position], [Kind], CONVERT(varbinary(max), [Role]), [Required],
+                                  CONVERT(varbinary(max), [Dictionary]), [AllowsCandidate],
+                                  CONVERT(varbinary(max), [AppliesWhenField]),
+                                  CONVERT(varbinary(max), [AppliesWhenCode]),
+                                  CONVERT(varbinary(max), [ParentField])
                          FROM [product].[TemplateFields]
                         WHERE [TemplateId] IN ('f944d764-56f6-4a04-9a31-65074b2c06c1', '93772f5f-5be9-4dba-8c61-f9942f4e523d', 'b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2')
-                       EXCEPT SELECT * FROM @ExpectedFields)
+                       EXCEPT
+                       SELECT [TemplateId], [TemplateVersion], CONVERT(varbinary(max), [Key]),
+                              [Position], [Kind], CONVERT(varbinary(max), [Role]), [Required],
+                              CONVERT(varbinary(max), [Dictionary]), [AllowsCandidate],
+                              CONVERT(varbinary(max), [AppliesWhenField]),
+                              CONVERT(varbinary(max), [AppliesWhenCode]),
+                              CONVERT(varbinary(max), [ParentField])
+                         FROM @ExpectedFields)
                 THROW 51045, 'The welded tube/profile field release is partial or changed; use a reviewed forward fix.', 1;
 
             IF EXISTS (SELECT 1 FROM [product].[Products]
