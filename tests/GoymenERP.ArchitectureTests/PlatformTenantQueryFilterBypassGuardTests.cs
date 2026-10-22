@@ -319,7 +319,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "4395cb2fc98659df3c7f9ac9c5d175da862457f7dfdae3663f18504a4974ed57";
+        "da02936a6fe108b1c7ee0ecf38f8bdc276b606fd55f03e6cadf313a2be8d8051";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -3066,17 +3066,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                          "          --aggregate \\",
                          "          # --aggregate \\"),
                      (
-                         "      - name: Upload exact SQL shard proof\n"
-                         + "        uses: actions/upload-artifact@v7",
-                         "      - name: Upload exact SQL shard proof\n"
+                         "      - name: Preserve exact SQL shard proof locally\n"
+                         + "        shell: bash",
+                         "      - name: Preserve exact SQL shard proof locally\n"
                          + "        if: ${{ false }}\n"
-                         + "        uses: actions/upload-artifact@v7"),
+                         + "        shell: bash"),
                      (
-                         "      - name: Download exact SQL shard proofs\n"
-                         + "        uses: actions/download-artifact@v8",
-                         "      - name: Download exact SQL shard proofs\n"
+                         "      - name: Restore exact SQL shard proofs from local evidence\n"
+                         + "        shell: bash",
+                         "      - name: Restore exact SQL shard proofs from local evidence\n"
                          + "        shell: echo {0}\n"
-                         + "        uses: actions/download-artifact@v8"),
+                         + "        run: *restore-local-proofs"),
                  })
         {
             Assert.Contains(
@@ -6727,9 +6727,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         var aggregateStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
             "\n      - name: Verify complete SQL Server relational acceptance\n", StringComparison.Ordinal));
         var proofUploadStep = ExtractYamlStep(shardJob, shardJob.IndexOf(
-            "\n      - name: Upload exact SQL shard proof\n", StringComparison.Ordinal));
+            "\n      - name: Preserve exact SQL shard proof locally\n", StringComparison.Ordinal));
         var proofDownloadStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
-            "\n      - name: Download exact SQL shard proofs\n", StringComparison.Ordinal));
+            "\n      - name: Restore exact SQL shard proofs from local evidence\n", StringComparison.Ordinal));
         var expectedShardStepLines = new[]
         {
             "- name: Run exact SQL Server relational shard",
@@ -6765,21 +6765,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         };
         var expectedProofUploadStepLines = new[]
         {
-            "- name: Upload exact SQL shard proof",
-            "uses: actions/upload-artifact@v7",
-            "with:",
-            "name: ci-relational-shard-proof-${{ matrix.shard }}",
-            "path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
-            "if-no-files-found: error",
-            "retention-days: 7",
+            "- name: Preserve exact SQL shard proof locally",
+            "shell: bash",
+            "env:",
+            "LOCAL_EVIDENCE_SCOPE: relational-proof-${{ matrix.shard }}",
+            "LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
+            "run: *publish-local-evidence",
         };
         var expectedProofDownloadStepLines = new[]
         {
-            "- name: Download exact SQL shard proofs",
-            "uses: actions/download-artifact@v8",
-            "with:",
-            "pattern: ci-relational-shard-proof-*",
-            "path: artifacts/ci-relational-proofs",
+            "- name: Restore exact SQL shard proofs from local evidence",
+            "shell: bash",
+            "env:",
+            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
+            "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
+            "LOCAL_PROOF_IDS: A,B,C",
+            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
+            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
+            "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
+            "run: *restore-local-proofs",
         };
         if (shardJob.Length == 0 || rcsiJob.Length == 0 || relationalJob.Length == 0
             || !shardLines.Contains("name: SQL Server relational shard (${{ matrix.shard }})",
@@ -6804,6 +6809,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(shardStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(rcsiStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(aggregateStep))
+            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(proofUploadStep))
+            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(proofDownloadStep))
             || aggregateLines.Count(line => line.StartsWith("if:", StringComparison.Ordinal)) != 1
             || aggregateLines.Any(line => line.StartsWith("continue-on-error:", StringComparison.Ordinal)))
         {
