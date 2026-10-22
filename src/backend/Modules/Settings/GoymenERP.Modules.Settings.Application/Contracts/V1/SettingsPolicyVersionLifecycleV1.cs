@@ -98,6 +98,7 @@ public sealed class SettingsPolicyVersionLifecycleV1
         ImmutableArray<SettingsPolicySnapshotEntryV1> values,
         DateOnly effectiveFrom,
         string preparedBy,
+        ImmutableArray<string> makerHistory,
         DateTimeOffset preparedAtUtc,
         DateOnly preparedBusinessDate,
         string preparationReason,
@@ -124,6 +125,7 @@ public sealed class SettingsPolicyVersionLifecycleV1
         Values = values;
         EffectiveFrom = effectiveFrom;
         PreparedBy = preparedBy;
+        MakerHistory = makerHistory;
         PreparedAtUtc = preparedAtUtc;
         PreparedBusinessDate = preparedBusinessDate;
         PreparationReason = preparationReason;
@@ -151,6 +153,7 @@ public sealed class SettingsPolicyVersionLifecycleV1
     public ImmutableArray<SettingsPolicySnapshotEntryV1> Values { get; }
     public DateOnly EffectiveFrom { get; }
     public string PreparedBy { get; }
+    public ImmutableArray<string> MakerHistory { get; }
     public DateTimeOffset PreparedAtUtc { get; }
     public DateOnly PreparedBusinessDate { get; }
     public string PreparationReason { get; }

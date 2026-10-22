@@ -11,6 +11,7 @@ public sealed class SettingsPolicyVersionLifecyclePolicyV1Tests
     private static readonly Guid NextVersion = Guid.Parse("82000000-0000-4000-8000-000000000002");
     private static readonly Guid Snapshot = Guid.Parse("83000000-0000-4000-8000-000000000001");
     private static readonly Guid NextSnapshot = Guid.Parse("83000000-0000-4000-8000-000000000002");
+    private static readonly Guid ThirdSnapshot = Guid.Parse("83000000-0000-4000-8000-000000000003");
     private static readonly DateOnly BusinessDate = new(2026, 10, 22);
     private static readonly DateTimeOffset At = new(2026, 10, 22, 8, 0, 0, TimeSpan.Zero);
 
@@ -41,6 +42,7 @@ public sealed class SettingsPolicyVersionLifecyclePolicyV1Tests
         Assert.Equal((1L, 3L), (published.PolicyVersion, published.StateVersion));
         Assert.Equal(("maker", "checker", "publisher"),
             (published.PreparedBy, published.ApprovedBy, published.PublishedBy));
+        Assert.Equal(new[] { "maker" }, published.MakerHistory);
         Assert.Equal(("synthetic-family", "synthetic-schema-v1", "synthetic-scope"),
             (published.FamilyId, published.SchemaId, published.ScopeIdentity));
         Assert.Equal(Snapshot, published.ValueSnapshotId);
@@ -76,24 +78,43 @@ public sealed class SettingsPolicyVersionLifecyclePolicyV1Tests
     }
 
     [Fact]
-    public void Draft_revision_moves_the_maker_fence_and_keeps_business_version_identity()
+    public void Every_draft_maker_remains_separated_after_multiple_revisions()
     {
         var draft = Prepare(BusinessDate);
-        var revision = Revision(NextSnapshot, "revised-value", BusinessDate.AddDays(1));
-        var revised = SettingsPolicyVersionLifecyclePolicyV1.Revise(
+        var revisedOnce = SettingsPolicyVersionLifecyclePolicyV1.Revise(
             draft,
             new ReviseSettingsPolicyVersionV1(
-                revision,
+                Revision(NextSnapshot, "revised-value", BusinessDate.AddDays(1)),
                 Context("second-maker", draft, 1)));
+        var revisedTwice = SettingsPolicyVersionLifecyclePolicyV1.Revise(
+            revisedOnce,
+            new ReviseSettingsPolicyVersionV1(
+                Revision(ThirdSnapshot, "revised-again", BusinessDate.AddDays(2)),
+                Context("third-maker", revisedOnce, 2)));
 
         Assert.Equal((draft.PolicyId, draft.PolicyVersionId, 1L, 2L),
-            (revised.PolicyId, revised.PolicyVersionId, revised.PolicyVersion, revised.StateVersion));
-        Assert.Equal("second-maker", revised.PreparedBy);
-        Assert.Equal(NextSnapshot, revised.ValueSnapshotId);
-        AssertCode(SettingsPolicyVersionLifecycleCodesV1.MakerSeparationRequired,
-            () => SettingsPolicyVersionLifecyclePolicyV1.Approve(
-                revised,
-                new ApproveSettingsPolicyVersionV1(Context("second-maker", revised, 2))));
+            (revisedOnce.PolicyId, revisedOnce.PolicyVersionId, revisedOnce.PolicyVersion, revisedOnce.StateVersion));
+        Assert.Equal((draft.PolicyId, draft.PolicyVersionId, 1L, 3L),
+            (revisedTwice.PolicyId, revisedTwice.PolicyVersionId, revisedTwice.PolicyVersion, revisedTwice.StateVersion));
+        Assert.Equal("third-maker", revisedTwice.PreparedBy);
+        Assert.Equal(ThirdSnapshot, revisedTwice.ValueSnapshotId);
+        Assert.Equal(new[] { "maker", "second-maker", "third-maker" }, revisedTwice.MakerHistory);
+        foreach (var maker in revisedTwice.MakerHistory)
+        {
+            AssertCode(SettingsPolicyVersionLifecycleCodesV1.MakerSeparationRequired,
+                () => SettingsPolicyVersionLifecyclePolicyV1.Approve(
+                    revisedTwice,
+                    new ApproveSettingsPolicyVersionV1(Context(maker, revisedTwice, 3))));
+        }
+
+        var approved = Approve(revisedTwice, "checker", 4);
+        var published = Publish(approved, "checker", BusinessDate, 5);
+        Assert.Equal("checker", published.ApprovedBy);
+        Assert.Equal("checker", published.PublishedBy);
+        Assert.Equal(new[] { "maker", "second-maker", "third-maker" }, published.MakerHistory);
+        var extendedHistory = published.MakerHistory.Add("not-a-maker");
+        Assert.Contains("not-a-maker", extendedHistory);
+        Assert.DoesNotContain("not-a-maker", published.MakerHistory);
     }
 
     [Fact]
@@ -110,6 +131,11 @@ public sealed class SettingsPolicyVersionLifecyclePolicyV1Tests
                 draft,
                 new ApproveSettingsPolicyVersionV1(
                     Context("checker", draft, 1) with { PolicyVersionId = Guid.NewGuid() })));
+        AssertCode(SettingsPolicyVersionLifecycleCodesV1.Invalid,
+            () => SettingsPolicyVersionLifecyclePolicyV1.Approve(
+                draft,
+                new ApproveSettingsPolicyVersionV1(
+                    Context("checker", draft, 1) with { PolicyId = Guid.NewGuid() })));
 
         var failure = Assert.Throws<SettingsPolicyVersionLifecycleException>(() =>
             SettingsPolicyVersionLifecyclePolicyV1.Approve(
@@ -118,6 +144,37 @@ public sealed class SettingsPolicyVersionLifecyclePolicyV1Tests
         Assert.Equal(SettingsPolicyVersionLifecycleCodesV1.VersionConflict, failure.Code);
         Assert.Equal(99, failure.ExpectedStateVersion);
         Assert.Equal(1, failure.CurrentStateVersion);
+    }
+
+    [Fact]
+    public void Malformed_command_context_is_rejected_through_the_policy_guard()
+    {
+        var draft = Prepare(BusinessDate);
+        var valid = Context("checker", draft, 1);
+        SettingsPolicyCommandContextV1[] malformed =
+        [
+            valid with { CompanyId = Guid.Empty },
+            valid with { PolicyId = Guid.Empty },
+            valid with { PolicyVersionId = Guid.Empty },
+            valid with { ActorId = " checker " },
+            valid with { IdempotencyKey = "" },
+            valid with { IdempotencyKey = "bad\nkey" },
+            valid with { IdempotencyKey = new string('k', 129) },
+            valid with { Reason = " " },
+            valid with { Reason = "bad\treason" },
+            valid with { Reason = new string('r', 501) },
+            valid with { ExpectedStateVersion = -1 },
+            valid with { OccurredAtUtc = At.ToOffset(TimeSpan.FromHours(3)) },
+            valid with { BusinessDateEuropeIstanbul = default },
+        ];
+
+        foreach (var context in malformed)
+        {
+            AssertCode(SettingsPolicyVersionLifecycleCodesV1.Invalid,
+                () => SettingsPolicyVersionLifecyclePolicyV1.Approve(
+                    draft,
+                    new ApproveSettingsPolicyVersionV1(context)));
+        }
     }
 
     [Fact]
@@ -152,6 +209,26 @@ public sealed class SettingsPolicyVersionLifecyclePolicyV1Tests
         Assert.Equal((published.FamilyId, published.SchemaId, published.ScopeIdentity),
             (next.FamilyId, next.SchemaId, next.ScopeIdentity));
         Assert.Equal("successor-value", Assert.Single(next.Values).Value);
+        Assert.Equal(new[] { "maker-2" }, next.MakerHistory);
+
+        var revisedNext = SettingsPolicyVersionLifecyclePolicyV1.Revise(
+            next,
+            new ReviseSettingsPolicyVersionV1(
+                Revision(ThirdSnapshot, "successor-revised", BusinessDate.AddDays(2)),
+                Context("maker-3", next, 1)));
+        Assert.Equal(new[] { "maker-2", "maker-3" }, revisedNext.MakerHistory);
+        foreach (var maker in revisedNext.MakerHistory)
+        {
+            AssertCode(SettingsPolicyVersionLifecycleCodesV1.MakerSeparationRequired,
+                () => SettingsPolicyVersionLifecyclePolicyV1.Approve(
+                    revisedNext,
+                    new ApproveSettingsPolicyVersionV1(Context(maker, revisedNext, 2))));
+        }
+
+        var approvedNext = Approve(revisedNext, "maker", 3);
+        var publishedNext = Publish(approvedNext, "maker", BusinessDate, 4);
+        Assert.Equal("maker", publishedNext.ApprovedBy);
+        Assert.Equal("maker", publishedNext.PublishedBy);
     }
 
     [Fact]

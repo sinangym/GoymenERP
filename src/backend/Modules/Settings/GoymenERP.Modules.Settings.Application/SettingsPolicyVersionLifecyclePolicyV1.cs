@@ -66,6 +66,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             revision.Values,
             revision.EffectiveFrom,
             request.Context.ActorId,
+            current.MakerHistory.Add(request.Context.ActorId),
             request.Context.OccurredAtUtc,
             request.Context.BusinessDateEuropeIstanbul,
             request.Context.Reason,
@@ -185,6 +186,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             values,
             effectiveFrom,
             context.ActorId,
+            [context.ActorId],
             context.OccurredAtUtc,
             context.BusinessDateEuropeIstanbul,
             context.Reason,
@@ -224,6 +226,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             current.Values,
             current.EffectiveFrom,
             current.PreparedBy,
+            current.MakerHistory,
             current.PreparedAtUtc,
             current.PreparedBusinessDate,
             current.PreparationReason,
@@ -277,6 +280,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
             && ValidEntries(current.Values, requireValue: true)
             && current.EffectiveFrom != default
             && ValidText(current.PreparedBy, ActorMaximumLength)
+            && ValidMakerHistory(current.MakerHistory, current.PreparedBy)
             && Utc(current.PreparedAtUtc)
             && current.PreparedBusinessDate != default
             && ValidText(current.PreparationReason, ReasonMaximumLength);
@@ -289,7 +293,7 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
                 && current.PublishedBusinessDate is null && current.PublicationReason is null,
             SettingsPolicyVersionStatusV1.Approved =>
                 ValidText(current.ApprovedBy, ActorMaximumLength)
-                && !SameActor(current.PreparedBy, current.ApprovedBy)
+                && !IsMaker(current, current.ApprovedBy)
                 && Utc(current.ApprovedAtUtc)
                 && current.ApprovedBusinessDate is not null
                 && ValidText(current.ApprovalReason, ReasonMaximumLength)
@@ -297,12 +301,12 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
                 && current.PublishedBusinessDate is null && current.PublicationReason is null,
             SettingsPolicyVersionStatusV1.Published =>
                 ValidText(current.ApprovedBy, ActorMaximumLength)
-                && !SameActor(current.PreparedBy, current.ApprovedBy)
+                && !IsMaker(current, current.ApprovedBy)
                 && Utc(current.ApprovedAtUtc)
                 && current.ApprovedBusinessDate is not null
                 && ValidText(current.ApprovalReason, ReasonMaximumLength)
                 && ValidText(current.PublishedBy, ActorMaximumLength)
-                && !SameActor(current.PreparedBy, current.PublishedBy)
+                && !IsMaker(current, current.PublishedBy)
                 && Utc(current.PublishedAtUtc)
                 && current.PublishedBusinessDate is not null
                 && current.EffectiveFrom >= current.PublishedBusinessDate.Value
@@ -425,11 +429,20 @@ public static class SettingsPolicyVersionLifecyclePolicyV1
         SettingsPolicyVersionLifecycleV1 current,
         SettingsPolicyCommandContextV1 context)
     {
-        if (SameActor(current.PreparedBy, context.ActorId))
+        if (IsMaker(current, context.ActorId))
         {
             throw Failure(SettingsPolicyVersionLifecycleCodesV1.MakerSeparationRequired);
         }
     }
+
+    private static bool ValidMakerHistory(ImmutableArray<string> makerHistory, string preparedBy) =>
+        !makerHistory.IsDefaultOrEmpty
+        && makerHistory.All(actor => ValidText(actor, ActorMaximumLength))
+        && SameActor(makerHistory[^1], preparedBy);
+
+    private static bool IsMaker(SettingsPolicyVersionLifecycleV1 current, string? actor) =>
+        !current.MakerHistory.IsDefaultOrEmpty
+        && current.MakerHistory.Any(maker => SameActor(maker, actor));
 
     private static void RequireConsistentSnapshotIdentity(
         SettingsPolicyVersionLifecycleV1 current,
