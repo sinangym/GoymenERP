@@ -27,6 +27,7 @@ GROUP_PROJECTS = {
     ),
     "modules": (
         "tests/GoymenERP.Accounting.UnitTests/GoymenERP.Accounting.UnitTests.csproj",
+        "tests/GoymenERP.Ai.UnitTests/GoymenERP.Ai.UnitTests.csproj",
         "tests/GoymenERP.Audit.UnitTests/GoymenERP.Audit.UnitTests.csproj",
         "tests/GoymenERP.Counterparty.UnitTests/GoymenERP.Counterparty.UnitTests.csproj",
         "tests/GoymenERP.DocumentGeneration.Pdf.Tests/GoymenERP.DocumentGeneration.Pdf.Tests.csproj",
@@ -46,8 +47,8 @@ GROUP_PROJECTS = {
         "tests/GoymenERP.Work.UnitTests/GoymenERP.Work.UnitTests.csproj",
     ),
 }
-SOLUTION_PROJECT_COUNT = 71
-TEST_PROJECT_COUNT = 20
+SOLUTION_PROJECT_COUNT = 72
+TEST_PROJECT_COUNT = 21
 PROOF_SCHEMA = 2
 MAX_PROOF_BYTES = 16384
 HEAD_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
@@ -93,8 +94,8 @@ def catalog() -> dict[str, tuple[str, ...]]:
     if (len(projects) != TEST_PROJECT_COUNT or len(set(projects)) != TEST_PROJECT_COUNT
             or sorted(GROUP_PROJECTS) != ["api", "architecture", "modules"]
             or [len(GROUP_PROJECTS[group]) for group in ("architecture", "api", "modules")]
-            != [1, 1, 18]):
-        raise RuntimeError("Backend groups must partition exactly twenty TestSDK projects.")
+            != [1, 1, 19]):
+        raise RuntimeError("Backend groups must partition exactly twenty-one TestSDK projects.")
     return GROUP_PROJECTS
 
 
@@ -108,7 +109,7 @@ def source_inventory(root: Path) -> tuple[str, str]:
     except (OSError, ET.ParseError, KeyError) as exception:
         raise RuntimeError("Backend solution inventory is unreadable.") from exception
     if len(paths) != SOLUTION_PROJECT_COUNT or len(set(paths)) != SOLUTION_PROJECT_COUNT:
-        raise RuntimeError("Backend solution must retain exactly seventy-one unique projects.")
+        raise RuntimeError("Backend solution must retain exactly seventy-two unique projects.")
     test_projects = []
     for value in paths:
         if value.startswith("/") or ".." in Path(value).parts or not value.endswith(".csproj"):

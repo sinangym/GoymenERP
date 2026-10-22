@@ -77,17 +77,58 @@ class BackendGroupVerifierTests(unittest.TestCase):
         self.root = Path(directory.name)
         make_repository(self.root)
 
-    def test_exact_seventy_one_project_solution_has_twenty_disjoint_testsdk_projects(self) -> None:
+    def test_exact_seventy_two_project_solution_has_twenty_one_disjoint_testsdk_projects(self) -> None:
         solution_hash, catalog_hash = VERIFIER.source_inventory(self.root)
         self.assertEqual(len(solution_hash), 64)
         self.assertEqual(len(catalog_hash), 64)
         self.assertEqual(
             [len(VERIFIER.GROUP_PROJECTS[key]) for key in ("architecture", "api", "modules")],
-            [1, 1, 18],
+            [1, 1, 19],
         )
         self.assertEqual(
-            len({p for paths in VERIFIER.GROUP_PROJECTS.values() for p in paths}), 20
+            len({p for paths in VERIFIER.GROUP_PROJECTS.values() for p in paths}), 21
         )
+
+    def test_ai_project_is_required_once_and_only_in_modules_group(self) -> None:
+        ai_project = "tests/GoymenERP.Ai.UnitTests/GoymenERP.Ai.UnitTests.csproj"
+        ai_line = f'    <Project Path="{ai_project}" />\n'
+        solution_path = self.root / "GoymenERP.slnx"
+        solution = solution_path.read_text(encoding="utf-8")
+        self.assertEqual(1, solution.count(ai_line))
+        for label, mutation in (
+            ("missing", solution.replace(ai_line, "", 1)),
+            ("doubled", solution.replace(ai_line, ai_line + ai_line, 1)),
+        ):
+            with self.subTest(source=label):
+                solution_path.write_text(mutation, encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "seventy-two unique projects"):
+                    VERIFIER.source_inventory(self.root)
+        solution_path.write_text(solution, encoding="utf-8")
+
+        original_groups = VERIFIER.GROUP_PROJECTS
+        modules_without_ai = tuple(
+            project for project in original_groups["modules"] if project != ai_project
+        )
+        group_mutations = (
+            ("missing", {**original_groups, "modules": modules_without_ai}),
+            ("doubled", {**original_groups, "modules": original_groups["modules"] + (ai_project,)}),
+            (
+                "wrong-group",
+                {
+                    **original_groups,
+                    "api": original_groups["api"] + (ai_project,),
+                    "modules": modules_without_ai,
+                },
+            ),
+        )
+        for label, mutation in group_mutations:
+            with self.subTest(catalog=label):
+                VERIFIER.GROUP_PROJECTS = mutation
+                try:
+                    with self.assertRaisesRegex(RuntimeError, "twenty-one TestSDK projects"):
+                        VERIFIER.catalog()
+                finally:
+                    VERIFIER.GROUP_PROJECTS = original_groups
 
     def test_missing_extra_duplicate_and_unclassified_project_fail_closed(self) -> None:
         source = (self.root / "GoymenERP.slnx").read_text(encoding="utf-8")
@@ -188,11 +229,11 @@ class BackendGroupVerifierTests(unittest.TestCase):
             (artifact / f"proof-{group}.json").write_text(json.dumps(proof), encoding="utf-8")
         return directory
 
-    def test_aggregate_requires_all_workers_source_and_exact_twenty_project_union(self) -> None:
+    def test_aggregate_requires_all_workers_source_and_exact_twenty_one_project_union(self) -> None:
         directory = self.proof_directory()
         self.assertEqual(
             VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success"),
-            20,
+            21,
         )
         for build, workers in (("failure", "success"), ("success", "skipped")):
             with self.subTest(build=build, workers=workers):
