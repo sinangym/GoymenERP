@@ -16,14 +16,15 @@ public interface IPurchaseDeliveryCommitmentSourceV1
 
 /// <summary>
 /// Immutable Purchasing source facts. Quantities remain the owner's exact text; no sum, tolerance,
-/// conversion or commercial calculation is implied. <see cref="PurchaseOrderVersion"/> is the source
-/// version observed by the consumer. Slice order is explicit through <see cref="PurchaseDeliveryCommitmentSliceV1.SliceNo"/>.
+/// conversion or commercial calculation is implied. <see cref="PurchaseOrderVersion"/> is the opaque
+/// source token observed by the consumer; it has equality identity only and must not be parsed, ordered
+/// or used in arithmetic. Slice order is explicit through <see cref="PurchaseDeliveryCommitmentSliceV1.SliceNo"/>.
 /// </summary>
 public sealed record PurchaseDeliveryCommitmentSourceV1(
     Guid CompanyId,
     Guid PurchaseOrderId,
     Guid PurchaseOrderLineId,
-    long PurchaseOrderVersion,
+    string PurchaseOrderVersion,
     IReadOnlyList<PurchaseDeliveryCommitmentSliceV1> Slices);
 
 /// <summary>
