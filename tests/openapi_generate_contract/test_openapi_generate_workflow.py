@@ -62,15 +62,53 @@ class OpenApiGenerateWorkflowTests(unittest.TestCase):
         self.assertIn("sha256sum contracts/openapi/goymen-erp-v1.json", report)
         self.assertNotIn("contracts/openapi/goymen-erp-v1.json >", report)
 
-    def test_upload_is_exactly_one_file_named_by_the_exact_head(self):
-        uploads = re.findall(r"uses: actions/upload-artifact@", self.workflow)
-        self.assertEqual(len(uploads), 1)
-        upload = self._step("Upload the generated document")
-        self.assertIn("name: openapi-${{ needs.resolve.outputs.head_sha }}", upload)
-        self.assertIn("path: artifacts/openapi.json\n", upload)
-        self.assertNotIn("path: |", upload)
-        self.assertIn("if-no-files-found: error", upload)
-        self.assertRegex(upload, r"(?m)^          retention-days: 3$")
+    def test_local_preservation_is_exactly_one_file_bound_to_the_exact_head(self):
+        self.assertNotIn("actions/upload-artifact", self.workflow)
+        preservation = self._step("Preserve the generated document locally")
+        for required in (
+            "OPENAPI_EVIDENCE_ROOT: /home/ci/local-ci-evidence",
+            'target_sha="${EXPECTED_HEAD_SHA,,}"',
+            '[[ "$(git rev-parse HEAD)" == "$target_sha" ]]',
+            'source_file="$source_root/openapi.json"',
+            'install -m 0644 -- "$resolved_source" "$temporary/openapi.json"',
+            '"files": [',
+            '"path": "openapi.json"',
+            "OPENAPI_EVIDENCE_MANIFEST_FILE_SET_INVALID",
+            "OPENAPI_EVIDENCE_MANIFEST_FILE_MISMATCH",
+            "OpenAPI manifest SHA256:",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, preservation)
+        self.assertNotIn("GITHUB_SHA,,", preservation)
+        self.assertNotIn("contracts/openapi", preservation)
+
+    def test_local_publication_fails_closed_without_overwriting_or_nesting(self):
+        preservation = self._step("Preserve the generated document locally")
+        for required in (
+            "GITHUB_RUN_ID",
+            "GITHUB_RUN_ATTEMPT",
+            "gh-${workflow}-${run_id}-${run_attempt}-${target_sha7}",
+            "OPENAPI_EVIDENCE_ROOT_SYMLINK",
+            "OPENAPI_EVIDENCE_SOURCE_INVALID",
+            "OPENAPI_EVIDENCE_SOURCE_ESCAPE",
+            "OPENAPI_EVIDENCE_TARGET_ESCAPE",
+            "OPENAPI_EVIDENCE_DESTINATION_EXISTS",
+            "mv -T --no-clobber",
+            "OPENAPI_EVIDENCE_PUBLICATION_REFUSED",
+            "OPENAPI_EVIDENCE_PUBLICATION_INVALID",
+            "OPENAPI_EVIDENCE_MANIFEST_PUBLICATION_DRIFT",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, preservation)
+        publish = preservation.index('mv -T --no-clobber -- "$temporary" "$destination"')
+        temp_gone = preservation.index('[[ ! -e "$temporary" && ! -L "$temporary" ]]')
+        final_directory = preservation.index('[[ -d "$destination" && ! -L "$destination" ]]')
+        final_hash = preservation.index('[[ "$final_manifest_hash" == "$manifest_hash" ]]')
+        clear_trap = preservation.index("trap - EXIT")
+        self.assertLess(publish, temp_gone)
+        self.assertLess(temp_gone, final_directory)
+        self.assertLess(final_directory, final_hash)
+        self.assertLess(final_hash, clear_trap)
 
     def test_generation_matches_the_drift_jobs_build_inputs(self):
         # Same bootstrap preflight, same restore flags and configuration as ci.yml's drift job, so

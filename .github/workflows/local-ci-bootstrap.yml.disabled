@@ -1,0 +1,1058 @@
+name: Local CI migration acceptance
+
+on:
+  push:
+    branches:
+      - chatgpt/local-ci-validate-20261016
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-ci-bootstrap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-build:
+    name: Backend full build, vulnerability and migrations
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Delivery backlog integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_task_manifest.py
+          python3 -I -S -B -m unittest discover -s tests/task_manifest_validator -p "test_*.py" -v
+          python3 -I -S -B tools/validate_delivery_backlog.py
+          python3 -I -S -B -m unittest discover -s tests/delivery_backlog_validator -p "test_*.py" -v
+
+      - name: Restore tools and packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool restore --tool-manifest dotnet-tools.json --configfile NuGet.Config
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
+
+      - name: Build
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet build GoymenERP.slnx -noAutoResponse --configuration Release --no-restore
+
+      - name: Architecture dependency guard
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet test tests/GoymenERP.ArchitectureTests/GoymenERP.ArchitectureTests.csproj \
+          -noAutoResponse \
+          --configuration Release \
+          --no-build \
+          --results-directory artifacts/ci-test-results/backend \
+          --logger "console;verbosity=normal" \
+          --logger "trx;LogFilePrefix=architecture"
+
+      - name: Produce secret-free backend test summary
+        if: always() && hashFiles('artifacts/ci-test-results/backend/**/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/backend \
+          --output artifacts/ci-safe-test-summary/backend.json \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job backend-build \
+          --phase test-suite
+
+      - name: Preserve secret-free backend test summary locally
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/backend.json') != ''
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-build-summary
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: &publish-local-evidence |
+          set -euo pipefail
+          root=/home/ci/local-ci-evidence
+          head="${LOCAL_EVIDENCE_SOURCE_HEAD,,}"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          tested="$(git rev-parse HEAD)"
+          [[ "$tested" =~ ^[0-9a-f]{40}$ ]]
+          for ancestor in /home /home/ci "$root"; do test ! -L "$ancestor"; done
+          mkdir -p "$root"
+          test "$(realpath -e "$root")" = "$root"
+          run_root="$root/gh-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${head:0:7}"
+          destination="$run_root/$LOCAL_EVIDENCE_SCOPE"
+          mkdir -p "$run_root"
+          test "$(realpath -e "$run_root")" = "$run_root"
+          test ! -e "$destination"
+          test ! -L "$destination"
+          test -f "$LOCAL_EVIDENCE_FILE"
+          test ! -L "$LOCAL_EVIDENCE_FILE"
+          temporary="$(mktemp -d "$root/.tmp-${LOCAL_EVIDENCE_SCOPE}-XXXXXX")"
+          lock="$destination.lock"
+          lock_acquired=false
+          cleanup() {
+            rm -rf -- "$temporary"
+            if [[ "$lock_acquired" = true ]]; then rmdir -- "$lock" 2>/dev/null || true; fi
+          }
+          trap cleanup EXIT
+          mkdir -p "$temporary/files/$(dirname "$LOCAL_EVIDENCE_FILE")"
+          cp -- "$LOCAL_EVIDENCE_FILE" "$temporary/files/$LOCAL_EVIDENCE_FILE"
+          bytes="$(wc -c < "$temporary/files/$LOCAL_EVIDENCE_FILE" | tr -d '[:space:]')"
+          digest="$(sha256sum "$temporary/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)"
+          printf 'schemaVersion=1\nworkflow=ci\nscope=%s\nrunId=%s\nrunAttempt=%s\nsourceHead=%s\ntestedCommit=%s\nrunnerName=%s\nfile=%s\nbytes=%s\nsha256=%s\n' \
+            "$LOCAL_EVIDENCE_SCOPE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$head" "$tested" "$RUNNER_NAME" \
+            "$LOCAL_EVIDENCE_FILE" "$bytes" "$digest" > "$temporary/manifest.txt"
+          manifest_digest="$(sha256sum "$temporary/manifest.txt" | cut -d ' ' -f 1)"
+          test "$(sha256sum "$temporary/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)" = "$digest"
+          mkdir -- "$lock"
+          lock_acquired=true
+          test ! -e "$destination"
+          mv -T --no-clobber -- "$temporary" "$destination"
+          test ! -e "$temporary"
+          test ! -L "$destination"
+          test "$(realpath -e "$destination")" = "$destination"
+          test "$(sha256sum "$destination/manifest.txt" | cut -d ' ' -f 1)" = "$manifest_digest"
+          test "$(wc -c < "$destination/files/$LOCAL_EVIDENCE_FILE" | tr -d '[:space:]')" = "$bytes"
+          test "$(sha256sum "$destination/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)" = "$digest"
+          printf 'local_evidence=%s\nmanifest_sha256=%s\n' "$destination" "$manifest_digest"
+
+      - name: Check vulnerable dependencies
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet list GoymenERP.slnx package --vulnerable --include-transitive --no-restore --configfile NuGet.Config
+
+      - name: Generate idempotent SQL migration script
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/GoymenERP.Modules.Organization.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --output artifacts/organization-migration.sql
+
+      - name: Generate identity idempotent SQL migration script
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/GoymenERP.Modules.Identity.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context IdentityDbContext \
+          --output artifacts/identity-migration.sql
+
+      - name: Generate audit idempotent SQL migration script
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context AuditDbContext \
+          --output artifacts/audit-migration.sql
+
+      - name: Generate idempotency idempotent SQL migration script
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet tool run dotnet-ef migrations script \
+          --idempotent \
+          --no-build \
+          --configuration Release \
+          --project src/backend/Modules/Idempotency/GoymenERP.Modules.Idempotency.Infrastructure/GoymenERP.Modules.Idempotency.Infrastructure.csproj \
+          --startup-project src/backend/GoymenERP.Api/GoymenERP.Api.csproj \
+          --context CommandExecutionDbContext \
+          --output artifacts/idempotency-migration.sql
+
+  backend-test-group:
+    name: Backend test group (${{ matrix.group }})
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [architecture, api, modules]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore locked solution packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config
+
+      - name: Run exact backend test group
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_backend_test_groups.py \
+          --group "${{ matrix.group }}" \
+          --results-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
+          --proof-output "artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)"
+
+      - name: Preserve exact backend group proof locally
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-proof-${{ matrix.group }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
+
+      - name: Produce secret-free backend group summary
+        if: always() && hashFiles('artifacts/ci-test-results/backend-groups/*/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory "artifacts/ci-test-results/backend-groups/${{ matrix.group }}" \
+          --output "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job backend-test-group \
+          --phase test-suite
+
+      - name: Preserve secret-free backend group summary locally
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/backend-*.json') != ''
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-summary-${{ matrix.group }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
+
+  backend:
+    name: Backend build, test and migration
+    needs: [backend-build, backend-test-group]
+    if: ${{ always() }}
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify backend group proof parser
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
+
+      - name: Restore exact backend group proofs from local evidence
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: backend-proof-
+          LOCAL_PROOF_IDS: api,architecture,modules
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-proof-
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-backend-group-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-backend-group-proofs
+        run: &restore-local-proofs |
+          set -euo pipefail
+          root=/home/ci/local-ci-evidence
+          head="${LOCAL_EVIDENCE_SOURCE_HEAD,,}"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          tested="$(git rev-parse HEAD)"
+          [[ "$tested" =~ ^[0-9a-f]{40}$ ]]
+          test ! -L "$root"
+          test "$(realpath -e "$root")" = "$root"
+          run_root="$root/gh-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${head:0:7}"
+          test ! -L "$run_root"
+          test "$(realpath -e "$run_root")" = "$run_root"
+          rm -rf -- "$LOCAL_PROOF_OUTPUT"
+          mkdir -p "$LOCAL_PROOF_OUTPUT"
+          IFS=',' read -r -a ids <<< "$LOCAL_PROOF_IDS"
+          for id in "${ids[@]}"; do
+            scope="${LOCAL_PROOF_SCOPE_PREFIX}${id}"
+            source="$run_root/$scope"
+            relative="${LOCAL_PROOF_RELATIVE_PREFIX}${id}.json"
+            manifest="$source/manifest.txt"
+            test -f "$manifest"
+            test ! -L "$source"
+            test "$(realpath -e "$source")" = "$source"
+            grep -Fx "schemaVersion=1" "$manifest"
+            grep -Fx "workflow=ci" "$manifest"
+            grep -Fx "scope=$scope" "$manifest"
+            grep -Fx "runId=$GITHUB_RUN_ID" "$manifest"
+            grep -Fx "runAttempt=$GITHUB_RUN_ATTEMPT" "$manifest"
+            grep -Fx "sourceHead=$head" "$manifest"
+            grep -Fx "testedCommit=$tested" "$manifest"
+            grep -Fx "runnerName=$RUNNER_NAME" "$manifest"
+            grep -Fx "file=$relative" "$manifest"
+            bytes="$(sed -n 's/^bytes=//p' "$manifest")"
+            digest="$(sed -n 's/^sha256=//p' "$manifest")"
+            test "$(wc -c < "$source/files/$relative" | tr -d '[:space:]')" = "$bytes"
+            test "$(sha256sum "$source/files/$relative" | cut -d ' ' -f 1)" = "$digest"
+            artifact_directory="$LOCAL_PROOF_OUTPUT/${LOCAL_PROOF_ARTIFACT_PREFIX}${id}"
+            mkdir -- "$artifact_directory"
+            cp -- "$source/files/$relative" "$artifact_directory/proof-$id.json"
+          done
+          test "$(find "$LOCAL_PROOF_OUTPUT" -mindepth 2 -maxdepth 2 -type f -name 'proof-*.json' | wc -l | tr -d '[:space:]')" = "${#ids[@]}"
+      - name: Verify complete backend build and test groups
+        run: |
+          python3 -I -S -B tools/verify_backend_test_groups.py \
+          --aggregate \
+          --proof-directory artifacts/ci-backend-group-proofs \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --build-result "${{ needs.backend-build.result }}" \
+          --worker-result "${{ needs.backend-test-group.result }}"
+
+  recovery-surface-inventory:
+    name: Recovery surface inventory exact-source proof
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify recovery inventory exact event source
+        working-directory: ${{ github.workspace }}
+        shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}
+        env:
+          GIT_NO_REPLACE_OBJECTS: "1"
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          unset \
+            GIT_ALTERNATE_OBJECT_DIRECTORIES \
+            GIT_CEILING_DIRECTORIES \
+            GIT_COMMON_DIR \
+            GIT_CONFIG_COUNT \
+            GIT_CONFIG_GLOBAL \
+            GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_SYSTEM \
+            GIT_DIR \
+            GIT_DISCOVERY_ACROSS_FILESYSTEM \
+            GIT_EXEC_PATH \
+            GIT_GRAFT_FILE \
+            GIT_INDEX_FILE \
+            GIT_NAMESPACE \
+            GIT_OBJECT_DIRECTORY \
+            GIT_REPLACE_REF_BASE \
+            GIT_SHALLOW_FILE \
+            GIT_WORK_TREE \
+            PYTHONBREAKPOINT \
+            PYTHONHOME \
+            PYTHONINSPECT \
+            PYTHONPATH \
+            PYTHONPLATLIBDIR \
+            PYTHONSTARTUP \
+            PYTHONUSERBASE \
+            PYTHONWARNINGS
+          test "$SOURCE_COMMIT" = "$(printf '%s' "$SOURCE_COMMIT" | grep -E '^[0-9a-f]{40}$')"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+          generator_path="tools/generate_recovery_surface_inventory.py"
+          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"
+          generator_temp="$(mktemp --suffix=.py)"
+          inventory_temp="$(mktemp --suffix=.json)"
+
+          cleanup() {
+            rm -f "$generator_temp" "$inventory_temp"
+          }
+          trap cleanup EXIT
+
+          python3 -I -S -B -m unittest discover \
+            -s tests/recovery_surface_inventory \
+            -p "test_*.py" \
+            -v
+
+          git cat-file blob "$SOURCE_COMMIT:$generator_path" > "$generator_temp"
+          test "$(git hash-object "$generator_temp")" = "$generator_blob"
+
+          python3 -I -S -B "$generator_temp" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$inventory_temp"
+          python3 -I -S -B -m json.tool "$inventory_temp" > /dev/null
+
+          printf 'source_commit=%s\n' "$SOURCE_COMMIT"
+          printf 'tested_commit=%s\n' "$(git rev-parse HEAD)"
+          printf 'generator_blob=%s\n' "$generator_blob"
+          printf 'generator_sha256=%s\n' "$(sha256sum "$generator_temp" | cut -d ' ' -f 1)"
+          printf 'inventory_sha256=%s\n' "$(sha256sum "$inventory_temp" | cut -d ' ' -f 1)"
+          printf 'inventory_bytes=%s\n' "$(wc -c < "$inventory_temp" | tr -d '[:space:]')"
+
+  release-manifest:
+    name: Release manifest exact-source proof
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify source-only release manifest
+        working-directory: ${{ github.workspace }}
+        shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}
+        env:
+          GIT_NO_REPLACE_OBJECTS: "1"
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          unset \
+            GIT_ALTERNATE_OBJECT_DIRECTORIES \
+            GIT_CEILING_DIRECTORIES \
+            GIT_COMMON_DIR \
+            GIT_CONFIG_COUNT \
+            GIT_CONFIG_GLOBAL \
+            GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_SYSTEM \
+            GIT_DIR \
+            GIT_DISCOVERY_ACROSS_FILESYSTEM \
+            GIT_EXEC_PATH \
+            GIT_GRAFT_FILE \
+            GIT_INDEX_FILE \
+            GIT_NAMESPACE \
+            GIT_OBJECT_DIRECTORY \
+            GIT_REPLACE_REF_BASE \
+            GIT_SHALLOW_FILE \
+            GIT_WORK_TREE \
+            PYTHONBREAKPOINT \
+            PYTHONHOME \
+            PYTHONINSPECT \
+            PYTHONPATH \
+            PYTHONPLATLIBDIR \
+            PYTHONSTARTUP \
+            PYTHONUSERBASE \
+            PYTHONWARNINGS
+          test "$SOURCE_COMMIT" = "$(printf '%s' "$SOURCE_COMMIT" | grep -E '^[0-9a-f]{40}$')"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+          generator_path="tools/generate_release_manifest.py"
+          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"
+          first_manifest="$(mktemp --suffix=.json)"
+          second_manifest="$(mktemp --suffix=.json)"
+
+          cleanup() {
+            rm -f "$first_manifest" "$second_manifest"
+          }
+          trap cleanup EXIT
+
+          test "$(git hash-object "$generator_path")" = "$generator_blob"
+          python3 -I -S -B -m unittest discover \
+            -s tests/release_manifest \
+            -p "test_*.py" \
+            -v
+
+          python3 -I -S -B "$generator_path" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$first_manifest"
+          python3 -I -S -B "$generator_path" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$second_manifest"
+          cmp --silent "$first_manifest" "$second_manifest"
+          python3 -I -S -B -c \
+            'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); assert d["source"]["commit"]==sys.argv[2]; assert d["source"]["tree"]==sys.argv[3]; assert d["manifestMode"]=="SOURCE_ONLY"; assert d["result"]=="UNVERIFIED"; assert d["deployable"] is False' \
+            "$first_manifest" "$SOURCE_COMMIT" "$(git rev-parse "$SOURCE_COMMIT^{tree}")"
+
+          printf 'source_commit=%s\n' "$SOURCE_COMMIT"
+          printf 'tested_commit=%s\n' "$(git rev-parse HEAD)"
+          printf 'generator_blob=%s\n' "$generator_blob"
+          printf 'generator_sha256=%s\n' "$(sha256sum "$generator_path" | cut -d ' ' -f 1)"
+          printf 'release_manifest_sha256=%s\n' "$(sha256sum "$first_manifest" | cut -d ' ' -f 1)"
+          printf 'release_manifest_bytes=%s\n' "$(wc -c < "$first_manifest" | tr -d '[:space:]')"
+
+  frontend:
+    name: Frontend lint, test and build
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    defaults:
+      run:
+        working-directory: src/frontend/goymen-erp-web
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  relational-shard:
+    name: SQL Server relational shard (${{ matrix.shard }})
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [A, B, C]
+    env:
+      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
+        Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore relational test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Run exact SQL Server relational shard
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --shard "${{ matrix.shard }}" \
+          --trx-output "artifacts/ci-test-results/relational/broad-${{ matrix.shard }}.trx" \
+          --proof-output "artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)"
+
+      - name: Preserve exact SQL shard proof locally
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-proof-${{ matrix.shard }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
+
+      - name: Produce secret-free relational shard summary
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --output "artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json" \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job relational-shard \
+          --phase sql-acceptance
+
+      - name: Preserve secret-free relational shard summary locally
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/shard-*.json') != ''
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-summary-${{ matrix.shard }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
+
+  relational-rcsi:
+    name: Exact RCSI relational acceptance
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    env:
+      GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
+        Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_PID: Developer
+          MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
+          --health-start-period 20s
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/ci_safe_trx_summary -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore relational test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Run exact RCSI relational acceptance verifier
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --rcsi \
+          --trx-output artifacts/ci-test-results/relational/rcsi.trx
+
+      - name: Produce secret-free RCSI test summary
+        if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
+        run: |
+          python3 -I -S -B tools/ci/summarize_trx.py \
+          --trx-directory artifacts/ci-test-results/relational \
+          --output artifacts/ci-safe-test-summary/relational.json \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --job relational-rcsi \
+          --phase sql-acceptance
+
+      - name: Preserve secret-free RCSI test summary locally
+        if: always() && hashFiles('artifacts/ci-safe-test-summary/relational.json') != ''
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-rcsi-summary
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/relational.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
+
+  relational:
+    name: SQL Server relational acceptance
+    needs: [relational-shard, relational-rcsi]
+    if: ${{ always() }}
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify relational shard proof parser
+        run: |
+          python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
+
+      - name: Restore exact SQL shard proofs from local evidence
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: relational-proof-
+          LOCAL_PROOF_IDS: A,B,C
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs
+        run: *restore-local-proofs
+
+      - name: Verify complete SQL Server relational acceptance
+        run: |
+          python3 -I -S -B tools/verify_rcsi_relational_acceptance.py \
+          --aggregate \
+          --proof-directory artifacts/ci-relational-proofs \
+          --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
+          --tested-commit "$(git rev-parse HEAD)" \
+          --worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
+
+  contract-drift:
+    name: OpenAPI contract drift
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: .NET bootstrap and drift validator preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dotnet_bootstrap_integrity -p "test_*.py" -v
+          python3 -I -S -B -m unittest discover -s tests/openapi_contract_drift -p "test_*.py" -v
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore OpenAPI contract test packages
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet restore tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configfile NuGet.Config
+
+      - name: Generate and verify deterministic OpenAPI contract
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          dotnet test tests/GoymenERP.Api.IntegrationTests/GoymenERP.Api.IntegrationTests.csproj \
+          -noAutoResponse \
+          --configuration Release \
+          --no-restore \
+          --filter "FullyQualifiedName~OpenApiContractGenerationTests" \
+          --logger "console;verbosity=normal"
+
+      - name: Compare generated OpenAPI with canonical baseline
+        run: |
+          python3 -I -S -B tools/validate_openapi_contract.py \
+          --baseline contracts/openapi/goymen-erp-v1.json \
+          --generated artifacts/openapi.json
+
+  containers:
+    name: Container build
+    needs:
+      - backend
+      - frontend
+      - relational
+      - contract-drift
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    env:
+      MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: .NET bootstrap integrity preflight
+        run: |
+          python3 -I -S -B tools/validate_dotnet_bootstrap_integrity.py
+          python3 -I -S -B -m unittest discover -s tests/dockerhub_mirror_contract -p "test_*.py" -v
+
+      - name: Configure Docker Hub cache mirror
+        run: |
+          sudo python3 -I -S -B tools/configure_dockerhub_mirror.py configure \
+            --daemon-config /etc/docker/daemon.json
+          sudo systemctl restart docker
+          docker info --format '{{json .RegistryConfig.Mirrors}}' | \
+            python3 -I -S -B tools/configure_dockerhub_mirror.py verify
+
+      - name: Validate compose model
+        run: docker compose -f infra/docker-compose.yml config --quiet
+
+      - name: Build application images
+        run: docker compose -f infra/docker-compose.yml build api web
+
+  validate-ui-catalog:
+    name: UI catalog structure, references and hashes
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Run validator negative tests
+        run: >-
+          python -m unittest discover
+          --start-directory tests/ui_catalog_validator
+          --pattern "test_*.py"
+          --verbose
+
+      - name: Validate UI catalog golden state
+        run: python tools/validate_ui_catalog.py
+
+  cari-c006-backend:
+    name: Cari C006 backend envelope
+    runs-on: [self-hosted, Windows, X64, goymen-ci-windows]
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: '"C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe" -NoLogo -NoProfile -NonInteractive -File {0}'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Existing frontend-owned scanner at an immutable source, not browser PASS evidence.
+      - uses: actions/checkout@v7
+        with:
+          ref: c3cb45e1f85a7079c742bc0abbe62ca3aa805dfe
+          path: artifacts/c006-frontend-scanner
+          persist-credentials: false
+          sparse-checkout: tests/e2e/cari-acceptance-009
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Build and verify backend source and lifecycle
+        run: >-
+          ./tools/ci/cari-c02-link.ps1 -Mode BackendVerify
+          -OutputParent "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Scan final evidence before uploading
+        id: scan
+        if: always()
+        run: >-
+          node artifacts/c006-frontend-scanner/tests/e2e/cari-acceptance-009/scan-evidence.mjs
+          "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}/scan.json"
+          "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Preserve scanned results locally, including failed runs
+        if: ${{ always() && steps.scan.outcome == 'success' }}
+        env:
+          C006_SOURCE: ${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
+          C006_EVIDENCE_ROOT: E:\GoymenERP-CI\evidence
+          C006_WORKFLOW: cari-c02-link-acceptance
+        run: |
+          $innerScript = @'
+          $ErrorActionPreference = 'Stop'
+
+          $approvedPowerShell = 'C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe'
+          $approvedPowerShellHash = 'FA2C8BB1E35CDD62AD15CD06A1D8F2C5961E9725A9BFA1E7CFD2C322F49E9619'
+          $process = Get-Process -Id $PID
+          $processPath = $process.Path
+          $processHash = (Get-FileHash -LiteralPath $processPath -Algorithm SHA256).Hash
+          if ($processPath -ne $approvedPowerShell -or $processHash -ne $approvedPowerShellHash) {
+            throw "Unapproved preservation runtime: $processPath ($processHash)"
+          }
+
+          if (-not (Test-Path -LiteralPath $env:C006_SOURCE -PathType Container)) {
+            throw "Scanned C006 evidence directory is missing: $env:C006_SOURCE"
+          }
+
+          $source = (Resolve-Path -LiteralPath $env:C006_SOURCE).Path.TrimEnd('\')
+          $sourceInfo = Get-Item -LiteralPath $source -Force
+          if (($sourceInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Scanned C006 evidence root is a reparse point: $source"
+          }
+
+          $reparsePoint = Get-ChildItem -LiteralPath $source -Force -Recurse |
+            Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 } |
+            Select-Object -First 1
+          if ($null -ne $reparsePoint) {
+            throw "Scanned C006 evidence contains a reparse point: $($reparsePoint.FullName)"
+          }
+
+          $commitSha = $env:GITHUB_SHA.ToLowerInvariant()
+          if ($commitSha -notmatch '^[0-9a-f]{40}$') {
+            throw "GITHUB_SHA is not canonical: $($env:GITHUB_SHA)"
+          }
+          $actualHead = (& git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $commitSha) {
+            throw "Checked-out HEAD does not match GITHUB_SHA: expected=$commitSha actual=$actualHead"
+          }
+          $runId = $env:GITHUB_RUN_ID
+          if ($runId -notmatch '^[1-9][0-9]*$') {
+            throw "GITHUB_RUN_ID is not canonical: $($env:GITHUB_RUN_ID)"
+          }
+          $runAttempt = $env:GITHUB_RUN_ATTEMPT
+          if ($runAttempt -notmatch '^[1-9][0-9]*$') {
+            throw "GITHUB_RUN_ATTEMPT is not canonical: $($env:GITHUB_RUN_ATTEMPT)"
+          }
+
+          $expectedEvidenceRoot = 'E:\GoymenERP-CI\evidence'
+          $evidenceRootCandidate = [IO.Path]::GetFullPath($env:C006_EVIDENCE_ROOT).TrimEnd('\')
+          if ($evidenceRootCandidate -cne $expectedEvidenceRoot) {
+            throw "C006 evidence root is not the approved literal path: $evidenceRootCandidate"
+          }
+
+          function Assert-NoReparsePathChain([string] $Path, [bool] $RequireLeaf) {
+            $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+            $root = [IO.Path]::GetPathRoot($fullPath).TrimEnd('\')
+            $current = $root
+            $rootItem = Get-Item -LiteralPath ([IO.Path]::GetPathRoot($fullPath)) -Force
+            if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "C006 evidence path contains a reparse point: $($rootItem.FullName)"
+            }
+            $relative = $fullPath.Substring([IO.Path]::GetPathRoot($fullPath).Length)
+            foreach ($segment in $relative.Split('\', [StringSplitOptions]::RemoveEmptyEntries)) {
+              $current = Join-Path $current $segment
+              if (-not (Test-Path -LiteralPath $current)) {
+                if ($RequireLeaf) {
+                  throw "C006 evidence path component is missing: $current"
+                }
+                break
+              }
+              $item = Get-Item -LiteralPath $current -Force
+              if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "C006 evidence path contains a reparse point: $($item.FullName)"
+              }
+            }
+          }
+
+          Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $false
+          New-Item -ItemType Directory -Path $evidenceRootCandidate -Force | Out-Null
+          Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $true
+          $evidenceRootInfo = Get-Item -LiteralPath $evidenceRootCandidate -Force
+          if (-not $evidenceRootInfo.PSIsContainer) {
+            throw "C006 evidence root is not a directory: $($evidenceRootInfo.FullName)"
+          }
+          $evidenceRoot = [IO.Path]::GetFullPath($evidenceRootInfo.FullName).TrimEnd('\')
+          $rootPrefix = "$evidenceRoot\"
+          $sha7 = $commitSha.Substring(0, 7)
+          $directoryName = "gh-$($env:C006_WORKFLOW)-$runId-$runAttempt-$sha7"
+          $destination = [IO.Path]::GetFullPath((Join-Path $evidenceRoot $directoryName))
+          $temporary = [IO.Path]::GetFullPath((Join-Path $evidenceRoot ".tmp-$directoryName-$([Guid]::NewGuid().ToString('N'))"))
+          foreach ($ownedTarget in @($destination, $temporary)) {
+            if (-not $ownedTarget.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "C006 evidence target escapes the owned root: $ownedTarget"
+            }
+          }
+          if (Test-Path -LiteralPath $destination) {
+            throw "C006 evidence destination already exists: $destination"
+          }
+
+          $published = $false
+          try {
+            New-Item -ItemType Directory -Path $temporary | Out-Null
+            foreach ($child in Get-ChildItem -LiteralPath $source -Force) {
+              Copy-Item -LiteralPath $child.FullName -Destination (Join-Path $temporary $child.Name) -Recurse -Force
+            }
+
+            $runtimeLogPath = Join-Path $temporary 'preservation-runtime.json'
+            [ordered]@{
+              processId = $PID
+              processPath = $processPath
+              processStartUtc = $process.StartTime.ToUniversalTime().ToString('O')
+              processSha256 = $processHash.ToLowerInvariant()
+              workingDirectory = (Get-Location).Path
+            } |
+              ConvertTo-Json -Depth 4 |
+              Set-Content -LiteralPath $runtimeLogPath -Encoding UTF8
+
+            $files = @(
+              Get-ChildItem -LiteralPath $temporary -File -Recurse -Force |
+                Sort-Object { $_.FullName.Substring($temporary.Length + 1) } |
+                ForEach-Object {
+                  [ordered]@{
+                    path = $_.FullName.Substring($temporary.Length + 1).Replace('\', '/')
+                    bytes = $_.Length
+                    sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                  }
+                }
+            )
+
+            $manifestPath = Join-Path $temporary 'manifest.json'
+            [ordered]@{
+              schemaVersion = 1
+              workflow = $env:C006_WORKFLOW
+              runId = $runId
+              runAttempt = $runAttempt
+              commitSha = $commitSha
+              commitSha7 = $sha7
+              files = $files
+            } |
+              ConvertTo-Json -Depth 8 |
+              Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+            $manifestReadback = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $readbackFiles = @($manifestReadback.files)
+            if ($manifestReadback.schemaVersion -ne 1 -or
+                $manifestReadback.workflow -cne $env:C006_WORKFLOW -or
+                $manifestReadback.runId -cne $runId -or
+                $manifestReadback.runAttempt -cne $runAttempt -or
+                $manifestReadback.commitSha -cne $commitSha -or
+                $manifestReadback.commitSha7 -cne $sha7 -or
+                $readbackFiles.Count -ne $files.Count) {
+              throw "C006 evidence manifest readback failed: $manifestPath"
+            }
+            $readbackPaths = @($readbackFiles | ForEach-Object { [string]$_.path })
+            $sortedUniquePaths = @($readbackPaths | Sort-Object -Unique)
+            if ([string]::Join("`n", $readbackPaths) -cne [string]::Join("`n", $sortedUniquePaths)) {
+              throw "C006 evidence manifest paths are not sorted and unique: $manifestPath"
+            }
+            $copiedPaths = @(
+              Get-ChildItem -LiteralPath $temporary -File -Recurse -Force |
+                ForEach-Object { $_.FullName.Substring($temporary.Length + 1).Replace('\', '/') } |
+                Where-Object { $_ -cne 'manifest.json' } |
+                Sort-Object -Unique
+            )
+            if ([string]::Join("`n", $copiedPaths) -cne [string]::Join("`n", $readbackPaths)) {
+              throw "C006 evidence manifest does not contain the exact copied file set: $manifestPath"
+            }
+            for ($index = 0; $index -lt $files.Count; $index++) {
+              $expectedFile = $files[$index]
+              $readbackFile = $readbackFiles[$index]
+              if ($readbackFile.path -cne $expectedFile.path -or
+                  [long]$readbackFile.bytes -ne [long]$expectedFile.bytes -or
+                  $readbackFile.sha256 -cne $expectedFile.sha256) {
+                throw "C006 evidence manifest file identity drifted at index $index"
+              }
+              $copiedPath = Join-Path $temporary ([string]$readbackFile.path).Replace('/', '\')
+              if (-not (Test-Path -LiteralPath $copiedPath -PathType Leaf) -or
+                  (Get-Item -LiteralPath $copiedPath -Force).Length -ne [long]$readbackFile.bytes -or
+                  (Get-FileHash -LiteralPath $copiedPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $readbackFile.sha256) {
+                throw "C006 evidence copied bytes do not match the manifest: $($readbackFile.path)"
+              }
+            }
+            $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+            [IO.Directory]::Move($temporary, $destination)
+            $published = $true
+            if (Test-Path -LiteralPath $temporary) {
+              throw "C006 temporary evidence directory still exists after publication: $temporary"
+            }
+            $destinationInfo = Get-Item -LiteralPath $destination -Force
+            if (-not $destinationInfo.PSIsContainer -or
+                ($destinationInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "C006 published evidence is not a non-reparse directory: $destination"
+            }
+            $finalManifestPath = Join-Path $destination 'manifest.json'
+            $finalManifestHash = (Get-FileHash -LiteralPath $finalManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($finalManifestHash -ne $manifestHash) {
+              throw "C006 evidence manifest changed during publication: $finalManifestPath"
+            }
+            foreach ($manifestFile in $readbackFiles) {
+              $finalFilePath = Join-Path $destination ([string]$manifestFile.path).Replace('/', '\')
+              if (-not (Test-Path -LiteralPath $finalFilePath -PathType Leaf) -or
+                  (Get-Item -LiteralPath $finalFilePath -Force).Length -ne [long]$manifestFile.bytes -or
+                  (Get-FileHash -LiteralPath $finalFilePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifestFile.sha256) {
+                throw "C006 published bytes do not match the manifest: $($manifestFile.path)"
+              }
+            }
+            $publishedPaths = @(
+              Get-ChildItem -LiteralPath $destination -File -Recurse -Force |
+                ForEach-Object { $_.FullName.Substring($destination.Length + 1).Replace('\', '/') } |
+                Where-Object { $_ -cne 'manifest.json' } |
+                Sort-Object -Unique
+            )
+            if ([string]::Join("`n", $publishedPaths) -cne [string]::Join("`n", $readbackPaths)) {
+              throw "C006 published file set does not exactly match the manifest: $destination"
+            }
+
+            Write-Host "C006 evidence preserved at $destination"
+            Write-Host "C006 manifest: $finalManifestPath"
+            Write-Host "C006 manifest SHA256: $finalManifestHash"
+          }
+          finally {
+            if (-not $published -and (Test-Path -LiteralPath $temporary)) {
+              Remove-Item -LiteralPath $temporary -Recurse -Force
+            }
+          }
+          '@
+
+          & 'C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe' -NoLogo -NoProfile -NonInteractive -Command $innerScript
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
