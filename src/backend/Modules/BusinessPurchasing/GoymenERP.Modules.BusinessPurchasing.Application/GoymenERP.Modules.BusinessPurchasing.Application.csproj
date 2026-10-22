@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../GoymenERP.Modules.BusinessPurchasing.Domain/GoymenERP.Modules.BusinessPurchasing.Domain.csproj" />
+    <ProjectReference Include="../../../BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="../../Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
+  </ItemGroup>
+</Project>
