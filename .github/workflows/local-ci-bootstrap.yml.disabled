@@ -690,7 +690,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        shell: pwsh
+        shell: '"C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe" -NoLogo -NoProfile -NonInteractive -File {0}'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -720,11 +720,241 @@ jobs:
           node artifacts/c006-frontend-scanner/tests/e2e/cari-acceptance-009/scan-evidence.mjs
           "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}/scan.json"
           "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}"
-      - name: Preserve scanned results, including failed runs
+      - name: Preserve scanned results locally, including failed runs
         if: ${{ always() && steps.scan.outcome == 'success' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
+        env:
+          C006_SOURCE: ${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
+          C006_EVIDENCE_ROOT: E:\GoymenERP-CI\evidence
+          C006_WORKFLOW: cari-c02-link-acceptance
+        run: |
+          $innerScript = @'
+          $ErrorActionPreference = 'Stop'
+
+          $approvedPowerShell = 'C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe'
+          $approvedPowerShellHash = 'FA2C8BB1E35CDD62AD15CD06A1D8F2C5961E9725A9BFA1E7CFD2C322F49E9619'
+          $process = Get-Process -Id $PID
+          $processPath = $process.Path
+          $processHash = (Get-FileHash -LiteralPath $processPath -Algorithm SHA256).Hash
+          if ($processPath -ne $approvedPowerShell -or $processHash -ne $approvedPowerShellHash) {
+            throw "Unapproved preservation runtime: $processPath ($processHash)"
+          }
+
+          if (-not (Test-Path -LiteralPath $env:C006_SOURCE -PathType Container)) {
+            throw "Scanned C006 evidence directory is missing: $env:C006_SOURCE"
+          }
+
+          $source = (Resolve-Path -LiteralPath $env:C006_SOURCE).Path.TrimEnd('\')
+          $sourceInfo = Get-Item -LiteralPath $source -Force
+          if (($sourceInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Scanned C006 evidence root is a reparse point: $source"
+          }
+
+          $reparsePoint = Get-ChildItem -LiteralPath $source -Force -Recurse |
+            Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 } |
+            Select-Object -First 1
+          if ($null -ne $reparsePoint) {
+            throw "Scanned C006 evidence contains a reparse point: $($reparsePoint.FullName)"
+          }
+
+          $commitSha = $env:GITHUB_SHA.ToLowerInvariant()
+          if ($commitSha -notmatch '^[0-9a-f]{40}$') {
+            throw "GITHUB_SHA is not canonical: $($env:GITHUB_SHA)"
+          }
+          $actualHead = (& git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $commitSha) {
+            throw "Checked-out HEAD does not match GITHUB_SHA: expected=$commitSha actual=$actualHead"
+          }
+          $runId = $env:GITHUB_RUN_ID
+          if ($runId -notmatch '^[1-9][0-9]*$') {
+            throw "GITHUB_RUN_ID is not canonical: $($env:GITHUB_RUN_ID)"
+          }
+          $runAttempt = $env:GITHUB_RUN_ATTEMPT
+          if ($runAttempt -notmatch '^[1-9][0-9]*$') {
+            throw "GITHUB_RUN_ATTEMPT is not canonical: $($env:GITHUB_RUN_ATTEMPT)"
+          }
+
+          $expectedEvidenceRoot = 'E:\GoymenERP-CI\evidence'
+          $evidenceRootCandidate = [IO.Path]::GetFullPath($env:C006_EVIDENCE_ROOT).TrimEnd('\')
+          if ($evidenceRootCandidate -cne $expectedEvidenceRoot) {
+            throw "C006 evidence root is not the approved literal path: $evidenceRootCandidate"
+          }
+
+          function Assert-NoReparsePathChain([string] $Path, [bool] $RequireLeaf) {
+            $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+            $root = [IO.Path]::GetPathRoot($fullPath).TrimEnd('\')
+            $current = $root
+            $rootItem = Get-Item -LiteralPath ([IO.Path]::GetPathRoot($fullPath)) -Force
+            if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "C006 evidence path contains a reparse point: $($rootItem.FullName)"
+            }
+            $relative = $fullPath.Substring([IO.Path]::GetPathRoot($fullPath).Length)
+            foreach ($segment in $relative.Split('\', [StringSplitOptions]::RemoveEmptyEntries)) {
+              $current = Join-Path $current $segment
+              if (-not (Test-Path -LiteralPath $current)) {
+                if ($RequireLeaf) {
+                  throw "C006 evidence path component is missing: $current"
+                }
+                break
+              }
+              $item = Get-Item -LiteralPath $current -Force
+              if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "C006 evidence path contains a reparse point: $($item.FullName)"
+              }
+            }
+          }
+
+          Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $false
+          New-Item -ItemType Directory -Path $evidenceRootCandidate -Force | Out-Null
+          Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $true
+          $evidenceRootInfo = Get-Item -LiteralPath $evidenceRootCandidate -Force
+          if (-not $evidenceRootInfo.PSIsContainer) {
+            throw "C006 evidence root is not a directory: $($evidenceRootInfo.FullName)"
+          }
+          $evidenceRoot = [IO.Path]::GetFullPath($evidenceRootInfo.FullName).TrimEnd('\')
+          $rootPrefix = "$evidenceRoot\"
+          $sha7 = $commitSha.Substring(0, 7)
+          $directoryName = "gh-$($env:C006_WORKFLOW)-$runId-$runAttempt-$sha7"
+          $destination = [IO.Path]::GetFullPath((Join-Path $evidenceRoot $directoryName))
+          $temporary = [IO.Path]::GetFullPath((Join-Path $evidenceRoot ".tmp-$directoryName-$([Guid]::NewGuid().ToString('N'))"))
+          foreach ($ownedTarget in @($destination, $temporary)) {
+            if (-not $ownedTarget.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "C006 evidence target escapes the owned root: $ownedTarget"
+            }
+          }
+          if (Test-Path -LiteralPath $destination) {
+            throw "C006 evidence destination already exists: $destination"
+          }
+
+          $published = $false
+          try {
+            New-Item -ItemType Directory -Path $temporary | Out-Null
+            foreach ($child in Get-ChildItem -LiteralPath $source -Force) {
+              Copy-Item -LiteralPath $child.FullName -Destination (Join-Path $temporary $child.Name) -Recurse -Force
+            }
+
+            $runtimeLogPath = Join-Path $temporary 'preservation-runtime.json'
+            [ordered]@{
+              processId = $PID
+              processPath = $processPath
+              processStartUtc = $process.StartTime.ToUniversalTime().ToString('O')
+              processSha256 = $processHash.ToLowerInvariant()
+              workingDirectory = (Get-Location).Path
+            } |
+              ConvertTo-Json -Depth 4 |
+              Set-Content -LiteralPath $runtimeLogPath -Encoding UTF8
+
+            $files = @(
+              Get-ChildItem -LiteralPath $temporary -File -Recurse -Force |
+                Sort-Object { $_.FullName.Substring($temporary.Length + 1) } |
+                ForEach-Object {
+                  [ordered]@{
+                    path = $_.FullName.Substring($temporary.Length + 1).Replace('\', '/')
+                    bytes = $_.Length
+                    sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                  }
+                }
+            )
+
+            $manifestPath = Join-Path $temporary 'manifest.json'
+            [ordered]@{
+              schemaVersion = 1
+              workflow = $env:C006_WORKFLOW
+              runId = $runId
+              runAttempt = $runAttempt
+              commitSha = $commitSha
+              commitSha7 = $sha7
+              files = $files
+            } |
+              ConvertTo-Json -Depth 8 |
+              Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+            $manifestReadback = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $readbackFiles = @($manifestReadback.files)
+            if ($manifestReadback.schemaVersion -ne 1 -or
+                $manifestReadback.workflow -cne $env:C006_WORKFLOW -or
+                $manifestReadback.runId -cne $runId -or
+                $manifestReadback.runAttempt -cne $runAttempt -or
+                $manifestReadback.commitSha -cne $commitSha -or
+                $manifestReadback.commitSha7 -cne $sha7 -or
+                $readbackFiles.Count -ne $files.Count) {
+              throw "C006 evidence manifest readback failed: $manifestPath"
+            }
+            $readbackPaths = @($readbackFiles | ForEach-Object { [string]$_.path })
+            $sortedUniquePaths = @($readbackPaths | Sort-Object -Unique)
+            if ([string]::Join("`n", $readbackPaths) -cne [string]::Join("`n", $sortedUniquePaths)) {
+              throw "C006 evidence manifest paths are not sorted and unique: $manifestPath"
+            }
+            $copiedPaths = @(
+              Get-ChildItem -LiteralPath $temporary -File -Recurse -Force |
+                ForEach-Object { $_.FullName.Substring($temporary.Length + 1).Replace('\', '/') } |
+                Where-Object { $_ -cne 'manifest.json' } |
+                Sort-Object -Unique
+            )
+            if ([string]::Join("`n", $copiedPaths) -cne [string]::Join("`n", $readbackPaths)) {
+              throw "C006 evidence manifest does not contain the exact copied file set: $manifestPath"
+            }
+            for ($index = 0; $index -lt $files.Count; $index++) {
+              $expectedFile = $files[$index]
+              $readbackFile = $readbackFiles[$index]
+              if ($readbackFile.path -cne $expectedFile.path -or
+                  [long]$readbackFile.bytes -ne [long]$expectedFile.bytes -or
+                  $readbackFile.sha256 -cne $expectedFile.sha256) {
+                throw "C006 evidence manifest file identity drifted at index $index"
+              }
+              $copiedPath = Join-Path $temporary ([string]$readbackFile.path).Replace('/', '\')
+              if (-not (Test-Path -LiteralPath $copiedPath -PathType Leaf) -or
+                  (Get-Item -LiteralPath $copiedPath -Force).Length -ne [long]$readbackFile.bytes -or
+                  (Get-FileHash -LiteralPath $copiedPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $readbackFile.sha256) {
+                throw "C006 evidence copied bytes do not match the manifest: $($readbackFile.path)"
+              }
+            }
+            $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+            [IO.Directory]::Move($temporary, $destination)
+            $published = $true
+            if (Test-Path -LiteralPath $temporary) {
+              throw "C006 temporary evidence directory still exists after publication: $temporary"
+            }
+            $destinationInfo = Get-Item -LiteralPath $destination -Force
+            if (-not $destinationInfo.PSIsContainer -or
+                ($destinationInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "C006 published evidence is not a non-reparse directory: $destination"
+            }
+            $finalManifestPath = Join-Path $destination 'manifest.json'
+            $finalManifestHash = (Get-FileHash -LiteralPath $finalManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($finalManifestHash -ne $manifestHash) {
+              throw "C006 evidence manifest changed during publication: $finalManifestPath"
+            }
+            foreach ($manifestFile in $readbackFiles) {
+              $finalFilePath = Join-Path $destination ([string]$manifestFile.path).Replace('/', '\')
+              if (-not (Test-Path -LiteralPath $finalFilePath -PathType Leaf) -or
+                  (Get-Item -LiteralPath $finalFilePath -Force).Length -ne [long]$manifestFile.bytes -or
+                  (Get-FileHash -LiteralPath $finalFilePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifestFile.sha256) {
+                throw "C006 published bytes do not match the manifest: $($manifestFile.path)"
+              }
+            }
+            $publishedPaths = @(
+              Get-ChildItem -LiteralPath $destination -File -Recurse -Force |
+                ForEach-Object { $_.FullName.Substring($destination.Length + 1).Replace('\', '/') } |
+                Where-Object { $_ -cne 'manifest.json' } |
+                Sort-Object -Unique
+            )
+            if ([string]::Join("`n", $publishedPaths) -cne [string]::Join("`n", $readbackPaths)) {
+              throw "C006 published file set does not exactly match the manifest: $destination"
+            }
+
+            Write-Host "C006 evidence preserved at $destination"
+            Write-Host "C006 manifest: $finalManifestPath"
+            Write-Host "C006 manifest SHA256: $finalManifestHash"
+          }
+          finally {
+            if (-not $published -and (Test-Path -LiteralPath $temporary)) {
+              Remove-Item -LiteralPath $temporary -Recurse -Force
+            }
+          }
+          '@
+
+          & 'C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe' -NoLogo -NoProfile -NonInteractive -Command $innerScript
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
