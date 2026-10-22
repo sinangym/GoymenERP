@@ -38,6 +38,8 @@ REQUIRED_FILES = (
     "docs/decisions/KARAR_SICILI.md",
     "docs/decisions/KARAR_SICILI.csv",
     "docs/decisions/ACIK_KARARLAR.md",
+    "docs/decisions/SINAN_KARARLARI_2026-10-21.md",
+    "docs/decisions/SINAN_KARARLARI_2026-10-22.md",
     "docs/acceptance/ACCEPTANCE_70.md",
     "docs/ui/CANONICAL_SCREEN_STATUS.csv",
 )
@@ -77,17 +79,21 @@ class IndependentProvenanceRecomputeTests(unittest.TestCase):
 
         result = RECOMPUTE.recompute(REPOSITORY_ROOT)
 
-        self.assertEqual(117, result["decisionRegistry"]["count"])
+        self.assertEqual(213, result["decisionRegistry"]["count"])
+        self.assertEqual(117, result["legacyDecisionRegistry"]["count"])
+        self.assertTrue(result["legacyDecisionRegistry"]["isReviewed"])
+        self.assertEqual(96, result["delegatedSourceAdmission"]["count"])
+        self.assertTrue(result["delegatedSourceAdmission"]["isExact"])
         self.assertEqual(
-            {"GECICI_VARSAYIM": 3, "KILITLI": 114},
+            {"GECICI_VARSAYIM": 99, "KILITLI": 114},
             result["decisionRegistry"]["statusHistogram"],
         )
         self.assertEqual(
-            "af615a1f2b3d01e8b07c8d63643e52c3a6c452b1eea8e5c4aa4bedea62bac1c9",
+            "90742638160e681618ed4008d93f5ebbf4495e761078d54f66fe16818da2259c",
             result["decisionRegistry"]["canonicalRowsSha256"],
         )
         self.assertEqual(
-            "94c1b852e421288bb110f005bdf5e77a35046c3e9729f8eb6a044440d7da085f",
+            "6681913f63c339f913a6882a23d4d91440f67e3284ead64123f988ea6473e3cd",
             result["decisionRegistry"]["orderedIdsSha256"],
         )
         self.assertTrue(result["decisionRegistryParity"]["isExact"])
@@ -405,6 +411,152 @@ class DecisionRoundMutationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._temporary_directory.cleanup()
+
+    def test_delegated_source_admission_is_separate_from_delivery_coverage(self) -> None:
+        errors, statistics = VALIDATOR.validate_repository_with_statistics(self.root)
+        self.assertEqual([], errors)
+        assert statistics is not None
+        self.assertEqual((117, 213, 96), (
+            statistics.decision_count, statistics.registry_record_count,
+            statistics.delegated_record_count,
+        ))
+        result = RECOMPUTE.recompute(self.root)
+        self.assertEqual(117, len(result["deliveryBacklog"]["usedDecisionIds"]))
+        self.assertEqual([], result["deliveryBacklog"]["missingDecisionIds"])
+        self.assertTrue(result["delegatedSourceAdmission"]["isExact"])
+
+    def test_delegated_literal_comparison_and_no133_are_lossless(self) -> None:
+        errors = []
+        source = VALIDATOR._read_delegated_source(
+            self.root / VALIDATOR.DELEGATED_SOURCE_PATH, errors,
+        )
+        self.assertEqual([], errors)
+        by_id = {row["id"]: row for row in source}
+        self.assertIn("fark < blok", by_id["DELEGE-20261021-62"]["decision"])
+        text = (self.root / VALIDATOR.DELEGATED_SOURCE_PATH).read_text(encoding="utf-8")
+        combined = next(line for line in text.splitlines() if line.startswith("| 133 |"))
+        self.assertEqual(
+            combined.split("|")[2].strip(),
+            by_id["DELEGE-20261021-133"]["area"] + ": " + by_id["DELEGE-20261021-133"]["decision"],
+        )
+        self.assertTrue(RECOMPUTE.recompute(self.root)["delegatedSourceAdmission"]["isExact"])
+
+    def test_delegated_fields_cannot_drift_even_when_markdown_and_csv_agree(self) -> None:
+        md = self.decision_md.read_text(encoding="utf-8")
+        csv_text = self.decision_csv.read_text(encoding="utf-8")
+        # Each replacement affects one complete admitted row on both surfaces.
+        cases = (
+            ("DecisionId", "DELEGE-20261022-4"),
+            ("DecisionId", "DELEGE-20261021-999"),
+            ("Alan", "Changed area"),
+            ("Karar", "Changed policy"),
+            ("Durum", "KILITLI"),
+            ("Durum", "UNSUPPORTED"),
+            ("Oncelik", "K0"),
+            ("Kaynak", "[unknown source](unknown.md)"),
+            ("Sahip", "Different owner"),
+            ("KabulKaniti", "Runtime accepted"),
+        )
+        for field, value in cases:
+            with self.subTest(field=field, value=value):
+                self.decision_md.write_text(md, encoding="utf-8")
+                self.decision_csv.write_text(csv_text, encoding="utf-8")
+                rows = self._read_csv_rows()
+                row = next(row for row in rows if row["DecisionId"] == "DELEGE-20261021-4")
+                row[field] = value
+                self._write_csv_rows(rows)
+                column = VALIDATOR.DECISION_CSV_HEADERS.index(field)
+                def replace_cell(line: str) -> str:
+                    cells = [cell.strip() for cell in line.split("|")[1:-1]]
+                    cells[column] = value
+                    return "| " + " | ".join(cells) + " |"
+                self._mutate_markdown_decision("DELEGE-20261021-4", replace_cell)
+                self.assert_error_contains("Delegated registry source/identity/order/status/field drift")
+                self.assertFalse(RECOMPUTE.recompute(self.root)["delegatedSourceAdmission"]["isExact"])
+
+    def test_missing_duplicate_and_extra_delegations_are_rejected(self) -> None:
+        originals = (self.decision_md.read_text(encoding="utf-8"), self.decision_csv.read_text(encoding="utf-8"))
+        for kind in ("missing", "duplicate", "extra"):
+            with self.subTest(kind=kind):
+                self.decision_md.write_text(originals[0], encoding="utf-8")
+                self.decision_csv.write_text(originals[1], encoding="utf-8")
+                rows = self._read_csv_rows()
+                record = dict(next(row for row in rows if row["DecisionId"] == "DELEGE-20261021-4"))
+                line = self._markdown_decision_line(record["DecisionId"])
+                if kind == "missing":
+                    self._remove_markdown_decision(record["DecisionId"])
+                    rows = [row for row in rows if row["DecisionId"] != record["DecisionId"]]
+                else:
+                    if kind == "extra":
+                        line = line.replace(record["DecisionId"], "DELEGE-20261021-999", 1)
+                        record["DecisionId"] = "DELEGE-20261021-999"
+                    self.decision_md.write_text(self.decision_md.read_text(encoding="utf-8") + line + "\n", encoding="utf-8")
+                    rows.append(record)
+                self._write_csv_rows(rows)
+                self.assert_error_contains("Delegated registry source/identity/order/status/field drift")
+                self.assertFalse(RECOMPUTE.recompute(self.root)["delegatedSourceAdmission"]["isExact"])
+
+    def test_delegations_cannot_be_promoted_to_backlog_authority(self) -> None:
+        backlog = json.loads(self.backlog.read_text(encoding="utf-8"))
+        backlog["global_decisions"].append("DELEGE-20261021-4")
+        self.backlog.write_text(json.dumps(backlog, ensure_ascii=False), encoding="utf-8")
+        self.assert_error_contains("unknown decision ids: DELEGE-20261021-4")
+        self.assertEqual(["DELEGE-20261021-4"], RECOMPUTE.recompute(self.root)["deliveryBacklog"]["extraDecisionIds"])
+
+    def test_same_set_delegated_order_swap_is_rejected_on_both_surfaces(self) -> None:
+        lines = self.decision_md.read_text(encoding="utf-8").splitlines()
+        indices = [index for index, line in enumerate(lines) if line.startswith("| DELEGE-")]
+        first, second = indices[:2]
+        lines[first], lines[second] = lines[second], lines[first]
+        self.decision_md.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        rows = self._read_csv_rows()
+        positions = [index for index, row in enumerate(rows) if row["DecisionId"].startswith("DELEGE-")]
+        first, second = positions[:2]
+        rows[first], rows[second] = rows[second], rows[first]
+        self._write_csv_rows(rows)
+        self.assert_error_contains("Delegated registry source/identity/order/status/field drift")
+        self.assertFalse(RECOMPUTE.recompute(self.root)["delegatedSourceAdmission"]["isExact"])
+
+    def test_delegated_one_surface_semantic_drift_is_rejected(self) -> None:
+        self._mutate_markdown_decision(
+            "DELEGE-20261021-4", lambda row: row.replace("ölçek 3", "ölçek 9", 1),
+        )
+        self.assert_error_contains("Markdown/CSV semantic drift for 'DELEGE-20261021-4'")
+        self.assertFalse(RECOMPUTE.recompute(self.root)["decisionRegistryParity"]["isExact"])
+
+    def test_authorized_no73_note_cannot_be_removed_from_the_core(self) -> None:
+        note = "; üçüncü sonuç — DELEGE-20261021-73"
+        for path in (self.decision_md, self.decision_csv):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(note, text)
+            path.write_text(text.replace(note, "", 1), encoding="utf-8")
+        self.assert_error_contains("Decision registry row baseline hash drift")
+        self.assertFalse(RECOMPUTE.recompute(self.root)["legacyDecisionRegistry"]["isReviewed"])
+
+    def test_changed_authority_cannot_launder_changed_registry_text(self) -> None:
+        authority = self.root / VALIDATOR.DELEGATED_SOURCE_PATH
+        authority.write_text(authority.read_text(encoding="utf-8").replace("ölçek 3", "ölçek 9", 1), encoding="utf-8")
+        for path in (self.decision_md, self.decision_csv):
+            path.write_text(path.read_text(encoding="utf-8").replace("ölçek 3", "ölçek 9", 1), encoding="utf-8")
+        self.assert_error_contains("Delegated decision source baseline hash drift")
+        with self.assertRaisesRegex(ValueError, "authority source digest changed"):
+            RECOMPUTE.recompute(self.root)
+
+    def test_missing_authority_and_delegated_markup_fail_closed(self) -> None:
+        authority = self.root / VALIDATOR.DELEGATED_SOURCE_PATH
+        authority.unlink()
+        self.assert_error_contains("Delegated decision source unavailable")
+        with self.assertRaises(OSError):
+            RECOMPUTE.recompute(self.root)
+
+    def test_literal_admission_does_not_allow_html_inside_or_outside_inline_code(self) -> None:
+        for markup in (
+            "<script>", "`<script>`", "<!-- hidden -->", "<div>",
+            "``DELEGE-20261021-<No>`", "`DELEGE-20261021-<No>``",
+        ):
+            with self.subTest(markup=markup):
+                self.assertTrue(VALIDATOR._has_raw_markup(markup))
+                self.assertTrue(RECOMPUTE._contains_markup(markup))
 
     def test_add_decision_in_both_sources_is_rejected(self) -> None:
         self.decision_md.write_text(

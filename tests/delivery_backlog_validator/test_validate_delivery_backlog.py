@@ -620,6 +620,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
 
         with mock.patch.multiple(
             VALIDATOR_MODULE,
+            EXPECTED_DELEGATED_COUNT=0,
             EXPECTED_DECISION_COUNT=2,
             EXPECTED_LOCKED_DECISION_COUNT=1,
             EXPECTED_TEMPORARY_DECISION_COUNT=1,
@@ -888,6 +889,7 @@ class DeliveryBacklogValidatorTests(unittest.TestCase):
     ) -> tuple[list[str], Any]:
         with mock.patch.multiple(
             VALIDATOR_MODULE,
+            EXPECTED_DELEGATED_COUNT=0,
             EXPECTED_DECISION_COUNT=1,
             EXPECTED_LOCKED_DECISION_COUNT=1,
             EXPECTED_TEMPORARY_DECISION_COUNT=0,
