@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Read", "Glob", "Grep", "Edit", "Write",
+      "Bash(git status:*)", "Bash(git log:*)", "Bash(git diff:*)", "Bash(git show:*)",
+      "Bash(git branch:*)", "Bash(git fetch:*)", "Bash(git rev-parse:*)", "Bash(git ls-files:*)",
+      "Bash(git add:*)", "Bash(git commit:*)", "Bash(git push -u origin:*)",
+      "Bash(git checkout -b:*)", "Bash(git switch -c:*)",
+      "Bash(dotnet restore:*)", "Bash(dotnet build:*)", "Bash(dotnet test:*)",
+      "Bash(dotnet format:*)", "Bash(dotnet ef migrations:*)",
+      "Bash(npm ci:*)", "Bash(npm install:*)", "Bash(npm run:*)", "Bash(npm test:*)",
+      "Bash(npm audit:*)", "Bash(npx vitest:*)", "Bash(npx playwright:*)",
+      "Bash(npx tsc:*)", "Bash(npx eslint:*)",
+      "Bash(python3 -I -S -B tools/*)", "Bash(python3 -I -S -B -m unittest discover *)",
+      "Bash(ls:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(wc:*)",
+      "Bash(find:*)", "Bash(rg:*)", "Bash(sha256sum:*)", "Bash(sed -n:*)", "Bash(mkdir:*)",
+      "WebFetch(domain:github.com)", "WebFetch(domain:docs.github.com)",
+      "WebFetch(domain:learn.microsoft.com)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)", "Bash(git push -f:*)", "Bash(git push --force-with-lease:*)",
+      "Bash(git push origin main:*)", "Bash(git push -u origin main:*)",
+      "Bash(git push origin HEAD:main:*)", "Bash(git push -u origin HEAD:main:*)",
+      "Bash(git reset --hard:*)", "Bash(git clean:*)", "Bash(git rebase:*)", "Bash(rm -rf:*)",
+      "Read(.env)", "Read(**/.env)", "Read(**/*.pfx)", "Read(**/secrets/**)"
+    ]
+  }
+}
