@@ -103,6 +103,9 @@ public static class ProductFamilyRuleSetsV2
 {
     public const string GdcBandCoil = "gdc-band-coil";
     public const string GdcCutSheetPlate = "gdc-cut-sheet-plate";
+    public const string GdcWeldedRoundPipe = "gdc-welded-round-pipe";
+    public const string GdcWeldedSquareProfile = "gdc-welded-square-profile";
+    public const string GdcWeldedRectangleProfile = "gdc-welded-rectangle-profile";
 }
 
 /// <summary>The field roles a released Product rule set may require, each exactly once and required.</summary>
@@ -111,6 +114,10 @@ public static class ProductTemplateFieldRolesV2
     public const string Thickness = "thickness";
     public const string Width = "width";
     public const string Length = "length";
+    public const string OutsideDiameter = "outside-diameter";
+    public const string WallThickness = "wall-thickness";
+    public const string SectionWidth = "section-width";
+    public const string SectionHeight = "section-height";
     public const string Quality = "quality";
     public const string Coating = "coating";
 }

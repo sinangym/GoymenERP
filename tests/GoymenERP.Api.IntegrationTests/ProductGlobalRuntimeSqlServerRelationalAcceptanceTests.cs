@@ -54,6 +54,8 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
     private const string ProductCodeGroupMigration = "20261004213000_ReleaseInitialProductCodeGroup";
     private const string ProductCutSheetTechnicalDefinitionMigration =
         "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition";
+    private const string ProductWeldedTubeProfileTechnicalDefinitionMigration =
+        "20261016100000_ReleaseWeldedTubeProfileTechnicalDefinition";
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
@@ -437,20 +439,22 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await AssertRollbackRefusedAsync(migrationScope.ServiceProvider.GetRequiredService<GroupSharedCommandDbContext>(), 51043);
             var product = migrationScope.ServiceProvider.GetRequiredService<ProductDbContext>();
             var productMigrations = (await product.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.Equal(ProductCutSheetTechnicalDefinitionMigration, productMigrations[^1]);
+            Assert.Equal(ProductWeldedTubeProfileTechnicalDefinitionMigration, productMigrations[^1]);
 
             // EF Core 10 commits each migration in its own transaction. First remove the unreferenced
-            // cut-sheet release, then the code-group and technical-definition releases, before exercising
-            // the schema guard as a single rollback step. Reapply all releases afterwards so this
-            // acceptance case leaves the Product runtime at its entry schema.
-            await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
-            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
-            await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
-            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
-            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
-            Assert.Equal(productMigrations[..^3], await product.Database.GetAppliedMigrationsAsync());
-            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            // welded and cut-sheet releases, then the code-group and technical-definition releases,
+            // before exercising the schema guard as a single rollback step. Reapply all releases
+            // afterwards so this acceptance case leaves the Product runtime at its entry schema.
             await product.GetService<IMigrator>().MigrateAsync(ProductCutSheetTechnicalDefinitionMigration);
+            Assert.Equal(productMigrations[..^1], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductCodeGroupMigration);
+            Assert.Equal(productMigrations[..^2], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductTechnicalDefinitionMigration);
+            Assert.Equal(productMigrations[..^3], await product.Database.GetAppliedMigrationsAsync());
+            await product.GetService<IMigrator>().MigrateAsync(ProductFamilyRegistryMigration);
+            Assert.Equal(productMigrations[..^4], await product.Database.GetAppliedMigrationsAsync());
+            await AssertRollbackRefusedAsync(product, 51044, ProductPreFamilyRegistryMigration);
+            await product.GetService<IMigrator>().MigrateAsync(ProductWeldedTubeProfileTechnicalDefinitionMigration);
             Assert.Equal(productMigrations, await product.Database.GetAppliedMigrationsAsync());
             Assert.Equal(afterEdit, await SnapshotAsync(factory.DatabaseConnectionString));
         });
@@ -485,7 +489,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                 var definitionBefore = await new SqlProductFamilyDefinitionSource(genuineOnly).GetAsync(default);
                 var groupsBefore = (await genuineOnly.CodeGroups.AsNoTracking().ToListAsync())
                     .Select(row => row.ToContract()).OrderBy(row => row.Id).ToArray();
-                Assert.Equal((5, 2, 5, 11, 5), before);
+                Assert.Equal((8, 5, 8, 31, 5), before);
                 var store = new ProductStockDisplayQualifiedFixtureStore(
                     genuineOnly,
                     new ProductUnitProfileAdapter(
@@ -737,6 +741,112 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef),
                 (snapshot.Template.TemplateId, snapshot.Template.TemplateVersion,
                     snapshot.Template.SourceRevision));
+        });
+
+    [SqlServerFact]
+    public Task Welded_tube_profile_activation_requires_exact_and_canonical_geometry() =>
+        WithDatabaseAsync(async (factory, _) =>
+        {
+            using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
+
+            async Task<ProductMutationResponse> CreateAsync(string name, Guid familyId, Guid templateId,
+                Dictionary<string, JsonElement> attributes, string key)
+            {
+                using var message = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products")
+                {
+                    Content = JsonContent.Create(new CreateProductDraftRequest(name,
+                        ProductInitialCodeGroupV1.SacGroupId, FamilyId: familyId,
+                        References: new ProductReferences(templateId, "1", attributes, null))),
+                };
+                message.Headers.Add(ProductApiV1.IdempotencyHeader, key);
+                using var response = await client.SendAsync(message);
+                Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+                return (await response.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+            }
+
+            async Task<HttpResponseMessage> ActivateAsync(ProductMutationResponse created, string key)
+            {
+                var message = new HttpRequestMessage(HttpMethod.Post,
+                    $"/api/v1/products/{created.Card.Product.Id:D}/activation")
+                {
+                    Content = JsonContent.Create(new ActivateProductRequest(created.Card.Product.Version)),
+                };
+                message.Headers.Add(ProductApiV1.IdempotencyHeader, key);
+                return await client.SendAsync(message);
+            }
+
+            static Dictionary<string, JsonElement> Round(decimal? diameter = 48.3m)
+            {
+                var attributes = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                {
+                    ["wall-thickness-mm"] = JsonSerializer.SerializeToElement(1.5m),
+                    ["length-mm"] = JsonSerializer.SerializeToElement(6000m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                };
+                if (diameter.HasValue)
+                    attributes["outside-diameter-mm"] = JsonSerializer.SerializeToElement(diameter.Value);
+                return attributes;
+            }
+
+            static Dictionary<string, JsonElement> Profile(decimal width, decimal height) =>
+                new(StringComparer.Ordinal)
+                {
+                    ["section-width-mm"] = JsonSerializer.SerializeToElement(width),
+                    ["section-height-mm"] = JsonSerializer.SerializeToElement(height),
+                    ["wall-thickness-mm"] = JsonSerializer.SerializeToElement(1.4m),
+                    ["length-mm"] = JsonSerializer.SerializeToElement(6000m),
+                    ["steel-grade"] = JsonSerializer.SerializeToElement("S235JR"),
+                    ["coating"] = JsonSerializer.SerializeToElement("uncoated"),
+                };
+
+            var invalid = new[]
+            {
+                (Name: "Eksik çaplı kaynaklı boru",
+                 Family: ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+                 Template: ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId,
+                 Attributes: Round(null), Field: "references.attributes.outside-diameter-mm"),
+                (Name: "Eşit olmayan kare profil",
+                 Family: ProductInitialTechnicalDefinitionV1.WeldedSquareProfileFamilyId,
+                 Template: ProductInitialTechnicalDefinitionV1.WeldedSquareProfileTemplateId,
+                 Attributes: Profile(60m, 40m), Field: "references.attributes.section-height-mm"),
+                (Name: "Kanonik olmayan dikdörtgen profil",
+                 Family: ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileFamilyId,
+                 Template: ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileTemplateId,
+                 Attributes: Profile(40m, 60m), Field: "references.attributes.section-width-mm"),
+            };
+            for (var index = 0; index < invalid.Length; index++)
+            {
+                var item = invalid[index];
+                var created = await CreateAsync(item.Name, item.Family, item.Template, item.Attributes,
+                    $"product-p013-invalid-{index}-create");
+                using var response = await ActivateAsync(created, $"product-p013-invalid-{index}-activate");
+                Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+                var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+                Assert.Contains(problem.GetProperty("errors").EnumerateArray(),
+                    error => error.GetProperty("field").GetString() == item.Field);
+            }
+
+            var valid = new[]
+            {
+                (Name: "Kaynaklı yuvarlak boru", Family: ProductInitialTechnicalDefinitionV1.WeldedRoundPipeFamilyId,
+                 Template: ProductInitialTechnicalDefinitionV1.WeldedRoundPipeTemplateId, Attributes: Round()),
+                (Name: "Kaynaklı kare profil", Family: ProductInitialTechnicalDefinitionV1.WeldedSquareProfileFamilyId,
+                 Template: ProductInitialTechnicalDefinitionV1.WeldedSquareProfileTemplateId, Attributes: Profile(40m, 40m)),
+                (Name: "Kaynaklı dikdörtgen profil", Family: ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileFamilyId,
+                 Template: ProductInitialTechnicalDefinitionV1.WeldedRectangleProfileTemplateId, Attributes: Profile(60m, 40m)),
+            };
+            for (var index = 0; index < valid.Length; index++)
+            {
+                var item = valid[index];
+                var created = await CreateAsync(item.Name, item.Family, item.Template, item.Attributes,
+                    $"product-p013-valid-{index}-create");
+                using var response = await ActivateAsync(created, $"product-p013-valid-{index}-activate");
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var activated = (await response.Content.ReadFromJsonAsync<ProductMutationResponse>())!;
+                Assert.Equal((created.Card.Product.Id, "Active", "2"),
+                    (activated.Card.Product.Id, activated.Card.Product.Lifecycle, activated.Card.Product.Version));
+            }
         });
 
     [SqlServerFact]
