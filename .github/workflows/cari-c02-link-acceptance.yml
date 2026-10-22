@@ -1,9 +1,7 @@
 name: Cari C006 backend envelope acceptance
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -85,20 +83,60 @@ jobs:
           if ($commitSha -notmatch '^[0-9a-f]{40}$') {
             throw "GITHUB_SHA is not canonical: $($env:GITHUB_SHA)"
           }
+          $actualHead = (& git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $commitSha) {
+            throw "Checked-out HEAD does not match GITHUB_SHA: expected=$commitSha actual=$actualHead"
+          }
+          $runId = $env:GITHUB_RUN_ID
+          if ($runId -notmatch '^[1-9][0-9]*$') {
+            throw "GITHUB_RUN_ID is not canonical: $($env:GITHUB_RUN_ID)"
+          }
           $runAttempt = $env:GITHUB_RUN_ATTEMPT
           if ($runAttempt -notmatch '^[1-9][0-9]*$') {
             throw "GITHUB_RUN_ATTEMPT is not canonical: $($env:GITHUB_RUN_ATTEMPT)"
           }
 
-          New-Item -ItemType Directory -Path $env:C006_EVIDENCE_ROOT -Force | Out-Null
-          $evidenceRootInfo = Get-Item -LiteralPath $env:C006_EVIDENCE_ROOT -Force
-          if (($evidenceRootInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw "C006 evidence root is a reparse point: $($evidenceRootInfo.FullName)"
+          $expectedEvidenceRoot = 'E:\GoymenERP-CI\evidence'
+          $evidenceRootCandidate = [IO.Path]::GetFullPath($env:C006_EVIDENCE_ROOT).TrimEnd('\')
+          if ($evidenceRootCandidate -cne $expectedEvidenceRoot) {
+            throw "C006 evidence root is not the approved literal path: $evidenceRootCandidate"
           }
-          $evidenceRoot = $evidenceRootInfo.FullName.TrimEnd('\')
+
+          function Assert-NoReparsePathChain([string] $Path, [bool] $RequireLeaf) {
+            $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+            $root = [IO.Path]::GetPathRoot($fullPath).TrimEnd('\')
+            $current = $root
+            $rootItem = Get-Item -LiteralPath ([IO.Path]::GetPathRoot($fullPath)) -Force
+            if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "C006 evidence path contains a reparse point: $($rootItem.FullName)"
+            }
+            $relative = $fullPath.Substring([IO.Path]::GetPathRoot($fullPath).Length)
+            foreach ($segment in $relative.Split('\', [StringSplitOptions]::RemoveEmptyEntries)) {
+              $current = Join-Path $current $segment
+              if (-not (Test-Path -LiteralPath $current)) {
+                if ($RequireLeaf) {
+                  throw "C006 evidence path component is missing: $current"
+                }
+                break
+              }
+              $item = Get-Item -LiteralPath $current -Force
+              if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "C006 evidence path contains a reparse point: $($item.FullName)"
+              }
+            }
+          }
+
+          Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $false
+          New-Item -ItemType Directory -Path $evidenceRootCandidate -Force | Out-Null
+          Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $true
+          $evidenceRootInfo = Get-Item -LiteralPath $evidenceRootCandidate -Force
+          if (-not $evidenceRootInfo.PSIsContainer) {
+            throw "C006 evidence root is not a directory: $($evidenceRootInfo.FullName)"
+          }
+          $evidenceRoot = [IO.Path]::GetFullPath($evidenceRootInfo.FullName).TrimEnd('\')
           $rootPrefix = "$evidenceRoot\"
           $sha7 = $commitSha.Substring(0, 7)
-          $directoryName = "gh-$($env:C006_WORKFLOW)-$($env:GITHUB_RUN_ID)-$runAttempt-$sha7"
+          $directoryName = "gh-$($env:C006_WORKFLOW)-$runId-$runAttempt-$sha7"
           $destination = [IO.Path]::GetFullPath((Join-Path $evidenceRoot $directoryName))
           $temporary = [IO.Path]::GetFullPath((Join-Path $evidenceRoot ".tmp-$directoryName-$([Guid]::NewGuid().ToString('N'))"))
           foreach ($ownedTarget in @($destination, $temporary)) {
@@ -110,6 +148,7 @@ jobs:
             throw "C006 evidence destination already exists: $destination"
           }
 
+          $published = $false
           try {
             New-Item -ItemType Directory -Path $temporary | Out-Null
             foreach ($child in Get-ChildItem -LiteralPath $source -Force) {
@@ -143,7 +182,7 @@ jobs:
             [ordered]@{
               schemaVersion = 1
               workflow = $env:C006_WORKFLOW
-              runId = $env:GITHUB_RUN_ID
+              runId = $runId
               runAttempt = $runAttempt
               commitSha = $commitSha
               commitSha7 = $sha7
@@ -153,16 +192,78 @@ jobs:
               Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
             $manifestReadback = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-            if ($manifestReadback.commitSha -ne $commitSha -or $manifestReadback.files.Count -ne $files.Count) {
+            $readbackFiles = @($manifestReadback.files)
+            if ($manifestReadback.schemaVersion -ne 1 -or
+                $manifestReadback.workflow -cne $env:C006_WORKFLOW -or
+                $manifestReadback.runId -cne $runId -or
+                $manifestReadback.runAttempt -cne $runAttempt -or
+                $manifestReadback.commitSha -cne $commitSha -or
+                $manifestReadback.commitSha7 -cne $sha7 -or
+                $readbackFiles.Count -ne $files.Count) {
               throw "C006 evidence manifest readback failed: $manifestPath"
+            }
+            $readbackPaths = @($readbackFiles | ForEach-Object { [string]$_.path })
+            $sortedUniquePaths = @($readbackPaths | Sort-Object -Unique)
+            if ([string]::Join("`n", $readbackPaths) -cne [string]::Join("`n", $sortedUniquePaths)) {
+              throw "C006 evidence manifest paths are not sorted and unique: $manifestPath"
+            }
+            $copiedPaths = @(
+              Get-ChildItem -LiteralPath $temporary -File -Recurse |
+                ForEach-Object { $_.FullName.Substring($temporary.Length + 1).Replace('\', '/') } |
+                Where-Object { $_ -cne 'manifest.json' } |
+                Sort-Object -Unique
+            )
+            if ([string]::Join("`n", $copiedPaths) -cne [string]::Join("`n", $readbackPaths)) {
+              throw "C006 evidence manifest does not contain the exact copied file set: $manifestPath"
+            }
+            for ($index = 0; $index -lt $files.Count; $index++) {
+              $expectedFile = $files[$index]
+              $readbackFile = $readbackFiles[$index]
+              if ($readbackFile.path -cne $expectedFile.path -or
+                  [long]$readbackFile.bytes -ne [long]$expectedFile.bytes -or
+                  $readbackFile.sha256 -cne $expectedFile.sha256) {
+                throw "C006 evidence manifest file identity drifted at index $index"
+              }
+              $copiedPath = Join-Path $temporary ([string]$readbackFile.path).Replace('/', '\')
+              if (-not (Test-Path -LiteralPath $copiedPath -PathType Leaf) -or
+                  (Get-Item -LiteralPath $copiedPath -Force).Length -ne [long]$readbackFile.bytes -or
+                  (Get-FileHash -LiteralPath $copiedPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $readbackFile.sha256) {
+                throw "C006 evidence copied bytes do not match the manifest: $($readbackFile.path)"
+              }
             }
             $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
-            Move-Item -LiteralPath $temporary -Destination $destination
+            [IO.Directory]::Move($temporary, $destination)
+            $published = $true
+            if (Test-Path -LiteralPath $temporary) {
+              throw "C006 temporary evidence directory still exists after publication: $temporary"
+            }
+            $destinationInfo = Get-Item -LiteralPath $destination -Force
+            if (-not $destinationInfo.PSIsContainer -or
+                ($destinationInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "C006 published evidence is not a non-reparse directory: $destination"
+            }
             $finalManifestPath = Join-Path $destination 'manifest.json'
             $finalManifestHash = (Get-FileHash -LiteralPath $finalManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($finalManifestHash -ne $manifestHash) {
               throw "C006 evidence manifest changed during publication: $finalManifestPath"
+            }
+            foreach ($manifestFile in $readbackFiles) {
+              $finalFilePath = Join-Path $destination ([string]$manifestFile.path).Replace('/', '\')
+              if (-not (Test-Path -LiteralPath $finalFilePath -PathType Leaf) -or
+                  (Get-Item -LiteralPath $finalFilePath -Force).Length -ne [long]$manifestFile.bytes -or
+                  (Get-FileHash -LiteralPath $finalFilePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifestFile.sha256) {
+                throw "C006 published bytes do not match the manifest: $($manifestFile.path)"
+              }
+            }
+            $publishedPaths = @(
+              Get-ChildItem -LiteralPath $destination -File -Recurse |
+                ForEach-Object { $_.FullName.Substring($destination.Length + 1).Replace('\', '/') } |
+                Where-Object { $_ -cne 'manifest.json' } |
+                Sort-Object -Unique
+            )
+            if ([string]::Join("`n", $publishedPaths) -cne [string]::Join("`n", $readbackPaths)) {
+              throw "C006 published file set does not exactly match the manifest: $destination"
             }
 
             Write-Host "C006 evidence preserved at $destination"
@@ -170,7 +271,7 @@ jobs:
             Write-Host "C006 manifest SHA256: $finalManifestHash"
           }
           finally {
-            if (Test-Path -LiteralPath $temporary) {
+            if (-not $published -and (Test-Path -LiteralPath $temporary)) {
               Remove-Item -LiteralPath $temporary -Recurse -Force
             }
           }

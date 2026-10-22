@@ -103,6 +103,33 @@ class ComposeContractTests(unittest.TestCase):
     def test_valid_model_passes(self):
         validator.validate_compose(valid_compose(), COMMIT, PROJECT)
 
+    def test_c006_local_preservation_is_manual_and_fail_closed(self):
+        workflow = (ROOT / ".github" / "workflows" / "cari-c02-link-acceptance.yml").read_text(
+            encoding="utf-8"
+        )
+        trigger = workflow.split("on:\n", 1)[1].split("\npermissions:", 1)[0]
+        self.assertEqual("  workflow_dispatch:\n", trigger)
+
+        required_fragments = (
+            "$actualHead = (& git rev-parse HEAD).Trim().ToLowerInvariant()",
+            "$runId -notmatch '^[1-9][0-9]*$'",
+            "Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $false",
+            "Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $true",
+            "$readbackFiles = @($manifestReadback.files)",
+            "C006 evidence manifest does not contain the exact copied file set",
+            "$readbackFile.path -cne $expectedFile.path",
+            "C006 evidence copied bytes do not match the manifest",
+            "[IO.Directory]::Move($temporary, $destination)",
+            "C006 temporary evidence directory still exists after publication",
+            "C006 published evidence is not a non-reparse directory",
+            "C006 published bytes do not match the manifest",
+            "C006 published file set does not exactly match the manifest",
+            "if (-not $published -and (Test-Path -LiteralPath $temporary))",
+        )
+        positions = [workflow.index(fragment) for fragment in required_fragments]
+        self.assertEqual(sorted(positions), positions)
+        self.assertNotIn("Move-Item -LiteralPath $temporary", workflow)
+
     def test_public_port_fails(self):
         model = valid_compose()
         model["services"]["api"]["ports"][0]["host_ip"] = "0.0.0.0"
