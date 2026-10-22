@@ -164,6 +164,7 @@ public sealed record AiOwnerCommandRequestV1
     public AiPreviewV1 Preview { get; }
     public AiCommandContextV1 CommandContext { get; }
     public string PreviewIdentityJson { get; }
+    public string RequestIdentityJson { get; }
     public AiOwnerCommandRequestV1(AiToolDescriptorV1 tool, AiServerContextV1 context, AiPreviewV1 preview,
         AiCommandContextV1 commandContext, string approvedPreviewIdentityJson)
     {
@@ -182,6 +183,11 @@ public sealed record AiOwnerCommandRequestV1
             || audit.Contract != tool.Contract)
             throw new ArgumentException("Approval metadata does not bind this owner request.");
         Tool = tool; ServerContext = context; Preview = preview; CommandContext = commandContext;
+        // Include the complete approval/audit and key, not merely the preview digest or payload.
+        RequestIdentityJson = AiCanonicalJson.Canonicalize(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            format = "goymen.ai.owner-request.v1", previewIdentityJson = PreviewIdentityJson, commandContext,
+        }, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
     }
 }
 
@@ -203,29 +209,110 @@ public sealed record AiCommandResultV1
     }
 }
 
-public sealed record AiLookupAbsenceEvidenceV1(string PreviewIdentityJson, string IdempotencyKey,
-    DateTimeOffset ReadAtUtc, string OwnerEvidenceReference);
+/// <summary>
+/// Identity/provenance supplied by a trusted owner adapter, never synthesized from an unrelated result.
+/// Construction validates shape only; it does not authenticate an owner or perform a durable lookup.
+/// </summary>
+public sealed record AiOwnerEvidenceBindingV1
+{
+    public string RequestIdentityJson { get; }
+    public string IdempotencyKey { get; }
+    public string OwnerModule { get; }
+    public string OwnerCommandName { get; }
+    public string SourceContractRevision { get; }
+    public string OwnerEvidenceReference { get; }
+    public DateTimeOffset ObservedAtUtc { get; }
+
+    public AiOwnerEvidenceBindingV1(string requestIdentityJson, string idempotencyKey, string ownerModule,
+        string ownerCommandName, string sourceContractRevision, string ownerEvidenceReference, DateTimeOffset observedAtUtc)
+    {
+        RequestIdentityJson = AiContractGuard.Text(requestIdentityJson);
+        IdempotencyKey = AiContractGuard.Text(idempotencyKey); OwnerModule = AiContractGuard.Text(ownerModule);
+        OwnerCommandName = AiContractGuard.Text(ownerCommandName);
+        SourceContractRevision = AiContractGuard.Text(sourceContractRevision);
+        OwnerEvidenceReference = AiContractGuard.Text(ownerEvidenceReference);
+        AiContractGuard.Utc(observedAtUtc); ObservedAtUtc = observedAtUtc;
+    }
+
+    /// <summary>Exact structural binding only; the caller must authenticate the owner evidence source.</summary>
+    public void RequireMatches(AiOwnerCommandRequestV1 request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (RequestIdentityJson != request.RequestIdentityJson || IdempotencyKey != request.CommandContext.IdempotencyKey
+            || OwnerModule != request.Tool.OwnerModule || OwnerCommandName != request.Tool.OwnerCommandName
+            || SourceContractRevision != request.Tool.Contract.SourceContract
+            || ObservedAtUtc < request.CommandContext.Audit.ApprovedAtUtc)
+            throw new ArgumentException("Owner evidence does not bind this frozen request.");
+    }
+}
+
+public sealed record AiOwnerRecordedResultV1
+{
+    public AiOwnerEvidenceBindingV1 Binding { get; }
+    public AiCommandResultV1 Result { get; }
+    public AiOwnerRecordedResultV1(AiOwnerEvidenceBindingV1 binding, AiCommandResultV1 result)
+    {
+        Binding = binding ?? throw new ArgumentNullException(nameof(binding));
+        Result = result ?? throw new ArgumentNullException(nameof(result));
+    }
+}
+
+public enum AiOwnerObservationStateV1 { Absent = 1, Pending = 2, InFlight = 3, Uncertain = 4 }
+
+/// <summary>An ordinary lookup observation, including a late absent row, supplies no no-effect finality.</summary>
+public sealed record AiOwnerLookupObservationV1
+{
+    public AiOwnerEvidenceBindingV1 Binding { get; }
+    public AiOwnerObservationStateV1 State { get; }
+    public AiOwnerLookupObservationV1(AiOwnerEvidenceBindingV1 binding, AiOwnerObservationStateV1 state)
+    {
+        Binding = binding ?? throw new ArgumentNullException(nameof(binding));
+        if (!Enum.IsDefined(state)) throw new ArgumentException("Unknown owner observation.");
+        State = state;
+    }
+}
+
+public enum AiOwnerNoEffectConclusionV1 { DefinitivelyNotAdmittedAndCannotTakeEffect = 1 }
+
+/// <summary>
+/// An explicit owner-issued final conclusion for this exact command: it was not admitted and cannot
+/// still take effect. A missing row, timeout, timestamp or arbitrary reference must never produce this
+/// conclusion. No real producer/finality mechanism is supplied here; the future trusted owner adapter
+/// must establish it from its own authoritative protocol, not from null FindCommand.
+/// </summary>
+public sealed record AiOwnerDefinitiveNoEffectEvidenceV1
+{
+    public AiOwnerEvidenceBindingV1 Binding { get; }
+    public AiOwnerNoEffectConclusionV1 Conclusion { get; }
+    public string OwnerFinalityReference { get; }
+    public AiOwnerDefinitiveNoEffectEvidenceV1(AiOwnerEvidenceBindingV1 binding,
+        AiOwnerNoEffectConclusionV1 conclusion, string ownerFinalityReference)
+    {
+        Binding = binding ?? throw new ArgumentNullException(nameof(binding));
+        if (conclusion != AiOwnerNoEffectConclusionV1.DefinitivelyNotAdmittedAndCannotTakeEffect)
+            throw new ArgumentException("Explicit definitive owner no-effect conclusion required.");
+        Conclusion = conclusion; OwnerFinalityReference = AiContractGuard.Text(ownerFinalityReference);
+    }
+}
 
 public sealed record AiOwnerLookupResultV1
 {
     public AiCommandOutcomeV1 Outcome { get; }
-    public AiCommandResultV1? RecordedResult { get; }
-    public AiLookupAbsenceEvidenceV1? AbsenceEvidence { get; }
-    public AiOwnerLookupResultV1(AiOwnerCommandRequestV1 request, AiCommandResultV1? recordedResult = null,
-        AiLookupAbsenceEvidenceV1? absenceEvidence = null)
+    public AiOwnerRecordedResultV1? RecordedResult { get; }
+    public AiOwnerLookupObservationV1? Observation { get; }
+    public AiOwnerDefinitiveNoEffectEvidenceV1? DefinitiveNoEffect { get; }
+    public AiOwnerLookupResultV1(AiOwnerCommandRequestV1 request, AiOwnerRecordedResultV1? recordedResult = null,
+        AiOwnerLookupObservationV1? observation = null, AiOwnerDefinitiveNoEffectEvidenceV1? definitiveNoEffect = null)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (recordedResult is not null && absenceEvidence is not null) throw new ArgumentException("Ambiguous owner evidence.");
-        if (absenceEvidence is not null)
-        {
-            AiContractGuard.Utc(absenceEvidence.ReadAtUtc); AiContractGuard.Text(absenceEvidence.OwnerEvidenceReference);
-            if (absenceEvidence.PreviewIdentityJson != request.PreviewIdentityJson
-                || absenceEvidence.IdempotencyKey != request.CommandContext.IdempotencyKey
-                || absenceEvidence.ReadAtUtc < request.CommandContext.Audit.ApprovedAtUtc)
-                throw new ArgumentException("Absence evidence belongs to another owner request.");
-        }
-        Outcome = recordedResult?.Outcome ?? (absenceEvidence is null ? AiCommandOutcomeV1.Unknown : AiCommandOutcomeV1.NotRecorded);
-        RecordedResult = recordedResult; AbsenceEvidence = absenceEvidence;
+        if ((recordedResult is null ? 0 : 1) + (observation is null ? 0 : 1) + (definitiveNoEffect is null ? 0 : 1) > 1)
+            throw new ArgumentException("Ambiguous owner evidence.");
+        recordedResult?.Binding.RequireMatches(request);
+        observation?.Binding.RequireMatches(request);
+        definitiveNoEffect?.Binding.RequireMatches(request);
+        Outcome = recordedResult?.Result.Outcome
+            ?? (definitiveNoEffect is null ? AiCommandOutcomeV1.Unknown : AiCommandOutcomeV1.NotRecorded);
+        RecordedResult = recordedResult; Observation = observation; DefinitiveNoEffect = definitiveNoEffect;
     }
 }
 
@@ -239,7 +326,7 @@ public interface IAiOwnerPreviewToolV1 : IAiOwnerToolV1
 /// <summary>Future owner ports only: no implementation, registration, execution or resend policy is supplied.</summary>
 public interface IAiOwnerCommandToolV1 : IAiOwnerPreviewToolV1
 {
-    Task<AiCommandResultV1> ExecuteAsync(AiOwnerCommandRequestV1 request, CancellationToken cancellationToken = default);
+    Task<AiOwnerRecordedResultV1> ExecuteAsync(AiOwnerCommandRequestV1 request, CancellationToken cancellationToken = default);
     Task<AiOwnerLookupResultV1> FindResultAsync(AiOwnerCommandRequestV1 request, CancellationToken cancellationToken = default);
 }
 

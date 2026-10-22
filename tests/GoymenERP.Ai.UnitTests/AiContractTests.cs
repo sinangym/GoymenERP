@@ -203,34 +203,160 @@ public sealed class AiContractTests
         var request = Request();
         var unknown = new AiCommandResultV1(AiCommandOutcomeV1.Unknown);
         Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request).Outcome);
-        Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request, unknown).Outcome);
+        Assert.Equal(AiCommandOutcomeV1.Unknown,
+            new AiOwnerLookupResultV1(request, new AiOwnerRecordedResultV1(SyntheticBinding(request), unknown)).Outcome);
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.NotRecorded));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Unknown, resultVersion: "v1"));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Unknown, isReplay: true));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Applied));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Refused));
-        Assert.Equal(AiCommandOutcomeV1.Applied,
-            new AiOwnerLookupResultV1(request, new AiCommandResultV1(AiCommandOutcomeV1.Applied, "result-1", isReplay: true)).Outcome);
     }
 
     [Fact]
-    public void Definite_owner_absence_requires_the_same_frozen_identity_and_key()
+    public void Owner_recorded_applied_refused_and_replay_results_keep_their_exact_request_binding()
     {
         var request = Request();
-        var evidence = new AiLookupAbsenceEvidenceV1(request.PreviewIdentityJson,
-            request.CommandContext.IdempotencyKey, Created.AddMinutes(2), "synthetic-owner-proof-1");
-        Assert.Equal(AiCommandOutcomeV1.NotRecorded, new AiOwnerLookupResultV1(request, absenceEvidence: evidence).Outcome);
+        var results = new[]
+        {
+            new AiCommandResultV1(AiCommandOutcomeV1.Applied, "result-1"),
+            new AiCommandResultV1(AiCommandOutcomeV1.Applied, "result-1", isReplay: true),
+            new AiCommandResultV1(AiCommandOutcomeV1.Refused, refusalCode: "synthetic-refusal"),
+        };
+        foreach (var result in results)
+        {
+            var envelope = new AiOwnerRecordedResultV1(SyntheticBinding(request), result);
+            var lookup = new AiOwnerLookupResultV1(request, envelope);
+            Assert.Equal(result.Outcome, lookup.Outcome);
+            Assert.Same(envelope, lookup.RecordedResult);
+            var captured = Assert.IsType<AiOwnerRecordedResultV1>(lookup.RecordedResult);
+            Assert.Equal(result.ResultVersion, captured.Result.ResultVersion);
+            Assert.Equal(result.RefusalCode, captured.Result.RefusalCode);
+            Assert.Equal(result.IsReplay, captured.Result.IsReplay);
+            Assert.Equal(request.RequestIdentityJson, envelope.Binding.RequestIdentityJson);
+            Assert.Equal(request.CommandContext.IdempotencyKey, envelope.Binding.IdempotencyKey);
+        }
+    }
+
+    [Fact]
+    public void A_request_cannot_consume_another_request_or_contexts_recorded_result()
+    {
+        var requestA = Request();
+        var variants = new[]
+        {
+            Request(context: Context() with { ActorId = "actor-B" }),
+            Request(context: Context() with { CompanyId = Target }),
+            Request(context: Context() with { SessionId = "session-B" }),
+            Request(context: Context() with { ScopeRevision = "scope-B" }),
+            Request(preview: Preview(command: "{\"quantity\":2}")),
+            Request(preview: Preview(id: ApprovalId)),
+            Request(approvalId: Target),
+        };
+        foreach (var requestB in variants)
+        {
+            var resultB = new AiOwnerRecordedResultV1(SyntheticBinding(requestB),
+                new AiCommandResultV1(AiCommandOutcomeV1.Applied, "synthetic-B-version"));
+            Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(requestA, resultB));
+        }
+        // Same preview/key/body but another approval is still another frozen request.
+        var anotherApproval = Request(approvalId: Target);
+        Assert.Equal(requestA.PreviewIdentityJson, anotherApproval.PreviewIdentityJson);
+        Assert.Equal(requestA.CommandContext.IdempotencyKey, anotherApproval.CommandContext.IdempotencyKey);
+        Assert.NotEqual(requestA.RequestIdentityJson, anotherApproval.RequestIdentityJson);
+    }
+
+    [Fact]
+    public void Key_owner_command_source_contract_and_partial_evidence_mismatches_are_rejected()
+    {
+        var request = Request();
+        var bindings = new[]
+        {
+            SyntheticBinding(request, key: "synthetic-another-key"),
+            SyntheticBinding(request, owner: "OtherModule"),
+            SyntheticBinding(request, command: "OtherCommand"),
+            SyntheticBinding(request, sourceContract: "other-source-contract"),
+            SyntheticBinding(request, identity: request.PreviewIdentityJson), // No approval/key envelope.
+            SyntheticBinding(request, observed: Created), // Evidence predates approval.
+        };
+        foreach (var binding in bindings)
+        {
+            var recorded = new AiOwnerRecordedResultV1(binding, new AiCommandResultV1(AiCommandOutcomeV1.Applied, "v1"));
+            Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request, recorded));
+            Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request,
+                observation: new AiOwnerLookupObservationV1(binding, AiOwnerObservationStateV1.Absent)));
+            Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request,
+                definitiveNoEffect: SyntheticDefinitiveNoEffect(binding)));
+        }
+        Assert.Throws<ArgumentException>(() => SyntheticBinding(request, identity: ""));
+        Assert.Throws<ArgumentException>(() => SyntheticBinding(request, key: ""));
+        Assert.Throws<ArgumentException>(() => SyntheticBinding(request, owner: ""));
+        Assert.Throws<ArgumentException>(() => SyntheticBinding(request, command: ""));
+        Assert.Throws<ArgumentException>(() => SyntheticBinding(request, sourceContract: ""));
+        Assert.Throws<ArgumentException>(() => new AiOwnerEvidenceBindingV1(request.RequestIdentityJson,
+            request.CommandContext.IdempotencyKey, "Sample", "SampleCommand", "source-1", "", Created.AddMinutes(2)));
+    }
+
+    [Theory]
+    [InlineData(AiOwnerObservationStateV1.Absent)]
+    [InlineData(AiOwnerObservationStateV1.Pending)]
+    [InlineData(AiOwnerObservationStateV1.InFlight)]
+    [InlineData(AiOwnerObservationStateV1.Uncertain)]
+    public void Even_late_bound_owner_observations_cannot_prove_no_future_effect(AiOwnerObservationStateV1 state)
+    {
+        var request = Request();
+        var observation = new AiOwnerLookupObservationV1(SyntheticBinding(request, observed: Created.AddDays(7)), state);
+        var lookup = new AiOwnerLookupResultV1(request, observation: observation);
+        Assert.Equal(AiCommandOutcomeV1.Unknown, lookup.Outcome);
+        Assert.Null(lookup.RecordedResult);
+        Assert.Null(lookup.DefinitiveNoEffect);
+        Assert.Same(observation, lookup.Observation);
+        // No finality producer or owner method is invoked; no-row/time/reference are insufficient.
+    }
+
+    [Fact]
+    public void Only_explicit_exact_bound_definitive_owner_no_effect_conclusion_can_be_not_recorded()
+    {
+        var request = Request();
+        // SENTETIK: a typed owner conclusion, not fabricated evidence that a real command was queried.
+        var finality = SyntheticDefinitiveNoEffect(SyntheticBinding(request));
+        var lookup = new AiOwnerLookupResultV1(request, definitiveNoEffect: finality);
+        Assert.Equal(AiCommandOutcomeV1.NotRecorded, lookup.Outcome);
+        Assert.Same(finality, lookup.DefinitiveNoEffect);
+        Assert.Null(lookup.RecordedResult); Assert.Null(lookup.Observation);
         Assert.Equal("ai:" + PreviewId.ToString("D"), request.CommandContext.IdempotencyKey);
-        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request,
-            absenceEvidence: evidence with { IdempotencyKey = "another-key" }));
-        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request,
-            absenceEvidence: evidence with { PreviewIdentityJson = "{}" }));
-        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request,
-            absenceEvidence: evidence with { ReadAtUtc = Created }));
-        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request,
-            new AiCommandResultV1(AiCommandOutcomeV1.Unknown), evidence));
-        var changedRequest = Request(context: Context() with { ActorId = "other-actor" });
-        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(changedRequest, absenceEvidence: evidence));
+        Assert.Throws<ArgumentException>(() => new AiOwnerDefinitiveNoEffectEvidenceV1(SyntheticBinding(request),
+            (AiOwnerNoEffectConclusionV1)0, "SENTETIK-finality"));
+        Assert.Throws<ArgumentException>(() => new AiOwnerDefinitiveNoEffectEvidenceV1(SyntheticBinding(request),
+            AiOwnerNoEffectConclusionV1.DefinitivelyNotAdmittedAndCannotTakeEffect, ""));
+        var anotherRequest = Request(approvalId: Target);
+        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(anotherRequest, definitiveNoEffect: finality));
+        var otherBody = Request(preview: Preview(command: "{\"quantity\":2}"));
+        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(otherBody, definitiveNoEffect: finality));
+    }
+
+    [Fact]
+    public void An_absent_observation_can_be_followed_by_a_later_commit_for_the_same_request()
+    {
+        var request = Request();
+        var absent = new AiOwnerLookupObservationV1(SyntheticBinding(request), AiOwnerObservationStateV1.Absent);
+        Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request, observation: absent).Outcome);
+        var laterRecorded = new AiOwnerRecordedResultV1(SyntheticBinding(request, observed: Created.AddMinutes(3)),
+            new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-later-commit"));
+        Assert.Equal(AiCommandOutcomeV1.Applied, new AiOwnerLookupResultV1(request, laterRecorded).Outcome);
+        Assert.Equal(absent.Binding.IdempotencyKey, laterRecorded.Binding.IdempotencyKey);
+        Assert.Equal(absent.Binding.RequestIdentityJson, laterRecorded.Binding.RequestIdentityJson);
+    }
+
+    [Fact]
+    public void Conflicting_record_observation_or_finality_evidence_is_not_accepted()
+    {
+        var request = Request(); var binding = SyntheticBinding(request);
+        var recorded = new AiOwnerRecordedResultV1(binding, new AiCommandResultV1(AiCommandOutcomeV1.Applied, "v1"));
+        var observation = new AiOwnerLookupObservationV1(binding, AiOwnerObservationStateV1.InFlight);
+        var finality = SyntheticDefinitiveNoEffect(binding);
+        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request, recorded, observation));
+        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request, recorded, definitiveNoEffect: finality));
+        Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request, observation: observation, definitiveNoEffect: finality));
+        Assert.Throws<ArgumentException>(() => new AiOwnerLookupObservationV1(binding, (AiOwnerObservationStateV1)0));
     }
 
     [Fact]
@@ -317,10 +443,19 @@ public sealed class AiContractTests
         DateTimeOffset? created = null, DateTimeOffset? expires = null) =>
         new(id ?? PreviewId, targetKind, targetId ?? Target, targetVersion, command, difference,
             sources ?? [Source()], created ?? Created, expires ?? Created.AddMinutes(15));
-    private static AiOwnerCommandRequestV1 Request(AiServerContextV1? context = null)
+    private static AiOwnerEvidenceBindingV1 SyntheticBinding(AiOwnerCommandRequestV1 request, string? identity = null,
+        string? key = null, string? owner = null, string? command = null, string? sourceContract = null,
+        DateTimeOffset? observed = null) => new(identity ?? request.RequestIdentityJson,
+            key ?? request.CommandContext.IdempotencyKey, owner ?? request.Tool.OwnerModule,
+            command ?? request.Tool.OwnerCommandName!, sourceContract ?? request.Tool.Contract.SourceContract,
+            "SENTETIK-owner-result-reference", observed ?? Created.AddMinutes(2));
+    private static AiOwnerDefinitiveNoEffectEvidenceV1 SyntheticDefinitiveNoEffect(AiOwnerEvidenceBindingV1 binding) =>
+        new(binding, AiOwnerNoEffectConclusionV1.DefinitivelyNotAdmittedAndCannotTakeEffect, "SENTETIK-definitive-no-effect");
+    private static AiOwnerCommandRequestV1 Request(AiServerContextV1? context = null,
+        AiPreviewV1? preview = null, Guid? approvalId = null)
     {
-        context ??= Context(); var tool = Tool(); var preview = Preview();
-        var audit = new AiAuditContextV1(context, tool, preview, ApprovalId, "human-1", Created.AddMinutes(1));
+        context ??= Context(); var tool = Tool(); preview ??= Preview();
+        var audit = new AiAuditContextV1(context, tool, preview, approvalId ?? ApprovalId, "human-1", Created.AddMinutes(1));
         return new(tool, context, preview, new AiCommandContextV1(preview.Id, audit),
             AiCanonicalJson.PreviewIdentity(context, tool, preview));
     }
