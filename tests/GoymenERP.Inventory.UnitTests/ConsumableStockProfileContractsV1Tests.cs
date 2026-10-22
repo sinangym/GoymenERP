@@ -86,6 +86,25 @@ public sealed class ConsumableStockProfileContractsV1Tests
     }
 
     [Fact]
+    public void Missing_settings_profile_version_is_rejected_through_the_controlled_contract_channel()
+    {
+        var malformed = new UnitProfileV1(
+            CompanyId,
+            UnitId,
+            "L",
+            "Volume",
+            false,
+            null!,
+            2,
+            true,
+            new DateOnly(2026, 10, 20),
+            new DateOnly(2026, 10, 24));
+
+        AssertCode(ConsumableStockProfileCodesV1.InvalidUnitProfile,
+            () => Snapshot(profile: malformed));
+    }
+
+    [Fact]
     public void Unit_profile_codes_and_scale_are_validated_without_defaulting()
     {
         AssertCode(ConsumableStockProfileCodesV1.InvalidUnitProfile,

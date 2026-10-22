@@ -96,6 +96,7 @@ public sealed record ConsumableStockProfileSnapshotV1
         if (profile is null
             || profile.CompanyId != companyId
             || profile.UnitId == Guid.Empty
+            || profile.Profile is null
             || profile.Profile.ProfileId == Guid.Empty
             || profile.Profile.Version <= 0
             || profile.Scale is < 0 or > 28)
