@@ -21,12 +21,19 @@ public sealed class ReleaseWeldedTubeProfileTechnicalDefinition : Migration
         migrationBuilder.Sql("""
             IF NOT EXISTS (SELECT 1 FROM [product].[DictionaryEntries]
                     WHERE [Dictionary] = 'gdc-steel-grades' AND [Code] = N'S235JR'
-                      AND [Status] = 1 AND [SourceRef] = 'product-source-40eb0b82')
+                      AND [DisplayName] = N'S235JR' AND [Status] = 1
+                      AND [SourceRef] = 'product-source-40eb0b82' AND [ParentCode] IS NULL
+                      AND [MassGm2] IS NULL AND [IsExplicitNone] = 0)
                 OR NOT EXISTS (SELECT 1 FROM [product].[DictionaryEntries]
                     WHERE [Dictionary] = 'gdc-coatings' AND [Code] = N'uncoated'
-                      AND [Status] = 1 AND [SourceRef] = 'product-source-40eb0b82' AND [IsExplicitNone] = 1)
+                      AND [DisplayName] = N'Kaplamasız' AND [Status] = 1
+                      AND [SourceRef] = 'product-source-40eb0b82' AND [ParentCode] IS NULL
+                      AND [MassGm2] IS NULL AND [IsExplicitNone] = 1)
                 OR NOT EXISTS (SELECT 1 FROM [product].[DictionaryEntries]
-                    WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237')
+                    WHERE [Dictionary] = 'gdc-producer-grades' AND [Code] = N'erdemir:3237'
+                      AND [DisplayName] = N'Erdemir 3237 — S235JR+AR' AND [Status] = 1
+                      AND [SourceRef] = 'erdemir-flat-2021-p16' AND [ParentCode] = N'S235JR'
+                      AND [MassGm2] IS NULL AND [IsExplicitNone] = 0)
                 THROW 51045, 'The accepted Product technical definition prerequisite is unavailable; use a reviewed forward reconciliation.', 1;
 
             IF EXISTS (SELECT 1 FROM [product].[Families]
