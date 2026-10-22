@@ -66,13 +66,15 @@ hizmet, hesap, lisans yok.
    `recovery-surface-inventory` + `validate-ui-catalog` (`ui-catalog-validation.yml`).
    Ayrı bir `architecture` job'u yoktur. Aggregate job'lar `if: always()` olduğundan kabul
    kanıtında alt job'ların her biri ayrıca `success` olmalıdır. `containers`, browser E2E,
-   C01 ve `cari-c006-backend` (Windows) gece slotunda/merge treninde koşar; PR'da zorunlu
+   C01 ve `cari-c006-backend` (Windows) saat bağımsız her zaman, mevcut tek ağır-iş kilidi
+   altında sırayla/merge treninde koşar; PR'da zorunlu
    değil. #765 job id'lerini değiştiriyorsa liste #765 head'inden alınır ve PR'a yazılır.
-5. **Gece slotu:** `schedule` tetikleyicisi yerine runner'daki yerel zamanlayıcı (Windows Görev
-   Zamanlayıcı, mevcut tek ağır-iş kilidi) 22:00'de `local_check.py full` çalıştırır
-   (`schedule` runner seçmez ve self-hosted ile o da ücretsiz olurdu; yerel tercihinin nedeni:
-   `schedule` yalnız default branch'ten koşar, 60 gün hareketsizlikte otomatik kapanır ve gece
-   koşumunun kanıtı yerel klasör + Issue #66 makbuzudur). LOCAL_FULL kilidinin üç blokeri
+5. **Her zaman, sıralı koşu:** [22 Ekim kullanıcı kararı](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342843156)
+   uyarınca ağır koşular saat bağımsız her zaman, mevcut tek ağır-iş kilidi altında
+   sırayla yürür; gece saatine bırakılmaz. Anlık 2 GiB boş RAM kapısı her koşuda korunur.
+   Eşik tutmazsa koşu reddedilir, ret gerekçesi makbuza yazılır ve koşu ilk boş fırsatta
+   aynı kapılarla otomatik yeniden denenir. Scheduler, servis, config veya yeni watcher eklenmez; Windows Görev Zamanlayıcı
+   22:00 işi ya da yeni `schedule` tetikleyicisi kurulmaz. LOCAL_FULL kilidinin üç blokeri
    kabul edildikten sonra açılır; öncesinde `--plan`.
 6. **Kabul kanıtı:** aday head'de bütün zorunlu job'lar tamam (cancelled/skipped/sıfır test
    yok), ham log + TRX, head SHA. TRX özetleri mevcut `tools/ci/summarize_trx.py` ile
@@ -105,9 +107,11 @@ oturumu) açık olduğu sürece PR'da yalnız hafif check'ler otomatik koşar.
 
 ## 5. Kaynak sorunu (RAM < 2 GiB)
 
-Eşik değişmez. Gece slotu bu yüzden vardır: 22:00–07:00 arasında bilgisayar açık ve boşta
-bırakılır; sıralı tek kilit; sabah kanıt hazırdır. Gündüz (§3.7 uygulandıktan sonra) yalnız
-hafif job'lar (build, unit, lint, architecture guard) koşar.
+Anlık 2 GiB boş RAM eşiği değişmez; bu bir saat kapısı değildir. Ağır koşular her zaman,
+mevcut tek ağır-iş kilidi altında sırayla yürür. Eşik tutmazsa koşu reddedilir, ret gerekçesi
+makbuza yazılır ve koşu ilk boş fırsatta aynı kapılarla otomatik yeniden denenir; eşik aşılmaz veya test
+başarılı sayılmaz. Sonuç koşu tamamlandığında kanıt klasörüne yazılır. Bu düzenleme
+scheduler, servis, config veya yeni watcher eklemez.
 
 ## 6. Geri alma
 
