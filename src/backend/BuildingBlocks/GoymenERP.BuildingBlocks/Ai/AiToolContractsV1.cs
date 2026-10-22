@@ -246,13 +246,20 @@ public sealed record AiOwnerEvidenceBindingV1
     }
 }
 
+/// <summary>
+/// A direct execute response must be bound to the actual request at construction, before a consumer
+/// can observe its result. Lookup performs its own check as well; it is not the execute admission gate.
+/// This structural check does not authenticate the owner or establish a real execution producer.
+/// </summary>
 public sealed record AiOwnerRecordedResultV1
 {
     public AiOwnerEvidenceBindingV1 Binding { get; }
     public AiCommandResultV1 Result { get; }
-    public AiOwnerRecordedResultV1(AiOwnerEvidenceBindingV1 binding, AiCommandResultV1 result)
+    public AiOwnerRecordedResultV1(AiOwnerCommandRequestV1 request, AiOwnerEvidenceBindingV1 binding, AiCommandResultV1 result)
     {
+        ArgumentNullException.ThrowIfNull(request);
         Binding = binding ?? throw new ArgumentNullException(nameof(binding));
+        Binding.RequireMatches(request);
         Result = result ?? throw new ArgumentNullException(nameof(result));
     }
 }

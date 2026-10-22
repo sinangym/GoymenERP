@@ -204,7 +204,7 @@ public sealed class AiContractTests
         var unknown = new AiCommandResultV1(AiCommandOutcomeV1.Unknown);
         Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request).Outcome);
         Assert.Equal(AiCommandOutcomeV1.Unknown,
-            new AiOwnerLookupResultV1(request, new AiOwnerRecordedResultV1(SyntheticBinding(request), unknown)).Outcome);
+            new AiOwnerLookupResultV1(request, new AiOwnerRecordedResultV1(request, SyntheticBinding(request), unknown)).Outcome);
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.NotRecorded));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Unknown, resultVersion: "v1"));
         Assert.Throws<ArgumentException>(() => new AiCommandResultV1(AiCommandOutcomeV1.Unknown, isReplay: true));
@@ -224,7 +224,7 @@ public sealed class AiContractTests
         };
         foreach (var result in results)
         {
-            var envelope = new AiOwnerRecordedResultV1(SyntheticBinding(request), result);
+            var envelope = new AiOwnerRecordedResultV1(request, SyntheticBinding(request), result);
             var lookup = new AiOwnerLookupResultV1(request, envelope);
             Assert.Equal(result.Outcome, lookup.Outcome);
             Assert.Same(envelope, lookup.RecordedResult);
@@ -235,6 +235,43 @@ public sealed class AiContractTests
             Assert.Equal(request.RequestIdentityJson, envelope.Binding.RequestIdentityJson);
             Assert.Equal(request.CommandContext.IdempotencyKey, envelope.Binding.IdempotencyKey);
         }
+    }
+
+    [Fact]
+    public void Direct_execute_response_rejects_another_requests_binding_before_any_lookup()
+    {
+        var requestA = Request();
+        var requestB = Request(preview: Preview(command: "{\"quantity\":2}"));
+        var resultB = new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-B-version");
+        var bindingB = SyntheticBinding(requestB);
+        // Same key is insufficient: the actual execute request's full frozen body/approval must match.
+        Assert.Equal(requestA.CommandContext.IdempotencyKey, bindingB.IdempotencyKey);
+        Assert.Throws<ArgumentException>(() => new AiOwnerRecordedResultV1(requestA, bindingB, resultB));
+        // No lookup wrapper, fake ExecuteAsync implementation or real owner invocation is involved.
+    }
+
+    [Fact]
+    public void Direct_execute_response_preserves_matching_applied_refused_replay_and_unknown_results()
+    {
+        var request = Request(); var binding = SyntheticBinding(request);
+        var results = new[]
+        {
+            new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-version"),
+            new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-version", isReplay: true),
+            new AiCommandResultV1(AiCommandOutcomeV1.Refused, refusalCode: "SENTETIK-refusal"),
+            new AiCommandResultV1(AiCommandOutcomeV1.Unknown),
+        };
+        foreach (var result in results)
+        {
+            var response = new AiOwnerRecordedResultV1(request, binding, result);
+            Assert.Same(binding, response.Binding);
+            Assert.Same(result, response.Result);
+            Assert.Equal(request.RequestIdentityJson, response.Binding.RequestIdentityJson);
+            Assert.Equal(request.CommandContext.IdempotencyKey, response.Binding.IdempotencyKey);
+        }
+        Assert.Throws<ArgumentNullException>(() => new AiOwnerRecordedResultV1(null!, binding, results[0]));
+        Assert.Throws<ArgumentNullException>(() => new AiOwnerRecordedResultV1(request, null!, results[0]));
+        Assert.Throws<ArgumentNullException>(() => new AiOwnerRecordedResultV1(request, binding, null!));
     }
 
     [Fact]
@@ -253,8 +290,10 @@ public sealed class AiContractTests
         };
         foreach (var requestB in variants)
         {
-            var resultB = new AiOwnerRecordedResultV1(SyntheticBinding(requestB),
-                new AiCommandResultV1(AiCommandOutcomeV1.Applied, "synthetic-B-version"));
+            var bindingB = SyntheticBinding(requestB);
+            var appliedB = new AiCommandResultV1(AiCommandOutcomeV1.Applied, "synthetic-B-version");
+            Assert.Throws<ArgumentException>(() => new AiOwnerRecordedResultV1(requestA, bindingB, appliedB));
+            var resultB = new AiOwnerRecordedResultV1(requestB, bindingB, appliedB);
             Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(requestA, resultB));
         }
         // Same preview/key/body but another approval is still another frozen request.
@@ -279,8 +318,8 @@ public sealed class AiContractTests
         };
         foreach (var binding in bindings)
         {
-            var recorded = new AiOwnerRecordedResultV1(binding, new AiCommandResultV1(AiCommandOutcomeV1.Applied, "v1"));
-            Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request, recorded));
+            Assert.Throws<ArgumentException>(() => new AiOwnerRecordedResultV1(request, binding,
+                new AiCommandResultV1(AiCommandOutcomeV1.Applied, "v1")));
             Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request,
                 observation: new AiOwnerLookupObservationV1(binding, AiOwnerObservationStateV1.Absent)));
             Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request,
@@ -339,7 +378,7 @@ public sealed class AiContractTests
         var request = Request();
         var absent = new AiOwnerLookupObservationV1(SyntheticBinding(request), AiOwnerObservationStateV1.Absent);
         Assert.Equal(AiCommandOutcomeV1.Unknown, new AiOwnerLookupResultV1(request, observation: absent).Outcome);
-        var laterRecorded = new AiOwnerRecordedResultV1(SyntheticBinding(request, observed: Created.AddMinutes(3)),
+        var laterRecorded = new AiOwnerRecordedResultV1(request, SyntheticBinding(request, observed: Created.AddMinutes(3)),
             new AiCommandResultV1(AiCommandOutcomeV1.Applied, "SENTETIK-later-commit"));
         Assert.Equal(AiCommandOutcomeV1.Applied, new AiOwnerLookupResultV1(request, laterRecorded).Outcome);
         Assert.Equal(absent.Binding.IdempotencyKey, laterRecorded.Binding.IdempotencyKey);
@@ -350,7 +389,7 @@ public sealed class AiContractTests
     public void Conflicting_record_observation_or_finality_evidence_is_not_accepted()
     {
         var request = Request(); var binding = SyntheticBinding(request);
-        var recorded = new AiOwnerRecordedResultV1(binding, new AiCommandResultV1(AiCommandOutcomeV1.Applied, "v1"));
+        var recorded = new AiOwnerRecordedResultV1(request, binding, new AiCommandResultV1(AiCommandOutcomeV1.Applied, "v1"));
         var observation = new AiOwnerLookupObservationV1(binding, AiOwnerObservationStateV1.InFlight);
         var finality = SyntheticDefinitiveNoEffect(binding);
         Assert.Throws<ArgumentException>(() => new AiOwnerLookupResultV1(request, recorded, observation));
