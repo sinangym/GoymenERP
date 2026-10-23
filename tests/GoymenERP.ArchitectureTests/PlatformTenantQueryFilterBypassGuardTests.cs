@@ -312,13 +312,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "7b5999d3529adaccd72c13d3c3412f6f4acae56616839f8ede77732150806f76";
+        "3a0d55852ab6028a003e4d9b07755de2eba030c13e19c9c9fe1e41e8e73248de";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "95abaadfa075a9f6077670a2e15660629e6b1073ade36b64e45d74404fd3f4cb";
+        "a88c8285da37b27be46b08a14862188f66df2f5173d49216e98494243e9c41bc";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "da02936a6fe108b1c7ee0ecf38f8bdc276b606fd55f03e6cadf313a2be8d8051";
+        "7b4901d5781300811880a8b3b28448a25365cdb60e163487eab784398cdec71e";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
