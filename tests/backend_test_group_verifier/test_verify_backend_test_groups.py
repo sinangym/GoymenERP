@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from collections import Counter
 import json
 import os
 from pathlib import Path
@@ -68,6 +69,33 @@ def project_row(path: str) -> dict[str, object]:
         "skipped": 0,
         "stageElapsedMs": {stage: 0 for stage in VERIFIER.STAGES},
     }
+
+
+def batch_trx_source(methods: Counter[str], first_execution: int) -> str:
+    results = []
+    definitions = []
+    execution = first_execution
+    for index, (name, cases) in enumerate(methods.items()):
+        class_name, method = name.rsplit(".", 1)
+        definitions.append(
+            f'<UnitTest id="{index}"><TestMethod className="{class_name}" '
+            f'name="{method}" /></UnitTest>'
+        )
+        for _ in range(cases):
+            results.append(
+                f'<UnitTestResult testId="{index}" '
+                f'executionId="12345678-1234-4abc-8def-{execution:012x}" '
+                'outcome="Passed" />'
+            )
+            execution += 1
+    total = sum(methods.values())
+    return (
+        '<TestRun><Counters '
+        f'total="{total}" executed="{total}" passed="{total}" '
+        'notExecuted="0" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" />'
+        f'<Results>{"".join(results)}</Results>'
+        f'<TestDefinitions>{"".join(definitions)}</TestDefinitions></TestRun>'
+    )
 
 
 class BackendGroupVerifierTests(unittest.TestCase):
@@ -260,7 +288,8 @@ class BackendGroupVerifierTests(unittest.TestCase):
             if arguments[0] == "dotnet" and "--results-directory" in arguments:
                 directory = Path(arguments[arguments.index("--results-directory") + 1])
                 directory.mkdir(parents=True, exist_ok=True)
-                (directory / (Path(project).stem + ".trx")).write_text(
+                logger = next(value for value in arguments if value.startswith("trx;LogFileName="))
+                (directory / logger.split("=", 1)[1]).write_text(
                     trx_source(project), encoding="utf-8"
                 )
             return ""
@@ -283,6 +312,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         self.assertIn("--list-tests", commands[3])
         self.assertIn("--no-build", commands[3])
         self.assertIn("--no-build", commands[5])
+        self.assertEqual(commands[5][-2:], ["--filter", "FullyQualifiedName=" + name])
         row = json.loads(proof.read_text(encoding="utf-8"))["projects"][0]
         self.assertEqual(row["path"], project)
         self.assertEqual(row["stageElapsedMs"], {
@@ -290,6 +320,95 @@ class BackendGroupVerifierTests(unittest.TestCase):
         })
         with self.assertRaisesRegex(RuntimeError, "fresh"):
             VERIFIER.run_group(self.root, "api", results, proof, HEAD, COMMIT)
+
+    def test_api_batches_preserve_complete_classes_theories_and_case_equivalent_filters(self) -> None:
+        prefix = Path(VERIFIER.GROUP_PROJECTS["api"][0]).stem
+        names = Counter({
+            f"{prefix}.Alpha.One": 3, f"{prefix}.Alpha.Two": 1,
+            f"{prefix}.alpha.Three": 2, f"{prefix}.Beta.One": 1,
+        })
+        with mock.patch.object(VERIFIER, "API_BATCH_METHOD_BUDGET", 2):
+            batches = VERIFIER.api_test_batches(names)
+        self.assertEqual(len(batches), 2)
+        self.assertEqual(len(batches[0]), 3)  # One complete case-equivalent class.
+        self.assertEqual(sum(batches, Counter()), names)
+        self.assertEqual(sum(sum(batch.values()) for batch in batches), 7)
+        self.assertEqual(VERIFIER.api_test_batches(Counter(dict(reversed(list(names.items()))))),
+                         VERIFIER.api_test_batches(names))
+        for invalid in (Counter(), Counter({"x|FullyQualifiedName=Other": 1}),
+                        Counter({f"{prefix}.Alpha.One": 0}),
+                        Counter({f"{prefix}.Alpha.One": True}), Counter({1: 1})):
+            with self.subTest(invalid=invalid), self.assertRaises(RuntimeError):
+                VERIFIER.api_test_batches(invalid)
+
+    def test_api_batch_runner_requires_exact_full_union_multiplicity_and_unique_execution_ids(self) -> None:
+        prefix = Path(VERIFIER.GROUP_PROJECTS["api"][0]).stem
+        alpha, beta, extra = (f"{prefix}.{name}.Runs" for name in ("Alpha", "Beta", "Extra"))
+        discovery = Counter({alpha: 2, beta: 1})
+        modes = ("valid", "missing_batch", "overlap", "extra_result", "too_few_theory_rows",
+                 "duplicate_execution", "failed_command", "missing_trx")
+        for mode in modes:
+            with self.subTest(mode=mode):
+                proof = self.root / mode / "proof.json"
+                results = self.root / mode / "results"
+                commands: list[list[str]] = []
+                test_commands: list[list[str]] = []
+
+                def command(arguments: list[str], root: Path) -> str:
+                    commands.append(arguments)
+                    if "--list-tests" in arguments:
+                        return "\n".join(name for name, count in discovery.items() for _ in range(count))
+                    if "--results-directory" not in arguments:
+                        return ""
+                    test_commands.append(arguments)
+                    number = len(test_commands)
+                    selected = arguments[arguments.index("--filter") + 1]
+                    names = selected.split("|")
+                    self.assertTrue(all(value.startswith("FullyQualifiedName=") for value in names))
+                    batch = Counter({value.split("=", 1)[1]: discovery[value.split("=", 1)[1]]
+                                     for value in names})
+                    if mode == "failed_command" and number == 2:
+                        raise RuntimeError("Backend project command exited with code 1.")
+                    if mode == "missing_trx" and number == 2:
+                        return ""
+                    if mode == "extra_result" and number == 2:
+                        batch[extra] = 1
+                    if mode == "too_few_theory_rows" and number == 1:
+                        batch[alpha] = 1
+                    first_execution = 100 if mode == "duplicate_execution" else number * 100
+                    logger = next(value for value in arguments if value.startswith("trx;LogFileName="))
+                    (results / logger.split("=", 1)[1]).write_text(
+                        batch_trx_source(batch, first_execution), encoding="utf-8"
+                    )
+                    return ""
+
+                planner = VERIFIER.api_test_batches
+                if mode == "missing_batch":
+                    planner = lambda _: [Counter({alpha: 2})]
+                elif mode == "overlap":
+                    planner = lambda _: [Counter({alpha: 2}), Counter({alpha: 2})]
+                with mock.patch.object(VERIFIER, "API_BATCH_METHOD_BUDGET", 1), mock.patch.object(
+                    VERIFIER, "api_test_batches", side_effect=planner
+                ), mock.patch.object(VERIFIER, "run_checked", side_effect=command), mock.patch.dict(
+                    os.environ, {"GOYMEN_ERP_TEST_SQLSERVER_CONNECTION": ""}, clear=False
+                ):
+                    if mode != "valid":
+                        with self.assertRaises(RuntimeError):
+                            VERIFIER.run_group(self.root, "api", results, proof, HEAD, COMMIT)
+                        self.assertFalse(proof.exists())
+                        continue
+                    self.assertEqual(VERIFIER.run_group(self.root, "api", results, proof, HEAD, COMMIT), 3)
+                row = json.loads(proof.read_text(encoding="utf-8"))["projects"][0]
+                self.assertEqual((row["discoveredMethods"], row["discoveredCases"], row["passed"],
+                                  row["executionCount"], row["skipped"]), (2, 3, 3, 3, 0))
+                self.assertEqual(row["discoveryHash"], VERIFIER.digest(sorted(discovery.items())))
+                self.assertEqual(len(test_commands), 2)
+                for arguments in test_commands:
+                    self.assertIn("--no-build", arguments)
+                    self.assertIn("--no-restore", arguments)
+                    index = commands.index(arguments)
+                    self.assertEqual(commands[index - 1][0], VERIFIER.sys.executable)
+                    self.assertIn("tools/validate_dotnet_bootstrap_integrity.py", commands[index - 1])
 
     def test_build_failure_stops_before_discovery_or_proof(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["api"][0]

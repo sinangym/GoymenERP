@@ -50,6 +50,9 @@ SOLUTION_PROJECT_COUNT = 71
 TEST_PROJECT_COUNT = 20
 PROOF_SCHEMA = 2
 MAX_PROOF_BYTES = 16384
+# Release per-process memory between API batches on the bounded local runner.
+# Keep complete classes together; a large class remains one indivisible batch.
+API_BATCH_METHOD_BUDGET = 32
 HEAD_PATTERN = re.compile(r"[0-9a-f]{40}\Z")
 HASH_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 FQN_PATTERN = re.compile(r"GoymenERP\.[A-Za-z0-9_.+`]+\Z")
@@ -150,7 +153,9 @@ def discovery_map(stdout: str, project: str) -> Counter[str]:
     return names
 
 
-def trx_result_map(path: Path, discovered: Counter[str]) -> tuple[dict[str, dict[str, int]], int, int]:
+def trx_result_map(
+    path: Path, discovered: Counter[str], *, execution_ids: set[str] | None = None,
+) -> tuple[dict[str, dict[str, int]], int, int]:
     try:
         document = ET.parse(path).getroot()
     except (ET.ParseError, OSError) as exception:
@@ -177,7 +182,8 @@ def trx_result_map(path: Path, discovered: Counter[str]) -> tuple[dict[str, dict
     total = 0
     passed = 0
     skipped = 0
-    execution_ids: set[str] = set()
+    if execution_ids is None:
+        execution_ids = set()
     for element in elements("UnitTestResult"):
         test_id = element.attrib.get("testId")
         if test_id not in definitions:
@@ -215,6 +221,37 @@ def trx_result_map(path: Path, discovered: Counter[str]) -> tuple[dict[str, dict
     if actual != expected:
         raise RuntimeError("Backend TRX counters differ from its exact results.")
     return results, passed, skipped
+
+
+def api_test_batches(discovered: Counter[str]) -> list[Counter[str]]:
+    """Partition the complete discovery, preserving classes and theory rows."""
+    classes: dict[str, Counter[str]] = {}
+    if not discovered:
+        raise RuntimeError("API batch discovery is empty.")
+    for name, cases in sorted(discovered.items()):
+        if not isinstance(name, str) or FQN_PATTERN.fullmatch(name) is None \
+                or type(cases) is not int or cases < 1:
+            raise RuntimeError("API batch discovery has a noncanonical test identity or count.")
+        # VSTest filters are case insensitive. Keep case-equivalent class names
+        # together so exact method filters cannot select a different batch.
+        classes.setdefault(name.rsplit(".", 1)[0].lower(), Counter())[name] = cases
+    batches: list[Counter[str]] = []
+    current: Counter[str] = Counter()
+    for methods in classes.values():
+        if current and len(current) + len(methods) > API_BATCH_METHOD_BUDGET:
+            batches.append(current)
+            current = Counter()
+        current.update(methods)
+    if current:
+        batches.append(current)
+    union: Counter[str] = Counter()
+    for batch in batches:
+        if union.keys() & batch.keys():
+            raise RuntimeError("API test batches overlap.")
+        union.update(batch)
+    if union != discovered:
+        raise RuntimeError("API test batches differ from complete project discovery.")
+    return batches
 
 
 def expected_proof(group: str, source_head: str, tested_commit: str, root: Path) -> dict[str, object]:
@@ -344,7 +381,6 @@ def run_group(
     results_directory.mkdir(parents=True, exist_ok=True)
     for project in GROUP_PROJECTS[group]:
         name = Path(project).stem
-        trx = results_directory / f"{name}.trx"
         elapsed_ns = {stage: 0 for stage in Stage}
 
         def measure(stage: Stage, action: Callable[[], T]) -> T:
@@ -367,16 +403,42 @@ def run_group(
             "--no-restore", "--no-build", "--list-tests",
             "--logger", "console;verbosity=quiet",
         ], root)), project)
-        measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
-        measure(Stage.TEST, lambda: run_checked([
-            "dotnet", "test", project, "-noAutoResponse", "--configuration", "Release",
-            "--no-restore", "--no-build", "--results-directory", str(results_directory),
-            "--logger", f"trx;LogFileName={trx.name}",
-            "--logger", "console;verbosity=quiet",
-        ], root))
-        if not trx.is_file() or trx.is_symlink():
-            raise RuntimeError("Backend project did not produce its exact TRX.")
-        results, passed, skipped = trx_result_map(trx, discovered)
+        batches = api_test_batches(discovered) if group == "api" else [discovered]
+        results: dict[str, dict[str, int]] = {}
+        execution_ids: set[str] = set()
+        passed = skipped = 0
+        for index, batch in enumerate(batches, start=1):
+            suffix = f".batch-{index:03d}" if group == "api" else ""
+            trx = results_directory / f"{name}{suffix}.trx"
+            arguments = [
+                "dotnet", "test", project, "-noAutoResponse", "--configuration", "Release",
+                "--no-restore", "--no-build", "--results-directory", str(results_directory),
+                "--logger", f"trx;LogFileName={trx.name}",
+                "--logger", "console;verbosity=quiet",
+            ]
+            if group == "api":
+                arguments += ["--filter", "|".join(
+                    f"FullyQualifiedName={method}" for method in sorted(batch)
+                )]
+                print(f"BACKEND_API_BATCH: START batch={index}/{len(batches)} "
+                      f"methods={len(batch)} discoveredCases={sum(batch.values())}", flush=True)
+            measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
+            measure(Stage.TEST, lambda: run_checked(arguments, root))
+            if not trx.is_file() or trx.is_symlink():
+                raise RuntimeError("Backend project did not produce its exact TRX.")
+            batch_results, batch_passed, batch_skipped = trx_result_map(
+                trx, batch, execution_ids=execution_ids,
+            )
+            if results.keys() & batch_results.keys():
+                raise RuntimeError("Backend test batch results overlap.")
+            results.update(batch_results)
+            passed += batch_passed
+            skipped += batch_skipped
+            if group == "api":
+                print(f"BACKEND_API_BATCH: PASS batch={index}/{len(batches)} "
+                      f"passed={batch_passed} skipped={batch_skipped}", flush=True)
+        if set(results) != set(discovered):
+            raise RuntimeError("Backend test batches do not cover complete project discovery.")
         proof["projects"].append({
             "path": project,
             "discoveryHash": digest(sorted(discovered.items())),
