@@ -6109,8 +6109,6 @@ public sealed partial class OpenApiContractGenerationTests
                          repositoryRoot.Replace('\\', '/'),
                          temporaryRoot,
                          temporaryRoot.Replace('\\', '/'),
-                         Environment.MachineName,
-                         Environment.UserName,
                          "openapi.invalid",
                          "127.0.0.1",
                          "DB_CONNECTION_STRING",
@@ -6124,12 +6122,50 @@ public sealed partial class OpenApiContractGenerationTests
                     StringComparison.OrdinalIgnoreCase);
             }
 
+            foreach (var hostIdentity in new[] { Environment.MachineName, Environment.UserName })
+            {
+                Assert.False(
+                    ContainsHostIdentity(contractText, hostIdentity),
+                    "The generated contract contains a host identity.");
+            }
+
             AssertContractShape(first.Bytes);
         }
         finally
         {
             Directory.Delete(temporaryRoot, recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData("ci", "/api/v1/finance/official-invoice-imports/", false)]
+    [InlineData("ci", "{\"description\":\"official invoice\"}", false)]
+    [InlineData("build", "rebuilding", false)]
+    [InlineData("ci", "{\"user\":\"ci\"}", true)]
+    [InlineData("ci", "/home/ci/workspace", true)]
+    [InlineData("ci", "C:\\Users\\CI\\workspace", true)]
+    [InlineData("build-host", "https://build-host/internal", true)]
+    [InlineData("build.host", "https://buildXhost/internal", false)]
+    [InlineData("build.host", "https://build.host/internal", true)]
+    public void HostIdentityDetection_RejectsIdentityTokensWithoutMatchingInsideWords(
+        string identity,
+        string text,
+        bool expected)
+    {
+        Assert.Equal(expected, ContainsHostIdentity(text, identity));
+    }
+
+    private static bool ContainsHostIdentity(string text, string identity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(identity);
+        var pattern = @"(?<![\p{L}\p{N}_])"
+            + System.Text.RegularExpressions.Regex.Escape(identity)
+            + @"(?![\p{L}\p{N}_])";
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            text,
+            pattern,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     }
 
     [Fact]
