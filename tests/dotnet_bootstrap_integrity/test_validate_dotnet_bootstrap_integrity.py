@@ -1063,7 +1063,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "254e1db93babbf9014b8ef624d102cd77ac44be276185e35b8664ddbaa2da4a7"
             ),
             "frontend": (
-                "a9ca3aa90175cf1952cb2d1e0c495e30f9e30f8f29bfa75657b9421c6860959e"
+                "55d910350d81c91efeb330c5f0c4c549f1888fed24a12b0641c8effb333d4093"
             ),
             "relational-shard": (
                 "a9ef44adf521831a1c41313898b38c12ab451a5c1be32f5bfd20881e0d35e366"
@@ -1144,7 +1144,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "npm ci",
                 "npm audit --audit-level=high",
                 "npm run lint",
-                "npm test",
+                "npm test -- --maxWorkers=1 --no-file-parallelism",
                 "npm run build",
             ],
         )

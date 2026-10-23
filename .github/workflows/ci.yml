@@ -499,7 +499,9 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run lint
-      - run: npm test
+      # The isolated runner has a shared two-CPU/four-GiB working budget.
+      # Keep every test, without competing jsdom workers or longer assertions.
+      - run: npm test -- --maxWorkers=1 --no-file-parallelism
       - run: npm run build
 
   relational-shard:
