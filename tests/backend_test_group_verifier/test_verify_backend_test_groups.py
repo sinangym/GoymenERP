@@ -140,8 +140,8 @@ class BackendGroupVerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "TestSDK source inventory"):
             VERIFIER.source_inventory(self.root)
 
-    def test_discovery_and_trx_preserve_theory_multiplicity_and_skip(self) -> None:
-        project = VERIFIER.GROUP_PROJECTS["api"][0]
+    def test_discovery_and_trx_preserve_deferred_module_theory_multiplicity_and_skip(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["modules"][10]
         name = Path(project).stem + ".ExampleTests.Runs"
         discovered = VERIFIER.discovery_map(name + "\n", project)
         path = self.root / "test.trx"
@@ -151,6 +151,25 @@ class BackendGroupVerifierTests(unittest.TestCase):
         self.assertEqual(results[name], {"passed": 2, "skipped": 0})
         path.write_text(trx_source(project, outcome="NotExecuted"), encoding="utf-8")
         _, passed, skipped = VERIFIER.trx_result_map(path, discovered)
+        self.assertEqual((passed, skipped), (0, 1))
+
+    def test_exact_api_multiplicity_rejects_surplus_theory_rows_with_consistent_counters(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["api"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        discovered = Counter({name: 2})
+        path = self.root / "exact-api.trx"
+        for cases in (1, 3):
+            with self.subTest(cases=cases):
+                path.write_text(trx_source(project, theory_rows=cases), encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "multiplicity differs"):
+                    VERIFIER.trx_result_map(path, discovered, exact_multiplicity=True)
+        path.write_text(trx_source(project, theory_rows=2), encoding="utf-8")
+        _, passed, skipped = VERIFIER.trx_result_map(path, discovered, exact_multiplicity=True)
+        self.assertEqual((passed, skipped), (2, 0))
+        path.write_text(trx_source(project, outcome="NotExecuted"), encoding="utf-8")
+        _, passed, skipped = VERIFIER.trx_result_map(
+            path, Counter({name: 1}), exact_multiplicity=True,
+        )
         self.assertEqual((passed, skipped), (0, 1))
 
     def test_trx_refuses_absent_wrong_extra_or_duplicate_counts(self) -> None:
@@ -222,6 +241,16 @@ class BackendGroupVerifierTests(unittest.TestCase):
             VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success"),
             20,
         )
+        # Module MemberData can defer nonserializable records until execution.
+        # Preserve that existing behavior while API's pre-enumerated batches
+        # require exact method multiplicities and an exact total case count.
+        module_path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
+        module_proof = json.loads(module_path.read_text(encoding="utf-8"))
+        module_proof["projects"][10].update(executionCount=4, passed=4)
+        module_path.write_text(json.dumps(module_proof), encoding="utf-8")
+        self.assertEqual(
+            VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success"), 23,
+        )
         for build, workers in (("failure", "success"), ("success", "skipped")):
             with self.subTest(build=build, workers=workers):
                 with self.assertRaisesRegex(RuntimeError, "must succeed"):
@@ -235,6 +264,9 @@ class BackendGroupVerifierTests(unittest.TestCase):
         original = path.read_text(encoding="utf-8")
         for mutation in (
             original.replace('"passed": 1', '"passed": 2', 1),
+            original.replace('"passed": 1', '"passed": 2', 1).replace(
+                '"executionCount": 1', '"executionCount": 2', 1
+            ),
             original.replace('"projectCount": 1', '"projectCount": 2', 1),
             original.replace('"schemaVersion": 2', '"schemaVersion": 1', 1),
             original.replace('"group": "api"', '"group": "modules"', 1),
@@ -346,6 +378,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         alpha, beta, extra = (f"{prefix}.{name}.Runs" for name in ("Alpha", "Beta", "Extra"))
         discovery = Counter({alpha: 2, beta: 1})
         modes = ("valid", "missing_batch", "overlap", "extra_result", "too_few_theory_rows",
+                 "too_many_theory_rows",
                  "duplicate_execution", "failed_command", "missing_trx")
         for mode in modes:
             with self.subTest(mode=mode):
@@ -375,6 +408,8 @@ class BackendGroupVerifierTests(unittest.TestCase):
                         batch[extra] = 1
                     if mode == "too_few_theory_rows" and number == 1:
                         batch[alpha] = 1
+                    if mode == "too_many_theory_rows" and number == 1:
+                        batch[alpha] = 3
                     first_execution = 100 if mode == "duplicate_execution" else number * 100
                     logger = next(value for value in arguments if value.startswith("trx;LogFileName="))
                     (results / logger.split("=", 1)[1]).write_text(

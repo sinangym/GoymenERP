@@ -155,6 +155,7 @@ def discovery_map(stdout: str, project: str) -> Counter[str]:
 
 def trx_result_map(
     path: Path, discovered: Counter[str], *, execution_ids: set[str] | None = None,
+    exact_multiplicity: bool = False,
 ) -> tuple[dict[str, dict[str, int]], int, int]:
     try:
         document = ET.parse(path).getroot()
@@ -206,6 +207,10 @@ def trx_result_map(
         skipped += outcome == "NotExecuted"
     if not results or set(results) != set(discovered):
         raise RuntimeError("Backend TRX result identities differ from exact project discovery.")
+    if exact_multiplicity and any(
+        sum(results[name].values()) != discovered[name] for name in discovered
+    ):
+        raise RuntimeError("Backend TRX execution multiplicity differs from exact discovery.")
     if any(sum(results[name].values()) < discovered[name] for name in discovered):
         raise RuntimeError("Backend TRX execution multiplicity is below discovery.")
     expected = {
@@ -311,6 +316,7 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str) -> None
             raise RuntimeError("Backend group proof has invalid stage timing.")
         if (row["discoveredMethods"] < 1 or row["discoveredCases"] < row["discoveredMethods"]
                 or row["executionCount"] < row["discoveredCases"]
+                or (group == "api" and row["executionCount"] != row["discoveredCases"])
                 or row["executionCount"] != row["passed"] + row["skipped"]):
             raise RuntimeError("Backend group proof counts are inconsistent.")
 
@@ -427,7 +433,7 @@ def run_group(
             if not trx.is_file() or trx.is_symlink():
                 raise RuntimeError("Backend project did not produce its exact TRX.")
             batch_results, batch_passed, batch_skipped = trx_result_map(
-                trx, batch, execution_ids=execution_ids,
+                trx, batch, execution_ids=execution_ids, exact_multiplicity=group == "api",
             )
             if results.keys() & batch_results.keys():
                 raise RuntimeError("Backend test batch results overlap.")
