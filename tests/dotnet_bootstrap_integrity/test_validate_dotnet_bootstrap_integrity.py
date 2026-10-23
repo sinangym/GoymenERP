@@ -1066,10 +1066,10 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "55d910350d81c91efeb330c5f0c4c549f1888fed24a12b0641c8effb333d4093"
             ),
             "relational-shard": (
-                "a9ef44adf521831a1c41313898b38c12ab451a5c1be32f5bfd20881e0d35e366"
+                "9490be512bd1336d4015005583b2e83d062bf83225f4312a9e3c16f95d3f56ba"
             ),
             "relational-rcsi": (
-                "d8b5be86b8172f3a856775f0d5268754f537344e624670265681a504a8b3c5df"
+                "ceace17efdc888231e81024c13c680607c577e121974ccf330bcb5e7a28405a1"
             ),
             "relational": (
                 "673b38cc52d85ca0d61156a0de7d99fb78f524a2183f8d11ea1b3966122649cb"

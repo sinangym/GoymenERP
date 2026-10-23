@@ -522,12 +522,14 @@ jobs:
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
@@ -602,12 +604,14 @@ jobs:
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
