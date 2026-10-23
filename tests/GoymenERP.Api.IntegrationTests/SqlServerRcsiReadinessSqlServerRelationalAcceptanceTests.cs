@@ -765,6 +765,8 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         Directory.CreateDirectory(root);
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
+        Task<WrapperProcessResult>? invocation = null;
+        var wrapperTestProcessTimeout = TimeSpan.FromSeconds(90);
         try
         {
             var payload = CreateRuntimePayloadManifest(root);
@@ -781,7 +783,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             }.ConnectionString;
             var outputPath = Path.Combine(root, "timeout-run", "readiness.json");
             var acceptTask = listener.AcceptTcpClientAsync();
-            var invocation = RunPowerShellWrapperAsync(
+            invocation = RunPowerShellWrapperAsync(
                 connectionString,
                 "goymen_erp_rcsi_wrapper_timeout",
                 [SqlServerLogicalEndpointFingerprint.ComputeSha256(
@@ -789,14 +791,13 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                 outputPath,
                 payload,
                 overallTimeoutSeconds: 20,
-                testProcessTimeout: TimeSpan.FromSeconds(90));
+                testProcessTimeout: wrapperTestProcessTimeout);
 
             var acceptedTask = acceptTask;
             var firstCompleted = await Task.WhenAny(acceptedTask, invocation)
-                // Keep the behavioral timeout at 20 seconds, but allow a cold or
-                // fully-loaded host the same 60-second child-start budget used by
-                // the direct CLI containment test above.
-                .WaitAsync(TimeSpan.FromSeconds(60));
+                // Share the existing wrapper-process bound for cold startup;
+                // the child's behavioral deadline remains 20 seconds.
+                .WaitAsync(wrapperTestProcessTimeout);
             if (firstCompleted == invocation)
             {
                 var earlyResult = await invocation;
@@ -836,6 +837,13 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         finally
         {
             listener.Stop();
+            if (invocation is { } pendingInvocation)
+            {
+                // Await the already bounded owner before deleting its manifest,
+                // preserving any earlier startup/behavior assertion failure.
+                await Record.ExceptionAsync(() => pendingInvocation);
+            }
+
             Directory.Delete(root, recursive: true);
         }
     }
