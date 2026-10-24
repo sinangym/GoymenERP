@@ -76,6 +76,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import { MasterFormLauncher, MasterRecordForm } from './MasterRecordForm'
+import { LocationOperatorSection } from './LocationOperatorSection'
 import { MASTER_TEXT, savedNotice } from './organizationText'
 import { refreshOrganizationReads } from './refreshOrganizationReads'
 import styles from './LocationDetailPage.module.css'
@@ -225,6 +226,15 @@ function LocationDetail({ namespace }: { readonly namespace: string | null }) {
   return (
     <Frame namespace={namespace}>
       <LocationCard location={state.data} />
+      {namespace !== null && state.data.isExternal ? (
+        <LocationOperatorSection
+          namespace={namespace}
+          location={state.data}
+          companyId={activeCompanyId ?? ''}
+          canAssign={canEdit}
+          onRefresh={refreshAll}
+        />
+      ) : null}
       {namespace !== null && isCanonicalLocationId(state.data.id) &&
         hasCapability(shell, ORGANIZATION_CAPABILITY.workCentersList) ? (
           <p><Link to={workCenterListPath(state.data.id)}>{WORK_CENTER_LOCATION_TEXT.action}</Link></p>
