@@ -6,6 +6,7 @@
 import type { PeriodFailure, PeriodUnknown } from './commandApi'
 import type { JournalKind, PeriodStatus } from './contract'
 import type { JournalReversalFailure } from './journalReversalApi'
+import type { NormalJournalFailure } from './normalJournalApi'
 
 export const PERIODS_TITLE = 'Muhasebe Dönemleri'
 export const PERIODS_INTRO =
@@ -210,6 +211,137 @@ export function reversalFailureText(failure: JournalReversalFailure): string {
       return 'Ters fiş oluşturulamadı; hiçbir şey kaydedilmedi.'
     case 'rule':
       return REVERSAL_CODE_TEXT[failure.code] ?? `Kural reddetti (${failure.code}).`
+    case 'unsupported-media':
+      return 'İstek biçimi desteklenmiyor.'
+  }
+}
+
+// ---------------------------------------------------------------------------------
+// ACC-V1 normal journal drafts (BLG-05: every user text of NormalJournalDraftPages lives here)
+// ---------------------------------------------------------------------------------
+
+export const NORMAL_JOURNAL_TEXT = {
+  contextSubject: 'muhasebe şirket bağlamı',
+  draftTitle: 'Normal fiş taslağı',
+  draftSubject: 'normal fiş taslağı',
+  createTitle: 'Yeni normal fiş taslağı',
+  createdTitle: 'Normal fiş taslağı kaydedildi',
+  createHelp:
+    'Hesaplar yalnız sunucudaki onaylı Mikro aynası ve posting rule ile doğrulanır. Sağlayıcı hazır değilse kayıt yapılmaz.',
+  invalidSourceAndDates: 'Kaynak ve tarihler geçerli olmalıdır.',
+  preparationRequired: 'Kaynağın onaylı hesap hazırlığı yüklenmelidir.',
+  invalidLines: 'Her satırda geçerli hesap, taraf ve pozitif tutar gerekir.',
+  reopen: 'Kaydı kapat ve yeniden aç',
+  openApproval: 'Onay ekranını aç',
+  createUnknown: 'Sonuç bilinmiyor. Aynı anahtar ve aynı içerikle yeniden gönderin.',
+  approvalUnknown: 'Onay sonucu bilinmiyor.',
+  resend: 'Aynı isteği yeniden gönder',
+  source: 'Onaylı finans kaynağı',
+  chooseSource: 'Kaynak seçin',
+  transactionDate: 'İşlem tarihi',
+  accountingDate: 'Muhasebe tarihi',
+  valueDate: 'Valör tarihi',
+  sourcesSubject: 'yetkili finans kaynakları',
+  preparationSubject: 'onaylı hesap hazırlığı',
+  preparationUnreadable: 'Kaynağın onaylı hesap hazırlığı okunamadı.',
+  account: 'Onaylı hesap',
+  chooseAccount: 'Hesap seçin',
+  debit: 'Borç',
+  credit: 'Alacak',
+  amount: 'Tutar',
+  removeLine: 'Satırı kaldır',
+  addLine: 'Satır ekle',
+  saveDraft: 'Taslağı kaydet',
+  closeForm: 'Formu kapat',
+  preparationChanged: 'Onaylı hesap hazırlığı değişti. Seçimleri yenileyin.',
+  refreshPreparation: 'Hazırlığı yenile',
+  status: 'Durum',
+  version: 'Sürüm',
+  sourceRef: 'Kaynak',
+  postingRule: 'Posting rule',
+  lineNumber: 'Satır',
+  lineAccount: 'Hesap',
+  lineSide: 'Taraf',
+  approve: 'Normal taslağı onayla',
+  openPostedJournal: 'Oluşturulan fişi aç',
+  backToJournals: 'Fişlere dön',
+  // BLG-05: the approval period is chosen from the readable open periods, never typed as an id.
+  period: 'Onay dönemi',
+  choosePeriod: 'Açık dönem seçin',
+  periodsSubject: 'açık muhasebe dönemleri',
+  periodListUnavailable:
+    'Onay dönemi seçmek için muhasebe dönemlerini görme yetkisi gerekir. Bu yetki olmadan onay verilemez.',
+  noOpenPeriod: 'Bu şirkette açık muhasebe dönemi yok. Önce bir dönemin açılması gerekir.',
+  morePeriods: 'Daha eski dönemleri yükle',
+  morePeriodsFailed: 'Daha eski dönemler yüklenemedi. Aynı düğmeyle yeniden deneyin.',
+  periodsRestarted: 'Dönem listesi bu arada değişti; liste baştan yüklendi.',
+  periodRequired: 'Bir açık dönem seçin.',
+} as const
+
+export function normalDraftSavedText(version: number): string {
+  return `Taslak sürüm ${version} olarak kaydedildi.`
+}
+
+export function normalPreparationVersionsText(accountPlanVersion: string, ruleVersion: string): string {
+  return `Onaylı ayna ${accountPlanVersion}; kural ${ruleVersion}.`
+}
+
+export function normalSourceRefText(sourceId: string): string {
+  return `Kaynak ref. ...${sourceId.slice(-8)}`
+}
+
+/** An open period as the approver reads it: its date range, and whether it holds the draft's accounting date. */
+export function approvalPeriodLabel(startsOn: string, endsOn: string, holdsAccountingDate: boolean): string {
+  return holdsAccountingDate
+    ? `${startsOn} – ${endsOn} (taslağın muhasebe tarihi bu dönemde)`
+    : `${startsOn} – ${endsOn}`
+}
+
+/** The server's stable rule codes for a period that can no longer take the draft (422). */
+const NORMAL_JOURNAL_CODE_TEXT: Readonly<Record<string, string>> = {
+  accounting_period_closed: 'Seçilen dönem bu sırada kapandı. Açık dönemler yeniden okundu; başka bir açık dönem seçin.',
+  accounting_period_not_open: 'Seçilen dönem açık değil. Açık dönemler yeniden okundu; başka bir açık dönem seçin.',
+  accounting_period_does_not_cover_date: 'Seçilen dönem taslağın muhasebe tarihini kapsamıyor. Tarihi kapsayan açık dönemi seçin.',
+  accounting_period_not_found: 'Seçilen dönem bulunamadı. Açık dönemler yeniden okundu.',
+}
+
+/** Codes after which the open-period list is re-read and the choice cleared. */
+export const NORMAL_JOURNAL_PERIOD_CODES: ReadonlySet<string> = new Set(Object.keys(NORMAL_JOURNAL_CODE_TEXT))
+
+export function normalJournalCreateFailureText(failure: NormalJournalFailure): string {
+  return `İstek reddedildi: ${normalJournalFailureDetail(failure)}`
+}
+
+export function normalJournalApprovalFailureText(failure: NormalJournalFailure): string {
+  return `Onay reddedildi: ${normalJournalFailureDetail(failure)}`
+}
+
+function normalJournalFailureDetail(failure: NormalJournalFailure): string {
+  switch (failure.kind) {
+    case 'validation':
+      return failure.field === 'periodId' ? NORMAL_JOURNAL_TEXT.periodRequired : 'İstek geçerli değil.'
+    case 'unauthenticated':
+      return 'Oturumunuz sona erdi.'
+    case 'forbidden':
+      return 'Bu işlem için yetkiniz yok.'
+    case 'not-found':
+      return 'Taslak bulunamadı.'
+    case 'version-conflict':
+      return 'Taslak siz okurken değişti. Güncel hâlini yeniden okuyun.'
+    case 'idempotency-conflict':
+      return 'Bu işlem anahtarı başka bir istekle kullanılmış. Hiçbir şey varsayılmadı.'
+    case 'concurrent-change':
+      return 'Aynı anda başka bir yazma oldu; hiçbir şey kaydedilmedi.'
+    case 'content-conflict':
+      return 'Aynı taslak kimliği başka içerikle kayıtlı; hiçbir şey değişmedi.'
+    case 'not-pending':
+      return 'Taslak artık onay beklemiyor.'
+    case 'posting-conflict':
+      return 'Fiş oluşturulamadı; hiçbir şey kaydedilmedi.'
+    case 'preparation-version-conflict':
+      return 'Onaylı hesap hazırlığı değişti.'
+    case 'rule':
+      return NORMAL_JOURNAL_CODE_TEXT[failure.code] ?? `Kural reddetti (${failure.code}).`
     case 'unsupported-media':
       return 'İstek biçimi desteklenmiyor.'
   }
