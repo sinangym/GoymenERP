@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 from typing import Callable, TypeVar
 from types import ModuleType
 import xml.etree.ElementTree as ET
@@ -49,7 +50,7 @@ GROUP_PROJECTS = {
 }
 SOLUTION_PROJECT_COUNT = 71
 TEST_PROJECT_COUNT = 20
-PROOF_SCHEMA = 3
+PROOF_SCHEMA = 4
 MAX_PROOF_BYTES = 2 * 1024 * 1024
 # Release per-process memory between API batches on the bounded local runner.
 # Keep complete classes together; a large class remains one indivisible batch.
@@ -436,23 +437,163 @@ def discovery_map(stdout: str, project: str) -> Counter[str]:
     return Counter({name: len(cases) for name, cases in discovery_cases(stdout, project).items()})
 
 
-def sdk_display_name(value: str) -> str:
-    # xunit.runner.visualstudio 3.1.4 VsDiscoverySink.Escape/Truncate exposes
-    # 447 UTF-16 units; TRX retains the full runtime display. Keep exact counts
-    # and compare the view the SDK actually discovered. Reviewed deferred data
-    # has its own full runtime identities and must never use this projection.
-    # https://github.com/xunit/visualstudio.xunit/blob/3.1.4/src/xunit.runner.visualstudio/Sinks/VsDiscoverySink.cs
-    escaped = value.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
-    encoded = escaped.encode("utf-16-le", errors="surrogatepass")
-    if len(encoded) <= 447 * 2:
-        return escaped
-    return encoded[:444 * 2].decode("utf-16-le", errors="surrogatepass") + "\u00b7" * 3
+# The supported adapter IDs are independent of its lossy display-name view.
+# https://github.com/xunit/visualstudio.xunit/blob/3.1.4/src/xunit.runner.visualstudio/Sinks/VsDiscoverySink.cs
+FRAMEWORK_PACKAGES = {
+    "Microsoft.NET.Test.Sdk": ("17.14.1", "HJKqKOE+vshXra2aEHpi2TlxYX7Z9VFYkr+E5rwEvHC8eIXiyO+K9kNm8vmNom3e2rA56WqxU+/N9NJlLGXsJQ=="),
+    "Microsoft.TestPlatform.TestHost": ("17.14.1", "d78LPzGKkJwsJXAQwsbJJ7LE7D1wB+rAyhHHAaODF+RDSQ0NgMjDFkSA1Djw18VrxO76GlKAjRUhl+H8NL8Z+Q=="),
+    "xunit": ("2.9.3", "TlXQBinK35LpOPKHAqbLY4xlEen9TBafjs0V5KnA4wZsoQLQJiirCR4CbIXvOH8NzkW4YeJKP5P/Bnrodm0h9Q=="),
+    "xunit.runner.visualstudio": ("3.1.4", "5mj99LvCqrq3CNi06xYdyIAXOEh+5b33F2nErCzI5zWiDdLHXiPXEWFSUAF8zlIv0ZWqjZNCwHTQeAPYbF3pCg=="),
+}
+DISCOVERY_BOUNDARY = "vstest.console.dll, TestRequestSender.OnDiscoveryMessageReceived: Received message: "
+EXECUTOR_URI = "executor://xunit/VsTestRunner3/netcore/"
+
+
+def framework_inventory(root: Path) -> str:
+    rows = []
+    for project in (p for paths in catalog().values() for p in paths):
+        path = root / project
+        document = ET.parse(path).getroot()
+        for package in ("Microsoft.NET.Test.Sdk", "xunit", "xunit.runner.visualstudio"):
+            refs = [e for e in document.iter("PackageReference")
+                    if e.attrib.get("Include") == package]
+            if len(refs) != 1 or refs[0].attrib.get("Version") != FRAMEWORK_PACKAGES[package][0]:
+                raise RuntimeError("Backend discovery framework version is unsupported or ambiguous.")
+        rows.append((project, hashlib.sha256(path.read_bytes()).hexdigest()))
+    return digest([rows, FRAMEWORK_PACKAGES])
+
+
+def verify_framework_assets(root: Path, project: str) -> None:
+    path = root / Path(project).parent / "obj/project.assets.json"
+    try:
+        if path.is_symlink():
+            raise RuntimeError("Backend framework assets are linked.")
+        assets = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
+        if Path(assets["project"]["restore"]["projectPath"]).resolve() != (root / project).resolve():
+            raise RuntimeError("Backend framework assets belong to another project.")
+        libraries = assets["libraries"]
+        for package, (version, fingerprint) in FRAMEWORK_PACKAGES.items():
+            matches = [key for key in libraries if key.split("/", 1)[0].lower() == package.lower()]
+            key = package + "/" + version
+            if matches != [key] or libraries[key].get("sha512") != fingerprint:
+                raise RuntimeError("Backend restored framework version or package hash is unsupported.")
+    except (OSError, ValueError, KeyError, TypeError) as exception:
+        raise RuntimeError("Backend framework assets are missing or malformed.") from exception
+
+
+def canonical_test_id(value: object) -> str:
+    if (not isinstance(value, str) or not EXECUTION_ID_PATTERN.fullmatch(value)
+            or value != value.lower() or not uuid.UUID(value).int):
+        raise RuntimeError("Backend native test identity is missing or noncanonical.")
+    return value
+
+
+def structured_discovery(path: Path, root: Path, project: str) -> dict[str, list[str]]:
+    """Read one actual VSTest17.14.1 console receive stream, never echoed host frames.
+
+    TestFound batches plus completion's LastDiscoveredTests are disjoint. IDs,
+    not escaped/truncated DisplayName strings, define ordinary case identity.
+    """
+    expected_source = (root / Path(project).parent / "bin/Release/net10.0" /
+                       (Path(project).stem + ".dll")).resolve()
+    try:
+        if path.is_symlink():
+            raise RuntimeError("Backend discovery diagnostic is linked.")
+        lines = path.read_text(encoding="utf-8", errors="strict").splitlines()
+    except (OSError, UnicodeError) as exception:
+        raise RuntimeError("Backend structured discovery is missing or malformed.") from exception
+    cases = []
+    completed = False
+    total = None
+    for line in lines:
+        if DISCOVERY_BOUNDARY not in line:
+            continue
+        prefix, payload = line.split(DISCOVERY_BOUNDARY, 1)
+        if not re.fullmatch(r"TpTrace Verbose: 0 : [0-9]+, [0-9]+, [^\r\n]+, ", prefix):
+            raise RuntimeError("Backend discovery transport boundary is unsupported.")
+        try:
+            message = json.loads(payload, object_pairs_hook=_unique_object)
+        except (ValueError, UnicodeError) as exception:
+            raise RuntimeError("Backend discovery packet is malformed.") from exception
+        if (not isinstance(message, dict) or set(message) != {"Version", "MessageType", "Payload"}
+                or type(message["Version"]) is not int or message["Version"] != 7):
+            raise RuntimeError("Backend discovery protocol version or shape is unsupported.")
+        kind = message["MessageType"]
+        body = message["Payload"]
+        if kind == "TestSession.Message":
+            continue
+        if completed:
+            raise RuntimeError("Backend discovery has extra or repeated completion packets.")
+        if kind == "TestDiscovery.TestFound":
+            if not isinstance(body, list) or not body:
+                raise RuntimeError("Backend discovery case batch is malformed.")
+            cases.extend(body)
+        elif kind == "TestDiscovery.Completed":
+            required = {"TotalTests", "LastDiscoveredTests", "IsAborted", "Metrics",
+                        "FullyDiscoveredSources", "PartiallyDiscoveredSources",
+                        "NotDiscoveredSources", "SkippedDiscoverySources", "DiscoveredExtensions"}
+            if (not isinstance(body, dict) or set(body) != required
+                    or type(body["TotalTests"]) is not int or body["TotalTests"] < 1
+                    or body["IsAborted"] is not False
+                    or body["FullyDiscoveredSources"] != [str(expected_source)]
+                    or any(body[k] != [] for k in ("PartiallyDiscoveredSources", "NotDiscoveredSources", "SkippedDiscoverySources"))
+                    or not isinstance(body["LastDiscoveredTests"], list)):
+                raise RuntimeError("Backend discovery completion is partial, aborted or from another source.")
+            cases.extend(body["LastDiscoveredTests"])
+            total = body["TotalTests"]
+            completed = True
+        else:
+            raise RuntimeError("Backend discovery message type is unsupported.")
+    if not completed or total != len(cases):
+        raise RuntimeError("Backend discovery is incomplete or has inconsistent case counts.")
+    names: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    for case in cases:
+        if not isinstance(case, dict) or set(case) != {"Id", "FullyQualifiedName", "DisplayName", "ExecutorUri", "Source", "CodeFilePath", "LineNumber", "Properties"}:
+            raise RuntimeError("Backend discovered case shape is unsupported.")
+        test_id = canonical_test_id(case["Id"])
+        name = case["FullyQualifiedName"]
+        display = case["DisplayName"]
+        if (test_id in seen or not isinstance(name, str) or not FQN_PATTERN.fullmatch(name)
+                or not name.startswith(Path(project).stem + ".")
+                or case["ExecutorUri"] != EXECUTOR_URI or case["Source"] != str(expected_source)
+                or not isinstance(display, str) or not display):
+            raise RuntimeError("Backend discovered case identity, executor or assembly is wrong or duplicated.")
+        try:
+            display.encode("utf-8", errors="strict")
+        except UnicodeError as exception:
+            raise RuntimeError("Backend discovery has an unpaired UTF-16 surrogate.") from exception
+        properties = case["Properties"]
+        if not isinstance(properties, list):
+            raise RuntimeError("Backend discovery properties are malformed.")
+        values = {}
+        for prop in properties:
+            if not isinstance(prop, dict) or set(prop) != {"Key", "Value"} or not isinstance(prop["Key"], dict):
+                raise RuntimeError("Backend discovery property shape is unsupported.")
+            key = prop["Key"].get("Id")
+            if not isinstance(key, str) or key in values:
+                raise RuntimeError("Backend discovery repeats a property identity.")
+            values[key] = prop["Value"]
+        unique = values.get("XunitTestCaseUniqueID")
+        if (not isinstance(unique, str) or not re.fullmatch(r"[0-9a-f]{40}", unique)
+                or values.get("TestCase.ManagedType") != name.rsplit(".", 1)[0]
+                or values.get("TestCase.ManagedMethod") != name.rsplit(".", 1)[1]):
+            raise RuntimeError("Backend discovery lacks its actual xUnit native identity.")
+        native = uuid.UUID(bytes_le=hashlib.sha1((EXECUTOR_URI + unique).encode("utf-16-le")).digest()[:16])
+        if str(native) != test_id:
+            raise RuntimeError("Backend SDK test ID does not match the adapter's full native case identity.")
+        seen.add(test_id)
+        names.setdefault(name, []).append(test_id)
+    return {name: sorted(values) for name, values in names.items()}
 
 
 def trx_result_map(
     path: Path, discovered: Counter[str], *, execution_ids: set[str] | None = None,
     exact_multiplicity: bool = True, allowed_skips: set[str] | None = None,
     expected_case_names: dict[str, list[str]] | None = None,
+    expected_case_ids: dict[str, list[str]] | None = None,
+    observed_case_ids: dict[str, list[str]] | None = None,
+    observed_case_names: dict[str, list[str]] | None = None,
 ) -> tuple[dict[str, dict[str, int]], int, int]:
     try:
         document = ET.parse(path).getroot()
@@ -478,6 +619,7 @@ def trx_result_map(
         definitions[test_id] = name
     results: dict[str, dict[str, int]] = {}
     case_names: dict[str, list[str]] = {}
+    case_ids: dict[str, list[str]] = {}
     total = 0
     passed = 0
     skipped = 0
@@ -503,6 +645,7 @@ def trx_result_map(
             raise RuntimeError("Required non-SQL backend test was not executed.")
         entry = results.setdefault(name, {"passed": 0, "skipped": 0})
         case_names.setdefault(name, []).append(element.attrib.get("testName", ""))
+        case_ids.setdefault(name, []).append(test_id)
         entry["passed" if outcome == "Passed" else "skipped"] += 1
         total += 1
         passed += outcome == "Passed"
@@ -515,12 +658,23 @@ def trx_result_map(
         sum(results[name].values()) != discovered[name] for name in discovered
     ):
         raise RuntimeError("Backend TRX execution multiplicity differs from exact discovery.")
-    if expected_case_names is not None and {
-        name: Counter(values if name in DEFERRED_THEORIES else
-                      [sdk_display_name(value) for value in values])
-        for name, values in case_names.items()
-    } != {name: Counter(values) for name, values in expected_case_names.items()}:
-        raise RuntimeError("Backend TRX case identities differ from exact discovery or reviewed data.")
+    if expected_case_ids is not None:
+        if {name: Counter(values) for name, values in case_ids.items()} != {
+            name: Counter(values) for name, values in expected_case_ids.items()
+        }:
+            raise RuntimeError("Backend TRX native case identities differ from exact SDK discovery.")
+        for values in case_ids.values():
+            for value in values:
+                canonical_test_id(value)
+    if expected_case_names is not None and any(
+        Counter(case_names.get(name, [])) != Counter(values)
+        for name, values in expected_case_names.items()
+    ):
+        raise RuntimeError("Backend TRX case identities differ from exact reviewed data.")
+    if observed_case_ids is not None:
+        observed_case_ids.update({name: sorted(values) for name, values in case_ids.items()})
+    if observed_case_names is not None:
+        observed_case_names.update({name: sorted(values) for name, values in case_names.items()})
     expected = {
         # VSTest 17.14.1 writes zero here even for NotExecuted result rows.
         # Skipped executions remain independently counted from the result rows.
@@ -578,6 +732,7 @@ def expected_proof(group: str, source_head: str, tested_commit: str, root: Path)
         "testedCommit": canonical_head(tested_commit, "tested commit"),
         "solutionHash": solution_hash,
         "catalogHash": catalog_hash,
+        "frameworkInventoryHash": framework_inventory(root),
         "separateSqlInventoryHash": digest(sorted(relational_cases(root).items())),
         "projectCount": len(GROUP_PROJECTS[group]),
         "projects": [],
@@ -631,29 +786,40 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str, root: P
             raise RuntimeError("Backend group proof lacks exact method-level execution records.")
         discovered: Counter[str] = Counter()
         results: dict[str, dict[str, int]] = {}
+        seen_ids: set[str] = set()
         for record in tests:
-            if not isinstance(record, list) or len(record) != 6:
+            if not isinstance(record, list) or len(record) != 7:
                 raise RuntimeError("Backend method execution record schema is wrong.")
-            name, discovered_count, passed_count, skipped_count, discovered_hash, result_hash = record
+            name, discovered_count, passed_count, skipped_count, native_ids, result_hash, raw_names_hash = record
             if (not isinstance(name, str) or not FQN_PATTERN.fullmatch(name)
                     or not name.startswith(Path(path).stem + ".") or name in discovered
                     or any(type(value) is not int or value < 0 for value in
                            (discovered_count, passed_count, skipped_count))
                     or discovered_count < 1
                     or any(not isinstance(value, str) or not HASH_PATTERN.fullmatch(value)
-                           for value in (discovered_hash, result_hash))):
+                           for value in (result_hash, raw_names_hash))):
                 raise RuntimeError("Backend method identity, counts or case hashes are invalid.")
             if skipped_count and (group != "api" or name not in sql_cases):
                 raise RuntimeError("Required non-SQL backend test was not executed.")
+            if (not isinstance(native_ids, list) or len(native_ids) != discovered_count
+                    or any(not isinstance(value, str) for value in native_ids)
+                    or native_ids != sorted(native_ids) or len(set(native_ids)) != len(native_ids)
+                    or seen_ids.intersection(native_ids)):
+                raise RuntimeError("Backend method native discovery identities are missing or duplicated.")
+            for value in native_ids:
+                canonical_test_id(value)
+            seen_ids.update(native_ids)
             deferred = deferred_cases(root, name)
             expected_count = discovered_count
-            expected_hash = discovered_hash
+            expected_ids = native_ids
             if deferred is not None:
-                if discovered_count != 1 or discovered_hash != digest([name]):
+                if discovered_count != 1:
                     raise RuntimeError("Deferred theory discovery differs from its exact reviewed method.")
                 expected_count = len(deferred)
-                expected_hash = digest(sorted(deferred))
-            if passed_count + skipped_count != expected_count or result_hash != expected_hash:
+                expected_ids = native_ids * expected_count
+                if raw_names_hash != digest(sorted(deferred)):
+                    raise RuntimeError("Backend method case multiplicity or identity differs from reviewed data.")
+            if passed_count + skipped_count != expected_count or result_hash != digest(sorted(expected_ids)):
                 raise RuntimeError("Backend method case multiplicity or identity differs from discovery.")
             discovered[name] = discovered_count
             results[name] = {"passed": passed_count, "skipped": skipped_count}
@@ -757,19 +923,28 @@ def run_group(
             "--no-restore",
         ], root))
         measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
-        discovered_names = discovery_cases(measure(Stage.DISCOVERY, lambda: run_checked([
+        verify_framework_assets(root, project)
+        diagnostic = results_directory / f"{name}.discovery.diag.log"
+        measure(Stage.DISCOVERY, lambda: run_checked([
             "dotnet", "test", project, "-noAutoResponse", "--configuration", "Release",
-            "--no-restore", "--no-build", "--list-tests",
+            "--no-restore", "--no-build", "--list-tests", "--diag", str(diagnostic),
             "--logger", "console;verbosity=quiet",
-        ], root)), project)
-        discovered = Counter({name: len(cases) for name, cases in discovered_names.items()})
-        expected_names = {
-            name: list(deferred_cases(root, name) or cases)
-            for name, cases in discovered_names.items()
+        ], root))
+        discovered_ids = structured_discovery(diagnostic, root, project)
+        discovered = Counter({name: len(cases) for name, cases in discovered_ids.items()})
+        expected_names = {name: list(cases) for name in discovered_ids
+                          if (cases := deferred_cases(root, name)) is not None}
+        expected_ids = {
+            name: cases * len(expected_names[name]) if name in expected_names else cases
+            for name, cases in discovered_ids.items()
         }
+        if any(len(discovered_ids[name]) != 1 for name in expected_names):
+            raise RuntimeError("Deferred theory discovery differs from its exact reviewed method.")
         batches = api_test_batches(discovered) if group == "api" else [discovered]
         results: dict[str, dict[str, int]] = {}
         execution_ids: set[str] = set()
+        observed_ids: dict[str, list[str]] = {}
+        observed_names: dict[str, list[str]] = {}
         passed = skipped = 0
         for index, batch in enumerate(batches, start=1):
             suffix = f".batch-{index:03d}" if group == "api" else ""
@@ -791,9 +966,11 @@ def run_group(
             if not trx.is_file() or trx.is_symlink():
                 raise RuntimeError("Backend project did not produce its exact TRX.")
             batch_results, batch_passed, batch_skipped = trx_result_map(
-                trx, Counter({name: len(expected_names[name]) for name in batch}),
+                trx, Counter({name: len(expected_ids[name]) for name in batch}),
                 execution_ids=execution_ids, allowed_skips=allowed_skips,
-                expected_case_names={name: expected_names[name] for name in batch},
+                expected_case_names={name: expected_names[name] for name in batch if name in expected_names},
+                expected_case_ids={name: expected_ids[name] for name in batch},
+                observed_case_ids=observed_ids, observed_case_names=observed_names,
             )
             if results.keys() & batch_results.keys():
                 raise RuntimeError("Backend test batch results overlap.")
@@ -820,7 +997,7 @@ def run_group(
             },
             "testCases": [
                 [name, discovered[name], results[name]["passed"], results[name]["skipped"],
-                 digest(sorted(discovered_names[name])), digest(sorted(expected_names[name]))]
+                 discovered_ids[name], digest(observed_ids[name]), digest(observed_names[name])]
                 for name in sorted(discovered)
             ],
         })

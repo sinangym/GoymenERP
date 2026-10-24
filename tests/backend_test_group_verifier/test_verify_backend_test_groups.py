@@ -3,6 +3,9 @@ from __future__ import annotations
 import importlib.util
 from collections import Counter
 import json
+import copy
+import hashlib
+import uuid
 import os
 from pathlib import Path
 import py_compile
@@ -40,49 +43,91 @@ def make_repository(root: Path) -> None:
         project = root / path
         project.parent.mkdir(parents=True, exist_ok=True)
         references = (
-            '<ItemGroup><PackageReference Include="Microsoft.NET.Test.Sdk" /></ItemGroup>'
+            '<ItemGroup>' + "".join(
+                f'<PackageReference Include="{package}" Version="{VERIFIER.FRAMEWORK_PACKAGES[package][0]}" />'
+                for package in ("Microsoft.NET.Test.Sdk", "xunit", "xunit.runner.visualstudio")
+            ) + '</ItemGroup>'
             if path in {p for group in VERIFIER.GROUP_PROJECTS.values() for p in group}
             else ""
         )
         project.write_text(f'<Project Sdk="Microsoft.NET.Sdk">{references}</Project>', encoding="utf-8")
+        if references:
+            assets = project.parent / "obj/project.assets.json"
+            assets.parent.mkdir()
+            assets.write_text(json.dumps({
+                "project": {"restore": {"projectPath": str(project)}},
+                "libraries": {package + "/" + version: {"sha512": fingerprint}
+                              for package, (version, fingerprint) in VERIFIER.FRAMEWORK_PACKAGES.items()},
+            }), encoding="utf-8")
         solution.append(f'    <Project Path="{path}" />')
     solution += ["  </Folder>", "</Solution>"]
     (root / "GoymenERP.slnx").write_text("\n".join(solution), encoding="utf-8")
 
 
+def case_identity(name: str, display: str, index: int = 0) -> tuple[str, str]:
+    seed = name if name in VERIFIER.DEFERRED_THEORIES else json.dumps([display, index])
+    unique = hashlib.sha1(seed.encode()).hexdigest()
+    identity = str(uuid.UUID(bytes_le=hashlib.sha1(
+        (VERIFIER.EXECUTOR_URI + unique).encode("utf-16-le")
+    ).digest()[:16]))
+    return identity, unique
+
+
+def diagnostic_message(root: Path, project: str, displays: list[str]) -> dict:
+    source = str((root / Path(project).parent / "bin/Release/net10.0" /
+                  (Path(project).stem + ".dll")).resolve())
+    counts = Counter()
+    cases = []
+    for display in displays:
+        name = display.split("(", 1)[0]
+        identity, unique = case_identity(name, display, counts[name])
+        counts[name] += 1
+        cases.append({
+            "Id": identity, "FullyQualifiedName": name, "DisplayName": display,
+            "ExecutorUri": VERIFIER.EXECUTOR_URI, "Source": source,
+            "CodeFilePath": None, "LineNumber": -1,
+            "Properties": [{"Key": {"Id": key}, "Value": value} for key, value in {
+                "XunitTestCaseUniqueID": unique,
+                "TestCase.ManagedType": name.rsplit(".", 1)[0],
+                "TestCase.ManagedMethod": name.rsplit(".", 1)[1],
+            }.items()],
+        })
+    return {"Version": 7, "MessageType": "TestDiscovery.Completed", "Payload": {
+        "TotalTests": len(cases), "LastDiscoveredTests": cases, "IsAborted": False,
+        "Metrics": {}, "FullyDiscoveredSources": [source], "PartiallyDiscoveredSources": [],
+        "NotDiscoveredSources": [], "SkippedDiscoverySources": [], "DiscoveredExtensions": {},
+    }}
+
+
+def write_diagnostic(path: Path, messages: list[dict]) -> None:
+    prefix = "TpTrace Verbose: 0 : 1234, 10, 2026/10/24, 09:14:38.778, 15859071002409, "
+    path.write_text("\n".join(prefix + VERIFIER.DISCOVERY_BOUNDARY + json.dumps(message)
+                              for message in messages), encoding="utf-8")
+
+
+def mock_discovery(arguments: list[str], root: Path, project: str, displays: list[str]) -> str:
+    write_diagnostic(Path(arguments[arguments.index("--diag") + 1]),
+                     [diagnostic_message(root, project, displays)])
+    return "\n".join(displays)
+
+
 def trx_source(project: str, *, outcome: str = "Passed", theory_rows: int = 1) -> str:
-    test_name = Path(project).stem + ".ExampleTests.Runs"
-    results = "".join(
-        f'<UnitTestResult testId="one" '
-        f'executionId="12345678-1234-4abc-8def-{index + 1:012x}" '
-        f'outcome="{outcome}" testName="{test_name}" />'
-        for index in range(theory_rows)
-    )
-    passed = theory_rows if outcome == "Passed" else 0
-    return (
-        '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">'
-        f'<Counters total="{theory_rows}" executed="{passed}" passed="{passed}" '
-        'notExecuted="0" failed="0" error="0" timeout="0" '
-        'aborted="0" inconclusive="0" />'
-        f"<Results>{results}</Results><TestDefinitions>"
-        f'<UnitTest id="one"><TestMethod className="{Path(project).stem}.ExampleTests" '
-        'name="Runs" /></UnitTest></TestDefinitions></TestRun>'
+    name = Path(project).stem + ".ExampleTests.Runs"
+    return batch_trx_source(Counter({name: theory_rows}), 1, skipped=outcome == "NotExecuted").replace(
+        'outcome="Passed"', f'outcome="{outcome}"'
     )
 
 
 def project_row(path: str) -> dict[str, object]:
     name = Path(path).stem + ".ExampleTests.Runs"
+    identity, _ = case_identity(name, name)
     return {
-        "path": path,
-        "discoveryHash": VERIFIER.digest([(name, 1)]),
+        "path": path, "discoveryHash": VERIFIER.digest([(name, 1)]),
         "resultHash": VERIFIER.digest([(name, 1, 0)]),
-        "discoveredMethods": 1,
-        "discoveredCases": 1,
-        "executionCount": 1,
-        "passed": 1,
-        "skipped": 0,
+        "discoveredMethods": 1, "discoveredCases": 1, "executionCount": 1,
+        "passed": 1, "skipped": 0,
         "stageElapsedMs": {stage: 0 for stage in VERIFIER.STAGES},
-        "testCases": [[name, 1, 1, 0, VERIFIER.digest([name]), VERIFIER.digest([name])]],
+        "testCases": [[name, 1, 1, 0, [identity], VERIFIER.digest([identity]), VERIFIER.digest([name])]],
     }
 
 
@@ -91,18 +136,19 @@ def batch_trx_source(
     displays: dict[str, list[str]] | None = None,
 ) -> str:
     results = []
-    definitions = []
+    definitions = {}
     execution = first_execution
-    for index, (name, cases) in enumerate(methods.items()):
+    for name, count in methods.items():
         class_name, method = name.rsplit(".", 1)
-        definitions.append(
-            f'<UnitTest id="{index}"><TestMethod className="{class_name}" '
-            f'name="{method}" /></UnitTest>'
-        )
-        for case in range(cases):
+        for case in range(count):
             display = displays[name][case] if displays is not None else name
+            identity, _ = case_identity(name, display, case)
+            definitions[identity] = (
+                f'<UnitTest id="{identity}"><TestMethod className="{class_name}" '
+                f'name="{method}" /></UnitTest>'
+            )
             results.append(
-                f'<UnitTestResult testId="{index}" '
+                f'<UnitTestResult testId="{identity}" '
                 f'executionId="12345678-1234-4abc-8def-{execution:012x}" '
                 f'testName={quoteattr(display)} outcome="{"NotExecuted" if skipped else "Passed"}" />'
             )
@@ -114,7 +160,7 @@ def batch_trx_source(
         f'total="{total}" executed="{passed}" passed="{passed}" '
         'notExecuted="0" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" />'
         f'<Results>{"".join(results)}</Results>'
-        f'<TestDefinitions>{"".join(definitions)}</TestDefinitions></TestRun>'
+        f'<TestDefinitions>{"".join(definitions.values())}</TestDefinitions></TestRun>'
     )
 
 
@@ -155,7 +201,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
             current = arguments[2]
             listed = discovered_names if current == project else [Path(current).stem + ".ExampleTests.Runs"]
             if "--list-tests" in arguments:
-                return "\n".join(listed)
+                return mock_discovery(arguments, root, current, listed)
             if "--results-directory" not in arguments:
                 return ""
             displays = executed_names if current == project else listed
@@ -285,7 +331,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
             trx_source(project).replace('total="1"', 'total="2"'),
             trx_source(project).replace('executed="1"', 'executed="0"'),
             trx_source(project, outcome="NotExecuted").replace('notExecuted="0"', 'notExecuted="1"'),
-            trx_source(project).replace('testId="one"', 'testId="missing"'),
+            trx_source(project).replace('testId="', 'testId="missing'),
         ):
             with self.subTest(source=source[:80]):
                 path.write_text(source, encoding="utf-8")
@@ -362,8 +408,8 @@ class BackendGroupVerifierTests(unittest.TestCase):
             original.replace('"projectCount": 1', '"projectCount": 2', 1),
             original.replace('"projectCount": 1', '"projectCount": true', 1),
             original.replace('"projectCount": 1', '"projectCount": 1.0', 1),
-            original.replace('"schemaVersion": 3', '"schemaVersion": 2', 1),
-            original.replace('"schemaVersion": 3', '"schemaVersion": 3.0', 1),
+            original.replace('"schemaVersion": 4', '"schemaVersion": 3', 1),
+            original.replace('"schemaVersion": 4', '"schemaVersion": 4.0', 1),
             original.replace('"group": "api"', '"group": "modules"', 1),
             original.replace('"group": "api"', '"group": "api", "group": "api"', 1),
         ):
@@ -409,7 +455,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
         def command(arguments: list[str], root: Path) -> str:
             commands.append(arguments)
             if "--list-tests" in arguments:
-                return name + "\n"
+                return mock_discovery(arguments, root, project, [name])
             if arguments[0] == "dotnet" and "--results-directory" in arguments:
                 directory = Path(arguments[arguments.index("--results-directory") + 1])
                 directory.mkdir(parents=True, exist_ok=True)
@@ -483,7 +529,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 def command(arguments: list[str], root: Path) -> str:
                     commands.append(arguments)
                     if "--list-tests" in arguments:
-                        return "\n".join(name for name, count in discovery.items() for _ in range(count))
+                        return mock_discovery(arguments, root, VERIFIER.GROUP_PROJECTS["api"][0], [name for name, count in discovery.items() for _ in range(count)])
                     if "--results-directory" not in arguments:
                         return ""
                     test_commands.append(arguments)
@@ -594,7 +640,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 proof = json.loads(original)
                 row = proof["projects"][0]
                 row["testCases"][0][0] = foreign
-                row["testCases"][0][4:] = [VERIFIER.digest([foreign])] * 2
+                row["testCases"][0][6] = VERIFIER.digest([foreign])
                 self.recount(row)
                 path.write_text(json.dumps(proof), encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "Required non-SQL"):
@@ -657,25 +703,150 @@ class BackendGroupVerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
             self.aggregate(directory)
 
-    def test_real_producer_consumer_match_pinned_sdk_display_without_loosening_case_counts(self) -> None:
+    def test_native_ids_reject_lossy_suffix_escape_and_unicode_substitutions(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["architecture"][0]
         name = Path(project).stem + ".ExampleTests.Runs"
-        raw = name + '(value: "' + "x" * 500 + '")'
-        # Adapter 3.1.4 truncates discovery at 447 UTF-16 units including the
-        # three middle dots; its runtime result retains the full display name.
-        visible = raw[:444] + "\u00b7" * 3
-        self.assertEqual(VERIFIER.sdk_display_name(raw), visible)
-        self.assertEqual(VERIFIER.sdk_display_name(name + "(x: \r\n\t)"),
-                         name + r"(x: \r\n\t)")
-        self.assertEqual(VERIFIER.sdk_display_name("\U0001f600" * 224), "\U0001f600" * 222 + "\u00b7" * 3)
+        for number, (first, second) in enumerate((
+            ("x" * 500 + "a", "x" * 500 + "b"),
+            ("\t", r"\t"), ("\r\n", r"\r\n"),
+            ("x" * 443 + "\U0001f600" + "tail", "x" * 443 + "\U0001f601" + "tail"),
+        )):
+            expected = [name + '(value: "' + first + '")']
+            other = [name + '(value: "' + second + '")']
+            with self.subTest(number=number):
+                with self.assertRaisesRegex(RuntimeError, "native case identities"):
+                    self.produce_group("architecture", self.root / f"substitute-{number}", project,
+                                       expected, other)
+                directory = self.proof_directory(f"exact-{number}")
+                (directory / "ci-backend-test-group-proof-architecture/proof-architecture.json").unlink()
+                self.produce_group("architecture", directory, project, expected, expected)
+                self.assertEqual(self.aggregate(directory), 20)
+
+    def test_structured_discovery_requires_one_complete_native_stream(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["architecture"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        original = diagnostic_message(self.root, project, [name + "(x: 1)", name + "(x: 2)"])
+        path = self.root / "discovery.log"
+        cases = original["Payload"]["LastDiscoveredTests"]
+        expected = {name: sorted(case["Id"] for case in cases)}
+        write_diagnostic(path, [original])
+        self.assertEqual(VERIFIER.structured_discovery(path, self.root, project), expected)
+        # Genuine protocol permits disjoint incremental batches and a final tail.
+        split = copy.deepcopy(original)
+        split["Payload"]["LastDiscoveredTests"] = [cases[1]]
+        found = {"Version": 7, "MessageType": "TestDiscovery.TestFound", "Payload": [cases[0]]}
+        write_diagnostic(path, [found, split])
+        self.assertEqual(VERIFIER.structured_discovery(path, self.root, project), expected)
+        mutations = []
+        for label, mutate in (
+            ("version", lambda d: d.update(Version=8)),
+            ("boolversion", lambda d: d.update(Version=True)),
+            ("unknown", lambda d: d.update(MessageType="TestDiscovery.Unknown")),
+            ("aborted", lambda d: d["Payload"].update(IsAborted=True)),
+            ("partial", lambda d: d["Payload"].update(PartiallyDiscoveredSources=["other.dll"])),
+            ("count", lambda d: d["Payload"].update(TotalTests=3)),
+            ("missing", lambda d: d["Payload"].update(LastDiscoveredTests=[cases[0]])),
+            ("duplicate", lambda d: d["Payload"].update(LastDiscoveredTests=[cases[0], cases[0]])),
+            ("foreign", lambda d: d["Payload"]["LastDiscoveredTests"][0].update(Source="/foreign.dll")),
+            ("executor", lambda d: d["Payload"]["LastDiscoveredTests"][0].update(ExecutorUri="executor://foreign/")),
+            ("id", lambda d: d["Payload"]["LastDiscoveredTests"][0].update(Id=str(uuid.uuid4()))),
+            ("nil", lambda d: d["Payload"]["LastDiscoveredTests"][0].update(Id=str(uuid.UUID(int=0)))),
+            ("surrogate", lambda d: d["Payload"]["LastDiscoveredTests"][0].update(DisplayName="x" * 443 + "\ud83d" + "\u00b7" * 3)),
+        ):
+            changed = copy.deepcopy(original)
+            mutate(changed)
+            mutations.append((label, [changed]))
+        mutations += [("echo", [original, original]), ("no-completion", [found]),
+                      ("overlap-batch", [found, original])]
+        for label, messages in mutations:
+            with self.subTest(label=label):
+                write_diagnostic(path, messages)
+                with self.assertRaises(RuntimeError):
+                    VERIFIER.structured_discovery(path, self.root, project)
+        # A host SEND echo is never a console RECEIVE event.
+        write_diagnostic(path, [original])
+        path.write_text(path.read_text().replace(VERIFIER.DISCOVERY_BOUNDARY,
+                       "testhost.dll, TestRequestHandler.SendData: sending data from testhost: "))
+        with self.assertRaises(RuntimeError):
+            VERIFIER.structured_discovery(path, self.root, project)
+
+    def test_framework_source_assets_versions_hashes_and_project_are_bound(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["architecture"][0]
+        source = self.root / project
+        original = source.read_text()
+        original_hash = VERIFIER.framework_inventory(self.root)
+        VERIFIER.verify_framework_assets(self.root, project)
+        source.write_text(original + "\n<!-- source change -->\n")
+        self.assertNotEqual(VERIFIER.framework_inventory(self.root), original_hash)
+        for before, after in (("3.1.4", "3.1.5"), ("17.14.1", "17.14.2"), ("2.9.3", "2.9.4")):
+            source.write_text(original.replace(before, after))
+            with self.assertRaisesRegex(RuntimeError, "framework version"):
+                VERIFIER.expected_proof("architecture", HEAD, COMMIT, self.root)
+        source.write_text(original)
+        path = source.parent / "obj/project.assets.json"
+        assets = json.loads(path.read_text())
+        for label, mutate in (
+            ("hash", lambda a: a["libraries"]["xunit.runner.visualstudio/3.1.4"].update(sha512="foreign")),
+            ("mixed", lambda a: a["libraries"].update({"xunit.runner.visualstudio/3.1.5": {}})),
+            ("missing", lambda a: a["libraries"].pop("Microsoft.TestPlatform.TestHost/17.14.1")),
+            ("project", lambda a: a["project"]["restore"].update(projectPath="/foreign.csproj")),
+        ):
+            with self.subTest(label=label):
+                changed = copy.deepcopy(assets)
+                mutate(changed)
+                path.write_text(json.dumps(changed))
+                with self.assertRaises(RuntimeError):
+                    VERIFIER.verify_framework_assets(self.root, project)
+        path.write_text(json.dumps(assets))
         directory = self.proof_directory()
-        path = directory / "ci-backend-test-group-proof-architecture" / "proof-architecture.json"
+        proof_path = directory / "ci-backend-test-group-proof-architecture/proof-architecture.json"
+        proof = json.loads(proof_path.read_text())
+        proof["frameworkInventoryHash"] = "f" * 64
+        proof_path.write_text(json.dumps(proof))
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            self.aggregate(directory)
+
+    def test_native_identity_replacement_cannot_hide_behind_counts_or_new_execution_ids(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["architecture"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        displays = [name + "(x: 1)", name + "(x: 2)"]
+        identities = [case_identity(name, display, index)[0] for index, display in enumerate(displays)]
+        path = self.root / "native.trx"
+        source = batch_trx_source(Counter({name: 2}), 1, displays={name: displays})
+        path.write_text(source)
+        VERIFIER.trx_result_map(path, Counter({name: 2}), expected_case_ids={name: identities})
+        for replacement in (identities[0], str(uuid.uuid4())):
+            with self.subTest(replacement=replacement):
+                path.write_text(source.replace('testId="' + identities[1] + '"',
+                                               'testId="' + replacement + '"'))
+                with self.assertRaises(RuntimeError):
+                    VERIFIER.trx_result_map(path, Counter({name: 2}), expected_case_ids={name: identities})
+
+    def test_aggregate_native_id_multiset_cannot_be_replaced_or_duplicated(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["architecture"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        displays = [name + "(x: 1)", name + "(x: 2)"]
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-architecture/proof-architecture.json"
         path.unlink()
-        self.produce_group("architecture", directory, project, [visible], [raw])
-        self.assertEqual(self.aggregate(directory), 20)
-        for label, rows in (("missing", []), ("surplus", [raw, raw])):
-            with self.subTest(label=label), self.assertRaises(RuntimeError):
-                self.produce_group("architecture", self.root / label, project, [visible], rows)
+        self.produce_group("architecture", directory, project, displays, displays)
+        original = json.loads(path.read_text())
+        for label in ("duplicate", "replace", "wrong-runtime"):
+            with self.subTest(label=label):
+                proof = copy.deepcopy(original)
+                row = proof["projects"][0]
+                record = row["testCases"][0]
+                if label == "duplicate":
+                    record[4] = [record[4][0]] * 2
+                    record[5] = VERIFIER.digest(record[4])
+                elif label == "replace":
+                    record[4] = sorted([record[4][0], str(uuid.uuid4())])
+                else:
+                    record[5] = VERIFIER.digest([record[4][0]] * 2)
+                self.recount(row)
+                path.write_text(json.dumps(proof))
+                with self.assertRaises(RuntimeError):
+                    self.aggregate(directory)
 
     def test_reviewed_deferred_case_identities_and_source_are_exact_at_both_gates(self) -> None:
         self.assertEqual(len(VERIFIER.DEFERRED_THEORIES), 2)
@@ -703,7 +874,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                     proof = json.loads(original)
                     row = next(row for row in proof["projects"] if row["path"] == project)
                     row["testCases"][0][2] = len(rows)
-                    row["testCases"][0][5] = VERIFIER.digest(sorted(rows))
+                    row["testCases"][0][6] = VERIFIER.digest(sorted(rows))
                     self.recount(row)
                     path.write_text(json.dumps(proof), encoding="utf-8")
                     with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
