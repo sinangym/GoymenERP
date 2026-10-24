@@ -127,6 +127,45 @@ describe('location edit (ORG-02)', () => {
     expect((screen.getByLabelText('Ad') as HTMLInputElement).value).toBe('Hol-0 Boya')
   })
 
+  it('after a stale version shows the typed name next to the fresh record, keeps it and saves on the fresh version', async () => {
+    let current = location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0')
+    let commands = 0
+    const recorded = installFetch({
+      capabilities: [...READ_CAPABILITIES, ORGANIZATION_CAPABILITY.locationEdit],
+      respond: (url, init) => {
+        if (init?.method === 'PUT' && url.endsWith(`/organization/locations/${LOC_H0}`)) {
+          commands += 1
+          if (commands > 1) return noContent()
+          // Another session saved first: the record is now version 3 under another name.
+          current = location(LOC_H0, SITE_OSM, 'OSM-H0', 'Hol-0 Depo', { version: 3 })
+          return problem(409, { conflict: { expectedVersion: 1, currentVersion: 3 } })
+        }
+        if (url.includes(`/organization/locations/${LOC_H0}`)) return json(current)
+        return undefined
+      },
+    })
+    renderAt(PATH)
+    await userEvent.click(await screen.findByRole('button', { name: 'Lokasyonu düzenle' }))
+    await fill('Ad', 'Hol-0 Boya')
+    await fill('Gerekçe', 'Ad netleştirildi')
+    await userEvent.click(screen.getByRole('button', { name: 'Kaydet' }))
+    await userEvent.click(within(await screen.findByRole('alert')).getByRole('button', { name: 'Güncel kaydı yükle' }))
+
+    const diff = await screen.findByRole('table', { name: 'Girdiğiniz değerler ile güncel kayıt' })
+    const [, row] = within(diff).getAllByRole('row')
+    expect(within(row).getAllByRole('cell').map((cell) => cell.textContent)).toEqual(['Ad', 'Hol-0 Boya', 'Hol-0 Depo'])
+    expect((screen.getByLabelText('Ad') as HTMLInputElement).value).toBe('Hol-0 Boya')
+    expect((screen.getByLabelText('Gerekçe') as HTMLTextAreaElement).value).toBe('Ad netleştirildi')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Kaydet' }))
+    expect(await screen.findByText('Değişiklik kaydedildi')).toBeTruthy()
+    const [first, second] = writes(recorded)
+    expect(first.body).toMatchObject({ name: 'Hol-0 Boya', expectedVersion: '1' })
+    expect(second.body).toEqual({ code: 'OSM-H0', name: 'Hol-0 Boya', expectedVersion: '3', reason: 'Ad netleştirildi' })
+    expect(second.headers['Idempotency-Key']).not.toBe(first.headers['Idempotency-Key'])
+    expect(screen.queryByRole('table', { name: 'Girdiğiniz değerler ile güncel kayıt' })).toBeNull()
+  })
+
   it('keeps the key and freezes the fields when the outcome is unknown, and resends with the same key', async () => {
     const recorded = stub({ command: [() => problem(503), () => noContent({ 'Idempotency-Replayed': 'true' })] })
     renderAt(PATH)

@@ -13,6 +13,8 @@
  *    lists behind it; this form never predicts the saved values or the next version.
  *  - A 401/403 goes to the shared auth boundary, captured before the request, like every other Organization call.
  *  - Typed work is dirty work: the shell warns before a company switch discards it.
+ *  - AT-005: after a stale-version refusal and "reload", the fresh record arrives as `initial`; what the user typed is
+ *    kept and every differing field is shown next to the current value until the next submit (EK-46 LF-12).
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
@@ -30,6 +32,7 @@ import {
 } from './organizationText'
 import { useShellDispatch } from '../shell/shellContext'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { ConflictDiff, type ConflictDiffRow } from '../ui/ConflictDiff'
 import styles from './MasterRecordForm.module.css'
 
 export interface MasterFormValues {
@@ -118,6 +121,7 @@ export function MasterRecordForm({
   const [reason, setReason] = useState('')
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({})
   const [phase, setPhase] = useState<Phase>({ kind: 'editing' })
+  const [conflictReloaded, setConflictReloaded] = useState(false)
   const noticeRef = useRef<HTMLDivElement>(null)
   const codeRef = useRef<HTMLInputElement>(null)
 
@@ -210,6 +214,7 @@ export function MasterRecordForm({
       // A submit refused here mints NO key: nothing was attempted, so there is nothing to be uncertain about.
       if (Object.keys(next).length > 0) return
       const command = buildCommand({ code, name, choice: picked, secondChoice: picked2, reason })
+      setConflictReloaded(false)
       void send(newIdempotencyKey(), command)
     },
     [buildCommand, choice, code, frozen, name, picked, picked2, reason, secondChoice, send],
@@ -221,9 +226,18 @@ export function MasterRecordForm({
   }, [phase, send])
 
   const reloadAfterRefusal = useCallback(async () => {
+    const afterConflict = phase.kind === 'failed' && phase.failure.kind === 'version-conflict'
     setPhase({ kind: 'editing' })
     await onReload()
-  }, [onReload])
+    if (afterConflict) setConflictReloaded(true)
+  }, [onReload, phase])
+
+  const conflictRows: readonly ConflictDiffRow[] = conflictReloaded
+    ? [
+        ...(code === initial.code ? [] : [diffRow('code', MASTER_TEXT.code, code, initial.code)]),
+        ...(name === initial.name ? [] : [diffRow('name', MASTER_TEXT.name, name, initial.name)]),
+      ]
+    : []
 
   const fieldId = (field: string) => `${baseId}-${field}`
   const describedBy = (field: FieldName, help?: string) =>
@@ -240,6 +254,20 @@ export function MasterRecordForm({
       {note === undefined ? null : <p className={styles.help}>{note}</p>}
 
       <Notice phase={phase} noticeRef={noticeRef} onResend={resend} onReloadRecord={onReload} onReloadAfterRefusal={reloadAfterRefusal} />
+
+      {conflictReloaded ? (
+        <div className={styles.noticeWarn} role="status" data-outcome="conflict-reloaded">
+          <p className={styles.noticeTitle}>{MASTER_TEXT.conflictReloadedTitle}</p>
+          <p>{conflictRows.length === 0 ? MASTER_TEXT.conflictReloadedSame : MASTER_TEXT.conflictReloadedDetail}</p>
+          <ConflictDiff
+            label={MASTER_TEXT.conflictDiffLabel}
+            fieldHeader={MASTER_TEXT.conflictDiffField}
+            mineHeader={MASTER_TEXT.conflictDiffMine}
+            currentHeader={MASTER_TEXT.conflictDiffCurrent}
+            rows={conflictRows}
+          />
+        </div>
+      ) : null}
 
       <form className={styles.form} onSubmit={submit} noValidate aria-describedby={fieldId('help')}>
         <div className={styles.field}>
@@ -392,6 +420,16 @@ export function MasterFormLauncher({
       </button>
     </section>
   )
+}
+
+/** One differing field after a conflict reload; an emptied field says so instead of showing nothing. */
+function diffRow(field: string, label: string, mine: string, current: string): ConflictDiffRow {
+  return {
+    field,
+    label,
+    mine: mine === '' ? MASTER_TEXT.conflictEmpty : mine,
+    current: current === '' ? MASTER_TEXT.conflictEmpty : current,
+  }
 }
 
 function FieldError({ id, text }: { readonly id: string; readonly text: string | undefined }) {

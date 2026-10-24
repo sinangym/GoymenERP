@@ -340,6 +340,17 @@ export const MASTER_TEXT = {
   locationsUnavailable: 'Lokasyon listesi okunamadı; iş merkezi için lokasyon seçilemiyor.',
   locationsTooMany: 'Lokasyon listesi bu formun sınırını aşıyor; seçim listesi eksik olacağı için sunulmuyor.',
   sitesUnavailable: 'Tesis listesi okunamadı; lokasyon için tesis seçilemiyor.',
+  conflictReloadedTitle: 'Güncel kayıt yüklendi',
+  conflictReloadedDetail:
+    'Girdiğiniz değerler korundu. Güncel kayıttan farklı olan alanlar aşağıda; kaydederseniz değişikliğiniz ' +
+    'güncel sürüm üzerinden yeni bir işlem olarak gönderilir.',
+  conflictReloadedSame:
+    'Girdiğiniz kod ve ad güncel kayıtla aynı. Gerekçeyi kontrol edip yeniden kaydedebilirsiniz.',
+  conflictDiffLabel: 'Girdiğiniz değerler ile güncel kayıt',
+  conflictDiffField: 'Alan',
+  conflictDiffMine: 'Sizin girdiniz',
+  conflictDiffCurrent: 'Güncel kayıt',
+  conflictEmpty: '(boş)',
 } as const
 
 /** The notice after an accepted edit (204): accepted, or an earlier identical command replayed — never a state. */
