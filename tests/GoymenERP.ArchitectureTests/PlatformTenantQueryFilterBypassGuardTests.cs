@@ -237,8 +237,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ST-01 owner/custodian read: +1 exact-party, read-without-side-effect SQL fact.
             // D05 Inventory approvals: +3 pending stock-count/scrap read and fail-closed SQL facts.
             // GOY-UX-TEXT-FILTER-01: +1 typed-filter pre-pagination and cursor-resume SQL fact.
+            // BLG-02: +1 real writer/Identity revocation fact, including the stored replay boundary.
             ["tools/relational_inventory/inventory.txt"] =
-                "146364d46fe02cb22f8e1b0d55d8041f962fd4460b94200382c5cbd8de1f4766",
+                "9f39946aaf7b2bb38cbff7bc245baa36b8b49c8cfd1f8f0826a340171b9fc0ae",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -820,7 +821,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.Allocations.cs"] =
                     new(
-                        "6ea71ce123d8c94d27aacd26f8e18385391d2a055bb5be230a6ff164510f958f",
+                        "6f5636549fe86b0fd2ae74aa73fc0cb5a3afcc9e88c08998c55dd9a16cc116b8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -831,7 +832,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Inventory/"
                  + "GoymenERP.Modules.Inventory.Infrastructure/Persistence/InventoryStore.AllocationChanges.cs"] =
                     new(
-                        "7df810e1999bdf2c3e32e4a4e49750de396b2cc03a5079b82ab1f2db18b2a5d2",
+                        "6158fbf3f6b1864478253acd82392c4e4b8767fe3aac2046614983251ad8f84a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

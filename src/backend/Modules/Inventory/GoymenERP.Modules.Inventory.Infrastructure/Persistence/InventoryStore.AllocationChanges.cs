@@ -36,9 +36,11 @@ public sealed partial class InventoryStore
         Guid allocationId,
         ChangePhysicalSalesAllocationV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         RequireMetadata(metadata);
         RequireAllocationMetadata(metadata);
         RequireResolvedCompany();
@@ -72,7 +74,8 @@ public sealed partial class InventoryStore
             request.Reason,
             request.NewAllocationId,
         });
-        if (await FindChangeReplayAsync(keyHash, payloadHash, metadata.ActorId, cancellationToken) is { } replay)
+        if (await FindChangeReplayAsync(keyHash, payloadHash, metadata.ActorId, freshAuthorityFence,
+                cancellationToken) is { } replay)
         {
             return replay;
         }
@@ -136,6 +139,7 @@ public sealed partial class InventoryStore
         if (isMove)
         {
             var target = await ReservableTargetAsync(targetLabel, companyId, quantity, cancellationToken);
+            await RequireAllocationFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
             allocation.Release(expectedVersion);
             row.RemainingKg = allocation.Remaining.Value;
             row.Status = (int)allocation.Status;
@@ -200,6 +204,7 @@ public sealed partial class InventoryStore
                     cancellationToken);
             }
 
+            await RequireAllocationFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
             try
             {
                 allocation.Resize(expectedVersion, quantity);
@@ -251,7 +256,8 @@ public sealed partial class InventoryStore
             || exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
             dbContext.ChangeTracker.Clear();
-            if (await FindChangeReplayAsync(keyHash, payloadHash, metadata.ActorId, cancellationToken) is { } winner)
+            if (await FindChangeReplayAsync(keyHash, payloadHash, metadata.ActorId, freshAuthorityFence,
+                    cancellationToken) is { } winner)
             {
                 return winner;
             }
@@ -396,6 +402,7 @@ public sealed partial class InventoryStore
         string keyHash,
         string payloadHash,
         string actorId,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken)
     {
         var prior = await dbContext.Commands.AsNoTracking()
@@ -406,6 +413,7 @@ public sealed partial class InventoryStore
             return null;
         }
 
+        await RequireAllocationFreshAuthorityAsync(freshAuthorityFence, cancellationToken);
         if (!string.Equals(prior.PayloadHash, payloadHash, StringComparison.Ordinal)
             || !string.Equals(prior.ActorId, actorId, StringComparison.Ordinal))
         {
