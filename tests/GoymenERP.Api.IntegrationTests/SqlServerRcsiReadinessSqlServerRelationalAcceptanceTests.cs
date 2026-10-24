@@ -1588,12 +1588,12 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
         SqlServerRcsiReadinessEvidence evidence,
         string databaseName)
     {
+        Assert.Equal("RCSI_READY", evidence.ReasonCode);
+        Assert.Equal(SqlServerRcsiReadinessExitCode.Ready, evidence.ExitCode);
         Assert.True(
             evidence.IsReady,
             $"Readiness was {evidence.Status}: {evidence.ReasonCode} "
             + $"(exit {(int)evidence.ExitCode}).");
-        Assert.Equal(SqlServerRcsiReadinessExitCode.Ready, evidence.ExitCode);
-        Assert.Equal("RCSI_READY", evidence.ReasonCode);
         Assert.True(evidence.ReadCommittedSnapshotEnabled);
         Assert.True(evidence.LogicalEndpointMatches);
         Assert.Contains(
@@ -1619,6 +1619,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
                     WITH ROLLBACK IMMEDIATE;
                 """;
             await command.ExecuteNonQueryAsync();
+            ClearDatabasePoolForTest(baseConnectionString, databaseName);
         }
         catch
         {
@@ -1649,6 +1650,13 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             """;
         await command.ExecuteNonQueryAsync();
 
+        ClearDatabasePoolForTest(baseConnectionString, databaseName);
+    }
+
+    private static void ClearDatabasePoolForTest(
+        string baseConnectionString,
+        string databaseName)
+    {
         // The test administrator forcibly disconnects this database's sessions.
         // Discard only its pooled connections before a fresh host/probe opens one.
         using var poolKey = new SqlConnection(BuildDatabaseConnectionString(
@@ -1684,6 +1692,7 @@ public sealed class SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests
             END;
             """;
         await command.ExecuteNonQueryAsync();
+        ClearDatabasePoolForTest(baseConnectionString, databaseName);
     }
 
     private static async Task<SqlConnection> OpenMasterConnectionAsync(

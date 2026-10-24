@@ -498,7 +498,7 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run lint
-      # The isolated runner has a shared two-CPU/four-GiB working budget.
+      # Leave memory headroom on the isolated runner.
       # Keep every test, without competing jsdom workers or longer assertions.
       - run: npm test -- --maxWorkers=1 --no-file-parallelism
       - run: npm run build
@@ -520,6 +520,7 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
         # Keep readiness strict while allowing a bounded startup grace.
@@ -602,6 +603,7 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
         # Keep readiness strict while allowing a bounded startup grace.
