@@ -99,25 +99,29 @@ public sealed record InventoryPhysicalAllocationResultV1(
 /// <summary>
 /// Module-owned persistence boundary for physical sales allocation. It is deliberately not a host
 /// route: the host must first verify the approved Sales line and fresh write authority. No Inventory
-/// permission name or grant is invented here.
+/// permission name or grant is invented here. The writer must invoke the required authority fence
+/// after its last asynchronous read, before staging effects, and before releasing a stored replay.
 /// </summary>
 public interface IInventoryPhysicalAllocationWriterV1
 {
     Task<InventoryPhysicalAllocationResultV1> CreateAsync(
         CreatePhysicalSalesAllocationV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 
     Task<InventoryPhysicalAllocationResultV1> ReleaseAsync(
         Guid allocationId,
         ReleasePhysicalAllocationV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 
     Task<InventoryPhysicalAllocationChangeResultV1> ChangeAsync(
         Guid allocationId,
         ChangePhysicalSalesAllocationV1 request,
         InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence,
         CancellationToken cancellationToken = default);
 }
 

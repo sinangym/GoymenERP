@@ -42,7 +42,8 @@ public sealed record ChangeInventoryPhysicalAllocationRequestV1(
 /// Central host boundary for the Inventory-owned writer. It performs no Inventory or Sales table read:
 /// the approved demand comes through the Sales owner port and persistence remains behind the Inventory
 /// writer. Fresh authority is measured before the owner read and again after it, immediately before the
-/// derived command is handed to the writer.
+/// derived command is handed to the writer. The writer also receives a mandatory fence to measure
+/// the same actor/company authority after its own reads and before staging any write effects.
 /// </summary>
 public sealed class InventoryPhysicalAllocationHostService(
     ICompanyContext companyContext,
@@ -80,7 +81,8 @@ public sealed class InventoryPhysicalAllocationHostService(
             request.QuantityKg,
             request.Reason,
             request.ReservedUntilUtc);
-        return await writer.CreateAsync(command, Metadata(finalScope, transport), cancellationToken);
+        return await writer.CreateAsync(command, Metadata(finalScope, transport),
+            token => FreshAuthorityFenceAsync(finalScope, token), cancellationToken);
     }
 
     public async Task<InventoryPhysicalAllocationResultV1> ReleaseAsync(
@@ -92,7 +94,8 @@ public sealed class InventoryPhysicalAllocationHostService(
         ArgumentNullException.ThrowIfNull(request);
         var scope = await RequireAsync(cancellationToken);
         var finalScope = await RequireStillAsync(scope, cancellationToken);
-        return await writer.ReleaseAsync(allocationId, request, Metadata(finalScope, transport), cancellationToken);
+        return await writer.ReleaseAsync(allocationId, request, Metadata(finalScope, transport),
+            token => FreshAuthorityFenceAsync(finalScope, token), cancellationToken);
     }
 
     /// <summary>
@@ -131,7 +134,8 @@ public sealed class InventoryPhysicalAllocationHostService(
             request.QuantityKg,
             request.Reason,
             request.NewAllocationId);
-        return await writer.ChangeAsync(allocationId, command, Metadata(finalScope, transport), cancellationToken);
+        return await writer.ChangeAsync(allocationId, command, Metadata(finalScope, transport),
+            token => FreshAuthorityFenceAsync(finalScope, token), cancellationToken);
     }
 
     private async Task<(SalesOrderLineReferenceV1 Line, Scope FinalScope)> ApprovedLineAsync(
@@ -228,6 +232,9 @@ public sealed class InventoryPhysicalAllocationHostService(
 
         return scope with { RoleCodes = [.. measured.RoleCodes.Order(StringComparer.Ordinal)] };
     }
+
+    private async Task FreshAuthorityFenceAsync(Scope scope, CancellationToken cancellationToken) =>
+        _ = await RequireStillAsync(scope, cancellationToken);
 
     private bool Matches(Scope scope) => currentUser.IsAuthenticated
         && string.Equals(currentUser.UserId, scope.ActorId, StringComparison.Ordinal)

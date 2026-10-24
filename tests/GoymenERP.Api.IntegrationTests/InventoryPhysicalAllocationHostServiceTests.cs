@@ -18,11 +18,11 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
     [Fact]
     public async Task Approved_line_is_derived_and_fresh_company_wide_authority_reaches_the_writer()
     {
-        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-FINAL-B", "ROLE-FINAL-A"));
+        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-FINAL-B", "ROLE-FINAL-A"), Granted());
         var result = await fixture.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None);
 
         Assert.False(result.IsReplay);
-        Assert.Equal(2, fixture.Authority.Calls.Count);
+        Assert.Equal(3, fixture.Authority.Calls.Count);
         Assert.All(fixture.Authority.Calls, call => Assert.Equal(
             (ErpPermissions.InventoryPhysicalAllocationWrite, CompanyA), call));
         Assert.Equal((ProductId, "7", OrderId, LineId),
@@ -142,13 +142,13 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
     [Fact]
     public async Task Release_uses_the_same_exact_permission_and_fresh_fence()
     {
-        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-RELEASE-FINAL"));
+        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-RELEASE-FINAL"), Granted());
         var allocationId = Guid.NewGuid();
 
         await fixture.Service.ReleaseAsync(allocationId,
             new ReleasePhysicalAllocationV1("1", "SENTETIK release"), Metadata(), CancellationToken.None);
 
-        Assert.Equal(2, fixture.Authority.Calls.Count);
+        Assert.Equal(3, fixture.Authority.Calls.Count);
         Assert.Equal(allocationId, fixture.Writer.ReleaseId);
         Assert.Equal(InventoryPermissionManifestV1.PhysicalAllocationWrite,
             fixture.Writer.Metadata!.PermissionCode);
@@ -186,7 +186,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
     [Fact]
     public async Task Change_derives_the_approved_line_product_and_passes_the_fresh_fence_to_the_writer()
     {
-        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-CHANGE-FINAL"));
+        var fixture = Fixture(Granted("ROLE-OLD"), Granted("ROLE-CHANGE-FINAL"), Granted());
         var allocationId = Guid.NewGuid();
         var target = Guid.NewGuid();
         var newId = Guid.NewGuid();
@@ -196,7 +196,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
             Metadata(), CancellationToken.None);
 
         Assert.False(result.IsReplay);
-        Assert.Equal(2, fixture.Authority.Calls.Count);
+        Assert.Equal(3, fixture.Authority.Calls.Count);
         Assert.Equal(1, fixture.OrderLines.Calls);
         var (id, request) = fixture.Writer.Change!.Value;
         Assert.Equal((allocationId, ProductId, "7", OrderId, LineId, target, "9", "4.5", "3", newId),
@@ -269,6 +269,64 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
         Assert.Null(fixture.Writer.Change);
     }
 
+    [Theory]
+    [InlineData("create")]
+    [InlineData("release")]
+    [InlineData("change")]
+    public async Task Revocation_inside_the_writer_is_refused_before_any_writer_effect(string operation)
+    {
+        var fixture = Fixture(Granted(), Granted(), PermissionScope.Denied);
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            InvokeWriterAsync(fixture, operation));
+
+        Assert.Equal(StatusCodes.Status403Forbidden, exception.Status);
+        Assert.Equal(3, fixture.Authority.Calls.Count);
+        Assert.Null(fixture.Writer.CreateRequest);
+        Assert.Null(fixture.Writer.ReleaseId);
+        Assert.Null(fixture.Writer.Change);
+    }
+
+    [Theory]
+    [InlineData("create", "actor")]
+    [InlineData("create", "company")]
+    [InlineData("create", "logout")]
+    [InlineData("release", "actor")]
+    [InlineData("release", "company")]
+    [InlineData("release", "logout")]
+    [InlineData("change", "actor")]
+    [InlineData("change", "company")]
+    [InlineData("change", "logout")]
+    public async Task Writer_fence_keeps_the_original_actor_company_and_session(string operation, string change)
+    {
+        var fixture = Fixture();
+        fixture.Writer.AfterRead = () =>
+        {
+            if (change == "actor") fixture.User.UserId = "SENTETIK-other-actor";
+            else if (change == "company") fixture.Company.CompanyId = CompanyB;
+            else fixture.User.IsAuthenticated = false;
+        };
+
+        var exception = await Assert.ThrowsAsync<InventoryPhysicalAllocationHostException>(() =>
+            InvokeWriterAsync(fixture, operation));
+
+        Assert.Equal(StatusCodes.Status403Forbidden, exception.Status);
+        Assert.Equal(2, fixture.Authority.Calls.Count);
+        Assert.Null(fixture.Writer.CreateRequest);
+        Assert.Null(fixture.Writer.ReleaseId);
+        Assert.Null(fixture.Writer.Change);
+    }
+
+    private static async Task InvokeWriterAsync(TestFixture fixture, string operation)
+    {
+        if (operation == "create")
+            await fixture.Service.CreateAsync(CreateRequest(), Metadata(), CancellationToken.None);
+        else if (operation == "release")
+            await fixture.Service.ReleaseAsync(Guid.NewGuid(), new("1", "SENTETIK release"), Metadata(), CancellationToken.None);
+        else
+            await fixture.Service.ChangeAsync(Guid.NewGuid(), ChangeRequest(), Metadata(), CancellationToken.None);
+    }
+
     private static ChangeInventoryPhysicalAllocationRequestV1 ChangeRequest() => new(
         "1", OrderId, LineId, Guid.NewGuid(), "2", "3", "SENTETIK change", null);
 
@@ -276,7 +334,7 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
     {
         var company = new MutableCompanyContext(CompanyA);
         var user = new MutableCurrentUser("SENTETIK-actor", CompanyA, CompanyB);
-        var authority = new FakeAuthority(scopes.Length == 0 ? [Granted(), Granted()] : scopes);
+        var authority = new FakeAuthority(scopes.Length == 0 ? [Granted(), Granted(), Granted()] : scopes);
         var orderLines = new FakeOrderLines
         {
             Answer = new(SalesOrderLineReferenceOutcomeV1.Approved,
@@ -366,46 +424,56 @@ public sealed class InventoryPhysicalAllocationHostServiceTests
 
     private sealed class FakeWriter : IInventoryPhysicalAllocationWriterV1
     {
+        public Action? AfterRead { get; set; }
         public CreatePhysicalSalesAllocationV1? CreateRequest { get; private set; }
         public Guid? ReleaseId { get; private set; }
         public InventoryCommandMetadata? Metadata { get; private set; }
 
-        public Task<InventoryPhysicalAllocationResultV1> CreateAsync(
+        public async Task<InventoryPhysicalAllocationResultV1> CreateAsync(
             CreatePhysicalSalesAllocationV1 request,
             InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence,
             CancellationToken cancellationToken = default)
         {
+            AfterRead?.Invoke();
+            await freshAuthorityFence(cancellationToken);
             CreateRequest = request;
             Metadata = metadata;
-            return Task.FromResult(Result(request.AllocationId, request.LabelId, request.ProductId));
+            return Result(request.AllocationId, request.LabelId, request.ProductId);
         }
 
-        public Task<InventoryPhysicalAllocationResultV1> ReleaseAsync(
+        public async Task<InventoryPhysicalAllocationResultV1> ReleaseAsync(
             Guid allocationId,
             ReleasePhysicalAllocationV1 request,
             InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence,
             CancellationToken cancellationToken = default)
         {
+            AfterRead?.Invoke();
+            await freshAuthorityFence(cancellationToken);
             ReleaseId = allocationId;
             Metadata = metadata;
-            return Task.FromResult(Result(allocationId, Guid.NewGuid(), ProductId));
+            return Result(allocationId, Guid.NewGuid(), ProductId);
         }
 
         public (Guid AllocationId, ChangePhysicalSalesAllocationV1 Request)? Change { get; private set; }
 
-        public Task<InventoryPhysicalAllocationChangeResultV1> ChangeAsync(
+        public async Task<InventoryPhysicalAllocationChangeResultV1> ChangeAsync(
             Guid allocationId,
             ChangePhysicalSalesAllocationV1 request,
             InventoryCommandMetadata metadata,
+            Func<CancellationToken, Task> freshAuthorityFence,
             CancellationToken cancellationToken = default)
         {
+            AfterRead?.Invoke();
+            await freshAuthorityFence(cancellationToken);
             Change = (allocationId, request);
             Metadata = metadata;
             var view = Result(allocationId, request.TargetLabelId, request.ProductId).Allocation;
-            return Task.FromResult(new InventoryPhysicalAllocationChangeResultV1(
+            return new InventoryPhysicalAllocationChangeResultV1(
                 new InventoryPhysicalAllocationChangeViewV1(InventoryAllocationChangeKindsV1.Resize, view, null),
                 false,
-                "SENTETIK-correlation"));
+                "SENTETIK-correlation");
         }
 
         private static InventoryPhysicalAllocationResultV1 Result(Guid allocationId, Guid labelId, Guid productId) => new(
