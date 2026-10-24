@@ -7,13 +7,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Audit.Infrastructure.Services;
 
+/// <summary>
+/// The company audit read. Its rows carry the most sensitive content the platform stores: business
+/// before/after values, approval and AI context, the client IP address and user agent. So the
+/// company-wide audit authority is measured fresh before the read and again after it, immediately
+/// before anything is released (BLG-03): a grant revoked while the query ran releases no row and
+/// no cursor.
+/// </summary>
 internal sealed class AuditQueryService(
     AuditDbContext dbContext,
     ICompanyContext companyContext,
-    IErpAuthorizationService authorizationService)
+    ICurrentUser currentUser,
+    IErpAuthorityRevalidationService authority)
     : IAuditQueryService
 {
-    public async Task<AuditEventPage?> GetEventsAsync(
+    public async Task<AuditEventQueryResult> GetEventsAsync(
         int pageSize,
         string? cursor,
         string? correlationId,
@@ -21,13 +29,18 @@ internal sealed class AuditQueryService(
         string? entityId,
         CancellationToken cancellationToken = default)
     {
-        var scope = await authorizationService.GetPermissionScopeAsync(
-            ErpPermissions.IdentityAuditRead,
-            companyContext.CompanyId,
-            cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide)
+        if (!companyContext.IsResolved
+            || !currentUser.IsAuthenticated
+            || string.IsNullOrWhiteSpace(currentUser.UserId))
         {
-            return new AuditEventPage([], NormalizePageSize(pageSize), null);
+            return AuditEventQueryResult.Denied;
+        }
+
+        var companyId = companyContext.CompanyId;
+        var actorId = currentUser.UserId!;
+        if (!await HasFreshCompanyWideAccessAsync(companyId, actorId, cancellationToken))
+        {
+            return AuditEventQueryResult.Denied;
         }
 
         var normalizedPageSize = NormalizePageSize(pageSize);
@@ -37,7 +50,7 @@ internal sealed class AuditQueryService(
         {
             if (!AuditCursor.TryDecode(cursor, out var decodedCursor))
             {
-                return null;
+                return AuditEventQueryResult.InvalidCursor;
             }
 
             query = query.Where(x =>
@@ -69,6 +82,13 @@ internal sealed class AuditQueryService(
             .ThenByDescending(x => x.Id)
             .Take(normalizedPageSize + 1)
             .ToListAsync(cancellationToken);
+
+        // The fence: nothing read above leaves this method unless the authority still stands now.
+        if (!await HasFreshCompanyWideAccessAsync(companyId, actorId, cancellationToken))
+        {
+            return AuditEventQueryResult.Denied;
+        }
+
         var hasMore = events.Count > normalizedPageSize;
         var pageEvents = events.Take(normalizedPageSize).ToList();
         var items = pageEvents.Select(x => new AuditEventItem(
@@ -103,8 +123,38 @@ internal sealed class AuditQueryService(
         var nextCursor = hasMore
             ? AuditCursor.Encode(pageEvents[^1].OccurredAtUtc, pageEvents[^1].Id)
             : null;
-        return new AuditEventPage(items, normalizedPageSize, nextCursor);
+        return AuditEventQueryResult.Ok(new AuditEventPage(items, normalizedPageSize, nextCursor));
     }
+
+    // The actor and company checks around the fresh read come from Codex's parallel candidate
+    // (codex/sy07-audit-read-fence-20261024, 8e390339): the same person must still be acting for
+    // the same company on both sides of the authority round-trip.
+    private async Task<bool> HasFreshCompanyWideAccessAsync(
+        Guid expectedCompanyId,
+        string expectedActorId,
+        CancellationToken cancellationToken)
+    {
+        if (!RemainsCurrent(expectedCompanyId, expectedActorId))
+        {
+            return false;
+        }
+
+        var scope = await authority.RevalidatePermissionScopeAsync(
+            ErpPermissions.IdentityAuditRead,
+            expectedCompanyId,
+            cancellationToken);
+        return RemainsCurrent(expectedCompanyId, expectedActorId)
+            && scope.IsGranted
+            && scope.IsCompanyWide;
+    }
+
+    private bool RemainsCurrent(Guid expectedCompanyId, string expectedActorId) =>
+        currentUser.IsAuthenticated
+        && !string.IsNullOrWhiteSpace(currentUser.UserId)
+        && companyContext.IsResolved
+        && companyContext.CompanyId == expectedCompanyId
+        && currentUser.CanAccessCompany(expectedCompanyId)
+        && string.Equals(currentUser.UserId, expectedActorId, StringComparison.Ordinal);
 
     private static int NormalizePageSize(int pageSize)
     {

@@ -5,6 +5,10 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Organization.Application.Contracts;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -138,6 +142,49 @@ public sealed class AuditAcceptanceTests(GoymenErpApiFactory factory)
         Assert.False(invalidCursorProblem.RootElement.TryGetProperty("code", out _));
     }
 
+    // BLG-03, from Codex's parallel candidate 8e390339 (adapted: the refusal is a 403, not an empty page).
+    [Fact]
+    public async Task AuditRead_FinalFreshAuthorityDenial_RefusesWithoutEventsOrCursor()
+    {
+        await CreateAuditedChangeAsync(TestUsers.CompanyA, TestCompanyIds.CompanyA, "OSM-H5");
+        await CreateAuditedChangeAsync(TestUsers.CompanyA, TestCompanyIds.CompanyA, "OSM-H4");
+        var authority = new SequencedAuditAuthority(denyAtCall: 2);
+        using var host = CreateAuditHost(authority);
+        using var client = CreateAuditClient(host);
+
+        var response = await client.GetAsync("/api/v1/audit/events?pageSize=1");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal("forbidden", problem.RootElement.GetProperty("code").GetString());
+        Assert.False(problem.RootElement.TryGetProperty("items", out _));
+        Assert.False(problem.RootElement.TryGetProperty("nextCursor", out _));
+        Assert.Equal(2, authority.FreshCalls);
+        Assert.All(authority.Requests, request =>
+        {
+            Assert.Equal(ErpPermissions.IdentityAuditRead, request.Permission);
+            Assert.Equal(TestCompanyIds.CompanyA, request.CompanyId);
+        });
+    }
+
+    [Fact]
+    public async Task AuditRead_StableFreshAuthority_ReturnsExpectedPageAndCursor()
+    {
+        await CreateAuditedChangeAsync(TestUsers.CompanyA, TestCompanyIds.CompanyA, "OSM-H5");
+        await CreateAuditedChangeAsync(TestUsers.CompanyA, TestCompanyIds.CompanyA, "OSM-H4");
+        var authority = new SequencedAuditAuthority();
+        using var host = CreateAuditHost(authority);
+        using var client = CreateAuditClient(host);
+
+        var response = await client.GetAsync("/api/v1/audit/events?pageSize=1");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = Assert.IsType<AuditEventPage>(await response.Content.ReadFromJsonAsync<AuditEventPage>());
+        Assert.Single(result.Items);
+        Assert.NotNull(result.NextCursor);
+        Assert.Equal(2, authority.FreshCalls);
+    }
+
     [Fact]
     public async Task MissingReasonAndInvalidCorrelation_AreRejectedBeforeMutation()
     {
@@ -191,5 +238,46 @@ public sealed class AuditAcceptanceTests(GoymenErpApiFactory factory)
                 "Audit şirket kapsamı testi"));
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         return correlationId;
+    }
+
+    private WebApplicationFactory<Program> CreateAuditHost(SequencedAuditAuthority authority) =>
+        factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IErpAuthorityRevalidationService>();
+            services.AddSingleton<IErpAuthorityRevalidationService>(authority);
+        }));
+
+    private static HttpClient CreateAuditClient(WebApplicationFactory<Program> host)
+    {
+        var client = host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Development-User", TestUsers.GroupAdmin);
+        client.DefaultRequestHeaders.Add("X-Company-Id", TestCompanyIds.CompanyA.ToString("D"));
+        return client;
+    }
+
+    private sealed class SequencedAuditAuthority(int? denyAtCall = null) : IErpAuthorityRevalidationService
+    {
+        public int FreshCalls { get; private set; }
+
+        public List<(string Permission, Guid CompanyId)> Requests { get; } = [];
+
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            FreshCalls++;
+            Requests.Add((permission, companyId));
+            return Task.FromResult(denyAtCall == FreshCalls
+                ? PermissionScope.Denied
+                : new PermissionScope(
+                    true,
+                    true,
+                    new HashSet<string>(StringComparer.Ordinal),
+                    new HashSet<Guid>(),
+                    new HashSet<Guid>(),
+                    new HashSet<Guid>()));
+        }
     }
 }
