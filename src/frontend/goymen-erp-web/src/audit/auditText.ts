@@ -39,9 +39,19 @@ export const AUDIT_TEXT = {
   invalidQueryTitle: 'Sayfa bilgisi geçersiz',
   invalidQueryDetail: 'Denetim listesini ilk sayfadan yeniden açın.',
   firstPage: 'İlk sayfayı aç',
-  hiddenFieldsNote:
-    'Önceki/sonraki değerler, gerekçe, IP adresi ve tarayıcı bilgisi bu listede gösterilmez; gösterilmeleri ayrı ' +
-    'bir saklama ve gizlilik kararı bekliyor.',
+  columnDetails: 'Ayrıntılar',
+  showDetails: 'Ayrıntılar',
+  hideDetails: 'Ayrıntıları gizle',
+  detailsHeading: 'Kayıt ayrıntıları',
+  detailsSubject: 'kayıt ayrıntıları',
+  detailsClose: 'Kapat',
+  detailBefore: 'Önceki değerler',
+  detailAfter: 'Sonraki değerler',
+  detailReason: 'Gerekçe',
+  detailIp: 'IP adresi',
+  detailUserAgent: 'Tarayıcı bilgisi',
+  detailRoles: 'Rol kodları',
+  detailEmpty: '(boş)',
   none: '—',
 } as const
 
@@ -76,6 +86,16 @@ export const outcomeLabel = (token: string) => label(OUTCOME_LABEL, token)
 export function versionLabel(before: string | null, after: string | null): string {
   if (before === null && after === null) return AUDIT_TEXT.none
   return `${before ?? AUDIT_TEXT.none} → ${after ?? AUDIT_TEXT.none}`
+}
+
+/** Display only: valid JSON is indented for reading; anything else is shown verbatim. Nothing is interpreted. */
+export function readableJson(value: string): string {
+  if (value.trim().length === 0) return AUDIT_TEXT.detailEmpty
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    return value
+  }
 }
 
 const DATE = new Intl.DateTimeFormat('tr-TR', {

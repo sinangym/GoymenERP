@@ -14,17 +14,18 @@
  *  - Remounted per committed context and route entry, and every query key carries the namespace: a stale render
  *    would put one company's audit trail under another company's label. A group (multi-company) context shows the
  *    no-company state rather than guessing a company.
- *  - The page shows only the minimal fields (./contract.ts DATA MINIMISATION); payloads, reason, IP and user agent
- *    never reach this component.
+ *  - The list shows only the minimal fields (./contract.ts DATA MINIMISATION). Payloads, reason, IP, user agent and
+ *    role codes appear only in the details panel: one row at a time, behind a per-row "Ayrıntılar" button that exists
+ *    only for the holder of `audit.events.details`, read from their own endpoint (Sinan, #66/6383408216).
  *  - No paging policy: the server's default page size is used and only its opaque cursor is followed. A 400 (an
  *    expired cursor) offers the first page of the same filter instead of a generic error.
  */
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { fetchAuditEvents } from './api'
-import type { AuditEventPage, AuditEventRow } from './contract'
+import { fetchAuditEventDetails, fetchAuditEvents } from './api'
+import type { AuditEventDetails, AuditEventPage, AuditEventRow } from './contract'
 import {
   AUDIT_CAPABILITY,
   AUDIT_FILTER_MAX_LENGTH,
@@ -39,6 +40,7 @@ import {
   aiInvolvementLabel,
   formatInstant,
   outcomeLabel,
+  readableJson,
   versionLabel,
 } from './auditText'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
@@ -65,6 +67,7 @@ function AuditScreen({ namespace }: { readonly namespace: string | null }) {
   const companyId = shell.activeContext?.companyId ?? null
   const singleCompany = (shell.activeContext?.scopeMode ?? 'single') === 'single' && companyId !== null
   const canRead = hasCapability(shell, AUDIT_CAPABILITY.eventsList)
+  const canSeeDetails = hasCapability(shell, AUDIT_CAPABILITY.eventDetails)
   const ready = namespace !== null && singleCompany && canRead
   const query = readAuditQuery(searchParams)
 
@@ -130,9 +133,12 @@ function AuditScreen({ namespace }: { readonly namespace: string | null }) {
           subject={AUDIT_TEXT.subject}
         />
       ) : (
-        <EventList page={state.data} query={query} />
+        <EventList
+          page={state.data}
+          query={query}
+          details={canSeeDetails && namespace !== null ? { namespace, companyId: companyId ?? '' } : null}
+        />
       )}
-      <p className={styles.muted}>{AUDIT_TEXT.hiddenFieldsNote}</p>
     </Frame>
   )
 }
@@ -226,8 +232,47 @@ function FilterForm({ query }: { readonly query: AuditQuery }) {
   )
 }
 
-function EventList({ page, query }: { readonly page: AuditEventPage; readonly query: AuditQuery }) {
-  const columns: readonly DataTableColumn<AuditEventRow>[] = [
+interface DetailsAccess {
+  readonly namespace: string
+  readonly companyId: string
+}
+
+function EventList({
+  page,
+  query,
+  details,
+}: {
+  readonly page: AuditEventPage
+  readonly query: AuditQuery
+  /** Present only when the details capability is granted; otherwise no button exists and nothing is read. */
+  readonly details: DetailsAccess | null
+}) {
+  const [openRow, setOpenRow] = useState<AuditEventRow | null>(null)
+  const detailsColumn: DataTableColumn<AuditEventRow> | null =
+    details === null
+      ? null
+      : {
+          key: 'details',
+          header: AUDIT_TEXT.columnDetails,
+          pin: 'end',
+          cell: (row) => {
+            const expanded = openRow?.id === row.id
+            return (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-expanded={expanded}
+                aria-controls={DETAILS_PANEL_ID}
+                aria-label={`${expanded ? AUDIT_TEXT.hideDetails : AUDIT_TEXT.showDetails}: ${row.eventType} ${formatInstant(row.occurredAtUtc)}`}
+                onClick={() => setOpenRow(expanded ? null : row)}
+              >
+                {expanded ? AUDIT_TEXT.hideDetails : AUDIT_TEXT.showDetails}
+              </Button>
+            )
+          },
+        }
+  const baseColumns: readonly DataTableColumn<AuditEventRow>[] = [
     {
       key: 'time',
       header: AUDIT_TEXT.columnTime,
@@ -297,6 +342,8 @@ function EventList({ page, query }: { readonly page: AuditEventPage; readonly qu
     },
   ]
 
+  const columns = detailsColumn === null ? baseColumns : [...baseColumns, detailsColumn]
+
   return (
     <>
       <DataTable
@@ -306,6 +353,9 @@ function EventList({ page, query }: { readonly page: AuditEventPage; readonly qu
         rowKey={(row) => row.id}
         rowAttributes={(row) => ({ 'data-audit-event': row.id })}
       />
+      {details !== null && openRow !== null ? (
+        <DetailsPanel key={openRow.id} access={details} row={openRow} onClose={() => setOpenRow(null)} />
+      ) : null}
       <nav className={styles.pager} aria-label={AUDIT_TEXT.pagerLabel}>
         {query.cursor === null ? null : (
           <Link className={styles.link} to={auditEventsPath({ ...query, cursor: null })}>
@@ -321,5 +371,92 @@ function EventList({ page, query }: { readonly page: AuditEventPage; readonly qu
         )}
       </nav>
     </>
+  )
+}
+
+const DETAILS_PANEL_ID = 'audit-event-details'
+
+/**
+ * One event's hidden fields, read from their own endpoint only when the button is pressed. One panel at a time, below
+ * the table, so the list stays compact (Sinan, #66/6383408216). A 403 here goes to the auth boundary like every read.
+ */
+function DetailsPanel({
+  access,
+  row,
+  onClose,
+}: {
+  readonly access: DetailsAccess
+  readonly row: AuditEventRow
+  readonly onClose: () => void
+}) {
+  const shell = useShellState()
+  const boundary = useAuthBoundary()
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const query = useQuery({
+    queryKey: [access.namespace, shell.routeEntryGeneration, 'audit-event-details', row.id],
+    queryFn: async ({ signal }) => {
+      const snapshot = boundary.capture()
+      const outcome = await fetchAuditEventDetails(access.companyId, row.id, signal)
+      if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
+        boundary.report(outcome.status, snapshot)
+      }
+      return outcome
+    },
+  })
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+  const state = (
+    query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })
+  ) as RemoteViewState<AuditEventDetails>
+
+  return (
+    <section id={DETAILS_PANEL_ID} className={styles.details} aria-labelledby="audit-event-details-heading" data-details-for={row.id}>
+      <div className={styles.detailsHeader}>
+        <h2 id="audit-event-details-heading" ref={headingRef} tabIndex={-1}>
+          {AUDIT_TEXT.detailsHeading}: <code className={styles.code}>{row.eventType}</code>{' '}
+          <time dateTime={row.occurredAtUtc}>{formatInstant(row.occurredAtUtc)}</time>
+        </h2>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          {AUDIT_TEXT.detailsClose}
+        </Button>
+      </div>
+      {state.kind !== 'ready' ? (
+        <StateBlock state={state} subject={AUDIT_TEXT.detailsSubject} onRetry={() => void query.refetch()} />
+      ) : (
+        <dl className={styles.detailList}>
+          <div>
+            <dt>{AUDIT_TEXT.detailReason}</dt>
+            <dd>{state.data.reason.trim().length === 0 ? AUDIT_TEXT.detailEmpty : state.data.reason}</dd>
+          </div>
+          <div>
+            <dt>{AUDIT_TEXT.detailRoles}</dt>
+            <dd className={styles.code}>
+              {state.data.roleCodes.length === 0 ? AUDIT_TEXT.detailEmpty : state.data.roleCodes.join(', ')}
+            </dd>
+          </div>
+          <div>
+            <dt>{AUDIT_TEXT.detailIp}</dt>
+            <dd className={styles.code}>{state.data.clientIpAddress ?? AUDIT_TEXT.detailEmpty}</dd>
+          </div>
+          <div>
+            <dt>{AUDIT_TEXT.detailUserAgent}</dt>
+            <dd className={styles.id}>{state.data.userAgent ?? AUDIT_TEXT.detailEmpty}</dd>
+          </div>
+          <div className={styles.wide}>
+            <dt>{AUDIT_TEXT.detailBefore}</dt>
+            <dd>
+              <pre className={styles.json}>{readableJson(state.data.beforeJson)}</pre>
+            </dd>
+          </div>
+          <div className={styles.wide}>
+            <dt>{AUDIT_TEXT.detailAfter}</dt>
+            <dd>
+              <pre className={styles.json}>{readableJson(state.data.afterJson)}</pre>
+            </dd>
+          </div>
+        </dl>
+      )}
+    </section>
   )
 }

@@ -1,8 +1,8 @@
 /**
  * Capability id, route and URL parameters of "Denetim kayıtları" — a STATEMENT OF INTENT, not a grant.
  *
- * The server side has the read (`GET /api/v1/audit/events`, permission `identity.audit.read`, company-wide) but NO
- * shell capability declaration yet: no `IShellCapabilityProvider` publishes `audit.events.list`. Until one does,
+ * The server side has the list read (`GET /api/v1/audit/events`, permission `identity.audit.read`, company-wide) but NO
+ * shell capability declaration yet, and the details endpoint and its permission are only proposed (#66/6383408216): no `IShellCapabilityProvider` publishes `audit.events.list`. Until one does,
  * `hasCapability` answers false for every caller, the route renders the neutral not-found block and no nav entry is
  * drawn. That is the intended default-deny, not a bug: the screen opens the day the backend lane declares the
  * capability (`audit.events.list <- identity.audit.read`, company-wide), and every request is re-authorized
@@ -16,15 +16,22 @@
 export const AUDIT_CAPABILITY = {
   /** Route `/ayarlar/denetim-kayitlari`. Read-only; there is no write capability and there must not be one. */
   eventsList: 'audit.events.list',
+  /**
+   * A CONTROL capability on the list, not a route: draws the per-row "Ayrıntılar" button. Proposed
+   * `audit.events.details <- identity.audit.details.read`, held at first only by the system administrator and widenable
+   * later (Sinan, #66/6383408216). Nothing in the list ever renders detail fields without it, and the details are read
+   * from their own server-guarded endpoint, never from the list answer.
+   */
+  eventDetails: 'audit.events.details',
 } as const
 
 export type AuditCapabilityId = (typeof AUDIT_CAPABILITY)[keyof typeof AUDIT_CAPABILITY]
 
-export const AUDIT_ROUTE: Record<AuditCapabilityId, string> = {
+export const AUDIT_ROUTE: Record<typeof AUDIT_CAPABILITY.eventsList, string> = {
   [AUDIT_CAPABILITY.eventsList]: '/ayarlar/denetim-kayitlari',
 }
 
-export const AUDIT_NAV_LABEL: Record<AuditCapabilityId, string> = {
+export const AUDIT_NAV_LABEL: Record<typeof AUDIT_CAPABILITY.eventsList, string> = {
   [AUDIT_CAPABILITY.eventsList]: 'Denetim kayıtları',
 }
 

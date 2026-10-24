@@ -1,7 +1,7 @@
 /** The audit page decoder fails closed and keeps only the minimal fields (./contract.ts). */
 
 import { describe, expect, it } from 'vitest'
-import { decodeAuditEventPage } from './contract'
+import { decodeAuditEventDetails, decodeAuditEventPage } from './contract'
 import { COMPANY_A, COMPANY_B, auditItem, auditPage } from './testHarness'
 
 describe('decodeAuditEventPage', () => {
@@ -50,5 +50,36 @@ describe('decodeAuditEventPage', () => {
     ['items that are not an array', () => ({ items: {}, pageSize: 25, nextCursor: null })],
   ])('rejects %s', (_name, build) => {
     expect(decodeAuditEventPage(build(), COMPANY_A)).toBeNull()
+  })
+
+  it('accepts a row without the detail fields (details moved to their own endpoint)', () => {
+    const minimal = (({ roleCodes: _a, beforeJson: _b, afterJson: _c, reason: _d, clientIpAddress: _e, userAgent: _f, ...rest }) => rest)(auditItem())
+    expect(decodeAuditEventPage(auditPage([minimal]), COMPANY_A)?.items).toHaveLength(1)
+  })
+
+  it('rejects a row carrying only some of the detail fields', () => {
+    const partial = (({ beforeJson: _b, ...rest }) => rest)(auditItem())
+    expect(decodeAuditEventPage(auditPage([partial]), COMPANY_A)).toBeNull()
+  })
+})
+
+describe('decodeAuditEventDetails', () => {
+  const ID = '00000001-aaaa-4aaa-8aaa-000000000001'
+  const details = (overrides: Record<string, unknown> = {}) => ({
+    id: ID, beforeJson: '{"a":1}', afterJson: '{"a":2}', reason: 'Düzeltme', clientIpAddress: null, userAgent: 'UA', roleCodes: ['ADMIN'],
+    ...overrides,
+  })
+
+  it('decodes the details of the requested event', () => {
+    expect(decodeAuditEventDetails(details(), ID)).toEqual(details())
+  })
+
+  it.each([
+    ['another event', details({ id: '00000002-aaaa-4aaa-8aaa-000000000002' })],
+    ['an extra key', { ...details(), integrityHash: 'x' }],
+    ['a null payload', details({ beforeJson: null })],
+    ['an empty role code', details({ roleCodes: [''] })],
+  ])('rejects %s', (_name, raw) => {
+    expect(decodeAuditEventDetails(raw, ID)).toBeNull()
   })
 })

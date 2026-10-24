@@ -21,7 +21,7 @@ import {
   problem,
   renderAt,
 } from './testHarness'
-import { auditEventsPath } from './capabilities'
+import { AUDIT_CAPABILITY, auditEventsPath } from './capabilities'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -94,6 +94,9 @@ describe('Denetim kayıtları — list', () => {
     // No paging policy of its own: no pageSize is sent.
     expect(new URL(reads[0].url, 'http://localhost').search).toBe('')
     expect(recorded.every((request) => request.method === 'GET')).toBe(true)
+    // Without the details capability there is no button and no details read.
+    expect(screen.queryByRole('button', { name: /Ayrıntılar/ })).toBeNull()
+    expect(recorded.filter((request) => request.url.includes('/details'))).toHaveLength(0)
   })
 
   it('pages to older records with the server cursor and back to the newest', async () => {
@@ -222,5 +225,98 @@ describe('Denetim kayıtları — states', () => {
     await user.click(screen.getByRole('button', { name: 'Tekrar dene' }))
     await waitFor(() => expect(within(table()).getAllByRole('row')).toHaveLength(2))
     expect(auditReads(recorded)).toHaveLength(2)
+  })
+})
+
+describe('Denetim kayıtları — details (only for the details capability)', () => {
+  const WITH_DETAILS = [AUDIT_CAPABILITY.eventsList, AUDIT_CAPABILITY.eventDetails]
+
+  function detailsBody(id: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id,
+      beforeJson: '{"name":"Hol-0 Boya"}',
+      afterJson: '{"name":"Hol-0 Depo"}',
+      reason: 'Ad düzeltmesi',
+      clientIpAddress: '198.51.100.4',
+      userAgent: 'Mozilla/5.0 Test',
+      roleCodes: ['SYSTEM_ADMINISTRATOR'],
+      ...overrides,
+    }
+  }
+
+  it("opens one row's details from their own endpoint and closes them again", async () => {
+    const user = userEvent.setup()
+    const row = auditItem()
+    const recorded = installFetch({
+      capabilities: WITH_DETAILS,
+      respond: onAudit((url) =>
+        url.pathname.endsWith('/details') ? json(detailsBody(String(row.id))) : json(auditPage([row, auditItem()])),
+      ),
+    })
+    renderAt(auditEventsPath())
+
+    await waitFor(() => expect(within(table()).getAllByRole('row')).toHaveLength(3))
+    // The list itself never renders the list-carried hidden fields.
+    expect(document.body.textContent).not.toContain('GİZLİ')
+    expect(recorded.filter((request) => request.url.includes('/details'))).toHaveLength(0)
+
+    const button = within(table()).getAllByRole('button', { name: /^Ayrıntılar/ })[0]
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    await user.click(button)
+
+    const panel = await screen.findByRole('region', { name: /Kayıt ayrıntıları/ })
+    expect(await within(panel).findByText('Ad düzeltmesi')).toBeTruthy()
+    expect(within(panel).getByText('198.51.100.4')).toBeTruthy()
+    expect(within(panel).getByText('Mozilla/5.0 Test')).toBeTruthy()
+    expect(within(panel).getByText('SYSTEM_ADMINISTRATOR')).toBeTruthy()
+    expect(panel.textContent).toContain('"name": "Hol-0 Boya"')
+    expect(panel.textContent).toContain('"name": "Hol-0 Depo"')
+    const reads = recorded.filter((request) => request.url.includes('/details'))
+    expect(reads).toHaveLength(1)
+    expect(reads[0].url).toContain(`/audit/events/${String(row.id)}/details`)
+    expect(reads[0].headers['X-Company-Id']).toBe(COMPANY_A)
+
+    const hide = within(table()).getByRole('button', { name: /^Ayrıntıları gizle/ })
+    expect(hide.getAttribute('aria-expanded')).toBe('true')
+    await user.click(hide)
+    expect(screen.queryByRole('region', { name: /Kayıt ayrıntıları/ })).toBeNull()
+  })
+
+  it('details for another event fail closed', async () => {
+    const user = userEvent.setup()
+    const row = auditItem()
+    installFetch({
+      capabilities: WITH_DETAILS,
+      respond: onAudit((url) =>
+        url.pathname.endsWith('/details')
+          ? json(detailsBody('00000009-aaaa-4aaa-8aaa-999999999999'))
+          : json(auditPage([row])),
+      ),
+    })
+    renderAt(auditEventsPath())
+    await user.click(await screen.findByRole('button', { name: /^Ayrıntılar/ }))
+    const panel = await screen.findByRole('region', { name: /Kayıt ayrıntıları/ })
+    await waitFor(() => expect(panel.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+    expect(panel.textContent).not.toContain('198.51.100.4')
+  })
+
+  it('a 503 on the details is the unavailable state with retry', async () => {
+    const user = userEvent.setup()
+    const row = auditItem()
+    let calls = 0
+    installFetch({
+      capabilities: WITH_DETAILS,
+      respond: onAudit((url) => {
+        if (!url.pathname.endsWith('/details')) return json(auditPage([row]))
+        calls += 1
+        return calls === 1 ? problem(503) : json(detailsBody(String(row.id)))
+      }),
+    })
+    renderAt(auditEventsPath())
+    await user.click(await screen.findByRole('button', { name: /^Ayrıntılar/ }))
+    const panel = await screen.findByRole('region', { name: /Kayıt ayrıntıları/ })
+    await waitFor(() => expect(panel.querySelector('[data-state="service-unavailable"]')).not.toBeNull())
+    await user.click(within(panel).getByRole('button', { name: 'Tekrar dene' }))
+    expect(await within(panel).findByText('Ad düzeltmesi')).toBeTruthy()
   })
 })

@@ -9,12 +9,15 @@
  * the company the request named — a foreign-company row is a fence breach, never something to filter out quietly.
  * Ids are unique on a page and the page never holds more rows than its own `pageSize`.
  *
- * DATA MINIMISATION (ASSUMPTION-AUDIT-VIEW-FIELDS, NEEDS-SINAN for the rest). The decoder CHECKS every field but
- * KEEPS only what the list shows: when, what, which record, which operation, who, which permission, which channel,
- * AI involvement, outcome and correlation. The before/after payloads, the free-text reason, approval and AI context,
- * client IP address, user agent, role codes, causation id and integrity hash are type-checked and then dropped, so
- * no component can render them by accident. Showing any of them is a retention/privacy decision, not a UI choice.
- *
+ * DATA MINIMISATION (Sinan, #66/6383408216). The list shows only: when, what, which record, which operation, who,
+ * which permission, which channel, AI involvement, outcome and correlation. The before/after payloads, reason, client
+ * IP address, user agent and role codes are shown ONLY behind the per-row "Ayrıntılar" button, ONLY to the holder of the
+ * details capability, and ONLY from their own endpoint (`decodeAuditEventDetails`). If the list answer still carries
+ * those fields (the published v1 shape does), the list decoder type-checks them and DROPS them, so no list component
+ * can render them; the shape without them (proposed v2, detail fields moved out) is accepted too. Detail keys are
+ * all-or-none: a list row carrying some of them is malformed. Approval/AI context, causation and the integrity hash
+ * are never shown.
+
  * Entity versions are int64 on the wire; they are kept as decimal strings (like every version the UI sends back),
  * and a value JSON could not carry exactly is malformed rather than rounded.
  */
@@ -29,6 +32,9 @@ const PAGE_SIZE_MAX = 100
 const CURSOR_MAX_LENGTH = 128
 
 const PAGE_KEYS = ['items', 'pageSize', 'nextCursor'] as const
+
+/** The fields that belong to the details endpoint; on a list row they are all present (v1) or all absent (v2). */
+const LIST_DETAIL_KEYS = ['roleCodes', 'beforeJson', 'afterJson', 'reason', 'clientIpAddress', 'userAgent'] as const
 
 const ITEM_KEYS = [
   'id',
@@ -127,8 +133,14 @@ function decodeRoleCodes(value: unknown): boolean {
   return Array.isArray(value) && value.every(isNonEmptyString)
 }
 
+const ITEM_KEYS_WITHOUT_DETAILS: readonly string[] = ITEM_KEYS.filter(
+  (key) => !(LIST_DETAIL_KEYS as readonly string[]).includes(key),
+)
+
 function decodeItem(raw: unknown, companyId: string): AuditEventRow | null {
-  if (!isRecord(raw) || !hasExactKeys(raw, ITEM_KEYS)) return null
+  if (!isRecord(raw)) return null
+  const carriesDetails = hasExactKeys(raw, ITEM_KEYS)
+  if (!carriesDetails && !hasExactKeys(raw, ITEM_KEYS_WITHOUT_DETAILS)) return null
   const entityVersionBefore = decodeVersion(raw.entityVersionBefore)
   const entityVersionAfter = decodeVersion(raw.entityVersionAfter)
   const {
@@ -165,14 +177,15 @@ function decodeItem(raw: unknown, companyId: string): AuditEventRow | null {
     !isNonEmptyString(outcome) ||
     !isNonEmptyString(correlationId) ||
     // Checked, then dropped (see the file header).
-    !decodeRoleCodes(raw.roleCodes) ||
-    !isString(raw.beforeJson) ||
-    !isString(raw.afterJson) ||
-    !isString(raw.reason) ||
+    (carriesDetails &&
+      (!decodeRoleCodes(raw.roleCodes) ||
+        !isString(raw.beforeJson) ||
+        !isString(raw.afterJson) ||
+        !isString(raw.reason) ||
+        !isNullableString(raw.clientIpAddress) ||
+        !isNullableString(raw.userAgent))) ||
     !isNullableString(raw.approvalContextJson) ||
     !isNullableString(raw.aiContextJson) ||
-    !isNullableString(raw.clientIpAddress) ||
-    !isNullableString(raw.userAgent) ||
     !isNullableString(raw.causationId) ||
     typeof raw.schemaVersion !== 'number' ||
     !Number.isSafeInteger(raw.schemaVersion) ||
@@ -227,4 +240,39 @@ export function decodeAuditEventPage(raw: unknown, companyId: string): AuditEven
   // A next page with nothing on this one is not a shape the server produces (it only hands a cursor on overflow).
   if (items.length === 0 && nextCursor !== null) return null
   return { items, pageSize, nextCursor }
+}
+
+export interface AuditEventDetails {
+  readonly id: string
+  readonly beforeJson: string
+  readonly afterJson: string
+  readonly reason: string
+  readonly clientIpAddress: string | null
+  readonly userAgent: string | null
+  readonly roleCodes: readonly string[]
+}
+
+const DETAIL_KEYS = ['id', 'beforeJson', 'afterJson', 'reason', 'clientIpAddress', 'userAgent', 'roleCodes'] as const
+
+/**
+ * PROPOSED `GET /api/v1/audit/events/{id}/details` (#66/6383408216; Codex owns the final shape). Must be the event the
+ * button asked for; exact keys; nothing passed through.
+ */
+export function decodeAuditEventDetails(raw: unknown, requestedId: string): AuditEventDetails | null {
+  if (!isRecord(raw) || !hasExactKeys(raw, DETAIL_KEYS)) return null
+  const { id, beforeJson, afterJson, reason, clientIpAddress, userAgent, roleCodes } = raw
+  if (
+    !isUuid(id) ||
+    id.toLowerCase() !== requestedId.toLowerCase() ||
+    !isString(beforeJson) ||
+    !isString(afterJson) ||
+    !isString(reason) ||
+    !isNullableString(clientIpAddress) ||
+    !isNullableString(userAgent) ||
+    !Array.isArray(roleCodes) ||
+    !roleCodes.every(isNonEmptyString)
+  ) {
+    return null
+  }
+  return { id, beforeJson, afterJson, reason, clientIpAddress, userAgent, roleCodes: [...roleCodes] }
 }

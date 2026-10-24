@@ -2,13 +2,13 @@
  * Audit event list read transport. Thin and hand-written like `../identity/api.ts`; when the generated client lands
  * (Issue #122) the fetch call moves and the decoder in ./contract.ts survives.
  *
- * ONE GET and nothing else: the audit trail is append-only and this screen never writes. No `pageSize` is sent — the
+ * GETs only: the audit trail is append-only and this screen never writes. No `pageSize` is sent — the
  * server's default page is used, so the screen picks no paging policy of its own. Only the filters the server has
  * (`correlationId`, `entityType`, `entityId`) and its opaque `cursor` are sent, each already trimmed and within the
  * server's length bound (./capabilities.ts `readAuditQuery`).
  */
 
-import { decodeAuditEventPage, type AuditEventPage } from './contract'
+import { decodeAuditEventDetails, decodeAuditEventPage, type AuditEventDetails, type AuditEventPage } from './contract'
 import type { AuditQuery } from './capabilities'
 import type { ViewOutcome } from '../shell/uiState'
 
@@ -61,4 +61,35 @@ export async function fetchAuditEvents(
   const page = decodeAuditEventPage(body, companyId)
   if (page === null) return { type: 'malformed' }
   return { type: 'ok-single', data: page }
+}
+
+/**
+ * PROPOSED `GET /audit/events/{id}/details` — the hidden fields of one event, read only when the authorized user presses
+ * "Ayrıntılar". The server must refuse it without `identity.audit.details.read`; a 403/404 passes through as a status.
+ */
+export async function fetchAuditEventDetails(
+  companyId: string,
+  eventId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<AuditEventDetails>> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/audit/events/${encodeURIComponent(eventId)}/details`, {
+      headers: { ...devHeaders(), 'X-Company-Id': companyId },
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    return navigator.onLine ? { type: 'network-error' } : { type: 'offline' }
+  }
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    if (signal?.aborted) return { type: 'fence-stale' }
+    body = null
+  }
+  if (response.status !== 200) return { type: 'http', status: response.status, body }
+  const details = decodeAuditEventDetails(body, eventId)
+  return details === null ? { type: 'malformed' } : { type: 'ok-single', data: details }
 }
