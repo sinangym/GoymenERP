@@ -540,7 +540,11 @@ test.describe.serial('ACC-01 periods and reads (real API, real SQL)', () => {
     await expect(page.locator('body')).not.toContainText(created.sourceId)
 
     await page.getByRole('link', { name: 'Onay ekranını aç', exact: true }).click()
-    await page.getByLabel('Açık dönem kimliği', { exact: true }).fill(env.seed.openPeriodId)
+    // BLG-05: no period id is typed. The open period holding the draft's accounting date is preselected by its date
+    // range; the seed id is only the expectation, and it is never shown as text.
+    const periodPicker = page.getByLabel('Onay dönemi', { exact: true })
+    await expect(periodPicker).toHaveValue(env.seed.openPeriodId, { timeout: 30_000 })
+    await expect(page.locator('body')).not.toContainText(env.seed.openPeriodId)
     const approvalAnswer = page.waitForResponse(response =>
       new URL(response.url()).pathname === `/api/v1/accounting/normal-journal-drafts/${created.draftId}/approval`
         && response.request().method() === 'POST')
