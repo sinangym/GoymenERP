@@ -405,3 +405,45 @@ export function masterFailureText(
       return failureText(failure)
   }
 }
+
+/** O02 — the operator of an external location (who runs it). Party codes and names are shown as the server sent them. */
+export const OPERATOR_TEXT = {
+  heading: 'İşletici',
+  lead: 'Bu harici lokasyonu işleten cari. Atama gerekçeyle kaydedilir ve denetim kaydına yazılır.',
+  subject: 'lokasyon işleticisi',
+  none: 'Atanmış işletici yok.',
+  code: 'Cari kodu',
+  legalName: 'Unvan',
+  tradeName: 'Ticari ad',
+  ineligible: 'Şu an işletici olarak uygun değil',
+  ineligibleDetail:
+    'Kayıtlı işletici sunucunun güncel işletici koşullarını artık sağlamıyor. Kayıt değişmedi; yeni bir atama ' +
+    'gerekebilir.',
+  assign: 'İşletici ata',
+  change: 'İşleticiyi değiştir',
+  formHeading: 'İşletici seç',
+  searchFormLabel: 'İşletici adayı arama',
+  searchLabel: 'Cari ara',
+  searchHelp: 'Kod, unvan veya ticari ad. Yalnız işletici olabilecek cariler listelenir.',
+  searchTooLong: (max: number) => `Arama metni en fazla ${max} karakter olabilir.`,
+  search: 'Ara',
+  candidatesLegend: 'Aday cariler',
+  candidatesSubject: 'işletici adayları',
+  noCandidates: 'Bu aramayla işletici olabilecek cari bulunamadı.',
+  nextPage: 'Sonraki adaylar',
+  firstPage: 'İlk adaylara dön',
+  invalidCursor: 'Aday listesinin sayfa bilgisi artık geçerli değil. Listeyi baştan açın.',
+  current: '(mevcut işletici)',
+  pickRequired: 'Bir cari seçin.',
+  save: 'İşleticiyi kaydet',
+  resend: 'Aynı işlemle tekrar gönder',
+  reload: 'Güncel kaydı yükle',
+  ineligibleTitle: 'Bu cari işletici olarak atanamıyor',
+  ineligibleRefusal:
+    'Sunucu bu cariyi bu lokasyon için uygun bulmadı (lokasyon harici değil veya cari işletici koşullarını ' +
+    'sağlamıyor). Atama yapılmadı.',
+  dependencyTitle: 'Cari doğrulaması şu an yapılamıyor',
+  dependencyDetail:
+    'Sunucu cari uygunluğunu kontrol edemedi ve hiçbir şey kaydetmedi. Aynı işlemle tekrar gönderebilirsiniz.',
+  forbiddenDetail: 'Bu lokasyonun işleticisini değiştirme yetkiniz bulunmuyor. Atama yapılmadı.',
+} as const

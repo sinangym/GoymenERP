@@ -44,14 +44,14 @@ export function devHeaders(): Record<string, string> {
 export const PAGE_SIZE_MAX = 100
 export const DEFAULT_PAGE_SIZE = 25
 
-interface RawResult {
+export interface RawResult {
   readonly status: number
   /** EXACT 200 only — `Response.ok` spans all of 2xx, which is not this contract. */
   readonly isOk200: boolean
   readonly body: unknown
 }
 
-async function read(
+export async function read(
   path: string,
   companyId: string,
   signal?: AbortSignal,
@@ -81,7 +81,7 @@ async function read(
   return { status: response.status, isOk200: response.status === 200, body }
 }
 
-function transportOutcome<T>(
+export function transportOutcome<T>(
   result: 'aborted' | 'offline' | 'unreachable',
 ): ViewOutcome<T> {
   if (result === 'aborted') return { type: 'fence-stale' }
