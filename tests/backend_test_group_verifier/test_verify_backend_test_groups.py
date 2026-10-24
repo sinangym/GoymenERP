@@ -657,6 +657,26 @@ class BackendGroupVerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
             self.aggregate(directory)
 
+    def test_real_producer_consumer_match_pinned_sdk_display_without_loosening_case_counts(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["architecture"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        raw = name + '(value: "' + "x" * 500 + '")'
+        # Adapter 3.1.4 truncates discovery at 447 UTF-16 units including the
+        # three middle dots; its runtime result retains the full display name.
+        visible = raw[:444] + "\u00b7" * 3
+        self.assertEqual(VERIFIER.sdk_display_name(raw), visible)
+        self.assertEqual(VERIFIER.sdk_display_name(name + "(x: \r\n\t)"),
+                         name + r"(x: \r\n\t)")
+        self.assertEqual(VERIFIER.sdk_display_name("\U0001f600" * 224), "\U0001f600" * 222 + "\u00b7" * 3)
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-architecture" / "proof-architecture.json"
+        path.unlink()
+        self.produce_group("architecture", directory, project, [visible], [raw])
+        self.assertEqual(self.aggregate(directory), 20)
+        for label, rows in (("missing", []), ("surplus", [raw, raw])):
+            with self.subTest(label=label), self.assertRaises(RuntimeError):
+                self.produce_group("architecture", self.root / label, project, [visible], rows)
+
     def test_reviewed_deferred_case_identities_and_source_are_exact_at_both_gates(self) -> None:
         self.assertEqual(len(VERIFIER.DEFERRED_THEORIES), 2)
         for number, (name, (relative, _, cases)) in enumerate(VERIFIER.DEFERRED_THEORIES.items()):

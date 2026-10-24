@@ -436,6 +436,19 @@ def discovery_map(stdout: str, project: str) -> Counter[str]:
     return Counter({name: len(cases) for name, cases in discovery_cases(stdout, project).items()})
 
 
+def sdk_display_name(value: str) -> str:
+    # xunit.runner.visualstudio 3.1.4 VsDiscoverySink.Escape/Truncate exposes
+    # 447 UTF-16 units; TRX retains the full runtime display. Keep exact counts
+    # and compare the view the SDK actually discovered. Reviewed deferred data
+    # has its own full runtime identities and must never use this projection.
+    # https://github.com/xunit/visualstudio.xunit/blob/3.1.4/src/xunit.runner.visualstudio/Sinks/VsDiscoverySink.cs
+    escaped = value.replace("\r", "\\r").replace("\n", "\\n").replace("\t", "\\t")
+    encoded = escaped.encode("utf-16-le", errors="surrogatepass")
+    if len(encoded) <= 447 * 2:
+        return escaped
+    return encoded[:444 * 2].decode("utf-16-le", errors="surrogatepass") + "\u00b7" * 3
+
+
 def trx_result_map(
     path: Path, discovered: Counter[str], *, execution_ids: set[str] | None = None,
     exact_multiplicity: bool = True, allowed_skips: set[str] | None = None,
@@ -503,7 +516,9 @@ def trx_result_map(
     ):
         raise RuntimeError("Backend TRX execution multiplicity differs from exact discovery.")
     if expected_case_names is not None and {
-        name: Counter(values) for name, values in case_names.items()
+        name: Counter(values if name in DEFERRED_THEORIES else
+                      [sdk_display_name(value) for value in values])
+        for name, values in case_names.items()
     } != {name: Counter(values) for name, values in expected_case_names.items()}:
         raise RuntimeError("Backend TRX case identities differ from exact discovery or reviewed data.")
     expected = {
