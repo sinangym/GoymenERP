@@ -273,6 +273,8 @@ export const NORMAL_JOURNAL_TEXT = {
     'Onay dönemi seçmek için muhasebe dönemlerini görme yetkisi gerekir. Bu yetki olmadan onay verilemez.',
   noOpenPeriod: 'Bu şirkette açık muhasebe dönemi yok. Önce bir dönemin açılması gerekir.',
   morePeriods: 'Daha eski dönemleri yükle',
+  morePeriodsFailed: 'Daha eski dönemler yüklenemedi. Aynı düğmeyle yeniden deneyin.',
+  periodsRestarted: 'Dönem listesi bu arada değişti; liste baştan yüklendi.',
   periodRequired: 'Bir açık dönem seçin.',
 } as const
 

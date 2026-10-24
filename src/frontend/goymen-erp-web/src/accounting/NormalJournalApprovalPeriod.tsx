@@ -28,7 +28,11 @@ const PERIOD_SELECT_ID = 'normal-journal-approval-period'
 
 const holds = (period: PeriodView, date: string) => period.startsOn <= date && date <= period.endsOn
 
+// A later-page cursor the server no longer accepts (the list changed under it): start again from the first page.
+const CURSOR_REFUSED = new Set([400, 409, 410, 422])
+
 export function NormalJournalApprovalPeriod({
+  namespace,
   companyId,
   accountingDate,
   value,
@@ -36,6 +40,8 @@ export function NormalJournalApprovalPeriod({
   disabled,
   reloadToken,
 }: {
+  /** The shell query namespace; first in the key so a fenced context drops this read with the rest. */
+  readonly namespace: string
   readonly companyId: string
   readonly accountingDate: string
   readonly value: string
@@ -51,7 +57,7 @@ export function NormalJournalApprovalPeriod({
   const boundary = useAuthBoundary()
   const canList = hasCapability(shell, ACCOUNTING_CAPABILITY.periodsList)
   const query = useQuery({
-    queryKey: [companyId, shell.routeEntryGeneration, 'accounting', 'normal-journal-approval-periods', reloadToken],
+    queryKey: [namespace, shell.routeEntryGeneration, 'accounting', 'normal-journal-approval-periods', companyId, reloadToken],
     enabled: canList,
     retry: false,
     staleTime: 0,
@@ -66,6 +72,8 @@ export function NormalJournalApprovalPeriod({
   const [more, setMore] = useState<readonly PeriodView[]>([])
   const [nextCursor, setNextCursor] = useState<string | null | undefined>(undefined)
   const [loadingMore, setLoadingMore] = useState(false)
+  // A failed later page is said, never swallowed; the same button retries it.
+  const [moreFailure, setMoreFailure] = useState<'failed' | 'restarted' | null>(null)
 
   const state = (canList
     ? (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' }))
@@ -86,6 +94,7 @@ export function NormalJournalApprovalPeriod({
   const loadMore = async () => {
     if (cursor === null || loadingMore) return
     setLoadingMore(true)
+    setMoreFailure(null)
     const snapshot = boundary.capture()
     const outcome = await fetchPeriods(companyId, cursor)
     setLoadingMore(false)
@@ -94,6 +103,13 @@ export function NormalJournalApprovalPeriod({
       setNextCursor(outcome.data.nextCursor)
     } else if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) {
       boundary.report(outcome.status, snapshot)
+    } else if (outcome.type === 'http' && CURSOR_REFUSED.has(outcome.status)) {
+      setMore([])
+      setNextCursor(undefined)
+      setMoreFailure('restarted')
+      void query.refetch()
+    } else {
+      setMoreFailure('failed')
     }
   }
 
@@ -107,6 +123,8 @@ export function NormalJournalApprovalPeriod({
       </option>)}
     </select>
     {open.length === 0 && cursor === null ? <p role="note">{T.noOpenPeriod}</p> : null}
+    {moreFailure === 'failed' ? <p role="alert">{T.morePeriodsFailed}</p> : null}
+    {moreFailure === 'restarted' ? <p role="status">{T.periodsRestarted}</p> : null}
     {cursor !== null
       ? <button type="button" disabled={disabled || loadingMore} onClick={() => void loadMore()}>{T.morePeriods}</button>
       : null}
