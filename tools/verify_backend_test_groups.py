@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 from typing import Callable, TypeVar
+from types import ModuleType
 import xml.etree.ElementTree as ET
 
 
@@ -48,8 +49,8 @@ GROUP_PROJECTS = {
 }
 SOLUTION_PROJECT_COUNT = 71
 TEST_PROJECT_COUNT = 20
-PROOF_SCHEMA = 2
-MAX_PROOF_BYTES = 16384
+PROOF_SCHEMA = 3
+MAX_PROOF_BYTES = 2 * 1024 * 1024
 # Release per-process memory between API batches on the bounded local runner.
 # Keep complete classes together; a large class remains one indivisible batch.
 API_BATCH_METHOD_BUDGET = 32
@@ -59,6 +60,284 @@ FQN_PATTERN = re.compile(r"GoymenERP\.[A-Za-z0-9_.+`]+\Z")
 EXECUTION_ID_PATTERN = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z"
 )
+
+# Only these two reviewed nonserializable MemberData methods defer their rows
+# until execution. Exact display identities and source bytes are reviewed together.
+# An unknown deferred theory must fail closed, rather than permit a lower bound.
+DEFERRED_THEORIES: dict[str, tuple[str, str, tuple[str, ...]]] = {'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version': ('tests/GoymenERP.Manufacturing.UnitTests/ManufacturingCommercialContextSnapshotTests.cs',
+                                                                                                                                    'd0a327ac6a0daadccf2a421d80354acc461a1806b2bda57677b18ec836bec450',
+                                                                                                                                    ('GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
+                                                                                                                                     'PlanCommercialContextSnapshotV1 '
+                                                                                                                                     '{ '
+                                                                                                                                     'PartyId '
+                                                                                                                                     '= '
+                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
+                                                                                                                                     'CompanyPartyAccountId '
+                                                                                                                                     '= '
+                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
+                                                                                                                                     'PartyVersion '
+                                                                                                                                     '= '
+                                                                                                                                     'party-v1, '
+                                                                                                                                     'AccountVersion '
+                                                                                                                                     '= '
+                                                                                                                                     'account-v2 '
+                                                                                                                                     '})',
+                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
+                                                                                                                                     'PlanCommercialContextSnapshotV1 '
+                                                                                                                                     '{ '
+                                                                                                                                     'PartyId '
+                                                                                                                                     '= '
+                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
+                                                                                                                                     'CompanyPartyAccountId '
+                                                                                                                                     '= '
+                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
+                                                                                                                                     'PartyVersion '
+                                                                                                                                     '= '
+                                                                                                                                     'party-v2, '
+                                                                                                                                     'AccountVersion '
+                                                                                                                                     '= '
+                                                                                                                                     'account-v1 '
+                                                                                                                                     '})',
+                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
+                                                                                                                                     'PlanCommercialContextSnapshotV1 '
+                                                                                                                                     '{ '
+                                                                                                                                     'PartyId '
+                                                                                                                                     '= '
+                                                                                                                                     '30000000-0000-0000-0000-000000000003, '
+                                                                                                                                     'CompanyPartyAccountId '
+                                                                                                                                     '= '
+                                                                                                                                     '40000000-0000-0000-0000-000000000099, '
+                                                                                                                                     'PartyVersion '
+                                                                                                                                     '= '
+                                                                                                                                     'party-v1, '
+                                                                                                                                     'AccountVersion '
+                                                                                                                                     '= '
+                                                                                                                                     'account-v1 '
+                                                                                                                                     '})',
+                                                                                                                                     'GoymenERP.Manufacturing.UnitTests.ManufacturingCommercialContextSnapshotTests.One_plan_refuses_a_different_identity_or_version(differentContext: '
+                                                                                                                                     'PlanCommercialContextSnapshotV1 '
+                                                                                                                                     '{ '
+                                                                                                                                     'PartyId '
+                                                                                                                                     '= '
+                                                                                                                                     '30000000-0000-0000-0000-000000000099, '
+                                                                                                                                     'CompanyPartyAccountId '
+                                                                                                                                     '= '
+                                                                                                                                     '40000000-0000-0000-0000-000000000004, '
+                                                                                                                                     'PartyVersion '
+                                                                                                                                     '= '
+                                                                                                                                     'party-v1, '
+                                                                                                                                     'AccountVersion '
+                                                                                                                                     '= '
+                                                                                                                                     'account-v1 '
+                                                                                                                                     '})')),
+ 'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping': ('tests/GoymenERP.Organization.UnitTests/WorkCenterWorkingTimeAvailabilityContractTests.cs',
+                                                                                                                                                       'd122f06addfda39be9892bbfc787eb0b5785b712659b5311a50d307bb5c6ce5e',
+                                                                                                                                                       ('GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/05/2026 '
+                                                                                                                                                        '23:59:59 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '01:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}])',
+                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '00:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/07/2026 '
+                                                                                                                                                        '03:00:00 '
+                                                                                                                                                        '+03:00 '
+                                                                                                                                                        '}])',
+                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '01:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/07/2026 '
+                                                                                                                                                        '00:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}])',
+                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '02:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '02:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}])',
+                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '03:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '02:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}])',
+                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '03:00:00 '
+                                                                                                                                                        '+03:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '01:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}])',
+                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '06:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '10:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}, '
+                                                                                                                                                        'WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '06:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '10:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}])',
+                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '06:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '10:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}, '
+                                                                                                                                                        'WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '09:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '12:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}])',
+                                                                                                                                                        'GoymenERP.Organization.UnitTests.WorkCenterWorkingTimeAvailabilityContractTests.Intervals_must_be_utc_positive_bounded_ordered_and_nonoverlapping(intervals: '
+                                                                                                                                                        '[WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '12:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '14:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}, '
+                                                                                                                                                        'WorkCenterWorkingTimeIntervalV1 '
+                                                                                                                                                        '{ '
+                                                                                                                                                        'StartsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '06:00:00 '
+                                                                                                                                                        '+00:00, '
+                                                                                                                                                        'EndsAtUtc '
+                                                                                                                                                        '= '
+                                                                                                                                                        '10/06/2026 '
+                                                                                                                                                        '10:00:00 '
+                                                                                                                                                        '+00:00 '
+                                                                                                                                                        '}])'))}
+
+
+def relational_verifier(root: Path) -> ModuleType:
+    path = root / "tools/verify_rcsi_relational_acceptance.py"
+    if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root):
+        raise RuntimeError("Separate SQL verifier source is missing or linked.")
+    # Execute the reviewed source bytes, never a timestamp-valid ignored .pyc.
+    module = ModuleType("backend_separate_sql_gate")
+    module.__file__ = str(path)
+    exec(compile(path.read_bytes(), str(path), "exec"), module.__dict__)
+    if module.BROAD_INVENTORY_ERROR is not None:
+        raise module.BROAD_INVENTORY_ERROR
+    return module
+
+
+def relational_cases(root: Path) -> dict[str, int]:
+    verifier = relational_verifier(root)
+    cases = dict(verifier.BROAD_EXECUTIONS)
+    # The accepted platform shard already includes all fourteen RCSI cases;
+    # its dedicated skip0 job is an additional required check, not a disjoint set.
+    for name in verifier.EXPECTED_TESTS:
+        if cases.get(name) != 1:
+            raise RuntimeError("Broad SQL inventory must retain every exact RCSI case once.")
+    return cases
+
+
+def deferred_cases(root: Path, name: str) -> tuple[str, ...] | None:
+    reviewed = DEFERRED_THEORIES.get(name)
+    if reviewed is None:
+        return None
+    relative, fingerprint, cases = reviewed
+    path = root / relative
+    if path.is_symlink() or not path.is_file() or hashlib.sha256(
+        path.read_bytes().replace(b"\r\n", b"\n")
+    ).hexdigest() != fingerprint:
+        raise RuntimeError("Deferred theory source differs from its reviewed case inventory.")
+    if len(cases) < 2 or len(set(cases)) != len(cases) or any(
+        not case.startswith(name + "(") for case in cases
+    ):
+        raise RuntimeError("Deferred theory case inventory is incomplete or duplicated.")
+    return cases
 
 
 class Stage(str, Enum):
@@ -140,22 +419,27 @@ def source_inventory(root: Path) -> tuple[str, str]:
     return hashlib.sha256(solution_bytes).hexdigest(), digest(groups)
 
 
-def discovery_map(stdout: str, project: str) -> Counter[str]:
+def discovery_cases(stdout: str, project: str) -> dict[str, list[str]]:
     prefix = Path(project).stem + "."
-    names = Counter(
-        candidate
-        for line in stdout.splitlines()
-        if (candidate := line.strip().split("(", 1)[0]).startswith(prefix)
-        and FQN_PATTERN.fullmatch(candidate) is not None
-    )
+    names: dict[str, list[str]] = {}
+    for line in stdout.splitlines():
+        display = line.strip()
+        candidate = display.split("(", 1)[0]
+        if candidate.startswith(prefix) and FQN_PATTERN.fullmatch(candidate) is not None:
+            names.setdefault(candidate, []).append(display)
     if not names:
         raise RuntimeError("Backend project discovery is empty.")
     return names
 
 
+def discovery_map(stdout: str, project: str) -> Counter[str]:
+    return Counter({name: len(cases) for name, cases in discovery_cases(stdout, project).items()})
+
+
 def trx_result_map(
     path: Path, discovered: Counter[str], *, execution_ids: set[str] | None = None,
-    exact_multiplicity: bool = False,
+    exact_multiplicity: bool = True, allowed_skips: set[str] | None = None,
+    expected_case_names: dict[str, list[str]] | None = None,
 ) -> tuple[dict[str, dict[str, int]], int, int]:
     try:
         document = ET.parse(path).getroot()
@@ -180,6 +464,7 @@ def trx_result_map(
             raise RuntimeError("Backend TRX test identity is not canonical.")
         definitions[test_id] = name
     results: dict[str, dict[str, int]] = {}
+    case_names: dict[str, list[str]] = {}
     total = 0
     passed = 0
     skipped = 0
@@ -200,19 +485,27 @@ def trx_result_map(
         outcome = element.attrib.get("outcome")
         if outcome not in ("Passed", "NotExecuted"):
             raise RuntimeError("Backend TRX contains a failed or unknown test result.")
-        entry = results.setdefault(definitions[test_id], {"passed": 0, "skipped": 0})
+        name = definitions[test_id]
+        if outcome == "NotExecuted" and name not in (allowed_skips or set()):
+            raise RuntimeError("Required non-SQL backend test was not executed.")
+        entry = results.setdefault(name, {"passed": 0, "skipped": 0})
+        case_names.setdefault(name, []).append(element.attrib.get("testName", ""))
         entry["passed" if outcome == "Passed" else "skipped"] += 1
         total += 1
         passed += outcome == "Passed"
         skipped += outcome == "NotExecuted"
     if not results or set(results) != set(discovered):
         raise RuntimeError("Backend TRX result identities differ from exact project discovery.")
-    if exact_multiplicity and any(
+    if not exact_multiplicity:
+        raise RuntimeError("Backend execution multiplicity cannot use a lower bound.")
+    if any(
         sum(results[name].values()) != discovered[name] for name in discovered
     ):
         raise RuntimeError("Backend TRX execution multiplicity differs from exact discovery.")
-    if any(sum(results[name].values()) < discovered[name] for name in discovered):
-        raise RuntimeError("Backend TRX execution multiplicity is below discovery.")
+    if expected_case_names is not None and {
+        name: Counter(values) for name, values in case_names.items()
+    } != {name: Counter(values) for name, values in expected_case_names.items()}:
+        raise RuntimeError("Backend TRX case identities differ from exact discovery or reviewed data.")
     expected = {
         # VSTest 17.14.1 writes zero here even for NotExecuted result rows.
         # Skipped executions remain independently counted from the result rows.
@@ -270,6 +563,7 @@ def expected_proof(group: str, source_head: str, tested_commit: str, root: Path)
         "testedCommit": canonical_head(tested_commit, "tested commit"),
         "solutionHash": solution_hash,
         "catalogHash": catalog_hash,
+        "separateSqlInventoryHash": digest(sorted(relational_cases(root).items())),
         "projectCount": len(GROUP_PROJECTS[group]),
         "projects": [],
     }
@@ -284,20 +578,21 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
-def _valid_proof(proof: object, expected: dict[str, object], group: str) -> None:
+def _valid_proof(proof: object, expected: dict[str, object], group: str, root: Path) -> None:
     if not isinstance(proof, dict) or set(proof) != set(expected):
         raise RuntimeError("Backend group proof schema is incomplete or extended.")
-    if {key: value for key, value in proof.items() if key != "projects"} != {
-        key: value for key, value in expected.items() if key != "projects"
-    }:
+    if any(type(proof[key]) is not type(value) or proof[key] != value
+           for key, value in expected.items() if key != "projects"):
         raise RuntimeError("Backend group proof does not match source, commit and catalog.")
     rows = proof["projects"]
     if not isinstance(rows, list) or len(rows) != len(GROUP_PROJECTS[group]):
         raise RuntimeError("Backend group proof project count is wrong.")
+    sql_cases = relational_cases(root)
     for path, row in zip(GROUP_PROJECTS[group], rows, strict=True):
         if not isinstance(row, dict) or set(row) != {
             "path", "discoveryHash", "resultHash", "discoveredMethods",
             "discoveredCases", "executionCount", "passed", "skipped", "stageElapsedMs",
+            "testCases",
         } or row["path"] != path:
             raise RuntimeError("Backend group proof project identity is wrong.")
         if not isinstance(row["discoveryHash"], str) or not HASH_PATTERN.fullmatch(
@@ -314,19 +609,61 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str) -> None
                 or any(type(timings[stage]) is not int or timings[stage] < 0
                        for stage in STAGES)):
             raise RuntimeError("Backend group proof has invalid stage timing.")
-        if (row["discoveredMethods"] < 1 or row["discoveredCases"] < row["discoveredMethods"]
-                or row["executionCount"] < row["discoveredCases"]
-                or (group == "api" and row["executionCount"] != row["discoveredCases"])
-                or row["executionCount"] != row["passed"] + row["skipped"]):
+        tests = row["testCases"]
+        # Each compact record binds FQN, SDK discovery count, passed/SQL-excluded
+        # counts, discovery display identities and verified runtime identities.
+        if not isinstance(tests, list) or not tests:
+            raise RuntimeError("Backend group proof lacks exact method-level execution records.")
+        discovered: Counter[str] = Counter()
+        results: dict[str, dict[str, int]] = {}
+        for record in tests:
+            if not isinstance(record, list) or len(record) != 6:
+                raise RuntimeError("Backend method execution record schema is wrong.")
+            name, discovered_count, passed_count, skipped_count, discovered_hash, result_hash = record
+            if (not isinstance(name, str) or not FQN_PATTERN.fullmatch(name)
+                    or not name.startswith(Path(path).stem + ".") or name in discovered
+                    or any(type(value) is not int or value < 0 for value in
+                           (discovered_count, passed_count, skipped_count))
+                    or discovered_count < 1
+                    or any(not isinstance(value, str) or not HASH_PATTERN.fullmatch(value)
+                           for value in (discovered_hash, result_hash))):
+                raise RuntimeError("Backend method identity, counts or case hashes are invalid.")
+            if skipped_count and (group != "api" or name not in sql_cases):
+                raise RuntimeError("Required non-SQL backend test was not executed.")
+            deferred = deferred_cases(root, name)
+            expected_count = discovered_count
+            expected_hash = discovered_hash
+            if deferred is not None:
+                if discovered_count != 1 or discovered_hash != digest([name]):
+                    raise RuntimeError("Deferred theory discovery differs from its exact reviewed method.")
+                expected_count = len(deferred)
+                expected_hash = digest(sorted(deferred))
+            if passed_count + skipped_count != expected_count or result_hash != expected_hash:
+                raise RuntimeError("Backend method case multiplicity or identity differs from discovery.")
+            discovered[name] = discovered_count
+            results[name] = {"passed": passed_count, "skipped": skipped_count}
+        if (list(discovered) != sorted(discovered)
+                or row["discoveredMethods"] != len(discovered)
+                or row["discoveredCases"] != sum(discovered.values())
+                or row["passed"] != sum(value["passed"] for value in results.values())
+                or row["skipped"] != sum(value["skipped"] for value in results.values())
+                or row["executionCount"] != row["passed"] + row["skipped"]
+                or row["discoveryHash"] != digest(sorted(discovered.items()))
+                or row["resultHash"] != digest(sorted((name, values["passed"], values["skipped"])
+                                                    for name, values in results.items()))):
             raise RuntimeError("Backend group proof counts are inconsistent.")
 
 
 def verify_aggregate(
     root: Path, directory: Path, source_head: str, tested_commit: str,
     build_result: str, worker_result: str,
+    relational_proof_directory: Path, relational_worker_result: str, rcsi_result: str,
 ) -> int:
     if build_result != "success" or worker_result != "success":
         raise RuntimeError("Backend full build and every TestSDK worker must succeed.")
+    relational_verifier(root).verify_aggregate_proofs(
+        relational_proof_directory, source_head, tested_commit, relational_worker_result, rcsi_result,
+    )
     if directory.is_symlink() or not directory.is_dir():
         raise RuntimeError("Backend group proof directory is missing or linked.")
     expected_names = {f"ci-backend-test-group-proof-{group}" for group in GROUP_PROJECTS}
@@ -347,7 +684,7 @@ def verify_aggregate(
             proof = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_unique_object)
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exception:
             raise RuntimeError("Backend group proof is unreadable or malformed.") from exception
-        _valid_proof(proof, expected_proof(group, source_head, tested_commit, root), group)
+        _valid_proof(proof, expected_proof(group, source_head, tested_commit, root), group, root)
         for row in proof["projects"]:
             if row["path"] in covered:
                 raise RuntimeError("Backend group proof projects overlap.")
@@ -382,6 +719,7 @@ def run_group(
     if os.environ.get("GOYMEN_ERP_TEST_SQLSERVER_CONNECTION", "").strip():
         raise RuntimeError("Backend groups cannot use the separate real-SQL acceptance connection.")
     proof = expected_proof(group, source_head, tested_commit, root)
+    allowed_skips = set(relational_cases(root)) if group == "api" else set()
     if proof_path.exists() or (results_directory.exists() and any(results_directory.iterdir())):
         raise RuntimeError("Backend group requires fresh proof and TRX output paths.")
     results_directory.mkdir(parents=True, exist_ok=True)
@@ -404,11 +742,16 @@ def run_group(
             "--no-restore",
         ], root))
         measure(Stage.BOOTSTRAP_PREFLIGHT, lambda: run_bootstrap_preflight(root))
-        discovered = discovery_map(measure(Stage.DISCOVERY, lambda: run_checked([
+        discovered_names = discovery_cases(measure(Stage.DISCOVERY, lambda: run_checked([
             "dotnet", "test", project, "-noAutoResponse", "--configuration", "Release",
             "--no-restore", "--no-build", "--list-tests",
             "--logger", "console;verbosity=quiet",
         ], root)), project)
+        discovered = Counter({name: len(cases) for name, cases in discovered_names.items()})
+        expected_names = {
+            name: list(deferred_cases(root, name) or cases)
+            for name, cases in discovered_names.items()
+        }
         batches = api_test_batches(discovered) if group == "api" else [discovered]
         results: dict[str, dict[str, int]] = {}
         execution_ids: set[str] = set()
@@ -433,7 +776,9 @@ def run_group(
             if not trx.is_file() or trx.is_symlink():
                 raise RuntimeError("Backend project did not produce its exact TRX.")
             batch_results, batch_passed, batch_skipped = trx_result_map(
-                trx, batch, execution_ids=execution_ids, exact_multiplicity=group == "api",
+                trx, Counter({name: len(expected_names[name]) for name in batch}),
+                execution_ids=execution_ids, allowed_skips=allowed_skips,
+                expected_case_names={name: expected_names[name] for name in batch},
             )
             if results.keys() & batch_results.keys():
                 raise RuntimeError("Backend test batch results overlap.")
@@ -458,8 +803,13 @@ def run_group(
             "stageElapsedMs": {
                 stage.value: elapsed_ns[stage] // 1_000_000 for stage in Stage
             },
+            "testCases": [
+                [name, discovered[name], results[name]["passed"], results[name]["skipped"],
+                 digest(sorted(discovered_names[name])), digest(sorted(expected_names[name]))]
+                for name in sorted(discovered)
+            ],
         })
-    _valid_proof(proof, expected_proof(group, source_head, tested_commit, root), group)
+    _valid_proof(proof, expected_proof(group, source_head, tested_commit, root), group, root)
     proof_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = proof_path.with_suffix(".tmp")
     with temporary.open("x", encoding="utf-8") as output:
@@ -481,6 +831,9 @@ def main() -> int:
     parser.add_argument("--tested-commit")
     parser.add_argument("--build-result")
     parser.add_argument("--worker-result")
+    parser.add_argument("--relational-proof-directory", type=Path)
+    parser.add_argument("--relational-worker-result")
+    parser.add_argument("--rcsi-result")
     args = parser.parse_args()
     if args.source_head is None or args.tested_commit is None:
         raise RuntimeError("Backend group source and tested commit are mandatory.")
@@ -489,7 +842,8 @@ def main() -> int:
     if args.group is not None:
         if (args.results_directory is None or args.proof_output is None
                 or args.proof_directory is not None or args.build_result is not None
-                or args.worker_result is not None):
+                or args.worker_result is not None or args.relational_proof_directory is not None
+                or args.relational_worker_result is not None or args.rcsi_result is not None):
             raise RuntimeError("Backend group mode requires only its exact output inputs.")
         results_directory = (root / args.results_directory).resolve()
         if not results_directory.is_relative_to(root):
@@ -502,14 +856,19 @@ def main() -> int:
         return 0
     if (args.proof_directory is None or args.results_directory is not None
             or args.proof_output is not None or args.build_result is None
-            or args.worker_result is None):
+            or args.worker_result is None or args.relational_proof_directory is None
+            or args.relational_worker_result is None or args.rcsi_result is None):
         raise RuntimeError("Backend aggregate requires only exact proof and worker inputs.")
     directory = (root / args.proof_directory).resolve()
     if not directory.is_relative_to(root):
         raise RuntimeError("Backend group proofs must remain inside source.")
+    relational_directory = (root / args.relational_proof_directory).resolve()
+    if not relational_directory.is_relative_to(root):
+        raise RuntimeError("Separate SQL proofs must remain inside source.")
     total = verify_aggregate(
         root, directory, args.source_head, args.tested_commit,
         args.build_result, args.worker_result,
+        relational_directory, args.relational_worker_result, args.rcsi_result,
     )
     print(f"BACKEND_TEST_GROUPS: PASS projects={TEST_PROJECT_COUNT} executions={total}")
     return 0

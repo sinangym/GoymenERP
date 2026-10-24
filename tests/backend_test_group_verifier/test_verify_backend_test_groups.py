@@ -5,9 +5,12 @@ from collections import Counter
 import json
 import os
 from pathlib import Path
+import py_compile
+import shutil
 import tempfile
 import unittest
 from unittest import mock
+from xml.sax.saxutils import quoteattr
 
 
 SOURCE = Path(__file__).resolve().parents[2] / "tools" / "verify_backend_test_groups.py"
@@ -20,6 +23,16 @@ COMMIT = "b" * 40
 
 
 def make_repository(root: Path) -> None:
+    source_root = SOURCE.parent.parent
+    for relative in ("tools/verify_rcsi_relational_acceptance.py",):
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_root / relative, destination)
+    shutil.copytree(source_root / "tools/relational_inventory", root / "tools/relational_inventory")
+    for relative, _, _ in VERIFIER.DEFERRED_THEORIES.values():
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_root / relative, destination)
     projects = [path for group in VERIFIER.GROUP_PROJECTS.values() for path in group]
     projects += [f"src/backend/Other{i:02d}/Other{i:02d}.csproj" for i in range(51)]
     solution = ["<Solution>", '  <Folder Name="/tests/">']
@@ -58,20 +71,25 @@ def trx_source(project: str, *, outcome: str = "Passed", theory_rows: int = 1) -
 
 
 def project_row(path: str) -> dict[str, object]:
+    name = Path(path).stem + ".ExampleTests.Runs"
     return {
         "path": path,
-        "discoveryHash": "c" * 64,
-        "resultHash": "d" * 64,
+        "discoveryHash": VERIFIER.digest([(name, 1)]),
+        "resultHash": VERIFIER.digest([(name, 1, 0)]),
         "discoveredMethods": 1,
         "discoveredCases": 1,
         "executionCount": 1,
         "passed": 1,
         "skipped": 0,
         "stageElapsedMs": {stage: 0 for stage in VERIFIER.STAGES},
+        "testCases": [[name, 1, 1, 0, VERIFIER.digest([name]), VERIFIER.digest([name])]],
     }
 
 
-def batch_trx_source(methods: Counter[str], first_execution: int) -> str:
+def batch_trx_source(
+    methods: Counter[str], first_execution: int, *, skipped: bool = False,
+    displays: dict[str, list[str]] | None = None,
+) -> str:
     results = []
     definitions = []
     execution = first_execution
@@ -81,17 +99,19 @@ def batch_trx_source(methods: Counter[str], first_execution: int) -> str:
             f'<UnitTest id="{index}"><TestMethod className="{class_name}" '
             f'name="{method}" /></UnitTest>'
         )
-        for _ in range(cases):
+        for case in range(cases):
+            display = displays[name][case] if displays is not None else name
             results.append(
                 f'<UnitTestResult testId="{index}" '
                 f'executionId="12345678-1234-4abc-8def-{execution:012x}" '
-                'outcome="Passed" />'
+                f'testName={quoteattr(display)} outcome="{"NotExecuted" if skipped else "Passed"}" />'
             )
             execution += 1
     total = sum(methods.values())
+    passed = 0 if skipped else total
     return (
         '<TestRun><Counters '
-        f'total="{total}" executed="{total}" passed="{total}" '
+        f'total="{total}" executed="{passed}" passed="{passed}" '
         'notExecuted="0" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" />'
         f'<Results>{"".join(results)}</Results>'
         f'<TestDefinitions>{"".join(definitions)}</TestDefinitions></TestRun>'
@@ -104,6 +124,72 @@ class BackendGroupVerifierTests(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
         make_repository(self.root)
+        self.sql_directory = self.root / "sql-proofs"
+        sql = VERIFIER.relational_verifier(self.root)
+        for shard in sql.SHARD_MODULES:
+            artifact = self.sql_directory / f"ci-relational-shard-proof-{shard}"
+            artifact.mkdir(parents=True)
+            (artifact / f"proof-{shard}.json").write_text(
+                json.dumps(sql.expected_shard_proof(shard, HEAD, COMMIT)), encoding="utf-8"
+            )
+
+    def aggregate(self, directory: Path, head: str = HEAD, commit: str = COMMIT,
+                  build: str = "success", workers: str = "success",
+                  sql_workers: str = "success", rcsi: str = "success") -> int:
+        return VERIFIER.verify_aggregate(
+            self.root, directory, head, commit, build, workers,
+            self.sql_directory, sql_workers, rcsi,
+        )
+
+    def produce_group(
+        self, group: str, directory: Path, project: str, discovered_names: list[str],
+        executed_names: list[str], *, skipped: bool = False,
+    ) -> Path:
+        """Exercise the real producer and its serialized proof, faking only TestSDK commands."""
+        results = self.root / "producer-results" / f"{directory.name}-{group}"
+        proof = directory / f"ci-backend-test-group-proof-{group}" / f"proof-{group}.json"
+
+        def command(arguments: list[str], root: Path) -> str:
+            if len(arguments) < 3 or arguments[0] != "dotnet":
+                return ""
+            current = arguments[2]
+            listed = discovered_names if current == project else [Path(current).stem + ".ExampleTests.Runs"]
+            if "--list-tests" in arguments:
+                return "\n".join(listed)
+            if "--results-directory" not in arguments:
+                return ""
+            displays = executed_names if current == project else listed
+            names: dict[str, list[str]] = {}
+            for display in displays:
+                names.setdefault(display.split("(", 1)[0], []).append(display)
+            if "--filter" in arguments:
+                selected = arguments[arguments.index("--filter") + 1].split("|")
+                names = {name: values for name, values in names.items()
+                         if "FullyQualifiedName=" + name in selected}
+            logger = next(value for value in arguments if value.startswith("trx;LogFileName="))
+            (results / logger.split("=", 1)[1]).write_text(
+                batch_trx_source(Counter({name: len(values) for name, values in names.items()}),
+                                 100, skipped=skipped and current == project, displays=names),
+                encoding="utf-8",
+            )
+            return ""
+
+        with mock.patch.object(VERIFIER, "run_checked", side_effect=command), mock.patch.dict(
+            os.environ, {"GOYMEN_ERP_TEST_SQLSERVER_CONNECTION": ""}, clear=False
+        ):
+            VERIFIER.run_group(self.root, group, results, proof, HEAD, COMMIT)
+        return proof
+
+    @staticmethod
+    def recount(row: dict[str, object]) -> None:
+        tests = row["testCases"]
+        row.update(
+            discoveredMethods=len(tests), discoveredCases=sum(record[1] for record in tests),
+            passed=sum(record[2] for record in tests), skipped=sum(record[3] for record in tests),
+            executionCount=sum(record[2] + record[3] for record in tests),
+            discoveryHash=VERIFIER.digest([(record[0], record[1]) for record in tests]),
+            resultHash=VERIFIER.digest([(record[0], record[2], record[3]) for record in tests]),
+        )
 
     def test_exact_seventy_one_project_solution_has_twenty_disjoint_testsdk_projects(self) -> None:
         solution_hash, catalog_hash = VERIFIER.source_inventory(self.root)
@@ -140,37 +226,53 @@ class BackendGroupVerifierTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "TestSDK source inventory"):
             VERIFIER.source_inventory(self.root)
 
-    def test_discovery_and_trx_preserve_deferred_module_theory_multiplicity_and_skip(self) -> None:
-        project = VERIFIER.GROUP_PROJECTS["modules"][10]
-        name = Path(project).stem + ".ExampleTests.Runs"
-        discovered = VERIFIER.discovery_map(name + "\n", project)
-        path = self.root / "test.trx"
-        path.write_text(trx_source(project, theory_rows=2), encoding="utf-8")
-        results, passed, skipped = VERIFIER.trx_result_map(path, discovered)
-        self.assertEqual((passed, skipped), (2, 0))
-        self.assertEqual(results[name], {"passed": 2, "skipped": 0})
-        path.write_text(trx_source(project, outcome="NotExecuted"), encoding="utf-8")
-        _, passed, skipped = VERIFIER.trx_result_map(path, discovered)
-        self.assertEqual((passed, skipped), (0, 1))
+    def test_separate_sql_inventory_executes_current_source_and_ignores_valid_foreign_bytecode(self) -> None:
+        path = self.root / "tools/verify_rcsi_relational_acceptance.py"
+        source = path.read_bytes()
+        foreign = self.root / "foreign.py"
+        foreign.write_bytes(source + b"\n_IGNORED_FOREIGN_SQL_BYTECODE = True\n")
+        cached = Path(importlib.util.cache_from_source(str(path)))
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        py_compile.compile(str(foreign), cfile=str(cached), dfile=str(path), doraise=True,
+                           invalidation_mode=py_compile.PycInvalidationMode.TIMESTAMP)
+        payload = bytearray(cached.read_bytes())
+        payload[8:12] = int(path.stat().st_mtime).to_bytes(4, "little")
+        payload[12:16] = len(source).to_bytes(4, "little")
+        cached.write_bytes(payload)
+        self.assertFalse(hasattr(VERIFIER.relational_verifier(self.root),
+                                 "_IGNORED_FOREIGN_SQL_BYTECODE"))
 
-    def test_exact_api_multiplicity_rejects_surplus_theory_rows_with_consistent_counters(self) -> None:
-        project = VERIFIER.GROUP_PROJECTS["api"][0]
-        name = Path(project).stem + ".ExampleTests.Runs"
-        discovered = Counter({name: 2})
-        path = self.root / "exact-api.trx"
-        for cases in (1, 3):
-            with self.subTest(cases=cases):
-                path.write_text(trx_source(project, theory_rows=cases), encoding="utf-8")
-                with self.assertRaisesRegex(RuntimeError, "multiplicity differs"):
-                    VERIFIER.trx_result_map(path, discovered, exact_multiplicity=True)
-        path.write_text(trx_source(project, theory_rows=2), encoding="utf-8")
-        _, passed, skipped = VERIFIER.trx_result_map(path, discovered, exact_multiplicity=True)
-        self.assertEqual((passed, skipped), (2, 0))
-        path.write_text(trx_source(project, outcome="NotExecuted"), encoding="utf-8")
-        _, passed, skipped = VERIFIER.trx_result_map(
-            path, Counter({name: 1}), exact_multiplicity=True,
-        )
-        self.assertEqual((passed, skipped), (0, 1))
+    def test_sql_catalog_requires_the_existing_exact_rcsi_subset_without_double_counting(self) -> None:
+        sql = VERIFIER.relational_verifier(self.root)
+        self.assertEqual(VERIFIER.relational_cases(self.root), sql.BROAD_EXECUTIONS)
+        name = sql.EXPECTED_TESTS[0]
+        path = self.root / "tools/relational_inventory/platform.txt"
+        original = path.read_text(encoding="utf-8")
+        for changed in (
+            original.replace(name + "\n", ""),
+            original.replace(name + "\n", name + "  x2  # unintended duplicate probe\n"),
+        ):
+            with self.subTest(inventory=changed[-80:]):
+                path.write_text(changed, encoding="utf-8", newline="\n")
+                with self.assertRaisesRegex(RuntimeError, "every exact RCSI case once"):
+                    VERIFIER.relational_cases(self.root)
+
+    def test_all_groups_require_exact_enumerated_multiplicity_and_reject_non_sql_skip(self) -> None:
+        path = self.root / "exact.trx"
+        for group in VERIFIER.GROUP_PROJECTS:
+            project = VERIFIER.GROUP_PROJECTS[group][0]
+            name = Path(project).stem + ".ExampleTests.Runs"
+            for cases in (3, 5):
+                with self.subTest(group=group, cases=cases):
+                    path.write_text(trx_source(project, theory_rows=cases), encoding="utf-8")
+                    with self.assertRaisesRegex(RuntimeError, "multiplicity differs"):
+                        VERIFIER.trx_result_map(path, Counter({name: 4}))
+            path.write_text(trx_source(project, theory_rows=4), encoding="utf-8")
+            _, passed, skipped = VERIFIER.trx_result_map(path, Counter({name: 4}))
+            self.assertEqual((passed, skipped), (4, 0))
+            path.write_text(trx_source(project, outcome="NotExecuted"), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "Required non-SQL"):
+                VERIFIER.trx_result_map(path, Counter({name: 1}))
 
     def test_trx_refuses_absent_wrong_extra_or_duplicate_counts(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["architecture"][0]
@@ -225,8 +327,8 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, error):
                     VERIFIER.trx_result_map(path, discovered)
 
-    def proof_directory(self) -> Path:
-        directory = self.root / "artifacts" / "proofs"
+    def proof_directory(self, name: str = "proofs") -> Path:
+        directory = self.root / "artifacts" / name
         for group, paths in VERIFIER.GROUP_PROJECTS.items():
             artifact = directory / f"ci-backend-test-group-proof-{group}"
             artifact.mkdir(parents=True, exist_ok=True)
@@ -238,25 +340,15 @@ class BackendGroupVerifierTests(unittest.TestCase):
     def test_aggregate_requires_all_workers_source_and_exact_twenty_project_union(self) -> None:
         directory = self.proof_directory()
         self.assertEqual(
-            VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success"),
+            self.aggregate(directory),
             20,
-        )
-        # Module MemberData can defer nonserializable records until execution.
-        # Preserve that existing behavior while API's pre-enumerated batches
-        # require exact method multiplicities and an exact total case count.
-        module_path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
-        module_proof = json.loads(module_path.read_text(encoding="utf-8"))
-        module_proof["projects"][10].update(executionCount=4, passed=4)
-        module_path.write_text(json.dumps(module_proof), encoding="utf-8")
-        self.assertEqual(
-            VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success"), 23,
         )
         for build, workers in (("failure", "success"), ("success", "skipped")):
             with self.subTest(build=build, workers=workers):
                 with self.assertRaisesRegex(RuntimeError, "must succeed"):
-                    VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, build, workers)
-        with self.assertRaisesRegex(RuntimeError, "does not match source"):
-            VERIFIER.verify_aggregate(self.root, directory, "f" * 40, COMMIT, "success", "success")
+                    self.aggregate(directory, build=build, workers=workers)
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            self.aggregate(directory, head="f" * 40)
 
     def test_aggregate_rejects_missing_unknown_duplicate_json_and_bad_count(self) -> None:
         directory = self.proof_directory()
@@ -268,23 +360,26 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 '"executionCount": 1', '"executionCount": 2', 1
             ),
             original.replace('"projectCount": 1', '"projectCount": 2', 1),
-            original.replace('"schemaVersion": 2', '"schemaVersion": 1', 1),
+            original.replace('"projectCount": 1', '"projectCount": true', 1),
+            original.replace('"projectCount": 1', '"projectCount": 1.0', 1),
+            original.replace('"schemaVersion": 3', '"schemaVersion": 2', 1),
+            original.replace('"schemaVersion": 3', '"schemaVersion": 3.0', 1),
             original.replace('"group": "api"', '"group": "modules"', 1),
             original.replace('"group": "api"', '"group": "api", "group": "api"', 1),
         ):
             with self.subTest(mutation=mutation[-80:]):
                 path.write_text(mutation, encoding="utf-8")
                 with self.assertRaises(RuntimeError):
-                    VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success")
+                    self.aggregate(directory)
         path.write_text(original, encoding="utf-8")
         unexpected = directory / "ci-backend-test-group-proof-unknown"
         unexpected.mkdir()
         with self.assertRaisesRegex(RuntimeError, "missing, duplicated or unknown"):
-            VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success")
+            self.aggregate(directory)
         unexpected.rmdir()
         path.unlink()
         with self.assertRaisesRegex(RuntimeError, "contents are missing"):
-            VERIFIER.verify_aggregate(self.root, directory, HEAD, COMMIT, "success", "success")
+            self.aggregate(directory)
 
     def test_aggregate_rejects_missing_extra_or_invalid_stage_timings(self) -> None:
         directory = self.proof_directory()
@@ -304,9 +399,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 mutate(proof["projects"][0]["stageElapsedMs"])
                 path.write_text(json.dumps(proof), encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, "invalid stage timing"):
-                    VERIFIER.verify_aggregate(
-                        self.root, directory, HEAD, COMMIT, "success", "success"
-                    )
+                    self.aggregate(directory)
 
     def test_group_runner_discovers_then_executes_exact_project_and_writes_safe_proof(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["api"][0]
@@ -464,6 +557,146 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 VERIFIER.run_group(self.root, "api", results, proof, HEAD, COMMIT)
         self.assertEqual(len(commands), 2)
         self.assertFalse(proof.exists())
+
+    def test_real_producer_and_consumer_reject_required_non_sql_skip(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["api"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
+        path.unlink()
+        with self.assertRaisesRegex(RuntimeError, "Required non-SQL"):
+            self.produce_group("api", directory, project, [name], [name], skipped=True)
+        self.assertFalse(path.exists())
+        directory = self.proof_directory("executed")
+        path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
+        path.unlink()
+        path = self.produce_group("api", directory, project, [name], [name])
+        self.assertEqual(self.aggregate(directory), 20)
+        proof = json.loads(path.read_text(encoding="utf-8"))
+        row = proof["projects"][0]
+        row["testCases"][0][2:4] = [0, 1]
+        self.recount(row)
+        path.write_text(json.dumps(proof), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "Required non-SQL"):
+            self.aggregate(directory)
+
+    def test_separate_sql_skip_requires_exact_inventory_and_same_source_complete_proofs(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["api"][0]
+        name = sorted(VERIFIER.relational_cases(self.root))[0]
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-api" / "proof-api.json"
+        path.unlink()
+        path = self.produce_group("api", directory, project, [name], [name], skipped=True)
+        self.assertEqual(self.aggregate(directory), 20)
+        original = path.read_text(encoding="utf-8")
+        for foreign in (name + "Unknown", "GoymenERP.Api.IntegrationTests.OrdinaryTests.Required"):
+            with self.subTest(foreign=foreign):
+                proof = json.loads(original)
+                row = proof["projects"][0]
+                row["testCases"][0][0] = foreign
+                row["testCases"][0][4:] = [VERIFIER.digest([foreign])] * 2
+                self.recount(row)
+                path.write_text(json.dumps(proof), encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "Required non-SQL"):
+                    self.aggregate(directory)
+                with self.assertRaisesRegex(RuntimeError, "Required non-SQL"):
+                    self.produce_group("api", self.root / foreign.rsplit(".", 1)[-1],
+                                       project, [foreign], [foreign], skipped=True)
+        path.write_text(original, encoding="utf-8")
+        for sql_workers, rcsi in (("failure", "success"), ("success", "skipped")):
+            with self.subTest(sql_workers=sql_workers, rcsi=rcsi):
+                with self.assertRaisesRegex(RuntimeError, "must succeed"):
+                    self.aggregate(directory, sql_workers=sql_workers, rcsi=rcsi)
+        sql_path = self.sql_directory / "ci-relational-shard-proof-A" / "proof-A.json"
+        sql_original = sql_path.read_text(encoding="utf-8")
+        for field in ("sourceHead", "testedCommit", "executionMapHash", "catalogHash"):
+            with self.subTest(foreign_field=field):
+                proof = json.loads(sql_original)
+                proof[field] = "f" * len(proof[field])
+                sql_path.write_text(json.dumps(proof), encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "does not match"):
+                    self.aggregate(directory)
+        sql_path.unlink()
+        with self.assertRaisesRegex(RuntimeError, "missing"):
+            self.aggregate(directory)
+
+    def test_non_api_enumerated_theory_requires_exact_cases_at_producer_and_consumer(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["modules"][12]
+        name = Path(project).stem + ".ProductSalesEligibilityServiceTests.Missing_server_scope_denies_before_any_owner_read"
+        expected = [f"{name}(value: {index})" for index in range(4)]
+        for count in (3, 5):
+            with self.subTest(count=count):
+                with self.assertRaisesRegex(RuntimeError, "multiplicity differs"):
+                    self.produce_group("modules", self.root / f"bad-{count}", project,
+                                       expected, [f"{name}(value: {index})" for index in range(count)])
+        for label, rows in (
+            ("duplicate", expected[:-1] + [expected[0]]),
+            ("unknown", expected[:-1] + [f"{name}(value: 99)"]),
+        ):
+            with self.subTest(identity=label), self.assertRaisesRegex(RuntimeError, "case identities"):
+                self.produce_group("modules", self.root / label, project, expected, rows)
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
+        path.unlink()
+        path = self.produce_group("modules", directory, project, expected, expected)
+        self.assertEqual(self.aggregate(directory), 23)
+        original = path.read_text(encoding="utf-8")
+        for count in (3, 5):
+            with self.subTest(aggregate_count=count):
+                proof = json.loads(original)
+                row = proof["projects"][12]
+                row["testCases"][0][2] = count
+                self.recount(row)
+                path.write_text(json.dumps(proof), encoding="utf-8")
+                with self.assertRaisesRegex(RuntimeError, "multiplicity"):
+                    self.aggregate(directory)
+        proof = json.loads(original)
+        row = proof["projects"][12]
+        row["testCases"][0][5] = VERIFIER.digest(sorted(expected[:-1] + [expected[0]]))
+        path.write_text(json.dumps(proof), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
+            self.aggregate(directory)
+
+    def test_reviewed_deferred_case_identities_and_source_are_exact_at_both_gates(self) -> None:
+        self.assertEqual(len(VERIFIER.DEFERRED_THEORIES), 2)
+        for number, (name, (relative, _, cases)) in enumerate(VERIFIER.DEFERRED_THEORIES.items()):
+            project = next(path for path in VERIFIER.GROUP_PROJECTS["modules"]
+                           if name.startswith(Path(path).stem + "."))
+            expected = list(cases)
+            mutations = {
+                "missing": expected[:-1], "surplus": expected + [expected[0]],
+                "duplicate": expected[:-1] + [expected[0]],
+                "wrong": expected[:-1] + [name + "(unknown: 999)"],
+            }
+            for label, rows in mutations.items():
+                with self.subTest(theory=name, producer=label), self.assertRaises(RuntimeError):
+                    self.produce_group("modules", self.root / f"deferred-{number}-{label}",
+                                       project, [name], rows)
+            directory = self.proof_directory(f"deferred-{number}")
+            path = directory / "ci-backend-test-group-proof-modules" / "proof-modules.json"
+            path.unlink()
+            path = self.produce_group("modules", directory, project, [name], expected)
+            self.assertEqual(self.aggregate(directory), 19 + len(expected))
+            original = path.read_text(encoding="utf-8")
+            for label, rows in mutations.items():
+                with self.subTest(theory=name, aggregate=label):
+                    proof = json.loads(original)
+                    row = next(row for row in proof["projects"] if row["path"] == project)
+                    row["testCases"][0][2] = len(rows)
+                    row["testCases"][0][5] = VERIFIER.digest(sorted(rows))
+                    self.recount(row)
+                    path.write_text(json.dumps(proof), encoding="utf-8")
+                    with self.assertRaisesRegex(RuntimeError, "multiplicity or identity"):
+                        self.aggregate(directory)
+            path.write_text(original, encoding="utf-8")
+            source = self.root / relative
+            original_source = source.read_bytes()
+            try:
+                source.write_bytes(original_source + b"\n// unreviewed test data change\n")
+                with self.assertRaisesRegex(RuntimeError, "Deferred theory source differs"):
+                    self.aggregate(directory)
+            finally:
+                source.write_bytes(original_source)
 
     def test_group_refuses_real_sql_connection_before_dispatch(self) -> None:
         with mock.patch.dict(

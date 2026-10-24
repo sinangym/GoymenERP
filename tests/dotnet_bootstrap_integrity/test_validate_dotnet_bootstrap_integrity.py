@@ -1060,7 +1060,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             "backend-build": "13582f700c8cd6553fccf6f2d647cb08b8544a8dcef5abc7ae583d392bf0a129",
             "backend-test-group": "e23aad7f39befd9522caf10b414f914bf795e134e3a897b3a996be46c154d867",
             "backend": (
-                "254e1db93babbf9014b8ef624d102cd77ac44be276185e35b8664ddbaa2da4a7"
+                "005e0cdcf1fd21bb97f1efed06b27fa2a1cca100ae1c0008da377a5efa701691"
             ),
             "frontend": (
                 "8be05bad85324efbb62b106dba48b1da4a456ddbed9b74b92a9741292e42a83c"
@@ -1223,7 +1223,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", aggregate, re.M),
             ["    name: Backend build, test and migration",
-             "    needs: [backend-build, backend-test-group]",
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "    if: ${{ always() }}",
              "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    steps:"],
         )
@@ -1234,6 +1234,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "Verify backend group proof parser",
                 "Restore exact backend group proofs from local evidence",
+                "Restore same-run SQL proofs for excluded backend tests",
                 "Verify complete backend build and test groups",
             ],
         )
@@ -1262,6 +1263,17 @@ class WorkflowOrderingTests(unittest.TestCase):
             "run: &restore-local-proofs |",
         ):
             self.assertIn(required, local_backend_restore)
+        sql_restore = self.step_body(aggregate, "Restore same-run SQL proofs for excluded backend tests")
+        for required in (
+            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
+            "LOCAL_PROOF_IDS: A,B,C",
+            "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
+            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
+            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
+            "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
+            "run: *restore-local-proofs",
+        ):
+            self.assertIn(required, sql_restore)
         self.assertEqual(
             self.read_step_lines(
                 self.step_body(aggregate, "Verify complete backend build and test groups")
@@ -1274,7 +1286,10 @@ class WorkflowOrderingTests(unittest.TestCase):
                 f'--source-head "{head_ref}" \\',
                 '--tested-commit "$(git rev-parse HEAD)" \\',
                 '--build-result "${{ needs.backend-build.result }}" \\',
-                '--worker-result "${{ needs.backend-test-group.result }}"',
+                '--worker-result "${{ needs.backend-test-group.result }}" \\',
+                '--relational-proof-directory artifacts/ci-relational-proofs \\',
+                '--relational-worker-result "${{ needs.relational-shard.result }}" \\',
+                '--rcsi-result "${{ needs.relational-rcsi.result }}"',
             ],
         )
 
@@ -1289,12 +1304,19 @@ class WorkflowOrderingTests(unittest.TestCase):
              "  backend-test-group:\n    if: ${{ false }}\n    name:"),
             ("soft worker", "  backend-test-group:\n    name:",
              "  backend-test-group:\n    continue-on-error: true\n    name:"),
-            ("missing build", "needs: [backend-build, backend-test-group]",
+            ("missing build", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "needs: [backend-test-group]"),
             ("not always", "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group]\n    if: ${{ always() }}",
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ always() }}",
              "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group]\n    if: ${{ success() }}"),
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ success() }}"),
+            ("missing SQL dependency", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
+             "needs: [backend-build, backend-test-group, relational-rcsi]"),
+            ("missing SQL proof", "LOCAL_PROOF_IDS: A,B,C", "LOCAL_PROOF_IDS: A,B"),
+            ("foreign SQL directory", "--relational-proof-directory artifacts/ci-relational-proofs",
+             "--relational-proof-directory artifacts/other-proofs"),
+            ("constant RCSI success", '--rcsi-result "${{ needs.relational-rcsi.result }}"',
+             '--rcsi-result "success"'),
             ("untrusted restore", "dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config",
              "dotnet restore GoymenERP.slnx -noAutoResponse --configfile other.config"),
             ("summary substituted for proof", "LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-proof-",

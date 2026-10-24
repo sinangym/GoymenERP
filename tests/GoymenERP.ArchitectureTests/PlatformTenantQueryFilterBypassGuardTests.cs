@@ -312,13 +312,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "3a0d55852ab6028a003e4d9b07755de2eba030c13e19c9c9fe1e41e8e73248de";
+        "fe2d622e3a6a4f02aa851ace94c7f328e6de4eafafd2d7d300b8f6db4ce05f4b";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "a88c8285da37b27be46b08a14862188f66df2f5173d49216e98494243e9c41bc";
+        "0cd3d2fc42bb1d3fef4d001e5f15857dce167e1e41492e8ddf37f8cb4be3e3b5";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "cb3aa34fb19bf46edf40ae0fc6f888b5c7f35e82ae2df5281ebefb72d9e79b3a";
+        "213d2e710c7adccb01a6eb0ce67ada82979aae9ec91ce742e178d9e9a15d9e34";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -6686,8 +6686,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         if (!backendBuildJob.Contains("dotnet build GoymenERP.slnx -noAutoResponse", StringComparison.Ordinal)
             || !backendBuildJob.Contains("Architecture dependency guard", StringComparison.Ordinal)
             || !backendBuildJob.Contains("Check vulnerable dependencies", StringComparison.Ordinal)
-            || !backendAggregateJob.Contains("needs: [backend-build, backend-test-group]", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("if: ${{ always() }}", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("Restore same-run SQL proofs for excluded backend tests", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("--relational-proof-directory artifacts/ci-relational-proofs", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("--relational-worker-result \"${{ needs.relational-shard.result }}\"", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("--rcsi-result \"${{ needs.relational-rcsi.result }}\"", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("Verify complete backend build and test groups", StringComparison.Ordinal))
         {
             errors.Add("RCSI CLI/policy tests require the reviewed fail-closed backend build and aggregate jobs.");

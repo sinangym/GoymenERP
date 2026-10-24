@@ -246,7 +246,7 @@ jobs:
 
   backend:
     name: Backend build, test and migration
-    needs: [backend-build, backend-test-group]
+    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]
     if: ${{ always() }}
     runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
@@ -308,6 +308,17 @@ jobs:
             cp -- "$source/files/$relative" "$artifact_directory/proof-$id.json"
           done
           test "$(find "$LOCAL_PROOF_OUTPUT" -mindepth 2 -maxdepth 2 -type f -name 'proof-*.json' | wc -l | tr -d '[:space:]')" = "${#ids[@]}"
+      - name: Restore same-run SQL proofs for excluded backend tests
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: relational-proof-
+          LOCAL_PROOF_IDS: A,B,C
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs
+        run: *restore-local-proofs
+
       - name: Verify complete backend build and test groups
         run: |
           python3 -I -S -B tools/verify_backend_test_groups.py \
@@ -316,7 +327,10 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)" \
           --build-result "${{ needs.backend-build.result }}" \
-          --worker-result "${{ needs.backend-test-group.result }}"
+          --worker-result "${{ needs.backend-test-group.result }}" \
+          --relational-proof-directory artifacts/ci-relational-proofs \
+          --relational-worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
 
   recovery-surface-inventory:
     name: Recovery surface inventory exact-source proof
