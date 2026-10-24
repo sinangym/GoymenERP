@@ -21,6 +21,16 @@ import {
 import type { CreateNormalJournalDraftLine, CreateNormalJournalDraftRequest, NormalJournalDraft, NormalJournalSide } from './contract'
 import { sendNormalJournalCommand, type NormalJournalCommandOutcome, type NormalJournalCommandSnapshot } from './normalJournalApi'
 import { clearNormalJournalCreate, recallNormalJournalCreate, storeNormalJournalCreate } from './normalJournalCreateAttempt'
+import {
+  NORMAL_JOURNAL_PERIOD_CODES,
+  NORMAL_JOURNAL_TEXT as T,
+  normalDraftSavedText,
+  normalJournalApprovalFailureText,
+  normalJournalCreateFailureText,
+  normalPreparationVersionsText,
+  normalSourceRefText,
+} from './accountingText'
+import { NormalJournalApprovalPeriod } from './NormalJournalApprovalPeriod'
 import styles from './Accounting.module.css'
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -28,7 +38,7 @@ const newId = () => crypto.randomUUID()
 type LineForm = { readonly accountId: string; readonly side: NormalJournalSide; readonly amount: string }
 
 function sourceLabel(source: SourceSummary): string {
-  const number = GUID.test(source.sourceNumber) ? `Kaynak ref. ...${source.id.slice(-8)}` : source.sourceNumber
+  const number = GUID.test(source.sourceNumber) ? normalSourceRefText(source.id) : source.sourceNumber
   return `${number} - ${source.occurredOn}`
 }
 
@@ -36,7 +46,7 @@ export function NormalJournalDraftCreatePage() {
   const shell = useShellState()
   const key = contextKey(shell)
   if (key === null) {
-    return <StateBlock state={{ kind: 'initial-loading' }} subject="muhasebe şirket bağlamı" />
+    return <StateBlock state={{ kind: 'initial-loading' }} subject={T.contextSubject} />
   }
   const namespace = contextKeyString(key)
   const context = shell.activeContext
@@ -116,7 +126,7 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
     shownPreparation.current = next
   }, [preparation?.preparationVersion])
 
-  if (!single) return <Frame title="Normal fiş taslağı"><StateBlock state={{ kind: 'no-authorized-company' }} subject="normal fiş taslağı" /></Frame>
+  if (!single) return <Frame title={T.draftTitle}><StateBlock state={{ kind: 'no-authorized-company' }} subject={T.draftSubject} /></Frame>
 
   const send = async (next: NormalJournalCommandSnapshot) => {
     if (next.operation === 'create' && !canCreate) return
@@ -140,12 +150,12 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
     event.preventDefault()
     if (!canCreate || sending || unresolved || outcome?.type === 'applied') return
     if (!GUID.test(sourceId) || !isDateOnly(transactionDate) || !isDateOnly(accountingDate)
-        || (valueDate !== '' && !isDateOnly(valueDate))) return setError('Kaynak ve tarihler geçerli olmalıdır.')
-    if (preparation === null) return setError('Kaynağın onaylı hesap hazırlığı yüklenmelidir.')
+        || (valueDate !== '' && !isDateOnly(valueDate))) return setError(T.invalidSourceAndDates)
+    if (preparation === null) return setError(T.preparationRequired)
     const requestLines: CreateNormalJournalDraftLine[] = []
     for (const line of lines) {
       const amount = parseAmountInput(line.amount)
-      if (!GUID.test(line.accountId) || !amount.ok) return setError('Her satırda geçerli hesap, taraf ve pozitif tutar gerekir.')
+      if (!GUID.test(line.accountId) || !amount.ok) return setError(T.invalidLines)
       requestLines.push({ accountId: line.accountId, side: line.side, amount: amount.wire })
     }
     const request: CreateNormalJournalDraftRequest = {
@@ -157,50 +167,50 @@ function NormalJournalDraftCreate({ namespace, attemptOwner }: { readonly namesp
   }
 
   if (outcome?.type === 'applied') {
-    return <Frame title="Normal fiş taslağı kaydedildi">
-      <p role="status" className={styles.noticeOk}>Taslak sürüm {outcome.draft.version} olarak kaydedildi.</p>
+    return <Frame title={T.createdTitle}>
+      <p role="status" className={styles.noticeOk}>{normalDraftSavedText(outcome.draft.version)}</p>
       <div className={styles.actions}>
-        <Link to={normalDraftDetailPath(outcome.draft.draftId)}>Kaydı kapat ve yeniden aç</Link>
+        <Link to={normalDraftDetailPath(outcome.draft.draftId)}>{T.reopen}</Link>
         {hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftApprove)
-          ? <Link to={normalDraftApprovalPath(outcome.draft.draftId)}>Onay ekranını aç</Link> : null}
+          ? <Link to={normalDraftApprovalPath(outcome.draft.draftId)}>{T.openApproval}</Link> : null}
       </div>
     </Frame>
   }
 
-  return <Frame title="Yeni normal fiş taslağı">
-    <p className={styles.help}>Hesaplar yalnız sunucudaki onaylı Mikro aynası ve posting rule ile doğrulanır. Sağlayıcı hazır değilse kayıt yapılmaz.</p>
-    {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>Sonuç bilinmiyor. Aynı anahtar ve aynı içerikle yeniden gönderin.<button type="button" onClick={() => snapshot && void send(snapshot)}>Aynı isteği yeniden gönder</button></div> : null}
-    {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>İstek reddedildi: {outcome.failure.kind}</p> : null}
+  return <Frame title={T.createTitle}>
+    <p className={styles.help}>{T.createHelp}</p>
+    {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>{T.createUnknown}<button type="button" onClick={() => snapshot && void send(snapshot)}>{T.resend}</button></div> : null}
+    {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>{normalJournalCreateFailureText(outcome.failure)}</p> : null}
     <form className={styles.page} noValidate onSubmit={submit}>
       <div className={styles.form}>
-        <div className={styles.control}><label htmlFor="normal-journal-source">Onaylı finans kaynağı</label><select id="normal-journal-source" value={sourceId} disabled={sending || unresolved || sourceListState.kind !== 'ready'} onChange={event => {
+        <div className={styles.control}><label htmlFor="normal-journal-source">{T.source}</label><select id="normal-journal-source" value={sourceId} disabled={sending || unresolved || sourceListState.kind !== 'ready'} onChange={event => {
           setSourceId(event.target.value)
           setSnapshot(null)
           setOutcome(null)
           setError(null)
           setLines(current => current.map(line => ({ ...line, accountId: '' })))
-        }}><option value="">Kaynak seçin</option>{authorizedSources.map(source => <option key={source.id} value={source.id}>{sourceLabel(source)}</option>)}</select></div>
-        <label className={styles.control}>İşlem tarihi<input type="date" value={transactionDate} disabled={sending || unresolved} onChange={event => setTransactionDate(event.target.value)} /></label>
-        <label className={styles.control}>Muhasebe tarihi<input type="date" value={accountingDate} disabled={sending || unresolved} onChange={event => setAccountingDate(event.target.value)} /></label>
-        <label className={styles.control}>Valör tarihi<input type="date" value={valueDate} disabled={sending || unresolved} onChange={event => setValueDate(event.target.value)} /></label>
+        }}><option value="">{T.chooseSource}</option>{authorizedSources.map(source => <option key={source.id} value={source.id}>{sourceLabel(source)}</option>)}</select></div>
+        <label className={styles.control}>{T.transactionDate}<input type="date" value={transactionDate} disabled={sending || unresolved} onChange={event => setTransactionDate(event.target.value)} /></label>
+        <label className={styles.control}>{T.accountingDate}<input type="date" value={accountingDate} disabled={sending || unresolved} onChange={event => setAccountingDate(event.target.value)} /></label>
+        <label className={styles.control}>{T.valueDate}<input type="date" value={valueDate} disabled={sending || unresolved} onChange={event => setValueDate(event.target.value)} /></label>
       </div>
-      {sourceListState.kind !== 'ready' ? <StateBlock state={sourceListState} subject="yetkili finans kaynakları" onRetry={() => void sourceListQuery.refetch()} /> : null}
-      {sourceIsValid && preparationQuery.isPending ? <StateBlock state={{ kind: 'initial-loading' }} subject="onaylı hesap hazırlığı" /> : null}
+      {sourceListState.kind !== 'ready' ? <StateBlock state={sourceListState} subject={T.sourcesSubject} onRetry={() => void sourceListQuery.refetch()} /> : null}
+      {sourceIsValid && preparationQuery.isPending ? <StateBlock state={{ kind: 'initial-loading' }} subject={T.preparationSubject} /> : null}
       {sourceIsValid && preparationQuery.data !== undefined && preparationQuery.data.type !== 'ok-single'
-        ? <p role="alert" className={styles.error}>Kaynağın onaylı hesap hazırlığı okunamadı.</p> : null}
-      {preparation ? <p className={styles.help}>Onaylı ayna {preparation.accountPlanSourceVersion}; kural {preparation.postingRuleVersion}.</p> : null}
+        ? <p role="alert" className={styles.error}>{T.preparationUnreadable}</p> : null}
+      {preparation ? <p className={styles.help}>{normalPreparationVersionsText(preparation.accountPlanSourceVersion, preparation.postingRuleVersion)}</p> : null}
       {lines.map((line, index) => <div className={styles.form} key={index}>
-        <div className={styles.control}><label htmlFor={`normal-journal-account-${index}`}>Onaylı hesap</label><select id={`normal-journal-account-${index}`} value={line.accountId === '' ? '' : `${line.side}:${line.accountId}`} disabled={sending || unresolved || preparation === null} onChange={event => {
+        <div className={styles.control}><label htmlFor={`normal-journal-account-${index}`}>{T.account}</label><select id={`normal-journal-account-${index}`} value={line.accountId === '' ? '' : `${line.side}:${line.accountId}`} disabled={sending || unresolved || preparation === null} onChange={event => {
           const mapping = preparation?.mappings.find(candidate => `${candidate.side}:${candidate.accountId}` === event.target.value)
           setLines(current => current.map((item, i) => i === index
             ? { ...item, accountId: mapping?.accountId ?? '', side: mapping?.side ?? item.side } : item))
-        }}><option value="">Hesap seçin</option>{preparation?.mappings.map(mapping => <option key={`${mapping.side}:${mapping.accountId}`} value={`${mapping.side}:${mapping.accountId}`}>{mapping.accountCode} - {mapping.accountName} ({mapping.side === 'Debit' ? 'Borç' : 'Alacak'})</option>)}</select></div>
-        <label className={styles.control}>Tutar<input inputMode="decimal" value={line.amount} disabled={sending || unresolved} onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))} /></label>
-        {lines.length > 2 ? <button type="button" disabled={sending || unresolved} onClick={() => setLines(current => current.filter((_, i) => i !== index))}>Satırı kaldır</button> : null}
+        }}><option value="">{T.chooseAccount}</option>{preparation?.mappings.map(mapping => <option key={`${mapping.side}:${mapping.accountId}`} value={`${mapping.side}:${mapping.accountId}`}>{mapping.accountCode} - {mapping.accountName} ({mapping.side === 'Debit' ? T.debit : T.credit})</option>)}</select></div>
+        <label className={styles.control}>{T.amount}<input inputMode="decimal" value={line.amount} disabled={sending || unresolved} onChange={event => setLines(current => current.map((item, i) => i === index ? { ...item, amount: event.target.value } : item))} /></label>
+        {lines.length > 2 ? <button type="button" disabled={sending || unresolved} onClick={() => setLines(current => current.filter((_, i) => i !== index))}>{T.removeLine}</button> : null}
       </div>)}
-      <div className={styles.actions}><button type="button" disabled={sending || unresolved || preparation === null} onClick={() => setLines(current => [...current, { accountId: '', side: 'Debit', amount: '' }])}>Satır ekle</button><button type="submit" disabled={sending || unresolved || preparation === null}>Taslağı kaydet</button><Link to={ACCOUNTING_ROUTE.journalsList}>Formu kapat</Link></div>
+      <div className={styles.actions}><button type="button" disabled={sending || unresolved || preparation === null} onClick={() => setLines(current => [...current, { accountId: '', side: 'Debit', amount: '' }])}>{T.addLine}</button><button type="submit" disabled={sending || unresolved || preparation === null}>{T.saveDraft}</button><Link to={ACCOUNTING_ROUTE.journalsList}>{T.closeForm}</Link></div>
       {outcome?.type === 'failed' && outcome.failure.kind === 'preparation-version-conflict'
-        ? <p role="alert" className={styles.noticeWarn}>Onaylı hesap hazırlığı değişti. Seçimleri yenileyin.<button type="button" onClick={() => void preparationQuery.refetch()}>Hazırlığı yenile</button></p> : null}
+        ? <p role="alert" className={styles.noticeWarn}>{T.preparationChanged}<button type="button" onClick={() => void preparationQuery.refetch()}>{T.refreshPreparation}</button></p> : null}
       {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </form>
   </Frame>
@@ -211,10 +221,10 @@ export function NormalJournalDraftPage({ mode }: { readonly mode: 'own' | 'appro
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
   const { draftId = '' } = useParams()
-  return <NormalJournalDraftDetail key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}:${draftId}:${mode}`} draftId={draftId} mode={mode} />
+  return <NormalJournalDraftDetail key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}:${draftId}:${mode}`} namespace={namespace} draftId={draftId} mode={mode} />
 }
 
-function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string; readonly mode: 'own' | 'approve' }) {
+function NormalJournalDraftDetail({ namespace, draftId, mode }: { readonly namespace: string | null; readonly draftId: string; readonly mode: 'own' | 'approve' }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const mountedRef = useRef(true)
@@ -227,11 +237,14 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
   const companyId = shell.activeContext?.companyId ?? null
   const single = shell.activeContext?.scopeMode === 'single' && companyId !== null
   const [periodId, setPeriodId] = useState('')
+  // BLG-05: bumped after a period refusal, so the open periods are read again and the stale choice is cleared.
+  const [periodReload, setPeriodReload] = useState(0)
   const [snapshot, setSnapshot] = useState<NormalJournalCommandSnapshot | null>(null)
   const [outcome, setOutcome] = useState<NormalJournalCommandOutcome | null>(null)
   const inFlight = useRef(false)
   const query = useQuery({
-    queryKey: [companyId, shell.routeEntryGeneration, 'normal-journal-draft', draftId],
+    // Namespace first: the shell drops every query of a fenced context by `queryKey[0]`.
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'accounting', 'normal-journal-draft', draftId],
     enabled: single && GUID.test(draftId),
     queryFn: async ({ signal }) => {
       const captured = boundary.capture()
@@ -240,10 +253,10 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
       return answer
     },
   })
-  if (!single) return <Frame title="Normal fiş taslağı"><StateBlock state={{ kind: 'no-authorized-company' }} subject="normal fiş taslağı" /></Frame>
-  if (!GUID.test(draftId)) return <Frame title="Normal fiş taslağı"><StateBlock state={{ kind: 'not-found' }} subject="normal fiş taslağı" /></Frame>
+  if (!single) return <Frame title={T.draftTitle}><StateBlock state={{ kind: 'no-authorized-company' }} subject={T.draftSubject} /></Frame>
+  if (!GUID.test(draftId)) return <Frame title={T.draftTitle}><StateBlock state={{ kind: 'not-found' }} subject={T.draftSubject} /></Frame>
   const remote = (query.isPending ? { kind: 'initial-loading' } : classifyOutcome(query.data ?? { type: 'malformed' })) as RemoteViewState<NormalJournalDraft>
-  if (remote.kind !== 'ready' && outcome?.type !== 'applied') return <Frame title="Normal fiş taslağı"><StateBlock state={remote} subject="normal fiş taslağı" onRetry={() => void query.refetch()} /></Frame>
+  if (remote.kind !== 'ready' && outcome?.type !== 'applied') return <Frame title={T.draftTitle}><StateBlock state={remote} subject={T.draftSubject} onRetry={() => void query.refetch()} /></Frame>
   const draft = outcome?.type === 'applied' ? outcome.draft : (remote as { kind: 'ready'; data: NormalJournalDraft }).data
   const sending = snapshot !== null && outcome === null
   const unresolved = outcome?.type === 'unknown'
@@ -259,23 +272,30 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
         if (answer.failure.kind === 'unauthenticated') boundary.report(401, security)
         if (answer.failure.kind === 'forbidden') boundary.report(403, security)
       }
-      if (mountedRef.current) setOutcome(answer)
+      if (mountedRef.current) {
+        setOutcome(answer)
+        if (answer.type === 'failed' && answer.failure.kind === 'rule' && NORMAL_JOURNAL_PERIOD_CODES.has(answer.failure.code)) {
+          setPeriodId('')
+          setPeriodReload((current) => current + 1)
+        }
+      }
     } finally {
       inFlight.current = false
     }
   }
   const approve = () => {
     if (inFlight.current || unresolved) return
+    // The period comes from the open-period picker; an empty or foreign value never leaves the client.
     if (!GUID.test(periodId)) return setOutcome({ type: 'failed', failure: { kind: 'validation', field: 'periodId' } })
     void send({ operation: 'approve', idempotencyKey: newId(), draftId, expectedVersion: draft.version, periodId })
   }
-  return <Frame title="Normal fiş taslağı">
-    <dl className={styles.form}><div className={styles.control}><dt>Durum</dt><dd>{draft.status}</dd></div><div className={styles.control}><dt>Sürüm</dt><dd>{draft.version}</dd></div><div className={styles.control}><dt>Kaynak</dt><dd>Kaynak ref. ...{draft.sourceId.slice(-8)}</dd></div><div className={styles.control}><dt>Posting rule</dt><dd>{draft.postingRuleVersion}</dd></div></dl>
-    <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Satır</th><th>Hesap</th><th>Taraf</th><th className={styles.amount}>Tutar</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td className={styles.mono}>{line.accountId}</td><td>{line.side === 'Debit' ? 'Borç' : 'Alacak'}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
-    {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>Onay sonucu bilinmiyor.<button type="button" onClick={() => snapshot && void send(snapshot, true)}>Aynı isteği yeniden gönder</button></div> : null}
-    {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>Onay reddedildi: {outcome.failure.kind}</p> : null}
-    {mode === 'approve' && draft.status === 'Draft' ? <div className={styles.actions}><label className={styles.control}>Açık dönem kimliği<input value={periodId} disabled={sending || unresolved} onChange={event => setPeriodId(event.target.value)} /></label><button type="button" disabled={sending || unresolved} onClick={approve}>Normal taslağı onayla</button></div> : null}
-    <div className={styles.actions}>{draft.status === 'Approved' && draft.postedJournalId && hasCapability(shell, ACCOUNTING_CAPABILITY.journalsDetail) ? <Link to={journalDetailPath(draft.postedJournalId)}>Oluşturulan fişi aç</Link> : null}{mode === 'own' && hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftApprove) ? <Link to={normalDraftApprovalPath(draftId)}>Onay ekranını aç</Link> : null}<Link to={ACCOUNTING_ROUTE.journalsList}>Fişlere dön</Link></div>
+  return <Frame title={T.draftTitle}>
+    <dl className={styles.form}><div className={styles.control}><dt>{T.status}</dt><dd>{draft.status}</dd></div><div className={styles.control}><dt>{T.version}</dt><dd>{draft.version}</dd></div><div className={styles.control}><dt>{T.sourceRef}</dt><dd>{normalSourceRefText(draft.sourceId)}</dd></div><div className={styles.control}><dt>{T.postingRule}</dt><dd>{draft.postingRuleVersion}</dd></div></dl>
+    <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{T.lineNumber}</th><th>{T.lineAccount}</th><th>{T.lineSide}</th><th className={styles.amount}>{T.amount}</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td className={styles.mono}>{line.accountId}</td><td>{line.side === 'Debit' ? T.debit : T.credit}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
+    {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>{T.approvalUnknown}<button type="button" onClick={() => snapshot && void send(snapshot, true)}>{T.resend}</button></div> : null}
+    {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>{normalJournalApprovalFailureText(outcome.failure)}</p> : null}
+    {mode === 'approve' && draft.status === 'Draft' ? <div className={styles.actions}><NormalJournalApprovalPeriod key={periodReload} reloadToken={periodReload} namespace={namespace ?? 'no-context'} companyId={companyId ?? ''} accountingDate={draft.accountingDate} value={periodId} onChange={setPeriodId} disabled={sending || unresolved} /><button type="button" disabled={sending || unresolved || periodId === ''} onClick={approve}>{T.approve}</button></div> : null}
+    <div className={styles.actions}>{draft.status === 'Approved' && draft.postedJournalId && hasCapability(shell, ACCOUNTING_CAPABILITY.journalsDetail) ? <Link to={journalDetailPath(draft.postedJournalId)}>{T.openPostedJournal}</Link> : null}{mode === 'own' && hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftApprove) ? <Link to={normalDraftApprovalPath(draftId)}>{T.openApproval}</Link> : null}<Link to={ACCOUNTING_ROUTE.journalsList}>{T.backToJournals}</Link></div>
   </Frame>
 }
 
