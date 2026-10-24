@@ -1,3 +1,4 @@
+using GoymenERP.Api.Errors;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Security;
@@ -37,12 +38,18 @@ public static class AuditEndpoints
                     entityType,
                     entityId,
                     cancellationToken);
-                return result is null
-                    ? Results.Problem(
+                return result.Status switch
+                {
+                    AuditEventQueryStatus.Ok => Results.Ok(result.Page),
+                    AuditEventQueryStatus.InvalidCursor => Results.Problem(
                         title: "Audit cursor bilgisi geçersiz.",
                         detail: "Audit listesini ilk sayfadan yeniden açın.",
-                        statusCode: StatusCodes.Status400BadRequest)
-                    : Results.Ok(result);
+                        statusCode: StatusCodes.Status400BadRequest),
+                    // BLG-03: authority revoked before or during the read; nothing is released.
+                    _ => Results.Problem(
+                        statusCode: StatusCodes.Status403Forbidden,
+                        extensions: new Dictionary<string, object?> { ["code"] = ErpProblemCodes.Forbidden }),
+                };
             })
             .RequireAuthorization(ErpPermissions.IdentityAuditRead)
             .RequireCompanyContext()
