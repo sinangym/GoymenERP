@@ -17,11 +17,13 @@ import {
   decodePeriodPage,
   decodePostingQueues,
   decodeNormalJournalDraft,
+  decodeNormalJournalDraftAccounts,
   type JournalDetail,
   type JournalPage,
   type PeriodPage,
   type PostingQueues,
   type NormalJournalDraft,
+  type NormalJournalDraftAccounts,
 } from './contract'
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api/v1'
@@ -106,6 +108,20 @@ export function fetchJournal(
 /** `GET /accounting/posting-queues` — the open mapping exceptions and pending valuations (M-01). */
 export function fetchPostingQueues(companyId: string, signal?: AbortSignal): Promise<ViewOutcome<PostingQueues>> {
   return read(`${ACCOUNTING_BASE}/posting-queues`, companyId, decodePostingQueues, signal)
+}
+
+/** BLG-05b: the draft's accounts named by its own frozen account plan, under the draft read's authority. */
+export function fetchNormalJournalDraftAccounts(
+  companyId: string,
+  draft: NormalJournalDraft,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<NormalJournalDraftAccounts>> {
+  return read(
+    `${ACCOUNTING_BASE}/normal-journal-drafts/${encodeURIComponent(draft.draftId)}/accounts`,
+    companyId,
+    (body) => decodeNormalJournalDraftAccounts(body, draft),
+    signal,
+  )
 }
 
 /** ACC-V1 draft read. Create authority sees only its own; approve authority sees company drafts. */
