@@ -7,13 +7,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Audit.Infrastructure.Services;
 
+/// <summary>
+/// The company audit read. Its rows carry the most sensitive content the platform stores: business
+/// before/after values, approval and AI context, the client IP address and user agent. So the
+/// company-wide audit authority is measured fresh before the read and again after it, immediately
+/// before anything is released (BLG-03): a grant revoked while the query ran releases no row and
+/// no cursor.
+/// </summary>
 internal sealed class AuditQueryService(
     AuditDbContext dbContext,
     ICompanyContext companyContext,
-    IErpAuthorizationService authorizationService)
+    IErpAuthorityRevalidationService authority)
     : IAuditQueryService
 {
-    public async Task<AuditEventPage?> GetEventsAsync(
+    public async Task<AuditEventQueryResult> GetEventsAsync(
         int pageSize,
         string? cursor,
         string? correlationId,
@@ -21,13 +28,15 @@ internal sealed class AuditQueryService(
         string? entityId,
         CancellationToken cancellationToken = default)
     {
-        var scope = await authorizationService.GetPermissionScopeAsync(
-            ErpPermissions.IdentityAuditRead,
-            companyContext.CompanyId,
-            cancellationToken);
-        if (!scope.IsGranted || !scope.IsCompanyWide)
+        if (!companyContext.IsResolved)
         {
-            return new AuditEventPage([], NormalizePageSize(pageSize), null);
+            return AuditEventQueryResult.Denied;
+        }
+
+        var companyId = companyContext.CompanyId;
+        if (!await IsCompanyWideAsync(companyId, cancellationToken))
+        {
+            return AuditEventQueryResult.Denied;
         }
 
         var normalizedPageSize = NormalizePageSize(pageSize);
@@ -37,7 +46,7 @@ internal sealed class AuditQueryService(
         {
             if (!AuditCursor.TryDecode(cursor, out var decodedCursor))
             {
-                return null;
+                return AuditEventQueryResult.InvalidCursor;
             }
 
             query = query.Where(x =>
@@ -69,6 +78,15 @@ internal sealed class AuditQueryService(
             .ThenByDescending(x => x.Id)
             .Take(normalizedPageSize + 1)
             .ToListAsync(cancellationToken);
+
+        // The fence: nothing read above leaves this method unless the authority still stands now.
+        if (!companyContext.IsResolved
+            || companyContext.CompanyId != companyId
+            || !await IsCompanyWideAsync(companyId, cancellationToken))
+        {
+            return AuditEventQueryResult.Denied;
+        }
+
         var hasMore = events.Count > normalizedPageSize;
         var pageEvents = events.Take(normalizedPageSize).ToList();
         var items = pageEvents.Select(x => new AuditEventItem(
@@ -103,7 +121,16 @@ internal sealed class AuditQueryService(
         var nextCursor = hasMore
             ? AuditCursor.Encode(pageEvents[^1].OccurredAtUtc, pageEvents[^1].Id)
             : null;
-        return new AuditEventPage(items, normalizedPageSize, nextCursor);
+        return AuditEventQueryResult.Ok(new AuditEventPage(items, normalizedPageSize, nextCursor));
+    }
+
+    private async Task<bool> IsCompanyWideAsync(Guid companyId, CancellationToken cancellationToken)
+    {
+        var scope = await authority.RevalidatePermissionScopeAsync(
+            ErpPermissions.IdentityAuditRead,
+            companyId,
+            cancellationToken);
+        return scope.IsGranted && scope.IsCompanyWide;
     }
 
     private static int NormalizePageSize(int pageSize)
