@@ -367,6 +367,14 @@ export function createdNotice(replayed: boolean): { title: string; detail: strin
     : { title: MASTER_TEXT.createdTitle, detail: MASTER_TEXT.createdDetail, outcome: 'created' }
 }
 
+/**
+ * A later retry of a master-data command was refused while the first one is still unresolved (BLG-11).
+ * Like `retryRefusedText`, it never says the first request was not applied.
+ */
+export function masterRetryRefusedText(failure: CommandFailure | { readonly kind: 'code-in-use' }): string {
+  return `Son deneme sunucu tarafından reddedildi (${masterFailureText(failure).title}). Bu, ilk isteğin uygulanmadığı anlamına gelmez.`
+}
+
 /** A definite refusal of a master-data command. Each kind has its own text; none says the record is changed. */
 export function masterFailureText(
   failure: CommandFailure | { readonly kind: 'code-in-use' },

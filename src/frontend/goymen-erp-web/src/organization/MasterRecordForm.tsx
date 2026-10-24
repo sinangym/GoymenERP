@@ -28,6 +28,7 @@ import {
   REASON_TOO_LONG,
   conflictVersionsText,
   masterFailureText,
+  masterRetryRefusedText,
   unknownText,
 } from './organizationText'
 import { useShellDispatch } from '../shell/shellContext'
@@ -487,7 +488,7 @@ function Notice({
       <p>{detail}</p>
       {phase.lastRefusal === undefined ? null : (
         <p data-refusal={phase.lastRefusal.kind}>
-          {`Son deneme sunucu tarafından reddedildi (${masterFailureText(phase.lastRefusal).title}). Bu, ilk isteğin uygulanmadığı anlamına gelmez.`}
+          {masterRetryRefusedText(phase.lastRefusal)}
         </p>
       )}
       <div className={styles.actions}>
