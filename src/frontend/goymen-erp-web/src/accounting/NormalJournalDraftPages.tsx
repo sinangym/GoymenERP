@@ -9,7 +9,7 @@ import { useShellState } from '../shell/shellContext'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
-import { fetchNormalJournalDraft } from './api'
+import { fetchNormalJournalDraft, fetchNormalJournalDraftAccounts } from './api'
 import { fetchNormalJournalDraftSource, fetchNormalJournalSources } from './normalJournalSourceApi'
 import {
   ACCOUNTING_CAPABILITY,
@@ -24,6 +24,7 @@ import { clearNormalJournalCreate, recallNormalJournalCreate, storeNormalJournal
 import {
   NORMAL_JOURNAL_PERIOD_CODES,
   NORMAL_JOURNAL_TEXT as T,
+  accountLabel,
   normalDraftSavedText,
   normalJournalApprovalFailureText,
   normalJournalCreateFailureText,
@@ -291,7 +292,7 @@ function NormalJournalDraftDetail({ namespace, draftId, mode }: { readonly names
   }
   return <Frame title={T.draftTitle}>
     <dl className={styles.form}><div className={styles.control}><dt>{T.status}</dt><dd>{draft.status}</dd></div><div className={styles.control}><dt>{T.version}</dt><dd>{draft.version}</dd></div><div className={styles.control}><dt>{T.sourceRef}</dt><dd>{normalSourceRefText(draft.sourceId)}</dd></div><div className={styles.control}><dt>{T.postingRule}</dt><dd>{draft.postingRuleVersion}</dd></div></dl>
-    <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{T.lineNumber}</th><th>{T.lineAccount}</th><th>{T.lineSide}</th><th className={styles.amount}>{T.amount}</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td className={styles.mono}>{line.accountId}</td><td>{line.side === 'Debit' ? T.debit : T.credit}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
+    <NormalJournalDraftLines namespace={namespace ?? 'no-context'} companyId={companyId ?? ''} draft={draft} />
     {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>{T.approvalUnknown}<button type="button" onClick={() => snapshot && void send(snapshot, true)}>{T.resend}</button></div> : null}
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>{normalJournalApprovalFailureText(outcome.failure)}</p> : null}
     {mode === 'approve' && draft.status === 'Draft' ? <div className={styles.actions}><NormalJournalApprovalPeriod key={periodReload} reloadToken={periodReload} namespace={namespace ?? 'no-context'} companyId={companyId ?? ''} accountingDate={draft.accountingDate} value={periodId} onChange={setPeriodId} disabled={sending || unresolved} /><button type="button" disabled={sending || unresolved || periodId === ''} onClick={approve}>{T.approve}</button></div> : null}
@@ -301,4 +302,37 @@ function NormalJournalDraftDetail({ namespace, draftId, mode }: { readonly names
 
 function Frame({ title, children }: { readonly title: string; readonly children: React.ReactNode }) {
   return <section className={styles.page}><h1>{title}</h1>{children}</section>
+}
+
+/**
+ * BLG-05b: the draft lines with each account named by the draft's own frozen account plan (code + name), never
+ * as a technical id. While the names load the cell says so; when the plan does not hold an account, or the read
+ * fails, the cell says the name is unavailable. A 401/403 goes to the shell boundary like every read.
+ */
+function NormalJournalDraftLines({ namespace, companyId, draft }: {
+  readonly namespace: string
+  readonly companyId: string
+  readonly draft: NormalJournalDraft
+}) {
+  const shell = useShellState()
+  const boundary = useAuthBoundary()
+  const query = useQuery({
+    queryKey: [namespace, shell.routeEntryGeneration, 'accounting', 'normal-journal-draft-accounts', draft.draftId, draft.version],
+    retry: false,
+    queryFn: async ({ signal }) => {
+      const captured = boundary.capture()
+      const answer = await fetchNormalJournalDraftAccounts(companyId, draft, signal)
+      if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, captured)
+      return answer
+    },
+  })
+  const named = query.data?.type === 'ok-single' ? query.data.data.accounts : null
+  const accountText = (lineNumber: number) => {
+    if (query.isPending) return T.accountLoading
+    const account = named?.find(candidate => candidate.lineNumber === lineNumber)
+    return account?.accountCode != null && account.accountName != null
+      ? accountLabel(account.accountCode, account.accountName)
+      : T.accountUnavailable
+  }
+  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{T.lineNumber}</th><th>{T.lineAccount}</th><th>{T.lineSide}</th><th className={styles.amount}>{T.amount}</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td>{accountText(line.lineNumber)}</td><td>{line.side === 'Debit' ? T.debit : T.credit}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
 }

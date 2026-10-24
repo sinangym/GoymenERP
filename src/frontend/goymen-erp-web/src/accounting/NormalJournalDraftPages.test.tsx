@@ -498,3 +498,74 @@ describe('normal journal approval period (BLG-05)', () => {
     }
   })
 })
+
+describe('normal journal draft accounts (BLG-05b)', () => {
+  function accounts(overrides: Record<string, unknown> = {}, rows?: readonly unknown[]) {
+    return {
+      draftId: DRAFT, version: 1, accountPlanSourceVersion: 'mikro-v1', accountPlanSourceSha256: 'a'.repeat(64),
+      accounts: rows ?? [
+        { lineNumber: 1, accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' },
+        { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
+      ],
+      ...overrides,
+    }
+  }
+
+  function install(answer: () => Response) {
+    return installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}/accounts`)) return answer()
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER]))
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+  }
+
+  it('names each line by the draft\'s frozen plan as code and name, never as an id', async () => {
+    const recorded = install(() => json(accounts()))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(screen.getByText('120 — Alıcılar')).toBeTruthy()
+    expect(document.body.textContent).not.toContain(ACCOUNT_1)
+    expect(document.body.textContent).not.toContain(ACCOUNT_2)
+    expect(requestsFor(recorded, `/normal-journal-drafts/${DRAFT}/accounts`, 'GET')).toHaveLength(1)
+  })
+
+  it('says the name is unavailable when the frozen plan does not hold the account', async () => {
+    install(() => json(accounts({}, [
+      { lineNumber: 1, accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' },
+      { lineNumber: 2, accountId: ACCOUNT_2, accountCode: null, accountName: null },
+    ])))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(screen.getByText('Hesap adı bulunamadı')).toBeTruthy()
+    expect(document.body.textContent).not.toContain(ACCOUNT_2)
+  })
+
+  it('refuses an answer for another version or another account and shows no name from it', async () => {
+    install(() => json(accounts({ version: 2 })))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await waitFor(() => expect(screen.getAllByText('Hesap adı bulunamadı')).toHaveLength(2))
+    expect(screen.queryByText('100 — Kasa')).toBeNull()
+  })
+
+  it('refuses a half-named account (code without name)', async () => {
+    install(() => json(accounts({}, [
+      { lineNumber: 1, accountId: ACCOUNT_1, accountCode: '100', accountName: null },
+      { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
+    ])))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await waitFor(() => expect(screen.getAllByText('Hesap adı bulunamadı')).toHaveLength(2))
+    expect(screen.queryByText('120 — Alıcılar')).toBeNull()
+  })
+
+  it('reports a 403 on the accounts read to the shell boundary, which closes the screen', async () => {
+    install(() => json({ status: 403 }, 403))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await screen.findByText(/Bulunamadı/)
+    expect(screen.queryByText('Normal taslağı onayla')).toBeNull()
+  })
+})
+

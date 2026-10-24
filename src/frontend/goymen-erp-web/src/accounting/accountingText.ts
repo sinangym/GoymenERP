@@ -261,6 +261,9 @@ export const NORMAL_JOURNAL_TEXT = {
   postingRule: 'Posting rule',
   lineNumber: 'Satır',
   lineAccount: 'Hesap',
+  // BLG-05b: accounts are named by the draft's own frozen account plan.
+  accountLoading: 'Hesap adı yükleniyor…',
+  accountUnavailable: 'Hesap adı bulunamadı',
   lineSide: 'Taraf',
   approve: 'Normal taslağı onayla',
   openPostedJournal: 'Oluşturulan fişi aç',
@@ -277,6 +280,11 @@ export const NORMAL_JOURNAL_TEXT = {
   periodsRestarted: 'Dönem listesi bu arada değişti; liste baştan yüklendi.',
   periodRequired: 'Bir açık dönem seçin.',
 } as const
+
+/** A draft line's account as its frozen plan names it: code and name. */
+export function accountLabel(code: string, name: string): string {
+  return `${code} — ${name}`
+}
 
 export function normalDraftSavedText(version: number): string {
   return `Taslak sürüm ${version} olarak kaydedildi.`
