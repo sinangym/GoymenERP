@@ -17,6 +17,7 @@ namespace GoymenERP.Modules.Audit.Infrastructure.Services;
 internal sealed class AuditQueryService(
     AuditDbContext dbContext,
     ICompanyContext companyContext,
+    ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority)
     : IAuditQueryService
 {
@@ -28,13 +29,16 @@ internal sealed class AuditQueryService(
         string? entityId,
         CancellationToken cancellationToken = default)
     {
-        if (!companyContext.IsResolved)
+        if (!companyContext.IsResolved
+            || !currentUser.IsAuthenticated
+            || string.IsNullOrWhiteSpace(currentUser.UserId))
         {
             return AuditEventQueryResult.Denied;
         }
 
         var companyId = companyContext.CompanyId;
-        if (!await IsCompanyWideAsync(companyId, cancellationToken))
+        var actorId = currentUser.UserId!;
+        if (!await HasFreshCompanyWideAccessAsync(companyId, actorId, cancellationToken))
         {
             return AuditEventQueryResult.Denied;
         }
@@ -80,9 +84,7 @@ internal sealed class AuditQueryService(
             .ToListAsync(cancellationToken);
 
         // The fence: nothing read above leaves this method unless the authority still stands now.
-        if (!companyContext.IsResolved
-            || companyContext.CompanyId != companyId
-            || !await IsCompanyWideAsync(companyId, cancellationToken))
+        if (!await HasFreshCompanyWideAccessAsync(companyId, actorId, cancellationToken))
         {
             return AuditEventQueryResult.Denied;
         }
@@ -124,14 +126,35 @@ internal sealed class AuditQueryService(
         return AuditEventQueryResult.Ok(new AuditEventPage(items, normalizedPageSize, nextCursor));
     }
 
-    private async Task<bool> IsCompanyWideAsync(Guid companyId, CancellationToken cancellationToken)
+    // The actor and company checks around the fresh read come from Codex's parallel candidate
+    // (codex/sy07-audit-read-fence-20261024, 8e390339): the same person must still be acting for
+    // the same company on both sides of the authority round-trip.
+    private async Task<bool> HasFreshCompanyWideAccessAsync(
+        Guid expectedCompanyId,
+        string expectedActorId,
+        CancellationToken cancellationToken)
     {
+        if (!RemainsCurrent(expectedCompanyId, expectedActorId))
+        {
+            return false;
+        }
+
         var scope = await authority.RevalidatePermissionScopeAsync(
             ErpPermissions.IdentityAuditRead,
-            companyId,
+            expectedCompanyId,
             cancellationToken);
-        return scope.IsGranted && scope.IsCompanyWide;
+        return RemainsCurrent(expectedCompanyId, expectedActorId)
+            && scope.IsGranted
+            && scope.IsCompanyWide;
     }
+
+    private bool RemainsCurrent(Guid expectedCompanyId, string expectedActorId) =>
+        currentUser.IsAuthenticated
+        && !string.IsNullOrWhiteSpace(currentUser.UserId)
+        && companyContext.IsResolved
+        && companyContext.CompanyId == expectedCompanyId
+        && currentUser.CanAccessCompany(expectedCompanyId)
+        && string.Equals(currentUser.UserId, expectedActorId, StringComparison.Ordinal);
 
     private static int NormalizePageSize(int pageSize)
     {
