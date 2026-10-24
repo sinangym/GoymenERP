@@ -23,6 +23,7 @@ VERIFIER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
 HEAD = "a" * 40
 COMMIT = "b" * 40
+FIXTURE_ASSEMBLY = Path("/fixture/UnitTests.dll").resolve()
 
 
 def make_repository(root: Path) -> None:
@@ -111,9 +112,10 @@ def mock_discovery(arguments: list[str], root: Path, project: str, displays: lis
     return "\n".join(displays)
 
 
-def trx_source(project: str, *, outcome: str = "Passed", theory_rows: int = 1) -> str:
+def trx_source(project: str, *, outcome: str = "Passed", theory_rows: int = 1,
+               source: Path = FIXTURE_ASSEMBLY) -> str:
     name = Path(project).stem + ".ExampleTests.Runs"
-    return batch_trx_source(Counter({name: theory_rows}), 1, skipped=outcome == "NotExecuted").replace(
+    return batch_trx_source(Counter({name: theory_rows}), 1, skipped=outcome == "NotExecuted", source=source).replace(
         'outcome="Passed"', f'outcome="{outcome}"'
     )
 
@@ -122,7 +124,8 @@ def project_row(path: str) -> dict[str, object]:
     name = Path(path).stem + ".ExampleTests.Runs"
     identity, _ = case_identity(name, name)
     return {
-        "path": path, "discoveryHash": VERIFIER.digest([(name, 1)]),
+        "path": path, "assemblyPath": VERIFIER.assembly_relative_path(path),
+        "executorUri": VERIFIER.EXECUTOR_URI, "discoveryHash": VERIFIER.digest([(name, 1)]),
         "resultHash": VERIFIER.digest([(name, 1, 0)]),
         "discoveredMethods": 1, "discoveredCases": 1, "executionCount": 1,
         "passed": 1, "skipped": 0,
@@ -133,7 +136,7 @@ def project_row(path: str) -> dict[str, object]:
 
 def batch_trx_source(
     methods: Counter[str], first_execution: int, *, skipped: bool = False,
-    displays: dict[str, list[str]] | None = None,
+    displays: dict[str, list[str]] | None = None, source: Path = FIXTURE_ASSEMBLY,
 ) -> str:
     results = []
     definitions = {}
@@ -144,7 +147,8 @@ def batch_trx_source(
             display = displays[name][case] if displays is not None else name
             identity, _ = case_identity(name, display, case)
             definitions[identity] = (
-                f'<UnitTest id="{identity}"><TestMethod className="{class_name}" '
+                f'<UnitTest id="{identity}" storage={quoteattr(str(source.resolve()).lower())}><TestMethod '
+                f'codeBase={quoteattr(str(source.resolve()))} adapterTypeName={quoteattr(VERIFIER.EXECUTOR_URI)} className="{class_name}" '
                 f'name="{method}" /></UnitTest>'
             )
             results.append(
@@ -215,7 +219,8 @@ class BackendGroupVerifierTests(unittest.TestCase):
             logger = next(value for value in arguments if value.startswith("trx;LogFileName="))
             (results / logger.split("=", 1)[1]).write_text(
                 batch_trx_source(Counter({name: len(values) for name, values in names.items()}),
-                                 100, skipped=skipped and current == project, displays=names),
+                                 100, skipped=skipped and current == project, displays=names,
+                                 source=root / VERIFIER.assembly_relative_path(current)),
                 encoding="utf-8",
             )
             return ""
@@ -312,13 +317,13 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 with self.subTest(group=group, cases=cases):
                     path.write_text(trx_source(project, theory_rows=cases), encoding="utf-8")
                     with self.assertRaisesRegex(RuntimeError, "multiplicity differs"):
-                        VERIFIER.trx_result_map(path, Counter({name: 4}))
+                        VERIFIER.trx_result_map(path, Counter({name: 4}), expected_source=FIXTURE_ASSEMBLY)
             path.write_text(trx_source(project, theory_rows=4), encoding="utf-8")
-            _, passed, skipped = VERIFIER.trx_result_map(path, Counter({name: 4}))
+            _, passed, skipped = VERIFIER.trx_result_map(path, Counter({name: 4}), expected_source=FIXTURE_ASSEMBLY)
             self.assertEqual((passed, skipped), (4, 0))
             path.write_text(trx_source(project, outcome="NotExecuted"), encoding="utf-8")
             with self.assertRaisesRegex(RuntimeError, "Required non-SQL"):
-                VERIFIER.trx_result_map(path, Counter({name: 1}))
+                VERIFIER.trx_result_map(path, Counter({name: 1}), expected_source=FIXTURE_ASSEMBLY)
 
     def test_trx_refuses_absent_wrong_extra_or_duplicate_counts(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["architecture"][0]
@@ -336,10 +341,10 @@ class BackendGroupVerifierTests(unittest.TestCase):
             with self.subTest(source=source[:80]):
                 path.write_text(source, encoding="utf-8")
                 with self.assertRaises(RuntimeError):
-                    VERIFIER.trx_result_map(path, discovered)
+                    VERIFIER.trx_result_map(path, discovered, expected_source=FIXTURE_ASSEMBLY)
         path.write_text(trx_source(project), encoding="utf-8")
         with self.assertRaisesRegex(RuntimeError, "identities differ"):
-            VERIFIER.trx_result_map(path, VERIFIER.discovery_map(name + "\n" + name + ".Other\n", project))
+            VERIFIER.trx_result_map(path, VERIFIER.discovery_map(name + "\n" + name + ".Other\n", project), expected_source=FIXTURE_ASSEMBLY)
 
     def test_trx_rejects_missing_invalid_and_duplicate_execution_identities(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["architecture"][0]
@@ -371,7 +376,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
             with self.subTest(case=label):
                 path.write_text(source, encoding="utf-8")
                 with self.assertRaisesRegex(RuntimeError, error):
-                    VERIFIER.trx_result_map(path, discovered)
+                    VERIFIER.trx_result_map(path, discovered, expected_source=FIXTURE_ASSEMBLY)
 
     def proof_directory(self, name: str = "proofs") -> Path:
         directory = self.root / "artifacts" / name
@@ -461,7 +466,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 directory.mkdir(parents=True, exist_ok=True)
                 logger = next(value for value in arguments if value.startswith("trx;LogFileName="))
                 (directory / logger.split("=", 1)[1]).write_text(
-                    trx_source(project), encoding="utf-8"
+                    trx_source(project, source=root / VERIFIER.assembly_relative_path(project)), encoding="utf-8"
                 )
             return ""
 
@@ -552,7 +557,7 @@ class BackendGroupVerifierTests(unittest.TestCase):
                     first_execution = 100 if mode == "duplicate_execution" else number * 100
                     logger = next(value for value in arguments if value.startswith("trx;LogFileName="))
                     (results / logger.split("=", 1)[1]).write_text(
-                        batch_trx_source(batch, first_execution), encoding="utf-8"
+                        batch_trx_source(batch, first_execution, source=root / VERIFIER.assembly_relative_path(VERIFIER.GROUP_PROJECTS["api"][0])), encoding="utf-8"
                     )
                     return ""
 
@@ -814,13 +819,13 @@ class BackendGroupVerifierTests(unittest.TestCase):
         path = self.root / "native.trx"
         source = batch_trx_source(Counter({name: 2}), 1, displays={name: displays})
         path.write_text(source)
-        VERIFIER.trx_result_map(path, Counter({name: 2}), expected_case_ids={name: identities})
+        VERIFIER.trx_result_map(path, Counter({name: 2}), expected_case_ids={name: identities}, expected_source=FIXTURE_ASSEMBLY)
         for replacement in (identities[0], str(uuid.uuid4())):
             with self.subTest(replacement=replacement):
                 path.write_text(source.replace('testId="' + identities[1] + '"',
                                                'testId="' + replacement + '"'))
                 with self.assertRaises(RuntimeError):
-                    VERIFIER.trx_result_map(path, Counter({name: 2}), expected_case_ids={name: identities})
+                    VERIFIER.trx_result_map(path, Counter({name: 2}), expected_case_ids={name: identities}, expected_source=FIXTURE_ASSEMBLY)
 
     def test_aggregate_native_id_multiset_cannot_be_replaced_or_duplicated(self) -> None:
         project = VERIFIER.GROUP_PROJECTS["architecture"][0]
@@ -847,6 +852,67 @@ class BackendGroupVerifierTests(unittest.TestCase):
                 path.write_text(json.dumps(proof))
                 with self.assertRaises(RuntimeError):
                     self.aggregate(directory)
+
+    def test_producer_and_consumer_bind_runtime_assembly_and_executor(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["architecture"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        original_builder = batch_trx_source
+        mutations = (
+            ("storage-foreign", 'storage="', 'storage="/foreign/'),
+            ("storage-missing", 'storage=', 'ignoredStorage='),
+            ("codebase-foreign", 'codeBase="', 'codeBase="/foreign/'),
+            ("codebase-missing", 'codeBase=', 'ignoredCodeBase='),
+            ("executor-foreign", VERIFIER.EXECUTOR_URI, "executor://foreign/"),
+            ("executor-missing", 'adapterTypeName=', 'ignoredAdapter='),
+        )
+        for label, before, after in mutations:
+            with self.subTest(label=label):
+                directory = self.root / label
+                def foreign_trx(*args, **kwargs):
+                    return original_builder(*args, **kwargs).replace(before, after)
+                with mock.patch.dict(globals(), {"batch_trx_source": foreign_trx}):
+                    with self.assertRaisesRegex(RuntimeError, "provenance differs"):
+                        self.produce_group("architecture", directory, project, [name], [name])
+                self.assertFalse((directory / "ci-backend-test-group-proof-architecture/proof-architecture.json").exists())
+        directory = self.proof_directory()
+        path = directory / "ci-backend-test-group-proof-architecture/proof-architecture.json"
+        path.unlink()
+        self.produce_group("architecture", directory, project, [name], [name])
+        self.assertEqual(self.aggregate(directory), 20)
+        original = json.loads(path.read_text())
+        for field in ("assemblyPath", "executorUri"):
+            for replacement in (None, "/foreign/Other.dll"):
+                with self.subTest(field=field, replacement=replacement):
+                    changed = copy.deepcopy(original)
+                    if replacement is None:
+                        del changed["projects"][0][field]
+                    else:
+                        changed["projects"][0][field] = replacement
+                    path.write_text(json.dumps(changed))
+                    with self.assertRaises(RuntimeError):
+                        self.aggregate(directory)
+
+    def test_runtime_provenance_has_no_basename_casefold_or_unused_definition_fallback(self) -> None:
+        project = VERIFIER.GROUP_PROJECTS["architecture"][0]
+        name = Path(project).stem + ".ExampleTests.Runs"
+        identity = case_identity(name, name)[0]
+        source = trx_source(project)
+        path = self.root / "runtime-provenance.trx"
+        for label, changed in (
+            ("basename", source.replace(str(FIXTURE_ASSEMBLY), str(FIXTURE_ASSEMBLY.parent / "foreign/UnitTests.dll"))),
+            ("codebase-casefold", source.replace('codeBase="' + str(FIXTURE_ASSEMBLY), 'codeBase="' + str(FIXTURE_ASSEMBLY).upper())),
+            ("storage-casefold", source.replace('storage="' + str(FIXTURE_ASSEMBLY).lower(), 'storage="' + str(FIXTURE_ASSEMBLY).upper())),
+            ("unused-definition", source.replace('</TestDefinitions>',
+                '<UnitTest id="22222222-2222-2222-2222-222222222222" storage=' + quoteattr(str(FIXTURE_ASSEMBLY).lower()) +
+                '><TestMethod codeBase=' + quoteattr(str(FIXTURE_ASSEMBLY)) +
+                ' adapterTypeName=' + quoteattr(VERIFIER.EXECUTOR_URI) +
+                ' className="GoymenERP.ArchitectureTests.OtherTests" name="Runs" /></UnitTest></TestDefinitions>')),
+        ):
+            with self.subTest(label=label):
+                path.write_text(changed)
+                with self.assertRaises(RuntimeError):
+                    VERIFIER.trx_result_map(path, Counter({name: 1}), expected_source=FIXTURE_ASSEMBLY,
+                                            expected_case_ids={name: [identity]})
 
     def test_reviewed_deferred_case_identities_and_source_are_exact_at_both_gates(self) -> None:
         self.assertEqual(len(VERIFIER.DEFERRED_THEORIES), 2)

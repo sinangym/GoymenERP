@@ -488,14 +488,18 @@ def canonical_test_id(value: object) -> str:
     return value
 
 
+def assembly_relative_path(project: str) -> str:
+    return (Path(project).parent / "bin/Release/net10.0" /
+            (Path(project).stem + ".dll")).as_posix()
+
+
 def structured_discovery(path: Path, root: Path, project: str) -> dict[str, list[str]]:
     """Read one actual VSTest17.14.1 console receive stream, never echoed host frames.
 
     TestFound batches plus completion's LastDiscoveredTests are disjoint. IDs,
     not escaped/truncated DisplayName strings, define ordinary case identity.
     """
-    expected_source = (root / Path(project).parent / "bin/Release/net10.0" /
-                       (Path(project).stem + ".dll")).resolve()
+    expected_source = (root / assembly_relative_path(project)).resolve()
     try:
         if path.is_symlink():
             raise RuntimeError("Backend discovery diagnostic is linked.")
@@ -588,7 +592,8 @@ def structured_discovery(path: Path, root: Path, project: str) -> dict[str, list
 
 
 def trx_result_map(
-    path: Path, discovered: Counter[str], *, execution_ids: set[str] | None = None,
+    path: Path, discovered: Counter[str], *, expected_source: Path,
+    execution_ids: set[str] | None = None,
     exact_multiplicity: bool = True, allowed_skips: set[str] | None = None,
     expected_case_names: dict[str, list[str]] | None = None,
     expected_case_ids: dict[str, list[str]] | None = None,
@@ -606,6 +611,7 @@ def trx_result_map(
     if len(counters) != 1:
         raise RuntimeError("Backend TRX must have exactly one counter element.")
     definitions: dict[str, str] = {}
+    expected_assembly = str(expected_source.resolve())
     for element in elements("UnitTest"):
         test_id = element.attrib.get("id")
         methods = [child for child in element.iter()
@@ -613,6 +619,13 @@ def trx_result_map(
         if not test_id or test_id in definitions or len(methods) != 1:
             raise RuntimeError("Backend TRX test definition is missing or duplicated.")
         method = methods[0]
+        # VSTest17.14.1's TRX serializer lowercases storage; codeBase retains the
+        # exact native path. Check both actual formats and the pinned executor.
+        # https://github.com/microsoft/vstest/blob/v17.14.1/src/Microsoft.TestPlatform.Extensions.TrxLogger/ObjectModel/TestElement.cs
+        if (element.attrib.get("storage") != expected_assembly.lower()
+                or method.attrib.get("codeBase") != expected_assembly
+                or method.attrib.get("adapterTypeName") != EXECUTOR_URI):
+            raise RuntimeError("Backend TRX assembly or executor provenance differs from discovery.")
         name = f"{method.attrib.get('className', '')}.{method.attrib.get('name', '')}"
         if FQN_PATTERN.fullmatch(name) is None:
             raise RuntimeError("Backend TRX test identity is not canonical.")
@@ -650,6 +663,8 @@ def trx_result_map(
         total += 1
         passed += outcome == "Passed"
         skipped += outcome == "NotExecuted"
+    if set(definitions) != {identity for values in case_ids.values() for identity in values}:
+        raise RuntimeError("Backend TRX has unused or missing native test definitions.")
     if not results or set(results) != set(discovered):
         raise RuntimeError("Backend TRX result identities differ from exact project discovery.")
     if not exact_multiplicity:
@@ -762,9 +777,11 @@ def _valid_proof(proof: object, expected: dict[str, object], group: str, root: P
         if not isinstance(row, dict) or set(row) != {
             "path", "discoveryHash", "resultHash", "discoveredMethods",
             "discoveredCases", "executionCount", "passed", "skipped", "stageElapsedMs",
-            "testCases",
+            "testCases", "assemblyPath", "executorUri",
         } or row["path"] != path:
             raise RuntimeError("Backend group proof project identity is wrong.")
+        if row["assemblyPath"] != assembly_relative_path(path) or row["executorUri"] != EXECUTOR_URI:
+            raise RuntimeError("Backend group proof assembly or executor provenance is wrong.")
         if not isinstance(row["discoveryHash"], str) or not HASH_PATTERN.fullmatch(
             row["discoveryHash"]
         ) or not isinstance(row["resultHash"], str) or not HASH_PATTERN.fullmatch(
@@ -967,6 +984,7 @@ def run_group(
                 raise RuntimeError("Backend project did not produce its exact TRX.")
             batch_results, batch_passed, batch_skipped = trx_result_map(
                 trx, Counter({name: len(expected_ids[name]) for name in batch}),
+                expected_source=root / assembly_relative_path(project),
                 execution_ids=execution_ids, allowed_skips=allowed_skips,
                 expected_case_names={name: expected_names[name] for name in batch if name in expected_names},
                 expected_case_ids={name: expected_ids[name] for name in batch},
@@ -984,6 +1002,8 @@ def run_group(
             raise RuntimeError("Backend test batches do not cover complete project discovery.")
         proof["projects"].append({
             "path": project,
+            "assemblyPath": assembly_relative_path(project),
+            "executorUri": EXECUTOR_URI,
             "discoveryHash": digest(sorted(discovered.items())),
             "resultHash": digest(sorted((name, counts["passed"], counts["skipped"])
                                         for name, counts in results.items())),
