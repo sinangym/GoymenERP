@@ -2,6 +2,7 @@ using GoymenERP.Api.ProductRuntime;
 using GoymenERP.Modules.Accounting.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
+using GoymenERP.Modules.Documents.Infrastructure.Persistence;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
@@ -11,8 +12,10 @@ using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Manufacturing.Infrastructure.Persistence;
 using GoymenERP.Modules.Organization.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using GoymenERP.Modules.Product.Infrastructure.PriceLists;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
+using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -30,6 +33,7 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
     private static readonly (string Name, Type ContextType)[] Contexts =
     [
         ("organization", typeof(OrganizationDbContext)),
+        ("settings", typeof(SettingsDbContext)),
         ("identity", typeof(IdentityDbContext)),
         ("audit", typeof(AuditDbContext)),
         ("idempotency", typeof(CommandExecutionDbContext)),
@@ -37,28 +41,31 @@ internal sealed class DatabaseSchemaCompatibilityHealthCheck(
         ("inventory", typeof(InventoryDbContext)),
         ("product", typeof(ProductDbContext)),
         ("group-shared-command", typeof(GroupSharedCommandDbContext)),
+        ("product-price-list", typeof(ProductPriceListDbContext)),
         ("finance", typeof(FinanceDbContext)),
         ("sales", typeof(SalesDbContext)),
         ("manufacturing", typeof(ManufacturingDbContext)),
         ("logistics", typeof(LogisticsDbContext)),
         ("purchasing", typeof(PurchasingDbContext)),
         ("accounting", typeof(AccountingDbContext)),
+        ("documents", typeof(DocumentsDbContext)),
     ];
+
+    // Keep the narrow host inventory; the integration guard compares it with actual registered
+    // DbContext options. Product card/terminal registrations exist even when their runtime is dormant.
+    internal static IReadOnlyList<(string Name, Type ContextType)> GetActiveContexts(bool productRuntimeEnabled) =>
+        Contexts.Where(entry => productRuntimeEnabled
+            || (entry.ContextType != typeof(ProductDbContext)
+                && entry.ContextType != typeof(GroupSharedCommandDbContext)
+                && entry.ContextType != typeof(ProductPriceListDbContext))).ToArray();
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        foreach (var (name, contextType) in Contexts)
+        foreach (var (name, contextType) in GetActiveContexts(productRuntimeOptions.IsEnabled))
         {
-            if (!productRuntimeOptions.IsEnabled
-                && (contextType == typeof(ProductDbContext)
-                    || contextType == typeof(GroupSharedCommandDbContext)))
-            {
-                continue;
-            }
-
             try
             {
                 var database = (DbContext)scope.ServiceProvider.GetRequiredService(contextType);
