@@ -13,6 +13,7 @@ import { pendingApprovalKey, recallPendingApproval, releasePendingApproval, rese
 import styles from './PurchaseOrderDetailPage.module.css'
 import { GoodsReceiptDetailRow } from './GoodsReceiptDetail'
 import { GoodsReceiptPanel } from './GoodsReceiptPanel'
+import { receiptAttemptBinding } from './goodsReceiptAttempt'
 import { GOODS_RECEIPT_TEXT } from './goodsReceiptText'
 import { PURCHASE_GOODS_RECEIPT_CAPABILITY } from './goodsReceiptContract'
 import { PURCHASE_ORDER_DETAIL_TEXT as T } from './purchaseOrderDetailText'
@@ -98,6 +99,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail as never)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')
+  // BLG-01: the receipt attempt's identity, NOT the query namespace — see goodsReceiptAttempt.ts.
+  const receiptAttempt = receiptAttemptBinding(shell)
   const [attempt, setAttempt] = useState<
     | { readonly phase: 'idle' }
     | { readonly phase: 'submitting'; readonly snapshot: ApprovalSnapshot }
@@ -237,9 +240,9 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     /> : null}
     {canApprove ? outcomeNotice : null}
     {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</Button></section> : null}
-    {namespace !== null && hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)
+    {namespace !== null && receiptAttempt !== null && hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)
       ? <div className={styles.section} data-testid="purchase-order-receipt-action"><GoodsReceiptPanel enabled
-          binding={namespace} detail={state.data} onRecorded={() => void query.refetch()} /></div>
+          binding={namespace} attemptBinding={receiptAttempt} detail={state.data} onRecorded={() => void query.refetch()} /></div>
       : null}
   </>, <StatusIndicator className={styles.status} tone={order.status === 'Approved' ? 'success' : 'warning'}>{order.status === 'Approved' ? T.approved : T.draft}</StatusIndicator>)
 }
