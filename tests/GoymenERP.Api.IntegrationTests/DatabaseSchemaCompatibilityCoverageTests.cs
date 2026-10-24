@@ -19,17 +19,21 @@ public sealed class DatabaseSchemaCompatibilityCoverageTests
     public async Task Readiness_covers_every_active_registered_context_without_requiring_dormant_Work(bool productEnabled)
     {
         Type[] registered = [];
+        var configurationOverrides = new Dictionary<string, string?>
+        {
+            ["DatabaseStartup:Mode"] = "ValidateOnly",
+            ["ProductRuntime:IssuerLocalUserId"] = productEnabled ? Guid.NewGuid().ToString("D") : null,
+            ["ProductRuntime:IssuerExternalIdentityId"] = productEnabled ? Guid.NewGuid().ToString("D") : null,
+        };
         await using var parent = new GoymenErpApiFactory();
         await using var factory = parent.WithWebHostBuilder(builder =>
         {
-            builder.UseSetting("DatabaseStartup:Mode", "ValidateOnly");
+            // Program reads Product's options while composing services, before the later
+            // app-configuration callback. Supply the same values at both host boundaries.
+            foreach (var (key, value) in configurationOverrides)
+                builder.UseSetting(key, value);
             builder.ConfigureAppConfiguration((_, configuration) =>
-                configuration.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["DatabaseStartup:Mode"] = "ValidateOnly",
-                    ["ProductRuntime:IssuerLocalUserId"] = productEnabled ? Guid.NewGuid().ToString("D") : null,
-                    ["ProductRuntime:IssuerExternalIdentityId"] = productEnabled ? Guid.NewGuid().ToString("D") : null,
-                }));
+                configuration.AddInMemoryCollection(configurationOverrides));
             builder.ConfigureTestServices(services => registered = services
                 .Where(descriptor => descriptor.ServiceType.IsGenericType
                     && descriptor.ServiceType.GetGenericTypeDefinition() == typeof(DbContextOptions<>))
