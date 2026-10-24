@@ -614,6 +614,24 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                     body.GetProperty("status").GetString(), body.GetProperty("version").GetInt64()));
         }
 
+        {
+            // BLG-05b: the draft's accounts are named by the draft's own frozen plan version, from the stored catalog.
+            var accountsClient = Track(run.Client(Preparer, CompanyA));
+            var accounts = Track(await accountsClient.GetAsync($"{NormalDraftsPath}/{draftId:D}/accounts"));
+            Assert.Equal(HttpStatusCode.OK, accounts.StatusCode);
+            var accountsBody = await Json(accounts);
+            Assert.Equal((draftId, 1L, package.AccountPlanSourceVersion, package.AccountsSha256),
+                (accountsBody.GetProperty("draftId").GetGuid(), accountsBody.GetProperty("version").GetInt64(),
+                    accountsBody.GetProperty("accountPlanSourceVersion").GetString(),
+                    accountsBody.GetProperty("accountPlanSourceSha256").GetString()));
+            Assert.Equal(
+                [(1, DebitAccountId, "100.01", "Synthetic debit"), (2, CreditAccountId, "320.01", "Synthetic credit")],
+                accountsBody.GetProperty("accounts").EnumerateArray().Select(account => (
+                    account.GetProperty("lineNumber").GetInt32(), account.GetProperty("accountId").GetGuid(),
+                    account.GetProperty("accountCode").GetString(), account.GetProperty("accountName").GetString()))
+                    .ToArray());
+        }
+
         var approveRequest = new ApproveNormalJournalDraftRequestV1(1, periodId);
         var approveKey = Key("draft-approve");
         JsonElement approvedBody;

@@ -352,6 +352,22 @@ public static class AccountingEndpoints
             .Produces<NormalJournalDraftViewV1>(StatusCodes.Status200OK)
             .WithReadProblems(notFound: true);
 
+        // BLG-05b: the draft's accounts named by the draft's own frozen account plan version.
+        group.MapGet("/normal-journal-drafts/{draftId:guid}/accounts", async (
+                Guid draftId,
+                NormalJournalDraftAccountReadServiceV1 service,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response.Headers);
+                return ToHttpResult(httpContext, await service.ReadAsync(draftId, cancellationToken), null);
+            })
+            .RequireCompanyContext()
+            .WithName("GetAccountingNormalJournalDraftAccountsV1")
+            .Produces<NormalJournalDraftAccountsViewV1>(StatusCodes.Status200OK)
+            .WithReadProblems(notFound: true)
+            .ProducesErpConflict(AccountingApiCodes.VersionConflict);
+
         group.MapPost("/normal-journal-drafts/{draftId:guid}/approval", async (
                 Guid draftId,
                 ApproveNormalJournalDraftRequestV1 request,
