@@ -31,7 +31,8 @@ public sealed class DatabaseSchemaCompatibilityCoverageTests
             // Program reads Product's options while composing services, before the later
             // app-configuration callback. Supply the same values at both host boundaries.
             foreach (var (key, value) in configurationOverrides)
-                builder.UseSetting(key, value);
+                if (value is not null)
+                    builder.UseSetting(key, value);
             builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(configurationOverrides));
             builder.ConfigureTestServices(services => registered = services
