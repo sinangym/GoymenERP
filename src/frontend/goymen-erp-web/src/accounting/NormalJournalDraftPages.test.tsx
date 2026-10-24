@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, normalDraftApprovalPath } from './capabilities'
 import { COMPANY_A, installFetch, json, renderAt, requestsFor } from './testHarness'
@@ -403,5 +403,98 @@ describe('normal journal approval period (BLG-05)', () => {
     const fresh = await screen.findByLabelText('Onay dönemi') as HTMLSelectElement
     await waitFor(() => expect([...fresh.options].map((option) => option.value)).toEqual(['', OTHER_PERIOD]))
     expect(fresh.value).toBe('')
+  })
+
+  it('says a failed later page and loads it with the same button on retry', async () => {
+    let laterReads = 0
+    installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods') && url.includes('cursor=')) {
+          laterReads += 1
+          return laterReads === 1 ? json({ status: 503 }, 503) : json(periodPage([AUGUST]))
+        }
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER], 'page-2'))
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    const more = await screen.findByRole('button', { name: 'Daha eski dönemleri yükle' })
+    fireEvent.click(more)
+    expect((await screen.findByRole('alert')).textContent).toBe('Daha eski dönemler yüklenemedi. Aynı düğmeyle yeniden deneyin.')
+    // The first page and its choice survive the failure.
+    expect((screen.getByLabelText('Onay dönemi') as HTMLSelectElement).value).toBe(PERIOD)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Daha eski dönemleri yükle' }))
+    await screen.findByRole('option', { name: '2026-08-01 – 2026-08-31' })
+    expect(screen.queryByText(/Daha eski dönemler yüklenemedi/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Daha eski dönemleri yükle' })).toBeNull()
+    expect(laterReads).toBe(2)
+  })
+
+  it('starts again from the first page when the server no longer accepts the cursor', async () => {
+    let firstReads = 0
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods') && url.includes('cursor=')) return json({ code: 'invalid_cursor' }, 409)
+        if (url.includes('/accounting/periods')) {
+          firstReads += 1
+          return json(firstReads === 1 ? periodPage([SEPTEMBER], 'stale') : periodPage([SEPTEMBER, AUGUST]))
+        }
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    fireEvent.click(await screen.findByRole('button', { name: 'Daha eski dönemleri yükle' }))
+    expect((await screen.findByRole('status')).textContent).toBe('Dönem listesi bu arada değişti; liste baştan yüklendi.')
+    const choice = screen.getByLabelText('Onay dönemi') as HTMLSelectElement
+    await waitFor(() => expect([...choice.options].map((option) => option.value)).toEqual(['', PERIOD, OTHER_PERIOD]))
+    expect(firstReads).toBe(2)
+    // Restarted from the first page: no further cursor is offered, and the stale one was sent once only.
+    expect(screen.queryByRole('button', { name: 'Daha eski dönemleri yükle' })).toBeNull()
+    expect(requestsFor(recorded, 'cursor=stale', 'GET')).toHaveLength(1)
+  })
+
+  it('keys the period and draft reads by the shell namespace, so a fenced 403 read is never served again', async () => {
+    let capabilityReads = 0
+    let periodReads = 0
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      capabilityGeneration: () => (capabilityReads += 1) === 1 ? 'acc-cap-gen-1' : 'acc-cap-gen-2',
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods')) {
+          periodReads += 1
+          return periodReads === 1 ? json({ status: 403 }, 403) : json(periodPage([SEPTEMBER]))
+        }
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    const { queryClient, router } = renderAt(normalDraftApprovalPath(DRAFT))
+    // The 403 is reported: the shell strips the snapshot and the gated page closes.
+    await screen.findByText(/Bulunamadı/)
+    expect(screen.queryByLabelText('Onay dönemi')).toBeNull()
+    // The next entry verifies a FRESH snapshot (a new generation, the same grant).
+    await act(async () => { await router.navigate(ACCOUNTING_ROUTE.journalsList) })
+    await act(async () => { await router.navigate(normalDraftApprovalPath(DRAFT)) })
+    const choice = await screen.findByLabelText('Onay dönemi') as HTMLSelectElement
+    await waitFor(() => expect(choice.value).toBe(PERIOD))
+    expect(periodReads).toBe(2)
+    expect(capabilityReads).toBeGreaterThanOrEqual(2)
+    expect(requestsFor(recorded, '/accounting/periods', 'GET').length).toBe(periodReads)
+
+    // Every accounting read of this page is namespace-first, under the current generation only.
+    const keys = queryClient.getQueryCache().getAll().map((query) => query.queryKey)
+    const pageKeys = keys.filter((key) => key.includes('normal-journal-approval-periods') || key.includes('normal-journal-draft'))
+    expect(pageKeys.length).toBeGreaterThanOrEqual(2)
+    for (const key of pageKeys) {
+      expect(typeof key[0]).toBe('string')
+      const fields = JSON.parse(key[0] as string) as unknown[]
+      expect(fields).toContain('acc-cap-gen-2')
+      expect(fields).not.toContain('acc-cap-gen-1')
+    }
   })
 })

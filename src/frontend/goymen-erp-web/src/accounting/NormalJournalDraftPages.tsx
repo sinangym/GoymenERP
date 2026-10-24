@@ -221,10 +221,10 @@ export function NormalJournalDraftPage({ mode }: { readonly mode: 'own' | 'appro
   const key = contextKey(shell)
   const namespace = key === null ? null : contextKeyString(key)
   const { draftId = '' } = useParams()
-  return <NormalJournalDraftDetail key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}:${draftId}:${mode}`} draftId={draftId} mode={mode} />
+  return <NormalJournalDraftDetail key={`${namespace ?? 'none'}:${shell.routeEntryGeneration}:${draftId}:${mode}`} namespace={namespace} draftId={draftId} mode={mode} />
 }
 
-function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string; readonly mode: 'own' | 'approve' }) {
+function NormalJournalDraftDetail({ namespace, draftId, mode }: { readonly namespace: string | null; readonly draftId: string; readonly mode: 'own' | 'approve' }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const mountedRef = useRef(true)
@@ -243,7 +243,8 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
   const [outcome, setOutcome] = useState<NormalJournalCommandOutcome | null>(null)
   const inFlight = useRef(false)
   const query = useQuery({
-    queryKey: [companyId, shell.routeEntryGeneration, 'normal-journal-draft', draftId],
+    // Namespace first: the shell drops every query of a fenced context by `queryKey[0]`.
+    queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'accounting', 'normal-journal-draft', draftId],
     enabled: single && GUID.test(draftId),
     queryFn: async ({ signal }) => {
       const captured = boundary.capture()
@@ -293,7 +294,7 @@ function NormalJournalDraftDetail({ draftId, mode }: { readonly draftId: string;
     <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{T.lineNumber}</th><th>{T.lineAccount}</th><th>{T.lineSide}</th><th className={styles.amount}>{T.amount}</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td className={styles.mono}>{line.accountId}</td><td>{line.side === 'Debit' ? T.debit : T.credit}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
     {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>{T.approvalUnknown}<button type="button" onClick={() => snapshot && void send(snapshot, true)}>{T.resend}</button></div> : null}
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>{normalJournalApprovalFailureText(outcome.failure)}</p> : null}
-    {mode === 'approve' && draft.status === 'Draft' ? <div className={styles.actions}><NormalJournalApprovalPeriod key={periodReload} reloadToken={periodReload} companyId={companyId ?? ''} accountingDate={draft.accountingDate} value={periodId} onChange={setPeriodId} disabled={sending || unresolved} /><button type="button" disabled={sending || unresolved || periodId === ''} onClick={approve}>{T.approve}</button></div> : null}
+    {mode === 'approve' && draft.status === 'Draft' ? <div className={styles.actions}><NormalJournalApprovalPeriod key={periodReload} reloadToken={periodReload} namespace={namespace ?? 'no-context'} companyId={companyId ?? ''} accountingDate={draft.accountingDate} value={periodId} onChange={setPeriodId} disabled={sending || unresolved} /><button type="button" disabled={sending || unresolved || periodId === ''} onClick={approve}>{T.approve}</button></div> : null}
     <div className={styles.actions}>{draft.status === 'Approved' && draft.postedJournalId && hasCapability(shell, ACCOUNTING_CAPABILITY.journalsDetail) ? <Link to={journalDetailPath(draft.postedJournalId)}>{T.openPostedJournal}</Link> : null}{mode === 'own' && hasCapability(shell, ACCOUNTING_CAPABILITY.normalDraftApprove) ? <Link to={normalDraftApprovalPath(draftId)}>{T.openApproval}</Link> : null}<Link to={ACCOUNTING_ROUTE.journalsList}>{T.backToJournals}</Link></div>
   </Frame>
 }
