@@ -3,7 +3,7 @@
  *
  * This is a reviewer's checklist, not runtime code: nothing in the app imports it. Each item names how it is proved:
  * the static audit (./listFormAudit.ts with its shrinking baseline), the token contrast test, a Vitest page test, the
- * isolated browser pack (tests/e2e/isolated-acceptance/specs/ek46-list-form.spec.ts) or a human review. The texts
+ * browser cases (EK46-* in tests/e2e/organization-org03/specs/org03-work-centre-list.spec.ts) or a human review. The texts
  * are Turkish because reviewers read them; they deliberately avoid tag and API spellings so the audit never reads
  * this file as markup.
  */
