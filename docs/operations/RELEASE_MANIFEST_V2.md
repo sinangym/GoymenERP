@@ -101,6 +101,6 @@ düzeltmesinde yalnız dosya/hash/diff kontrolleri yapılır;
 AST/schema/unit/CLI/generator/build/restore/SQL/browser/scanner/CI **NOT_RUN**.
 İki bağımsız güncel exact-head K3 incelemesi, insan ve fresh zorunlu CI kapıları
 açıktır. Push/PR/main merge, source admission, R02.2 ortamı, production veya 18/128
-artışı bu düzeltmeyle verilmez. İlk claim'deki Finance STOP, AI A-contract-only,
-permission/grant/Critical ve #759 sahiplik ifadeleri tarihsel kapsam kaydıdır;
-bu düzeltme yeni karar veya bu alanlar için yetki üretmez.
+artışı bu düzeltmeyle verilmez. Bu dar kaynak işi Finance STOP, AI A-contract-only,
+permission/grant/Critical ve #759 sahiplik sınırlarını aynen korur. Bu düzeltme
+yeni karar, aktivasyon veya bu alanlar için yetki üretmez.
