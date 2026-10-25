@@ -44,7 +44,9 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
 
         // DEC-SAL-005: a cancelled order keeps its approval facts (history), but its lines are no longer an approved demand —
         // a consumer's NEW allocation or loading line for it is refused by that consumer (NotApproved, state "Cancelled").
-        if (draft.State == SalesDraftState.Cancelled)
+        // No 30 / SAT-D12: a force-closed order likewise (NotApproved, state "Closed") — its remainder is closed, so no owner
+        // may create a new link to it; the delivered/shipped history stays the owners'.
+        if (draft.State is SalesDraftState.Cancelled or SalesDraftState.Closed)
         {
             return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, draft.State.ToString());
         }
@@ -127,7 +129,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             {
                 // DEC-SAL-005: a cancelled order is still listed as Approved by the store's approval filter (its facts stay), but
                 // its lines are no longer offered to a consumer's picker.
-                if (draft.ApprovalState != InternalApprovalState.Approved || draft.State == SalesDraftState.Cancelled
+                if (draft.ApprovalState != InternalApprovalState.Approved || draft.State != SalesDraftState.Draft
                     || !draft.IsCustomerAccepted)
                 {
                     previous = draft;

@@ -1907,6 +1907,23 @@ public sealed partial class SalesDraftServiceTests
             return result;
         }
 
+        public List<ForceClosureFacts> ForceClosures { get; } = [];
+
+        public async Task<SalesDraftStateResult?> ForceCloseDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, SalesForceClosurePlan, DateTimeOffset, ForceClosureFacts> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task<SalesForceClosurePlan>> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.ForceCloseV1) throw new ArgumentException("wrong command", nameof(commandName));
+            SalesForceClosurePlan? plan = null;
+            ForceClosureFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, plan!, now), audit,
+                async token => plan = await beforeWrite(draft!, token), cancellationToken);
+            if (recorded is not null) ForceClosures.Add(recorded);
+            return result;
+        }
+
         public List<RemainderChangeFacts> RemainderChanges { get; } = [];
 
         public async Task<SalesDraftStateResult?> ChangeRemainderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,

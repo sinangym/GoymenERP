@@ -158,8 +158,9 @@ public sealed class SalesOrderDraftApprovalTests
             .Order(StringComparer.Ordinal)
             .ToArray();
         // DEC-SAL-005: the cancellation of an approved order is a mutation entry too (RequireCancellable only reads);
-        // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads).
-        Assert.Equal(["AddLine", "Approve", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
+        // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads); No 30: so is the force-close
+        // (RequireForceClosable only reads).
+        Assert.Equal(["AddLine", "Approve", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "ForceClose", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
@@ -180,6 +181,10 @@ public sealed class SalesOrderDraftApprovalTests
         // DEC-SAL-005: a withdrawn draft was never approved — it is not cancelled either.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Cancel(3, Approver, "SENTETIK",
             new CancellationImpactSnapshot("t", [new("inventory.active-allocations", "None")]), T0)));
+        // No 30: a withdrawn draft was never approved — it is not force-closed either.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ForceClose(3, Approver, "SENTETIK",
+            new ForceClosureImpactSnapshot("t", [new("inventory.active-allocations", "None", false)]),
+            [new ForceClosureLineInput(draft.Lines[0].Id, 0m)], T0)));
         // DEC-SAL-002: a withdrawn draft's quantities do not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseQuantities(3,
             [new LineQuantityInput(draft.Lines[0].Id, "9", 9m)], "synthetic-reviser", "SENTETIK", T0)));

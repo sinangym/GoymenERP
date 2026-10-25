@@ -322,3 +322,24 @@ internal sealed class DraftCancellationRow : ISalesTenantRow
     public string ImpactJson { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// No 30 / SAT-D12: the recorded force-closure of an approved order (append-only, at most one per draft): the revision closed,
+/// who, when, why, the draft version it produced, the impact preview the user confirmed (its token and each category's status
+/// and blocking flag, as JSON) and every line's closed remainder (ordered, shipped, closed remainder as exact text, as JSON).
+/// Never modified, never deleted; the draft's other rows (its line quantities included) stay as they were.
+/// </summary>
+internal sealed class DraftForceClosureRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public string ClosedBy { get; set; } = string.Empty;
+    public DateTimeOffset ClosedAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long DraftVersion { get; set; }
+    public string ImpactToken { get; set; } = string.Empty;
+    public string ImpactJson { get; set; } = string.Empty;
+    public string LinesJson { get; set; } = string.Empty;
+    public string CorrelationId { get; set; } = string.Empty;
+}

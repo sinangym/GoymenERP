@@ -956,6 +956,156 @@ public sealed class SalesStore(
     }
 
     /// <summary>
+    /// No 30 / SAT-D12: the force-closure of an approved order, one save — the cancellation's key rules and shape. The header is
+    /// tracked; <paramref name="beforeWrite"/> (the caller's fences, the domain's preconditions and the impact read afresh from
+    /// the owners) runs on the draft as read and answers the plan to keep (the confirmed impact and every line's shipped total);
+    /// the domain decides (version, state, reason, the closed remainders) and returns the facts. The closure row is APPENDED
+    /// beside the header's lifecycle state and version, the attempt record and the audit event (the facts, the impact and every
+    /// line's closed remainder) — or nothing at all. No line, revision, schedule or approval column changes (checked); no stock
+    /// or money event and no other module's record is written.
+    /// </summary>
+    public async Task<SalesDraftStateResult?> ForceCloseDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, SalesForceClosurePlan, DateTimeOffset, ForceClosureFacts> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task<SalesForceClosurePlan>> beforeWrite, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(audit);
+        ArgumentNullException.ThrowIfNull(beforeWrite);
+        RequireEnvelope(envelope);
+        RequireHash(requestHash);
+        RequireCommand(commandName);
+        if (commandName != SalesDraftCommands.ForceCloseV1)
+        {
+            throw new ArgumentException("Yalnız zorla kapatma komutu siparişi kapatır.", nameof(commandName));
+        }
+
+        if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
+        {
+            throw new ArgumentException("Zorla kapatma komutunun audit olayı tür, işlem ve gerekçe ister.", nameof(audit));
+        }
+
+        var companyId = RequireResolvedCompany();
+        var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
+        var actorId = envelope.ActorId.Trim();
+        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        if (attempt is not null)
+        {
+            if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
+                || !string.Equals(attempt.RequestHash, requestHash, StringComparison.Ordinal))
+            {
+                throw Refused(SalesDraftStoreCodes.SameKeyPayloadMismatch,
+                    "Aynı Idempotency-Key başka bir istekle geldi; ilk cevap bu isteğe verilmez.");
+            }
+
+            if (attempt.Outcome != AttemptOutcomeRecorded || attempt.DraftId is not { } recordedId)
+            {
+                throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar kayıtlı bir terminal reddi taşıyor; tekrar aynı reddi alır.");
+            }
+
+            var stored = await FindDraftAsync(recordedId, cancellationToken)
+                ?? throw new InvalidOperationException("Kayıtlı deneme kaydının taslağı bulunamadı.");
+            return new SalesDraftStateResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
+        }
+
+        if (draftId == Guid.Empty)
+        {
+            return null;
+        }
+
+        var row = await dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        var draft = (await RestoreAsync([row], cancellationToken)).Single();
+        var plan = await beforeWrite(draft, cancellationToken)
+            ?? throw new InvalidOperationException("Zorla kapatma, kullanıcının gördüğü etki önizlemesi olmadan kaydedilmez.");
+        var before = new { state = draft.State.ToString(), approvalState = draft.ApprovalState.ToString(), revision = draft.Revision, version = draft.Version };
+        var versionBefore = draft.Version;
+        var revisionBefore = draft.Revision;
+        var approvalBefore = (draft.ApprovalState, draft.Approval);
+        var quantitiesBefore = draft.Lines.Select(line => (line.Id, line.QuantityText)).ToArray();
+        var now = timeProvider.GetUtcNow();
+        var facts = mutate(draft, plan, now);
+        if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId
+            || draft.Revision != revisionBefore || (draft.ApprovalState, draft.Approval) != approvalBefore
+            || draft.State != SalesDraftState.Closed || facts is null || draft.ForceClosure != facts || facts.Impact != plan.Impact
+            || !quantitiesBefore.SequenceEqual(draft.Lines.Select(line => (line.Id, line.QuantityText))))
+        {
+            throw new InvalidOperationException("Zorla kapatma tam olarak bir sürüm ilerletir; revizyonu, onay eksenini ve satır miktarlarını değiştirmez.");
+        }
+
+        var impactJson = JsonSerializer.Serialize(new { token = facts.Impact.Token, sources = facts.Impact.Sources }, Json);
+        var linesJson = JsonSerializer.Serialize(facts.Lines, Json);
+        dbContext.DraftForceClosures.Add(new DraftForceClosureRow
+        {
+            CompanyId = companyId,
+            DraftId = draft.Id,
+            Revision = facts.Revision,
+            ClosedBy = facts.ClosedBy,
+            ClosedAtUtc = facts.ClosedAtUtc,
+            Reason = facts.Reason,
+            DraftVersion = draft.Version,
+            ImpactToken = facts.Impact.Token,
+            ImpactJson = impactJson,
+            LinesJson = linesJson,
+            CorrelationId = envelope.CorrelationId.Trim(),
+        });
+        row.State = (int)draft.State;
+        row.Version = draft.Version;
+        row.UpdatedAtUtc = draft.UpdatedAtUtc;
+        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        {
+            CompanyId = companyId,
+            CommandName = commandName,
+            IdempotencyKeyHash = keyHash,
+            RequestHash = requestHash,
+            ActorId = actorId,
+            Outcome = AttemptOutcomeRecorded,
+            DraftId = draft.Id,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            RecordedAtUtc = now,
+        });
+        auditEvents.Enqueue(new AuditEventDraft(
+            companyId,
+            audit.EventType,
+            DraftEntityType,
+            draft.Id.ToString("D"),
+            audit.Operation,
+            EntityVersionBefore: versionBefore,
+            EntityVersionAfter: draft.Version,
+            AuditActorTypes.User,
+            envelope.ActorId,
+            envelope.PermissionCode,
+            envelope.RoleCodes,
+            JsonSerializer.Serialize(before, Json),
+            JsonSerializer.Serialize(new
+            {
+                state = draft.State.ToString(),
+                approvalState = draft.ApprovalState.ToString(),
+                revision = draft.Revision,
+                version = draft.Version,
+                forceClosure = new { facts.ClosedBy, facts.ClosedAtUtc, facts.Reason },
+                impact = new { token = facts.Impact.Token, sources = facts.Impact.Sources },
+                lines = facts.Lines,
+            }, Json),
+            audit.Reason,
+            ApprovalContextJson: null,
+            AuditAiInvolvement.None,
+            AiContextJson: null,
+            envelope.SourceChannel,
+            envelope.ClientIpAddress,
+            envelope.UserAgent,
+            envelope.CorrelationId,
+            envelope.CausationId,
+            envelope.IdempotencyKey));
+        await SaveAsync(cancellationToken);
+        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
+    }
+
+    /// <summary>
     /// Partial delivery (user decision 2026-09-30): one remainder change step, one save — the cancellation's key rules and
     /// shape. The header and the line rows are tracked; <paramref name="beforeWrite"/> (the caller's fences, the domain's
     /// preconditions and the owners' floor read afresh) runs on the draft as read; the domain decides and returns the change.
@@ -1280,6 +1430,7 @@ public sealed class SalesStore(
         var schedules = await dbContext.DraftDeliverySchedules.AsNoTracking().Where(schedule => ids.Contains(schedule.DraftId)).ToListAsync(cancellationToken);
         var scheduleDates = await dbContext.DraftDeliveryScheduleDates.AsNoTracking().Where(date => ids.Contains(date.DraftId)).ToListAsync(cancellationToken);
         var cancellations = await dbContext.DraftCancellations.AsNoTracking().Where(cancellation => ids.Contains(cancellation.DraftId)).ToListAsync(cancellationToken);
+        var forceClosures = await dbContext.DraftForceClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         var remainderChanges = await dbContext.DraftRemainderChanges.AsNoTracking().Where(change => ids.Contains(change.DraftId)).ToListAsync(cancellationToken);
         var remainderDecisions = await dbContext.DraftRemainderDecisions.AsNoTracking().Where(decision => ids.Contains(decision.DraftId)).ToListAsync(cancellationToken);
         var drafts = new List<SalesOrderDraft>(rows.Count);
@@ -1380,16 +1531,26 @@ public sealed class SalesStore(
             // header's lifecycle state and the appended row must agree: a cancelled header without its row, or a row beside a
             // Draft header, is refused, not repaired.
             var cancellation = cancellations.SingleOrDefault(candidate => candidate.DraftId == row.Id);
+            // No 30 / SAT-D12: the same for the recorded force-closure — a closed header without its row, or a row beside any
+            // other lifecycle state, is refused, not repaired.
+            var forceClosure = forceClosures.SingleOrDefault(candidate => candidate.DraftId == row.Id);
             if ((row.State == (int)SalesDraftState.Cancelled) != (cancellation is not null)
-                || row.State is not ((int)SalesDraftState.Draft or (int)SalesDraftState.Cancelled))
+                || (row.State == (int)SalesDraftState.Closed) != (forceClosure is not null)
+                || row.State is not ((int)SalesDraftState.Draft or (int)SalesDraftState.Cancelled or (int)SalesDraftState.Closed))
             {
-                throw new InvalidOperationException("Kayıtlı yaşam döngüsü durumu ile iptal kaydı uyuşmuyor.");
+                throw new InvalidOperationException("Kayıtlı yaşam döngüsü durumu ile iptal ya da zorla kapatma kaydı uyuşmuyor.");
             }
 
             if (cancellation is not null)
             {
                 draft.RestoreCancellation(new CancellationFacts(cancellation.Revision, cancellation.CancelledBy, cancellation.CancelledAtUtc,
                     cancellation.Reason, CancellationImpact(cancellation)));
+            }
+
+            if (forceClosure is not null)
+            {
+                draft.RestoreForceClosure(new ForceClosureFacts(forceClosure.Revision, forceClosure.ClosedBy, forceClosure.ClosedAtUtc,
+                    forceClosure.Reason, ForceClosureImpact(forceClosure), ForceClosureLines(forceClosure)));
             }
 
             draft.RestoreCustomerAcceptance(row.CustomerAcceptedRevision is null
@@ -1426,6 +1587,33 @@ public sealed class SalesStore(
     }
 
     private sealed record StoredImpact(string Token, IReadOnlyList<CancellationImpactEntry> Sources);
+
+    /// <summary>The impact stored with a force-closure: its token (the row's column) and the sources of its JSON; a mismatch is refused.</summary>
+    private static ForceClosureImpactSnapshot ForceClosureImpact(DraftForceClosureRow row)
+    {
+        var stored = JsonSerializer.Deserialize<StoredForceClosureImpact>(row.ImpactJson, Json);
+        if (stored is null || stored.Sources is null || stored.Sources.Any(source => source is null)
+            || !string.Equals(stored.Token, row.ImpactToken, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Kayıtlı zorla kapatma etkisi okunamadı.");
+        }
+
+        return new ForceClosureImpactSnapshot(row.ImpactToken, [.. stored.Sources]);
+    }
+
+    /// <summary>The closed remainders stored with a force-closure; the domain's restore checks them against the order's lines.</summary>
+    private static IReadOnlyList<ForceClosureLineSnapshot> ForceClosureLines(DraftForceClosureRow row)
+    {
+        var stored = JsonSerializer.Deserialize<IReadOnlyList<ForceClosureLineSnapshot>>(row.LinesJson, Json);
+        if (stored is null || stored.Any(line => line is null))
+        {
+            throw new InvalidOperationException("Kayıtlı zorla kapatma satırları okunamadı.");
+        }
+
+        return stored;
+    }
+
+    private sealed record StoredForceClosureImpact(string Token, IReadOnlyList<ForceClosureImpactEntry> Sources);
 
     /// <summary>A stored remainder change and its decision as the domain's facts; an undefined kind or outcome is refused, not repaired.</summary>
     private static RemainderChangeFacts RemainderChange(DraftRemainderChangeRow change, DraftRemainderDecisionRow? decision)
@@ -1548,7 +1736,8 @@ public sealed class SalesStore(
     {
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
-            or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ReviseQuantityV1
+            or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ForceCloseV1
+            or SalesDraftCommands.ReviseQuantityV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
             or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1
             or SalesDraftCommands.ApprovePriceFloorExceptionsV1))

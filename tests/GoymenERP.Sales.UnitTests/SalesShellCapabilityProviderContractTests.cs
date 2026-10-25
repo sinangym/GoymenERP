@@ -15,6 +15,15 @@ public sealed class SalesShellCapabilityProviderContractTests
 {
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/sales/capabilities.ts";
 
+    /// <summary>
+    /// No 30 / SAT-D12: the force-close control is published by the backend slice BEFORE the frontend lane declares its id in
+    /// <c>capabilities.ts</c> (the frontend lane owns that file and adds it with the force-close screen). Until then it is the
+    /// ONLY declaration exempt from the frontend-file check; every other id and route is still read from the file. Remove this
+    /// exemption when the frontend declares <c>'sales.orders.force-close'</c>.
+    /// </summary>
+    private static readonly IReadOnlySet<string> AwaitingFrontendDeclaration =
+        new HashSet<string>([SalesShellCapabilityProvider.ForceCloseCapabilityId], StringComparer.Ordinal);
+
     [Fact]
     public void The_three_screens_and_the_two_controls_are_declared_with_the_frontends_ids_and_routes()
     {
@@ -24,12 +33,16 @@ public sealed class SalesShellCapabilityProviderContractTests
 
         // DEC-SAL-003 (1.2): the delivery-schedule control joins the approve and commercial-revision controls;
         // DEC-SAL-005 (1.3): cancel; DEC-SAL-002 (1.4): quantity revision; Q9 (1.5): customer acceptance;
-        // AT-021 (1.6): reasoned floor-exception approval remains a separate child control.
-        Assert.Equal(("SALES", "1.6"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(10, declarations.Count);
+        // AT-021 (1.6): reasoned floor-exception approval remains a separate child control; No 30 (1.7): force-close.
+        Assert.Equal(("SALES", "1.7"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(11, declarations.Count);
         foreach (var declaration in declarations)
         {
-            Assert.Contains($"'{declaration.CapabilityId}'", source);
+            if (!AwaitingFrontendDeclaration.Contains(declaration.CapabilityId))
+            {
+                Assert.Contains($"'{declaration.CapabilityId}'", source);
+            }
+
             Assert.Contains($"'{declaration.RoutePath}'", source);
             Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
             Assert.Null(declaration.GlobalProductOperation);
@@ -105,6 +118,15 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, quantity.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersQuantityWrite], quantity.RequiredPermissions);
 
+        // No 30 / SAT-D12: the force-close preview and command are a control of the detail — the read plus its own name, never
+        // the cancel name.
+        var forceClose = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.ForceCloseCapabilityId);
+        Assert.Equal("sales.orders.force-close", forceClose.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (forceClose.RouteId, forceClose.RoutePath, forceClose.ScreenId, forceClose.RoutePrecedence, forceClose.ContextRequirement, forceClose.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, forceClose.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersForceClose], forceClose.RequiredPermissions);
+
         var customerAcceptance = Assert.Single(declarations,
             item => item.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId);
         Assert.Equal("sales.orders.customer-acceptance.record", customerAcceptance.CapabilityId);
@@ -136,7 +158,10 @@ public sealed class SalesShellCapabilityProviderContractTests
         // DEC-SAL-002: the SEPARATE quantity-revision name; no other Sales name confers it and it confers no approval.
         Assert.Equal("sales.orders.quantity.write", SalesPermissionManifestV1.OrdersQuantityWrite);
         Assert.Equal("sales.orders.customer-acceptance.record", SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);
-        Assert.Equal((10, 10), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // No 30: the SEPARATE force-close name, the decision's own literal, distinct from the cancel name.
+        Assert.Equal("sales.orders.force-close", SalesPermissionManifestV1.OrdersForceClose);
+        Assert.NotEqual(SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersForceClose);
+        Assert.Equal((11, 11), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -148,6 +173,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
                 SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel,
+                SalesPermissionManifestV1.OrdersForceClose,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
             ],
             StringComparer.Ordinal);
@@ -156,7 +182,8 @@ public sealed class SalesShellCapabilityProviderContractTests
             new SalesDraftServiceBindings(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove,
                 SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersQuantityWrite,
-                SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove));
+                SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+                SalesPermissionManifestV1.OrdersForceClose));
     }
 
     private static string FindRepositoryRoot()

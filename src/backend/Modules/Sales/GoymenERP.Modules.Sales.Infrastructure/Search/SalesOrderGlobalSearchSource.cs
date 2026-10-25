@@ -92,12 +92,17 @@ internal sealed class SalesOrderGlobalSearchSource(
 
     internal static string Normalize(string term) => term.Trim().ToUpperInvariant();
 
-    /// <summary>The lifecycle wins when terminal (DEC-SAL-005 Cancelled); otherwise the internal approval state's name.</summary>
+    /// <summary>The lifecycle wins when terminal (DEC-SAL-005 Cancelled, No 30 Closed); otherwise the internal approval state's name.</summary>
     internal static string StateName(int state, int approvalState)
     {
         if (state == (int)SalesDraftState.Cancelled)
         {
             return nameof(SalesDraftState.Cancelled);
+        }
+
+        if (state == (int)SalesDraftState.Closed)
+        {
+            return nameof(SalesDraftState.Closed);
         }
 
         if (state != (int)SalesDraftState.Draft || !Enum.IsDefined(typeof(InternalApprovalState), approvalState))

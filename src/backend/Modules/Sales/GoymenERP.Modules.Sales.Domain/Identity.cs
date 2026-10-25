@@ -164,6 +164,11 @@ public static class SalesRuleCodes
     /// <summary>A cancellation reason over the technical bound (the note's) is refused, never cut.</summary>
     public const string CancellationReasonTooLong = "sales_cancellation_reason_too_long";
 
+    /// <summary>No 30 ("Zorla kapatma … gerekçe zorunlu, audit"): a blank force-close reason is refused, never defaulted.</summary>
+    public const string ForceCloseReasonRequired = "sales_force_close_reason_required";
+    /// <summary>A force-close reason over the technical bound (the note's) is refused, never cut.</summary>
+    public const string ForceCloseReasonTooLong = "sales_force_close_reason_too_long";
+
     // Partial delivery (user decision 2026-09-30): the undelivered remainder of a partly delivered line is cancelled or its
     // quantity revised, with approval; the delivered and loaded part is kept.
     /// <summary>The line has no recorded shipment yet: it is not partly delivered, so its remainder is not this command's (a revision is).</summary>

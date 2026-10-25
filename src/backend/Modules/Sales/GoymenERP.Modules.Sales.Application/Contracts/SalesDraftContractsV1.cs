@@ -38,7 +38,8 @@ public enum SalesCommercialStageV1 { Quote, Order }
 
 // SALES-A1 (contract delta): `approvalState` is the internal approval axis — "Preparing",
 // "PendingApproval", "Approved", "Rejected" or (D2) "Withdrawn" — beside the lifecycle `state` ("Draft", or since
-// DEC-SAL-005 "Cancelled" for an approved order cancelled after its impact preview), the
+// DEC-SAL-005 "Cancelled" for an approved order cancelled after its impact preview, or since No 30 / SAT-D12 "Closed" for an
+// approved order force-closed after its impact preview), the
 // commercial `revision` and the concurrency `version`. Four separate facts, never merged.
 public sealed record SalesOrderDraftSummaryView(
     Guid Id, Guid CompanyId, string DocumentNo, string Kind, string State,
@@ -309,6 +310,12 @@ public static class SalesDraftApiV1
     public const string CancellationImpactPath = "/api/v1/sales/drafts/{id}/cancellation-impact";
     public const string CancellationPath = "/api/v1/sales/drafts/{id}/cancellation";
 
+    // No 30 / SAT-D12: the force-close preview (GET, the force-close permission), the force-close command (POST, 200 with the
+    // detail after the change; same-key replay 200 + `Idempotency-Replayed`) and the recorded closure with every line's closed
+    // remainder (GET, the draft read). The detail wire is unchanged apart from the lifecycle `state` ("Closed").
+    public const string ForceCloseImpactPath = "/api/v1/sales/drafts/{id}/force-close-impact";
+    public const string ForceClosePath = "/api/v1/sales/drafts/{id}/force-close";
+
     // Partial delivery (user decision 2026-09-30): the remainder change of a partly delivered line — requested (POST, the
     // quantity-write name), approved or rejected by an approver (POST, the approve name; 200 with the detail after the step,
     // same-key replay 200 + `Idempotency-Replayed`), and the lines' remainder facts with every recorded change (GET, the draft
@@ -481,6 +488,25 @@ public static class SalesDraftJson
     public static SalesDraftCancelRequest ReadCancel(string json)
     {
         var request = JsonSerializer.Deserialize<SalesDraftCancelRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
+            || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))
+            throw new JsonException("Invalid expected version.");
+        if (request.Reason is null || request.Reason.Length > 4000)
+            throw new JsonException("Invalid reason.");
+        if (string.IsNullOrWhiteSpace(request.ImpactToken) || request.ImpactToken.Length > 128)
+            throw new JsonException("Invalid impact token.");
+        return request;
+    }
+
+    /// <summary>
+    /// No 30: the strict force-close body — the cancel body's shape exactly: the expected version (canonical positive integer
+    /// text), the reason (present, at most 4000; the domain requires it non-blank) and the preview token (non-blank, at most
+    /// 128). Anything else is a shape error.
+    /// </summary>
+    public static SalesDraftForceCloseRequest ReadForceClose(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesDraftForceCloseRequest>(json, Options)
             ?? throw new JsonException("Request body is required.");
         if (string.IsNullOrEmpty(request.ExpectedVersion) || request.ExpectedVersion.Length > 19
             || !Regex.IsMatch(request.ExpectedVersion, "\\A[1-9][0-9]*\\z"))

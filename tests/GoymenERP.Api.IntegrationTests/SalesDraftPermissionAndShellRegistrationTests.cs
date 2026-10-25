@@ -43,6 +43,9 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // DEC-SAL-005: cancelling an approved order. Its own name, company-wide and not Critical (the reason is on
     // ErpPermissions.SalesOrdersCancel).
     [InlineData(SalesPermissionManifestV1.OrdersCancel, ErpPermissions.SalesOrdersCancel)]
+    // No 30 / SAT-D12: force-closing an approved order. Its own name (the decision's literal, separate from the cancel
+    // name), company-wide and not Critical (the reason is on ErpPermissions.SalesOrdersForceClose).
+    [InlineData(SalesPermissionManifestV1.OrdersForceClose, ErpPermissions.SalesOrdersForceClose)]
     // DEC-SAL-002: the quantity revision of an approved order. Its own name, company-wide and not Critical (the reason is
     // on ErpPermissions.SalesOrdersQuantityWrite).
     [InlineData(SalesPermissionManifestV1.OrdersQuantityWrite, ErpPermissions.SalesOrdersQuantityWrite)]
@@ -102,8 +105,12 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
             new ShellCapabilityAuthorityCatalog([authority]));
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
         // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, AT-021 floor-exception approval,
-        // DEC-SAL-003 delivery-schedule, DEC-SAL-005 cancel and DEC-SAL-002 quantity-revision controls.
-        Assert.Equal(10, sales.Length);
+        // DEC-SAL-003 delivery-schedule, DEC-SAL-005 cancel, DEC-SAL-002 quantity-revision, Q9 customer-acceptance and
+        // No 30 force-close controls.
+        Assert.Equal(11, sales.Length);
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.ForceCloseCapabilityId)
+                .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.QuantityWriteCapabilityId)
                 .Declaration.ParentCapabilityId);

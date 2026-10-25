@@ -538,6 +538,31 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         public Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             Cancellation(draftId);
 
+        // No 30: the force-close preview, command and read, recorded like the cancellation's.
+        public Func<Guid, Task<SalesOrderDraftForceCloseImpactResponse>> ForceCloseImpact { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, SalesDraftForceCloseRequest, Task<SalesOrderDraftResponse>> ForceClose { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, Task<SalesOrderDraftForceClosureResponse>> ForceClosure { get; set; } =
+            _ => Task.FromResult(new SalesOrderDraftForceClosureResponse(null));
+
+        public List<(Guid DraftId, SalesDraftForceCloseRequest Request, string Key)> ForceCloseCalls { get; } = [];
+
+        public Task<SalesOrderDraftForceCloseImpactResponse> GetForceCloseImpactAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            ForceCloseImpact(draftId);
+
+        public Task<SalesOrderDraftResponse> ForceCloseDraftAsync(Guid draftId, SalesDraftForceCloseRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            ForceCloseCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return ForceClose(draftId, request);
+        }
+
+        public Task<SalesOrderDraftForceClosureResponse> GetDraftForceClosureAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            ForceClosure(draftId);
+
         public Func<Guid, SalesDraftRemainderChangeRequest, Task<SalesOrderDraftResponse>> RemainderRequest { get; set; } =
             (_, _) => throw new SalesDraftServiceException(404, "not_found");
 
@@ -1233,6 +1258,164 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             var cancellation = body.GetProperty("cancellation");
             Assert.Equal(["revision", "cancelledBy", "cancelledAtUtc", "reason", "impactToken", "sources"], cancellation.EnumerateObject().Select(member => member.Name));
             Assert.Equal("SENTETIK neden", cancellation.GetProperty("reason").GetString());
+        }
+    }
+
+    /// <summary>
+    /// No 30 / SAT-D12: the three force-close routes' wire — the preview (each source with its status AND whether it blocks,
+    /// every line with the closed remainder a closure would record) and the record are private reads whose 404/503 stay
+    /// code-less; the command needs one canonical key and the strict body {expectedVersion, reason, impactToken} before the
+    /// service is reached, answers 200 with the detail after the change, and carries the replay headers on a replayed result
+    /// and on a replayed terminal refusal.
+    /// </summary>
+    [Fact]
+    public async Task Force_close_preview_command_and_record_use_the_strict_owner_contract_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var token = new string('e', 64);
+        var service = new StubDraftService
+        {
+            ForceCloseImpact = id => Task.FromResult(new SalesOrderDraftForceCloseImpactResponse("4", "Rev.0", true, token,
+                [new(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.None, false),
+                 new(SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.Present, false)],
+                [new(lineId, 1, unitId, "6", 0, "0", 1, "4", "4", "4", "4", "2")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var impactPath = $"{SalesEndpoints.DraftsPath}/{draftId:D}/force-close-impact";
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/force-close";
+
+        using (var preview = await client.GetAsync(impactPath))
+        {
+            Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+            Assert.True(preview.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await preview.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "revision", "closable", "impactToken", "sources", "lines"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(["source", "status", "blocks"], body.GetProperty("sources")[0].EnumerateObject().Select(member => member.Name));
+            Assert.Equal(JsonValueKind.False, body.GetProperty("sources")[1].GetProperty("blocks").ValueKind);
+            var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "activeAllocations", "allocatedKg", "loadingInstructionLines",
+                "instructed", "loaded", "shipped", "delivered", "closedRemainder"], line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(("4", "2"), (line.GetProperty("shipped").GetString(), line.GetProperty("closedRemainder").GetString()));
+        }
+
+        foreach (var status in new[] { 404, 503 })
+        {
+            service.ForceCloseImpact = _ => throw new SalesDraftServiceException(status, status == 404 ? "not_found" : SalesDraftProblemCodesV1.ForceCloseImpactUnavailable);
+            using var refused = await client.GetAsync(impactPath);
+            Assert.Equal(status, (int)refused.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.ForceCloseImpactUnavailable, await refused.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent($"{{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\"{token}\"}}", Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        using (var notJson = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent("expectedVersion=4", Encoding.UTF8, "text/plain"),
+               })
+        {
+            notJson.Headers.Add("Idempotency-Key", "SENTETIK-not-json");
+            using var response = await client.SendAsync(notJson);
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     $"{{\"expectedVersion\":4,\"reason\":\"x\",\"impactToken\":\"{token}\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"impactToken\":\"{token}\"}}",
+                     "{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\" \"}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\"{token}\",\"lines\":[]}}",
+                     $"{{\"expectedVersion\":\"04\",\"reason\":\"x\",\"impactToken\":\"{token}\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"{new string('x', 4001)}\",\"impactToken\":\"{token}\"}}",
+                 })
+        {
+            using var invalid = StateCommand(draftId, "force-close", "SENTETIK-invalid", json);
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.ForceCloseCalls);
+
+        var valid = JsonSerializer.Serialize(new SalesDraftForceCloseRequest("4", "SENTETIK neden", token), SalesDraftJson.Options);
+        service.ForceClose = (id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"), request.Reason == "replayed", "SENTETIK-close-first"));
+        using (var closed = await client.SendAsync(StateCommand(draftId, "force-close", "SENTETIK-close", valid)))
+        {
+            Assert.Equal(HttpStatusCode.OK, closed.StatusCode);
+            Assert.False(closed.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal((draftId, "4", "SENTETIK neden", token, "SENTETIK-close"),
+            (service.ForceCloseCalls[0].DraftId, service.ForceCloseCalls[0].Request.ExpectedVersion, service.ForceCloseCalls[0].Request.Reason,
+                service.ForceCloseCalls[0].Request.ImpactToken, service.ForceCloseCalls[0].Key));
+        Assert.Empty(service.CancelCalls);
+
+        using (var replayed = await client.SendAsync(StateCommand(draftId, "force-close", "SENTETIK-close-2",
+                   JsonSerializer.Serialize(new SalesDraftForceCloseRequest("4", "replayed", token), SalesDraftJson.Options))))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-close-first", Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.ForceClose = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.ForceCloseBlocked,
+            [new(SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, SalesCancellationImpactStatusesV1.Present)], true, "SENTETIK-blocked-first");
+        using (var blocked = await client.SendAsync(StateCommand(draftId, "force-close", "SENTETIK-blocked", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+            Assert.Equal("true", Assert.Single(blocked.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-blocked-first", Assert.Single(blocked.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            var problem = await blocked.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(SalesDraftProblemCodesV1.ForceCloseBlocked, problem.GetProperty("code").GetString());
+            Assert.Equal(SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        service.ForceClose = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ForceCloseImpactUnavailable);
+        using (var unavailable = await client.SendAsync(StateCommand(draftId, "force-close", "SENTETIK-503", valid)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.ForceCloseImpactUnavailable, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        using (var none = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, none.StatusCode);
+            Assert.Equal(JsonValueKind.Null, (await none.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("forceClosure").ValueKind);
+        }
+
+        service.ForceClosure = id => Task.FromResult(new SalesOrderDraftForceClosureResponse(new SalesDraftForceClosureV1("Rev.0", "SENTETIK-closer",
+            new DateTimeOffset(2026, 10, 25, 12, 0, 0, TimeSpan.Zero), "SENTETIK neden", token,
+            [new(SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.Present, false)],
+            [new(lineId, 1, "6", "4", "2")])));
+        using (var record = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, record.StatusCode);
+            Assert.True(record.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await record.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["forceClosure"], body.EnumerateObject().Select(member => member.Name));
+            var closure = body.GetProperty("forceClosure");
+            Assert.Equal(["revision", "closedBy", "closedAtUtc", "reason", "impactToken", "sources", "lines"], closure.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(["source", "status", "blocks"], closure.GetProperty("sources")[0].EnumerateObject().Select(member => member.Name));
+            var line = Assert.Single(closure.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "ordered", "shipped", "closedRemainder"], line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal("2", line.GetProperty("closedRemainder").GetString());
+        }
+
+        service.ForceClosure = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         }
     }
 

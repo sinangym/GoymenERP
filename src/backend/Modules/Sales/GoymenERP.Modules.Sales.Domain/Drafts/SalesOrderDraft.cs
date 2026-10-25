@@ -10,9 +10,10 @@ public enum SalesDraftKind
 
 /// <summary>
 /// The LIFECYCLE axis of an order (DEC-SAL-001: a separate axis from the internal approval; DURUM_MAKINELERI "Yaşam
-/// döngüsü: Taslak / Aktif / Kapalı / İptal"). Only the two states this code can reach exist: <see cref="Draft"/> (every
-/// order, approved or not — "Aktif"/"Kapalı" are not derived here) and <see cref="Cancelled"/> (DEC-SAL-005: an approved
-/// order cancelled after its impact preview; terminal, nothing deleted).
+/// döngüsü: Taslak / Aktif / Kapalı / İptal"). Only the states this code can reach exist: <see cref="Draft"/> (every
+/// order, approved or not — "Aktif" is not derived here), <see cref="Cancelled"/> (DEC-SAL-005: an approved order cancelled
+/// after its impact preview; terminal, nothing deleted) and <see cref="Closed"/> (No 30 / SAT-D12: an approved order
+/// force-closed after its impact preview; terminal, nothing deleted).
 /// </summary>
 public enum SalesDraftState
 {
@@ -23,6 +24,15 @@ public enum SalesDraftState
     /// The approval axis keeps its facts (who approved stays who approved); the lines, revisions and schedules stay.
     /// </summary>
     Cancelled = 2,
+
+    /// <summary>
+    /// SINAN_KARARLARI_2026-10-21 No 30 ("Zorla kapatma") as narrowed by SAT-D12 (2026-10-25): the approved order was
+    /// force-closed with a reason after its impact preview; the not-shipped remainder of every line is recorded as the
+    /// closed ("iptal edilen") remainder — a separate axis from the line quantities, which do not move (DEC-SAL-001).
+    /// Terminal like <see cref="Cancelled"/>: every mutation entry refuses it; the approval facts, lines, revisions and
+    /// schedules stay. No stock or money event exists.
+    /// </summary>
+    Closed = 3,
 }
 
 /// <summary>
@@ -174,7 +184,7 @@ public sealed partial class SalesOrderDraft
 
     public SalesDraftKind Kind => SalesDraftKind.Order;
 
-    /// <summary>The lifecycle axis: <see cref="SalesDraftState.Draft"/> until a recorded cancellation (DEC-SAL-005).</summary>
+    /// <summary>The lifecycle axis: <see cref="SalesDraftState.Draft"/> until a recorded cancellation (DEC-SAL-005) or force-closure (No 30).</summary>
     public SalesDraftState State { get; private set; } = SalesDraftState.Draft;
 
     /// <summary>DEC-SAL-005: the recorded cancellation (who, when, why, which revision); null while the order is not cancelled.</summary>
@@ -764,7 +774,7 @@ public sealed partial class SalesOrderDraft
     {
         ArgumentNullException.ThrowIfNull(facts);
         RequireApprovalNotRestored();
-        if (State != SalesDraftState.Draft || Cancellation is not null || facts.Revision != Revision
+        if (State != SalesDraftState.Draft || Cancellation is not null || ForceClosure is not null || facts.Revision != Revision
             || string.IsNullOrWhiteSpace(facts.CancelledBy) || facts.CancelledBy.Length > MaximumActorLength
             || string.IsNullOrWhiteSpace(facts.Reason) || facts.Reason.Length > MaximumCancellationReasonLength
             || !IsImpact(facts.Impact))
@@ -791,11 +801,22 @@ public sealed partial class SalesOrderDraft
         && impact.Sources.All(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.Source) && !string.IsNullOrWhiteSpace(entry.Status))
         && impact.Sources.Select(entry => entry.Source).Distinct(StringComparer.Ordinal).Count() == impact.Sources.Count;
 
+    /// <summary>
+    /// The terminal lifecycle guard of every mutation entry: a cancelled (DEC-SAL-005) or force-closed (No 30 / SAT-D12)
+    /// order is a <see cref="SalesRuleCodes.StateConflict"/>. <paramref name="message"/> names the cancelled case; the
+    /// closed case has its own text.
+    /// </summary>
     private void RequireNotCancelled(string message)
     {
         if (State == SalesDraftState.Cancelled)
         {
             throw new SalesRuleException(SalesRuleCodes.StateConflict, $"{message} (yaşam döngüsü: {State}).");
+        }
+
+        if (State == SalesDraftState.Closed)
+        {
+            throw new SalesRuleException(SalesRuleCodes.StateConflict,
+                $"Zorla kapatılmış sipariş değiştirilmez (yaşam döngüsü: {State}).");
         }
     }
 
@@ -1473,12 +1494,20 @@ public sealed partial class SalesOrderDraft
         }
 
         var cancellationTransitions = State == SalesDraftState.Cancelled ? 1L : 0L;
+        // No 30 / SAT-D12: a recorded force-closure was one step of its own, and only an APPROVED order without a pending
+        // remainder change is ever force-closed - a stored closure beside anything else is refused, not repaired.
+        if (State == SalesDraftState.Closed && (state != InternalApprovalState.Approved || PendingRemainderChange is not null))
+        {
+            throw new InvalidOperationException("Kayıtlı zorla kapatma yalnız karar bekleyen kalan değişikliği olmayan onaylı bir siparişin yanında durur.");
+        }
+
+        var forceClosureTransitions = State == SalesDraftState.Closed ? 1L : 0L;
         // Partial delivery (user decision 2026-09-30): every recorded remainder request was one step of its own, and so was
         // every decision on one (restored just before this).
         var remainderTransitions = RemainderTransitions;
         var customerAcceptanceTransitions = CustomerAcceptance is null ? 0L : 1L;
         var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
-            + cancellationTransitions + remainderTransitions + customerAcceptanceTransitions);
+            + cancellationTransitions + forceClosureTransitions + remainderTransitions + customerAcceptanceTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

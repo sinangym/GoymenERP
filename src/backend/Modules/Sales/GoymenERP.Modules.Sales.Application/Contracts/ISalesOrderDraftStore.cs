@@ -67,6 +67,9 @@ public static class SalesDraftCommands
     /// <summary>DEC-SAL-005: POST /api/v1/sales/drafts/{id}/cancellation — an approved order's lifecycle Draft → Cancelled after its impact preview.</summary>
     public const string CancelV1 = "sales.order-draft.cancel.v1";
 
+    /// <summary>No 30 / SAT-D12: POST /api/v1/sales/drafts/{id}/force-close — an approved order's lifecycle Draft → Closed after its impact preview.</summary>
+    public const string ForceCloseV1 = "sales.order-draft.force-close.v1";
+
     /// <summary>Partial delivery: POST /api/v1/sales/drafts/{id}/remainder-changes — a remainder cancel/revise is requested (nothing on the line moves).</summary>
     public const string RequestRemainderChangeV1 = "sales.order-draft.request-remainder-change.v1";
 
@@ -259,6 +262,20 @@ public interface ISalesOrderDraftStore
         Func<SalesOrderDraft, CancellationToken, Task<CancellationImpactSnapshot>> beforeWrite, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// No 30 / SAT-D12: the force-closure of an approved order, one save — the cancellation's key rules and shape (§3/§4/§7/§8).
+    /// <paramref name="beforeWrite"/> receives the draft as read (tracked header) and is the caller's last word before the
+    /// mutation — its fences, the domain's own preconditions and the impact read afresh from the owners, answered as the plan to
+    /// keep (the confirmed impact and every line's shipped total); any refusal it throws leaves nothing written.
+    /// <paramref name="mutate"/> is the domain's <c>ForceClose</c>. The store APPENDS the closure row (who, when, why, the
+    /// revision, the version produced, the impact the user confirmed, every line's closed remainder) and moves the header's
+    /// lifecycle state and version together with the attempt record and the audit event — or nothing at all. No line, revision,
+    /// schedule or approval column changes. The command name must be <see cref="SalesDraftCommands.ForceCloseV1"/>.
+    /// </summary>
+    Task<SalesDraftStateResult?> ForceCloseDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, SalesForceClosurePlan, DateTimeOffset, ForceClosureFacts> mutate, SalesDraftStateAudit audit,
+        Func<SalesOrderDraft, CancellationToken, Task<SalesForceClosurePlan>> beforeWrite, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// DEC-SAL-002: the quantity revision, one save — the commercial revision's key rules and shape (§3/§4/§7/§8).
     /// <paramref name="beforeWrite"/> receives the draft as read (tracked header and lines) and is the caller's last word before
     /// the mutation — its fences, the domain's own preconditions and the owners' links read afresh; any refusal it throws
@@ -362,6 +379,15 @@ public static class SalesDraftRequestHash
 
     /// <summary>DEC-SAL-005: the canonical content of a cancellation (command, draft, version, reason as sent, the preview token).</summary>
     public static string Compute(string commandName, Guid draftId, SalesDraftCancelRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.ImpactToken }, SalesDraftJson.Options));
+    }
+
+    /// <summary>No 30: the canonical content of a force-close (command, draft, version, reason as sent, the preview token).</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftForceCloseRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
