@@ -2,8 +2,8 @@
 
 Kaynak: Sinan Göymen'in 25 Ekim 2026 tarihli Claude cloud oturumunda, Satış modülü hazırlık
 incelemesi sırasında sorulan seçenekli sorulara verdiği **doğrudan cevaplar**. SAT-D12 aynı
-oturumda zorla kapatma uygulanırken soruldu. Her satırdaki "Seçilen" sütunu kullanıcının işaretlediği seçeneğin kendisidir; Claude yalnız soruyu ve
-seçenekleri hazırlamıştır.
+oturumda zorla kapatma uygulanırken soruldu. Her satırdaki "Seçilen" sütunu kullanıcının
+işaretlediği seçeneğin kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 
 ## 0. Yetki ve sınır
 

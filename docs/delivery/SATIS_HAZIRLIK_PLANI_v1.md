@@ -201,9 +201,9 @@ Sevkiyatçı siparişi fiyatsız görür (fiyatsız okuma görünümü ayrıca g
 | Dalga | İçerik | Ön şart |
 |---|---|---|
 | **S0** | Karar kaydı (bu PR), TEK-06 (UI etiketi), TEK-08, TEK-09…12, UI-10, TEK-13'ün frontend kısmı | – |
-| **S1** | TEK-01…03, TEK-05 (idempotency ADR), API-01/02 + UI-12 (zorla kapatma), API-10 + UI-70/71 (iade görünümü), UI-11, UI-13, PRS-01/02 | – |
-| **S2** | MOD-03 + API-50…52, API-03 (toplamlar), API-08/09 (durum eksenleri), MOD-02 (fiyat kademesi), API-12 iskonto limiti kontrolü, UI-14/15, TEK-07 (dosya bölme) | Ayarlar politika kaydı, TEK-03 |
-| **S3** | TEK-04 (outbox), MOD-01 + API-06/07 (risk), API-04/05 (başlık/satır revizyonu), MOD-07, MOD-08, TEK-06 (API v2 adı) | ERP-000F |
+| **S1** | TEK-01…03, TEK-05 (idempotency ADR), API-01/02 + UI-12 (zorla kapatma), API-10 + UI-70 (iade görünümü), MOD-07 + UI-11 + UI-71 (belgeler, S-11), UI-13, PRS-01/02 | – |
+| **S2** | MOD-03 + API-50…52, API-03 (toplamlar), API-08 (durum eksenleri) + API-09 (Faturalar sekmesi), MOD-02 (fiyat kademesi), API-12 iskonto limiti kontrolü, UI-14, UI-15 (toplamlar ve durum eksenleri kartı), TEK-07 (dosya bölme) | Ayarlar politika kaydı, TEK-03 |
+| **S3** | TEK-04 (outbox, = MOD-09), MOD-01 + API-06/07 (risk) + UI-15 risk kartı, API-04/05 (başlık/satır revizyonu), MOD-08, TEK-06 (API v2 adı) | ERP-000F |
 | **S4** | API-20…24 + UI-20 (talep/teklif), MOD-10 | S2 |
 | **S5** | MOD-06, API-30…37, MOD-04, UI-60…65 (irsaliye & fatura, manuel akış) | S2, S3 |
 | **S6** | API-40 (iade kaydı), API-11 + MOD-05 (kaynak stratejisi), UI-50/51, API-41/42 + UI-80, MOD-11 | S5 |
