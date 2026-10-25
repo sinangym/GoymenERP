@@ -1,11 +1,10 @@
 /**
  * The Sales order draft contract — the only file that spells a Sales wire name.
  *
- * STATUS: `PINNED_SOURCE`, not live. Pinned to Sales Backend draft #257 @ 2c1239e
- * (`src/backend/Modules/Sales/CONTRACT_V1.md`, `SalesDraftContractsV1.cs`, and the 13
- * JSON examples copied verbatim into ./examples), on Business #254 @ 6f0cd10. The
- * Backend says it plainly: "local DTO/decoder/example preparation, not an implemented
- * HTTP API". No route is mapped, no permission exists, nothing here proves a server.
+ * STATUS: LIVE. The routes are served by `SalesEndpoints` and listed in
+ * `contracts/openapi/goymen-erp-v1.json`. The first contract was Sales Backend draft #257
+ * @ 2c1239e (`src/backend/Modules/Sales/CONTRACT_V1.md`, `SalesDraftContractsV1.cs`, and the
+ * JSON examples copied verbatim into ./examples), on Business #254 @ 6f0cd10.
  *
  * Rules taken from the source rather than assumed:
  *  - request optionality does not make a response member optional: every response
@@ -21,8 +20,6 @@
 
 import { unplannedQuantity } from './deliveryPlan'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
-
-export const SALES_CONTRACT_STATUS = 'PINNED_SOURCE' as const
 
 export const SALES_DRAFT_PATH = '/sales/drafts'
 export const salesDraftDetailPath = (id: string) => `${SALES_DRAFT_PATH}/${encodeURIComponent(id)}`

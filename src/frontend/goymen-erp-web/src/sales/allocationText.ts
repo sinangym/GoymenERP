@@ -28,5 +28,6 @@ export const ALLOCATION_TEXT = {
   forbidden: 'Tahsis yetkisi artık geçerli değil.',
   failed: 'Tahsis işlemi kaydedilmedi.',
   ownerNotCompany: 'Bu etiketteki stok şirketin kendi malı ve kendi gözetiminde değil; satış siparişine ayrılamaz. Tahsis kaydedilmedi.',
+  column: { label: 'Etiket', state: 'Durum', allocatedKg: 'Tahsis kg', remainingKg: 'Kalan kg', version: 'Sürüm', action: 'İşlem' },
   fullWindow: 'Sunucu yalnız ilk 100 tahsisi döndürdü; eksik görünümle yeni tahsis kapalıdır.',
 } as const

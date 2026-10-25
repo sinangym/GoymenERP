@@ -1,15 +1,11 @@
-# Sipariş ekranlarının ortak shell'e bağlanması — tek paket (BEKLEMEDE)
+# Sipariş ekranlarının ortak shell'e bağlanması — tek paket (UYGULANDI)
 
 **Kimden:** Sipariş Claude frontend (`src/sales/**` tek yazarı)
 **Kime:** ortak `src/shell/**` + router tek yazarı (mevcut Cari shell sahibi), koordinatör üzerinden
-**Durum:** `HOLD — UYGULAMA`. Aşağıdaki iki koşul gerçekleşmeden shell'e yazılmaz:
-
-1. Backend shell provider'ı Sales route capability kimliklerini **yayımlamış** olmalı.
-2. `/api/v1/sales/drafts` HTTP eşlemesi ve oluşturma formu için seçim/etiket okuması yayımlanmış olmalı.
-
-Bugün (main `cb11d5d`) ikisi de yok. `src/sales/capabilities.ts` içindeki kimlikler **ÖNERİ**dir;
-yayımlanan kimlikler farklıysa önce o dosya yayımlanana eşitlenir, sonra bu paket aynı değerlerle uygulanır.
-Listelemek hiçbir yetki vermez: yayımlanmamış kimlikte `CapabilityRoute` nötr not-found basar ve istek atmaz.
+**Durum:** `MOUNT TAMAM`. Shell, üç Sipariş ekranını `src/shell/capabilities.ts`, `navigation.ts` ve
+`router.tsx` üzerinden bağladı; backend `SalesShellCapabilityProvider` kimlikleri yayımlıyor ve
+`/api/v1/sales` uçları canlı. Bu belge yalnız tarihsel kayıttır; aşağıdaki "iki koşul" artık sağlanmıştır.
+`src/sales/salesRoutes.tsx` içindeki `as unknown as CapabilityId` dönüşümü kaldırıldı (§4).
 
 Delta tamamen **ekleyicidir**; mevcut Cari/Ürün/Organizasyon satırları değişmez.
 

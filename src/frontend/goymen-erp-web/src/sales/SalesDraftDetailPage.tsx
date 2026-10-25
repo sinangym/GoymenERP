@@ -154,11 +154,11 @@ export function SalesDraftDetailPage() {
   const outcome = query.data
   if (outcome === undefined || outcome.type !== 'ok-single') {
     return (
-      <section className={styles.page} aria-label="Sipariş taslağı">
+      <section className={styles.page} aria-label={T.pageLabel}>
         {backLink}
         <StateBlock
           state={outcome === undefined ? { kind: 'initial-loading' } : classifyOutcome(outcome)}
-          subject="sipariş taslağı"
+          subject={T.stateSubject}
           onRetry={() => void query.refetch()}
         />
       </section>

@@ -30,6 +30,7 @@ import { fetchPhysicalAllocations } from './allocationApi'
 import type { AllocationScope } from './allocationContract'
 import { ORDER_DETAIL_TEXT } from './salesText'
 import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
 
 const T = ORDER_DETAIL_TEXT.approval.linkedEffects
 
@@ -159,7 +160,7 @@ function LinkedAllocationLine({ companyId, namespace, routeEntryGeneration, sale
       {status === 'error' ? (
         <>
           {' '}
-          <button type="button" className={styles.linkButton} onClick={() => void query.refetch()}>{T.retry}</button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={() => void query.refetch()}>{T.retry}</Button>
         </>
       ) : null}
     </li>
@@ -241,7 +242,7 @@ function LinkedLoading({ companyId, namespace, routeEntryGeneration, salesOrderI
       {retryable ? (
         <>
           {' '}
-          <button type="button" className={styles.linkButton} onClick={() => void query.refetch()}>{T.retry}</button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={() => void query.refetch()}>{T.retry}</Button>
         </>
       ) : null}
     </span>
