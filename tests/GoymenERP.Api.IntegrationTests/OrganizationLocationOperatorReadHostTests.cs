@@ -9,6 +9,7 @@ namespace GoymenERP.Api.IntegrationTests;
 public sealed class OrganizationLocationOperatorReadHostTests
 {
     private static readonly Guid Company = Guid.Parse("71000000-0000-4000-8000-000000000001");
+    private static readonly Guid OtherCompany = Guid.Parse("71000000-0000-4000-8000-000000000002");
     private static readonly Guid Location = Guid.Parse("75000000-0000-4000-8000-000000000001");
     private static readonly Guid Party = Guid.Parse("74000000-0000-4000-8000-000000000001");
 
@@ -51,6 +52,62 @@ public sealed class OrganizationLocationOperatorReadHostTests
         Assert.Equal(OrganizationLocationOperatorReadOutcomeV1.Success, result.Outcome);
         Assert.Null(result.Resource!.Operator);
         Assert.Empty(owner.DisplayRequests);
+        Assert.Equal(2, organization.LocationReads);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("authentication")]
+    [InlineData("company")]
+    [InlineData("resolution")]
+    [InlineData("access")]
+    public async Task Display_without_assignment_refuses_identity_drift_on_the_final_read(string drift)
+    {
+        var company = new CompanyContext(Company);
+        var user = new UserContext("actor-1", Company);
+        var owner = new StubOwner();
+        var organization = new StubOrganization(LocationRow(null))
+        {
+            OnSecondRead = () => ApplyIdentityDrift(drift, company, user),
+        };
+
+        var result = await Host(organization, new StubLocationStatus(), owner, company, user)
+            .ReadDisplayAsync(Location);
+
+        Assert.Equal(OrganizationLocationOperatorReadOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Resource);
+        Assert.Empty(owner.DisplayRequests);
+        Assert.Equal(2, organization.LocationReads);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("authentication")]
+    [InlineData("company")]
+    [InlineData("resolution")]
+    [InlineData("access")]
+    public async Task Assigned_display_refuses_identity_drift_on_the_final_read(string drift)
+    {
+        var company = new CompanyContext(Company);
+        var user = new UserContext("actor-1", Company);
+        var organization = new StubOrganization(LocationRow(Party))
+        {
+            OnSecondRead = () => ApplyIdentityDrift(drift, company, user),
+        };
+        var owner = new StubOwner
+        {
+            Display = new(
+                CounterpartyOrganizationLocationOperatorReadOutcomeV1.Success,
+                [new(Location, Party, "CAR-1", "Tedarikçi A.Ş.", "Tedarikçi", true)]),
+        };
+
+        var result = await Host(organization, new StubLocationStatus(), owner, company, user)
+            .ReadDisplayAsync(Location);
+
+        Assert.Equal(OrganizationLocationOperatorReadOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Resource);
+        var request = Assert.Single(owner.DisplayRequests);
+        Assert.Equal((Company, "actor-1"), (request.CompanyId, request.ActorId));
         Assert.Equal(2, organization.LocationReads);
     }
 
@@ -146,6 +203,39 @@ public sealed class OrganizationLocationOperatorReadHostTests
     }
 
     [Theory]
+    [InlineData("actor")]
+    [InlineData("authentication")]
+    [InlineData("company")]
+    [InlineData("resolution")]
+    [InlineData("access")]
+    public async Task Candidate_search_refuses_identity_drift_on_the_final_read(string drift)
+    {
+        var company = new CompanyContext(Company);
+        var user = new UserContext("actor-1", Company);
+        var status = new StubLocationStatus
+        {
+            OnSecondRead = () => ApplyIdentityDrift(drift, company, user),
+        };
+        var owner = new StubOwner
+        {
+            Candidates = new(
+                CounterpartyOrganizationLocationOperatorReadOutcomeV1.Success,
+                [new(Party, "CAR-1", "Tedarikçi A.Ş.", null)],
+                null,
+                false),
+        };
+
+        var result = await Host(new StubOrganization(LocationRow(null)), status, owner, company, user)
+            .SearchCandidatesAsync(Location, new(null, 25, null), "server-session");
+
+        Assert.Equal(OrganizationLocationOperatorReadOutcomeV1.Unavailable, result.Outcome);
+        Assert.Null(result.Resource);
+        var request = Assert.Single(owner.CandidateRequests);
+        Assert.Equal((Company, "actor-1"), (request.CompanyId, request.ActorId));
+        Assert.Equal(2, status.Reads);
+    }
+
+    [Theory]
     [InlineData(CounterpartyOrganizationLocationOperatorReadOutcomeV1.Denied,
         (int)OrganizationLocationOperatorReadOutcomeV1.NotFound)]
     [InlineData(CounterpartyOrganizationLocationOperatorReadOutcomeV1.InvalidCursor,
@@ -188,8 +278,35 @@ public sealed class OrganizationLocationOperatorReadHostTests
     private static OrganizationLocationOperatorReadHostV1 Host(
         StubOrganization organization,
         StubLocationStatus status,
-        StubOwner owner) =>
-        new(organization, status, owner, new CompanyContext(Company), new UserContext("actor-1", Company));
+        StubOwner owner,
+        CompanyContext? company = null,
+        UserContext? user = null) =>
+        new(organization, status, owner, company ?? new CompanyContext(Company),
+            user ?? new UserContext("actor-1", Company));
+
+    private static void ApplyIdentityDrift(string drift, CompanyContext company, UserContext user)
+    {
+        switch (drift)
+        {
+            case "actor":
+                user.SetActor("actor-2");
+                break;
+            case "authentication":
+                user.SetAuthenticated(false);
+                break;
+            case "company":
+                company.Set(OtherCompany);
+                break;
+            case "resolution":
+                company.Set(Guid.Empty);
+                break;
+            case "access":
+                user.RemoveCompany(Company);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(drift), drift, null);
+        }
+    }
 
     private static LocationSummary LocationRow(Guid? partyId, long version = 4) =>
         new(Location, Guid.NewGuid(), "LOC-1", "Harici Depo", true, true, version, partyId);
@@ -204,10 +321,12 @@ public sealed class OrganizationLocationOperatorReadHostTests
         }
 
         public int LocationReads { get; private set; }
+        public Action? OnSecondRead { get; init; }
 
         public Task<LocationSummary?> GetLocationAsync(Guid id, CancellationToken cancellationToken)
         {
             LocationReads++;
+            if (LocationReads == 2) OnSecondRead?.Invoke();
             var location = locations.Count > 1 ? locations.Dequeue() : locations.Peek();
             return Task.FromResult(id == Location ? location : null);
         }
@@ -230,11 +349,13 @@ public sealed class OrganizationLocationOperatorReadHostTests
     {
         public OrganizationLocationStatusV1? Resource { get; init; } = new(Location, true, true);
         public int Reads { get; private set; }
+        public Action? OnSecondRead { get; init; }
 
         public Task<OrganizationLocationStatusV1?> ReadAsync(Guid companyId, Guid locationId,
             CancellationToken cancellationToken = default)
         {
             Reads++;
+            if (Reads == 2) OnSecondRead?.Invoke();
             return Task.FromResult(companyId == Company && locationId == Location ? Resource : null);
         }
     }
@@ -274,9 +395,14 @@ public sealed class OrganizationLocationOperatorReadHostTests
 
     private sealed class UserContext(string actorId, Guid companyId) : ICurrentUser
     {
-        public bool IsAuthenticated => true;
-        public string? UserId => actorId;
-        public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { companyId };
+        private readonly HashSet<Guid> allowedCompanyIds = [companyId];
+
+        public bool IsAuthenticated { get; private set; } = true;
+        public string? UserId { get; private set; } = actorId;
+        public IReadOnlySet<Guid> AllowedCompanyIds => allowedCompanyIds;
         public bool CanAccessCompany(Guid value) => AllowedCompanyIds.Contains(value);
+        public void SetActor(string value) => UserId = value;
+        public void SetAuthenticated(bool value) => IsAuthenticated = value;
+        public void RemoveCompany(Guid value) => allowedCompanyIds.Remove(value);
     }
 }

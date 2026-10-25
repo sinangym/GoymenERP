@@ -45,6 +45,11 @@ internal sealed class OrganizationLocationOperatorReadHostV1(
                     return Unavailable<OrganizationLocationOperatorContextV1>();
                 }
 
+                if (!SameIdentity(companyId, actorId))
+                {
+                    return Unavailable<OrganizationLocationOperatorContextV1>();
+                }
+
                 return Success(new OrganizationLocationOperatorContextV1(locationId, null));
             }
 
@@ -80,6 +85,11 @@ internal sealed class OrganizationLocationOperatorReadHostV1(
             }
 
             if (after.Version != before.Version || after.OperatorPartyId != partyId)
+            {
+                return Unavailable<OrganizationLocationOperatorContextV1>();
+            }
+
+            if (!SameIdentity(companyId, actorId))
             {
                 return Unavailable<OrganizationLocationOperatorContextV1>();
             }
@@ -172,6 +182,11 @@ internal sealed class OrganizationLocationOperatorReadHostV1(
                 return Unavailable<OrganizationLocationOperatorCandidatePageV1>();
             }
 
+            if (!SameIdentity(companyId, actorId))
+            {
+                return Unavailable<OrganizationLocationOperatorCandidatePageV1>();
+            }
+
             return Success(new OrganizationLocationOperatorCandidatePageV1(
                 answer.Items.Select(item => new OrganizationLocationOperatorCandidateV1(
                     item.PartyId,
@@ -209,6 +224,11 @@ internal sealed class OrganizationLocationOperatorReadHostV1(
             && currentUser.CanAccessCompany(companyId)
             && Canonical(actorId);
     }
+
+    private bool SameIdentity(Guid companyId, string actorId) =>
+        TryIdentity(out var currentCompanyId, out var currentActorId)
+        && currentCompanyId == companyId
+        && string.Equals(currentActorId, actorId, StringComparison.Ordinal);
 
     private static bool ValidCandidates(
         CounterpartyOrganizationLocationOperatorCandidateAnswerV1 answer,
