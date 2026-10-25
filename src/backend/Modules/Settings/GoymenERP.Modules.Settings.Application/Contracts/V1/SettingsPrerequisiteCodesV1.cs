@@ -32,8 +32,9 @@ public static class SettingsPrerequisiteCodesV1
 
     /// <summary>
     /// The company's approved Sales policy source is reachable but holds no policy for the identity
-    /// asked about: no delivery tolerance, no discount limit for the limit group (including an empty
-    /// id) or no approval amount threshold for the currency. Kept apart from
+    /// asked about: no delivery tolerance, no discount limit for the limit group or no approval amount
+    /// threshold for the currency. An empty id is <see cref="SalesPolicyRequestInvalid"/>, never this
+    /// code. Kept apart from
     /// <c>settings_provider_unavailable</c> (the company has no Sales policy source) and
     /// <c>settings_profile_invalid</c> (malformed data). For a discount limit it is SAT-D2's
     /// "no limit defined", which routes every discount to approval; it never means "unlimited".

@@ -111,7 +111,7 @@ public sealed class ApprovedSalesPolicyCatalog
         [],
         [GdcTurkishLiraApprovalThresholdV1]);
 
-    private const decimal MaximumPercentOfPrice = 100m;
+    private const decimal MaximumPercent = 100m;
 
     private readonly IReadOnlyDictionary<Guid, ApprovedSalesDeliveryToleranceEntry[]> _tolerances;
     private readonly IReadOnlyDictionary<(Guid CompanyId, Guid LimitGroupId), ApprovedSalesDiscountLimitEntry[]> _discounts;
@@ -137,12 +137,12 @@ public sealed class ApprovedSalesPolicyCatalog
                 || entry.WarnPercent < 0m
                 || entry.WarnPercent > entry.ApprovalPercent
                 || entry.ApprovalPercent > entry.BlockPercent
-                || entry.BlockPercent > MaximumPercentOfPrice)
+                || entry.BlockPercent > MaximumPercent)
             || discount.Any(entry => entry is null
                 || !IsWellFormed(entry.CompanyId, entry.ProfileId, entry.Version,
                     entry.EffectiveFrom, entry.EffectiveThrough, entry.Source)
                 || entry.LimitGroupId == Guid.Empty
-                || entry.MaximumDiscountPercent < 0m || entry.MaximumDiscountPercent > MaximumPercentOfPrice)
+                || entry.MaximumDiscountPercent < 0m || entry.MaximumDiscountPercent > MaximumPercent)
             || threshold.Any(entry => entry is null
                 || !IsWellFormed(entry.CompanyId, entry.ProfileId, entry.Version,
                     entry.EffectiveFrom, entry.EffectiveThrough, entry.Source)

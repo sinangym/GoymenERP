@@ -320,7 +320,7 @@ against the currency's money profile.
 - Tolerance: the percents are reference data; how a deviation is compared with them (bounds,
   over vs. under delivery) belongs to the consuming backend calculator, which UI and reports
   reuse. The read takes no product or operation input: SAT-D5's per-product/operation
-  overrides need a new V1 method later, not a change to this one.
+  overrides need a new versioned method or interface later, not a change to this one.
 - A returned policy is reference metadata, not an authorization: the consuming use case still
   checks its own permission and persists the applied profile id/version with its decision.
 
