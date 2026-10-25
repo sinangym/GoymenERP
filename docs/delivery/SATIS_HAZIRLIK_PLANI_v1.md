@@ -4,15 +4,16 @@ Tarih: 2026-10-25 · Hazırlayan: Claude (cloud oturumu) · Durum: **ÖNERİ** (
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.2, §8.1, §11; `docs/decisions/KARAR_SICILI.md`
 `DEC-SAL-001…008`; `SINAN_KARARLARI_2026-10-21.md` delegasyon satırları; **`SINAN_KARARLARI_2026-10-25_SATIS.md`
-(SAT-D1…D11)**; `src/backend/Modules/Sales/README.md`; `ui/sources/dispatch-invoice/dispatch-invoice-design-spec-v1.0.md`;
-`backlog/DELIVERY_BACKLOG_v1.json` W2-SATIS, W2-IRSALIYE, W2-ACIKKALEM, W5-RAPOR.
+(SAT-D1…D12)**; `src/backend/Modules/Sales/README.md`; `docs/ui/sources/dispatch-invoice/dispatch-invoice-design-spec-v1.0.md`;
+`docs/backlog/DELIVERY_BACKLOG_v1.json` W2-SATIS, W2-IRSALIYE, W2-ACIKKALEM, W5-RAPOR.
 
 Bu plan kodun 2026-10-25 `main` durumuna göre yazıldı. İnceleme raporu:
 <https://claude.ai/artifact/Y1dKjxbnQ3G7BcwBCYMpJi>.
 
 Şerit kısaltmaları: **CX** Codex (backend), **CL** Claude (frontend), **GP** ChatGPT (spec/kabul), **SN** Sinan (karar).
 Seviye: K1/K2/K3 (`GOYMEN_ERP_HIZLI_TESLIM_v4.md`). 2026-10-25'te Sinan, bu plan için Claude'un backend işlerine de
-başlamasını istedi; Claude'un yazdığı backend PR'ları yine bağımsız review ve koordinatör merge'ü bekler.
+başlamasını istedi (karar kaydı §0); Claude'un yazdığı backend PR'ları yine bağımsız review bekler, merge
+`SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md` kapılarıyla yapılır.
 
 ---
 
@@ -62,7 +63,7 @@ Tüm yeni uçlar `/api/v1/sales/` altında; değişiklik yapanlar `Idempotency-K
 | ID | Uç | Amaç | Yetki | Karar | Sev. |
 |---|---|---|---|---|---|
 | API-01 | `GET drafts/{id}/force-close-impact` | Zorla kapatma etki önizlemesi (iptalle aynı 6 kategori + token) | `sales.orders.force-close` | No 30, DEC-SAL-005 | K3 |
-| API-02 | `POST drafts/{id}/force-close` | Teslim başlamış onaylı siparişin kalanını "iptal edilen kalan" olarak kapat; gerekçe zorunlu; açık/okunamaz kategori varsa red | `sales.orders.force-close` | No 30 | K3 |
+| API-02 | `POST drafts/{id}/force-close` | Teslim başlamış onaylı siparişin kalanını "iptal edilen kalan" olarak kapat; gerekçe zorunlu; aktif tahsis, sevk edilmemiş yükleme veya okunamayan kaynak varsa red; faturalanmamış irsaliye engellemez, uyarı olarak gösterilir (SAT-D12) | `sales.orders.force-close` | No 30 | K3 |
 | API-03 | `GET drafts/{id}/totals` | Satır tutarı, KDV, tevkifat, toplam (SAT-D11) | `sales.orders.price.read` | SAT-D11, No 15 | K3 |
 | API-04 | `POST drafts/{id}/header-revision` | Cari hesap, para birimi, vade, satış sorumlusu, teslim bilgisi revizyonu → Rev+1, yeniden onay | `sales.orders.header.write` (yeni) | DEC-SAL-002, SAT-D3 | K3 |
 | API-05 | `POST drafts/{id}/line-revision` | Satır ekle/çıkar, ürün değiştir → Rev+1, yeniden onay | `sales.orders.quantity.write` | DEC-SAL-002, SAT-D3 | K3 |
@@ -199,13 +200,13 @@ Sevkiyatçı siparişi fiyatsız görür (fiyatsız okuma görünümü ayrıca g
 
 | Dalga | İçerik | Ön şart |
 |---|---|---|
-| **S0** | Karar kaydı (bu PR), TEK-09…12, UI-10, TEK-13'ün frontend kısmı | – |
-| **S1** | TEK-01…03, API-01/02 + UI-12 (zorla kapatma), API-10 + UI-70 (iade görünümü), UI-11 | – |
-| **S2** | MOD-03 + API-50…52, API-03 (toplamlar), API-08 (durum eksenleri), MOD-02 (fiyat kademesi), API-12 iskonto limiti kontrolü | Ayarlar politika kaydı |
-| **S3** | TEK-04 (outbox), MOD-01 + API-06/07 (risk), API-04/05 (başlık/satır revizyonu), MOD-08 | ERP-000F |
+| **S0** | Karar kaydı (bu PR), TEK-06 (UI etiketi), TEK-08, TEK-09…12, UI-10, TEK-13'ün frontend kısmı | – |
+| **S1** | TEK-01…03, TEK-05 (idempotency ADR), API-01/02 + UI-12 (zorla kapatma), API-10 + UI-70/71 (iade görünümü), UI-11, UI-13, PRS-01/02 | – |
+| **S2** | MOD-03 + API-50…52, API-03 (toplamlar), API-08/09 (durum eksenleri), MOD-02 (fiyat kademesi), API-12 iskonto limiti kontrolü, UI-14/15, TEK-07 (dosya bölme) | Ayarlar politika kaydı, TEK-03 |
+| **S3** | TEK-04 (outbox), MOD-01 + API-06/07 (risk), API-04/05 (başlık/satır revizyonu), MOD-07, MOD-08, TEK-06 (API v2 adı) | ERP-000F |
 | **S4** | API-20…24 + UI-20 (talep/teklif), MOD-10 | S2 |
 | **S5** | MOD-06, API-30…37, MOD-04, UI-60…65 (irsaliye & fatura, manuel akış) | S2, S3 |
-| **S6** | API-40 (iade kaydı), API-11 + MOD-05 (kaynak stratejisi), UI-50/51, API-41/42 + UI-80 | S5 |
+| **S6** | API-40 (iade kaydı), API-11 + MOD-05 (kaynak stratejisi), UI-50/51, API-41/42 + UI-80, MOD-11 | S5 |
 
 ---
 
