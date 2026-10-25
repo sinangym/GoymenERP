@@ -21,10 +21,12 @@ Gerçek restore/prova R05.2/R05.3 ve isimli ortam/veri sahiplerinin ayrı yetkis
 - Yeni araç, mevcut recovery generator'ın yalnız sabitlenmiş şema doğrulama
   fonksiyonunu kullanır. Doğrulanan kaynak baytları bellekte derlenir; generator'ın
   `main`/envanter üretimi/Git veya servis fonksiyonları çağrılmaz, pyc yüklenmez.
-  Motor ve iki mevcut şemanın Git-blob SHA256 değerleri accepted main
-  `b6ed7ca5496f8f34314a0a4b2d3f13467bb5ffe7` kaynağından sabittir. Yalnız checkout
-  CRLF → LF normalizasyonu uygulanır. Değişen/eksik kaynak reddedilir; ayrı inceleme
-  olmadan yeni sürüme veya farklı bir doğrulayıcıya geçilmez.
+  Motorun Git-blob SHA256 değeri güncel accepted main
+  `8c8559a41fc6d43386ebc0787f28f445651058f0` kaynağından sabittir. İki mevcut şemanın
+  Git-blob SHA256 değerleri `b6ed7ca5496f8f34314a0a4b2d3f13467bb5ffe7`
+  kaynağından değişmeden kalır. Yalnız checkout CRLF → LF normalizasyonu uygulanır.
+  Değişen/eksik kaynak reddedilir; ayrı inceleme olmadan yeni sürüme veya farklı
+  bir doğrulayıcıya geçilmez.
 - `tools/contract_schema_subset.py`, yeni paket, beşinci helper veya merkezi
   generator değişikliği yoktur. Null kanıt yuvaları mevcut motorun desteklediği
   `const: null` ile kapalıdır; desteklenmeyen `type: null` eklenmez.
