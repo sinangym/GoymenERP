@@ -45,10 +45,11 @@
  * and name published for THIS draft's party, linked to the Cari card only with that card's own capability.
  */
 
-import { useContext, useRef, useState } from 'react'
+import { useContext, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { fetchDraftDetail, sendDraftCommand } from './api'
+import { orderUnitCodes } from './unitNames'
 import {
   APPROVAL_STATE,
   CANCELLED_STATE,
@@ -395,6 +396,7 @@ export function DraftView({
   readonly onTabChange?: (tab: OrderTab) => void
 }) {
   const { draft, approval, customerAcceptance } = detail
+  const unitCodes = useMemo(() => orderUnitCodes(detail), [detail])
   const [ownTab, setOwnTab] = useState<OrderTab>(ORDER_TAB.lines)
   const tab = activeTab ?? ownTab
   const setTab = onTabChange ?? setOwnTab
@@ -455,14 +457,6 @@ export function DraftView({
           <dd data-testid="sales-draft-party"><SalesPartyDisplay party={detail.partyDisplay} canOpen={canOpenParty} /></dd>
         </div>
         <div>
-          <dt>{T.account}</dt>
-          <dd className={styles.identifier}>{draft.companyAccountId}</dd>
-        </div>
-        <div>
-          <dt>{T.currency}</dt>
-          <dd className={styles.identifier}>{draft.currencyId}</dd>
-        </div>
-        <div>
           <dt>{T.requestedDeliveryDate}</dt>
           <dd data-testid="sales-draft-header-due">
             {detail.requestedDeliveryDate === null ? T.unknown : formatBusinessDate(detail.requestedDeliveryDate)}
@@ -473,6 +467,19 @@ export function DraftView({
           <dd>{orUnknown(detail.note)}</dd>
         </div>
       </dl>
+      <details className={styles.technicalIds} data-testid="sales-draft-technical-ids">
+        <summary>{T.technicalIds}</summary>
+        <dl className={styles.facts}>
+          <div>
+            <dt>{T.account}</dt>
+            <dd className={styles.identifier}>{draft.companyAccountId}</dd>
+          </div>
+          <div>
+            <dt>{T.currency}</dt>
+            <dd className={styles.identifier}>{draft.currencyId}</dd>
+          </div>
+        </dl>
+      </details>
 
       {delivery}
 
@@ -560,7 +567,7 @@ export function DraftView({
               <section className={styles.section} aria-labelledby="sales-lines-heading">
                 <h2 id="sales-lines-heading">{T.linesHeading}</h2>
                 {detail.lines.map((line) => (
-                  <LineView key={line.lineId} line={line} />
+                  <LineView key={line.lineId} line={line} unitCodes={unitCodes} />
                 ))}
                 {quantityRevision}
                 {deliverySchedule}
@@ -943,7 +950,12 @@ function commandNotice(attempt: CommandAttempt): string | null {
   }
 }
 
-function LineView({ line }: { readonly line: DraftLine }) {
+function UnitName({ id, unitCodes }: { readonly id: string; readonly unitCodes: ReadonlyMap<string, string> }) {
+  const code = unitCodes.get(id)
+  return code === undefined ? <span className={styles.identifier}>{id}</span> : <>{code}</>
+}
+
+function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unitCodes: ReadonlyMap<string, string> }) {
   const plan = unplannedQuantity(line, line.requestedDeliverySlices)
   const headingId = `sales-line-${line.lineId}`
   return (
@@ -962,7 +974,9 @@ function LineView({ line }: { readonly line: DraftLine }) {
         </div>
         <div>
           <dt>{T.orderUnit}</dt>
-          <dd className={styles.identifier}>{line.orderUnitId}</dd>
+          <dd data-testid={`sales-line-${line.lineNo}-order-unit`}>
+            <UnitName id={line.orderUnitId} unitCodes={unitCodes} />
+          </dd>
         </div>
         <div className={styles.lineDueFact} data-layout-field="delivery-date">
           <dt>{T.lineDeliveryDate}</dt>
@@ -973,7 +987,21 @@ function LineView({ line }: { readonly line: DraftLine }) {
         <div className={styles.linePriceFact} data-layout-field="price">
           <dt>{T.price}</dt>
           <dd data-testid={`sales-line-${line.lineNo}-price`}>
-            {line.priceDisclosure === 'Withheld' ? T.priceWithheld : line.unitPrice === null ? T.notPriced : `${line.unitPrice} / ${line.priceUnitId}`}
+            {line.priceDisclosure === 'Withheld' ? (
+              T.priceWithheld
+            ) : line.unitPrice === null ? (
+              T.notPriced
+            ) : (
+              <>
+                {line.unitPrice}
+                {line.priceUnitId === null ? null : (
+                  <>
+                    {' / '}
+                    <UnitName id={line.priceUnitId} unitCodes={unitCodes} />
+                  </>
+                )}
+              </>
+            )}
           </dd>
         </div>
         <div>

@@ -140,6 +140,17 @@
   z-index: auto;
 }
 
+/* TEK-11: the stored ids, folded under the names the user reads. */
+.technicalIds {
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+}
+
+.technicalIds > summary {
+  cursor: pointer;
+  inline-size: fit-content;
+}
+
 .identifier {
   font-family: var(--goy-ds-font-mono);
   font-size: var(--goy-ds-font-size-sm);
