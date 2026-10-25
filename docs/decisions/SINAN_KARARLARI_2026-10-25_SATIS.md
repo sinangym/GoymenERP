@@ -10,7 +10,9 @@ seçenekleri hazırlamıştır.
 - Seçilen seçenekler doğrudan kullanıcı cevabıdır. AGENTS.md "Çelişkide daha yeni kullanıcı
   kararı geçerlidir" kuralı uyarınca bu belge, Satış kapsamında `KARAR_SICILI.md`'den ve
   2026-10-21 delegasyon satırlarından daha yeni olduğu için onlara göre **üstündür**.
-- **Makbuz:** Sinan'ın bu PR'ı merge etmesi veya Issue #66'ya yazacağı tek satırlık onay.
+- **Makbuz:** Sinan'ın bu PR'ı merge etmesi, Issue #66'ya yazacağı tek satırlık onay veya
+  `SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md` uyarınca Claude şeridinin kapılardan geçmiş merge'ü
+  (kararların kendisi bu oturumdaki doğrudan kullanıcı cevaplarıdır).
   Makbuz gelene kadar uygulama PR'ları bu kararları yapılandırılabilir ve kapalı varsayılanla
   (fail-closed) uygular; production aktivasyonu yapılmaz.
 - **Şerit:** aynı oturumda Sinan "Backend dahil kodlamaya başla" seçeneğini işaretledi. Bu, Satış hazırlık
