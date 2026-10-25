@@ -17,7 +17,7 @@ yürürlükte bırakır.
 
 ## M1. Yetki
 
-1. **Kapsam:** yalnız Claude şeridinin açtığı PR'lar, yani `claude/*` dalları.
+1. **Kapsam:** yalnız Claude şeridinin açtığı PR'lar: PR'ı bir Claude oturumu açmıştır ve dal `claude/*`'dır.
    - Codex/ChatGPT şeridinin açtığı bir PR'a Claude commit itmiş olsa bile o PR bu kapsama girmez.
    - Claude bu PR'ları `CODEX-ORCHESTRATOR`'ı beklemeden **squash merge** edebilir; kendi açtığı
      governance/karar PR'ları da buna dahildir.
@@ -62,6 +62,9 @@ sağlar. Bunun dayanakları:
 
 Review metni PR'a yazılır. Sinan bu yorumu tek satırla daraltabilir; örneğin "en az bir review Codex
 şeridinden olsun".
+
+Bu varsayımda ChatGPT hakemliği yoktur. Bu yüzden Issue #66'ya `NEEDS-SINAN` satırı olarak yazılır ve
+Sinan döndüğünde teyit edilir; teyide kadar varsayım geri alınabilir durumda yürürlüktedir.
 
 ## M3. İnsan kapıları
 

@@ -62,7 +62,8 @@ bağımsız review" şartını sağlar. Çelişkide v4 süreç tarafında, v2/v3
 üstündür.
 
 - Pre-production PR'ı tek karşı-ajan review + fresh zorunlu CI ile coordinator merge edilir
-  (Claude şeridinin kendi PR'ları için 25 Ekim 2026 istisnası ve ASSUMPTION-MERGE-1 aşağıda).
+  (Claude şeridinin kendi PR'ları için 25 Ekim 2026 istisnası aşağıda; review yorumu
+  ASSUMPTION-MERGE-1 için bkz. `docs/decisions/SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md`).
   Yalnız doküman/governance/ayar dosyası değiştiren PR'da fresh CI şartı yoktur (yukarıdaki
   22 Ekim kuralı).
 - İki bağımsız exact-head review yalnız **K3**'te gerekir; K3 kapsamı dardır: DB
