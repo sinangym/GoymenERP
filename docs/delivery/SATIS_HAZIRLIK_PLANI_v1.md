@@ -37,7 +37,7 @@ Satış modülü aşağıdakilerin hepsi sağlanınca hazırdır:
 
 | ID | İş | Neden | Şerit | Sev. | Bağımlılık |
 |---|---|---|---|---|---|
-| TEK-01 | `BuildingBlocks` içinde ortak `Money` (tutar + para birimi + ölçek) ve `ExchangeRate` değer nesneleri; Ö2 ölçekleri (tutar 2, birim fiyat ≤ 6) ve SAT-D11 yuvarlaması (`AwayFromZero`) tek yerde | AGENTS.md "Money VO kullan"; Satış fiyatları bugün metin | CX | K3 | – |
+| TEK-01 | `BuildingBlocks` içinde ortak `Money` (tutar + para birimi + ölçek) ve `ExchangeRate` değer nesneleri; ölçek VO'da taşınır ama değeri Ayarlar para profilinden okunur (kodda sabit ölçek yok; Ö2 başlangıç profili tutar 2, birim fiyat ≤ 6); SAT-D11 yuvarlaması (`AwayFromZero`) tek yerde | AGENTS.md "Money VO kullan"; Satış fiyatları bugün metin | CX | K3 | – |
 | TEK-02 | Ortak `Quantity` (kg ≤ 3 ondalık, adet tam) `BuildingBlocks`'a; Satış, Satın Alma, Lojistik kopyaları ona yönlenir | Üç kopya kural kayması riski | CX | K3 | – |
 | TEK-03 | Satış fiyat alanlarını TEK-01'e taşı (wire metin olarak kalır, domain `Money` kullanır) | Toplam/KDV hesabının ön şartı | CX | K3 | TEK-01 |
 | TEK-04 | Platform outbox/inbox (ERP-000F, manifestte `ready`, P0) | Satış dahil hiçbir modül olay yayınlayamıyor | CX | K3 | ERP-000E |
@@ -62,8 +62,8 @@ Tüm yeni uçlar `/api/v1/sales/` altında; değişiklik yapanlar `Idempotency-K
 
 | ID | Uç | Amaç | Yetki | Karar | Sev. |
 |---|---|---|---|---|---|
-| API-01 | `GET drafts/{id}/force-close-impact` | Zorla kapatma etki önizlemesi (iptalle aynı 6 kategori + token) | `sales.orders.force-close` | No 30, DEC-SAL-005 | K3 |
-| API-02 | `POST drafts/{id}/force-close` | Teslim başlamış onaylı siparişin kalanını "iptal edilen kalan" olarak kapat; gerekçe zorunlu; aktif tahsis, sevk edilmemiş yükleme veya okunamayan kaynak varsa red; faturalanmamış irsaliye engellemez, uyarı olarak gösterilir (SAT-D12) | `sales.orders.force-close` | No 30 | K3 |
+| API-01 | `GET drafts/{id}/force-close-impact` | Zorla kapatma etki önizlemesi (iptalle aynı 6 kategori + token) | `sales.orders.force-close` (yeni) | No 30, DEC-SAL-005 | K3 |
+| API-02 | `POST drafts/{id}/force-close` | Teslim başlamış onaylı siparişin kalanını "iptal edilen kalan" olarak kapat; gerekçe zorunlu; No 30'daki herhangi bir açık kategori (aktif tahsis, bağlı satın alma/üretim, irsaliyesiz yükleme, eşleşmemiş avans/dekont) veya okunamayan kaynak varsa red; yalnız faturalanmamış irsaliye engellemez, uyarı olarak gösterilir (SAT-D12) | `sales.orders.force-close` (yeni) | No 30, SAT-D12 | K3 |
 | API-03 | `GET drafts/{id}/totals` | Satır tutarı, KDV, tevkifat, toplam (SAT-D11) | `sales.orders.price.read` | SAT-D11, No 15 | K3 |
 | API-04 | `POST drafts/{id}/header-revision` | Cari hesap, para birimi, vade, satış sorumlusu, teslim bilgisi revizyonu → Rev+1, yeniden onay | `sales.orders.header.write` (yeni) | DEC-SAL-002, SAT-D3 | K3 |
 | API-05 | `POST drafts/{id}/line-revision` | Satır ekle/çıkar, ürün değiştir → Rev+1, yeniden onay | `sales.orders.quantity.write` | DEC-SAL-002, SAT-D3 | K3 |
@@ -164,6 +164,7 @@ alınır.
 | MOD-09 | Platform | Outbox/inbox (TEK-04) | CX | ERP-000F | K3 |
 | MOD-10 | Work | Talep, teklif, fatura onayları ve risk istisnası için onay kutusu adaptörleri | CX | mevcut Work native approval sözleşmesi | K2 |
 | MOD-11 | Muhasebe | Fatura vergi kontrolü (dispatch spec: muhasebe kontrol eder) | CX | Faz 6 sonrası | K3 |
+| MOD-12 | Stok | Tahsis paneli için şirket kapsamlı etiket okuma ucu (etiket kimliği yerine seçici) | CX | mevcut Inventory etiket kayıtları | K2 |
 
 ---
 
@@ -174,14 +175,14 @@ alınır.
 | UI-10 | Sipariş 360'ı altı kilitli sekmeye böl | CL | K2 | – |
 | UI-11 | Sözleşme/Belgeler sekmesi (`DocumentsPanel`) | CL | K2 | MOD-07 |
 | UI-12 | Zorla kapatma paneli | CL | K2 | API-01/02 |
-| UI-13 | Tahsis panelinde etiket seçici | CL | K2 | Stok okuma ucu |
+| UI-13 | Tahsis panelinde etiket seçici | CL | K2 | MOD-12 (Stok etiket okuma ucu) |
 | UI-14 | Yeni sipariş formunda fiyat girişi | CL | K2 | TEK-03 |
 | UI-15 | Toplamlar kartı, risk kartı, durum eksenleri | CL | K2 | API-03, 06, 08 |
 | UI-20 | S-01 Talep/Teklif Havuzu, "Siparişe dönüştür" | CL | K2 | API-20…24 |
 | UI-50 | S-05 Fiyat-İskonto-Marj-Risk Kontrolü | CL | K2 | GP görsel referans, API-50 |
 | UI-51 | S-06 Satış Onayları | CL | K2 | MOD-10 |
 | UI-60…65 | S-07 Sevkiyat/İrsaliyeler, S-08 Faturaya Hazır, S-09 Faturalar, Faturalar sekmesi, Kontrol Merkezi | CL | K2 | API-30…37 |
-| UI-70 | İade görünümü (sipariş ve fatura üzerinde; ayrı menü yok) | CL | K2 | API-10, API-40 |
+| UI-70 | İade görünümü (sipariş ve fatura üzerinde; ayrı menü yok); UI-70a okuma görünümü API-10, UI-70b iade kaydı API-40 | CL | K2 | API-10 (70a), API-40 (70b) |
 | UI-71 | S-11 İletişim/Sözleşmeler | CL | K2 | MOD-07 |
 | UI-80 | Satış raporları | CL | K2 | API-41/42 |
 
@@ -200,13 +201,13 @@ Sevkiyatçı siparişi fiyatsız görür (fiyatsız okuma görünümü ayrıca g
 
 | Dalga | İçerik | Ön şart |
 |---|---|---|
-| **S0** | Karar kaydı (bu PR), TEK-06 (UI etiketi), TEK-08, TEK-09…12, UI-10, TEK-13'ün frontend kısmı | – |
-| **S1** | TEK-01…03, TEK-05 (idempotency ADR), API-01/02 + UI-12 (zorla kapatma), API-10 + UI-70 (iade görünümü), MOD-07 + UI-11 + UI-71 (belgeler, S-11), UI-13, PRS-01/02 | – |
+| **S0** | Karar kaydı (bu PR), TEK-06 (UI etiketi), TEK-08, TEK-09…12, UI-10, TEK-13 (frontend ve kalan değişikliği SQL kabulü) | – |
+| **S1** | TEK-01…03, TEK-05 (idempotency ADR), API-01/02 + UI-12 (zorla kapatma), API-10 + UI-70a (iade görünümü), MOD-07 + UI-11 + UI-71 (belgeler, S-11), MOD-12 + UI-13, PRS-01/02, TEK-13 kalan backend kanıtı (gerçek sahiplerle olumlu oluşturma) | – |
 | **S2** | MOD-03 + API-50…52, API-03 (toplamlar), API-08 (durum eksenleri) + API-09 (Faturalar sekmesi), MOD-02 (fiyat kademesi), API-12 iskonto limiti kontrolü, UI-14, UI-15 (toplamlar ve durum eksenleri kartı), TEK-07 (dosya bölme) | Ayarlar politika kaydı, TEK-03 |
-| **S3** | TEK-04 (outbox, = MOD-09), MOD-01 + API-06/07 (risk) + UI-15 risk kartı, API-04/05 (başlık/satır revizyonu), MOD-08, TEK-06 (API v2 adı) | ERP-000F |
+| **S3** | TEK-04 (outbox, = MOD-09), MOD-01 + API-06/07 (risk) + UI-15 risk kartı, API-04/05 (başlık/satır revizyonu), MOD-08, MOD-10'un risk onayı adaptörü (API-07 onay yönlendirmesi için), TEK-06 (API v2 adı) | ERP-000E (TEK-04 = ERP-000F bu dalgada) |
 | **S4** | API-20…24 + UI-20 (talep/teklif), MOD-10 | S2 |
 | **S5** | MOD-06, API-30…37, MOD-04, UI-60…65 (irsaliye & fatura, manuel akış) | S2, S3 |
-| **S6** | API-40 (iade kaydı), API-11 + MOD-05 (kaynak stratejisi), UI-50/51, API-41/42 + UI-80, MOD-11 | S5 |
+| **S6** | API-40 + UI-70b (iade kaydı), API-11 + MOD-05 (kaynak stratejisi), UI-50/51, API-41/42 + UI-80, MOD-11 | S5 |
 
 ---
 
