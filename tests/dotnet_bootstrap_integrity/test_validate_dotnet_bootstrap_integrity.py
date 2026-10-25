@@ -1054,23 +1054,25 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
 
     def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
+        # #789/#794 replaced cloud transfer with local, run/attempt/head-bound
+        # evidence. Keep exact job pins as well as the semantic/mutation guards.
         expected_job_fingerprints = {
-            "backend-build": "641b61cfa11ebac1105f1e259c12e5d053c16027c83a0a94c7f972a068679f66",
-            "backend-test-group": "3566ea60fc73bd77bc94bd4efbaafd9c6b50dea6b65ab9ce93751faf8edb79a7",
+            "backend-build": "13582f700c8cd6553fccf6f2d647cb08b8544a8dcef5abc7ae583d392bf0a129",
+            "backend-test-group": "e23aad7f39befd9522caf10b414f914bf795e134e3a897b3a996be46c154d867",
             "backend": (
-                "234a8fb95d086d8c8e4a5981ad6d3f92adbdbfa4a900e8ea2e0fb34826afc6f7"
+                "005e0cdcf1fd21bb97f1efed06b27fa2a1cca100ae1c0008da377a5efa701691"
             ),
             "frontend": (
-                "e9c3e81fab8292129ef6889eab3cc426dece83c2d5f40acbf8e78d1a91a48b6f"
+                "8be05bad85324efbb62b106dba48b1da4a456ddbed9b74b92a9741292e42a83c"
             ),
             "relational-shard": (
-                "47327ffd439f6308051591a7feb4dc1c3d1893fa4e997491a9518bbcd76cab79"
+                "411eff8783d73fee80eabddd7dae62268cc3eabd8fd323ead70ef6098b7a23c9"
             ),
             "relational-rcsi": (
-                "146acd198b1bf61ba9314a5ab675033972ddbba8801570b62c9613f1a5ef5bb7"
+                "190c9f65ece485c6fccb6a5656b10c2cd76419968663412b458f42568e811da9"
             ),
             "relational": (
-                "cca5d1491c5951a2ebe2adf7580a424dea027ae0e7d102c84a5c3c53a7cd7d63"
+                "673b38cc52d85ca0d61156a0de7d99fb78f524a2183f8d11ea1b3966122649cb"
             ),
             "contract-drift": (
                 "9411969b92693589ca31561dff55eefeff4eeed2332355e4b68a92b08dfad494"
@@ -1142,7 +1144,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "npm ci",
                 "npm audit --audit-level=high",
                 "npm run lint",
-                "npm test",
+                "npm test -- --maxWorkers=1 --no-file-parallelism",
                 "npm run build",
             ],
         )
@@ -1221,7 +1223,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", aggregate, re.M),
             ["    name: Backend build, test and migration",
-             "    needs: [backend-build, backend-test-group]",
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "    if: ${{ always() }}",
              "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    steps:"],
         )
@@ -1232,6 +1234,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "Verify backend group proof parser",
                 "Restore exact backend group proofs from local evidence",
+                "Restore same-run SQL proofs for excluded backend tests",
                 "Verify complete backend build and test groups",
             ],
         )
@@ -1249,14 +1252,28 @@ class WorkflowOrderingTests(unittest.TestCase):
             aggregate, "Restore exact backend group proofs from local evidence"
         )
         for required in (
+            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
             "LOCAL_PROOF_IDS: api,architecture,modules",
             "LOCAL_PROOF_SCOPE_PREFIX: backend-proof-",
             "LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-proof-",
+            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-backend-group-proofs/proof-",
+            "LOCAL_PROOF_OUTPUT: artifacts/ci-backend-group-proofs",
             "runnerName=$RUNNER_NAME",
             "sha256sum",
             "run: &restore-local-proofs |",
         ):
             self.assertIn(required, local_backend_restore)
+        sql_restore = self.step_body(aggregate, "Restore same-run SQL proofs for excluded backend tests")
+        for required in (
+            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
+            "LOCAL_PROOF_IDS: A,B,C",
+            "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
+            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
+            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
+            "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
+            "run: *restore-local-proofs",
+        ):
+            self.assertIn(required, sql_restore)
         self.assertEqual(
             self.read_step_lines(
                 self.step_body(aggregate, "Verify complete backend build and test groups")
@@ -1269,7 +1286,10 @@ class WorkflowOrderingTests(unittest.TestCase):
                 f'--source-head "{head_ref}" \\',
                 '--tested-commit "$(git rev-parse HEAD)" \\',
                 '--build-result "${{ needs.backend-build.result }}" \\',
-                '--worker-result "${{ needs.backend-test-group.result }}"',
+                '--worker-result "${{ needs.backend-test-group.result }}" \\',
+                '--relational-proof-directory artifacts/ci-relational-proofs \\',
+                '--relational-worker-result "${{ needs.relational-shard.result }}" \\',
+                '--rcsi-result "${{ needs.relational-rcsi.result }}"',
             ],
         )
 
@@ -1284,16 +1304,23 @@ class WorkflowOrderingTests(unittest.TestCase):
              "  backend-test-group:\n    if: ${{ false }}\n    name:"),
             ("soft worker", "  backend-test-group:\n    name:",
              "  backend-test-group:\n    continue-on-error: true\n    name:"),
-            ("missing build", "needs: [backend-build, backend-test-group]",
+            ("missing build", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "needs: [backend-test-group]"),
             ("not always", "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group]\n    if: ${{ always() }}",
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ always() }}",
              "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group]\n    if: ${{ success() }}"),
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ success() }}"),
+            ("missing SQL dependency", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
+             "needs: [backend-build, backend-test-group, relational-rcsi]"),
+            ("missing SQL proof", "LOCAL_PROOF_IDS: A,B,C", "LOCAL_PROOF_IDS: A,B"),
+            ("foreign SQL directory", "--relational-proof-directory artifacts/ci-relational-proofs",
+             "--relational-proof-directory artifacts/other-proofs"),
+            ("constant RCSI success", '--rcsi-result "${{ needs.relational-rcsi.result }}"',
+             '--rcsi-result "success"'),
             ("untrusted restore", "dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config",
              "dotnet restore GoymenERP.slnx -noAutoResponse --configfile other.config"),
-            ("missing proof download", "pattern: ci-backend-test-group-proof-*",
-             "pattern: ci-backend-test-group-summary-*"),
+            ("summary substituted for proof", "LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-proof-",
+             "LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-summary-"),
             ("aggregate no-op", '--worker-result "${{ needs.backend-test-group.result }}"',
              '--worker-result "${{ needs.backend-test-group.result }}" || true'),
         )
@@ -1304,6 +1331,53 @@ class WorkflowOrderingTests(unittest.TestCase):
                 with mock.patch.object(self, "workflow", changed):
                     with self.assertRaises(AssertionError):
                         self.assert_backend_execution_and_aggregate_boundaries()
+
+    def assert_local_proof_restore_checks(self) -> tuple[str, ...]:
+        restore = self.step_body(
+            self.job_body("backend"),
+            "Restore exact backend group proofs from local evidence",
+        )
+        lines = self.read_step_lines(restore)
+        required_checks = (
+            "set -euo pipefail",
+            'run_root="$root/gh-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${head:0:7}"',
+            'test ! -L "$source"',
+            'test "$(realpath -e "$source")" = "$source"',
+            *(f'grep -Fx "{claim}" "$manifest"' for claim in (
+                "schemaVersion=1", "workflow=ci", "scope=$scope",
+                "runId=$GITHUB_RUN_ID", "runAttempt=$GITHUB_RUN_ATTEMPT",
+                "sourceHead=$head", "testedCommit=$tested",
+                "runnerName=$RUNNER_NAME", "file=$relative",
+            )),
+            'test "$(wc -c < "$source/files/$relative" | tr -d \'[:space:]\')" = "$bytes"',
+            'test "$(sha256sum "$source/files/$relative" | cut -d \' \' -f 1)" = "$digest"',
+            'artifact_directory="$LOCAL_PROOF_OUTPUT/${LOCAL_PROOF_ARTIFACT_PREFIX}${id}"',
+            'cp -- "$source/files/$relative" "$artifact_directory/proof-$id.json"',
+            'test "$(find "$LOCAL_PROOF_OUTPUT" -mindepth 2 -maxdepth 2 -type f -name \'proof-*.json\' | wc -l | tr -d \'[:space:]\')" = "${#ids[@]}"',
+        )
+        for line in required_checks:
+            self.assertIn(line, lines)
+        return required_checks
+
+    def test_local_proof_restore_requires_exact_identity_and_integrity_checks(self) -> None:
+        self.assert_local_proof_restore_checks()
+
+    def test_local_proof_restore_rejects_removed_or_softened_manifest_checks(self) -> None:
+        required_checks = self.assert_local_proof_restore_checks()
+        restore = self.step_body(
+            self.job_body("backend"),
+            "Restore exact backend group proofs from local evidence",
+        )
+        for line in required_checks:
+            if not line.startswith(('grep -Fx ', 'test ', 'set -euo ')):
+                continue
+            for replacement in ("# " + line, line + " || true"):
+                with self.subTest(check=line, replacement=replacement):
+                    changed = restore.replace(line, replacement, 1)
+                    self.assertNotEqual(changed, restore)
+                    with mock.patch.object(self, "workflow", self.workflow.replace(restore, changed, 1)):
+                        with self.assertRaises(AssertionError):
+                            self.assert_local_proof_restore_checks()
 
     def assert_relational_execution_and_aggregate_boundaries(self) -> None:
         validator_command = (
