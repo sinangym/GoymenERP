@@ -1,7 +1,7 @@
 # Sinan Kararları — 2026-10-25 (Satış modülü hazırlık soruları)
 
 Kaynak: Sinan Göymen'in 25 Ekim 2026 tarihli Claude cloud oturumunda, Satış modülü hazırlık
-incelemesi sırasında sorulan seçenekli sorulara verdiği **doğrudan cevaplar**. Her satırdaki
+incelemesi sırasında sorulan seçenekli sorulara verdiği **doğrudan cevaplar** (SAT-D12 aynı oturumda zorla kapatma uygulanırken soruldu). Her satırdaki
 "Seçilen" sütunu kullanıcının işaretlediği seçeneğin kendisidir; Claude yalnız soruyu ve
 seçenekleri hazırlamıştır.
 
@@ -35,6 +35,7 @@ seçenekleri hazırlamıştır.
 | SAT-D9 | Siparişte liste fiyatı seçimi | **Kademe zinciri otomatik:** anlaşma > cari özel > cari grubu > şirket; kaynak kademe satıra snapshot'lanır; hiçbir kademede fiyat yoksa elle giriş yalnız yetki + gerekçe + audit ile | `ASSUMPTION-PRL-4` (kullanıcı elle seçer) | `DEC-PRD-011`, delegasyon No 10 |
 | SAT-D10 | Fiyat geçerlilik tarihi ve iş günü saat dilimi | **Europe/Istanbul.** Kayıt zamanı teknik olarak UTC saklanır; iş tarihi ve geçerlilik sınırı Türkiye saatiyle hesaplanır | `ASSUMPTION-PRL-6` (UTC) | P7 |
 | SAT-D11 | Sipariş tutarı ve toplam yuvarlaması | **Fatura kuralıyla aynı:** satır tutarı 2 ondalık yarım-yukarı (`AwayFromZero`); KDV ve tevkifat satır bazında; toplamlar satırlardan. Hesap yalnız backend calculator'da | NEEDS-SINAN (net fiyat yuvarlaması) | delegasyon No 15, Ö2 |
+| SAT-D12 | Zorla kapatmada (delegasyon No 30) teslim edilmiş ama faturalanmamış irsaliye | **Engellemez, uyarı olarak gösterilir.** Zorla kapatma yalnız teslim edilmemiş kalanı "iptal edilen kalan" olarak kapatır; faturalanmamış irsaliye önizlemede açık fatura işi olarak görünür, finansal kapanış ekseni açık kalır (DEC-SAL-001). Aktif tahsis, sevk edilmemiş yükleme ve okunamayan kaynak engellemeye devam eder | No 30 metni: her açık kategori engeller | delegasyon No 30, `DEC-SAL-005`, `DEC-SAL-001` |
 
 ## 2. Etkilenen varsayımlar
 
