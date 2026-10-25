@@ -317,8 +317,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         "41d35d452fecd53aecd791c55c552cdb40a3ff0b686ba3e7506edd51e1a3f1b1";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
+    // Re-fingerprinted for the exact SDK pin: setup-dotnet now asks for the cached 10.0.402 instead of resolving
+    // 10.0.x to a new SDK whose retired dotnetorigin download answers 409. No job, artifact or permission change.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "213d2e710c7adccb01a6eb0ce67ada82979aae9ec91ce742e178d9e9a15d9e34";
+        "2baaccd28de28cd1b82e1b62d486764470b27c5c33c2c3086ba12aea8bb418fd";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.

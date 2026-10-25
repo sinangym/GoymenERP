@@ -28,7 +28,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.402
 
       - name: Delivery backlog integrity preflight
         run: |
@@ -199,7 +199,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.402
 
       - name: Restore locked solution packages
         run: |
@@ -557,7 +557,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.402
 
       - name: Restore relational test packages
         run: |
@@ -640,7 +640,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.402
 
       - name: Restore relational test packages
         run: |
@@ -726,7 +726,7 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.402
 
       - name: Restore OpenAPI contract test packages
         run: |

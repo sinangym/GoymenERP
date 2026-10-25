@@ -1057,8 +1057,8 @@ class WorkflowOrderingTests(unittest.TestCase):
         # #789/#794 replaced cloud transfer with local, run/attempt/head-bound
         # evidence. Keep exact job pins as well as the semantic/mutation guards.
         expected_job_fingerprints = {
-            "backend-build": "13582f700c8cd6553fccf6f2d647cb08b8544a8dcef5abc7ae583d392bf0a129",
-            "backend-test-group": "e23aad7f39befd9522caf10b414f914bf795e134e3a897b3a996be46c154d867",
+            "backend-build": "bfb57f6aa09cc3a16e7168df3610fb6d07731dce2c3bb30e8dde6b6cb9c2da48",
+            "backend-test-group": "0d6264b32b8b7dbe178d96cddbe2e4c48ef16e9eca9c1bd93595dee4949166ec",
             "backend": (
                 "005e0cdcf1fd21bb97f1efed06b27fa2a1cca100ae1c0008da377a5efa701691"
             ),
@@ -1066,16 +1066,16 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "8be05bad85324efbb62b106dba48b1da4a456ddbed9b74b92a9741292e42a83c"
             ),
             "relational-shard": (
-                "411eff8783d73fee80eabddd7dae62268cc3eabd8fd323ead70ef6098b7a23c9"
+                "3fa932be818eeaab7f66c61353f3408d3d231731a0da279f9e1721254341de57"
             ),
             "relational-rcsi": (
-                "190c9f65ece485c6fccb6a5656b10c2cd76419968663412b458f42568e811da9"
+                "642b2fb52f93bb485054f16d4b4ee96703eb8cd76e808d8cde96b9519f9326c5"
             ),
             "relational": (
                 "673b38cc52d85ca0d61156a0de7d99fb78f524a2183f8d11ea1b3966122649cb"
             ),
             "contract-drift": (
-                "9411969b92693589ca31561dff55eefeff4eeed2332355e4b68a92b08dfad494"
+                "0b8c42de4d5ed3f84da4c1d5ce416441b2c8482996b98fad2cf72848d5d5366a"
             ),
         }
 
