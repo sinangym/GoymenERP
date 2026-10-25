@@ -1,14 +1,11 @@
 /**
  * Sales screen mount ids and routes.
  *
- * STATUS: PROPOSED — NOT PUBLISHED. These ids are the frontend's mount keys for the
- * three screens, split the way every other lane splits them (a list grant must not
- * imply a detail or a create grant). They are NOT permissions and grant nothing:
- * #257 states that no Sales permission name exists yet and that absent mappings
- * default deny, and no backend shell provider publishes a `sales.*` capability. So
- * `CapabilityRoute` closes every Sales route onto the neutral not-found block in the
- * running app. That is the intended state until the central owner publishes the real
- * ids — at which point THIS file is renamed to match, and the mount handoff is sent.
+ * STATUS: PUBLISHED. The backend shell provider (`SalesShellCapabilityProvider`) publishes
+ * these ids and the shell mounts the three screens. They are split the way every other
+ * lane splits them (a list grant does not imply a detail or a create grant). A capability
+ * is not a permission: the API measures the grant afresh on every call, and an actor
+ * without the capability gets the neutral not-found block.
  */
 
 export const SALES_CAPABILITY = {

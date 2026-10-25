@@ -19,6 +19,7 @@ import { buildQuantityRevisionRequest, quantityRowsFromDetail, type QuantityRevi
 import { ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
 
 type RevisionAttempt = OrderAttemptState<DraftQuantityRevisionRequest, DraftMutation>
 
@@ -131,9 +132,9 @@ export function SalesDraftQuantityRevisionForm({
     return (
       <div className={styles.actions} data-testid="sales-quantity-revision">
         {notice === null ? null : <p role="status" className={styles.notice}>{notice}</p>}
-        <button type="button" className={styles.secondaryButton} disabled={!stateAllowsRevision} onClick={() => setOpen(true)}>
+        <Button type="button" variant="secondary" disabled={!stateAllowsRevision} onClick={() => setOpen(true)}>
           {text.open}
-        </button>
+        </Button>
         {!stateAllowsRevision ? <p className={styles.muted}>{text.stateUnavailable}</p> : null}
       </div>
     )
@@ -175,14 +176,14 @@ export function SalesDraftQuantityRevisionForm({
       <span id={`${reasonId}-hint`} className={styles.muted}>{text.reasonHint}</span>
       {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
         <>
-          <button type="button" className={styles.secondaryButton} onClick={retry}>{text.retry}</button>
-          <button type="button" className={styles.linkButton} onClick={leave}>{text.abandon}</button>
+          <Button type="button" variant="secondary" onClick={retry}>{text.retry}</Button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={leave}>{text.abandon}</Button>
         </>
       ) : null}
-      <button type="button" className={styles.primaryButton} disabled={frozen || !stateAllowsRevision} onClick={start}>
+      <Button type="button" variant="primary" disabled={frozen || !stateAllowsRevision} onClick={start}>
         {text.submit}
-      </button>
-      <button type="button" className={styles.linkButton} disabled={frozen} onClick={() => setOpen(false)}>{text.close}</button>
+      </Button>
+      <Button type="button" variant="ghost" className={styles.linkButton} disabled={frozen} onClick={() => setOpen(false)}>{text.close}</Button>
     </section>
   )
 }
