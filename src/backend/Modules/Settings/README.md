@@ -249,3 +249,81 @@ Validation: Settings unit/contract tests are synthetic, not SQL or browser UAT.
 No persistence changed, so new slice-specific SQL scenarios are not applicable;
 the existing required CI relational suite remains required. Rollback consists of
 removing unused project references; there is no data or migration rollback.
+
+## Approved Sales policies (MOD-03 slice 1)
+
+Source: Sinan's Sales decisions of 2026-10-25, SAT-D2, SAT-D5 and SAT-D6
+(`docs/decisions/SINAN_KARARLARI_2026-10-25_SATIS.md`); plan items MOD-03 and API-50…52 of
+`docs/delivery/SATIS_HAZIRLIK_PLANI_v1.md`.
+
+`ISettingsSalesPolicyProviderV1` is a separate V1 port with three reads. The company is always
+the server-resolved one, never a request input. `ApprovedSettingsPrerequisiteProvider` serves it
+from `ApprovedSalesPolicyCatalog`, versioned source code like the unit and money catalogs (no
+table, migration, seed or DbContext); the catalog-taking constructors are internal and visible to
+`GoymenERP.Settings.UnitTests` only. The unavailable adapter implements the port too and always
+answers `settings_access_denied` or `settings_provider_unavailable`.
+
+| Read | GDC `10000000-0000-0000-0000-000000000001` | Profile | Window | Source |
+|---|---|---|---|---|
+| `GetSalesDeliveryToleranceAsync(effectiveOn)` | warn 1 %, approval 2 %, block 3 % | `c088f8d5-26c4-5ed9-ae6f-f47e73a26b11`, version 1 | from 2026-10-25, no end | SAT-D5; OPEN-004 sales part |
+| `GetSalesDiscountLimitAsync(limitGroupId, effectiveOn)` | **none approved** — every group answers `settings_sales_policy_not_found` | — | — | SAT-D2 (no limit value approved) |
+| `GetSalesApprovalAmountThresholdAsync(currencyId, effectiveOn)` | TRY (`SettingsCurrencyIdentitiesV1.TurkishLira`): `IsEnabled = false`, amount `null` | `5c0ec7f4-2116-59c6-82fc-9c2a737a4342`, version 1 | from 2026-10-25, no end | SAT-D6; OPEN-009 KISMEN |
+
+Technical ids are UUIDv5 in namespace `eb68fb11-2146-5285-9cc5-6ce5f3981184`
+(= UUIDv5(URL, "https://github.com/sinangym/GoymenERP/settings/sales-policies")), names
+`sales-delivery-tolerance:<company id>:v1` and
+`sales-approval-amount-threshold:<company id>:TRY:v1`; assigned once, never reused.
+
+Outcomes of each read, in order:
+
+| Case | Result |
+|---|---|
+| cancelled | `OperationCanceledException` |
+| no authenticated actor / actor id, unresolved or empty company, not a member | `settings_access_denied`, before anything about the source is revealed |
+| no approved Sales policy source for the company (GSP, GIN) | `settings_provider_unavailable` |
+| source reachable, but no policy for the identity (any discount limit group, an empty or non-TRY currency) | `settings_sales_policy_not_found` (`SettingsPrerequisiteCodesV1.SalesPolicyNotFound`) |
+| malformed catalog | `settings_profile_invalid`, raised when the catalog is built; nothing repaired or skipped |
+| otherwise | the exact version in force on the date, with its real window |
+
+A company is "served" when it has any approved Sales policy. As for units and money, a date
+before the approval returns the real version with its real window; the consumer checks
+activity and window and rejects it.
+
+The catalog is refused whole when an identity is empty, a source blank, a version non-positive,
+a window reversed, a version repeated or two windows of one key overlap; also when a tolerance
+breaks 0 ≤ warn ≤ approval ≤ block, a discount limit is outside 0…100, an enabled threshold
+lacks a lossless positive amount (`ExactPositiveDecimalV1` lexical rules) or a disabled one
+carries an amount. The threshold amount's scale is not checked here: the consumer checks it
+against the currency's money profile.
+
+**Consumer obligations.**
+
+- Discount limit: `settings_sales_policy_not_found` is SAT-D2's "no limit defined for the role"
+  and means **every discount requires approval** — never "unlimited", never a zero limit that
+  blocks. `settings_provider_unavailable`, `settings_profile_invalid` and
+  `settings_access_denied` are not that answer; they are failures the consumer refuses on
+  (fail-closed), as for every other Settings read.
+- `limitGroupId` is an opaque id. Settings never receives a role name; mapping a user's role
+  to a limit group is the Identity owner's work and a human grant gate.
+- Approval threshold: `IsEnabled = false` means no amount-based routing; SAT-D6's single
+  approver (Müdür) applies. An enabled threshold is a later approved version, not a runtime
+  switch.
+- Tolerance: the percents are reference data; how a deviation is compared with them (bounds,
+  over vs. under delivery) belongs to the consuming backend calculator, which UI and reports
+  reuse.
+- A returned policy is reference metadata, not an authorization: the consuming use case still
+  checks its own permission and persists the applied profile id/version with its decision.
+
+**Host wiring.** The API host registers `ISettingsSalesPolicyProviderV1` as
+`ApprovedSettingsPrerequisiteProvider` (scoped, next to the other Settings ports).
+`SettingsHostWiringTests` proves the registration and the GDC/GSP/denied answers through the
+host. Reachable effect today: none — no module consumes the port yet.
+
+Not in this slice: any consumer (API-12 discount check, the delivery realization axis /
+API-08, the approval routing), per-product or per-operation tolerance overrides (SAT-D5), any
+discount limit value, the role → limit-group mapping (a human grant gate), an enabled
+threshold amount, an HTTP route, OpenAPI, persistence, migration, seed or grant.
+
+Validation: Settings unit tests (synthetic catalogs for invariants and windows; the approved
+values asserted against their SAT sources) and the host wiring tests. No persistence changed;
+rollback is removing the registration and the files, with no data rollback.

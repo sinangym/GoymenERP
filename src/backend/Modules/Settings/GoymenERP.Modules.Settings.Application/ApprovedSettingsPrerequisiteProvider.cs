@@ -47,12 +47,21 @@ namespace GoymenERP.Modules.Settings.Application;
 /// <see cref="GetMoneyProfileAsync"/> for its operation and date.
 /// </para>
 /// <para>
+/// <see cref="ISettingsSalesPolicyProviderV1"/> (MOD-03 slice 1) serves
+/// <see cref="ApprovedSalesPolicyCatalog"/> in the same order: access → <c>settings_access_denied</c>;
+/// a company without an approved Sales policy source → <c>settings_provider_unavailable</c>; a
+/// reachable source without a policy for the identity asked about (every discount limit group
+/// today, a currency other than TRY for the threshold) →
+/// <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/>; otherwise the exact version for the
+/// date with its real window.
+/// </para>
+/// <para>
 /// The company is never a request input. A returned profile is reference metadata, not an
 /// authorization for any operation: the consuming use case still checks its own permission.
 /// </para>
 /// </summary>
 public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader,
-    ISettingsManufacturingToleranceProviderV1
+    ISettingsManufacturingToleranceProviderV1, ISettingsSalesPolicyProviderV1
 {
     /// <summary>
     /// Kept as an alias so existing callers still compile. Consumers map the published contract
@@ -65,6 +74,7 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     private readonly ApprovedUnitProfileCatalog _catalog;
     private readonly ApprovedMoneyProfileCatalog _money;
     private readonly ApprovedManufacturingToleranceCatalog _manufacturingTolerance;
+    private readonly ApprovedSalesPolicyCatalog _sales;
     private readonly UnavailableSettingsPrerequisiteProvider _notApprovedYet;
 
     /// <summary>
@@ -106,21 +116,39 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     {
     }
 
+    /// <summary>Settings-only synthetic Sales policy seam.</summary>
+    internal ApprovedSettingsPrerequisiteProvider(
+        ICompanyContext companyContext, ICurrentUser currentUser, ApprovedSalesPolicyCatalog sales)
+        : this(companyContext, currentUser, ApprovedUnitProfileCatalog.Approved,
+            ApprovedMoneyProfileCatalog.Approved, ApprovedManufacturingToleranceCatalog.Approved, sales)
+    {
+    }
+
     internal ApprovedSettingsPrerequisiteProvider(
         ICompanyContext companyContext, ICurrentUser currentUser,
         ApprovedUnitProfileCatalog catalog, ApprovedMoneyProfileCatalog money,
         ApprovedManufacturingToleranceCatalog manufacturingTolerance)
+        : this(companyContext, currentUser, catalog, money, manufacturingTolerance, ApprovedSalesPolicyCatalog.Approved)
+    {
+    }
+
+    internal ApprovedSettingsPrerequisiteProvider(
+        ICompanyContext companyContext, ICurrentUser currentUser,
+        ApprovedUnitProfileCatalog catalog, ApprovedMoneyProfileCatalog money,
+        ApprovedManufacturingToleranceCatalog manufacturingTolerance, ApprovedSalesPolicyCatalog sales)
     {
         ArgumentNullException.ThrowIfNull(companyContext);
         ArgumentNullException.ThrowIfNull(currentUser);
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(money);
         ArgumentNullException.ThrowIfNull(manufacturingTolerance);
+        ArgumentNullException.ThrowIfNull(sales);
         _companyContext = companyContext;
         _currentUser = currentUser;
         _catalog = catalog;
         _money = money;
         _manufacturingTolerance = manufacturingTolerance;
+        _sales = sales;
         _notApprovedYet = new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser);
     }
 
@@ -259,10 +287,99 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
             entry.EffectiveThrough));
     }
 
+    /// <summary>The approved Sales delivery tolerance (SAT-D5); see the class remarks.</summary>
+    public Task<SalesDeliveryTolerancePolicyV1> GetSalesDeliveryToleranceAsync(
+        DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        if (SalesSourceRefusal<SalesDeliveryTolerancePolicyV1>(cancellationToken) is { } refusal)
+        {
+            return refusal;
+        }
+
+        var entry = _sales.DeliveryToleranceFor(_companyContext.CompanyId, effectiveOn);
+        return entry is null
+            ? SalesPolicyNotFound<SalesDeliveryTolerancePolicyV1>()
+            : Task.FromResult(new SalesDeliveryTolerancePolicyV1(
+                entry.CompanyId,
+                new ProfileVersionV1(entry.ProfileId, entry.Version),
+                entry.WarnPercent,
+                entry.ApprovalPercent,
+                entry.BlockPercent,
+                entry.IsActive,
+                entry.EffectiveFrom,
+                entry.EffectiveThrough));
+    }
+
+    /// <summary>
+    /// The approved discount limit of a limit group (SAT-D2). None is approved yet, so every group of a
+    /// served company answers <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/>: "no limit
+    /// defined", which SAT-D2 routes to approval.
+    /// </summary>
+    public Task<SalesDiscountLimitPolicyV1> GetSalesDiscountLimitAsync(
+        Guid limitGroupId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        if (SalesSourceRefusal<SalesDiscountLimitPolicyV1>(cancellationToken) is { } refusal)
+        {
+            return refusal;
+        }
+
+        var entry = _sales.DiscountLimitFor(_companyContext.CompanyId, limitGroupId, effectiveOn);
+        return entry is null
+            ? SalesPolicyNotFound<SalesDiscountLimitPolicyV1>()
+            : Task.FromResult(new SalesDiscountLimitPolicyV1(
+                entry.CompanyId,
+                entry.LimitGroupId,
+                new ProfileVersionV1(entry.ProfileId, entry.Version),
+                entry.MaximumDiscountPercent,
+                entry.IsActive,
+                entry.EffectiveFrom,
+                entry.EffectiveThrough));
+    }
+
+    /// <summary>The approved order-approval amount threshold of a currency (SAT-D6); see the class remarks.</summary>
+    public Task<SalesApprovalAmountThresholdPolicyV1> GetSalesApprovalAmountThresholdAsync(
+        Guid currencyId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        if (SalesSourceRefusal<SalesApprovalAmountThresholdPolicyV1>(cancellationToken) is { } refusal)
+        {
+            return refusal;
+        }
+
+        var entry = _sales.ApprovalAmountThresholdFor(_companyContext.CompanyId, currencyId, effectiveOn);
+        return entry is null
+            ? SalesPolicyNotFound<SalesApprovalAmountThresholdPolicyV1>()
+            : Task.FromResult(new SalesApprovalAmountThresholdPolicyV1(
+                entry.CompanyId,
+                entry.CurrencyId,
+                new ProfileVersionV1(entry.ProfileId, entry.Version),
+                entry.IsEnabled,
+                entry.ThresholdAmountText,
+                entry.IsActive,
+                entry.EffectiveFrom,
+                entry.EffectiveThrough));
+    }
+
     /// <summary>Not an approved source yet.</summary>
     public Task<PeriodEligibilityV1> GetPeriodEligibilityAsync(string operation,
         DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default) =>
         _notApprovedYet.GetPeriodEligibilityAsync(operation, occurredOn, valueOn, cancellationToken);
+
+    /// <summary>Cancellation, then access, then the company's Sales source; null when the read may proceed.</summary>
+    private Task<T>? SalesSourceRefusal<T>(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!HasCompanyAccess())
+        {
+            return Task.FromException<T>(new SettingsPrerequisiteException("settings_access_denied"));
+        }
+
+        return _sales.Serves(_companyContext.CompanyId)
+            ? null
+            : Task.FromException<T>(new SettingsPrerequisiteException("settings_provider_unavailable"));
+    }
+
+    private static Task<T> SalesPolicyNotFound<T>() =>
+        Task.FromException<T>(new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.SalesPolicyNotFound));
 
     private bool HasCompanyAccess() =>
         _currentUser.IsAuthenticated && !string.IsNullOrWhiteSpace(_currentUser.UserId)

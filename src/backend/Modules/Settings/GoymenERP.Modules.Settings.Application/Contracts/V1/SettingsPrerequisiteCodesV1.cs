@@ -29,4 +29,14 @@ public static class SettingsPrerequisiteCodesV1
     /// </summary>
     public const string ManufacturingToleranceProfileNotFound =
         "settings_manufacturing_tolerance_profile_not_found";
+
+    /// <summary>
+    /// The company's approved Sales policy source is reachable but holds no policy for the identity
+    /// asked about: no delivery tolerance, no discount limit for the limit group (including an empty
+    /// id) or no approval amount threshold for the currency. Kept apart from
+    /// <c>settings_provider_unavailable</c> (the company has no Sales policy source) and
+    /// <c>settings_profile_invalid</c> (malformed data). For a discount limit it is SAT-D2's
+    /// "no limit defined", which routes every discount to approval; it never means "unlimited".
+    /// </summary>
+    public const string SalesPolicyNotFound = "settings_sales_policy_not_found";
 }

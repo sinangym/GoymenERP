@@ -96,6 +96,63 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
+    public void The_host_registers_the_approved_provider_as_the_one_sales_policy_port()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsSalesPolicyProviderV1>();
+
+        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(provider);
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsSalesPolicyProviderV1>());
+    }
+
+    [Fact]
+    public async Task GDC_sales_policies_resolve_to_the_approved_catalog_through_the_host()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsSalesPolicyProviderV1>();
+        var salesApproval = new DateOnly(2026, 10, 25);
+
+        var tolerance = await provider.GetSalesDeliveryToleranceAsync(salesApproval);
+        var threshold = await provider.GetSalesApprovalAmountThresholdAsync(
+            SettingsCurrencyIdentitiesV1.TurkishLira, salesApproval);
+        var discount = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetSalesDiscountLimitAsync(Guid.NewGuid(), salesApproval));
+
+        Assert.Equal((1m, 2m, 3m), (tolerance.WarnPercent, tolerance.ApprovalPercent, tolerance.BlockPercent));
+        Assert.Equal(ApprovedSalesPolicyCatalog.GdcDeliveryToleranceV1.ProfileId, tolerance.Profile.ProfileId);
+        Assert.False(threshold.IsEnabled);
+        Assert.Null(threshold.ThresholdAmountText);
+        Assert.Equal(SettingsPrerequisiteCodesV1.SalesPolicyNotFound, discount.Code);
+    }
+
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task A_company_without_an_approved_sales_policy_source_stays_unavailable_through_the_host(string company)
+    {
+        using var factory = Host(company == "gsp" ? Gsp : Gin);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsSalesPolicyProviderV1>();
+
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetSalesDeliveryToleranceAsync(Approval))).Code);
+    }
+
+    [Fact]
+    public async Task The_sales_policy_host_port_denies_an_actor_outside_the_company()
+    {
+        using var factory = Host(Gdc, actorAllowedIn: Gsp);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsSalesPolicyProviderV1>();
+
+        Assert.Equal("settings_access_denied", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetSalesDeliveryToleranceAsync(Approval))).Code);
+    }
+
+    [Fact]
     public async Task GDC_kilogram_resolves_to_the_approved_profile_through_the_host()
     {
         using var factory = Host(Gdc);

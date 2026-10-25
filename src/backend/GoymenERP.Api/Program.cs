@@ -190,6 +190,8 @@ builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftCont
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
+// MOD-03 slice 1: the Settings-owned Sales policy registry (SAT-D2/D5/D6); no consumer is composed yet.
+builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
