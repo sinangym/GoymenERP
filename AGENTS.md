@@ -24,6 +24,14 @@ kapısında kalır" kuralının yerine geçer):** `AGENTS.md`, `docs/governance/
 - Yazar ≠ koordinatör; iki bağımsız exact-head review; açık P0/P1 yok.
 - Yalnız doküman/governance/karar/ayar dosyası (`docs/**`, `AGENTS.md`, `.claude/**`)
   değiştiren PR'da **CI koşumu şartı aranmaz**; `git diff --check` + iki review yeter.
+- `docs/decisions/**`, `docs/backlog/**` veya `.github/**` değiştiren adaylarda merge
+  öncesi `tools/validate_delivery_backlog.py`, `tests/delivery_backlog_validator/`
+  (bağımsız sicil MD/CSV eşliği dahil) ve `tests/dotnet_bootstrap_integrity/`
+  hafif kontrolleri yerelde çalıştırılır; komut, exit code ve kaynak commit'i PR'a
+  kaydedilir. Kaynak değişirse bu kanıt yenilenir. Sicil hash'i yalnız mevcut
+  `tests/delivery_backlog_validator/recompute_delivery_backlog_provenance.py`
+  üreticisinin çıktısından ve onaylı kaynak değişikliği incelendikten sonra güncellenir.
+  Bu daraltma test veya uygulama dosyası içeren adayın normal fresh CI şartını kaldırmaz.
 - `.github/**` değişikliğinde iki review ayrıca şunu doğrular: her `runs-on` self-hosted
   etikettir, hosted fallback yoktur, artifact/cache/Packages yüklemesi, secret, environment
   veya deploy yüzeyi açılmamıştır.
