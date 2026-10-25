@@ -50,8 +50,10 @@ namespace GoymenERP.Modules.Settings.Application;
 /// <see cref="ISettingsSalesPolicyProviderV1"/> (MOD-03 slice 1) serves
 /// <see cref="ApprovedSalesPolicyCatalog"/> in the same order: access → <c>settings_access_denied</c>;
 /// a company without an approved Sales policy source → <c>settings_provider_unavailable</c>; a
+/// an empty limit group or currency id → <see cref="SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid"/>
+/// (after the access check, before any lookup, never "not found"); a
 /// reachable source without a policy for the identity asked about (every discount limit group
-/// today, a currency other than TRY for the threshold) →
+/// today, a non-empty currency other than TRY for the threshold) →
 /// <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/>; otherwise the exact version for the
 /// date with its real window.
 /// </para>
@@ -318,7 +320,7 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     public Task<SalesDiscountLimitPolicyV1> GetSalesDiscountLimitAsync(
         Guid limitGroupId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
     {
-        if (SalesSourceRefusal<SalesDiscountLimitPolicyV1>(cancellationToken) is { } refusal)
+        if (SalesSourceRefusal<SalesDiscountLimitPolicyV1>(cancellationToken, limitGroupId) is { } refusal)
         {
             return refusal;
         }
@@ -340,7 +342,7 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     public Task<SalesApprovalAmountThresholdPolicyV1> GetSalesApprovalAmountThresholdAsync(
         Guid currencyId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
     {
-        if (SalesSourceRefusal<SalesApprovalAmountThresholdPolicyV1>(cancellationToken) is { } refusal)
+        if (SalesSourceRefusal<SalesApprovalAmountThresholdPolicyV1>(cancellationToken, currencyId) is { } refusal)
         {
             return refusal;
         }
@@ -364,13 +366,22 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
         DateOnly occurredOn, DateOnly? valueOn, CancellationToken cancellationToken = default) =>
         _notApprovedYet.GetPeriodEligibilityAsync(operation, occurredOn, valueOn, cancellationToken);
 
-    /// <summary>Cancellation, then access, then the company's Sales source; null when the read may proceed.</summary>
-    private Task<T>? SalesSourceRefusal<T>(CancellationToken cancellationToken)
+    /// <summary>
+    /// Cancellation, then access, then the requested identity (when the read takes one), then the
+    /// company's Sales source; null when the read may proceed.
+    /// </summary>
+    private Task<T>? SalesSourceRefusal<T>(CancellationToken cancellationToken, Guid? requestedId = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (!HasCompanyAccess())
         {
             return Task.FromException<T>(new SettingsPrerequisiteException("settings_access_denied"));
+        }
+
+        if (requestedId == Guid.Empty)
+        {
+            return Task.FromException<T>(
+                new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid));
         }
 
         return _sales.Serves(_companyContext.CompanyId)

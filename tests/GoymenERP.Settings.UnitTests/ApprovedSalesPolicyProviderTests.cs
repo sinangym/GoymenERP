@@ -77,12 +77,10 @@ public sealed class ApprovedSalesPolicyProviderTests
         Assert.Null(policy.EffectiveThrough);
     }
 
-    [Theory]
-    [InlineData("empty")]
-    [InlineData("other")]
-    public async Task A_currency_without_an_approved_threshold_is_not_found(string currency)
+    [Fact]
+    public async Task A_currency_without_an_approved_threshold_is_not_found()
     {
-        var currencyId = currency == "empty" ? Guid.Empty : Guid.Parse("0f3bd0a1-6e2c-4d77-a3a5-0b1c2d3e4f51");
+        var currencyId = Guid.Parse("0f3bd0a1-6e2c-4d77-a3a5-0b1c2d3e4f51");
 
         var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => Provider(Gdc).GetSalesApprovalAmountThresholdAsync(currencyId, Approval));
@@ -91,7 +89,6 @@ public sealed class ApprovedSalesPolicyProviderTests
     }
 
     [Theory]
-    [InlineData("00000000-0000-0000-0000-000000000000")]
     [InlineData("71000000-0000-4000-8000-000000000001")]
     [InlineData("0e9a3f0c-7d2b-4f1a-9c3e-5b6d7e8f9a0b")]
     public async Task Every_discount_limit_group_is_fail_closed_because_no_limit_is_approved(string group)
@@ -105,6 +102,98 @@ public sealed class ApprovedSalesPolicyProviderTests
 
         Assert.Equal(SettingsPrerequisiteCodesV1.SalesPolicyNotFound, failure.Code);
         Assert.Equal("settings_sales_policy_not_found", failure.Code);
+    }
+
+    [Theory]
+    [InlineData("discount", "gdc")]
+    [InlineData("threshold", "gdc")]
+    [InlineData("discount", "gsp")]
+    [InlineData("threshold", "gsp")]
+    public async Task An_empty_identity_is_an_invalid_request_never_not_found(string read, string company)
+    {
+        var provider = Provider(company == "gdc" ? Gdc : Gsp);
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => read == "discount"
+            ? provider.GetSalesDiscountLimitAsync(Guid.Empty, Approval)
+            : provider.GetSalesApprovalAmountThresholdAsync(Guid.Empty, Approval));
+
+        Assert.Equal(SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid, failure.Code);
+        Assert.Equal("settings_sales_policy_request_invalid", failure.Code);
+    }
+
+    [Theory]
+    [InlineData("discount")]
+    [InlineData("threshold")]
+    public async Task An_empty_identity_is_still_refused_access_first(string read)
+    {
+        var provider = new ApprovedSettingsPrerequisiteProvider(new Context(Gdc, true), new Actor(true, "x", Gsp));
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => read == "discount"
+            ? provider.GetSalesDiscountLimitAsync(Guid.Empty, Approval)
+            : provider.GetSalesApprovalAmountThresholdAsync(Guid.Empty, Approval));
+
+        Assert.Equal("settings_access_denied", failure.Code);
+    }
+
+    [Fact]
+    public async Task Synthetic_tolerance_versions_are_selected_by_date_and_a_closed_window_keeps_its_real_end()
+    {
+        var firstEnd = Approval.AddDays(30);
+        var secondStart = firstEnd.AddDays(1);
+        var secondEnd = secondStart.AddDays(60);
+        var provider = Provider(Gdc, new ApprovedSalesPolicyCatalog(
+            [
+                Tolerance() with { EffectiveThrough = firstEnd },
+                Tolerance() with
+                {
+                    Version = 2, ProfileId = Guid.Parse("71000000-0000-4000-8000-0000000000ac"),
+                    WarnPercent = 0.5m, ApprovalPercent = 1.5m, BlockPercent = 2.5m,
+                    EffectiveFrom = secondStart, EffectiveThrough = secondEnd,
+                },
+            ],
+            [],
+            []));
+
+        var first = await provider.GetSalesDeliveryToleranceAsync(firstEnd);
+        var second = await provider.GetSalesDeliveryToleranceAsync(secondStart);
+        var afterClosed = await provider.GetSalesDeliveryToleranceAsync(secondEnd.AddDays(1));
+
+        Assert.Equal((1L, 1m, 2m, 3m),
+            (first.Profile.Version, first.WarnPercent, first.ApprovalPercent, first.BlockPercent));
+        Assert.Equal((2L, 0.5m, 1.5m, 2.5m),
+            (second.Profile.Version, second.WarnPercent, second.ApprovalPercent, second.BlockPercent));
+        // Never widened: the last version comes back with its real end, so the consumer rejects it.
+        Assert.Equal(2, afterClosed.Profile.Version);
+        Assert.Equal(secondEnd, afterClosed.EffectiveThrough);
+    }
+
+    [Fact]
+    public async Task Synthetic_threshold_versions_are_selected_by_date_and_a_closed_window_keeps_its_real_end()
+    {
+        var firstEnd = Approval.AddDays(10);
+        var secondStart = firstEnd.AddDays(1);
+        var secondEnd = secondStart.AddDays(10);
+        var provider = Provider(Gdc, new ApprovedSalesPolicyCatalog(
+            [],
+            [],
+            [
+                Threshold() with { EffectiveThrough = firstEnd },
+                Threshold() with
+                {
+                    Version = 2, ProfileId = Guid.Parse("71000000-0000-4000-8000-0000000000ad"),
+                    IsEnabled = true, ThresholdAmountText = "0.50",
+                    EffectiveFrom = secondStart, EffectiveThrough = secondEnd,
+                },
+            ]));
+
+        var first = await provider.GetSalesApprovalAmountThresholdAsync(Try, firstEnd);
+        var second = await provider.GetSalesApprovalAmountThresholdAsync(Try, secondStart);
+        var afterClosed = await provider.GetSalesApprovalAmountThresholdAsync(Try, secondEnd.AddDays(1));
+
+        Assert.Equal((1L, false, (string?)null), (first.Profile.Version, first.IsEnabled, first.ThresholdAmountText));
+        Assert.Equal((2L, true, (string?)"0.50"), (second.Profile.Version, second.IsEnabled, second.ThresholdAmountText));
+        Assert.Equal(2, afterClosed.Profile.Version);
+        Assert.Equal(secondEnd, afterClosed.EffectiveThrough);
     }
 
     [Theory]
@@ -204,6 +293,7 @@ public sealed class ApprovedSalesPolicyProviderTests
     [InlineData(1, 1, 1)]
     [InlineData(0, 2, 3)]
     [InlineData(1, 2, 3)]
+    [InlineData(0, 0, 100)]
     public void Tolerance_invariant_accepts_warn_le_approval_le_block(int warn, int approval, int block)
     {
         var catalog = new ApprovedSalesPolicyCatalog(
@@ -216,6 +306,7 @@ public sealed class ApprovedSalesPolicyProviderTests
     [InlineData("negative warn")]
     [InlineData("warn above approval")]
     [InlineData("approval above block")]
+    [InlineData("block above 100")]
     [InlineData("tolerance empty company")]
     [InlineData("tolerance empty profile")]
     [InlineData("tolerance zero version")]
@@ -234,6 +325,8 @@ public sealed class ApprovedSalesPolicyProviderTests
     [InlineData("threshold enabled with zero")]
     [InlineData("threshold enabled with signed amount")]
     [InlineData("threshold enabled with grouped amount")]
+    [InlineData("threshold enabled with leading zero")]
+    [InlineData("threshold enabled with leading zero before the point")]
     [InlineData("threshold blank source")]
     public void Malformed_or_ambiguous_catalog_is_refused_whole(string fault)
     {
@@ -245,6 +338,7 @@ public sealed class ApprovedSalesPolicyProviderTests
             "negative warn" => [tolerance with { WarnPercent = -0.01m }],
             "warn above approval" => [tolerance with { WarnPercent = 2.01m }],
             "approval above block" => [tolerance with { ApprovalPercent = 3.01m }],
+            "block above 100" => [tolerance with { BlockPercent = 100.01m }],
             "tolerance empty company" => [tolerance with { CompanyId = Guid.Empty }],
             "tolerance empty profile" => [tolerance with { ProfileId = Guid.Empty }],
             "tolerance zero version" => [tolerance with { Version = 0 }],
@@ -287,6 +381,9 @@ public sealed class ApprovedSalesPolicyProviderTests
             "threshold enabled with zero" => [threshold with { IsEnabled = true, ThresholdAmountText = "0.00" }],
             "threshold enabled with signed amount" => [threshold with { IsEnabled = true, ThresholdAmountText = "-5" }],
             "threshold enabled with grouped amount" => [threshold with { IsEnabled = true, ThresholdAmountText = "1,000" }],
+            "threshold enabled with leading zero" => [threshold with { IsEnabled = true, ThresholdAmountText = "0100" }],
+            "threshold enabled with leading zero before the point" =>
+                [threshold with { IsEnabled = true, ThresholdAmountText = "00.50" }],
             "threshold blank source" => [threshold with { Source = "" }],
             _ => [],
         };

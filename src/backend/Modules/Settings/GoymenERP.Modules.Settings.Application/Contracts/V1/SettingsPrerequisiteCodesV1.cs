@@ -39,4 +39,11 @@ public static class SettingsPrerequisiteCodesV1
     /// "no limit defined", which routes every discount to approval; it never means "unlimited".
     /// </summary>
     public const string SalesPolicyNotFound = "settings_sales_policy_not_found";
+
+    /// <summary>
+    /// A Sales policy read was asked with an invalid identity (an empty limit group or currency id).
+    /// Reported after the access check and before any lookup: it is the caller's error, never
+    /// <see cref="SalesPolicyNotFound"/>, so an empty id can never be read as "no limit defined".
+    /// </summary>
+    public const string SalesPolicyRequestInvalid = "settings_sales_policy_request_invalid";
 }

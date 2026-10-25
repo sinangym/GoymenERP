@@ -12,7 +12,9 @@ namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 /// default: <c>settings_access_denied</c> before anything about the source is revealed;
 /// <c>settings_provider_unavailable</c> when the company has no approved Sales policy source;
 /// <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/> when the source is reachable but has
-/// no policy for the identity asked about; <c>settings_profile_invalid</c> for a malformed source.
+/// no policy for the identity asked about; <see cref="SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid"/>
+/// for an empty limit group or currency id (after the access check, before any lookup);
+/// <c>settings_profile_invalid</c> for a malformed source.
 /// </para>
 /// </summary>
 public interface ISettingsSalesPolicyProviderV1
@@ -40,7 +42,7 @@ public interface ISettingsSalesPolicyProviderV1
 }
 
 /// <summary>
-/// Delivery tolerance percents relative to the ordered quantity, with 0 ≤ warn ≤ approval ≤ block.
+/// Delivery tolerance percents relative to the ordered quantity, with 0 ≤ warn ≤ approval ≤ block ≤ 100.
 /// How a deviation is compared with them (inclusive or exclusive bounds, over and under delivery)
 /// is the consuming calculator's contract, not implied here.
 /// </summary>
@@ -54,7 +56,10 @@ public sealed record SalesDeliveryTolerancePolicyV1(
     DateOnly EffectiveFrom,
     DateOnly? EffectiveThrough);
 
-/// <summary>A limit group's maximum discount percent, 0 ≤ value ≤ 100.</summary>
+/// <summary>
+/// A limit group's maximum discount percent, 0 ≤ value ≤ 100. What the percent is relative to (the
+/// price base of the discount) is defined by the consuming contract (API-12), not by this port.
+/// </summary>
 public sealed record SalesDiscountLimitPolicyV1(
     Guid CompanyId,
     Guid LimitGroupId,

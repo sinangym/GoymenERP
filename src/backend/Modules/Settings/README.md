@@ -280,8 +280,9 @@ Outcomes of each read, in order:
 |---|---|
 | cancelled | `OperationCanceledException` |
 | no authenticated actor / actor id, unresolved or empty company, not a member | `settings_access_denied`, before anything about the source is revealed |
+| empty `limitGroupId` / `currencyId` | `settings_sales_policy_request_invalid` (`SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid`), after the access check and before any lookup — never "not found" |
 | no approved Sales policy source for the company (GSP, GIN) | `settings_provider_unavailable` |
-| source reachable, but no policy for the identity (any discount limit group, an empty or non-TRY currency) | `settings_sales_policy_not_found` (`SettingsPrerequisiteCodesV1.SalesPolicyNotFound`) |
+| source reachable, but no policy for the identity (any non-empty discount limit group, a non-TRY currency) | `settings_sales_policy_not_found` (`SettingsPrerequisiteCodesV1.SalesPolicyNotFound`) |
 | malformed catalog | `settings_profile_invalid`, raised when the catalog is built; nothing repaired or skipped |
 | otherwise | the exact version in force on the date, with its real window |
 
@@ -291,33 +292,45 @@ activity and window and rejects it.
 
 The catalog is refused whole when an identity is empty, a source blank, a version non-positive,
 a window reversed, a version repeated or two windows of one key overlap; also when a tolerance
-breaks 0 ≤ warn ≤ approval ≤ block, a discount limit is outside 0…100, an enabled threshold
-lacks a lossless positive amount (`ExactPositiveDecimalV1` lexical rules) or a disabled one
-carries an amount. The threshold amount's scale is not checked here: the consumer checks it
+breaks 0 ≤ warn ≤ approval ≤ block ≤ 100, a discount limit is outside 0…100, an enabled
+threshold lacks a lossless positive amount (`ExactPositiveDecimalV1` lexical rules, in canonical
+form without a leading zero: `0100` is refused, `0.50` is not) or a disabled one carries an
+amount. The threshold amount's scale is not checked here: the consumer checks it
 against the currency's money profile.
 
 **Consumer obligations.**
 
 - Discount limit: `settings_sales_policy_not_found` is SAT-D2's "no limit defined for the role"
   and means **every discount requires approval** — never "unlimited", never a zero limit that
-  blocks. `settings_provider_unavailable`, `settings_profile_invalid` and
-  `settings_access_denied` are not that answer; they are failures the consumer refuses on
-  (fail-closed), as for every other Settings read.
+  blocks. `settings_provider_unavailable` (including a company with no Sales policy source at
+  all), `settings_profile_invalid`, `settings_sales_policy_request_invalid` and
+  `settings_access_denied` are not that answer: the consumer refuses on them. For an unserved
+  company that refusal is the DEC-SET-001 fail-closed default, held until NEEDS-SINAN Q1 (#66
+  comment 6404405195: refuse, or route to approval like SAT-D2's "no limit"?) is answered.
+- What the discount percent is relative to (its price base) is defined by the consuming
+  contract (API-12), not by this port.
 - `limitGroupId` is an opaque id. Settings never receives a role name; mapping a user's role
   to a limit group is the Identity owner's work and a human grant gate.
 - Approval threshold: `IsEnabled = false` means no amount-based routing; SAT-D6's single
   approver (Müdür) applies. An enabled threshold is a later approved version, not a runtime
-  switch.
+  switch. `settings_sales_policy_not_found` on this read (a currency with no threshold profile,
+  e.g. USD/EUR for GDC today) is **not** "disabled": per DEC-SET-001 fail-closed the consumer
+  must not silently skip amount routing for that currency. What it does instead is
+  **NEEDS-SINAN (#66 comment 6404405195 follow-up)**, an open consumer question.
 - Tolerance: the percents are reference data; how a deviation is compared with them (bounds,
   over vs. under delivery) belongs to the consuming backend calculator, which UI and reports
-  reuse.
+  reuse. The read takes no product or operation input: SAT-D5's per-product/operation
+  overrides need a new V1 method later, not a change to this one.
 - A returned policy is reference metadata, not an authorization: the consuming use case still
   checks its own permission and persists the applied profile id/version with its decision.
 
 **Host wiring.** The API host registers `ISettingsSalesPolicyProviderV1` as
 `ApprovedSettingsPrerequisiteProvider` (scoped, next to the other Settings ports).
 `SettingsHostWiringTests` proves the registration and the GDC/GSP/denied answers through the
-host. Reachable effect today: none — no module consumes the port yet.
+host. Reachable effect today: none — no module consumes the port yet. This registration is
+not final: when the policies become user-maintained, a persistent provider replaces it through
+`services.Replace` in `SettingsModuleExtensions.AddSettingsModule`, as the Manufacturing
+tolerance provider does.
 
 Not in this slice: any consumer (API-12 discount check, the delivery realization axis /
 API-08, the approval routing), per-product or per-operation tolerance overrides (SAT-D5), any

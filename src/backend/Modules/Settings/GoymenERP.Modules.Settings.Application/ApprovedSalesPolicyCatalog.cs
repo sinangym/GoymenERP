@@ -54,8 +54,8 @@ public sealed record ApprovedSalesApprovalAmountThresholdEntry(
 /// A malformed catalog is refused as a whole with <c>settings_profile_invalid</c>: an empty
 /// identity, a blank source, a non-positive version, a window that ends before it starts, a
 /// repeated version or overlapping windows within one family key, a tolerance outside
-/// 0 ≤ warn ≤ approval ≤ block, a discount limit outside 0..100, an enabled threshold without a
-/// lossless positive amount or a disabled threshold carrying one. Nothing is repaired or skipped.
+/// 0 ≤ warn ≤ approval ≤ block ≤ 100, a discount limit outside 0..100, an enabled threshold without a
+/// lossless positive amount in canonical form (no leading zero) or a disabled threshold carrying one. Nothing is repaired or skipped.
 /// </para>
 /// <para>
 /// Technical ids are UUIDv5 in namespace <c>eb68fb11-2146-5285-9cc5-6ce5f3981184</c>
@@ -136,7 +136,8 @@ public sealed class ApprovedSalesPolicyCatalog
                     entry.EffectiveFrom, entry.EffectiveThrough, entry.Source)
                 || entry.WarnPercent < 0m
                 || entry.WarnPercent > entry.ApprovalPercent
-                || entry.ApprovalPercent > entry.BlockPercent)
+                || entry.ApprovalPercent > entry.BlockPercent
+                || entry.BlockPercent > MaximumPercentOfPrice)
             || discount.Any(entry => entry is null
                 || !IsWellFormed(entry.CompanyId, entry.ProfileId, entry.Version,
                     entry.EffectiveFrom, entry.EffectiveThrough, entry.Source)
@@ -209,11 +210,20 @@ public sealed class ApprovedSalesPolicyCatalog
             return entry.ThresholdAmountText is null;
         }
 
+        var text = entry.ThresholdAmountText;
+        // Canonical form: no leading zero before the integer digits ("0100" is refused, "0.50" is not),
+        // so one amount has exactly one spelling in the reviewed catalog.
+        if (text is { Length: > 1 } && text[0] == '0' && text[1] != '.')
+        {
+            return false;
+        }
+
         try
         {
-            // Lexical check only (lossless positive decimal); the scale belongs to the currency's
-            // money profile and is checked by the consumer, so any fractional length passes here.
-            ExactPositiveDecimalV1.Parse(entry.ThresholdAmountText, entry.ThresholdAmountText?.Length ?? 0);
+            // Lexical check only (lossless positive decimal). The text's own length is passed as the
+            // scale because it bounds any fractional length, so no scale is enforced here: the scale
+            // belongs to the currency's money profile and is checked by the consumer.
+            ExactPositiveDecimalV1.Parse(text, text?.Length ?? 0);
             return true;
         }
         catch (SettingsPrerequisiteException)
