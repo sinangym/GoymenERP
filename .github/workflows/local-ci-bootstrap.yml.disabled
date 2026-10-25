@@ -71,14 +71,61 @@ jobs:
           --job backend-build \
           --phase test-suite
 
-      - name: Upload secret-free backend test summary
+      - name: Preserve secret-free backend test summary locally
         if: always() && hashFiles('artifacts/ci-safe-test-summary/backend.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-test-summary-backend-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/backend.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-build-summary
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: &publish-local-evidence |
+          set -euo pipefail
+          root=/home/ci/local-ci-evidence
+          head="${LOCAL_EVIDENCE_SOURCE_HEAD,,}"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          tested="$(git rev-parse HEAD)"
+          [[ "$tested" =~ ^[0-9a-f]{40}$ ]]
+          for ancestor in /home /home/ci "$root"; do test ! -L "$ancestor"; done
+          mkdir -p "$root"
+          test "$(realpath -e "$root")" = "$root"
+          run_root="$root/gh-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${head:0:7}"
+          destination="$run_root/$LOCAL_EVIDENCE_SCOPE"
+          mkdir -p "$run_root"
+          test "$(realpath -e "$run_root")" = "$run_root"
+          test ! -e "$destination"
+          test ! -L "$destination"
+          test -f "$LOCAL_EVIDENCE_FILE"
+          test ! -L "$LOCAL_EVIDENCE_FILE"
+          temporary="$(mktemp -d "$root/.tmp-${LOCAL_EVIDENCE_SCOPE}-XXXXXX")"
+          lock="$destination.lock"
+          lock_acquired=false
+          cleanup() {
+            rm -rf -- "$temporary"
+            if [[ "$lock_acquired" = true ]]; then rmdir -- "$lock" 2>/dev/null || true; fi
+          }
+          trap cleanup EXIT
+          mkdir -p "$temporary/files/$(dirname "$LOCAL_EVIDENCE_FILE")"
+          cp -- "$LOCAL_EVIDENCE_FILE" "$temporary/files/$LOCAL_EVIDENCE_FILE"
+          bytes="$(wc -c < "$temporary/files/$LOCAL_EVIDENCE_FILE" | tr -d '[:space:]')"
+          digest="$(sha256sum "$temporary/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)"
+          printf 'schemaVersion=1\nworkflow=ci\nscope=%s\nrunId=%s\nrunAttempt=%s\nsourceHead=%s\ntestedCommit=%s\nrunnerName=%s\nfile=%s\nbytes=%s\nsha256=%s\n' \
+            "$LOCAL_EVIDENCE_SCOPE" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$head" "$tested" "$RUNNER_NAME" \
+            "$LOCAL_EVIDENCE_FILE" "$bytes" "$digest" > "$temporary/manifest.txt"
+          manifest_digest="$(sha256sum "$temporary/manifest.txt" | cut -d ' ' -f 1)"
+          test "$(sha256sum "$temporary/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)" = "$digest"
+          mkdir -- "$lock"
+          lock_acquired=true
+          test ! -e "$destination"
+          mv -T --no-clobber -- "$temporary" "$destination"
+          test ! -e "$temporary"
+          test ! -L "$destination"
+          test "$(realpath -e "$destination")" = "$destination"
+          test "$(sha256sum "$destination/manifest.txt" | cut -d ' ' -f 1)" = "$manifest_digest"
+          test "$(wc -c < "$destination/files/$LOCAL_EVIDENCE_FILE" | tr -d '[:space:]')" = "$bytes"
+          test "$(sha256sum "$destination/files/$LOCAL_EVIDENCE_FILE" | cut -d ' ' -f 1)" = "$digest"
+          printf 'local_evidence=%s\nmanifest_sha256=%s\n' "$destination" "$manifest_digest"
 
       - name: Check vulnerable dependencies
         run: |
@@ -169,13 +216,13 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)"
 
-      - name: Upload exact backend group proof
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-backend-test-group-proof-${{ matrix.group }}
-          path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
-          if-no-files-found: error
-          retention-days: 7
+      - name: Preserve exact backend group proof locally
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-proof-${{ matrix.group }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
       - name: Produce secret-free backend group summary
         if: always() && hashFiles('artifacts/ci-test-results/backend-groups/*/*.trx') != ''
@@ -188,18 +235,18 @@ jobs:
           --job backend-test-group \
           --phase test-suite
 
-      - name: Upload secret-free backend group summary
+      - name: Preserve secret-free backend group summary locally
         if: always() && hashFiles('artifacts/ci-safe-test-summary/backend-*.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-test-summary-backend-group-${{ matrix.group }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: backend-summary-${{ matrix.group }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
   backend:
     name: Backend build, test and migration
-    needs: [backend-build, backend-test-group]
+    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]
     if: ${{ always() }}
     runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
@@ -209,11 +256,68 @@ jobs:
         run: |
           python3 -I -S -B -m unittest discover -s tests/backend_test_group_verifier -p "test_*.py" -v
 
-      - name: Download exact backend group proofs
-        uses: actions/download-artifact@v8
-        with:
-          pattern: ci-backend-test-group-proof-*
-          path: artifacts/ci-backend-group-proofs
+      - name: Restore exact backend group proofs from local evidence
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: backend-proof-
+          LOCAL_PROOF_IDS: api,architecture,modules
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-backend-test-group-proof-
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-backend-group-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-backend-group-proofs
+        run: &restore-local-proofs |
+          set -euo pipefail
+          root=/home/ci/local-ci-evidence
+          head="${LOCAL_EVIDENCE_SOURCE_HEAD,,}"
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$GITHUB_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          tested="$(git rev-parse HEAD)"
+          [[ "$tested" =~ ^[0-9a-f]{40}$ ]]
+          test ! -L "$root"
+          test "$(realpath -e "$root")" = "$root"
+          run_root="$root/gh-ci-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${head:0:7}"
+          test ! -L "$run_root"
+          test "$(realpath -e "$run_root")" = "$run_root"
+          rm -rf -- "$LOCAL_PROOF_OUTPUT"
+          mkdir -p "$LOCAL_PROOF_OUTPUT"
+          IFS=',' read -r -a ids <<< "$LOCAL_PROOF_IDS"
+          for id in "${ids[@]}"; do
+            scope="${LOCAL_PROOF_SCOPE_PREFIX}${id}"
+            source="$run_root/$scope"
+            relative="${LOCAL_PROOF_RELATIVE_PREFIX}${id}.json"
+            manifest="$source/manifest.txt"
+            test -f "$manifest"
+            test ! -L "$source"
+            test "$(realpath -e "$source")" = "$source"
+            grep -Fx "schemaVersion=1" "$manifest"
+            grep -Fx "workflow=ci" "$manifest"
+            grep -Fx "scope=$scope" "$manifest"
+            grep -Fx "runId=$GITHUB_RUN_ID" "$manifest"
+            grep -Fx "runAttempt=$GITHUB_RUN_ATTEMPT" "$manifest"
+            grep -Fx "sourceHead=$head" "$manifest"
+            grep -Fx "testedCommit=$tested" "$manifest"
+            grep -Fx "runnerName=$RUNNER_NAME" "$manifest"
+            grep -Fx "file=$relative" "$manifest"
+            bytes="$(sed -n 's/^bytes=//p' "$manifest")"
+            digest="$(sed -n 's/^sha256=//p' "$manifest")"
+            test "$(wc -c < "$source/files/$relative" | tr -d '[:space:]')" = "$bytes"
+            test "$(sha256sum "$source/files/$relative" | cut -d ' ' -f 1)" = "$digest"
+            artifact_directory="$LOCAL_PROOF_OUTPUT/${LOCAL_PROOF_ARTIFACT_PREFIX}${id}"
+            mkdir -- "$artifact_directory"
+            cp -- "$source/files/$relative" "$artifact_directory/proof-$id.json"
+          done
+          test "$(find "$LOCAL_PROOF_OUTPUT" -mindepth 2 -maxdepth 2 -type f -name 'proof-*.json' | wc -l | tr -d '[:space:]')" = "${#ids[@]}"
+      - name: Restore same-run SQL proofs for excluded backend tests
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: relational-proof-
+          LOCAL_PROOF_IDS: A,B,C
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs
+        run: *restore-local-proofs
 
       - name: Verify complete backend build and test groups
         run: |
@@ -223,7 +327,10 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)" \
           --build-result "${{ needs.backend-build.result }}" \
-          --worker-result "${{ needs.backend-test-group.result }}"
+          --worker-result "${{ needs.backend-test-group.result }}" \
+          --relational-proof-directory artifacts/ci-relational-proofs \
+          --relational-worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
 
   recovery-surface-inventory:
     name: Recovery surface inventory exact-source proof
@@ -405,7 +512,9 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run lint
-      - run: npm test
+      # Leave memory headroom on the isolated runner.
+      # Keep every test, without competing jsdom workers or longer assertions.
+      - run: npm test -- --maxWorkers=1 --no-file-parallelism
       - run: npm run build
 
   relational-shard:
@@ -425,14 +534,17 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
@@ -464,13 +576,13 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)"
 
-      - name: Upload exact SQL shard proof
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-relational-shard-proof-${{ matrix.shard }}
-          path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json
-          if-no-files-found: error
-          retention-days: 7
+      - name: Preserve exact SQL shard proof locally
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-proof-${{ matrix.shard }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
       - name: Produce secret-free relational shard summary
         if: always() && hashFiles('artifacts/ci-test-results/relational/*.trx') != ''
@@ -483,14 +595,14 @@ jobs:
           --job relational-shard \
           --phase sql-acceptance
 
-      - name: Upload secret-free relational shard summary
+      - name: Preserve secret-free relational shard summary locally
         if: always() && hashFiles('artifacts/ci-safe-test-summary/shard-*.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-test-summary-relational-shard-${{ matrix.shard }}-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-summary-${{ matrix.shard }}
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
   relational-rcsi:
     name: Exact RCSI relational acceptance
@@ -505,14 +617,17 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
@@ -552,14 +667,14 @@ jobs:
           --job relational-rcsi \
           --phase sql-acceptance
 
-      - name: Upload secret-free RCSI test summary
+      - name: Preserve secret-free RCSI test summary locally
         if: always() && hashFiles('artifacts/ci-safe-test-summary/relational.json') != ''
-        uses: actions/upload-artifact@v7
-        with:
-          name: ci-test-summary-relational-rcsi-${{ github.event.pull_request.head.sha || github.sha }}
-          path: artifacts/ci-safe-test-summary/relational.json
-          if-no-files-found: error
-          retention-days: 7
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SCOPE: relational-rcsi-summary
+          LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/relational.json
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: *publish-local-evidence
 
   relational:
     name: SQL Server relational acceptance
@@ -573,11 +688,16 @@ jobs:
         run: |
           python3 -I -S -B -m unittest discover -s tests/rcsi_relational_acceptance_verifier -p "test_*.py" -v
 
-      - name: Download exact SQL shard proofs
-        uses: actions/download-artifact@v8
-        with:
-          pattern: ci-relational-shard-proof-*
-          path: artifacts/ci-relational-proofs
+      - name: Restore exact SQL shard proofs from local evidence
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: relational-proof-
+          LOCAL_PROOF_IDS: A,B,C
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs
+        run: *restore-local-proofs
 
       - name: Verify complete SQL Server relational acceptance
         run: |
@@ -690,7 +810,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        shell: pwsh
+        shell: '"C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe" -NoLogo -NoProfile -NonInteractive -File {0}'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -720,11 +840,241 @@ jobs:
           node artifacts/c006-frontend-scanner/tests/e2e/cari-acceptance-009/scan-evidence.mjs
           "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}/scan.json"
           "${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}"
-      - name: Preserve scanned results, including failed runs
+      - name: Preserve scanned results locally, including failed runs
         if: ${{ always() && steps.scan.outcome == 'success' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
-          retention-days: 14
+        env:
+          C006_SOURCE: ${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
+          C006_EVIDENCE_ROOT: E:\GoymenERP-CI\evidence
+          C006_WORKFLOW: cari-c02-link-acceptance
+        run: |
+          $innerScript = @'
+          $ErrorActionPreference = 'Stop'
+
+          $approvedPowerShell = 'C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe'
+          $approvedPowerShellHash = 'FA2C8BB1E35CDD62AD15CD06A1D8F2C5961E9725A9BFA1E7CFD2C322F49E9619'
+          $process = Get-Process -Id $PID
+          $processPath = $process.Path
+          $processHash = (Get-FileHash -LiteralPath $processPath -Algorithm SHA256).Hash
+          if ($processPath -ne $approvedPowerShell -or $processHash -ne $approvedPowerShellHash) {
+            throw "Unapproved preservation runtime: $processPath ($processHash)"
+          }
+
+          if (-not (Test-Path -LiteralPath $env:C006_SOURCE -PathType Container)) {
+            throw "Scanned C006 evidence directory is missing: $env:C006_SOURCE"
+          }
+
+          $source = (Resolve-Path -LiteralPath $env:C006_SOURCE).Path.TrimEnd('\')
+          $sourceInfo = Get-Item -LiteralPath $source -Force
+          if (($sourceInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Scanned C006 evidence root is a reparse point: $source"
+          }
+
+          $reparsePoint = Get-ChildItem -LiteralPath $source -Force -Recurse |
+            Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 } |
+            Select-Object -First 1
+          if ($null -ne $reparsePoint) {
+            throw "Scanned C006 evidence contains a reparse point: $($reparsePoint.FullName)"
+          }
+
+          $commitSha = $env:GITHUB_SHA.ToLowerInvariant()
+          if ($commitSha -notmatch '^[0-9a-f]{40}$') {
+            throw "GITHUB_SHA is not canonical: $($env:GITHUB_SHA)"
+          }
+          $actualHead = (& git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $actualHead -ne $commitSha) {
+            throw "Checked-out HEAD does not match GITHUB_SHA: expected=$commitSha actual=$actualHead"
+          }
+          $runId = $env:GITHUB_RUN_ID
+          if ($runId -notmatch '^[1-9][0-9]*$') {
+            throw "GITHUB_RUN_ID is not canonical: $($env:GITHUB_RUN_ID)"
+          }
+          $runAttempt = $env:GITHUB_RUN_ATTEMPT
+          if ($runAttempt -notmatch '^[1-9][0-9]*$') {
+            throw "GITHUB_RUN_ATTEMPT is not canonical: $($env:GITHUB_RUN_ATTEMPT)"
+          }
+
+          $expectedEvidenceRoot = 'E:\GoymenERP-CI\evidence'
+          $evidenceRootCandidate = [IO.Path]::GetFullPath($env:C006_EVIDENCE_ROOT).TrimEnd('\')
+          if ($evidenceRootCandidate -cne $expectedEvidenceRoot) {
+            throw "C006 evidence root is not the approved literal path: $evidenceRootCandidate"
+          }
+
+          function Assert-NoReparsePathChain([string] $Path, [bool] $RequireLeaf) {
+            $fullPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
+            $root = [IO.Path]::GetPathRoot($fullPath).TrimEnd('\')
+            $current = $root
+            $rootItem = Get-Item -LiteralPath ([IO.Path]::GetPathRoot($fullPath)) -Force
+            if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "C006 evidence path contains a reparse point: $($rootItem.FullName)"
+            }
+            $relative = $fullPath.Substring([IO.Path]::GetPathRoot($fullPath).Length)
+            foreach ($segment in $relative.Split('\', [StringSplitOptions]::RemoveEmptyEntries)) {
+              $current = Join-Path $current $segment
+              if (-not (Test-Path -LiteralPath $current)) {
+                if ($RequireLeaf) {
+                  throw "C006 evidence path component is missing: $current"
+                }
+                break
+              }
+              $item = Get-Item -LiteralPath $current -Force
+              if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "C006 evidence path contains a reparse point: $($item.FullName)"
+              }
+            }
+          }
+
+          Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $false
+          New-Item -ItemType Directory -Path $evidenceRootCandidate -Force | Out-Null
+          Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $true
+          $evidenceRootInfo = Get-Item -LiteralPath $evidenceRootCandidate -Force
+          if (-not $evidenceRootInfo.PSIsContainer) {
+            throw "C006 evidence root is not a directory: $($evidenceRootInfo.FullName)"
+          }
+          $evidenceRoot = [IO.Path]::GetFullPath($evidenceRootInfo.FullName).TrimEnd('\')
+          $rootPrefix = "$evidenceRoot\"
+          $sha7 = $commitSha.Substring(0, 7)
+          $directoryName = "gh-$($env:C006_WORKFLOW)-$runId-$runAttempt-$sha7"
+          $destination = [IO.Path]::GetFullPath((Join-Path $evidenceRoot $directoryName))
+          $temporary = [IO.Path]::GetFullPath((Join-Path $evidenceRoot ".tmp-$directoryName-$([Guid]::NewGuid().ToString('N'))"))
+          foreach ($ownedTarget in @($destination, $temporary)) {
+            if (-not $ownedTarget.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "C006 evidence target escapes the owned root: $ownedTarget"
+            }
+          }
+          if (Test-Path -LiteralPath $destination) {
+            throw "C006 evidence destination already exists: $destination"
+          }
+
+          $published = $false
+          try {
+            New-Item -ItemType Directory -Path $temporary | Out-Null
+            foreach ($child in Get-ChildItem -LiteralPath $source -Force) {
+              Copy-Item -LiteralPath $child.FullName -Destination (Join-Path $temporary $child.Name) -Recurse -Force
+            }
+
+            $runtimeLogPath = Join-Path $temporary 'preservation-runtime.json'
+            [ordered]@{
+              processId = $PID
+              processPath = $processPath
+              processStartUtc = $process.StartTime.ToUniversalTime().ToString('O')
+              processSha256 = $processHash.ToLowerInvariant()
+              workingDirectory = (Get-Location).Path
+            } |
+              ConvertTo-Json -Depth 4 |
+              Set-Content -LiteralPath $runtimeLogPath -Encoding UTF8
+
+            $files = @(
+              Get-ChildItem -LiteralPath $temporary -File -Recurse -Force |
+                Sort-Object { $_.FullName.Substring($temporary.Length + 1) } |
+                ForEach-Object {
+                  [ordered]@{
+                    path = $_.FullName.Substring($temporary.Length + 1).Replace('\', '/')
+                    bytes = $_.Length
+                    sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                  }
+                }
+            )
+
+            $manifestPath = Join-Path $temporary 'manifest.json'
+            [ordered]@{
+              schemaVersion = 1
+              workflow = $env:C006_WORKFLOW
+              runId = $runId
+              runAttempt = $runAttempt
+              commitSha = $commitSha
+              commitSha7 = $sha7
+              files = $files
+            } |
+              ConvertTo-Json -Depth 8 |
+              Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+            $manifestReadback = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            $readbackFiles = @($manifestReadback.files)
+            if ($manifestReadback.schemaVersion -ne 1 -or
+                $manifestReadback.workflow -cne $env:C006_WORKFLOW -or
+                $manifestReadback.runId -cne $runId -or
+                $manifestReadback.runAttempt -cne $runAttempt -or
+                $manifestReadback.commitSha -cne $commitSha -or
+                $manifestReadback.commitSha7 -cne $sha7 -or
+                $readbackFiles.Count -ne $files.Count) {
+              throw "C006 evidence manifest readback failed: $manifestPath"
+            }
+            $readbackPaths = @($readbackFiles | ForEach-Object { [string]$_.path })
+            $sortedUniquePaths = @($readbackPaths | Sort-Object -Unique)
+            if ([string]::Join("`n", $readbackPaths) -cne [string]::Join("`n", $sortedUniquePaths)) {
+              throw "C006 evidence manifest paths are not sorted and unique: $manifestPath"
+            }
+            $copiedPaths = @(
+              Get-ChildItem -LiteralPath $temporary -File -Recurse -Force |
+                ForEach-Object { $_.FullName.Substring($temporary.Length + 1).Replace('\', '/') } |
+                Where-Object { $_ -cne 'manifest.json' } |
+                Sort-Object -Unique
+            )
+            if ([string]::Join("`n", $copiedPaths) -cne [string]::Join("`n", $readbackPaths)) {
+              throw "C006 evidence manifest does not contain the exact copied file set: $manifestPath"
+            }
+            for ($index = 0; $index -lt $files.Count; $index++) {
+              $expectedFile = $files[$index]
+              $readbackFile = $readbackFiles[$index]
+              if ($readbackFile.path -cne $expectedFile.path -or
+                  [long]$readbackFile.bytes -ne [long]$expectedFile.bytes -or
+                  $readbackFile.sha256 -cne $expectedFile.sha256) {
+                throw "C006 evidence manifest file identity drifted at index $index"
+              }
+              $copiedPath = Join-Path $temporary ([string]$readbackFile.path).Replace('/', '\')
+              if (-not (Test-Path -LiteralPath $copiedPath -PathType Leaf) -or
+                  (Get-Item -LiteralPath $copiedPath -Force).Length -ne [long]$readbackFile.bytes -or
+                  (Get-FileHash -LiteralPath $copiedPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $readbackFile.sha256) {
+                throw "C006 evidence copied bytes do not match the manifest: $($readbackFile.path)"
+              }
+            }
+            $manifestHash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+            [IO.Directory]::Move($temporary, $destination)
+            $published = $true
+            if (Test-Path -LiteralPath $temporary) {
+              throw "C006 temporary evidence directory still exists after publication: $temporary"
+            }
+            $destinationInfo = Get-Item -LiteralPath $destination -Force
+            if (-not $destinationInfo.PSIsContainer -or
+                ($destinationInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+              throw "C006 published evidence is not a non-reparse directory: $destination"
+            }
+            $finalManifestPath = Join-Path $destination 'manifest.json'
+            $finalManifestHash = (Get-FileHash -LiteralPath $finalManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($finalManifestHash -ne $manifestHash) {
+              throw "C006 evidence manifest changed during publication: $finalManifestPath"
+            }
+            foreach ($manifestFile in $readbackFiles) {
+              $finalFilePath = Join-Path $destination ([string]$manifestFile.path).Replace('/', '\')
+              if (-not (Test-Path -LiteralPath $finalFilePath -PathType Leaf) -or
+                  (Get-Item -LiteralPath $finalFilePath -Force).Length -ne [long]$manifestFile.bytes -or
+                  (Get-FileHash -LiteralPath $finalFilePath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifestFile.sha256) {
+                throw "C006 published bytes do not match the manifest: $($manifestFile.path)"
+              }
+            }
+            $publishedPaths = @(
+              Get-ChildItem -LiteralPath $destination -File -Recurse -Force |
+                ForEach-Object { $_.FullName.Substring($destination.Length + 1).Replace('\', '/') } |
+                Where-Object { $_ -cne 'manifest.json' } |
+                Sort-Object -Unique
+            )
+            if ([string]::Join("`n", $publishedPaths) -cne [string]::Join("`n", $readbackPaths)) {
+              throw "C006 published file set does not exactly match the manifest: $destination"
+            }
+
+            Write-Host "C006 evidence preserved at $destination"
+            Write-Host "C006 manifest: $finalManifestPath"
+            Write-Host "C006 manifest SHA256: $finalManifestHash"
+          }
+          finally {
+            if (-not $published -and (Test-Path -LiteralPath $temporary)) {
+              Remove-Item -LiteralPath $temporary -Recurse -Force
+            }
+          }
+          '@
+
+          & 'C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\pwsh.exe' -NoLogo -NoProfile -NonInteractive -Command $innerScript
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
