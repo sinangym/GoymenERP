@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml;
+using System.Xml.Linq;
 using GoymenERP.DocumentGeneration.Pdf;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Tokens;
@@ -327,6 +329,32 @@ public sealed class TechnicalPdfGeneratorTests
     }
 
     [Theory]
+    [InlineData("<rdf:Description user='host&amp;machine'/>")]
+    [InlineData("<rdf:Description>host&amp;machine</rdf:Description>")]
+    [InlineData("<!-- host&amp;machine --><rdf:Description/>")]
+    public void Catalog_xmp_exposes_decoded_host_information_without_ignoring_comments(string payload)
+    {
+        var xml = "<x:xmpmeta xmlns:x='adobe:ns:meta/'>"
+            + "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>"
+            + payload + "</rdf:RDF></x:xmpmeta>";
+        var surface = DecodeCatalogXmp(Encoding.UTF8.GetBytes(xml));
+
+        Assert.Contains(
+            payload.StartsWith("<!--", StringComparison.Ordinal) ? "host&amp;machine" : "host&machine",
+            surface,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Catalog_xmp_rejects_DTD_before_resolving_external_entities()
+    {
+        const string xml = "<!DOCTYPE x [<!ENTITY host SYSTEM 'file:///not-readable-host-canary'>]>"
+            + "<x:xmpmeta xmlns:x='adobe:ns:meta/'>&host;</x:xmpmeta>";
+
+        Assert.Throws<Xunit.Sdk.XunitException>(() => DecodeCatalogXmp(Encoding.UTF8.GetBytes(xml)));
+    }
+
+    [Theory]
     [InlineData("page-comment")]
     [InlineData("cmap-comment")]
     [InlineData("page-array-comment")]
@@ -519,6 +547,16 @@ public sealed class TechnicalPdfGeneratorTests
     {
         var supportedStreams = new HashSet<PdfSharp.Pdf.PdfDictionary>();
         var lockedFontStreams = new HashSet<PdfSharp.Pdf.PdfDictionary>();
+        PdfSharp.Pdf.PdfDictionary? catalogMetadata = null;
+        if (document.Internals.Catalog.Elements.ContainsKey("/Metadata"))
+        {
+            catalogMetadata = Assert.IsAssignableFrom<PdfSharp.Pdf.PdfDictionary>(
+                document.Internals.Catalog.Elements.GetDictionary("/Metadata"));
+            Assert.Equal("/Metadata", catalogMetadata.Elements.GetName("/Type"));
+            Assert.Equal("/XML", catalogMetadata.Elements.GetName("/Subtype"));
+            Assert.NotNull(catalogMetadata.Stream);
+            supportedStreams.Add(catalogMetadata);
+        }
         var expectedFont = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Assets", "Fonts", "NotoSans-Regular.ttf"));
         foreach (var page in document.Pages)
         {
@@ -546,12 +584,20 @@ public sealed class TechnicalPdfGeneratorTests
         }
         foreach (var dictionary in document.Internals.GetAllObjects().OfType<PdfSharp.Pdf.PdfDictionary>())
         {
-            // This fixed technical PoC has no XMP or arbitrary payload channel.
-            Assert.False(dictionary.Elements.ContainsKey("/Metadata"), "Uninspected XMP metadata is not supported by this privacy proof.");
+            // PDFsharp emits catalog XMP itself. Inspect it as XML, while still
+            // refusing page/other metadata and every unsupported payload channel.
+            Assert.False(
+                dictionary.Elements.ContainsKey("/Metadata")
+                    && !ReferenceEquals(dictionary, document.Internals.Catalog),
+                "Uninspected XMP metadata is not supported by this privacy proof.");
             if (dictionary.Stream is not null)
             {
                 Assert.Contains(dictionary, supportedStreams);
-                if (!lockedFontStreams.Contains(dictionary))
+                if (ReferenceEquals(dictionary, catalogMetadata))
+                {
+                    yield return DecodeCatalogXmp(dictionary.Stream.UnfilteredValue);
+                }
+                else if (!lockedFontStreams.Contains(dictionary))
                 {
                     foreach (var surface in DecodedSyntaxStrings(dictionary.Stream.UnfilteredValue))
                     {
@@ -559,6 +605,34 @@ public sealed class TechnicalPdfGeneratorTests
                     }
                 }
             }
+        }
+    }
+
+    private static string DecodeCatalogXmp(byte[] bytes)
+    {
+        try
+        {
+            using var input = new MemoryStream(bytes, writable: false);
+            using var reader = XmlReader.Create(input, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = 65_536,
+            });
+            var metadata = XDocument.Load(reader, LoadOptions.PreserveWhitespace);
+            var root = Assert.IsType<XElement>(metadata.Root);
+            Assert.Equal(XName.Get("xmpmeta", "adobe:ns:meta/"), root.Name);
+            Assert.NotNull(root.Element(
+                XName.Get("RDF", "http://www.w3.org/1999/02/22-rdf-syntax-ns#")));
+            // Re-serialization exposes decoded character references, text,
+            // attributes, comments and processing instructions to the same scan.
+            return metadata.ToString(SaveOptions.DisableFormatting)
+                + "\n" + string.Join("\n", metadata.DescendantNodes().OfType<XText>().Select(text => text.Value))
+                + "\n" + string.Join("\n", metadata.Descendants().Attributes().Select(attribute => attribute.Value));
+        }
+        catch (XmlException)
+        {
+            throw new Xunit.Sdk.XunitException("Unparseable XMP metadata cannot be ignored.");
         }
     }
 
@@ -616,11 +690,12 @@ public sealed class TechnicalPdfGeneratorTests
             case PdfSharp.Pdf.PdfLongIntegerObject:
             case PdfSharp.Pdf.PdfReal:
             case PdfSharp.Pdf.PdfRealObject:
+            case PdfSharp.Pdf.PdfRectangle:
             case PdfSharp.Pdf.PdfNull:
             case PdfSharp.Pdf.PdfNullObject:
                 yield break;
             default:
-                throw new InvalidOperationException("An uninspected PDF payload cannot be ignored.");
+                throw new InvalidOperationException($"An uninspected PDF payload cannot be ignored: {item.GetType().FullName}.");
         }
     }
 
