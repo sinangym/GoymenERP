@@ -34,11 +34,11 @@ MAX_JSON_DEPTH = 64
 MAX_CONTAINER_ITEMS = 4096
 MAX_JSON_NODES = 100000
 
-# Git-blob SHA256 at accepted main b6ed7ca5; checkout CRLF is normalized to LF.
+# Git-blob SHA256 at accepted main 8c8559a4; checkout CRLF is normalized to LF.
 # This freezes the reused schema API. A changed shared source needs a new review,
 # not a fallback parser, an installed package, or execution of its generator.
 TRUSTED_CONTRACT_SOURCES = {
-    ENGINE_PATH: "1c5cf0b876c06e7bd1177641e30545b18c092e7a186e4805ad7cd53c4bc51293",
+    ENGINE_PATH: "f9d83e4723bac3c55a8f8c9092e044a0542437103c23eb0a2d0415c92ce53e3f",
     INVENTORY_SCHEMA: "58cea67ade4ad1f60cff701bd05dc1f86b97cd94348dbbb3a9224dd3bcf52ed8",
     MANIFEST_SCHEMA: "d9dfb3c5a18eccafa4be6ef900f6236809afafcaa3711245160138669a0c2db9",
 }
