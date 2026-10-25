@@ -21,6 +21,7 @@ import {
   CANCELLATION_STATUS,
   CLOSED_STATE,
   DRAFT_STATE,
+  LIMITS,
   SALES_PROBLEM_CODE,
   type DraftDetail,
   type DraftForceCloseRequest,
@@ -206,7 +207,7 @@ function ForceClosePreview({
               <label htmlFor="sales-force-close-reason">{T.reasonLabel}</label>
               <textarea
                 id="sales-force-close-reason"
-                maxLength={4000}
+                maxLength={LIMITS.note}
                 value={reason}
                 disabled={frozen}
                 onChange={(event) => setReason(event.target.value)}
@@ -240,21 +241,13 @@ function SourcesTable({ sources, testId }: { readonly sources: readonly ForceClo
         <tbody>{sources.map((entry) => (
           <tr key={entry.source} data-testid={`${testId}-${entry.source}`} data-status={entry.status} data-blocks={String(entry.blocks)}>
             <th scope="row">{C.source[entry.source] ?? entry.source}</th>
-            <td>{STATUS_TEXT[entry.status] ?? entry.status}</td>
+            <td>{T.sourceStatus[entry.status]}</td>
             <td>{entry.blocks ? T.blocks : entry.status === CANCELLATION_STATUS.present ? T.warns : T.noEffect}</td>
           </tr>
         ))}</tbody>
       </table>
     </div>
   )
-}
-
-/** The status in neutral words: whether it blocks is the third column's (it differs from the cancellation's). */
-const STATUS_TEXT: Record<string, string> = {
-  None: 'Kayıt yok (sahibi okundu)',
-  Present: 'Kayıt var',
-  Unreadable: 'Okunamadı; sıfır varsayılmaz',
-  NoSource: 'Kaynak yok; bu bağı tutan modül henüz yok',
 }
 
 function ImpactView({ impact }: { readonly impact: ForceCloseImpact }) {

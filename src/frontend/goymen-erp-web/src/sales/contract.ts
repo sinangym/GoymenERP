@@ -1484,7 +1484,8 @@ export interface ForceClosureRead {
 function forceCloseBlocks(source: CancellationSource, status: CancellationStatus): boolean {
   if (status === CANCELLATION_STATUS.unreadable) return true
   if (status !== CANCELLATION_STATUS.present) return false
-  return source === CANCELLATION_SOURCE.activeAllocations || source === CANCELLATION_SOURCE.loadingWithoutDispatchNote
+  // SAT-D12: the server blocks every present source except the uninvoiced dispatch notes (a warning only).
+  return source !== CANCELLATION_SOURCE.uninvoicedDispatchNotes
 }
 
 function decodeForceCloseSources(value: unknown): readonly ForceCloseImpactSource[] | null {

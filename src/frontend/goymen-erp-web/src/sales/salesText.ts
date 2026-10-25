@@ -2,7 +2,7 @@
  * User-facing Sales texts. Turkish, in one place, so they stay localizable.
  */
 
-import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CommercialStage, type SalesProblemCode } from './contract'
+import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CancellationStatus, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
   heading: 'Yeni satış siparişi taslağı',
@@ -757,4 +757,11 @@ export const FORCE_CLOSE_TEXT = {
   recordSources: 'Kapatma anındaki etki',
   recordLines: 'Kapatılan kalan',
   recordMissing: 'Kapatma kaydı okunamadı.',
+  /** The status in neutral words: whether it blocks is the third column's (it differs from the cancellation's). */
+  sourceStatus: {
+    None: 'Kayıt yok (sahibi okundu)',
+    Present: 'Kayıt var',
+    Unreadable: 'Okunamadı; sıfır varsayılmaz',
+    NoSource: 'Kaynak yok; bu bağı tutan modül henüz yok',
+  } satisfies Record<CancellationStatus, string>,
 } as const
