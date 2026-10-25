@@ -36,10 +36,12 @@ METHODS = frozenset({"get", "put", "post", "delete", "patch", "head", "options",
 PATH_METADATA = frozenset({"summary", "description", "parameters", "servers"})
 MAX_JSON_BYTES = 8 * 1024 * 1024
 
-# Accepted b6ed7ca5 Git-blob bytes: no patching of the reused v1 globals/guards.
+# Original source provenance: main b6ed7ca5. Current local integration baseline:
+# accepted main 8c8559a41fc6d43386ebc0787f28f445651058f0. Pins bind raw bytes;
+# reused v1 globals/guards are not patched.
 PINS = {
     V1_GENERATOR: "fe0c7dd2bfa49425db6069891976ad53407bbed805b2aaaa93e3c06debe52a67",
-    RECOVERY_GENERATOR: "1c5cf0b876c06e7bd1177641e30545b18c092e7a186e4805ad7cd53c4bc51293",
+    RECOVERY_GENERATOR: "f9d83e4723bac3c55a8f8c9092e044a0542437103c23eb0a2d0415c92ce53e3f",
     "contracts/release/release-manifest-v1.schema.json":
         "d9dfb3c5a18eccafa4be6ef900f6236809afafcaa3711245160138669a0c2db9",
     "contracts/recovery/recovery-surface-inventory-v1.schema.json":

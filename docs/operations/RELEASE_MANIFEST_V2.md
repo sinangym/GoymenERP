@@ -13,7 +13,12 @@ hâlâ v1 üretir/doğrular. V1 CI sonucu bu yeni v2 üreticisi veya testlerinin
 kanıtlamaz. `.github`, OpenAPI, migration veya ortak yardımcı değişikliği yoktur.
 R05.1 `ffb15ead` kaynağı v1-only kalır; v2 tüketimine bu dilimle açılmaz.
 
-Taban: `main@b6ed7ca5496f8f34314a0a4b2d3f13467bb5ffe7`.
+İlk kaynak tesliminin tarihsel tabanı:
+`main@b6ed7ca5496f8f34314a0a4b2d3f13467bb5ffe7`.
+Güncel yerel entegrasyon tabanı accepted main
+`8c8559a41fc6d43386ebc0787f28f445651058f0`'dır; kaynak bu tabanla normal yerel
+merge ile birleştirilmiştir. Bu düzeltme yalnız recovery generator pinini güncel
+accepted-main ham baytlarıyla hizalar; bağımlı helper değiştirilmez.
 Rapor girdisi: paket v2 `CILT_01.md:2394-3423`, bölüm SHA256
 `b5e577adcb7786ac2aac4e83d2cec0926e7f9c3db577336af0019b4b4cb00d75`.
 Rapordaki mevcut v1 dosyalarını dönüştüren hunklar uygulanmadı; mevcut koordinatörün
@@ -66,7 +71,8 @@ kopyalanmaz; gerçek kaynak/accepted inventory esas alınır.
 
 ## Yalnız ileride yetkili slotta kullanım
 
-Bu teslim kaynak-öncedir. Aşağıdaki komutlar bu oturumda çalıştırılmadı ve bir
+Bu teslim kaynak-öncedir. Aşağıdaki komutlar bu güncel pin/entegrasyon düzeltmesinde
+çalıştırılmadı ve bir
 test/CI/ortam slotu açmaz. Exact commit, bu v2 NEW4 kaynaklarını içeren temiz HEAD
 olmalıdır; eski b6ed7ca5 tek başına bu yeni üretici için gerekli dosyaları içermez.
 
@@ -89,9 +95,12 @@ koştuğu anlamına gelmez.
 
 ## Bu teslimin kanıt durumu
 
-Yalnız statik Python AST, JSON/schema yapısı, kaynak pinleri ve exact4 diff
-kontrolleri yapılır. Unit/CLI/generator/build/restore/SQL/browser/scanner/CI
-**NOT_RUN**. İki bağımsız exact-head K3 incelemesi, insan ve fresh zorunlu CI kapıları
-açıktır. Push/PR/merge, source admission, R02.2 ortamı, production veya 18/128 artışı
-bu kaynak commit'iyle verilmez. Finance STOP, AI A-contract-only,
-permission/grant/Critical ve #759 sahiplik sınırları korunur.
+İlk kaynak tesliminin statik Python AST, JSON/schema, pin/diff kayıtları ve sonraki
+koşum/inceleme makbuzları yalnız kendi tarihsel head'lerine aittir. Bu güncel kaynak
+düzeltmesinde yalnız dosya/hash/diff kontrolleri yapılır;
+AST/schema/unit/CLI/generator/build/restore/SQL/browser/scanner/CI **NOT_RUN**.
+İki bağımsız güncel exact-head K3 incelemesi, insan ve fresh zorunlu CI kapıları
+açıktır. Push/PR/main merge, source admission, R02.2 ortamı, production veya 18/128
+artışı bu düzeltmeyle verilmez. İlk claim'deki Finance STOP, AI A-contract-only,
+permission/grant/Critical ve #759 sahiplik ifadeleri tarihsel kapsam kaydıdır;
+bu düzeltme yeni karar veya bu alanlar için yetki üretmez.
