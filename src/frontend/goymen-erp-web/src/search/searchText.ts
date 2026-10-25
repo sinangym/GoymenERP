@@ -43,6 +43,7 @@ export const SEARCH_STATE_LABEL: Readonly<Record<string, string>> = {
   Rejected: 'Reddedildi',
   Withdrawn: 'Geri çekildi',
   Cancelled: 'İptal',
+  Closed: 'Kapalı',
 }
 
 export const stateLabel = (state: string) => SEARCH_STATE_LABEL[state] ?? state

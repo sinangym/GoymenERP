@@ -49,6 +49,8 @@ import {
   decodeLoadingProgress,
   decodeCancellation,
   decodeCancellationImpact,
+  decodeForceCloseImpact,
+  decodeForceClosure,
   decodeProblem,
   salesDraftCommercialRevisionPath,
   salesDraftPriceFloorExceptionApprovalPath,
@@ -58,6 +60,8 @@ import {
   salesDraftLoadingProgressPath,
   salesDraftCancellationImpactPath,
   salesDraftCancellationPath,
+  salesDraftForceCloseImpactPath,
+  salesDraftForceClosePath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
@@ -78,6 +82,9 @@ import {
   type CancellationImpact,
   type CancellationRead,
   type DraftCancelRequest,
+  type DraftForceCloseRequest,
+  type ForceCloseImpact,
+  type ForceClosureRead,
   type DraftDetail,
   type DraftDetailWithParty,
   type DraftMutation,
@@ -332,6 +339,35 @@ export async function fetchDraftCancellation(
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const read = decodeCancellation(raw.body)
+  return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
+}
+
+/**
+ * No 30: the force-close impact preview of `detail`, read-only under the cancel control's name; the server reads every
+ * category afresh from its owner (Inventory allocations, Logistics loading). Data only when it describes exactly this detail.
+ */
+export async function fetchForceCloseImpact(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ForceCloseImpact>> {
+  const raw = await request(salesDraftForceCloseImpactPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const impact = decodeForceCloseImpact(raw.body, detail)
+  return impact === null ? { type: 'malformed' } : { type: 'ok-single', data: impact }
+}
+
+/** No 30: the recorded force-closure (or null), read-only under the draft read; company filtering stays on the server. */
+export async function fetchDraftForceClosure(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ForceClosureRead>> {
+  const raw = await request(salesDraftForceClosePath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const read = decodeForceClosure(raw.body)
   return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
 }
 
@@ -922,6 +958,49 @@ export async function sendDraftCancel(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftCancellationPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * No 30 / SAT-D12: the force-close — the delivery schedule's keyed-attempt and strict response rules. Success is the
+ * draft after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
+ */
+export async function sendDraftForceClose(
+  payload: DraftForceCloseRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftForceClosePath(context.draftId),
     {
       method: 'POST',
       headers: {

@@ -22,6 +22,7 @@ import { fetchCancellationImpact, fetchDraftCancellation, sendDraftCancel } from
 import {
   APPROVAL_STATE,
   CANCELLED_STATE,
+  DRAFT_STATE,
   SALES_PROBLEM_CODE,
   type CancellationImpact,
   type CancellationImpactSource,
@@ -67,7 +68,8 @@ export function SalesDraftCancellation({
   readonly onRecorded: () => void
 }) {
   if (detail.draft.state === CANCELLED_STATE) return <CancellationRecordView shell={shell} detail={detail} companyId={companyId} />
-  if (!hasCapability(shell, SALES_CANCEL_CAPABILITY) || detail.draft.approvalState !== APPROVAL_STATE.approved) return null
+  // A closed order (No 30) is terminal like a cancelled one: no cancellation is offered.
+  if (detail.draft.state !== DRAFT_STATE || !hasCapability(shell, SALES_CANCEL_CAPABILITY) || detail.draft.approvalState !== APPROVAL_STATE.approved) return null
   return <CancellationPreview shell={shell} detail={detail} companyId={companyId} onRecorded={onRecorded} />
 }
 

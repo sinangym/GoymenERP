@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDraftRemainderChanges, sendRemainderChangeDecision, sendRemainderChangeRequest } from './api'
-import { APPROVAL_STATE, CANCELLED_STATE, type DraftDetail, type DraftMutation } from './contract'
+import { APPROVAL_STATE, isTerminalState, type DraftDetail, type DraftMutation } from './contract'
 import { generateOrderAttemptKey, type OrderCommandOutcome } from './orderAttempt'
 import { isPositiveDecimalString } from './wirePrimitives'
 import {
@@ -73,7 +73,7 @@ export function SalesDraftRemainderChangePanel({
   })
   const changes = query.data?.type === 'ok-single' ? query.data.data : null
   const selected = useMemo(() => changes?.lines.find((line) => line.lineId === lineId) ?? null, [changes, lineId])
-  const stateAllowsRequest = detail.draft.state !== CANCELLED_STATE && detail.draft.approvalState === APPROVAL_STATE.approved
+  const stateAllowsRequest = !isTerminalState(detail.draft.state) && detail.draft.approvalState === APPROVAL_STATE.approved
     && detail.customerAcceptance.isCurrentRevisionAccepted
     && changes?.floorStatus === REMAINDER_FLOOR.readable && selected?.remainder !== LINE_REMAINDER.cancelled
 

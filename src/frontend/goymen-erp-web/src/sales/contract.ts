@@ -41,6 +41,10 @@ export const salesDraftDeliveryProgressPath = (id: string) => `${salesDraftDetai
 export const salesDraftCancellationImpactPath = (id: string) => `${salesDraftDetailPath(id)}/cancellation-impact`
 /** DEC-SAL-005 / AT-007: the cancel command (POST) and the recorded cancellation (GET, the draft read). */
 export const salesDraftCancellationPath = (id: string) => `${salesDraftDetailPath(id)}/cancellation`
+/** No 30: the force-close impact preview (GET, the force-close control's name). */
+export const salesDraftForceCloseImpactPath = (id: string) => `${salesDraftDetailPath(id)}/force-close-impact`
+/** No 30: the force-close command (POST) and the recorded closure (GET, the draft read). */
+export const salesDraftForceClosePath = (id: string) => `${salesDraftDetailPath(id)}/force-close`
 
 /**
  * `SalesDraftApiV1`: a first commit answers 201; the same accepted attempt answers 201 again with
@@ -57,7 +61,15 @@ export const DRAFT_STATE = 'Draft' as const
  * lines and history stay (AT-007). The approval axis still reads `Approved` (who approved stays who approved).
  */
 export const CANCELLED_STATE = 'Cancelled' as const
-export type LifecycleState = typeof DRAFT_STATE | typeof CANCELLED_STATE
+/**
+ * Delegation No 30 / SAT-D12: the lifecycle `state` of an APPROVED order force-closed after its impact preview — terminal;
+ * the undelivered remainder is recorded as "iptal edilen kalan", the lines, approval facts and history stay.
+ */
+export const CLOSED_STATE = 'Closed' as const
+export type LifecycleState = typeof DRAFT_STATE | typeof CANCELLED_STATE | typeof CLOSED_STATE
+
+/** A Cancelled or Closed order is terminal: no command of this screen applies to it. */
+export const isTerminalState = (state: LifecycleState) => state === CANCELLED_STATE || state === CLOSED_STATE
 
 /** Q9: server-derived stage of the same commercial record; legacy stored command results may omit it. */
 export const COMMERCIAL_STAGE = {
@@ -519,6 +531,10 @@ export const SALES_PROBLEM_CODE = {
   // DEC-SAL-002 (contract delta): an owner links a record to the order (allocation, loading line) — the quantity revision is
   // refused fail-closed, like the cancellation; the errors name each blocking source.
   revisionBlocked: 'sales_revision_blocked',
+  // No 30 / SAT-D12: a blocking source (allocation, open loading, unreadable owner) refuses the force-close; the impact no
+  // longer is the preview the command named.
+  forceCloseBlocked: 'sales_force_close_blocked',
+  forceCloseImpactChanged: 'sales_force_close_impact_changed',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
@@ -702,8 +718,8 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     // Goods Orders in Draft, or (DEC-SAL-005) Cancelled — and only an approved order is ever cancelled. Any other kind or
     // state is a meaning this build was not written for, and is not shown as if it were a Draft.
     o.kind !== ORDER_KIND ||
-    (o.state !== DRAFT_STATE && o.state !== CANCELLED_STATE) ||
-    (o.state === CANCELLED_STATE && o.approvalState !== APPROVAL_STATE.approved) ||
+    (o.state !== DRAFT_STATE && o.state !== CANCELLED_STATE && o.state !== CLOSED_STATE) ||
+    ((o.state === CANCELLED_STATE || o.state === CLOSED_STATE) && o.approvalState !== APPROVAL_STATE.approved) ||
     !isVersionString(o.version) ||
     (o.version as string).length > LIMITS.versionText ||
     typeof o.revision !== 'string' ||
@@ -725,7 +741,7 @@ export function decodeDraftSummary(value: unknown): DraftSummary | null {
     companyId: o.companyId,
     documentNo: o.documentNo,
     kind: ORDER_KIND,
-    state: o.state === CANCELLED_STATE ? CANCELLED_STATE : DRAFT_STATE,
+    state: o.state === CANCELLED_STATE ? CANCELLED_STATE : o.state === CLOSED_STATE ? CLOSED_STATE : DRAFT_STATE,
     version: o.version as string,
     revision: o.revision,
     partyId: o.partyId,
@@ -1405,6 +1421,160 @@ export function decodeCancellation(value: unknown): CancellationRead | null {
     cancellation: {
       revision: c.revision, cancelledBy: c.cancelledBy, cancelledAtUtc: c.cancelledAtUtc, reason: c.reason,
       impactToken: c.impactToken, sources,
+    },
+  }
+}
+
+/* ── No 30 / SAT-D12: force-close of an approved order ─────────────────────── */
+
+/** One category of the force-close preview: the cancellation's status plus whether it blocks the closure. */
+export interface ForceCloseImpactSource {
+  readonly source: CancellationSource
+  readonly status: CancellationStatus
+  /** SAT-D12: an uninvoiced dispatch note is shown but does not block; an unreadable owner always blocks. */
+  readonly blocks: boolean
+}
+
+/** One line of the force-close preview: the cancellation's facts plus the remainder that would be closed. */
+export interface ForceCloseImpactLine extends CancellationImpactLine {
+  /** Ordered − shipped (exact); null when the loading owner could not be read. */
+  readonly closedRemainder: string | null
+}
+
+export interface ForceCloseImpact {
+  readonly draftVersion: string
+  readonly revision: string
+  readonly closable: boolean
+  readonly impactToken: string
+  readonly sources: readonly ForceCloseImpactSource[]
+  readonly lines: readonly ForceCloseImpactLine[]
+}
+
+/** `SalesDraftForceCloseRequest`: every member present; the reason is required (the server trims and bounds it). */
+export interface DraftForceCloseRequest {
+  readonly expectedVersion: string
+  readonly reason: string
+  readonly impactToken: string
+}
+
+export interface ForceClosureLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly ordered: string
+  readonly shipped: string
+  readonly closedRemainder: string
+}
+
+/** The recorded closure: who, when, why, the revision closed, the preview it was decided on and each line's closed remainder. */
+export interface ForceClosureRecord {
+  readonly revision: string
+  readonly closedBy: string
+  readonly closedAtUtc: string
+  readonly reason: string
+  readonly impactToken: string
+  readonly sources: readonly ForceCloseImpactSource[]
+  readonly lines: readonly ForceClosureLine[]
+}
+
+export interface ForceClosureRead {
+  readonly forceClosure: ForceClosureRecord | null
+}
+
+/** The closure's own blocking rule, mirrored only to refuse a body that contradicts it (the server decides). */
+function forceCloseBlocks(source: CancellationSource, status: CancellationStatus): boolean {
+  if (status === CANCELLATION_STATUS.unreadable) return true
+  if (status !== CANCELLATION_STATUS.present) return false
+  return source === CANCELLATION_SOURCE.activeAllocations || source === CANCELLATION_SOURCE.loadingWithoutDispatchNote
+}
+
+function decodeForceCloseSources(value: unknown): readonly ForceCloseImpactSource[] | null {
+  if (!Array.isArray(value) || value.length !== CANCELLATION_SOURCES.length) return null
+  const sources: ForceCloseImpactSource[] = []
+  for (const [index, entry] of value.entries()) {
+    const o = exact(entry, ['source', 'status', 'blocks'])
+    if (
+      o === null || o.source !== CANCELLATION_SOURCES[index] || typeof o.status !== 'string' ||
+      !CANCELLATION_STATUSES.includes(o.status) || typeof o.blocks !== 'boolean' ||
+      o.blocks !== forceCloseBlocks(o.source as CancellationSource, o.status as CancellationStatus)
+    ) return null
+    sources.push({ source: o.source as CancellationSource, status: o.status as CancellationStatus, blocks: o.blocks })
+  }
+  return sources
+}
+
+/**
+ * No 30: `SalesOrderDraftForceCloseImpactResponse`, read exactly and only as the preview OF `detail`. An owner's numbers are
+ * null together or present together, null exactly when that owner is Unreadable; `closable` never stands beside a blocking
+ * source.
+ */
+export function decodeForceCloseImpact(value: unknown, detail: DraftDetail): ForceCloseImpact | null {
+  const o = exact(value, ['draftVersion', 'revision', 'closable', 'impactToken', 'sources', 'lines'])
+  if (
+    o === null || o.draftVersion !== detail.draft.version || o.revision !== detail.draft.revision ||
+    typeof o.closable !== 'boolean' || typeof o.impactToken !== 'string' || !IMPACT_TOKEN_RE.test(o.impactToken) ||
+    !Array.isArray(o.lines) || o.lines.length !== detail.lines.length
+  ) return null
+  const sources = decodeForceCloseSources(o.sources)
+  if (sources === null) return null
+  if (o.closable && sources.some((entry) => entry.blocks)) return null
+  const statusOf = (source: CancellationSource) => sources.find((entry) => entry.source === source)?.status
+  const allocationsRead = statusOf(CANCELLATION_SOURCE.activeAllocations) !== CANCELLATION_STATUS.unreadable
+  const loadingRead = statusOf(CANCELLATION_SOURCE.loadingWithoutDispatchNote) !== CANCELLATION_STATUS.unreadable
+  const lines: ForceCloseImpactLine[] = []
+  for (const [index, entry] of o.lines.entries()) {
+    const l = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'activeAllocations', 'allocatedKg',
+      'loadingInstructionLines', 'instructed', 'loaded', 'shipped', 'delivered', 'closedRemainder'])
+    const line = detail.lines[index]
+    if (
+      l === null || !isRevisionId(l.lineId) || l.lineId.toLowerCase() !== line.lineId.toLowerCase() || l.lineNo !== line.lineNo ||
+      !isRevisionId(l.orderUnitId) || l.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || l.ordered !== line.quantity
+    ) return null
+    const allocationOk = allocationsRead
+      ? isCount(l.activeAllocations) && isRevisionDecimal(l.allocatedKg, false)
+      : l.activeAllocations === null && l.allocatedKg === null
+    const loadingOk = loadingRead
+      ? isCount(l.loadingInstructionLines) &&
+        [l.instructed, l.loaded, l.shipped, l.delivered, l.closedRemainder].every((member) => isRevisionDecimal(member, false))
+      : [l.loadingInstructionLines, l.instructed, l.loaded, l.shipped, l.delivered, l.closedRemainder].every((member) => member === null)
+    if (!allocationOk || !loadingOk) return null
+    lines.push({
+      lineId: l.lineId, lineNo: l.lineNo, orderUnitId: l.orderUnitId, ordered: l.ordered as string,
+      activeAllocations: l.activeAllocations as number | null, allocatedKg: l.allocatedKg as string | null,
+      loadingInstructionLines: l.loadingInstructionLines as number | null, instructed: l.instructed as string | null,
+      loaded: l.loaded as string | null, shipped: l.shipped as string | null, delivered: l.delivered as string | null,
+      closedRemainder: l.closedRemainder as string | null,
+    })
+  }
+  return { draftVersion: o.draftVersion, revision: o.revision, closable: o.closable, impactToken: o.impactToken, sources, lines }
+}
+
+/** No 30: `SalesOrderDraftForceClosureResponse`, read exactly: null, or the recorded facts. */
+export function decodeForceClosure(value: unknown): ForceClosureRead | null {
+  const o = exact(value, ['forceClosure'])
+  if (o === null) return null
+  if (o.forceClosure === null) return { forceClosure: null }
+  const c = exact(o.forceClosure, ['revision', 'closedBy', 'closedAtUtc', 'reason', 'impactToken', 'sources', 'lines'])
+  if (
+    c === null || typeof c.revision !== 'string' || !REVISION_RE.test(c.revision) || !isRevisionActor(c.closedBy) ||
+    !isRevisionInstant(c.closedAtUtc) || !isText(c.reason, LIMITS.note) || c.reason.trim().length === 0 ||
+    typeof c.impactToken !== 'string' || !IMPACT_TOKEN_RE.test(c.impactToken) || !Array.isArray(c.lines)
+  ) return null
+  const sources = decodeForceCloseSources(c.sources)
+  if (sources === null) return null
+  const lines: ForceClosureLine[] = []
+  for (const entry of c.lines) {
+    const l = exact(entry, ['lineId', 'lineNo', 'ordered', 'shipped', 'closedRemainder'])
+    if (
+      l === null || !isRevisionId(l.lineId) || !isPositiveInt(l.lineNo, LIMITS.lines) ||
+      ![l.ordered, l.shipped, l.closedRemainder].every((member) => isRevisionDecimal(member, false))
+    ) return null
+    lines.push({ lineId: l.lineId, lineNo: l.lineNo as number, ordered: l.ordered as string, shipped: l.shipped as string,
+      closedRemainder: l.closedRemainder as string })
+  }
+  return {
+    forceClosure: {
+      revision: c.revision, closedBy: c.closedBy, closedAtUtc: c.closedAtUtc, reason: c.reason,
+      impactToken: c.impactToken, sources, lines,
     },
   }
 }

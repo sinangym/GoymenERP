@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchLinePriceReferences, sendDraftCommercialRevision } from './api'
 import { buildCommercialRevisionRequest, commercialRowsFromFreshPricing, type AdjustmentKind, type CommercialRevisionRow } from './commercialRevision'
-import { APPROVAL_STATE, CANCELLED_STATE, SALES_PROBLEM_CODE, type DraftCommercialRevisionRequest, type DraftDetail, type DraftMutation } from './contract'
+import { APPROVAL_STATE, isTerminalState, SALES_PROBLEM_CODE, type DraftCommercialRevisionRequest, type DraftDetail, type DraftMutation } from './contract'
 import type { LinePriceReference } from './linePricing'
 import {
   abandon,
@@ -68,7 +68,7 @@ export function SalesDraftCommercialRevisionForm({
   }
 
   // DEC-SAL-005: a cancelled order keeps its Approved facts but is terminal — no revision re-opens it.
-  const stateAllowsRevision = detail.draft.state !== CANCELLED_STATE && (
+  const stateAllowsRevision = !isTerminalState(detail.draft.state) && (
     detail.draft.approvalState === APPROVAL_STATE.preparing ||
     detail.draft.approvalState === APPROVAL_STATE.rejected ||
     detail.draft.approvalState === APPROVAL_STATE.approved)

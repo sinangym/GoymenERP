@@ -15,15 +15,6 @@ public sealed class SalesShellCapabilityProviderContractTests
 {
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/sales/capabilities.ts";
 
-    /// <summary>
-    /// No 30 / SAT-D12: the force-close control is published by the backend slice BEFORE the frontend lane declares its id in
-    /// <c>capabilities.ts</c> (the frontend lane owns that file and adds it with the force-close screen). Until then it is the
-    /// ONLY declaration exempt from the frontend-file check; every other id and route is still read from the file. Remove this
-    /// exemption when the frontend declares <c>'sales.orders.force-close'</c>.
-    /// </summary>
-    private static readonly IReadOnlySet<string> AwaitingFrontendDeclaration =
-        new HashSet<string>([SalesShellCapabilityProvider.ForceCloseCapabilityId], StringComparer.Ordinal);
-
     [Fact]
     public void The_three_screens_and_the_two_controls_are_declared_with_the_frontends_ids_and_routes()
     {
@@ -38,11 +29,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal(11, declarations.Count);
         foreach (var declaration in declarations)
         {
-            if (!AwaitingFrontendDeclaration.Contains(declaration.CapabilityId))
-            {
-                Assert.Contains($"'{declaration.CapabilityId}'", source);
-            }
-
+            Assert.Contains($"'{declaration.CapabilityId}'", source);
             Assert.Contains($"'{declaration.RoutePath}'", source);
             Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
             Assert.Null(declaration.GlobalProductOperation);

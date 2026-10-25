@@ -212,6 +212,12 @@ export interface HarnessConfig {
   readonly onCommand?: (command: string, call: RecordedCall) => Response | Promise<Response>
   /** DEC-SAL-005: GET `/sales/drafts/{id}/cancellation-impact` (read only when the user asks for the preview). */
   readonly onCancellationImpact?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** No 30: GET `/sales/drafts/{id}/force-close-impact` (read only when the user asks for the preview). */
+  readonly onForceCloseImpact?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** No 30: a POST on `/sales/drafts/{id}/force-close`. */
+  readonly onForceClose?: (call: RecordedCall) => Response | Promise<Response>
+  /** No 30: GET `/sales/drafts/{id}/force-close`; default: no recorded closure. */
+  readonly onForceClosure?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-005: a POST on `/sales/drafts/{id}/cancellation`. */
   readonly onCancel?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-007: GET `/sales/drafts/{id}/cancellation`; default: no recorded cancellation. */
@@ -282,6 +288,17 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/quantity-revision$/.test(url)) {
           if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')
           return config.onQuantityRevision(call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/force-close-impact$/.test(url)) {
+          if (config.onForceCloseImpact === undefined) throw new Error('unexpected force-close-impact read')
+          return config.onForceCloseImpact(url, call.companyId)
+        }
+        if (/\/sales\/drafts\/[^/?]+\/force-close$/.test(url)) {
+          if (call.method === 'POST') {
+            if (config.onForceClose === undefined) throw new Error('unexpected force-close')
+            return config.onForceClose(call)
+          }
+          return config.onForceClosure?.(url, call.companyId) ?? json({ forceClosure: null })
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/cancellation-impact$/.test(url)) {
           if (config.onCancellationImpact === undefined) throw new Error('unexpected cancellation-impact read')

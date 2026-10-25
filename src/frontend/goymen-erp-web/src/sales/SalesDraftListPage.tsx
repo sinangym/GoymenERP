@@ -20,7 +20,7 @@ import { useCallback, useRef, useState, useSyncExternalStore } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchDraftPage } from './api'
-import { APPROVAL_STATE, CANCELLED_STATE, type ApprovalState, type DraftSummaryWithParty, type PartyDisplay } from './contract'
+import { APPROVAL_STATE, CANCELLED_STATE, CLOSED_STATE, isTerminalState, type ApprovalState, type DraftSummaryWithParty, type PartyDisplay } from './contract'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
 import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT, ORDER_LIST_TEXT, partyDisplayText } from './salesText'
 import { CAPABILITY, CAPABILITY_ROUTE } from '../shell/capabilities'
@@ -60,7 +60,7 @@ function readCards(): boolean {
 
 /** The row's own two facts, as one text: the lifecycle beside the internal approval, never merged into a new state. */
 function stateText(row: DraftSummaryWithParty): string {
-  return `${row.state === CANCELLED_STATE ? ORDER_DETAIL_TEXT.stateCancelled : ORDER_DETAIL_TEXT.stateDraft} · ${APPROVAL_STATE_TEXT[row.approvalState]}`
+  return `${row.state === CANCELLED_STATE ? ORDER_DETAIL_TEXT.stateCancelled : row.state === CLOSED_STATE ? ORDER_DETAIL_TEXT.stateClosed : ORDER_DETAIL_TEXT.stateDraft} · ${APPROVAL_STATE_TEXT[row.approvalState]}`
 }
 
 /**
@@ -76,7 +76,7 @@ const APPROVAL_TONE: Record<ApprovalState, StatusTone> = {
 }
 
 function stateTone(row: DraftSummaryWithParty): StatusTone {
-  return row.state === CANCELLED_STATE ? 'neutral' : APPROVAL_TONE[row.approvalState]
+  return isTerminalState(row.state) ? 'neutral' : APPROVAL_TONE[row.approvalState]
 }
 
 export function SalesDraftListPage() {
