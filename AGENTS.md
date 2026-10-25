@@ -72,7 +72,8 @@ bağımsız review" şartını sağlar. Çelişkide v4 süreç tarafında, v2/v3
 - Şeritler (v3 §6): **Codex** = backend + endpoint + gerçek-SQL + OpenAPI + formül
   calculator. **Claude** = tüm frontend / React shell / ekranlar / generated-client
   tüketimi / browser-a11y. **ChatGPT** = iş spec + acceptance + formül golden + backlog +
-  hakemlik (tam-zamanında, bir dilim önde). **`CODEX-ORCHESTRATOR`** = merge. Üç ajan
+  hakemlik (tam-zamanında, bir dilim önde). **`CODEX-ORCHESTRATOR`** = merge (Claude
+  şeridi kendi PR'larını da merge edebilir; 25 Ekim 2026 kararı). Üç ajan
   aynı dikey dilimin farklı katmanında çalışır.
 
 En güncel kullanıcı kararları için `docs/decisions/` içindeki tarihli `SINAN_KARARLARI_*.md`
@@ -82,7 +83,12 @@ dosyaları `KARAR_SICILI.md`'den önce, "son kullanıcı kararı" seviyesinde ge
 alınabilir standing merge yetkisini verir:
 
 - Şerit yazarı kendi PR'ını merge etmez; merge'i ayrı `CODEX-ORCHESTRATOR` koordinatörü
-  expected-head ile yapar.
+  expected-head ile yapar. **İstisna (25 Ekim 2026 kullanıcı kararı,
+  `docs/decisions/SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md`):** Claude şeridi kendi
+  açtığı/sürdürdüğü PR'ları aynı kapılarla (fresh CI, exact-head bağımsız ajan review'u,
+  K3'te iki review, açık P0/P1 yok) `CODEX-ORCHESTRATOR`'ı beklemeden squash merge edebilir
+  ve merge sonrası Issue #66 makbuzuyla `CODEX-ORCHESTRATOR`'ı bilgilendirir. İnsan
+  kapıları değişmez.
 - K1/K2 implementation PR'ı ancak fresh zorunlu kontroller, exact-head bağımsız review,
   yeni davranış testi ve açık P0/P1 olmaması halinde coordinator tarafından squash merge
   edilebilir.
