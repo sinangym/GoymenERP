@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
 import { readEnvironment } from '../src/env'
+import { ORDER_TAB_NAME, openOrderTab } from '../src/orderTabs'
 
 const environment = readEnvironment()
 const { apiBaseUrl, seed, testedCommit } = environment
@@ -203,6 +204,7 @@ test('S04-08 one approved record is priced in the form, reopened as Rev.1, and i
 
   // HYBRID-PILOT: the user sees the same archived snapshot after close/reopen,
   // rather than history being available only through a separate API assertion.
+  await openOrderTab(page, ORDER_TAB_NAME.history)
   const historyPanel = page.getByTestId('sales-revision-history')
   await expect(historyPanel.getByRole('heading', { name: 'Onaylı ticari revizyon geçmişi' })).toBeVisible()
   const archived = historyPanel.getByTestId('sales-revision-Rev.0')

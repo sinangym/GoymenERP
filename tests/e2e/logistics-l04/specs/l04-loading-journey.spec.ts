@@ -226,7 +226,8 @@ async function openSalesProgress(sales: Page, reload = false): Promise<void> {
   const answered = sales.waitForResponse((response) => response.request().method() === 'GET'
     && new URL(response.url()).pathname === `${SALES_DRAFTS_PATH}/${draftId}/delivery-progress`, { timeout: 30_000 })
   if (reload) await sales.reload()
-  else await sales.goto(SALES_DETAIL_ROUTE)
+  // UI-10: "Teslimat durumu" lives in the S-04 "Gerçekleşme / İrsaliye" tab, opened through its link.
+  else await sales.goto(`${SALES_DETAIL_ROUTE}?sekme=gerceklesme`)
   await expect(sales.getByRole('heading', { level: 1, name: DOCUMENT_NO })).toBeVisible({ timeout: 30_000 })
   expect((await answered).status(), 'the real delivery-progress read answers the Sales reader').toBe(200)
   await expect(sales.getByTestId('sales-delivery-progress-line-1')).toBeVisible({ timeout: 30_000 })

@@ -63,7 +63,7 @@ describe('S-04 delivery progress (AT-024)', () => {
       onDetail: () => json(detail()),
       onDeliveryProgress: () => json(progress({ shipped: '600', delivered: '400', remaining: '600' })),
     })
-    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
 
     const section = await screen.findByTestId('sales-delivery-progress')
     await within(section).findByTestId('sales-delivery-progress-line-1')
@@ -85,12 +85,12 @@ describe('S-04 delivery progress (AT-024)', () => {
         ? progress({ shipped: '600', delivered: '400', remaining: '600' })
         : progress({ shipped: '1000', delivered: '1000', remaining: '0' })),
     })
-    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
     await waitFor(() => expect(screen.getByTestId('sales-delivery-progress-line-1-delivered').textContent).toBe('400'))
 
     cleanup()
     delivered = '1000'
-    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
 
     await waitFor(() => expect(screen.getByTestId('sales-delivery-progress-line-1-delivered').textContent).toBe('1000'))
     expect(screen.getByTestId('sales-delivery-progress-line-1-remaining').textContent).toBe('0')
@@ -102,7 +102,7 @@ describe('S-04 delivery progress (AT-024)', () => {
       onDetail: () => json(detail()),
       onDeliveryProgress: () => json(progress({ shipped: '1000.5', delivered: '1000.5', remaining: '0', excess: '0.5' })),
     })
-    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
 
     await waitFor(() => expect(screen.getByTestId('sales-delivery-progress-line-1-excess').textContent).toBe('0.5'))
     expect(screen.getByTestId('sales-delivery-progress-line-1-remaining').textContent).toBe('0')
@@ -112,7 +112,7 @@ describe('S-04 delivery progress (AT-024)', () => {
 
   it('is not read for a draft that was never approved, and is read for a revised draft back in preparation', async () => {
     const preparing = installFetch({ onDetail: () => json(detail('Preparing')) })
-    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
     await screen.findByRole('heading', { name: 'SO-2026-0001' })
     expect(screen.queryByTestId('sales-delivery-progress')).toBeNull()
     expect(progressCalls(preparing.calls)).toHaveLength(0)
@@ -123,7 +123,7 @@ describe('S-04 delivery progress (AT-024)', () => {
       onDetail: () => json(detail('Preparing', 'Rev.1')),
       onDeliveryProgress: () => json(progress({ shipped: '400', delivered: '400', remaining: '600' })),
     })
-    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
     await waitFor(() => expect(screen.getByTestId('sales-delivery-progress-line-1-delivered').textContent).toBe('400'))
     expect(progressCalls(revised.calls)).toHaveLength(1)
   })
@@ -136,7 +136,7 @@ describe('S-04 delivery progress (AT-024)', () => {
         ? json({ status: 503 }, 503)
         : json(progress({ shipped: '600', delivered: '400', remaining: '600' }))),
     })
-    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
 
     const section = await screen.findByTestId('sales-delivery-progress')
     const alert = await within(section).findByRole('alert')
@@ -157,7 +157,7 @@ describe('S-04 delivery progress (AT-024)', () => {
       // Another version than the detail's: stale for this screen.
       onDeliveryProgress: () => json(progress({ shipped: '600', delivered: '400', remaining: '600' }, '3')),
     })
-    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    renderSalesApp(`/satis/siparisler/${DRAFT}?sekme=gerceklesme`)
 
     const section = await screen.findByTestId('sales-delivery-progress')
     const alert = await within(section).findByRole('alert')

@@ -268,3 +268,54 @@
     width: 100%;
   }
 }
+
+/* S-04 locked tabs (Master §7.2). The tablist scrolls on its own at phone width; the page never scrolls sideways. */
+.tabs {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+.tabList {
+  display: flex;
+  gap: var(--goy-ds-space-1);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  min-width: 0;
+}
+
+.tab {
+  flex: 0 0 auto;
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--goy-ds-color-text-secondary);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab[aria-selected='true'] {
+  border-bottom-color: var(--goy-ds-color-accent);
+  color: var(--goy-ds-color-text);
+}
+
+.tab:focus-visible,
+.tabPanel:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+.tabPanel {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  min-width: 0;
+}
+
+/* A class display value would beat the hidden attribute; keep inactive panels out of layout. */
+.tabPanel[hidden] {
+  display: none;
+}

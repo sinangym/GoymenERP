@@ -13,7 +13,8 @@ import {
 
 const DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const OTHER_DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab'
-const path = `/satis/siparisler/${DRAFT}`
+// The history lives in the S-04 "Revizyon / Geçmiş" tab, opened by its link.
+const path = `/satis/siparisler/${DRAFT}?sekme=gecmis`
 const history = () => JSON.parse(historyRaw)
 const historyRead = (url: string) => url.endsWith('/revisions')
 

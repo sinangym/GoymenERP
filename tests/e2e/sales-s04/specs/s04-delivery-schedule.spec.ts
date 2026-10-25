@@ -24,6 +24,7 @@
 import { expect, test, type APIRequestContext, type APIResponse, type Page } from '@playwright/test'
 import sql from 'mssql'
 import { readEnvironment } from '../src/env.js'
+import { ORDER_TAB_NAME, openOrderTab } from '../src/orderTabs.js'
 
 const env = readEnvironment()
 const { apiBaseUrl, testedCommit, seed } = env
@@ -278,9 +279,12 @@ test('S04-DS-01 the planner moves the approved order\'s dates in the form; no re
   await openDetail(page, plannerActor)
   await expect(page.getByTestId('sales-draft-approval-state')).toHaveText('Onaylı')
   await expect(scheduleForm(page)).toBeVisible()
+  // UI-10: the schedule history is in the "Revizyon / Geçmiş" tab; the form stays in "Satırlar".
+  await openOrderTab(page, ORDER_TAB_NAME.history)
   await expect(historyBlock(page)).toBeVisible()
   await expect(page.getByTestId('sales-delivery-schedule-0')).toBeVisible()
   await expect(historySections(page)).toHaveCount(1)
+  await openOrderTab(page, ORDER_TAB_NAME.lines)
 
   await scheduleForm(page).getByLabel('Üst termin tarihi').fill(HEADER_DATE)
   await scheduleForm(page).getByLabel('Satır termini').fill(LINE_DATE)

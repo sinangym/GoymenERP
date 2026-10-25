@@ -704,3 +704,20 @@ export const LINE_PRICING_TEXT = {
 export function partyDisplayText(party: { readonly code: string; readonly legalName: string; readonly tradeName: string | null }): string {
   return party.tradeName === null ? `${party.code} — ${party.legalName}` : `${party.code} — ${party.legalName} (${party.tradeName})`
 }
+
+/** S-04 Sipariş 360: the six locked order-detail tabs (Master §7.2) and their empty states. */
+export const ORDER_TABS_TEXT = {
+  label: 'Sipariş bölümleri',
+  tab: {
+    satirlar: 'Satırlar',
+    tahsis: 'Tahsis / Kaynak',
+    gerceklesme: 'Gerçekleşme / İrsaliye',
+    faturalar: 'Faturalar',
+    belgeler: 'Sözleşme / Belgeler',
+    gecmis: 'Revizyon / Geçmiş',
+  },
+  allocationNote: 'Kaynak stratejisi (stok, satın alma, üretim) henüz bu ekrandan seçilmiyor; tahsisler Stok sahibinden okunur.',
+  realizationNotApproved: 'Teslimat ve irsaliye bilgisi sipariş onaylandıktan sonra gösterilir.',
+  invoicesEmpty: 'Satış faturası ekranı henüz hazır değil. Bu sipariş için fatura bilgisi burada gösterilecek.',
+  documentsUnavailable: 'Belgeler yalnız tek bir şirket seçiliyken gösterilir.',
+} as const

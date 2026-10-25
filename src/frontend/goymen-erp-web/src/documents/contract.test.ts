@@ -40,11 +40,12 @@ function purchaseOrderDocument(over: Record<string, unknown> = {}) {
 }
 
 describe('document owner contract', () => {
-  it('pins the canonical counterparty, inventory label and purchase-order identities', () => {
+  it('pins the canonical counterparty, inventory label, purchase-order and sales-order identities', () => {
     expect(OWNER_KIND).toEqual({
       counterpartyParty: 'counterparty.party',
       inventoryMaterialLabel: 'inventory.material-label',
       purchasingPurchaseOrder: 'purchasing.purchase-order',
+      salesOrder: 'sales.order',
     });
   });
 

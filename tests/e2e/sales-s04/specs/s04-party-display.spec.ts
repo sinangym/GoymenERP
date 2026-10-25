@@ -23,6 +23,7 @@
 
 import { expect, test, type Page, type Request, type Response } from '@playwright/test'
 import { readEnvironment } from '../src/env.js'
+import { ORDER_TAB_NAME, openOrderTab } from '../src/orderTabs.js'
 
 const env = readEnvironment()
 const { preparerActor, readerActor, companyId, deliveryDraftId, scheduleDraftId, realPartyId } = env.seed
@@ -263,6 +264,7 @@ test('S04-GOYDS-01 Sipariş 360 keeps long Cari, due date and withheld price dis
   const scheduledFacts = page.getByTestId(`sales-line-${scheduled.lines[0].lineNo}-facts`)
   await expect(scheduledFacts.locator('[data-layout-field="delivery-date"]')).toContainText('20.10.2026')
   await expect(scheduledFacts.locator('[data-layout-field="price"]')).toContainText('Fiyat bu yetkiyle görüntülenmez')
+  await openOrderTab(page, ORDER_TAB_NAME.realization)
   await expect(page.getByTestId('sales-delivery-progress')).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
 })
