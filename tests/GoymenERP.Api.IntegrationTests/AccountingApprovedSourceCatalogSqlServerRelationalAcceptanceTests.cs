@@ -631,6 +631,26 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                     account.GetProperty("accountCode").GetString(), account.GetProperty("accountName").GetString()))
                     .ToArray());
         }
+        {
+            // BLG-05b negatives: the accounts read answers exactly as the draft read for a same-company actor
+            // without draft authority, refuses another company's actor, and knows no other draft.
+            var viewer = Track(run.Client(OtherActor, CompanyA));
+            var viewerDraft = Track(await viewer.GetAsync($"{NormalDraftsPath}/{draftId:D}"));
+            var viewerAccounts = Track(await viewer.GetAsync($"{NormalDraftsPath}/{draftId:D}/accounts"));
+            Assert.NotEqual(HttpStatusCode.OK, viewerAccounts.StatusCode);
+            Assert.Equal(viewerDraft.StatusCode, viewerAccounts.StatusCode);
+            Assert.DoesNotContain("Synthetic", await viewerAccounts.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            await run.GrantAsync(ForeignActor, CompanyB, DraftCreatePermission, DraftApprovePermission);
+            var foreign = Track(run.Client(ForeignActor, CompanyB));
+            var foreignAccounts = Track(await foreign.GetAsync($"{NormalDraftsPath}/{draftId:D}/accounts"));
+            Assert.Equal(HttpStatusCode.NotFound, foreignAccounts.StatusCode);
+            Assert.DoesNotContain("Synthetic", await foreignAccounts.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            var owner = Track(run.Client(Preparer, CompanyA));
+            var unknown = Track(await owner.GetAsync($"{NormalDraftsPath}/{Guid.NewGuid():D}/accounts"));
+            Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        }
 
         var approveRequest = new ApproveNormalJournalDraftRequestV1(1, periodId);
         var approveKey = Key("draft-approve");

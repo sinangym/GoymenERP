@@ -27,8 +27,12 @@ public sealed class ApprovedAccountPlanMirrorReaderV1(
             return null;
         }
 
+        // The catalog store keeps the accounts SHA-256 upper-case; filtering on it as well keeps this to
+        // the packages of that exact plan (normally one), not every package that reused the version name.
+        var accountsSha256 = sourceSha256.ToUpperInvariant();
         var packageIds = await dbContext.ApprovedSourceCatalogs.AsNoTracking()
-            .Where(candidate => candidate.AccountPlanSourceVersion == sourceVersion)
+            .Where(candidate => candidate.AccountPlanSourceVersion == sourceVersion
+                && candidate.AccountsSourceSha256 == accountsSha256)
             .OrderBy(candidate => candidate.CreatedAtUtc)
             .ThenBy(candidate => candidate.Id)
             .Select(candidate => candidate.Id)
