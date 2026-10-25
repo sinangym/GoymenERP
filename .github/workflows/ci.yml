@@ -247,7 +247,7 @@ jobs:
 
   backend:
     name: Backend build, test and migration
-    needs: [backend-build, backend-test-group]
+    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]
     if: ${{ always() }}
     runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
     steps:
@@ -309,6 +309,17 @@ jobs:
             cp -- "$source/files/$relative" "$artifact_directory/proof-$id.json"
           done
           test "$(find "$LOCAL_PROOF_OUTPUT" -mindepth 2 -maxdepth 2 -type f -name 'proof-*.json' | wc -l | tr -d '[:space:]')" = "${#ids[@]}"
+      - name: Restore same-run SQL proofs for excluded backend tests
+        shell: bash
+        env:
+          LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          LOCAL_PROOF_SCOPE_PREFIX: relational-proof-
+          LOCAL_PROOF_IDS: A,B,C
+          LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-
+          LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-
+          LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs
+        run: *restore-local-proofs
+
       - name: Verify complete backend build and test groups
         run: |
           python3 -I -S -B tools/verify_backend_test_groups.py \
@@ -317,7 +328,10 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)" \
           --build-result "${{ needs.backend-build.result }}" \
-          --worker-result "${{ needs.backend-test-group.result }}"
+          --worker-result "${{ needs.backend-test-group.result }}" \
+          --relational-proof-directory artifacts/ci-relational-proofs \
+          --relational-worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
 
   recovery-surface-inventory:
     name: Recovery surface inventory exact-source proof
@@ -499,7 +513,9 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run lint
-      - run: npm test
+      # Leave memory headroom on the isolated runner.
+      # Keep every test, without competing jsdom workers or longer assertions.
+      - run: npm test -- --maxWorkers=1 --no-file-parallelism
       - run: npm run build
 
   relational-shard:
@@ -519,14 +535,17 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
@@ -599,14 +618,17 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
