@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   closeBody,
+  decodeCutToLengthSpec,
   decodeMassBalance,
   decodeManufacturingOutputLocationCandidates,
   decodeManufacturingOutputProductCandidates,
@@ -18,6 +19,8 @@ import {
 } from './contract'
 import {
   APPROVER,
+  CUT_LINE_1,
+  CUT_LINE_2,
   ORDER,
   PLAN,
   ROLL_1,
@@ -25,6 +28,7 @@ import {
   order,
   orderList,
   orderSummary,
+  cutToLengthSpec,
   plan,
   planCalculation,
   roll,
@@ -349,7 +353,12 @@ describe('decodePlan', () => {
 
   it('normalizes a legacy response that omits both additive technical projections', () => {
     const current = plan()
-    const { calculation: _calculation, slittingSpec: _slittingSpec, ...legacyPlan } = current
+    const {
+      calculation: _calculation,
+      slittingSpec: _slittingSpec,
+      cutToLengthSpec: _cutToLengthSpec,
+      ...legacyPlan
+    } = current
     const legacyInputs = current.inputs.map((input) => {
       const { technicalSnapshot: _technicalSnapshot, ...legacyInput } = input
       return legacyInput
@@ -359,7 +368,64 @@ describe('decodePlan', () => {
 
     expect(decoded?.calculation).toBeNull()
     expect(decoded?.slittingSpec).toBeNull()
+    expect(decoded?.cutToLengthSpec).toBeNull()
     expect(decoded?.inputs.every((input) => input.technicalSnapshot === null)).toBe(true)
+  })
+
+  it('reads the current explicit null cut spec as the same absence as the legacy omission', () => {
+    expect(plan()).toHaveProperty('cutToLengthSpec', null)
+    expect(decodePlan(plan())?.cutToLengthSpec).toBeNull()
+  })
+
+  it('keeps stored cut lines losslessly: order, line id, signed sequence, canonical length and count', () => {
+    const decoded = decodePlan(plan({ process: 'CutToLength', cutToLengthSpec: cutToLengthSpec() }))
+
+    expect(decoded?.cutToLengthSpec).toEqual({
+      lines: [
+        { lineId: CUT_LINE_2, sequence: 20, lengthMm: '1250.5', count: 3 },
+        { lineId: CUT_LINE_1, sequence: -1, lengthMm: '0.001', count: 2147483647 },
+      ],
+    })
+    expect(decodeCutToLengthSpec(cutToLengthSpec({
+      lines: [{ lineId: CUT_LINE_1, sequence: -2147483648, lengthMm: '7', count: 1 }],
+    }))).toEqual({ lines: [{ lineId: CUT_LINE_1, sequence: -2147483648, lengthMm: '7', count: 1 }] })
+  })
+
+  const cutLine = (overrides: Record<string, unknown>) => ({
+    lines: [{ lineId: CUT_LINE_1, sequence: 1, lengthMm: '1000', count: 2, ...overrides }],
+  })
+
+  it.each([
+    ['a non-object spec', []],
+    ['an extra spec member', { ...cutToLengthSpec(), windingTargetKg: null }],
+    ['a missing line list', {}],
+    ['a null line list', { lines: null }],
+    ['an empty line list', { lines: [] }],
+    ['a null line', { lines: [null] }],
+    ['an extra line member', cutLine({ widthMm: '1000' })],
+    ['a missing line member', { lines: [{ lineId: CUT_LINE_1, sequence: 1, lengthMm: '1000' }] }],
+    ['a nil line id', cutLine({ lineId: '00000000-0000-0000-0000-000000000000' })],
+    ['a malformed line id', cutLine({ lineId: 'line-1' })],
+    ['a duplicate line id', { lines: [
+      { lineId: CUT_LINE_1, sequence: 1, lengthMm: '1000', count: 2 },
+      { lineId: CUT_LINE_1.toUpperCase(), sequence: 2, lengthMm: '900', count: 1 },
+    ] }],
+    ['a string sequence', cutLine({ sequence: '1' })],
+    ['a fractional sequence', cutLine({ sequence: 1.5 })],
+    ['an int32 overflow sequence', cutLine({ sequence: 2147483648 })],
+    ['an int32 underflow sequence', cutLine({ sequence: -2147483649 })],
+    ['a numeric length', cutLine({ lengthMm: 1000 })],
+    ['a zero length', cutLine({ lengthMm: '0' })],
+    ['a negative length', cutLine({ lengthMm: '-1' })],
+    ['a fourth length decimal', cutLine({ lengthMm: '1000.0001' })],
+    ['a non-canonical trailing zero length', cutLine({ lengthMm: '1000.50' })],
+    ['a string count', cutLine({ count: '2' })],
+    ['a zero count', cutLine({ count: 0 })],
+    ['a negative count', cutLine({ count: -1 })],
+    ['a fractional count', cutLine({ count: 1.5 })],
+    ['an int32 overflow count', cutLine({ count: 2147483648 })],
+  ])('fails closed on cut spec with %s', (_case, spec) => {
+    expect(decodePlan(plan({ process: 'CutToLength', cutToLengthSpec: spec }))).toBeNull()
   })
 
   it('keeps the stored slitting lines in their exact order and accepts an optional winding target', () => {
@@ -419,6 +485,68 @@ describe('decodePlan', () => {
     expect(decodePlan(plan({
       inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: snapshot }],
     }))?.inputs[0].technicalSnapshot).toMatchObject({ thicknessMm: '2.001', effectiveOn: '2024-02-29' })
+  })
+
+  it('keeps the captured nominal length as the exact server text and an explicit null as absence', () => {
+    const decode = (lengthMm: unknown) => decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot({ lengthMm }) }],
+    }))?.inputs[0].technicalSnapshot
+
+    expect(decode('2500.125')?.lengthMm).toBe('2500.125')
+    expect(decode('6000')?.lengthMm).toBe('6000')
+    expect(decode('0.001')?.lengthMm).toBe('0.001')
+    // Null stays null: not 0, not a cut-line length, not the current Product card.
+    expect(decode(null)?.lengthMm).toBeNull()
+    expect(decode(null)).toMatchObject({ thicknessMm: '2', widthMm: '1500', lengthMm: null })
+  })
+
+  it('does not take the nominal length from the cut lines of the same plan', () => {
+    const decoded = decodePlan(plan({
+      process: 'CutToLength',
+      cutToLengthSpec: cutToLengthSpec(),
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot() }],
+    }))
+
+    expect(decoded?.cutToLengthSpec?.lines[0].lengthMm).toBe(cutToLengthSpec().lines[0].lengthMm)
+    expect(decoded?.inputs[0].technicalSnapshot?.lengthMm).toBeNull()
+  })
+
+  it('fails closed on a snapshot without the required lengthMm key', () => {
+    const { lengthMm: _omitted, ...withoutLength } = technicalSnapshot()
+    expect(decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: withoutLength }],
+    }))).toBeNull()
+  })
+
+  it.each([
+    ['a JSON number', 2500.125],
+    ['a boolean', true],
+    ['an object', { value: '2500.125' }],
+    ['an empty text', ''],
+    ['a decimal comma', '2500,125'],
+    ['a fourth fraction digit', '2500.1255'],
+    ['a trailing fraction zero', '2500.120'],
+    ['a leading zero', '02500'],
+    ['a sign', '-2500'],
+    ['a plus sign', '+2500'],
+    ['zero', '0'],
+    ['surrounding whitespace', ' 2500 '],
+    ['a unit suffix', '2500 mm'],
+    ['an exponent', '2.5e3'],
+  ])('fails closed on a nominal length that is %s', (_, lengthMm) => {
+    expect(decodePlan(plan({
+      inputs: [{ parentRollId: ROLL_1, plannedKg: '1000.125', technicalSnapshot: technicalSnapshot({ lengthMm }) }],
+    }))).toBeNull()
+  })
+
+  it('fails closed on an extra snapshot key next to lengthMm', () => {
+    expect(decodePlan(plan({
+      inputs: [{
+        parentRollId: ROLL_1,
+        plannedKg: '1000.125',
+        technicalSnapshot: { ...technicalSnapshot({ lengthMm: '2500.125' }), nominalLengthMm: '2500.125' },
+      }],
+    }))).toBeNull()
   })
 
   it.each([

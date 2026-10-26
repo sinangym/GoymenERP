@@ -97,8 +97,9 @@ public sealed class Product
 
     /// <summary>
     /// DEC-PRD-010: a Draft card is approved for firm use. Only Draft becomes Active, at the version
-    /// the approver read. Completeness is not a precondition here (no source makes it one); the
-    /// operational eligibility reads still judge the whole card at the moment of use.
+    /// the approver read. This domain transition has no general completeness precondition. The Product
+    /// application boundary enforces the accepted cut-sheet/plate family's exact required-reference
+    /// exception before invoking it; other operational eligibility reads still judge cards at use time.
     /// </summary>
     public void Activate(long expectedVersion, DateTimeOffset now)
     {

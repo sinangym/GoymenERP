@@ -118,6 +118,7 @@ const IDENTITY = {
   displayName: 'Satış kullanıcısı',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
+  authenticationSessionBinding: null,
 }
 
 const DIRECTORY = [

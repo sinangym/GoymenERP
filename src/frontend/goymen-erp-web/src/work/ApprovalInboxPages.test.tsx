@@ -65,7 +65,7 @@ function installFetch(granted: readonly string[], served: Served = {}) {
     const headers = (init?.headers ?? {}) as Record<string, string>
     const contract = headers[WORK_APPROVAL_CONTRACT_HEADER] ?? null
     calls.push({ url, companyId: headers['X-Company-Id'] ?? null, method: (init?.method ?? 'GET').toUpperCase(), contract })
-    if (url.includes('/identity/me')) return json({ userId: USER, displayName: 'Onaycı', email: null, allowedCompanyIds: [COMPANY, OTHER_COMPANY] })
+    if (url.includes('/identity/me')) return json({ userId: USER, displayName: 'Onaycı', email: null, allowedCompanyIds: [COMPANY, OTHER_COMPANY], authenticationSessionBinding: null })
     if (url.includes('/organization/companies')) return json(DIRECTORY)
     if (url.includes('/shell/capabilities')) {
       return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: 'gen-1', capabilities: granted })

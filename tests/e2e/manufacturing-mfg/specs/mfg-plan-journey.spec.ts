@@ -23,10 +23,17 @@ const PLAN_PREVIEW_RE = /\/api\/v1\/manufacturing\/plans\/preview$/
 const ORDER_POST_RE = /\/api\/v1\/manufacturing\/orders$/
 const ORDER_GET_RE = /\/api\/v1\/manufacturing\/orders\/[^/]+$/
 const CANDIDATES_RE = /\/api\/v1\/inventory\/references\/parent-rolls(?:\?|$)/
+const IDENTITY_ME_RE = /\/api\/v1\/identity\/me$/
+const PRODUCT_ACTOR = 'group-bootstrap-admin'
+const SAC_GROUP_ID = '829e576d-c635-502a-97b8-9d5074c9d6a0'
+const CUT_SHEET_FAMILY_ID = '075d01d5-c57c-44b9-903a-89c00e4db029'
+const CUT_SHEET_TEMPLATE_ID = '57937348-393e-4982-a5a4-63eff8be40c9'
+const KILOGRAM_UNIT_ID = 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983'
 
 interface CandidateAnswer {
   readonly labelId: string
   readonly labelVersion: string
+  readonly physicalKg: string
   readonly draftSelectable: boolean
 }
 
@@ -74,13 +81,119 @@ interface WorkCenterAnswer {
   readonly kind: CanonicalProcess
 }
 
-async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
+interface CutToLengthLineAnswer {
+  readonly lineId: string
+  readonly sequence: number
+  readonly lengthMm: string
+  readonly count: number
+}
+
+interface CutToLengthSpecAnswer {
+  readonly lines: readonly CutToLengthLineAnswer[]
+}
+
+function displayedLengthPattern(lengthMm: string): RegExp {
+  const [whole, fraction] = lengthMm.split('.')
+  if (fraction === undefined) return new RegExp(`^${whole}(?:[.,]0+)? mm$`)
+  const significant = fraction.replace(/0+$/, '')
+  if (significant.length === 0) return new RegExp(`^${whole}(?:[.,]0+)? mm$`)
+  return new RegExp(`^${whole}[.,]${significant}(?:0+)? mm$`)
+}
+
+async function expectCutToLengthRows(page: Page, expected: readonly CutToLengthLineAnswer[]) {
+  const detail = page.getByRole('region', { name: 'Boy kesme ayrıntısı' })
+  await expect(detail).toBeVisible()
+  const rows = detail.getByRole('table').locator('tbody tr')
+  await expect(rows).toHaveCount(expected.length)
+  for (const [index, line] of expected.entries()) {
+    await expect(rows.nth(index).getByRole('rowheader')).toHaveText(String(line.sequence))
+    await expect(rows.nth(index).getByRole('cell').nth(0)).toHaveText(displayedLengthPattern(line.lengthMm))
+    await expect(rows.nth(index).getByRole('cell').nth(1)).toHaveText(String(line.count))
+  }
+}
+
+async function expectCutToLengthLines(page: Page) {
+  const detail = page.getByRole('region', { name: 'Boy kesme ayrıntısı' })
+  await expect(detail).toBeVisible()
+  const rows = detail.getByRole('table').locator('tbody tr')
+  await expect(rows).toHaveCount(2)
+  await expect(rows.nth(0).getByRole('rowheader')).toHaveText('40')
+  await expect(rows.nth(0).getByRole('cell').nth(0)).toHaveText(/^6000(?:[.,]0+)? mm$/)
+  await expect(rows.nth(0).getByRole('cell').nth(1)).toHaveText('3')
+  await expect(rows.nth(1).getByRole('rowheader')).toHaveText('-7')
+  await expect(rows.nth(1).getByRole('cell').nth(0)).toHaveText(/^2500[.,]5 mm$/)
+  await expect(rows.nth(1).getByRole('cell').nth(1)).toHaveText('2')
+}
+
+interface BrowserIdentityController {
+  readonly rewritten: Set<Request>
+  readonly current: () => { readonly actor: string; readonly sessionId: string }
+  readonly set: (actor: string, sessionId: string) => void
+}
+
+interface BrowserIdentityAnswer {
+  readonly userId: string
+  readonly authenticationSessionBinding: string | null
+}
+
+const browserIdentities = new WeakMap<BrowserContext, () => { readonly actor: string; readonly sessionId: string }>()
+
+function developmentIdentityHeaders(context: BrowserContext): Record<string, string> {
+  const identity = browserIdentities.get(context)?.()
+  if (identity === undefined) throw new Error('browser context has no registered Development identity')
+  return {
+    'x-development-user': identity.actor,
+    'x-development-session': identity.sessionId,
+  }
+}
+
+async function asSessionActor(
+  context: BrowserContext,
+  initialActor: string,
+  initialSessionId = randomUUID(),
+): Promise<BrowserIdentityController> {
   const rewritten = new Set<Request>()
+  let identity: { actor: string; sessionId: string } = { actor: initialActor, sessionId: initialSessionId }
+  browserIdentities.set(context, () => identity)
   await context.route('**/api/v1/**', async (route: Route) => {
     rewritten.add(route.request())
-    await route.fallback({ headers: { ...route.request().headers(), 'x-development-user': actor } })
+    await route.fallback({
+      headers: {
+        ...route.request().headers(),
+        ...developmentIdentityHeaders(context),
+      },
+    })
   })
-  return rewritten
+  return {
+    rewritten,
+    current: () => identity,
+    set: (actor, sessionId) => { identity = { actor, sessionId } },
+  }
+}
+
+async function asActor(context: BrowserContext, actor: string): Promise<Set<Request>> {
+  return (await asSessionActor(context, actor)).rewritten
+}
+
+async function readBrowserIdentity(page: Page): Promise<{
+  readonly answer: BrowserIdentityAnswer
+  readonly sessionHeader: string | undefined
+}> {
+  const responsePromise = page.waitForResponse((response) =>
+    IDENTITY_ME_RE.test(response.url()) && response.request().method() === 'GET')
+  await page.evaluate(async () => {
+    const response = await fetch('/api/v1/identity/me', { cache: 'no-store' })
+    await response.arrayBuffer()
+  })
+  const response = await responsePromise
+  expect(response.status()).toBe(200)
+  const answer = await response.json() as BrowserIdentityAnswer
+  expect(answer.userId).toMatch(/^[0-9a-f-]{36}$/i)
+  expect(answer.authenticationSessionBinding).toMatch(/^v1\.[0-9a-f]{64}$/)
+  return {
+    answer,
+    sessionHeader: response.request().headers()['x-development-session'],
+  }
 }
 
 function watchAnswers(page: Page): Request[] {
@@ -123,11 +236,14 @@ async function openPlanForm(
   const candidate = candidates.items.find((item) => item.labelId === roll.labelId)
   expect(candidate).toMatchObject({ labelId: roll.labelId, draftSelectable: true })
   expect(candidate?.labelVersion).toMatch(/^[1-9][0-9]*$/)
+  expect(candidate?.physicalKg).toMatch(/^(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/)
+  expect(Number(candidate?.physicalKg)).toBeGreaterThan(0)
+  const plannedKg = candidate!.physicalKg
 
   const row = page.getByRole('row', { name: new RegExp(roll.labelCode) })
-  await expect(row).toContainText('1000 kg')
+  await expect(row).toContainText(`${plannedKg} kg`)
   await row.getByRole('button', { name: 'Ekle', exact: true }).click()
-  await page.getByRole('textbox', { name: `${roll.labelCode} planlanan kg` }).fill('1000')
+  await page.getByRole('textbox', { name: `${roll.labelCode} planlanan kg` }).fill(plannedKg)
   return candidate as CandidateAnswer
 }
 
@@ -160,6 +276,227 @@ async function readCanonicalWorkCenters(api: APIRequestContext): Promise<Readonl
 }
 
 test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
+  test('M01.3: the real identity endpoint keeps F5 in one session and isolates A to B to A re-entry', async ({ page, context }) => {
+    const firstSession = randomUUID()
+    const otherActorSession = randomUUID()
+    const reentrySession = randomUUID()
+    const identity = await asSessionActor(context, env.seed.recorderActor, firstSession)
+    const answered = watchAnswers(page)
+
+    await page.goto('/uretim/emirler')
+    const first = await readBrowserIdentity(page)
+    expect(first.sessionHeader).toBe(firstSession)
+
+    await page.reload()
+    const refreshed = await readBrowserIdentity(page)
+    expect(refreshed.sessionHeader).toBe(firstSession)
+    expect(refreshed.answer).toEqual(first.answer)
+
+    identity.set(env.seed.readerActor, otherActorSession)
+    await page.reload()
+    const otherActor = await readBrowserIdentity(page)
+    expect(otherActor.sessionHeader).toBe(otherActorSession)
+    expect(otherActor.answer.userId).not.toBe(first.answer.userId)
+    expect(otherActor.answer.authenticationSessionBinding)
+      .not.toBe(first.answer.authenticationSessionBinding)
+
+    identity.set(env.seed.recorderActor, reentrySession)
+    await page.reload()
+    const reentered = await readBrowserIdentity(page)
+    expect(reentered.sessionHeader).toBe(reentrySession)
+    expect(reentered.answer.userId).toBe(first.answer.userId)
+    expect(reentered.answer.authenticationSessionBinding)
+      .not.toBe(first.answer.authenticationSessionBinding)
+    expect(reentered.answer.authenticationSessionBinding)
+      .not.toBe(otherActor.answer.authenticationSessionBinding)
+
+    expectEveryAnswerRewritten(answered, identity.rewritten)
+  })
+
+  test('P02.1: a real cut-sheet nominal length stays exact and separate from cut lines through revision and reopen', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const productApi = await apiAs(env, PRODUCT_ACTOR)
+    const recorderApi = await apiAs(env, env.seed.recorderActor)
+    const productName = `SENTETIK P02.1 ${randomUUID()} 3 mm x 248 mm x 2500,125 mm sac`
+    const labelId = randomUUID()
+    const labelCode = `SYN-P021-SHEET-${labelId.replaceAll('-', '')}`
+    const cutLine = { lineId: randomUUID(), sequence: 13, lengthMm: '6000', count: 2 }
+
+    try {
+      const productCreated = await productApi.post('/api/v1/products', {
+        data: {
+          name: productName,
+          groupId: SAC_GROUP_ID,
+          familyId: CUT_SHEET_FAMILY_ID,
+          references: {
+            templateId: CUT_SHEET_TEMPLATE_ID,
+            templateVersion: '1',
+            attributes: {
+              'thickness-mm': 3,
+              'width-mm': 248,
+              'length-mm': 2500.125,
+              'steel-grade': 'S235JR',
+              coating: 'uncoated',
+            },
+            units: { stock: KILOGRAM_UNIT_ID, sales: KILOGRAM_UNIT_ID },
+          },
+        },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      const productCreatedText = await productCreated.text()
+      expect(productCreated.status(), productCreatedText).toBe(201)
+      const productDraft = JSON.parse(productCreatedText) as {
+        card: { product: { id: string; lifecycle: string; version: string } }
+      }
+      expect(productDraft.card.product).toMatchObject({ lifecycle: 'Draft', version: '1' })
+
+      const productActivated = await productApi.post(
+        `/api/v1/products/${productDraft.card.product.id}/activation`,
+        {
+          data: { expectedVersion: productDraft.card.product.version },
+          headers: { 'Idempotency-Key': randomUUID() },
+        },
+      )
+      const productActivatedText = await productActivated.text()
+      expect(productActivated.status(), productActivatedText).toBe(200)
+      const activeProduct = JSON.parse(productActivatedText) as {
+        card: {
+          product: { id: string; lifecycle: string; version: string }
+          references: { attributes: Record<string, unknown> }
+        }
+      }
+      expect(activeProduct.card.product).toMatchObject({
+        id: productDraft.card.product.id,
+        lifecycle: 'Active',
+        version: '2',
+      })
+      expect(activeProduct.card.references.attributes['length-mm']).toBe(2500.125)
+
+      const opening = await recorderApi.post('/api/v1/inventory/opening-counts', {
+        data: {
+          countId: randomUUID(),
+          locationId: env.seed.output.locationId,
+          countedOn: '2026-09-18',
+          sheetReference: `P02.1-${labelId}`,
+          lines: [{
+            lineId: randomUUID(),
+            labelId,
+            labelCode,
+            lotId: randomUUID(),
+            heatNumber: null,
+            coilNumber: null,
+            productId: activeProduct.card.product.id,
+            productVersion: activeProduct.card.product.version,
+            quantityKg: '1000',
+          }],
+        },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      const openingText = await opening.text()
+      expect(opening.status(), openingText).toBe(201)
+
+      const candidates = await recorderApi.get('/api/v1/inventory/references/parent-rolls', {
+        params: { q: labelCode, limit: 25 },
+      })
+      const candidatesText = await candidates.text()
+      expect(candidates.status(), candidatesText).toBe(200)
+      const candidate = (JSON.parse(candidatesText) as { items: CandidateAnswer[] }).items
+        .find((item) => item.labelId === labelId)
+      expect(candidate).toMatchObject({ labelId, physicalKg: '1000', draftSelectable: true })
+      expect(candidate?.labelVersion).toMatch(/^[1-9][0-9]*$/)
+
+      const workCenters = await readCanonicalWorkCenters(recorderApi)
+      const cutToLength = workCenters.get('CutToLength')!
+      const planId = randomUUID()
+      const planInput = {
+        parentRollId: labelId,
+        plannedKg: '1000',
+        expectedLabelVersion: candidate!.labelVersion,
+      }
+      const cutToLengthSpec = { lines: [cutLine] }
+      const created = await recorderApi.post('/api/v1/manufacturing/plans', {
+        data: {
+          planId,
+          workCenterId: cutToLength.id,
+          inputs: [planInput],
+          target: null,
+          cutToLengthSpec,
+        },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      const createdText = await created.text()
+      expect(created.status(), createdText).toBe(201)
+      const createdPlan = JSON.parse(createdText) as {
+        inputs: Array<{ technicalSnapshot: { lengthMm: string | null } }>
+        cutToLengthSpec: CutToLengthSpecAnswer | null
+      }
+      expect(createdPlan.inputs[0].technicalSnapshot.lengthMm).toBe('2500.125')
+      expect(createdPlan.cutToLengthSpec).toEqual(cutToLengthSpec)
+
+      await page.goto(`/uretim/plan/${planId}`)
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      const inputRegion = page.getByRole('region', { name: 'Planlanan ana rulolar' })
+      await expect(inputRegion.getByText(/^Nominal ürün boyu:/))
+        .toHaveText('Nominal ürün boyu: 2500.125 mm')
+      const cutRegion = page.getByRole('region', { name: 'Boy kesme ayrıntısı' })
+      await expect(cutRegion.getByText(/^6000(?:[.,]0+)? mm$/)).toBeVisible()
+      await expect(cutRegion.getByText(/2500[.,]125/)).toHaveCount(0)
+
+      const revised = await recorderApi.post(`/api/v1/manufacturing/plans/${planId}/revision`, {
+        data: {
+          expectedVersion: 1,
+          workCenterId: cutToLength.id,
+          inputs: [{ ...planInput, plannedKg: '900' }],
+          target: null,
+          cutToLengthSpec,
+          reason: 'P02.1 snapshot korunumu',
+        },
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      const revisedText = await revised.text()
+      expect(revised.status(), revisedText).toBe(200)
+      const revisedPlan = JSON.parse(revisedText) as {
+        inputs: Array<{ technicalSnapshot: { lengthMm: string | null } }>
+        cutToLengthSpec: CutToLengthSpecAnswer | null
+      }
+      expect(revisedPlan.inputs[0].technicalSnapshot.lengthMm).toBe('2500.125')
+      expect(revisedPlan.cutToLengthSpec).toEqual(cutToLengthSpec)
+
+      await page.reload()
+      const reopenedInputs = page.getByRole('region', { name: 'Planlanan ana rulolar' })
+      await expect(reopenedInputs.getByText(/^Nominal ürün boyu:/))
+        .toHaveText('Nominal ürün boyu: 2500.125 mm')
+      await expectCutToLengthRows(page, [cutLine])
+
+      const freshPlan = await recorderApi.get(`/api/v1/manufacturing/plans/${planId}`)
+      expect(freshPlan.status()).toBe(200)
+      expect((await freshPlan.json()) as unknown).toMatchObject({
+        version: 2,
+        inputs: [{ technicalSnapshot: { lengthMm: '2500.125' } }],
+        cutToLengthSpec,
+      })
+      const history = await recorderApi.get(`/api/v1/manufacturing/plans/${planId}/revisions`)
+      expect(history.status()).toBe(200)
+      const revisions = (await history.json()) as {
+        revisions: Array<{
+          revision: number
+          inputs: Array<{ technicalSnapshot: { lengthMm: string | null } }>
+          cutToLengthSpec: CutToLengthSpecAnswer | null
+        }>
+      }
+      expect(revisions.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+      for (const entry of revisions.revisions) {
+        expect(entry.inputs[0].technicalSnapshot.lengthMm).toBe('2500.125')
+        expect(entry.cutToLengthSpec).toEqual(cutToLengthSpec)
+      }
+    } finally {
+      await productApi.dispose()
+      await recorderApi.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('each canonical process follows the same authorized save and fresh-reopen path', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
@@ -457,7 +794,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       if (firstRequest !== null) return route.fallback()
       firstRequest = route.request()
       const response = await route.fetch({
-        headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+        headers: { ...route.request().headers(), ...developmentIdentityHeaders(context) },
       })
       firstStatus = response.status()
       await route.abort('failed')
@@ -527,7 +864,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       if (committedRequest !== null) return route.fallback()
       committedRequest = route.request()
       const response = await route.fetch({
-        headers: { ...route.request().headers(), 'x-development-user': env.seed.recorderActor },
+        headers: { ...route.request().headers(), ...developmentIdentityHeaders(context) },
       })
       committedStatus = response.status()
       await route.abort('failed')
@@ -861,6 +1198,766 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     }
   })
 
+  test('M01.2: a populated cut-to-length draft keeps its ordered lines through preview, unrelated edit and fresh reopen', async ({ page, context }) => {
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const candidate = await readParentRollCandidate(env, env.seed.rolls.process.CutToLength)
+    const api = await apiAs(env, env.seed.recorderActor)
+    const planId = randomUUID()
+    const lineA = randomUUID()
+    const lineB = randomUUID()
+    const requestedSpec: CutToLengthSpecAnswer = {
+      lines: [
+        { lineId: lineA, sequence: 40, lengthMm: '6000.000', count: 3 },
+        { lineId: lineB, sequence: -7, lengthMm: '2500.5', count: 2 },
+      ],
+    }
+    const storedSpec: CutToLengthSpecAnswer = {
+      lines: [
+        { lineId: lineA, sequence: 40, lengthMm: '6000', count: 3 },
+        { lineId: lineB, sequence: -7, lengthMm: '2500.5', count: 2 },
+      ],
+    }
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      const cutToLength = workCenters.get('CutToLength')!
+      const createdResponse = await api.post('/api/v1/manufacturing/plans', {
+        headers: { 'Idempotency-Key': randomUUID() },
+        data: {
+          planId,
+          workCenterId: cutToLength.id,
+          inputs: [{
+            parentRollId: candidate.labelId,
+            plannedKg: '1000',
+            expectedLabelVersion: candidate.labelVersion,
+          }],
+          target: null,
+          cutToLengthSpec: requestedSpec,
+        },
+      })
+      const createdText = await createdResponse.text()
+      expect(createdResponse.status(), createdText).toBe(201)
+      const created = JSON.parse(createdText) as {
+        process: string
+        status: string
+        version: number
+        cutToLengthSpec: CutToLengthSpecAnswer | null
+      }
+      expect(created).toMatchObject({ process: 'CutToLength', status: 'Draft', version: 1 })
+      expect(created.cutToLengthSpec).toEqual(storedSpec)
+
+      const initialPlanRead = page.waitForResponse(
+        (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(planId)
+          && response.request().method() === 'GET',
+      )
+      const initialHistoryRead = page.waitForResponse(
+        (response) => PLAN_REVISIONS_RE.test(response.url()) && response.url().includes(planId)
+          && response.request().method() === 'GET',
+      )
+      await page.goto(`/uretim/plan/${planId}`)
+      const [initialPlanResponse, initialHistoryResponse] = await Promise.all([initialPlanRead, initialHistoryRead])
+      expect(initialPlanResponse.status()).toBe(200)
+      expect(initialHistoryResponse.status()).toBe(200)
+      expect(((await initialPlanResponse.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toEqual(storedSpec)
+      expect(((await initialHistoryResponse.json()) as {
+        revisions: Array<{ revision: number; cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }).revisions).toMatchObject([{ revision: 0, cutToLengthSpec: storedSpec }])
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      await expectCutToLengthLines(page)
+      await expect(page.getByRole('button', { name: 'Planı onayla', exact: true })).toBeVisible()
+
+      await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+      await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+        .fill('Tarayıcı kabulü: planlanan kg güncellendi')
+      const previewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const body = response.request().postDataJSON() as {
+          inputs?: Array<{ plannedKg?: string }>
+          cutToLengthSpec?: CutToLengthSpecAnswer
+        }
+        return body.inputs?.[0]?.plannedKg === '800'
+      })
+      await page.getByRole('textbox', { name: `${candidate.labelId} planlanan kg` }).fill('800')
+      const preview = await previewAnswer
+      expect(preview.status()).toBe(200)
+      const previewRequest = preview.request().postDataJSON() as {
+        inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+        cutToLengthSpec?: CutToLengthSpecAnswer
+      }
+      expect(previewRequest.inputs).toMatchObject([{
+        parentRollId: candidate.labelId,
+        plannedKg: '800',
+        expectedLabelVersion: candidate.labelVersion,
+      }])
+      expect(previewRequest.cutToLengthSpec).toEqual(storedSpec)
+      await expect(page.getByTestId('plan-preview').getByText(/Önizleme güncel/)).toBeVisible()
+
+      const revisionAnswer = page.waitForResponse(
+        (response) => PLAN_REVISION_RE.test(response.url()) && response.request().method() === 'POST',
+      )
+      const revisedPlanRead = page.waitForResponse(
+        (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(planId)
+          && response.request().method() === 'GET',
+      )
+      const revisedHistoryRead = page.waitForResponse(
+        (response) => PLAN_REVISIONS_RE.test(response.url()) && response.url().includes(planId)
+          && response.request().method() === 'GET',
+      )
+      await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      const revision = await revisionAnswer
+      expect(revision.status()).toBe(200)
+      const revisionRequest = revision.request().postDataJSON() as {
+        expectedVersion: number
+        inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+        reason: string
+        cutToLengthSpec?: CutToLengthSpecAnswer
+      }
+      expect(revisionRequest).toMatchObject({
+        expectedVersion: 1,
+        inputs: [{
+          parentRollId: candidate.labelId,
+          plannedKg: '800',
+          expectedLabelVersion: candidate.labelVersion,
+        }],
+        reason: 'Tarayıcı kabulü: planlanan kg güncellendi',
+      })
+      expect(revisionRequest.cutToLengthSpec).toEqual(storedSpec)
+      expect(((await revision.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toEqual(storedSpec)
+
+      const [revisedPlanResponse, revisedHistoryResponse] = await Promise.all([revisedPlanRead, revisedHistoryRead])
+      expect(revisedPlanResponse.status()).toBe(200)
+      expect(revisedHistoryResponse.status()).toBe(200)
+      expect(((await revisedPlanResponse.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toEqual(storedSpec)
+      const revisedHistory = (await revisedHistoryResponse.json()) as {
+        revisions: Array<{ revision: number; cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }
+      expect(revisedHistory.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+      expect(revisedHistory.revisions.map((entry) => entry.cutToLengthSpec)).toEqual([storedSpec, storedSpec])
+      await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
+        .toBeVisible()
+      await expectCutToLengthLines(page)
+
+      await page.goto('/uretim/emirler')
+      const listAnswer = page.waitForResponse(
+        (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+      )
+      await page.getByRole('link', { name: 'Üretim planları', exact: true }).click()
+      expect((await listAnswer).status()).toBe(200)
+      const reference = planId.slice(-8)
+      const reopenedPlanRead = page.waitForResponse(
+        (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(planId)
+          && response.request().method() === 'GET',
+      )
+      const reopenedHistoryRead = page.waitForResponse(
+        (response) => PLAN_REVISIONS_RE.test(response.url()) && response.url().includes(planId)
+          && response.request().method() === 'GET',
+      )
+      await page.getByRole('row', { name: new RegExp(reference) })
+        .getByRole('link', { name: new RegExp(reference) }).click()
+      const [reopenedPlanResponse, reopenedHistoryResponse] = await Promise.all([reopenedPlanRead, reopenedHistoryRead])
+      expect(reopenedPlanResponse.status()).toBe(200)
+      expect(reopenedHistoryResponse.status()).toBe(200)
+      expect(((await reopenedPlanResponse.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toEqual(storedSpec)
+      const reopenedHistory = (await reopenedHistoryResponse.json()) as {
+        revisions: Array<{ cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }
+      expect(reopenedHistory.revisions.map((entry) => entry.cutToLengthSpec)).toEqual([storedSpec, storedSpec])
+      await expectCutToLengthLines(page)
+      await expect(page.getByRole('button', { name: 'Planı onayla', exact: true })).toBeVisible()
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('M01.3: authored cut lines keep identity, source order and frozen create/revise replays through reopen', async ({ page, context }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const rewritten = await asActor(context, env.seed.recorderActor)
+    const answered = watchAnswers(page)
+    const api = await apiAs(env, env.seed.recorderActor)
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      const cutToLength = workCenters.get('CutToLength')!
+
+      // A stored legacy/null definition stays absent through edit and an unrelated revision.
+      const legacyCandidate = await readParentRollCandidate(env, env.seed.rolls.planRefusal)
+      const legacyPlanId = randomUUID()
+      const legacyCreate = await api.post('/api/v1/manufacturing/plans', {
+        headers: { 'Idempotency-Key': randomUUID() },
+        data: {
+          planId: legacyPlanId,
+          workCenterId: cutToLength.id,
+          inputs: [{
+            parentRollId: legacyCandidate.labelId,
+            plannedKg: '1000',
+            expectedLabelVersion: legacyCandidate.labelVersion,
+          }],
+          target: null,
+        },
+      })
+      expect(legacyCreate.status()).toBe(201)
+      expect(((await legacyCreate.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toBeNull()
+      await page.goto(`/uretim/plan/${legacyPlanId}`)
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      await expect(page.getByRole('region', { name: 'Boy kesme ayrıntısı' })).toHaveCount(0)
+      await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+      await expect(page.getByLabel(/Sıra no$/)).toHaveCount(0)
+      await page.getByRole('textbox', { name: `${legacyCandidate.labelId} planlanan kg` }).fill('900')
+      await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+        .fill('Tarayıcı kabulü: eski kesim tanımı eklenmeden kg güncellendi')
+      const legacyRevisionAnswer = page.waitForResponse(
+        (response) => PLAN_REVISION_RE.test(response.url()) && response.request().method() === 'POST',
+      )
+      await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      const legacyRevision = await legacyRevisionAnswer
+      expect(legacyRevision.status()).toBe(200)
+      const legacyRevisionBody = legacyRevision.request().postDataJSON() as Record<string, unknown>
+      expect(legacyRevisionBody).not.toHaveProperty('cutToLengthSpec')
+      expect(((await legacyRevision.json()) as { cutToLengthSpec: CutToLengthSpecAnswer | null }).cutToLengthSpec)
+        .toBeNull()
+      const storedLegacy = await readPlan(api, legacyPlanId)
+      expect(storedLegacy.response.status()).toBe(200)
+      expect(storedLegacy.body).toMatchObject({
+        planId: legacyPlanId,
+        version: 2,
+        cutToLengthSpec: null,
+      })
+      await expect(page.getByRole('region', { name: 'Boy kesme ayrıntısı' })).toHaveCount(0)
+
+      const legacyPreviewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const body = response.request().postDataJSON() as {
+          workCenterId?: string
+          inputs?: unknown[]
+          cutToLengthSpec?: CutToLengthSpecAnswer | null
+        }
+        return body.workCenterId === cutToLength.id
+          && body.inputs?.length === 1
+          && (body.cutToLengthSpec ?? null) === null
+      })
+      const candidate = await openPlanForm(page, env.seed.rolls.process.CutToLength, cutToLength.id)
+      const legacyPreview = await legacyPreviewAnswer
+      expect(legacyPreview.status()).toBe(200)
+      expect((legacyPreview.request().postDataJSON() as {
+        cutToLengthSpec?: CutToLengthSpecAnswer | null
+      }).cutToLengthSpec ?? null).toBeNull()
+      await expect(page.getByLabel(/Sıra no$/)).toHaveCount(0)
+
+      // An incomplete authored row is neither previewed nor saved and never becomes an implicit clear.
+      const previewCountBeforeInvalid = [...rewritten].filter(
+        (entry) => PLAN_PREVIEW_RE.test(entry.url()) && entry.method() === 'POST',
+      ).length
+      const createCountBeforeInvalid = [...rewritten].filter(
+        (entry) => PLAN_POST_RE.test(entry.url()) && entry.method() === 'POST',
+      ).length
+      await page.getByRole('button', { name: /Kesim satırı ekle/i }).click()
+      await expect(page.getByLabel(/Sıra no$/)).toHaveValue('')
+      await page.getByLabel(/Sıra no$/).fill('40')
+      await page.waitForTimeout(600)
+      expect([...rewritten].filter(
+        (entry) => PLAN_PREVIEW_RE.test(entry.url()) && entry.method() === 'POST',
+      )).toHaveLength(previewCountBeforeInvalid)
+      await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+      await expect(page.getByRole('alert').last()).toBeVisible()
+      expect([...rewritten].filter(
+        (entry) => PLAN_POST_RE.test(entry.url()) && entry.method() === 'POST',
+      )).toHaveLength(createCountBeforeInvalid)
+
+      // A present but invalid row is also neither previewed nor serialized as an implicit clear.
+      await page.getByLabel(/Uzunluk \(mm\)$/).fill('6000.0000')
+      await page.getByLabel(/Adet$/).fill('0')
+      await page.waitForTimeout(600)
+      expect([...rewritten].filter(
+        (entry) => PLAN_PREVIEW_RE.test(entry.url()) && entry.method() === 'POST',
+      )).toHaveLength(previewCountBeforeInvalid)
+      await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+      await expect(page.getByRole('alert').last()).toBeVisible()
+      expect([...rewritten].filter(
+        (entry) => PLAN_POST_RE.test(entry.url()) && entry.method() === 'POST',
+      )).toHaveLength(createCountBeforeInvalid)
+
+      await page.getByLabel(/Uzunluk \(mm\)$/).fill('6000.000')
+      await page.getByLabel(/Adet$/).fill('3')
+      await page.getByRole('button', { name: /Kesim satırı ekle/i }).click()
+      await expect(page.getByLabel(/Sıra no$/).nth(1)).toHaveValue('')
+      await page.getByLabel(/Sıra no$/).nth(1).fill('-7')
+      await page.getByLabel(/Uzunluk \(mm\)$/).nth(1).fill('2500.5')
+
+      const beforeMovePreviewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const spec = (response.request().postDataJSON() as {
+          cutToLengthSpec?: CutToLengthSpecAnswer
+        }).cutToLengthSpec
+        return spec?.lines.map((line) => line.sequence).join(',') === '40,-7'
+          && spec.lines[1]?.count === 2
+      })
+      await page.getByLabel(/Adet$/).nth(1).fill('2')
+      const beforeMovePreview = await beforeMovePreviewAnswer
+      expect(beforeMovePreview.status()).toBe(200)
+      const beforeMoveSpec = (beforeMovePreview.request().postDataJSON() as {
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }).cutToLengthSpec
+
+      const authoredPreviewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const spec = (response.request().postDataJSON() as {
+          cutToLengthSpec?: CutToLengthSpecAnswer
+        }).cutToLengthSpec
+        return spec?.lines.map((line) => line.sequence).join(',') === '-7,40'
+      })
+      const moveSecondUp = page.getByRole('button', { name: /yukarı taşı/i }).last()
+      await moveSecondUp.focus()
+      await moveSecondUp.press('Enter')
+      await expect(page.locator(':focus')).toHaveAccessibleName(/yukarı taşı/i)
+      const authoredPreview = await authoredPreviewAnswer
+      expect(authoredPreview.status()).toBe(200)
+      const authoredSpec = (authoredPreview.request().postDataJSON() as {
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }).cutToLengthSpec
+      expect(authoredSpec.lines).toHaveLength(2)
+      expect(authoredSpec.lines[0]).toMatchObject({ sequence: -7, count: 2 })
+      expect(authoredSpec.lines[1]).toMatchObject({ sequence: 40, count: 3 })
+      expect(Number(authoredSpec.lines[0].lengthMm)).toBe(2500.5)
+      expect(Number(authoredSpec.lines[1].lengthMm)).toBe(6000)
+      for (const line of authoredSpec.lines) {
+        expect(line.lineId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+        expect(line.lineId).toBe(beforeMoveSpec.lines.find((before) => before.sequence === line.sequence)?.lineId)
+      }
+      expect(new Set(authoredSpec.lines.map((line) => line.lineId)).size).toBe(2)
+      await expect(page.getByTestId('plan-preview').getByText(/Önizleme güncel/)).toBeVisible()
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+      await page.setViewportSize({ width: 390, height: 844 })
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+      let committedCreate: Request | null = null
+      let committedCreateStatus: number | null = null
+      await page.route(PLAN_POST_RE, async (route) => {
+        if (committedCreate !== null) return route.fallback()
+        committedCreate = route.request()
+        const response = await route.fetch({
+          headers: { ...route.request().headers(), ...developmentIdentityHeaders(context) },
+        })
+        committedCreateStatus = response.status()
+        await route.abort('failed')
+      })
+
+      await page.getByRole('button', { name: 'Taslak planı kaydet', exact: true }).click()
+      await expect(page.getByText('Sonuç bilinmiyor.', { exact: false })).toBeVisible()
+      expect(committedCreateStatus).toBe(201)
+      const firstCreate = committedCreate as Request | null
+      expect(firstCreate).not.toBeNull()
+      const firstCreateBody = firstCreate!.postDataJSON() as {
+        planId: string
+        workCenterId: string
+        inputs: Array<{ parentRollId: string; plannedKg: string; expectedLabelVersion: string }>
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }
+      const firstCreateKey = firstCreate!.headers()['idempotency-key']
+      expect(firstCreateBody).toMatchObject({
+        workCenterId: cutToLength.id,
+        inputs: [{
+          parentRollId: candidate.labelId,
+          plannedKg: candidate.physicalKg,
+          expectedLabelVersion: candidate.labelVersion,
+        }],
+      })
+      expect(firstCreateBody.cutToLengthSpec).toEqual(authoredSpec)
+      for (const field of [
+        page.getByRole('combobox', { name: 'İş merkezi' }),
+        page.getByRole('textbox', { name: `${env.seed.rolls.process.CutToLength.labelCode} planlanan kg` }),
+        page.getByLabel(/Sıra no$/).nth(0),
+        page.getByLabel(/Sıra no$/).nth(1),
+        page.getByLabel(/Uzunluk \(mm\)$/).nth(0),
+        page.getByLabel(/Uzunluk \(mm\)$/).nth(1),
+        page.getByLabel(/Adet$/).nth(0),
+        page.getByLabel(/Adet$/).nth(1),
+      ]) {
+        await expect(field).toBeDisabled()
+      }
+
+      // Reload proves that the pending-create snapshot, rather than current form state, owns the retry.
+      await page.reload()
+      await expect(page.getByText('Önceki gönderimin sonucu bilinmiyor.', { exact: true })).toBeVisible()
+      const createReplayAnswer = page.waitForResponse(
+        (response) => PLAN_POST_RE.test(response.url()) && response.request().method() === 'POST',
+      )
+      await page.getByRole('button', { name: 'Aynı anahtarla yeniden gönder', exact: true }).click()
+      const createReplay = await createReplayAnswer
+      expect(createReplay.status()).toBe(201)
+      expect(createReplay.headers()['idempotency-replayed']).toBe('true')
+      expect(createReplay.request().headers()['idempotency-key']).toBe(firstCreateKey)
+      expect(createReplay.request().postData()).toBe(firstCreate!.postData())
+      await expect(page.getByText('Önceki kayıtlı sonuç yeniden gösterildi.', { exact: true })).toBeVisible()
+
+      const storedAfterCreate: CutToLengthSpecAnswer = {
+        lines: authoredSpec.lines.map((line) => ({ ...line, lengthMm: String(Number(line.lengthMm)) })),
+      }
+      const storedCreate = await readPlan(api, firstCreateBody.planId)
+      expect(storedCreate.response.status()).toBe(200)
+      expect(storedCreate.body).toMatchObject({
+        planId: firstCreateBody.planId,
+        status: 'Draft',
+        version: 1,
+        cutToLengthSpec: storedAfterCreate,
+      })
+
+      const initialPlanRead = page.waitForResponse(
+        (response) => PLAN_GET_RE.test(response.url()) && response.url().endsWith(firstCreateBody.planId)
+          && response.request().method() === 'GET',
+      )
+      const initialHistoryRead = page.waitForResponse(
+        (response) => PLAN_REVISIONS_RE.test(response.url()) && response.url().includes(firstCreateBody.planId)
+          && response.request().method() === 'GET',
+      )
+      await page.getByRole('link', { name: 'Formu kapat ve planı yeniden aç' }).click()
+      expect((await initialPlanRead).status()).toBe(200)
+      const initialHistoryResponse = await initialHistoryRead
+      expect(initialHistoryResponse.status()).toBe(200)
+      expect(((await initialHistoryResponse.json()) as {
+        revisions: Array<{ revision: number; cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }).revisions).toMatchObject([{ revision: 0, cutToLengthSpec: storedAfterCreate }])
+      await expectCutToLengthRows(page, storedAfterCreate.lines)
+
+      // At phone width the same stored definition is edited with keyboard-operable row movement.
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+      await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+      await expect(page.getByLabel(/Sıra no$/).nth(0)).toHaveValue('-7')
+      await expect(page.getByLabel(/Sıra no$/).nth(1)).toHaveValue('40')
+      await page.getByLabel(/Adet$/).nth(0).fill('5')
+      await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+        .fill('Tarayıcı kabulü: kesim satırları güncellendi')
+
+      const editedPreviewAnswer = page.waitForResponse((response) => {
+        if (!PLAN_PREVIEW_RE.test(response.url()) || response.request().method() !== 'POST') return false
+        const spec = (response.request().postDataJSON() as {
+          cutToLengthSpec?: CutToLengthSpecAnswer
+        }).cutToLengthSpec
+        return spec?.lines.map((line) => line.sequence).join(',') === '40,-7'
+          && spec.lines[1]?.count === 5
+      })
+      const editMoveSecondUp = page.getByRole('button', { name: /yukarı taşı/i }).last()
+      await editMoveSecondUp.focus()
+      await editMoveSecondUp.press('Enter')
+      await expect(page.locator(':focus')).toHaveAccessibleName(/yukarı taşı/i)
+      const editedPreview = await editedPreviewAnswer
+      expect(editedPreview.status()).toBe(200)
+      const editedSpec = (editedPreview.request().postDataJSON() as {
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }).cutToLengthSpec
+      expect(editedSpec).toEqual({
+        lines: [
+          { ...storedAfterCreate.lines[1] },
+          { ...storedAfterCreate.lines[0], count: 5 },
+        ],
+      })
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+
+      let committedRevision: Request | null = null
+      let committedRevisionStatus: number | null = null
+      await page.route(PLAN_REVISION_RE, async (route) => {
+        if (committedRevision !== null) return route.fallback()
+        committedRevision = route.request()
+        const response = await route.fetch({
+          headers: { ...route.request().headers(), ...developmentIdentityHeaders(context) },
+        })
+        committedRevisionStatus = response.status()
+        await route.abort('failed')
+      })
+
+      await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      await expect(page.getByText(
+        'Düzenlemenin sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.',
+        { exact: true },
+      )).toBeVisible()
+      expect(committedRevisionStatus).toBe(200)
+      const firstRevision = committedRevision as Request | null
+      expect(firstRevision).not.toBeNull()
+      const firstRevisionBody = firstRevision!.postDataJSON() as {
+        expectedVersion: number
+        reason: string
+        cutToLengthSpec: CutToLengthSpecAnswer
+      }
+      const firstRevisionKey = firstRevision!.headers()['idempotency-key']
+      expect(firstRevisionBody).toMatchObject({
+        expectedVersion: 1,
+        reason: 'Tarayıcı kabulü: kesim satırları güncellendi',
+        cutToLengthSpec: editedSpec,
+      })
+      expect(firstRevisionBody.cutToLengthSpec).toEqual(editedSpec)
+      await expect(page.getByLabel(/Sıra no$/)).toHaveCount(0)
+
+      await page.reload()
+      await expect(page.getByText(
+        'Düzenlemenin sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.',
+        { exact: true },
+      )).toBeVisible()
+      const revisionReplayAnswer = page.waitForResponse(
+        (response) => PLAN_REVISION_RE.test(response.url()) && response.request().method() === 'POST',
+      )
+      await page.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder', exact: true }).click()
+      const revisionReplay = await revisionReplayAnswer
+      expect(revisionReplay.status()).toBe(200)
+      expect(revisionReplay.headers()['idempotency-replayed']).toBe('true')
+      expect(revisionReplay.request().headers()['idempotency-key']).toBe(firstRevisionKey)
+      expect(revisionReplay.request().postData()).toBe(firstRevision!.postData())
+      await expect(page.getByText('Plan güncellendi (sürüm 2); güncel kayıt ve geçmiş yeniden okundu.', { exact: true }))
+        .toBeVisible()
+      await expectCutToLengthRows(page, editedSpec.lines)
+
+      const historyRegion = page.getByRole('region', { name: 'Plan geçmişi' })
+      const latestRevision = historyRegion.getByRole('listitem', { name: 'Revizyon 1' })
+      await expect(latestRevision).toContainText(/Boy kesme/i)
+      await expect(latestRevision).not.toContainText('Ana rulo sırası değişti.')
+
+      const storedAfterRevision = await readPlan(api, firstCreateBody.planId)
+      expect(storedAfterRevision.response.status()).toBe(200)
+      expect(storedAfterRevision.body).toMatchObject({
+        planId: firstCreateBody.planId,
+        status: 'Draft',
+        version: 2,
+        cutToLengthSpec: editedSpec,
+      })
+      const storedHistoryResponse = await api.get('/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revisions')
+      expect(storedHistoryResponse.status()).toBe(200)
+      const storedHistory = (await storedHistoryResponse.json()) as {
+        revisions: Array<{ revision: number; cutToLengthSpec: CutToLengthSpecAnswer | null }>
+      }
+      expect(storedHistory.revisions.map((entry) => entry.revision)).toEqual([0, 1])
+      expect(storedHistory.revisions.map((entry) => entry.cutToLengthSpec)).toEqual([
+        storedAfterCreate,
+        editedSpec,
+      ])
+
+      // The authored cut definition never broadens the existing actor/company/version fences.
+      const stale = await api.post('/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revision', {
+        data: firstRevisionBody,
+        headers: { 'Idempotency-Key': randomUUID() },
+      })
+      expect(stale.status()).toBe(409)
+      expect((await stale.json()) as Record<string, unknown>).toMatchObject({ code: 'manufacturing_version_conflict' })
+
+      const reader = await apiAs(env, env.seed.readerActor)
+      try {
+        const forbidden = await reader.post('/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revision', {
+          data: { ...firstRevisionBody, expectedVersion: 2 },
+          headers: { 'Idempotency-Key': randomUUID() },
+        })
+        expect(forbidden.status()).toBe(403)
+      } finally {
+        await reader.dispose()
+      }
+
+      const otherCompany = await request.newContext({
+        baseURL: env.apiBaseUrl,
+        extraHTTPHeaders: {
+          'X-Development-User': env.seed.recorderActor,
+          'X-Company-Id': OTHER_COMPANY,
+          'X-Correlation-Id': 'mfg-ci-' + randomUUID(),
+        },
+      })
+      try {
+        const hidden = await otherCompany.post(
+          '/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revision',
+          {
+            data: { ...firstRevisionBody, expectedVersion: 2 },
+            headers: { 'Idempotency-Key': randomUUID() },
+          },
+        )
+        expect(hidden.status()).toBe(403)
+      } finally {
+        await otherCompany.dispose()
+      }
+
+      const finalHistoryResponse = await api.get(
+        '/api/v1/manufacturing/plans/' + firstCreateBody.planId + '/revisions',
+      )
+      expect(finalHistoryResponse.status()).toBe(200)
+      expect(((await finalHistoryResponse.json()) as {
+        revisions: Array<{ revision: number }>
+      }).revisions.map((entry) => entry.revision)).toEqual([0, 1])
+
+      await page.goto('/uretim/emirler')
+      const listAnswer = page.waitForResponse(
+        (response) => PLAN_LIST_RE.test(response.url()) && response.request().method() === 'GET',
+      )
+      await page.getByRole('link', { name: 'Üretim planları', exact: true }).click()
+      expect((await listAnswer).status()).toBe(200)
+      const reference = firstCreateBody.planId.slice(-8)
+      await page.getByRole('row', { name: new RegExp(reference) })
+        .getByRole('link', { name: new RegExp(reference) }).click()
+      await expectCutToLengthRows(page, editedSpec.lines)
+      expect(await page.evaluate(() =>
+        document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
+  test('M01.3: a same-actor new server session cannot replay or replace the earlier session revision', async ({ page, context }) => {
+    const firstSession = randomUUID()
+    const nextSession = randomUUID()
+    const identity = await asSessionActor(context, env.seed.recorderActor, firstSession)
+    const rewritten = identity.rewritten
+    const answered = watchAnswers(page)
+    const api = await apiAs(env, env.seed.recorderActor)
+
+    try {
+      const workCenters = await readCanonicalWorkCenters(api)
+      const cutToLength = workCenters.get('CutToLength')!
+      const candidate = await readParentRollCandidate(env, env.seed.rolls.planRefusal)
+      const planId = randomUUID()
+      const initialSpec: CutToLengthSpecAnswer = {
+        lines: [{ lineId: randomUUID(), sequence: 40, lengthMm: '6000.000', count: 3 }],
+      }
+      const created = await api.post('/api/v1/manufacturing/plans', {
+        headers: { 'Idempotency-Key': randomUUID() },
+        data: {
+          planId,
+          workCenterId: cutToLength.id,
+          inputs: [{
+            parentRollId: candidate.labelId,
+            plannedKg: '1000',
+            expectedLabelVersion: candidate.labelVersion,
+          }],
+          target: null,
+          cutToLengthSpec: initialSpec,
+        },
+      })
+      expect(created.status()).toBe(201)
+
+      await page.goto(`/uretim/plan/${planId}`)
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      const firstIdentity = await readBrowserIdentity(page)
+      expect(firstIdentity.sessionHeader).toBe(firstSession)
+      await page.getByRole('button', { name: 'Planı düzenle', exact: true }).click()
+      await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+      await page.getByLabel(/Adet$/).fill('4')
+      await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+        .fill('Tarayıcı kabulü: yanıt kaybından sonra bozuk bekleyen kayıt')
+      await expect(page.getByTestId('plan-preview').getByText(/Önizleme güncel/)).toBeVisible()
+
+      const revisionAttempts: Array<{ readonly key: string | undefined; readonly body: string | null }> = []
+      let committedStatus: number | null = null
+      await page.route(PLAN_REVISION_RE, async (route) => {
+        const request = route.request()
+        revisionAttempts.push({
+          key: request.headers()['idempotency-key'],
+          body: request.postData(),
+        })
+        if (revisionAttempts.length > 1) {
+          // The acceptance failure is the second command attempt itself; never let it create another real revision.
+          await route.abort('blockedbyclient')
+          return
+        }
+        const response = await route.fetch({
+          headers: { ...request.headers(), ...developmentIdentityHeaders(context) },
+        })
+        committedStatus = response.status()
+        await route.abort('failed')
+      })
+
+      await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      await expect(page.getByText(
+        'Düzenlemenin sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.',
+        { exact: true },
+      )).toBeVisible()
+      expect(committedStatus).toBe(200)
+      expect(revisionAttempts).toHaveLength(1)
+      const firstAttempt = revisionAttempts[0]
+      expect(firstAttempt.key).toMatch(/^[0-9a-f-]{36}$/i)
+      expect(firstAttempt.body).not.toBeNull()
+
+      const stored = await page.evaluate((currentPlanId) => {
+        for (const name of Object.keys(sessionStorage)) {
+          const value = sessionStorage.getItem(name)
+          if (name.startsWith('goymen.manufacturing.plan-revise.v2:') && value?.includes(currentPlanId)) {
+            return { name, value }
+          }
+        }
+        return null
+      }, planId)
+      expect(stored).not.toBeNull()
+      const pending = JSON.parse(stored!.value) as {
+        companyId: string
+        sessionBinding: string
+        snapshot: { idempotencyKey: string; request: Record<string, unknown> }
+      }
+      expect(pending.sessionBinding).toBe(firstIdentity.answer.authenticationSessionBinding)
+      expect(pending.snapshot.idempotencyKey).toBe(firstAttempt.key)
+      expect(JSON.stringify(pending.snapshot.request)).toBe(firstAttempt.body)
+
+      // The first command really moved the server to version 2. The same actor then signs in through a genuinely new
+      // Development/Testing server session. Its binding is different, so the earlier session's durable evidence is
+      // unreadable here; neither the newer GET nor the same actor id may authorize a fresh command.
+      const committed = await readPlan(api, planId)
+      expect(committed.response.status()).toBe(200)
+      expect(committed.body).toMatchObject({
+        planId,
+        version: 2,
+        cutToLengthSpec: { lines: [{ sequence: 40, count: 4 }] },
+      })
+      const freshRead = page.waitForResponse((response) =>
+        PLAN_GET_RE.test(response.url())
+          && response.url().endsWith(planId)
+          && response.request().method() === 'GET')
+      identity.set(env.seed.recorderActor, nextSession)
+      await page.reload()
+      const fresh = await freshRead
+      expect(fresh.status()).toBe(200)
+      expect((await fresh.json()) as Record<string, unknown>).toMatchObject({ planId, version: 2 })
+      const reenteredIdentity = await readBrowserIdentity(page)
+      expect(reenteredIdentity.sessionHeader).toBe(nextSession)
+      expect(reenteredIdentity.answer.userId).toBe(firstIdentity.answer.userId)
+      expect(reenteredIdentity.answer.authenticationSessionBinding)
+        .not.toBe(firstIdentity.answer.authenticationSessionBinding)
+      await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Aynı istek ve anahtarla yeniden gönder', exact: true }))
+        .toHaveCount(0)
+      expect(await page.evaluate((name) => sessionStorage.getItem(name), stored!.name)).toBe(stored!.value)
+
+      // Exercise any mistakenly exposed edit path. A correct fail-closed implementation can hide or disable it; if it
+      // is actionable, this deliberately valid change must still produce no second/new-key revision request.
+      const edit = page.getByRole('button', { name: 'Planı düzenle', exact: true })
+      if (await edit.count() > 0 && await edit.isEnabled()) {
+        await edit.click()
+        await expect(page.getByRole('heading', { name: 'Taslak planı düzenle' })).toBeVisible()
+        await page.getByLabel(/Adet$/).fill('5')
+        await page.getByRole('textbox', { name: 'Düzenleme gerekçesi' })
+          .fill('Bozuk bekleyen kayıt varken yeni komut engellenmeli')
+        await expect(page.getByTestId('plan-preview').getByText(/Önizleme güncel/)).toBeVisible()
+        await page.getByRole('button', { name: 'Değişikliği kaydet', exact: true }).click()
+      }
+      await page.waitForTimeout(400)
+      expect(revisionAttempts, 'another server session must not mint a new revision key').toEqual([
+        firstAttempt,
+      ])
+
+      const history = await api.get(`/api/v1/manufacturing/plans/${planId}/revisions`)
+      expect(history.status()).toBe(200)
+      expect(((await history.json()) as { revisions: Array<{ revision: number }> }).revisions
+        .map((entry) => entry.revision)).toEqual([0, 1])
+    } finally {
+      await api.dispose()
+    }
+    expectEveryAnswerRewritten(answered, rewritten)
+  })
+
   test('a draft plan is edited, closed and reopened with its history, and the approval and order read the edit', async ({ page, context }) => {
     const rewritten = await asActor(context, env.seed.recorderActor)
     const answered = watchAnswers(page)
@@ -913,6 +2010,7 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
       },
       thicknessMm: '1',
       widthMm: '1000',
+      lengthMm: null,
       unitKg: {
         companyId: '10000000-0000-0000-0000-000000000001',
         unitId: 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983',
@@ -924,6 +2022,8 @@ test.describe('MFG plan create and reopen (real Inventory parent roll)', () => {
     })
     expect(capturedTechnicalSnapshot).toEqual(createdTechnicalSnapshot)
     await expect(page.getByRole('heading', { name: 'Plan yeniden açıldı' })).toBeVisible()
+    await expect(storedPlanInputRows(page).getByText(/^Nominal ürün boyu:/))
+      .toHaveText('Nominal ürün boyu: kaydedilmemiş')
     await expect(page.getByText('Plan oluşturulduğundan beri düzenlenmedi.', { exact: true })).toBeVisible()
 
     // Edit: the planned kg and a target change, with a reason; the roll keeps its accepted label version.

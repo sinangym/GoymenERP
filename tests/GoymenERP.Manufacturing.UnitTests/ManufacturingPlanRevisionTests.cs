@@ -142,6 +142,44 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Cut_to_length_revision_replaces_the_whole_ordered_spec_and_restore_replays_it_immutably()
+    {
+        var lineA = Guid.Parse("50000000-0000-0000-0000-000000000001");
+        var lineB = Guid.Parse("50000000-0000-0000-0000-000000000002");
+        var original = new CutToLengthSpec(
+        [
+            new CutToLengthLine(lineA, 40, 6000m, 3),
+            new CutToLengthLine(lineB, -7, 2500.5m, 2),
+        ]);
+        var replacement = new CutToLengthSpec(
+        [
+            new CutToLengthLine(lineB, 90, 2500.5m, 4),
+            new CutToLengthLine(lineA, 5, 6000m, 1),
+        ]);
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.CutToLength,
+            Inputs(RollA, 1000m), cutToLengthSpec: original);
+
+        plan.Revise(1, WorkCenter, ManufacturingProcess.CutToLength, Inputs(RollA, 1000m), null, replacement);
+
+        Assert.Equal((2L, 1), (plan.Version, plan.RevisionCount));
+        Assert.Equal([(lineB, 90, 2500.5m, 4), (lineA, 5, 6000m, 1)],
+            plan.CutToLengthSpec!.Lines.Select(line => (line.LineId, line.Sequence, line.LengthMm, line.Count)));
+        Assert.Equal([(lineA, 40, 6000m, 3), (lineB, -7, 2500.5m, 2)],
+            original.Lines.Select(line => (line.LineId, line.Sequence, line.LengthMm, line.Count)));
+
+        var restored = ProductionPlan.Restore(plan.Id, Company, WorkCenter, ManufacturingProcess.CutToLength,
+            Inputs(RollA, 1000m), target: null, approvedByUserId: null, approvedAtUtc: null, version: 2,
+            revisions: [new PlanRevisionContent(WorkCenter, Inputs(RollA, 1000m), null, replacement)],
+            cutToLengthSpec: original);
+        Assert.Equal(plan.CutToLengthSpec.Lines, restored.CutToLengthSpec!.Lines);
+        Assert.Equal(ManufacturingRuleCodes.PlanRevisionNoChange,
+            Assert.Throws<ManufacturingRuleException>(() => restored.Revise(2, WorkCenter,
+                ManufacturingProcess.CutToLength, Inputs(RollA, 1000m), null,
+                new CutToLengthSpec(replacement.Lines.Select(line =>
+                    new CutToLengthLine(line.LineId, line.Sequence, line.LengthMm, line.Count))))).Code);
+    }
+
+    [Fact]
     public void A_stored_plan_replays_its_revisions_before_its_approval()
     {
         var revisions = new[]
@@ -319,6 +357,56 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         // The reason is trimmed before it is hashed, so the same words are the same request.
         Assert.Equal((ManufacturingApiStatus.Ok, true, 2L), (replay.Status, replay.IsReplay, replay.Resource!.Version));
         Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict), (other.Status, other.Code));
+        Assert.Single(fixture.Store.Writes);
+        Assert.Equal(1, fixture.Store.Plans[plan.Id].RevisionCount);
+    }
+
+    [Fact]
+    public async Task Cut_to_length_revision_round_trips_order_and_sequence_and_hashes_the_whole_spec()
+    {
+        var fixture = new Fixture();
+        fixture.WorkCenters.Kind = "CutToLength";
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.CutToLength,
+            Inputs(RollA, 1000m), cutToLengthSpec: new CutToLengthSpec(
+            [
+                new CutToLengthLine(Guid.Parse("50000000-0000-0000-0000-000000000001"), 40, 6000m, 3),
+            ]));
+        fixture.Store.Plans[plan.Id] = plan;
+        var request = Request(1, WorkCenter, "900", "7") with
+        {
+            CutToLengthSpec = new CutToLengthSpecRequestV1(
+            [
+                new CutToLengthLineRequestV1(
+                    Guid.Parse("50000000-0000-0000-0000-000000000002"), -7, "2500.500", 2),
+                new CutToLengthLineRequestV1(
+                    Guid.Parse("50000000-0000-0000-0000-000000000001"), 90, "6000", 1),
+            ]),
+        };
+
+        var first = await fixture.Service.RevisePlanAsync(
+            plan.Id, request, "cut-revision", Permission, CancellationToken.None);
+        var replay = await fixture.Service.RevisePlanAsync(
+            plan.Id, request, "cut-revision", Permission, CancellationToken.None);
+        var changedSequence = await fixture.Service.RevisePlanAsync(
+            plan.Id,
+            request with
+            {
+                CutToLengthSpec = new CutToLengthSpecRequestV1(
+                [
+                    request.CutToLengthSpec!.Lines![0] with { Sequence = -8 },
+                    request.CutToLengthSpec.Lines[1],
+                ]),
+            },
+            "cut-revision", Permission, CancellationToken.None);
+
+        Assert.Equal((ManufacturingApiStatus.Ok, false), (first.Status, first.IsReplay));
+        Assert.Equal(
+            [(-7, "2500.5", 2), (90, "6000", 1)],
+            first.Resource!.CutToLengthSpec!.Lines.Select(line => (line.Sequence, line.LengthMm, line.Count)));
+        Assert.Equal((ManufacturingApiStatus.Ok, true, 2L),
+            (replay.Status, replay.IsReplay, replay.Resource!.Version));
+        Assert.Equal((ManufacturingApiStatus.Conflict, ManufacturingApiCodes.IdempotencyConflict),
+            (changedSequence.Status, changedSequence.Code));
         Assert.Single(fixture.Store.Writes);
         Assert.Equal(1, fixture.Store.Plans[plan.Id].RevisionCount);
     }
@@ -577,6 +665,47 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public async Task Cut_to_length_history_returns_each_immutable_ordered_spec_and_legacy_absence()
+    {
+        var fixture = new Fixture();
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.CutToLength,
+            Inputs(RollA, 1000m), cutToLengthSpec: new CutToLengthSpec(
+            [
+                new CutToLengthLine(Guid.Parse("50000000-0000-0000-0000-000000000001"), 40, 6000m, 3),
+                new CutToLengthLine(Guid.Parse("50000000-0000-0000-0000-000000000002"), -7, 2500.5m, 2),
+            ]));
+        fixture.Store.Plans[plan.Id] = plan;
+        fixture.Store.History[plan.Id] =
+        [
+            new ManufacturingPlanRevision(0, 1, WorkCenter, Inputs(RollA, 1000m), null,
+                null, null, At, plan.CutToLengthSpec),
+            new ManufacturingPlanRevision(1, 2, WorkCenter, Inputs(RollA, 950m), null,
+                "Kesim sırası değişti", Actor.ToString("D"), At.AddMinutes(1), new CutToLengthSpec(
+                [
+                    new CutToLengthLine(Guid.Parse("50000000-0000-0000-0000-000000000002"), 90, 2500.5m, 4),
+                    new CutToLengthLine(Guid.Parse("50000000-0000-0000-0000-000000000001"), 5, 6000m, 1),
+                ])),
+            new ManufacturingPlanRevision(2, 3, WorkCenter, Inputs(RollA, 900m), null,
+                "Eski istemci kaydı", Actor.ToString("D"), At.AddMinutes(2)),
+        ];
+
+        var result = await fixture.Service.ListPlanRevisionsAsync(plan.Id, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, result.Status);
+        Assert.Equal(
+            [(40, "6000", 3), (-7, "2500.5", 2)],
+            result.Resource!.Revisions[0].CutToLengthSpec!.Lines.Select(line =>
+                (line.Sequence, line.LengthMm, line.Count)));
+        Assert.Equal(
+            [(90, "2500.5", 4), (5, "6000", 1)],
+            result.Resource.Revisions[1].CutToLengthSpec!.Lines.Select(line =>
+                (line.Sequence, line.LengthMm, line.Count)));
+        Assert.Null(result.Resource.Revisions[2].CutToLengthSpec);
+        Assert.Empty(fixture.Store.Writes);
+        Assert.Empty(fixture.Store.Commands);
+    }
+
     // ---- Helpers -----------------------------------------------------------------------------------------------
 
     private static ProductionPlan Draft() =>
@@ -615,6 +744,7 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
         new(Guid.Parse("f2000000-0000-0000-0000-000000000002"), "3", "COIL-SHEET", "template-r3"),
         thicknessMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
         widthMm.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        null,
         new(Company, SettingsUnitIdentitiesV1.Kilogram, "kg",
             Guid.Parse("4a790fdc-2a6b-5126-835f-d3a13d28b71c"), "1"),
         DateOnly.FromDateTime(At.UtcDateTime));
@@ -870,12 +1000,19 @@ public sealed class ManufacturingPlanRevisionTests(ITestOutputHelper output)
 
         public Task<ProductionPlan> RevisePlanAsync(Guid planId, long expectedVersion, Guid workCenterId,
             ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
-            string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+            string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+            RevisePlanWithCutLinesAsync(planId, expectedVersion, workCenterId, workCenterProcess, inputs, target,
+                cutToLengthSpec: null, reason, metadata, cancellationToken);
+
+        public Task<ProductionPlan> RevisePlanWithCutLinesAsync(Guid planId, long expectedVersion, Guid workCenterId,
+            ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
+            CutToLengthSpec? cutToLengthSpec, string reason, ManufacturingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
         {
             calls.Add("revise");
             var plan = Plans.GetValueOrDefault(planId)
                 ?? throw new ManufacturingStoreException(ManufacturingStoreCodes.PlanNotFound, "yok");
-            plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target);
+            plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target, cutToLengthSpec);
             LastRevision = (workCenterId, workCenterProcess, reason);
             if (metadata.Completion is { } completion)
             {

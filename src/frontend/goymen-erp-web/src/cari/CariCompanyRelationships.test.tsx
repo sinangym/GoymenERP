@@ -31,6 +31,7 @@ const IDENTITY = {
   displayName: 'Kullanıcı A',
   email: null,
   allowedCompanyIds: [A_ID, B_ID],
+  authenticationSessionBinding: null,
 }
 const COMPANY_A = { id: A_ID, code: 'GDC', legalName: 'Göymen Demir Çelik', isPlaceholder: false }
 const COMPANY_B = { id: B_ID, code: 'GSP', legalName: 'Göymen Sac Profil', isPlaceholder: false }

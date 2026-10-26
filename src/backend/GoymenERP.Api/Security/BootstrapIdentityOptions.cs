@@ -8,6 +8,8 @@ public sealed class BootstrapIdentityOptions
 
     public string HeaderName { get; init; } = "X-Development-User";
 
+    public string SessionHeaderName { get; init; } = "X-Development-Session";
+
     public List<BootstrapUser> Users { get; init; } = [];
 }
 

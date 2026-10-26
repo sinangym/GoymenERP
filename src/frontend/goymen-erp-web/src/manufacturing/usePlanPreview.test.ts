@@ -4,6 +4,8 @@
  * - an in-flight request for an older content is aborted, and its late answer never lands;
  * - the last answer is kept with the snapshot it answered and is `current` only for that snapshot;
  * - an incomplete form sends nothing and says why; a refusal replaces "current" with its reason.
+ * - M01.2: a plan's stored cut lines travel exactly as given in the body AND the cache identity, so an answer for
+ *   another cut definition is never the current one; a plan without them sends no member at all.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -71,12 +73,22 @@ const authBoundary: AuthBoundary = {
   report: reportSecurity,
 }
 
+/** Test data only (signed, non-monotonic sequences in source order): not a business default. */
+const CUT_LINES = [
+  { lineId: 'c0000000-0000-4000-8000-000000000002', sequence: 40, lengthMm: '6000', count: 3 },
+  { lineId: 'c0000000-0000-4000-8000-000000000001', sequence: -7, lengthMm: '2500.5', count: 2 },
+]
+
 function row(plannedKg: string): PlanPreviewFormRow {
   return { parentRollId: ROLL, label: 'LBL-0007', labelVersion: '7', plannedKg }
 }
 
 function input(plannedKg: string): PlanPreviewInput {
   return planPreviewInput(WORK_CENTER, [row(plannedKg)], '', '')
+}
+
+function cutInput(lines: readonly (typeof CUT_LINES)[number][]): PlanPreviewInput {
+  return planPreviewInput(WORK_CENTER, [row('5')], '', '', undefined, { lines })
 }
 
 function respond(index: number, status = 200, body?: unknown) {
@@ -190,6 +202,64 @@ describe('usePlanPreview', () => {
       ...COMMERCIAL_CONTEXT,
       accountVersion: 'account:v03/β',
     })
+  })
+
+  it('keeps the stored cut lines in the body and the cache identity; another cut definition is never current', async () => {
+    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
+      initialProps: { value: cutInput(CUT_LINES) },
+    })
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    expect(pending).toHaveLength(1)
+    expect(pending[0].request.cutToLengthSpec).toEqual({ lines: CUT_LINES })
+    respond(0)
+    await flush()
+    expect(result.current.current).toBe(true)
+    expect(result.current.last?.request.cutToLengthSpec).toEqual({ lines: CUT_LINES })
+
+    // The same definition in new objects is the same content: not sent again, still current.
+    rerender({ value: cutInput(CUT_LINES.map((line) => ({ ...line }))) })
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS * 2)
+    expect(pending).toHaveLength(1)
+    expect(result.current.current).toBe(true)
+
+    // The same lines in another order are another definition: the stored answer stops being current at once.
+    const reordered = [...CUT_LINES].reverse()
+    rerender({ value: cutInput(reordered) })
+    expect(result.current.current).toBe(false)
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    expect(pending[1].request.cutToLengthSpec).toEqual({ lines: reordered })
+
+    // Renumbered while that request is in flight: it is aborted and its late answer never lands.
+    const renumbered = CUT_LINES.map((line, index) => ({ ...line, sequence: index + 1 }))
+    rerender({ value: cutInput(renumbered) })
+    expect(pending[1].signal.aborted).toBe(true)
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    respond(1)
+    await flush()
+    expect(result.current.current).toBe(false)
+    expect(result.current.last?.request.cutToLengthSpec).toEqual({ lines: CUT_LINES })
+
+    respond(2)
+    await flush()
+    expect(result.current.current).toBe(true)
+    expect(result.current.last?.request.cutToLengthSpec).toEqual({ lines: renumbered })
+  })
+
+  it('a legacy content without cut lines and the same content with them are different previews', async () => {
+    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
+      initialProps: { value: input('5') },
+    })
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    expect(pending[0].request).not.toHaveProperty('cutToLengthSpec')
+    respond(0)
+    await flush()
+    expect(result.current.current).toBe(true)
+
+    rerender({ value: cutInput(CUT_LINES) })
+    expect(result.current.current).toBe(false)
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    expect(pending).toHaveLength(2)
+    expect(pending[1].request.cutToLengthSpec).toEqual({ lines: CUT_LINES })
   })
 
   it('aborts the in-flight request for an older content and never lets its late answer land', async () => {
@@ -343,6 +413,32 @@ describe('planPreviewInput', () => {
     })
   })
 
+  it('carries stored cut lines exactly as given and omits the member for a legacy or uncut plan', () => {
+    const spec = { lines: CUT_LINES }
+    const ready = planPreviewInput(WORK_CENTER, [row('12.5')], '', '', undefined, spec)
+    // Order, ids, signed sequences, canonical lengths and counts as given: nothing sorted, renumbered or defaulted.
+    expect(ready).toEqual({
+      type: 'ready',
+      request: {
+        workCenterId: WORK_CENTER,
+        inputs: [{ parentRollId: ROLL, plannedKg: '12.5', expectedLabelVersion: '7' }],
+        target: null,
+        cutToLengthSpec: { lines: CUT_LINES },
+      },
+    })
+    // A frozen copy: a later change to the caller's object cannot reach the snapshot.
+    expect(ready.type === 'ready' ? ready.request.cutToLengthSpec : null).not.toBe(spec)
+
+    for (const absent of [undefined, null]) {
+      const legacy = planPreviewInput(WORK_CENTER, [row('12.5')], '', '', undefined, absent)
+      expect(legacy.type).toBe('ready')
+      expect(legacy.type === 'ready' ? legacy.request : null).not.toHaveProperty('cutToLengthSpec')
+      expect(legacy.type === 'ready' ? legacy.request : null).not.toHaveProperty('slittingSpec')
+    }
+    // The cut lines never make an incomplete form previewable.
+    expect(planPreviewInput(WORK_CENTER, [row('0')], '', '', undefined, spec).type).toBe('incomplete')
+  })
+
   it('keeps slitting rows ordered and validates width, count and optional winding target before preview', () => {
     expect(planPreviewInput(WORK_CENTER, [row('12.5')], '', '', {
       enabled: true,
@@ -390,6 +486,90 @@ describe('planPreviewInput', () => {
       type: 'incomplete',
       reasons: ['Bant 1: bant adedi 1 ile 2147483647 arasında tam sayı olmalıdır.'],
     })
+  })
+})
+
+describe('planPreviewInput — authored cut lines (M01.3)', () => {
+  const ID_A = 'c0000000-0000-4000-8000-0000000000aa'
+  const ID_B = 'c0000000-0000-4000-8000-0000000000bb'
+  function authored(...lines: { lineId: string; sequence: string; lengthMm: string; count: string }[]) {
+    return { authored: lines.map((line, index) => ({ ...line, label: `Kesim satırı ${index + 1}` })) }
+  }
+
+  it('sends explicit signed sequences, the typed lengths and counts in source order, with no renumbering or rounding', () => {
+    const input = planPreviewInput(WORK_CENTER, [row('12.5')], '', '', undefined, authored(
+      { lineId: ID_B, sequence: '40', lengthMm: '6000.000', count: '3' },
+      { lineId: ID_A, sequence: '-7', lengthMm: '2500.5', count: '2' },
+    ))
+    expect(input).toEqual({
+      type: 'ready',
+      request: {
+        workCenterId: WORK_CENTER,
+        inputs: [{ parentRollId: ROLL, plannedKg: '12.5', expectedLabelVersion: '7' }],
+        target: null,
+        cutToLengthSpec: {
+          lines: [
+            { lineId: ID_B, sequence: 40, lengthMm: '6000.000', count: 3 },
+            { lineId: ID_A, sequence: -7, lengthMm: '2500.5', count: 2 },
+          ],
+        },
+      },
+    })
+    // The int32 bounds are the contract's, not a business range: both ends are lossless.
+    expect(planPreviewInput(WORK_CENTER, [row('1')], '', '', undefined, authored(
+      { lineId: ID_A, sequence: '-2147483648', lengthMm: '0.001', count: '2147483647' },
+      { lineId: ID_B, sequence: '2147483647', lengthMm: '1', count: '1' },
+    ))).toMatchObject({
+      type: 'ready',
+      request: { cutToLengthSpec: { lines: [{ sequence: -2147483648, count: 2147483647 }, { sequence: 2147483647 }] } },
+    })
+  })
+
+  it('an incomplete or invalid authored row issues no preview and never becomes an omitted or cleared definition', () => {
+    const cases: readonly [Parameters<typeof authored>[0], string][] = [
+      [{ lineId: ID_A, sequence: '', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '-0', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '1.5', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '2147483648', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '-2147483649', lengthMm: '6000', count: '3' }, 'Kesim satırı 1: Sıra no'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '', count: '3' }, 'Kesim satırı 1: uzunluk'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '6000.0000', count: '3' }, 'Kesim satırı 1: uzunluk'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '0', count: '3' }, 'Kesim satırı 1: uzunluk'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '-5', count: '3' }, 'Kesim satırı 1: uzunluk'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '6000', count: '' }, 'Kesim satırı 1: adet'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '6000', count: '0' }, 'Kesim satırı 1: adet'],
+      [{ lineId: ID_A, sequence: '40', lengthMm: '6000', count: '2147483648' }, 'Kesim satırı 1: adet'],
+    ]
+    for (const [line, reason] of cases) {
+      const input = planPreviewInput(WORK_CENTER, [row('12.5')], '', '', undefined, authored(line))
+      expect(input.type, JSON.stringify(line)).toBe('incomplete')
+      expect(input.type === 'incomplete' ? input.reasons.join(' ') : '', JSON.stringify(line)).toContain(reason)
+    }
+    // An authored definition with no row is a refusal, not "no cut lines".
+    const empty = planPreviewInput(WORK_CENTER, [row('12.5')], '', '', undefined, { authored: [] })
+    expect(empty).toEqual({ type: 'incomplete', reasons: ['Boy kesme tanımı için en az bir kesim satırı gereklidir.'] })
+  })
+
+  it('an invalid authored row sends nothing and leaves the last answer not current', async () => {
+    const valid = planPreviewInput(WORK_CENTER, [row('5')], '', '', undefined, authored(
+      { lineId: ID_A, sequence: '40', lengthMm: '6000', count: '3' },
+    ))
+    const invalid = planPreviewInput(WORK_CENTER, [row('5')], '', '', undefined, authored(
+      { lineId: ID_A, sequence: '40', lengthMm: '6000', count: '0' },
+    ))
+    const { result, rerender } = renderHook(({ value }) => usePlanPreview(COMPANY, value, authBoundary), {
+      initialProps: { value: valid },
+    })
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS)
+    respond(0)
+    await flush()
+    expect(result.current.current).toBe(true)
+
+    rerender({ value: invalid })
+    await elapse(PLAN_PREVIEW_DEBOUNCE_MS * 2)
+    expect(pending).toHaveLength(1)
+    expect(result.current.current).toBe(false)
+    expect(result.current.status.type).toBe('incomplete')
   })
 })
 
