@@ -39,6 +39,7 @@ public static class WorkModuleExtensions
         });
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<WorkDesiredStateStoreV2>();
+        services.AddScoped<InventoryShipmentEvidenceStoreV1>();
         return services;
     }
 
