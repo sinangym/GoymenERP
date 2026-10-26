@@ -24,13 +24,13 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "213d2e710c7adccb01a6eb0ce67ada82979aae9ec91ce742e178d9e9a15d9e34"
+    "b6a7efaa216e80647a4ed586b7c44b19bc63f321f2c084e05e9cdaffa064ac76"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
-    "5a37d122520aee8e55e2a2c79570dfc9df131b6737d179d8acff001145b0490d"
+    "cd305f39ce3483947044ca1a28bb9ce9deea69c820e5b7f7d1a00e1777e7234d"
 )
 REVIEWED_RELEASE_MANIFEST_JOB_FINGERPRINT = (
-    "66546a275450bddd4676ce5552f45a146e3005380bb6e967e895b58c70c7a416"
+    "d20f56609a1f034815a34502584a5258c711d1f3ec65195c5c5f5d467e2b1138"
 )
 
 
@@ -830,7 +830,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
         summaries = {
             "backend-build": (
                 "Produce secret-free backend test summary",
-                "Preserve secret-free backend test summary locally",
+                "Upload secret-free backend test summary",
                 "artifacts/ci-test-results/backend",
                 "artifacts/ci-safe-test-summary/backend.json",
                 "artifacts/ci-safe-test-summary/backend.json",
@@ -840,7 +840,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             "backend-test-group": (
                 "Produce secret-free backend group summary",
-                "Preserve secret-free backend group summary locally",
+                "Upload secret-free backend group summary",
                 '"artifacts/ci-test-results/backend-groups/${{ matrix.group }}"',
                 '"artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json"',
                 "artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
@@ -850,7 +850,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             "relational-shard": (
                 "Produce secret-free relational shard summary",
-                "Preserve secret-free relational shard summary locally",
+                "Upload secret-free relational shard summary",
                 "artifacts/ci-test-results/relational",
                 f'"artifacts/ci-safe-test-summary/shard-{shard_ref}.json"',
                 f"artifacts/ci-safe-test-summary/shard-{shard_ref}.json",
@@ -860,7 +860,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             "relational-rcsi": (
                 "Produce secret-free RCSI test summary",
-                "Preserve secret-free RCSI test summary locally",
+                "Upload secret-free RCSI test summary",
                 "artifacts/ci-test-results/relational",
                 "artifacts/ci-safe-test-summary/relational.json",
                 "artifacts/ci-safe-test-summary/relational.json",
@@ -903,39 +903,37 @@ class SafeTrxSummaryTests(unittest.TestCase):
                     if job_name == "backend-test-group"
                     else upload_path
                 )
-                local_step = self._workflow_step_lines(body, upload_name)
-                self.assertIn(f"if: always() && hashFiles('{upload_glob}') != ''", local_step)
-                self.assertIn(f"LOCAL_EVIDENCE_FILE: {upload_path}", local_step)
-                if job_name == "backend-build":
-                    self.assertIn("run: &publish-local-evidence |", local_step)
-                    for required in (
-                        'tested="$(git rev-parse HEAD)"',
-                        "printf 'schemaVersion=1\\nworkflow=ci\\nscope=%s\\nrunId=%s\\n"
-                        "runAttempt=%s\\nsourceHead=%s\\ntestedCommit=%s\\nrunnerName=%s\\n"
-                        "file=%s\\nbytes=%s\\nsha256=%s\\n' \\",
-                        'mv -T --no-clobber -- "$temporary" "$destination"',
-                        'if [[ "$lock_acquired" = true ]]; then rmdir -- "$lock" 2>/dev/null || true; fi',
-                        'test ! -e "$temporary"',
-                    ):
-                        self.assertIn(required, local_step)
-                else:
-                    self.assertIn("run: *publish-local-evidence", local_step)
-                self.assertNotIn("actions/upload-artifact@v7", body)
+                self.assertEqual(
+                    self._workflow_step_lines(body, upload_name),
+                    [
+                        f"if: always() && hashFiles('{upload_glob}') != ''",
+                        "uses: actions/upload-artifact@v7",
+                        "with:",
+                        f"name: {artifact_name}",
+                        f"path: {upload_path}",
+                        "if-no-files-found: error",
+                        "retention-days: 7",
+                    ],
+                )
+                self.assertEqual(
+                    body.count("actions/upload-artifact@v7"),
+                    2 if job_name in ("relational-shard", "backend-test-group") else 1,
+                )
             except AssertionError as error:
                 raise AssertionError(f"{job_name}: {error}") from error
 
         backend_worker = jobs["backend-test-group"]
         self.assertEqual(
             self._workflow_step_lines(
-                backend_worker, "Preserve exact backend group proof locally"
+                backend_worker, "Upload exact backend group proof"
             ),
             [
-                "shell: bash",
-                "env:",
-                "LOCAL_EVIDENCE_SCOPE: backend-proof-${{ matrix.group }}",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
-                "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
-                "run: *publish-local-evidence",
+                "uses: actions/upload-artifact@v7",
+                "with:",
+                "name: ci-backend-test-group-proof-${{ matrix.group }}",
+                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
+                "if-no-files-found: error",
+                "retention-days: 7",
             ],
         )
         self.assertIn(
@@ -944,14 +942,14 @@ class SafeTrxSummaryTests(unittest.TestCase):
         )
         shard = jobs["relational-shard"]
         self.assertEqual(
-            self._workflow_step_lines(shard, "Preserve exact SQL shard proof locally"),
+            self._workflow_step_lines(shard, "Upload exact SQL shard proof"),
             [
-                "shell: bash",
-                "env:",
-                f"LOCAL_EVIDENCE_SCOPE: relational-proof-{shard_ref}",
-                f"LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-{shard_ref}.json",
-                "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
-                "run: *publish-local-evidence",
+                "uses: actions/upload-artifact@v7",
+                "with:",
+                f"name: ci-relational-shard-proof-{shard_ref}",
+                f"path: artifacts/ci-relational-proofs/proof-{shard_ref}.json",
+                "if-no-files-found: error",
+                "retention-days: 7",
             ],
         )
         self.assertIn(
@@ -975,22 +973,17 @@ class SafeTrxSummaryTests(unittest.TestCase):
             re.findall(r"^      - name: (.+)$", aggregate, re.M),
             [
                 "Verify relational shard proof parser",
-                "Restore exact SQL shard proofs from local evidence",
+                "Download exact SQL shard proofs",
                 "Verify complete SQL Server relational acceptance",
             ],
         )
         self.assertEqual(
-            self._workflow_step_lines(aggregate, "Restore exact SQL shard proofs from local evidence"),
+            self._workflow_step_lines(aggregate, "Download exact SQL shard proofs"),
             [
-                "shell: bash",
-                "env:",
-                "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
-                "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
-                "LOCAL_PROOF_IDS: A,B,C",
-                "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
-                "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
-                "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
-                "run: *restore-local-proofs",
+                "uses: actions/download-artifact@v8",
+                "with:",
+                "pattern: ci-relational-shard-proof-*",
+                "path: artifacts/ci-relational-proofs",
             ],
         )
         self.assertEqual(
@@ -1013,9 +1006,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 self.assertNotIn("tools/ci/summarize_trx.py", body)
                 self.assertNotIn("actions/upload-artifact@v7", body)
         self.assertEqual(workflow.count("tools/ci/summarize_trx.py"), 4)
-        self.assertNotIn("actions/upload-artifact@", workflow)
-        self.assertNotIn("actions/download-artifact@", workflow)
-        self.assertEqual(workflow.count("/home/ci/local-ci-evidence"), 2)
+        self.assertEqual(workflow.count("actions/upload-artifact@v7"), 6)
         self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*ci-test-results")
         self.assertNotRegex(workflow, r"(?m)^\s*path:\s*[^\n]*\.trx\b")
         self.assertIn("permissions:\n  contents: read", workflow)
@@ -1069,7 +1060,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
         no_op_job = (
             "    name: Recovery surface inventory exact-source proof\n"
-            "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
+            "    runs-on: ubuntu-latest\n"
             "    steps:\n"
             "      - run: echo ok\n\n"
         )
@@ -1255,8 +1246,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "job condition disabled",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n    if: false\n",
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n    if: false\n",
             ),
             (
                 "proof step condition disabled",
@@ -1376,7 +1367,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
         no_op_job = (
             "    name: Release manifest exact-source proof\n"
-            "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
+            "    runs-on: ubuntu-latest\n"
             "    steps:\n"
             "      - run: echo ok\n\n"
         )
@@ -1570,8 +1561,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "job condition disabled",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n    if: false\n",
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n    if: false\n",
             ),
             (
                 "proof step condition disabled",
@@ -1654,28 +1645,28 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ("missing head", '--source-head "', '--missing-source-head "'),
             (
                 "mismatched summary upload",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend.json",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/relational.json",
+                "path: artifacts/ci-safe-test-summary/backend.json",
+                "path: artifacts/ci-safe-test-summary/relational.json",
             ),
             (
                 "raw TRX upload",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend.json",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-test-results/backend/**/*.trx",
+                "path: artifacts/ci-safe-test-summary/backend.json",
+                "path: artifacts/ci-test-results/backend/**/*.trx",
             ),
             (
                 "directory upload",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend.json",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/",
+                "path: artifacts/ci-safe-test-summary/backend.json",
+                "path: artifacts/ci-safe-test-summary/",
             ),
             (
                 "proof passed as summary",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+                "path: artifacts/ci-safe-test-summary/shard-${{ matrix.shard }}.json",
+                "path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
             ),
             (
                 "backend proof passed as summary",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
-                "LOCAL_EVIDENCE_FILE: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
+                "path: artifacts/ci-safe-test-summary/backend-${{ matrix.group }}.json",
+                "path: artifacts/ci-backend-group-proofs/proof-${{ matrix.group }}.json",
             ),
             (
                 "wrong producer identity",

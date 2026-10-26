@@ -103,47 +103,6 @@ class ComposeContractTests(unittest.TestCase):
     def test_valid_model_passes(self):
         validator.validate_compose(valid_compose(), COMMIT, PROJECT)
 
-    def test_c006_local_preservation_is_manual_and_fail_closed(self):
-        workflow = (ROOT / ".github" / "workflows" / "cari-c02-link-acceptance.yml").read_text(
-            encoding="utf-8"
-        )
-        trigger = workflow.split("on:\n", 1)[1].split("\npermissions:", 1)[0]
-        self.assertEqual("  workflow_dispatch:\n", trigger)
-
-        required_fragments = (
-            "shell: '\"C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.7.0_x64__8wekyb3d8bbwe\\pwsh.exe\" -NoLogo -NoProfile -NonInteractive -File {0}'",
-            "$actualHead = (& git rev-parse HEAD).Trim().ToLowerInvariant()",
-            "$runId -notmatch '^[1-9][0-9]*$'",
-            "Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $false",
-            "Assert-NoReparsePathChain -Path $evidenceRootCandidate -RequireLeaf $true",
-            "$readbackFiles = @($manifestReadback.files)",
-            "C006 evidence manifest does not contain the exact copied file set",
-            "$readbackFile.path -cne $expectedFile.path",
-            "C006 evidence copied bytes do not match the manifest",
-            "[IO.Directory]::Move($temporary, $destination)",
-            "C006 temporary evidence directory still exists after publication",
-            "C006 published evidence is not a non-reparse directory",
-            "C006 published bytes do not match the manifest",
-            "C006 published file set does not exactly match the manifest",
-            "if (-not $published -and (Test-Path -LiteralPath $temporary))",
-        )
-        positions = [workflow.index(fragment) for fragment in required_fragments]
-        self.assertEqual(sorted(positions), positions)
-        self.assertEqual(
-            2,
-            workflow.count(
-                "Get-ChildItem -LiteralPath $temporary -File -Recurse -Force"
-            ),
-        )
-        self.assertEqual(
-            1,
-            workflow.count(
-                "Get-ChildItem -LiteralPath $destination -File -Recurse -Force"
-            ),
-        )
-        self.assertNotIn("shell: pwsh", workflow)
-        self.assertNotIn("Move-Item -LiteralPath $temporary", workflow)
-
     def test_public_port_fails(self):
         model = valid_compose()
         model["services"]["api"]["ports"][0]["host_ip"] = "0.0.0.0"
@@ -371,9 +330,7 @@ class ComposeContractTests(unittest.TestCase):
             "C01_E2E_BASELINE_EVIDENCE",
             "C01_E2E_DATABASE_NAME",
             "GOYMEN_ERP_C01_E2E_DISPOSABLE=CONFIRMED",
-            "name: Preserve exact-head evidence locally",
-            "C01_EVIDENCE_ROOT: /home/ci/local-ci-evidence",
-            "C01 manifest SHA256:",
+            "actions/upload-artifact@v7",
             "id: artifact_privacy",
             "steps.artifact_privacy.outcome == 'success'",
             "tools/validate_sab_e2e_contract.py preflight",
@@ -388,9 +345,6 @@ class ComposeContractTests(unittest.TestCase):
             "python3 -I -S -B tools/configure_dockerhub_mirror.py verify",
         ):
             self.assertIn(required, workflow)
-        trigger = workflow.split("on:\n", 1)[1].split("\npermissions:", 1)[0]
-        self.assertEqual(trigger.strip(), "workflow_dispatch:")
-        self.assertNotIn("actions/upload-artifact", workflow)
         self.assertNotIn("pull_request_target", workflow)
         self.assertNotIn("secrets.", workflow)
         self.assertNotIn("compose.log", workflow)
@@ -418,54 +372,31 @@ class ComposeContractTests(unittest.TestCase):
         self.assertLess(
             sab_run, workflow.index("tools/validate_sab_e2e_contract.py evidence")
         )
-        preservation = workflow.split(
-            "      - name: Preserve exact-head evidence locally", 1
-        )[1]
+        for relative in validator.ARTIFACT_UPLOAD_ALLOWLIST:
+            self.assertIn(f"artifacts/{relative}", workflow)
+        upload = workflow.split("      - name: Upload exact-head C-01 evidence", 1)[1]
+        path_block = upload.split("          path: |", 1)[1].split(
+            "          if-no-files-found:", 1
+        )[0]
+        uploaded = {
+            line.strip().removeprefix("artifacts/")
+            for line in path_block.splitlines()
+            if line.strip()
+        }
+        self.assertEqual(uploaded, set(validator.C01_ARTIFACT_UPLOAD_ALLOWLIST))
 
-        def shell_array(name):
-            block = preservation.split(f"          {name}=(\n", 1)[1].split(
-                "          )", 1
-            )[0]
-            return tuple(
-                line.strip().strip('"')
-                for line in block.splitlines()
-                if line.strip()
-            )
-
-        self.assertEqual(shell_array("c01_files"), validator.C01_ARTIFACT_UPLOAD_ALLOWLIST)
-        self.assertEqual(
-            shell_array("activation_files"),
-            validator.ACTIVATION_ARTIFACT_UPLOAD_ALLOWLIST,
-        )
-        self.assertEqual(shell_array("sab_files"), validator.SAB_ARTIFACT_UPLOAD_ALLOWLIST)
-        for required in (
-            "steps.artifact_privacy.outcome == 'success'",
-            "steps.activation_gate.outputs.enabled",
-            "steps.sab_gate.outputs.enabled",
-            "GITHUB_RUN_ATTEMPT",
-            "gh-${workflow}-${run_id}-${run_attempt}-${sha7}",
-            "C01_EVIDENCE_DESTINATION_EXISTS",
-            "C01_EVIDENCE_ROOT_INVALID",
-            "C01_EVIDENCE_ROOT_SYMLINK",
-            "C01_EVIDENCE_SELECTED_FILE_ESCAPE",
-            "mv -T --no-clobber",
-            "C01_EVIDENCE_PUBLICATION_REFUSED",
-            "C01_EVIDENCE_PUBLICATION_INVALID",
-            '"schemaVersion": 1',
-            '"files": files',
-            "C01_EVIDENCE_MANIFEST_IDENTITY_MISMATCH",
-            "C01_EVIDENCE_MANIFEST_PUBLICATION_DRIFT",
-        ):
-            self.assertIn(required, preservation)
-        publish = preservation.index('mv -T --no-clobber -- "$temporary" "$destination"')
-        temp_gone = preservation.index('[[ ! -e "$temporary" && ! -L "$temporary" ]]')
-        final_directory = preservation.index('[[ -d "$destination" && ! -L "$destination" ]]')
-        final_hash = preservation.index('[[ "$final_manifest_hash" == "$manifest_hash" ]]')
-        clear_trap = preservation.index("trap - EXIT")
-        self.assertLess(publish, temp_gone)
-        self.assertLess(temp_gone, final_directory)
-        self.assertLess(final_directory, final_hash)
-        self.assertLess(final_hash, clear_trap)
+        sab_upload = workflow.split("      - name: Upload exact-head SAB evidence", 1)[1]
+        sab_condition = sab_upload.splitlines()[1]
+        self.assertIn("steps.sab_gate.outputs.enabled == 'true'", sab_condition)
+        sab_path_block = sab_upload.split("          path: |", 1)[1].split(
+            "          if-no-files-found:", 1
+        )[0]
+        sab_uploaded = {
+            line.strip().removeprefix("artifacts/")
+            for line in sab_path_block.splitlines()
+            if line.strip()
+        }
+        self.assertEqual(sab_uploaded, set(validator.SAB_ARTIFACT_UPLOAD_ALLOWLIST))
 
     def test_api_start_failure_diagnostics_are_masked_job_log_only(self):
         workflow = (ROOT / ".github" / "workflows" / "c01-real-browser-e2e.yml").read_text(
