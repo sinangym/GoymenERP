@@ -458,6 +458,37 @@ describe('normal journal approval period (BLG-05)', () => {
     expect(requestsFor(recorded, 'cursor=stale', 'GET')).toHaveLength(1)
   })
 
+  it('clears a choice the restarted list no longer shows, so the approval sends only a visible period', async () => {
+    let firstReads = 0
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods') && url.includes('cursor=page-2')) return json(periodPage([AUGUST], 'page-3'))
+        if (url.includes('/accounting/periods') && url.includes('cursor=')) return json({ code: 'invalid_cursor' }, 409)
+        if (url.includes('/accounting/periods')) {
+          firstReads += 1
+          return json(periodPage([SEPTEMBER], firstReads === 1 ? 'page-2' : null))
+        }
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    fireEvent.click(await screen.findByRole('button', { name: 'Daha eski dönemleri yükle' }))
+    await screen.findByRole('option', { name: '2026-08-01 – 2026-08-31' })
+    const choice = screen.getByLabelText('Onay dönemi') as HTMLSelectElement
+    fireEvent.change(choice, { target: { value: OTHER_PERIOD } })
+    expect(choice.value).toBe(OTHER_PERIOD)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Daha eski dönemleri yükle' }))
+    await screen.findByRole('status')
+    await waitFor(() => expect(firstReads).toBe(2))
+    // August's page is gone; the hidden choice is dropped and the one period holding the date is offered again.
+    await waitFor(() => expect([...choice.options].map((option) => option.value)).toEqual(['', PERIOD]))
+    await waitFor(() => expect(choice.value).toBe(PERIOD))
+    expect(requestsFor(recorded, '/approval', 'POST')).toHaveLength(0)
+  })
+
   it('keys the period and draft reads by the shell namespace, so a fenced 403 read is never served again', async () => {
     let capabilityReads = 0
     let periodReads = 0
