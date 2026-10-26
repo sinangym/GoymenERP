@@ -6100,6 +6100,13 @@ public sealed partial class OpenApiContractGenerationTests
                 await File.ReadAllBytesAsync(canonicalArtifactPath));
 
             var contractText = Encoding.UTF8.GetString(first.Bytes);
+            using var contract = JsonDocument.Parse(first.Bytes);
+            var contractSurfaces = ReadContractStrings(contract.RootElement).Append(contractText).ToArray();
+            // A short OS username can be public contract text ("CI/AS", "official").
+            // Unique configured secret markers cover credential values; full host
+            // paths, including decoded JSON escapes, cover sensitive locations.
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            Assert.False(string.IsNullOrWhiteSpace(userProfile));
             foreach (var forbiddenValue in new[]
                      {
                          first.SecretMarker,
@@ -6109,8 +6116,9 @@ public sealed partial class OpenApiContractGenerationTests
                          repositoryRoot.Replace('\\', '/'),
                          temporaryRoot,
                          temporaryRoot.Replace('\\', '/'),
+                         userProfile,
+                         userProfile.Replace('\\', '/'),
                          Environment.MachineName,
-                         Environment.UserName,
                          "openapi.invalid",
                          "127.0.0.1",
                          "DB_CONNECTION_STRING",
@@ -6118,10 +6126,10 @@ public sealed partial class OpenApiContractGenerationTests
                          "SELECT ",
                      })
             {
-                Assert.DoesNotContain(
-                    forbiddenValue,
-                    contractText,
-                    StringComparison.OrdinalIgnoreCase);
+                foreach (var surface in contractSurfaces)
+                {
+                    Assert.DoesNotContain(forbiddenValue, surface, StringComparison.OrdinalIgnoreCase);
+                }
             }
 
             AssertContractShape(first.Bytes);
@@ -6129,6 +6137,45 @@ public sealed partial class OpenApiContractGenerationTests
         finally
         {
             Directory.Delete(temporaryRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("{\"path\":\"C:\\\\Users\\\\private-user\"}", "C:\\Users\\private-user")]
+    [InlineData("{\"metadata\":[{\"path\":\"\\u002fhome\\u002fprivate-user\"}]}", "/home/private-user")]
+    [InlineData("{\"\\u0073ecret-key\":\"public\"}", "secret-key")]
+    public void ContractPrivacySurfaces_DecodeEscapedHostPathsAndPropertyNames(string json, string marker)
+    {
+        using var contract = JsonDocument.Parse(json);
+        Assert.Contains(marker, ReadContractStrings(contract.RootElement));
+    }
+
+    private static IEnumerable<string> ReadContractStrings(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            yield return element.GetString()!;
+        }
+        else if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                yield return property.Name;
+                foreach (var value in ReadContractStrings(property.Value))
+                {
+                    yield return value;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                foreach (var value in ReadContractStrings(item))
+                {
+                    yield return value;
+                }
+            }
         }
     }
 

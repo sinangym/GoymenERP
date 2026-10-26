@@ -200,7 +200,7 @@ jobs:
 
   backend:
     name: Backend build, test and migration
-    needs: [backend-build, backend-test-group]
+    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
@@ -216,6 +216,12 @@ jobs:
           pattern: ci-backend-test-group-proof-*
           path: artifacts/ci-backend-group-proofs
 
+      - name: Download same-run SQL proofs for excluded backend tests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-relational-shard-proof-*
+          path: artifacts/ci-relational-proofs
+
       - name: Verify complete backend build and test groups
         run: |
           python3 -I -S -B tools/verify_backend_test_groups.py \
@@ -224,7 +230,10 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)" \
           --build-result "${{ needs.backend-build.result }}" \
-          --worker-result "${{ needs.backend-test-group.result }}"
+          --worker-result "${{ needs.backend-test-group.result }}" \
+          --relational-proof-directory artifacts/ci-relational-proofs \
+          --relational-worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
 
   recovery-surface-inventory:
     name: Recovery surface inventory exact-source proof
@@ -305,6 +314,90 @@ jobs:
           printf 'inventory_sha256=%s\n' "$(sha256sum "$inventory_temp" | cut -d ' ' -f 1)"
           printf 'inventory_bytes=%s\n' "$(wc -c < "$inventory_temp" | tr -d '[:space:]')"
 
+  release-manifest:
+    name: Release manifest exact-source proof
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify source-only release manifest
+        working-directory: ${{ github.workspace }}
+        shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}
+        env:
+          GIT_NO_REPLACE_OBJECTS: "1"
+          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          unset \
+            GIT_ALTERNATE_OBJECT_DIRECTORIES \
+            GIT_CEILING_DIRECTORIES \
+            GIT_COMMON_DIR \
+            GIT_CONFIG_COUNT \
+            GIT_CONFIG_GLOBAL \
+            GIT_CONFIG_PARAMETERS \
+            GIT_CONFIG_SYSTEM \
+            GIT_DIR \
+            GIT_DISCOVERY_ACROSS_FILESYSTEM \
+            GIT_EXEC_PATH \
+            GIT_GRAFT_FILE \
+            GIT_INDEX_FILE \
+            GIT_NAMESPACE \
+            GIT_OBJECT_DIRECTORY \
+            GIT_REPLACE_REF_BASE \
+            GIT_SHALLOW_FILE \
+            GIT_WORK_TREE \
+            PYTHONBREAKPOINT \
+            PYTHONHOME \
+            PYTHONINSPECT \
+            PYTHONPATH \
+            PYTHONPLATLIBDIR \
+            PYTHONSTARTUP \
+            PYTHONUSERBASE \
+            PYTHONWARNINGS
+          test "$SOURCE_COMMIT" = "$(printf '%s' "$SOURCE_COMMIT" | grep -E '^[0-9a-f]{40}$')"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+
+          generator_path="tools/generate_release_manifest.py"
+          generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"
+          first_manifest="$(mktemp --suffix=.json)"
+          second_manifest="$(mktemp --suffix=.json)"
+
+          cleanup() {
+            rm -f "$first_manifest" "$second_manifest"
+          }
+          trap cleanup EXIT
+
+          test "$(git hash-object "$generator_path")" = "$generator_blob"
+          python3 -I -S -B -m unittest discover \
+            -s tests/release_manifest \
+            -p "test_*.py" \
+            -v
+
+          python3 -I -S -B "$generator_path" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$first_manifest"
+          python3 -I -S -B "$generator_path" \
+            --repository-root "$GITHUB_WORKSPACE" \
+            --source-commit "$SOURCE_COMMIT" \
+            > "$second_manifest"
+          cmp --silent "$first_manifest" "$second_manifest"
+          python3 -I -S -B -c \
+            'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); assert d["source"]["commit"]==sys.argv[2]; assert d["source"]["tree"]==sys.argv[3]; assert d["manifestMode"]=="SOURCE_ONLY"; assert d["result"]=="UNVERIFIED"; assert d["deployable"] is False' \
+            "$first_manifest" "$SOURCE_COMMIT" "$(git rev-parse "$SOURCE_COMMIT^{tree}")"
+
+          printf 'source_commit=%s\n' "$SOURCE_COMMIT"
+          printf 'tested_commit=%s\n' "$(git rev-parse HEAD)"
+          printf 'generator_blob=%s\n' "$generator_blob"
+          printf 'generator_sha256=%s\n' "$(sha256sum "$generator_path" | cut -d ' ' -f 1)"
+          printf 'release_manifest_sha256=%s\n' "$(sha256sum "$first_manifest" | cut -d ' ' -f 1)"
+          printf 'release_manifest_bytes=%s\n' "$(wc -c < "$first_manifest" | tr -d '[:space:]')"
+
   frontend:
     name: Frontend lint, test and build
     runs-on: ubuntu-latest
@@ -318,13 +411,13 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: src/frontend/goymen-erp-web/package-lock.json
 
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run lint
-      - run: npm test
+      # Leave memory headroom on the isolated runner.
+      # Keep every test, without competing jsdom workers or longer assertions.
+      - run: npm test -- --maxWorkers=1 --no-file-parallelism
       - run: npm run build
 
   relational-shard:
@@ -344,14 +437,17 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
@@ -424,14 +520,17 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
