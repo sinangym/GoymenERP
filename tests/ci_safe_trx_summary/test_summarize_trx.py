@@ -24,10 +24,13 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "8f852a4759a1a273900929138d3c0a36ca36718572927dd7eb8aa360ce74373d"
+    "b6a7efaa216e80647a4ed586b7c44b19bc63f321f2c084e05e9cdaffa064ac76"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
     "cd305f39ce3483947044ca1a28bb9ce9deea69c820e5b7f7d1a00e1777e7234d"
+)
+REVIEWED_RELEASE_MANIFEST_JOB_FINGERPRINT = (
+    "d20f56609a1f034815a34502584a5258c711d1f3ec65195c5c5f5d467e2b1138"
 )
 
 
@@ -816,11 +819,13 @@ class SafeTrxSummaryTests(unittest.TestCase):
             "contract-drift",
             "containers",
             "recovery-surface-inventory",
+            "release-manifest",
         }
         self.assertEqual(required_jobs, set(jobs))
         self._assert_recovery_surface_inventory_job_contract(
             jobs["recovery-surface-inventory"]
         )
+        self._assert_release_manifest_job_contract(jobs["release-manifest"])
 
         summaries = {
             "backend-build": (
@@ -1115,6 +1120,11 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 "SOURCE_COMMIT: ${{ github.sha }}",
             ),
             (
+                "ambient GITHUB_SHA source binding",
+                "SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}",
+                "SOURCE_COMMIT: ${{ env.GITHUB_SHA }}",
+            ),
+            (
                 "source commit shape",
                 "grep -E '^[0-9a-f]{40}$'",
                 "grep -E '^[0-9a-f]{39}$'",
@@ -1333,6 +1343,300 @@ class SafeTrxSummaryTests(unittest.TestCase):
                 with self.assertRaises(AssertionError):
                     self.assert_ci_workflow_summary_contract(changed_workflow)
 
+    def test_release_manifest_job_is_artifact_free_and_fail_closed(self) -> None:
+        workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assert_ci_workflow_summary_contract(workflow)
+
+        deleted = self._workflow_without_job(workflow, "release-manifest")
+        with self.assertRaises(AssertionError):
+            self.assert_ci_workflow_summary_contract(deleted)
+
+        renamed = workflow.replace(
+            "  release-manifest:\n",
+            "  release-manifest-renamed:\n",
+            1,
+        )
+        self.assertNotEqual(renamed, workflow)
+        with self.assertRaises(AssertionError):
+            self.assert_ci_workflow_summary_contract(renamed)
+
+        safe_job = self._workflow_job_body(workflow, "release-manifest")
+        self._assert_release_manifest_job_contract(safe_job)
+
+        no_op_job = (
+            "    name: Release manifest exact-source proof\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - run: echo ok\n\n"
+        )
+        with self.assertRaises(AssertionError):
+            self.assert_ci_workflow_summary_contract(
+                self._workflow_with_job_body(
+                    workflow, "release-manifest", no_op_job
+                )
+            )
+
+        proof_mutations = (
+            ("checkout action", "actions/checkout@v7", "actions/checkout@v6"),
+            ("shallow checkout", "fetch-depth: 1", "fetch-depth: 0"),
+            (
+                "persisted credentials",
+                "persist-credentials: false",
+                "persist-credentials: true",
+            ),
+            (
+                "exact checkout ref",
+                "ref: ${{ github.event.pull_request.head.sha || github.sha }}",
+                "ref: main",
+            ),
+            (
+                "proof working directory",
+                "working-directory: ${{ github.workspace }}",
+                "working-directory: .",
+            ),
+            (
+                "proof executing shell",
+                "shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}",
+                "shell: bash -n {0}",
+            ),
+            (
+                "reviewed executable path",
+                'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"',
+                'export PATH="$PATH"',
+            ),
+            (
+                "ambient Git redirect clearing",
+                "GIT_OBJECT_DIRECTORY \\",
+                "GIT_OBJECT_DIRECTORY_DISABLED \\",
+            ),
+            (
+                "ambient Python redirect clearing",
+                "PYTHONPATH \\",
+                "PYTHONPATH_DISABLED \\",
+            ),
+            (
+                "replace-object defense",
+                'GIT_NO_REPLACE_OBJECTS: "1"',
+                'GIT_NO_REPLACE_OBJECTS: "0"',
+            ),
+            (
+                "source commit binding",
+                "SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}",
+                "SOURCE_COMMIT: ${{ github.sha }}",
+            ),
+            (
+                "source commit shape",
+                "grep -E '^[0-9a-f]{40}$'",
+                "grep -E '^[0-9a-f]{39}$'",
+            ),
+            (
+                "checked out HEAD equality",
+                'test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"',
+                'test "$(git rev-parse HEAD^)" = "$SOURCE_COMMIT"',
+            ),
+            (
+                "generator path",
+                'generator_path="tools/generate_release_manifest.py"',
+                'generator_path="tools/generate_recovery_surface_inventory.py"',
+            ),
+            (
+                "generator blob binding",
+                'generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"',
+                'generator_blob="$(git hash-object "$generator_path")"',
+            ),
+            (
+                "generator blob equality",
+                'test "$(git hash-object "$generator_path")" = "$generator_blob"',
+                'test "$(git hash-object "$generator_path")" != "$generator_blob"',
+            ),
+            (
+                "target suite command",
+                "python3 -I -S -B -m unittest discover \\",
+                "python3 -I -S -B -m unittest \\",
+            ),
+            (
+                "target suite path",
+                "-s tests/release_manifest \\",
+                "-s tests \\",
+            ),
+            (
+                "target suite pattern",
+                '-p "test_*.py" \\',
+                '-p "other_*.py" \\',
+            ),
+            (
+                "first generator execution",
+                '> "$first_manifest"',
+                '> /dev/null',
+            ),
+            (
+                "second generator execution",
+                '> "$second_manifest"',
+                '> "$first_manifest"',
+            ),
+            (
+                "portable byte determinism",
+                'cmp --silent "$first_manifest" "$second_manifest"',
+                'test -s "$first_manifest"',
+            ),
+            (
+                "strict source-only assertion",
+                'assert d["manifestMode"]=="SOURCE_ONLY"',
+                'assert d.get("manifestMode")',
+            ),
+            (
+                "strict unverified assertion",
+                'assert d["result"]=="UNVERIFIED"',
+                'assert d.get("result")',
+            ),
+            (
+                "strict non-deployable assertion",
+                'assert d["deployable"] is False',
+                'assert "deployable" in d',
+            ),
+            (
+                "repository root argument",
+                '--repository-root "$GITHUB_WORKSPACE" \\',
+                '--repository-root "." \\',
+            ),
+            (
+                "source commit argument",
+                '--source-commit "$SOURCE_COMMIT" \\',
+                '--source-commit "$(git rev-parse HEAD)" \\',
+            ),
+        )
+        for label, original, replacement in proof_mutations:
+            with self.subTest(mutant=label):
+                changed_job = safe_job.replace(original, replacement, 1)
+                self.assertNotEqual(changed_job, safe_job)
+                changed_workflow = self._workflow_with_job_body(
+                    workflow, "release-manifest", changed_job
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed_workflow)
+
+        execution_bypass_mutations = (
+            (
+                "unreviewed executable line added",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          echo bypass\n",
+            ),
+            (
+                "reviewed cleanup removed",
+                "          trap cleanup EXIT\n",
+                "",
+            ),
+            (
+                "errexit disabled",
+                "          set -euo pipefail\n",
+                "          set +e\n",
+            ),
+            (
+                "python executable overridden",
+                "          python3 -I -S -B -m unittest discover ",
+                "          python3() { :; }\n"
+                "          python3 -I -S -B -m unittest discover ",
+            ),
+            (
+                "successful early exit",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          exit 0\n",
+            ),
+            (
+                "successful early return",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          return 0\n",
+            ),
+            (
+                "successful exec bypass",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          exec true\n",
+            ),
+            (
+                "evaluated successful exit",
+                "          set -euo pipefail\n",
+                "          set -euo pipefail\n          eval 'exit 0'\n",
+            ),
+            (
+                "job condition disabled",
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n    if: false\n",
+            ),
+            (
+                "proof step condition disabled",
+                "      - name: Verify source-only release manifest\n",
+                "      - name: Verify source-only release manifest\n"
+                "        if: false\n",
+            ),
+            (
+                "proof step syntax-only shell",
+                "      - name: Verify source-only release manifest\n",
+                "      - name: Verify source-only release manifest\n"
+                "        shell: bash -n {0}\n",
+            ),
+            (
+                "job default non-executing shell",
+                "    steps:\n",
+                "    defaults:\n"
+                "      run:\n"
+                "        shell: bash -n {0}\n"
+                "    steps:\n",
+            ),
+        )
+        for label, original, replacement in execution_bypass_mutations:
+            with self.subTest(mutant=label):
+                changed_job = safe_job.replace(original, replacement, 1)
+                self.assertNotEqual(changed_job, safe_job)
+                changed_workflow = self._workflow_with_job_body(
+                    workflow, "release-manifest", changed_job
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed_workflow)
+
+        step_mutations = (
+            ("artifact upload", "      - uses: actions/upload-artifact@v7\n"),
+            ("artifact download", "      - uses: actions/download-artifact@v8\n"),
+            (
+                "TRX summary producer",
+                "      - run: python3 -I -S -B tools/ci/summarize_trx.py\n",
+            ),
+            ("deployment command", "      - run: ./deploy.sh\n"),
+            (
+                "secret context",
+                "      - run: echo '${{ secrets.RELEASE_TOKEN }}'\n",
+            ),
+        )
+        job_mutations = (
+            ("continue on error", "    continue-on-error: true\n"),
+            ("write permission", "    permissions:\n      contents: write\n"),
+            ("deployment environment", "    environment: production\n"),
+            ("unrelated job dependency", "    needs: backend-build\n"),
+        )
+        for label, addition in step_mutations:
+            with self.subTest(mutant=label):
+                changed_job = safe_job.replace(
+                    "    steps:\n",
+                    "    steps:\n" + addition,
+                    1,
+                )
+                self.assertNotEqual(changed_job, safe_job)
+                changed_workflow = self._workflow_with_job_body(
+                    workflow, "release-manifest", changed_job
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed_workflow)
+        for label, addition in job_mutations:
+            with self.subTest(mutant=label):
+                changed_job = safe_job.replace("    steps:\n", addition + "    steps:\n", 1)
+                self.assertNotEqual(changed_job, safe_job)
+                changed_workflow = self._workflow_with_job_body(
+                    workflow, "release-manifest", changed_job
+                )
+                with self.assertRaises(AssertionError):
+                    self.assert_ci_workflow_summary_contract(changed_workflow)
+
     def test_ci_workflow_rejects_unsafe_or_mismatched_uploads(self) -> None:
         workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml").read_text(
             encoding="utf-8"
@@ -1482,6 +1786,119 @@ class SafeTrxSummaryTests(unittest.TestCase):
         self.assertNotRegex(job, r"(?m)^\s*permissions\s*:")
         self.assertNotRegex(job, r"(?m)^\s*needs\s*:")
         self.assertNotRegex(job, r"(?m)^\s*environment\s*:")
+        self.assertNotRegex(job, r"(?i)\bdeploy(?:ment)?\b")
+        self.assertNotRegex(job, r"(?i)\bsecrets\b")
+
+    def _assert_release_manifest_job_contract(self, job: str) -> None:
+        checkout = (
+            "    steps:\n"
+            "      - uses: actions/checkout@v7\n"
+            "        with:\n"
+            "          fetch-depth: 1\n"
+            "          persist-credentials: false\n"
+            "          ref: ${{ github.event.pull_request.head.sha || github.sha }}\n"
+        )
+        self.assertIn(checkout, job)
+        self.assertEqual(job.count("actions/checkout@v7"), 1)
+        self.assertEqual(
+            re.findall(r"^      - name: (.+)$", job, re.M),
+            ["Verify source-only release manifest"],
+        )
+        proof_lines = self._workflow_step_lines(
+            job, "Verify source-only release manifest"
+        )
+        required_lines = (
+            "working-directory: ${{ github.workspace }}",
+            "shell: /usr/bin/env -u BASH_ENV -u ENV /bin/bash --noprofile --norc -p -euo pipefail -- {0}",
+            'GIT_NO_REPLACE_OBJECTS: "1"',
+            "SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}",
+            "set -euo pipefail",
+            'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"',
+            "unset \\",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES \\",
+            "GIT_CEILING_DIRECTORIES \\",
+            "GIT_COMMON_DIR \\",
+            "GIT_CONFIG_COUNT \\",
+            "GIT_CONFIG_GLOBAL \\",
+            "GIT_CONFIG_PARAMETERS \\",
+            "GIT_CONFIG_SYSTEM \\",
+            "GIT_DIR \\",
+            "GIT_DISCOVERY_ACROSS_FILESYSTEM \\",
+            "GIT_EXEC_PATH \\",
+            "GIT_GRAFT_FILE \\",
+            "GIT_INDEX_FILE \\",
+            "GIT_NAMESPACE \\",
+            "GIT_OBJECT_DIRECTORY \\",
+            "GIT_REPLACE_REF_BASE \\",
+            "GIT_SHALLOW_FILE \\",
+            "GIT_WORK_TREE \\",
+            "PYTHONBREAKPOINT \\",
+            "PYTHONHOME \\",
+            "PYTHONINSPECT \\",
+            "PYTHONPATH \\",
+            "PYTHONPLATLIBDIR \\",
+            "PYTHONSTARTUP \\",
+            "PYTHONUSERBASE \\",
+            "PYTHONWARNINGS",
+            'test "$SOURCE_COMMIT" = "$(printf \'%s\' "$SOURCE_COMMIT" | grep -E \'^[0-9a-f]{40}$\')"',
+            'test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"',
+            'generator_path="tools/generate_release_manifest.py"',
+            'generator_blob="$(git rev-parse "$SOURCE_COMMIT:$generator_path")"',
+            'first_manifest="$(mktemp --suffix=.json)"',
+            'second_manifest="$(mktemp --suffix=.json)"',
+            "cleanup() {",
+            'rm -f "$first_manifest" "$second_manifest"',
+            "}",
+            "trap cleanup EXIT",
+            'test "$(git hash-object "$generator_path")" = "$generator_blob"',
+            "python3 -I -S -B -m unittest discover \\",
+            "-s tests/release_manifest \\",
+            '-p "test_*.py" \\',
+            "-v",
+            'python3 -I -S -B "$generator_path" \\',
+            '--repository-root "$GITHUB_WORKSPACE" \\',
+            '--source-commit "$SOURCE_COMMIT" \\',
+            '> "$first_manifest"',
+            'python3 -I -S -B "$generator_path" \\',
+            '--repository-root "$GITHUB_WORKSPACE" \\',
+            '--source-commit "$SOURCE_COMMIT" \\',
+            '> "$second_manifest"',
+            'cmp --silent "$first_manifest" "$second_manifest"',
+            "python3 -I -S -B -c \\",
+            "'import json,sys; d=json.load(open(sys.argv[1],encoding=\"utf-8\")); assert d[\"source\"][\"commit\"]==sys.argv[2]; assert d[\"source\"][\"tree\"]==sys.argv[3]; assert d[\"manifestMode\"]==\"SOURCE_ONLY\"; assert d[\"result\"]==\"UNVERIFIED\"; assert d[\"deployable\"] is False' \\",
+            '"$first_manifest" "$SOURCE_COMMIT" "$(git rev-parse "$SOURCE_COMMIT^{tree}")"',
+            "printf 'source_commit=%s\\n' \"$SOURCE_COMMIT\"",
+            "printf 'tested_commit=%s\\n' \"$(git rev-parse HEAD)\"",
+            "printf 'generator_blob=%s\\n' \"$generator_blob\"",
+        )
+        previous_index = -1
+        for line in required_lines:
+            try:
+                current_index = proof_lines.index(line, previous_index + 1)
+            except ValueError as error:
+                raise AssertionError(
+                    f"Missing ordered release-manifest proof line: {line}"
+                ) from error
+            previous_index = current_index
+
+        self.assertEqual(
+            REVIEWED_RELEASE_MANIFEST_JOB_FINGERPRINT,
+            reviewed_source_fingerprint(job),
+            "Release-manifest proof job left its complete reviewed execution body",
+        )
+        self.assertEqual(job.count('python3 -I -S -B "$generator_path" \\'), 2)
+        self.assertEqual(job.count('--repository-root "$GITHUB_WORKSPACE" \\'), 2)
+        self.assertEqual(job.count('--source-commit "$SOURCE_COMMIT" \\'), 2)
+        self.assertNotIn("GITHUB_SHA", job)
+        self.assertNotIn("actions/upload-artifact@", job)
+        self.assertNotIn("actions/download-artifact@", job)
+        self.assertNotIn("tools/ci/summarize_trx.py", job)
+        self.assertNotIn("continue-on-error", job)
+        self.assertNotRegex(job, r"(?m)^\s*permissions\s*:")
+        self.assertNotRegex(job, r"(?m)^\s*needs\s*:")
+        self.assertNotRegex(job, r"(?m)^\s*environment\s*:")
+        self.assertNotRegex(job, r"(?m)^\s*defaults\s*:")
+        self.assertNotRegex(job, r"(?m)^\s*if\s*:")
         self.assertNotRegex(job, r"(?i)\bdeploy(?:ment)?\b")
         self.assertNotRegex(job, r"(?i)\bsecrets\b")
 
