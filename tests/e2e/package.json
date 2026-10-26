@@ -29,5 +29,8 @@
   "devDependencies": {
     "@playwright/test": "1.62.1",
     "mssql": "11.0.1"
+  },
+  "overrides": {
+    "@azure/msal-node": "7.1.1"
   }
 }
