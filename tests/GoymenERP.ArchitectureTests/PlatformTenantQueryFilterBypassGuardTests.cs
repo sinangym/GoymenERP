@@ -299,8 +299,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // PL04: +1 exact price-floor approval replay/down-refusal fact.
             // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
             // D-05: +1 pending-approval owner-read SQL fact, kept ordinal-sorted.
+            // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted.
             ["tools/relational_inventory/sales.txt"] =
-                "38262b4bd86d5c719afb4be6dbf774db037a27569b028ff2750d0b19f63ccde0",
+                "0742fcb91888866bca2854c478f6502e98e1cb99cc1108e8066213b6eabfbc8c",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -365,9 +366,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // same company-filtered Draft row; no query-filter bypass, direct database surface or tenant key changed.
             // Re-fingerprinted for PL04: the immutable price-floor replay-result constraint stays on the same
             // company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
+            // Re-fingerprinted for API-20 / API-21: the sales request tables (Requests, RequestLines, DocumentCounters), each with
+            // the same CompanyId query filter and a company-leading key, the attempt row's nullable RequestId (company-leading
+            // foreign key, widened outcome CK, request-target CK) and the request's decision-only write guard.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "f5b5fd5efec336d1614374b95864460310829e06499f090340dde77d19e879df",
+                "0149424fd40f6f07e6a459843d0b378a1a5d09a5e705ab1ed1f24af73d88a12d",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1245,8 +1249,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "SalesModuleExtensions.cs"] =
                     // Re-fingerprinted for #641: the scoped pending-approval read seam is DI-only; the provider
                     // branch and its database capability token counts are unchanged.
+                    // Re-fingerprinted for API-20 / API-21: the request store and service are DI-only seams over the same
+                    // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
                     new(
-                        "318a1490df72db9671b335ca4dbcbc42d4e69dfcbe875d2fcff5b03c026e80a9",
+                        "82e51b7c10cd8bfdd2e6cc0c1f0a487e44e018c2eb53cc6f583c09508c1f8826",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1268,8 +1274,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // replayed from the existing company-filtered attempt; SqlClient count remains unchanged.
                     // Re-fingerprinted for the stored product-snapshot replay check: structural summary equality
                     // replaces record equality; no database, connection, command, raw SQL or filter-bypass API was added.
+                    // Re-fingerprinted for API-20 / API-21: the class became partial (the request half lives in SalesStore.Requests.cs,
+                    // same filtered context, one save) and the list cursor takes an ordering label; SqlClient count unchanged.
                     new(
-                        "dcd91635cea0a3eaf85e19590b5168e6b0da20a647576ba3ce98b130803a9d69",
+                        "c944d6b82c356e6d041925318e3b4d3b5082c9b58b9152a53da7e8520e66447c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1670,6 +1678,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // replay result exists; the refusal precedes removal of the constraint and result column.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261004160000_AddSalesPriceFloorApprovalReplayResults.cs"] =
                     new("b1f3e21b2f6b13a6340edac1b29b5d5d25d5599212ab4d0596d905ed54679d3e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // API-20 / API-21: the Down's only raw SQL refuses rollback (51065, used by no other migration) while any sales
+                // request or request attempt is stored; the THROW precedes every drop and the CK restore. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261026221938_AddSalesRequests.cs"] =
+                    new("08616ba0bfa3cdd274571eff7d7d0b06fecc22f2b59dad9e4d3d9ffe6dc1e4ad",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

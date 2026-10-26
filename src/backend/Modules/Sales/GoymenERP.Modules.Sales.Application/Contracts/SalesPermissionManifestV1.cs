@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 10;
+    public const int Version = 11;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -85,8 +85,26 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersQuantityWrite = "sales.orders.quantity.write";
 
+    /// <summary>
+    /// API-20 (plan §3.2, S-01): recording a sales request — POST /api/v1/sales/requests. Its own name: the draft names do NOT
+    /// confer it and it confers none of them (no order, no price, no approval). Company-wide; registration is the central
+    /// writer's step (not Critical); which persona holds it is a human gate — no role receives it here.
+    /// </summary>
+    public const string RequestsWrite = "sales.requests.write";
+
+    /// <summary>API-20: GET /api/v1/sales/requests and GET /api/v1/sales/requests/{id} (list and detail share one read).</summary>
+    public const string RequestsRead = "sales.requests.read";
+
+    /// <summary>
+    /// API-21 (delegation No 160, 161): POST …/requests/{id}/approval and …/rejection — the decision on a sales request. Its own
+    /// name, separate from the order approval (<see cref="OrdersApprove"/>): neither confers the other. No maker≠checker,
+    /// threshold or second approver is implied by the name. Company-wide; not Critical; no role receives it here.
+    /// </summary>
+    public const string RequestsApprove = "sales.requests.approve";
+
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
-            OrdersPriceFloorExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite }
+            OrdersPriceFloorExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite,
+            RequestsWrite, RequestsRead, RequestsApprove }
             .ToFrozenSet(StringComparer.Ordinal);
 }

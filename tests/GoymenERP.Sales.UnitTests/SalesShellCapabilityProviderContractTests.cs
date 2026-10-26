@@ -136,7 +136,11 @@ public sealed class SalesShellCapabilityProviderContractTests
         // DEC-SAL-002: the SEPARATE quantity-revision name; no other Sales name confers it and it confers no approval.
         Assert.Equal("sales.orders.quantity.write", SalesPermissionManifestV1.OrdersQuantityWrite);
         Assert.Equal("sales.orders.customer-acceptance.record", SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);
-        Assert.Equal((10, 10), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // API-20 / API-21 (plan §3.2, S-01): the sales request's own three names; no draft or order name confers them.
+        Assert.Equal("sales.requests.write", SalesPermissionManifestV1.RequestsWrite);
+        Assert.Equal("sales.requests.read", SalesPermissionManifestV1.RequestsRead);
+        Assert.Equal("sales.requests.approve", SalesPermissionManifestV1.RequestsApprove);
+        Assert.Equal((11, 13), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -149,6 +153,9 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
+                SalesPermissionManifestV1.RequestsWrite,
+                SalesPermissionManifestV1.RequestsRead,
+                SalesPermissionManifestV1.RequestsApprove,
             ],
             StringComparer.Ordinal);
         Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));
@@ -156,7 +163,8 @@ public sealed class SalesShellCapabilityProviderContractTests
             new SalesDraftServiceBindings(SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersApprove,
                 SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersQuantityWrite,
-                SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove));
+                SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+                SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsApprove));
     }
 
     private static string FindRepositoryRoot()

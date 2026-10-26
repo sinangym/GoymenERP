@@ -177,4 +177,8 @@ public sealed record SalesDraftServiceBindings(
     string? CancelPermission = SalesPermissionManifestV1.OrdersCancel,
     string? QuantityPermission = SalesPermissionManifestV1.OrdersQuantityWrite,
     string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
-    string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove);
+    string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+    // API-20 / API-21: the sales request names (record, read, decide).
+    string? RequestWritePermission = SalesPermissionManifestV1.RequestsWrite,
+    string? RequestReadPermission = SalesPermissionManifestV1.RequestsRead,
+    string? RequestApprovePermission = SalesPermissionManifestV1.RequestsApprove);

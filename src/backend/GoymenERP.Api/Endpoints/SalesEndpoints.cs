@@ -16,7 +16,7 @@ using Microsoft.OpenApi;
 
 namespace GoymenERP.Api.Endpoints;
 
-public static class SalesEndpoints
+public static partial class SalesEndpoints
 {
     public const string AccountsPath = "/api/v1/sales/references/accounts";
     public const string CurrencyPath = "/api/v1/sales/references/currency";
@@ -210,6 +210,8 @@ public static class SalesEndpoints
             .ProducesErpAuthenticatedProblems();
 
         MapDraftEndpoints(endpoints);
+        // API-20 / API-21 (plan §3.2, S-01): the sales request routes.
+        MapRequestEndpoints(endpoints);
         return endpoints;
     }
 

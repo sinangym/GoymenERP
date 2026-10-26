@@ -3,6 +3,7 @@ using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Domain.Requests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -67,10 +68,37 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// refusals have no draft and new mutation refusals identify the existing draft; null remains valid
     /// for legacy mutation refusals written before that identity was retained, so upgrades preserve replay.
     /// </summary>
+    /// <para>
+    /// API-20 / API-21: the same table records the sales request commands' attempts; a stored outcome identifies EXACTLY one
+    /// target — a draft or a request, never both — and a refusal names at most one.
+    /// </para>
     internal const string AttemptOutcomeConstraint =
-        "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
+        "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] IS NULL) "
+        + "OR ([RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL))) "
         + "OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') "
+        + "AND ([RequestId] IS NULL OR ([RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)) "
         + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
+    /// <summary>
+    /// API-20 / API-21 (CK_DraftAttempts_RequestTarget): only a sales request command names a request, and a sales request
+    /// command never names a draft.
+    /// </summary>
+    internal const string AttemptRequestTargetConstraint =
+        "([RequestId] IS NULL OR [CommandName] IN (N'" + SalesRequestCommands.CreateV1 + "', N'" + SalesRequestCommands.ApproveV1
+        + "', N'" + SalesRequestCommands.RejectV1 + "')) AND ([DraftId] IS NULL OR [CommandName] NOT IN (N'" + SalesRequestCommands.CreateV1
+        + "', N'" + SalesRequestCommands.ApproveV1 + "', N'" + SalesRequestCommands.RejectV1 + "'))";
+
+    /// <summary>UX_DraftAttempts_RequestId: a stored request is born from exactly one create attempt (the draft's rule).</summary>
+    internal const string RequestCreateAttemptFilter = "[RequestId] IS NOT NULL AND [CommandName] = N'" + SalesRequestCommands.CreateV1 + "'";
+
+    /// <summary>
+    /// CK_Requests_Decision (API-21): Submitted (1) carries no decision; Approved (2) a decision without a reason; Rejected (3)
+    /// a decision with a non-blank reason (No 161: "Ret … gerekçe ile"). The rule the domain restores by.
+    /// </summary>
+    internal const string RequestDecisionConstraint =
+        "([State] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) "
+        + "OR ([State] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL) "
+        + "OR ([State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)";
     internal const string AttemptResultConstraint =
         "([CommandName] = N'sales.order-draft.approve-price-floor-exceptions.v1' AND [Outcome] = 1 "
         + "AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR "
@@ -104,6 +132,15 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>Partial delivery: the decision on each remainder change (append-only, at most one per change).</summary>
     internal DbSet<DraftRemainderDecisionRow> DraftRemainderDecisions => Set<DraftRemainderDecisionRow>();
+
+    /// <summary>API-20: the display-number counters of the non-draft Sales records, one row per company and series.</summary>
+    internal DbSet<DocumentCounterRow> DocumentCounters => Set<DocumentCounterRow>();
+
+    /// <summary>API-20 / API-21: the sales requests (header; the decision is the only change).</summary>
+    internal DbSet<RequestRow> Requests => Set<RequestRow>();
+
+    /// <summary>API-20: the requests' lines with the owners' snapshots (append-only).</summary>
+    internal DbSet<RequestLineRow> RequestLines => Set<RequestLineRow>();
 
     /// <summary>CK_DraftRemainderChanges_Kind: a cancel carries no quantity; a revise carries a positive quantity and its text.</summary>
     internal const string RemainderKindConstraint =
@@ -148,6 +185,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftDeliverySchedules(modelBuilder);
         ConfigureDraftCancellations(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
+        ConfigureRequests(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -324,6 +362,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             // ADR-011 §7: new mutation refusals bind to their draft; legacy null refusals remain replayable.
             table.HasCheckConstraint("CK_DraftAttempts_Outcome", AttemptOutcomeConstraint);
             table.HasCheckConstraint("CK_DraftAttempts_Result", AttemptResultConstraint);
+            table.HasCheckConstraint("CK_DraftAttempts_RequestTarget", AttemptRequestTargetConstraint);
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         entity.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
@@ -342,7 +381,103 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
+        // API-20 / API-21: a request command's attempt names its request (same company, by foreign key).
+        entity.HasIndex(x => new { x.CompanyId, x.RequestId }).IsUnique().HasDatabaseName("UX_DraftAttempts_RequestId")
+            .HasFilter(RequestCreateAttemptFilter);
+        entity.HasOne<RequestRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RequestId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    // API-20 / API-21: the sales request, its lines and the display-number counter of the non-draft records.
+    private void ConfigureRequests(ModelBuilder modelBuilder)
+    {
+        var counter = modelBuilder.Entity<DocumentCounterRow>();
+        counter.ToTable("DocumentCounters", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DocumentCounters_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([Series]) > 0");
+            table.HasCheckConstraint("CK_DocumentCounters_Next", "[Next] >= 1");
+            table.HasCheckConstraint("CK_DocumentCounters_Version", "[Version] >= 1");
+        });
+        counter.HasKey(x => new { x.CompanyId, x.Series });
+        counter.Property(x => x.Series).HasMaxLength(8).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        counter.Property(x => x.Version).IsConcurrencyToken();
+        counter.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        counter.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var request = modelBuilder.Entity<RequestRow>();
+        request.ToTable("Requests", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Requests_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Requests_State", "[State] IN (1, 2, 3)");
+            table.HasCheckConstraint("CK_Requests_Decision", RequestDecisionConstraint);
+            table.HasCheckConstraint("CK_Requests_Version", "[Version] >= 1 AND ([State] = 1 OR [Version] >= 2)");
+            table.HasCheckConstraint("CK_Requests_Text",
+                "LEN([DocumentNo]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        request.HasKey(x => x.Id);
+        request.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        request.Property(x => x.Id).ValueGeneratedNever();
+        request.Property(x => x.DocumentNo).HasMaxLength(SalesRequest.MaximumDocumentNoLength).IsRequired();
+        request.Property(x => x.Version).IsConcurrencyToken();
+        request.Property(x => x.RowVersion).IsRowVersion();
+        request.Property(x => x.DecidedBy).HasMaxLength(SalesRequest.MaximumActorLength);
+        request.Property(x => x.RejectionReason).HasMaxLength(SalesRequest.MaximumReasonLength);
+        request.Property(x => x.BusinessDate).HasColumnType("date");
+        request.Property(x => x.RequestedDeliveryDate).HasColumnType("date");
+        request.Property(x => x.Note).HasMaxLength(SalesRequest.MaximumNoteLength);
+        request.Property(x => x.CreatedBy).HasMaxLength(SalesRequest.MaximumActorLength).IsRequired();
+        request.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        request.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Requests_DocumentNo");
+        request.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Requests_CompanyId_CreatedAtUtc_Id");
+        request.HasIndex(x => new { x.CompanyId, x.State, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Requests_CompanyId_State_CreatedAtUtc_Id");
+        request.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        request.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<RequestLineRow>();
+        line.ToTable("RequestLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_RequestLines_LineNo", "[LineNo] >= 1");
+            table.HasCheckConstraint("CK_RequestLines_Identity",
+                "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OrderUnitId] <> '00000000-0000-0000-0000-000000000000' AND [OrderUnitProfileId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_RequestLines_Quantity", "[Quantity] > 0 AND LEN([QuantityText]) > 0");
+            table.HasCheckConstraint("CK_RequestLines_Scale",
+                "[OrderUnitProfileScale] >= 0 AND [OrderUnitScale] >= 0 AND [OrderUnitScale] <= [OrderUnitProfileScale] AND [OrderUnitScale] <= 3");
+            table.HasCheckConstraint("CK_RequestLines_Window",
+                "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
+        });
+        line.HasKey(x => new { x.CompanyId, x.RequestId, x.LineNo });
+        line.HasIndex(x => new { x.CompanyId, x.RequestId, x.LineId }).IsUnique().HasDatabaseName("UX_RequestLines_LineId");
+        line.Property(x => x.ProductVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.ProductCode).HasMaxLength(128).IsRequired();
+        line.Property(x => x.ProductName).HasMaxLength(256).IsRequired();
+        line.Property(x => x.ProductEffectiveOn).HasColumnType("date");
+        line.Property(x => x.StockUnitProfileVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.SalesUnitProfileVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.OrderUnitBindingProfileVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.OrderUnitCode).HasMaxLength(64).IsRequired();
+        line.Property(x => x.OrderUnitDimensionCode).HasMaxLength(64).IsRequired();
+        line.Property(x => x.OrderUnitProfileVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.OrderUnitEffectiveFrom).HasColumnType("date");
+        line.Property(x => x.OrderUnitEffectiveThrough).HasColumnType("date");
+        line.Property(x => x.Quantity).HasPrecision(18, 3);
+        line.Property(x => x.QuantityText).HasMaxLength(128).IsRequired();
+        line.Property(x => x.RequestedDeliveryDate).HasColumnType("date");
+        line.Property(x => x.Note).HasMaxLength(SalesRequest.MaximumNoteLength);
+        line.HasOne<RequestRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RequestId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     // DEC-SAL-003: the recorded delivery-schedule changes and their dates — append-only history beside the draft.
@@ -586,8 +721,30 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
                     DraftRemainderChangeRow => [],
                     DraftRemainderDecisionRow => [],
+                    // API-20: a counter moves its counter only (the version is its token).
+                    DocumentCounterRow => [nameof(DocumentCounterRow.Next), nameof(DocumentCounterRow.UpdatedAtUtc)],
+                    // API-21: a request moves only along its decision; its lines never change.
+                    RequestRow =>
+                    [
+                        nameof(RequestRow.State), nameof(RequestRow.DecidedBy), nameof(RequestRow.DecidedAtUtc),
+                        nameof(RequestRow.RejectionReason), nameof(RequestRow.UpdatedAtUtc),
+                    ],
+                    RequestLineRow => [],
                     _ => [],
                 };
+                if (entry.Entity is RequestRow)
+                {
+                    // API-21: a decision is taken once — Submitted → Approved | Rejected, Approved → Rejected; nothing else.
+                    var requestState = entry.Property(nameof(RequestRow.State));
+                    if (requestState.IsModified && !((int)requestState.OriginalValue! == (int)SalesRequestState.Submitted
+                            && (int)requestState.CurrentValue! is (int)SalesRequestState.Approved or (int)SalesRequestState.Rejected
+                        || (int)requestState.OriginalValue! == (int)SalesRequestState.Approved
+                            && (int)requestState.CurrentValue! == (int)SalesRequestState.Rejected))
+                    {
+                        throw new InvalidOperationException("Satış talebinin durumu yalnız Onay bekliyor → Onaylı/Reddedildi ya da Onaylı → Reddedildi yönünde değişir.");
+                    }
+                }
+
                 if (entry.Entity is DraftRow)
                 {
                     var state = entry.Property(nameof(DraftRow.State));
