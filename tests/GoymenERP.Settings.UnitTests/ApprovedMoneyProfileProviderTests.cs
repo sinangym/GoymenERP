@@ -266,14 +266,63 @@ public sealed class ApprovedMoneyProfileProviderTests
     [Theory]
     [InlineData("gsp")]
     [InlineData("gin")]
-    public async Task GSP_and_GIN_candidates_are_exactly_their_approved_TRY(string company)
+    public async Task GSP_and_GIN_operation_less_candidates_stay_unavailable_because_their_TRY_is_Sales_only(string company)
     {
+        // SAT-D18: the operation-less read cannot tell Finance FS0 that TRY is Sales-only, so it keeps the
+        // answer GSP/GIN had before any profile: unavailable, never TRY and never an empty list.
         ISettingsMoneyCandidateReader reader = Provider(company == "gsp" ? Gsp : Gin);
 
-        var candidates = await reader.GetMoneyCurrencyCandidatesAsync();
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => reader.GetMoneyCurrencyCandidatesAsync());
 
-        // Listed is not validity: an Accounting/Finance consumer still gets unavailable for TRY there.
+        Assert.Equal("settings_provider_unavailable", failure.Code);
+    }
+
+    [Theory]
+    [InlineData("gdc")]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task The_Sales_operation_candidates_are_TRY_in_every_seed_company(string company)
+    {
+        ISettingsMoneyCandidateReaderV2 reader = Provider(company switch { "gdc" => Gdc, "gsp" => Gsp, _ => Gin });
+
+        var candidates = await reader.GetMoneyCurrencyCandidatesAsync(SalesDraft);
+
         Assert.Equal(new MoneyCurrencyCandidateV1(Try, "TRY", "TRY"), Assert.Single(candidates));
+    }
+
+    [Theory]
+    [InlineData(FinanceReceipt)]
+    [InlineData(FinancePayment)]
+    [InlineData(AccountingJournalAmount)]
+    public async Task Operation_candidates_follow_each_company_s_approved_operations(string operation)
+    {
+        ISettingsMoneyCandidateReaderV2 gdc = Provider(Gdc);
+        ISettingsMoneyCandidateReaderV2 gsp = Provider(Gsp);
+
+        Assert.Equal(new MoneyCurrencyCandidateV1(Try, "TRY", "TRY"),
+            Assert.Single(await gdc.GetMoneyCurrencyCandidatesAsync(operation)));
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => gsp.GetMoneyCurrencyCandidatesAsync(operation))).Code);
+    }
+
+    [Theory]
+    [InlineData("unserved")]
+    [InlineData("unknown operation")]
+    [InlineData("denied")]
+    public async Task Operation_candidates_are_fail_closed(string fault)
+    {
+        ISettingsMoneyCandidateReaderV2 reader = fault switch
+        {
+            "unserved" => Provider(Unserved),
+            "denied" => new ApprovedSettingsPrerequisiteProvider(new Context(Gdc, true), new Actor(true, "x", Gsp)),
+            _ => Provider(Gdc),
+        };
+
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => reader.GetMoneyCurrencyCandidatesAsync(fault == "unknown operation" ? "synthetic-operation" : SalesDraft));
+
+        Assert.Equal(fault == "denied" ? "settings_access_denied" : "settings_provider_unavailable", failure.Code);
     }
 
     [Fact]

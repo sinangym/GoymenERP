@@ -37,6 +37,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     private static readonly Guid LotA = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a62");
     private static readonly Guid LotB = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a63");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
+    // Not a seed company: GDC, GSP and GIN all have a Settings kg profile since SAT-D18/SAT-D19.
+    private static readonly Guid NoSettingsSourceCompany = Guid.Parse("10000000-0000-0000-0000-0000000000ee");
 
     [SqlServerFact]
     public async Task Receipt_issue_block_and_release_are_durable_replayable_audited_and_reconcile()
@@ -124,6 +126,16 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             var receipt = Movement(CompanyB, StockMovementKind.Receipt, In(Position(CompanyB, locationB, labelB, BlockState.Free), 5m));
             Assert.Equal(InventoryScaleCodes.ProfileUnusable, (await Assert.ThrowsAsync<InventoryStoreException>(
                 () => b.Movements.RecordMovementAsync(receipt, Metadata(run)))).Code);
+        }
+
+        // A company with no Settings kg source at all (not a seed company): the Settings owner's own code,
+        // settings_provider_unavailable, and nothing stored — checked before any of its records is read.
+        await using (var unserved = run.Store(NoSettingsSourceCompany))
+        {
+            var orphan = Movement(NoSettingsSourceCompany, StockMovementKind.Receipt,
+                In(Position(NoSettingsSourceCompany, Guid.NewGuid(), NewLabel(NoSettingsSourceCompany, "SYN-U"), BlockState.Free), 5m));
+            Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => unserved.Movements.RecordMovementAsync(orphan, Metadata(run)))).Code);
         }
 
         await using (var a = run.Store(CompanyA))
@@ -942,6 +954,18 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             // B's own kg profile (GSP, SAT-D18) starts 2026-10-26, after the counted-on date: refused fail-closed.
             Assert.Equal(InventoryScaleCodes.ProfileUnusable, (await Assert.ThrowsAsync<InventoryStoreException>(
                 () => b.Opening.RecordAsync(countOfB, Metadata(run)))).Code);
+        }
+
+        // A company with no Settings kg source at all (not a seed company): settings_provider_unavailable.
+        await using (var unserved = run.Store(NoSettingsSourceCompany))
+        {
+            // NewLabel names LotA for any company other than B, so the in-memory lot uses that id.
+            var lotU = new MaterialLot(LotA, NoSettingsSourceCompany, Product);
+            var countOfUnserved = new OpeningCount(Guid.NewGuid(), NoSettingsSourceCompany, Guid.NewGuid(),
+                new DateOnly(2026, 9, 19), "SYN-SHEET-U",
+                [new(Guid.NewGuid(), lotU, NewLabel(NoSettingsSourceCompany, "SYN-OPEN-U"), Kilograms.Positive(1m))]);
+            Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<InventoryStoreException>(
+                () => unserved.Opening.RecordAsync(countOfUnserved, Metadata(run)))).Code);
         }
 
         await using (var raw = run.Context(CompanyB))

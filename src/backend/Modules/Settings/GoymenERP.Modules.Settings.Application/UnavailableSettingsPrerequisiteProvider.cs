@@ -11,7 +11,8 @@ namespace GoymenERP.Modules.Settings.Application;
 /// </summary>
 public sealed class UnavailableSettingsPrerequisiteProvider(
     ICompanyContext companyContext, ICurrentUser currentUser)
-    : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader, ISettingsManufacturingToleranceProviderV1,
+    : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader, ISettingsMoneyCandidateReaderV2,
+        ISettingsManufacturingToleranceProviderV1,
         ISettingsSalesPolicyProviderV1
 {
     /// <summary>
@@ -21,6 +22,10 @@ public sealed class UnavailableSettingsPrerequisiteProvider(
     /// </summary>
     public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
         CancellationToken cancellationToken = default) =>
+        Unavailable<IReadOnlyList<MoneyCurrencyCandidateV1>>(cancellationToken);
+
+    public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+        string operation, CancellationToken cancellationToken = default) =>
         Unavailable<IReadOnlyList<MoneyCurrencyCandidateV1>>(cancellationToken);
 
     public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn,

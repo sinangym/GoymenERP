@@ -502,6 +502,30 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.BankAccount'"));
     }
 
+    /// <summary>
+    /// SAT-D18: GSP and GIN have a TRY money profile for the Sales draft operation only. The REAL approved
+    /// Settings provider must not open Finance for them: a TRY bank-account proposal in GSP/GIN is refused
+    /// exactly as before they had any profile (unavailable, settings_provider_unavailable) and stores nothing.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_Sales_only_TRY_profile_does_not_open_a_GSP_or_GIN_bank_account()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var company in new[] { CompanyB, TestCompanyIds.CompanyC })
+        {
+            await using var scope = run.OpenWithApprovedSettings(company, Proposer);
+            var refused = await scope.Accounts.ProposeAsync(scope.Context, Key($"k-{company:N}"),
+                new BankAccountProposeRequest("SENTETIK", SettingsCurrencyIdentitiesV1.TurkishLira, "SENTETIK Banka", "SENTETIK tür", false),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Unavailable, refused.Outcome);
+            Assert.Equal("settings_provider_unavailable", Assert.Single(refused.Issues).Code);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.BankAccounts"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Finance.BankAccount'"));
+    }
+
     [SqlServerFact]
     public async Task Two_racing_approvals_store_one_and_the_database_refuses_a_self_approval()
     {
@@ -619,8 +643,12 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
         public Scope OpenWithPermissions(Guid company, string actor, IFinancePermissionPort permissions) =>
             Open(company, actor, realSettings: false, permissions, []);
 
+        /// <summary>The scope over the REAL approved Settings provider (the host's candidate reader).</summary>
+        public Scope OpenWithApprovedSettings(Guid company, string actor) =>
+            Open(company, actor, realSettings: false, new SyntheticPermissions(), [], approvedSettings: true);
+
         private Scope Open(Guid company, string actor, bool realSettings, IFinancePermissionPort permissions,
-            Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra)
+            Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor[] extra, bool approvedSettings = false)
         {
             var companyContext = new CompanyContext();
             companyContext.Set(company);
@@ -637,9 +665,11 @@ public sealed class FinanceBankAccountSqlServerRelationalAcceptanceTests
                 .AddInterceptors(interceptors)
                 .Options;
             var dbContext = new FinanceDbContext(options, companyContext);
-            ISettingsMoneyCandidateReader currencies = realSettings
-                ? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser)
-                : new SyntheticCandidates();
+            ISettingsMoneyCandidateReader currencies = approvedSettings
+                ? new ApprovedSettingsPrerequisiteProvider(companyContext, currentUser)
+                : realSettings
+                    ? new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser)
+                    : new SyntheticCandidates();
             var accounts = new FinanceBankAccountService(dbContext, companyContext, currentUser, permissions, currencies, collector,
                 new FinanceBankAccountEnvelopes(
                     new FinanceAuditEnvelope(FinanceBankAccountService.ProposeCommand, ["SENTETIK-FINANCE"], "Web"),

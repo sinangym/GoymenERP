@@ -66,6 +66,10 @@ public interface ISettingsSalesPolicyProviderV1
 /// applies.
 /// </para>
 /// <para>
+/// Over-delivery also triggers delegation No 57: the line goes to the sales owner's review queue and no
+/// invoice is created automatically.
+/// </para>
+/// <para>
 /// This port computes nothing: the deviation and its band belong to the consuming backend calculator,
 /// which UI and reports reuse; no percent is a code constant there.
 /// </para>

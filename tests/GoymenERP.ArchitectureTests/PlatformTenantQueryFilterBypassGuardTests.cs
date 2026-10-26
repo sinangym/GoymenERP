@@ -113,8 +113,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // network or hosted-service surface.
     // MOD-03 slice 1 adds one scoped in-process Settings Sales policy port registration (the approved
     // provider); it adds no OpenAPI-generation, network, hosted-service or production-activation surface.
+    // SAT-D18 follow-up adds one scoped in-process operation-aware Settings candidate reader registration and
+    // passes it to the Sales reference read; no OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "bb15604a565777116ce50a8259598a666f9aaa2cb144e3a301c6054615656794";
+        "4cf4cba980d368cebfef59ee0abed68a8e513bbe9a83783459af5e2c944ca6a6";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =

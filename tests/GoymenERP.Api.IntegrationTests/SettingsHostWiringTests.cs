@@ -362,14 +362,65 @@ public sealed class SettingsHostWiringTests
     [Theory]
     [InlineData("gsp")]
     [InlineData("gin")]
-    public async Task GSP_and_GIN_get_their_approved_TRY_as_the_only_candidate_through_the_host(string company)
+    public async Task GSP_and_GIN_get_TRY_only_from_the_Sales_operation_candidates_through_the_host(string company)
     {
+        // SAT-D18: TRY is Sales-only for GSP/GIN. The operation-less read (Finance FS0) keeps its earlier
+        // answer, unavailable; the operation-aware read lists TRY for the Sales owner's key only.
         using var factory = Host(company == "gsp" ? Gsp : Gin);
         using var scope = factory.Services.CreateScope();
-        var reader = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReader>();
+        var legacy = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReader>();
+        var byOperation = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReaderV2>();
 
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => legacy.GetMoneyCurrencyCandidatesAsync())).Code);
         Assert.Equal(new MoneyCurrencyCandidateV1(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", "TRY"),
-            Assert.Single(await reader.GetMoneyCurrencyCandidatesAsync()));
+            Assert.Single(await byOperation.GetMoneyCurrencyCandidatesAsync(SalesMoneyOperations.OrderDraftV1)));
+        Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => byOperation.GetMoneyCurrencyCandidatesAsync(FinanceMoneyOperations.ManualBankReceiptV1))).Code);
+    }
+
+    [Fact]
+    public void The_host_registers_the_approved_provider_as_the_one_operation_aware_candidate_reader()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(
+            scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReaderV2>());
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsMoneyCandidateReaderV2>());
+    }
+
+    [Theory]
+    [InlineData("gdc")]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task The_Sales_currency_list_with_the_host_s_readers_offers_TRY_in_every_seed_company(string company)
+    {
+        // The handler over the host's own readers, money binding and provider; only the permission is
+        // synthetic (no actor holds the draft form's grant — a human gate). GDC is unchanged; GSP/GIN
+        // get TRY through the operation-aware read (SAT-D18), effective from 2026-10-26.
+        var companyId = company switch { "gdc" => Gdc, "gsp" => Gsp, _ => Gin };
+        using var factory = Host(companyId);
+        using var scope = factory.Services.CreateScope();
+        var hostBindings = scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>();
+        var handler = new SalesReferenceReadHandler(
+            scope.ServiceProvider.GetRequiredService<ICompanyContext>(),
+            scope.ServiceProvider.GetRequiredService<ICurrentUser>(),
+            new GrantsOnly(SyntheticCurrencyPermission, companyId),
+            scope.ServiceProvider.GetRequiredService<ISalesAccountSelectionSourceV1>(),
+            scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
+            null,
+            hostBindings with { CurrencyPermission = SyntheticCurrencyPermission },
+            scope.ServiceProvider.GetService<ISettingsMoneyCandidateReader>(),
+            null,
+            scope.ServiceProvider.GetService<ISettingsMoneyCandidateReaderV2>());
+
+        var result = await handler.GetCurrenciesAsync(new SalesCurrencyListQueryV1(ExtraApproval));
+
+        Assert.Equal(200, result.StatusCode);
+        var currency = Assert.Single(result.Value!.Currencies);
+        Assert.Equal((companyId, SettingsCurrencyIdentitiesV1.TurkishLira, "TRY"),
+            (currency.CompanyId, currency.CurrencyId, currency.Code));
     }
 
     [Fact]

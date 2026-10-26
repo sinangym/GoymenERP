@@ -65,6 +65,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
     private static readonly Guid Lot = Guid.Parse("7e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a92");
     private static readonly Guid ToleranceProfile = Guid.Parse("7f100000-0000-4000-8000-000000000001");
     private static readonly DateTimeOffset At = new(2026, 9, 18, 9, 0, 0, TimeSpan.Zero);
+    // Not a seed company: GDC, GSP and GIN all have a Settings kg profile since SAT-D18/SAT-D19.
+    private static readonly Guid NoSettingsSourceCompany = Guid.Parse("10000000-0000-0000-0000-0000000000ee");
 
     private static readonly string[] AllWrites =
     [
@@ -444,6 +446,16 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             var fact = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
                 Run.Issue(1, roll, "10", At));
             Assert.Equal(HttpStatusCode.UnprocessableEntity, fact.StatusCode);
+        }
+
+        // A company with no Settings kg source at all (not a seed company): the write stops at Settings
+        // with 503 settings_provider_unavailable, before the order is looked up; nothing is stored.
+        var unservedUser = await run.GrantAsync(TestUsers.Unprovisioned, NoSettingsSourceCompany, AllWrites);
+        using (var client = run.ClientFor(unservedUser, NoSettingsSourceCompany))
+        {
+            var fact = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
+                Run.Issue(1, roll, "10", At));
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, fact.StatusCode);
         }
 
         // B's user naming company A is refused before anything is read.

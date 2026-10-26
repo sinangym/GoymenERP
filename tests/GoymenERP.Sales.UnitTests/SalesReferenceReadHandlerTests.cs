@@ -652,6 +652,19 @@ public sealed class SalesReferenceReadHandlerTests
     }
 
     [Fact]
+    public async Task The_operation_aware_candidate_read_is_asked_for_the_bound_Sales_operation()
+    {
+        // SAT-D18: with the operation-aware reader composed, the candidates are the Sales operation's
+        // (a Sales-only profile is listed), then revalidated exactly as before.
+        var f = new Fixture();
+        var result = await f.Handler(operationAware: true).GetCurrenciesAsync(f.CurrenciesQuery);
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal(new[] { f.Currency, f.SecondCurrency }, result.Value!.Currencies.Select(c => c.CurrencyId).ToArray());
+        Assert.Equal(["controlled.operation"], f.Candidates.OperationsAsked);
+        Assert.Equal(1, f.Candidates.Calls);
+    }
+
+    [Fact]
     public async Task A_candidate_without_a_profile_for_the_operation_or_not_in_effect_is_left_out_not_an_outage()
     {
         var f = new Fixture();
@@ -811,9 +824,10 @@ public sealed class SalesReferenceReadHandlerTests
                 ]));
         }
         public SalesReferenceReadHandler Handler(SalesReferenceReadBindings? bindings = null, bool productMissing = false,
-            bool candidatesMissing = false, bool contactMissing = false) =>
+            bool candidatesMissing = false, bool contactMissing = false, bool operationAware = false) =>
             new(Context, User, Auth, Accounts, Settings, productMissing ? null : Products, bindings ?? Bindings,
-                candidatesMissing ? null : Candidates, contactMissing ? null : ContactInformation);
+                candidatesMissing || operationAware ? null : Candidates, contactMissing ? null : ContactInformation,
+                operationAware ? Candidates : null);
         private ProductSalesUnitProfileV1 AddUnit(Guid unitId, string code, Guid profileId, long version)
         {
             Settings.Units[unitId] = new(Company, unitId, code, "owner-dimension", false,
@@ -898,14 +912,18 @@ public sealed class SalesReferenceReadHandlerTests
         { Calls++; Selection = selection; OnRead?.Invoke(); if (Error is not null) throw Error; return Task.FromResult(Result); }
     }
     /// <summary>SALES-A2a: the Settings owner's candidate list, as given (the handler revalidates each).</summary>
-    private sealed class Candidates : ISettingsMoneyCandidateReader
+    private sealed class Candidates : ISettingsMoneyCandidateReader, ISettingsMoneyCandidateReaderV2
     {
         public int Calls { get; private set; }
+        public List<string> OperationsAsked { get; } = [];
         public Action? OnRead { get; set; }
         public Exception? Error { get; set; }
         public IReadOnlyList<MoneyCurrencyCandidateV1> List { get; set; } = [];
         public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(CancellationToken cancellationToken = default)
         { Calls++; OnRead?.Invoke(); if (Error is not null) throw Error; return Task.FromResult(List); }
+        public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(string operation,
+            CancellationToken cancellationToken = default)
+        { OperationsAsked.Add(operation); return GetMoneyCurrencyCandidatesAsync(cancellationToken); }
     }
     /// <summary>SALES-A2a: the Cari owner's contact-information answer for the party account asked.</summary>
     private sealed class ContactInformation : ISalesPartyContactInformationPortV1

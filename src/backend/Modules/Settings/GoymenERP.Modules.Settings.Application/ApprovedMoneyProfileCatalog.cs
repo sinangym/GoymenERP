@@ -109,6 +109,7 @@ public sealed class ApprovedMoneyProfileCatalog
     private readonly IReadOnlyDictionary<(Guid CompanyId, Guid CurrencyId), ApprovedMoneyProfileEntry[]> _versions;
     private readonly IReadOnlySet<Guid> _companies;
     private readonly IReadOnlySet<(Guid CompanyId, string Operation)> _operations;
+    private readonly HashSet<string> _allOperations;
 
     /// <summary>Internal on purpose, as the unit catalog's: only Settings' own tests build another one.</summary>
     internal ApprovedMoneyProfileCatalog(IEnumerable<ApprovedMoneyProfileEntry> entries)
@@ -151,6 +152,7 @@ public sealed class ApprovedMoneyProfileCatalog
         _companies = all.Select(entry => entry.CompanyId).ToHashSet();
         _operations = all.SelectMany(entry => entry.Operations.Select(operation => (entry.CompanyId, operation)))
             .ToHashSet();
+        _allOperations = all.SelectMany(entry => entry.Operations).ToHashSet(StringComparer.Ordinal);
     }
 
     public IReadOnlyCollection<ApprovedMoneyProfileEntry> Entries =>
@@ -168,13 +170,27 @@ public sealed class ApprovedMoneyProfileCatalog
         operation is not null && _operations.Contains((companyId, operation));
 
     /// <summary>
-    /// The company's currencies that have an approved profile, one candidate each (any version),
-    /// in catalog order. The display label is the approved currency code itself: no approved
-    /// source names a longer label, so none is invented. Empty for a company with no profile.
+    /// The company's currencies with an approved profile that is UNRESTRICTED — some version answers
+    /// every operation key the catalog knows — one candidate each, in catalog order. This is what the
+    /// operation-less candidate read may list (it cannot tell its caller a restriction); a profile
+    /// narrowed to some operations (SAT-D18: GSP/GIN TRY, Sales draft only) is left out. The display
+    /// label is the approved currency code itself: no approved source names a longer label, so none
+    /// is invented. Empty for a company with no such profile.
     /// </summary>
-    public IReadOnlyList<MoneyCurrencyCandidateV1> CurrenciesOf(Guid companyId) =>
+    public IReadOnlyList<MoneyCurrencyCandidateV1> UnrestrictedCurrenciesOf(Guid companyId) =>
+        Candidates(companyId, entry => _allOperations.IsSubsetOf(entry.Operations));
+
+    /// <summary>
+    /// The company's currencies with an approved profile some version of which answers
+    /// <paramref name="operation"/> (exact, ordinal), one candidate each, in catalog order.
+    /// </summary>
+    public IReadOnlyList<MoneyCurrencyCandidateV1> CurrenciesOf(Guid companyId, string operation) =>
+        Candidates(companyId, entry => entry.Operations.Contains(operation));
+
+    private IReadOnlyList<MoneyCurrencyCandidateV1> Candidates(
+        Guid companyId, Func<ApprovedMoneyProfileEntry, bool> answers) =>
         _versions
-            .Where(currency => currency.Key.CompanyId == companyId)
+            .Where(currency => currency.Key.CompanyId == companyId && currency.Value.Any(answers))
             .Select(currency => currency.Value[^1])
             .Select(entry => new MoneyCurrencyCandidateV1(entry.CurrencyId, entry.CurrencyCode, entry.CurrencyCode))
             .ToArray();

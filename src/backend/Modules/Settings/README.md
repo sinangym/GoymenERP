@@ -137,6 +137,14 @@ Any other company has no approved profile (`settings_provider_unavailable`). A G
 before 2026-10-26 gets the real window and the consumer rejects it. GIN stays invoice-closed
 (DEC-ORG-005); a unit profile changes nothing about that.
 
+**Reach (SAT-D19).** A unit profile carries no operation scope, so the GSP/GIN kg profile has
+exactly GDC's reach: every consumer of `GetUnitProfileAsync` for kg — Sales, Inventory (receipt,
+opening count), Manufacturing, Purchasing (order line), Logistics (loading) and Product kg
+checks. Each operation still needs its own grant, a human gate (`OPEN-013`). SAT-D19 opens
+nothing else for GSP/GIN: the Manufacturing tolerance catalog and the stock tolerance policy
+(`OPEN-004` stock side) have no GSP/GIN entries and stay `settings_provider_unavailable`, and
+the TRY money profile stays Sales-only (SAT-D18).
+
 **Data source: versioned source code, not a table.** Profiles are approved per company and
 nothing may edit them at runtime; a new approval is a new version, reviewed like code.
 So there is no migration, seed write or DbContext, and every value is visible in the
@@ -249,16 +257,28 @@ Outcomes of `GetMoneyProfileAsync`, in order:
 As for units, a date before the approval returns the real window and the consumer
 rejects it; a later version takes over from its own start date.
 
-**Candidates.** The same provider implements `ISettingsMoneyCandidateReader` from the
-same catalog: each currency with an approved profile for the server company, one
-candidate per currency — GDC, GSP and GIN: `(TRY id, "TRY", "TRY")`. The label is the approved code
-itself, since no approved source names a longer one. Access first
-(`settings_access_denied`); a company without an approved money source (any company other
-than GDC, GSP and GIN) → `settings_provider_unavailable`, never an empty list or GDC's TRY; the list passes
-`MoneyCurrencyCandidatesV1.EnsureWellFormed`. Being listed is not validity: consumers
-still resolve the chosen currency with `GetMoneyProfileAsync` (for GSP/GIN, a Finance
-operation still answers `settings_provider_unavailable` for the listed TRY). FS0 (#312) checks a bank
-account's currency against this list.
+**Candidates.** The same provider implements two candidate reads from the same catalog, one
+candidate per currency, labelled by the approved code itself (no approved source names a longer
+one). Access first (`settings_access_denied`); every list passes
+`MoneyCurrencyCandidatesV1.EnsureWellFormed`; never an empty list or GDC's TRY in place of
+"unavailable".
+
+- `ISettingsMoneyCandidateReader.GetMoneyCurrencyCandidatesAsync()` (operation-less, used by
+  Finance FS0 #312 to check a bank account's currency) lists a currency only when its profile is
+  **unrestricted** — it answers every operation key the catalog knows — because the caller cannot
+  be told a restriction. GDC: `(TRY id, "TRY", "TRY")`. GSP/GIN's TRY is Sales-only (SAT-D18), so
+  they have no unrestricted profile and keep the answer they had before any profile:
+  `settings_provider_unavailable`. A GSP/GIN TRY bank account therefore stays refused, as SAT-D18
+  requires.
+- `ISettingsMoneyCandidateReaderV2.GetMoneyCurrencyCandidatesAsync(operation)` (operation-aware)
+  lists each currency whose profile answers the operation (exact, ordinal); a company without a
+  money source, or an operation no profile of the company answers, is
+  `settings_provider_unavailable`. GDC, GSP and GIN for `sales.order-draft.v1`: TRY. The Sales
+  currency list (`SalesReferenceReadHandler.GetCurrenciesAsync`) uses this read with the host's
+  bound Sales operation, falling back to the operation-less read only when V2 is not composed.
+
+Being listed is not validity: consumers still resolve the chosen currency with
+`GetMoneyProfileAsync` for their operation and date.
 
 **Host wiring.** `ISettingsMoneyCandidateReader` is registered as the approved provider,
 and `SalesReferenceReadBindings` binds the Sales owner's money operation
@@ -381,8 +401,8 @@ against the currency's money profile.
     directly (SAT-D5); in the warn band it becomes "Tamamlandı" directly; in the approval band
     after approval. In each case the remainder is a cancelled remainder. In the block band the
     line is not closed this way: the rest is shipped, or force-close (No 30, SAT-D12) applies.
-  - Over-delivery additionally follows delegation No 57 (sales owner review queue, no automatic
-    invoice).
+  - Over-delivery additionally triggers delegation No 57: the line goes to the sales owner's
+    review queue, and no invoice is created automatically.
 
   The percents come from this port, never from code constants; the deviation and band are
   computed by the consuming backend calculator, which UI and reports reuse. The read takes no product or operation input: SAT-D5's per-product/operation

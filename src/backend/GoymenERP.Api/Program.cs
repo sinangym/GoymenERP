@@ -190,6 +190,8 @@ builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftCont
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
+// SAT-D18: operation-aware currency candidates, so a Sales-only profile (GSP/GIN TRY) is listed for Sales only.
+builder.Services.AddScoped<ISettingsMoneyCandidateReaderV2, ApprovedSettingsPrerequisiteProvider>();
 // MOD-03 slice 1: the Settings-owned Sales policy registry (SAT-D2/D5/D6); no consumer is composed yet.
 builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
@@ -225,7 +227,8 @@ static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvid
     // SALES-A2a: both optional, and both answer 503 while absent — the currencies list is Settings'
     // approved candidates, the delivery address and contact the Cari owner's contact information.
     services.GetService<ISettingsMoneyCandidateReader>(),
-    services.GetService<ISalesPartyContactInformationPortV1>());
+    services.GetService<ISalesPartyContactInformationPortV1>(),
+    services.GetService<ISettingsMoneyCandidateReaderV2>());
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
     builder.Configuration,

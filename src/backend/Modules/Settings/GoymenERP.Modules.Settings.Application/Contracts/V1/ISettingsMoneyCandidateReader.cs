@@ -24,8 +24,32 @@ namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 /// </summary>
 public interface ISettingsMoneyCandidateReader
 {
+    /// <summary>
+    /// Operation-less candidates. Since a profile may answer only some operations (SAT-D18: GSP/GIN
+    /// TRY answers only <c>sales.order-draft.v1</c>), this read lists a currency only when its profile
+    /// is unrestricted — it answers every operation key the approved catalog knows — because the
+    /// caller cannot be told the restriction. A company with no such profile is
+    /// <c>settings_provider_unavailable</c>, exactly as before it had any profile. An operation-scoped
+    /// consumer uses <see cref="ISettingsMoneyCandidateReaderV2"/>.
+    /// </summary>
     Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Operation-aware money currency candidates (SAT-D18 follow-up). Lists, for the server-resolved
+/// company, each currency with an approved profile that answers <c>operation</c> (exact, ordinal).
+/// Same rules as <see cref="ISettingsMoneyCandidateReader"/> otherwise: access first
+/// (<c>settings_access_denied</c>); a company without an approved money source, or an operation no
+/// profile of that company answers → <c>settings_provider_unavailable</c>, never an empty list; the
+/// list passes <see cref="MoneyCurrencyCandidatesV1.EnsureWellFormed"/>; being listed is not validity
+/// (the consumer revalidates with <see cref="ISettingsPrerequisiteProvider.GetMoneyProfileAsync"/>).
+/// A separate interface so that the existing port and its test doubles do not change.
+/// </summary>
+public interface ISettingsMoneyCandidateReaderV2
+{
+    Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+        string operation, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

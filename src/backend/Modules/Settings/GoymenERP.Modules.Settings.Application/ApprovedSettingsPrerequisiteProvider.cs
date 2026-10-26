@@ -41,7 +41,11 @@ namespace GoymenERP.Modules.Settings.Application;
 /// </para>
 /// <para>
 /// <see cref="GetMoneyCurrencyCandidatesAsync"/> lists, from the same approved money catalog, each
-/// currency that has an approved profile for the server company (GDC, GSP, GIN: TRY). Access first; a
+/// currency whose approved profile for the server company is unrestricted — answers every operation
+/// key the catalog knows (GDC: TRY; GSP/GIN have none, their TRY is Sales-only, SAT-D18, so they get
+/// <c>settings_provider_unavailable</c> as before). The operation-aware
+/// <see cref="ISettingsMoneyCandidateReaderV2"/> read lists each currency whose profile answers the
+/// given operation (GSP/GIN for <c>sales.order-draft.v1</c>: TRY). Access first; a
 /// company without an approved money source → <c>settings_provider_unavailable</c>, never an
 /// empty list or a default; the list passes <see cref="MoneyCurrencyCandidatesV1.EnsureWellFormed"/>.
 /// Being listed is not validity: a consumer still resolves the chosen currency with
@@ -65,6 +69,7 @@ namespace GoymenERP.Modules.Settings.Application;
 /// </para>
 /// </summary>
 public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader,
+    ISettingsMoneyCandidateReaderV2,
     ISettingsManufacturingToleranceProviderV1, ISettingsSalesPolicyProviderV1
 {
     /// <summary>
@@ -240,16 +245,53 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
                 new SettingsPrerequisiteException("settings_access_denied"));
         }
 
+        // Operation-less: only unrestricted profiles can be listed. A company whose every profile is
+        // narrowed to some operations (GSP/GIN, SAT-D18) keeps its earlier answer: unavailable, so an
+        // operation-less consumer such as Finance FS0 is not opened by a Sales-only profile.
         var companyId = _companyContext.CompanyId;
-        if (!_money.Serves(companyId))
+        var unrestricted = _money.Serves(companyId)
+            ? _money.UnrestrictedCurrenciesOf(companyId)
+            : Array.Empty<MoneyCurrencyCandidateV1>();
+        if (unrestricted.Count == 0)
         {
             return Task.FromException<IReadOnlyList<MoneyCurrencyCandidateV1>>(
                 new SettingsPrerequisiteException("settings_provider_unavailable"));
         }
 
+        return WellFormed(unrestricted);
+    }
+
+    /// <summary>
+    /// The approved money currencies of the server company for one operation (SAT-D18 follow-up):
+    /// access first; no money source or an operation no profile of the company answers →
+    /// <c>settings_provider_unavailable</c>; otherwise each currency whose profile answers it.
+    /// </summary>
+    public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+        string operation, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!HasCompanyAccess())
+        {
+            return Task.FromException<IReadOnlyList<MoneyCurrencyCandidateV1>>(
+                new SettingsPrerequisiteException("settings_access_denied"));
+        }
+
+        var companyId = _companyContext.CompanyId;
+        if (!_money.Serves(companyId) || !_money.Approves(companyId, operation))
+        {
+            return Task.FromException<IReadOnlyList<MoneyCurrencyCandidateV1>>(
+                new SettingsPrerequisiteException("settings_provider_unavailable"));
+        }
+
+        return WellFormed(_money.CurrenciesOf(companyId, operation));
+    }
+
+    private static Task<IReadOnlyList<MoneyCurrencyCandidateV1>> WellFormed(
+        IReadOnlyList<MoneyCurrencyCandidateV1> candidates)
+    {
         try
         {
-            return Task.FromResult(MoneyCurrencyCandidatesV1.EnsureWellFormed(_money.CurrenciesOf(companyId)));
+            return Task.FromResult(MoneyCurrencyCandidatesV1.EnsureWellFormed(candidates));
         }
         catch (SettingsPrerequisiteException exception)
         {
