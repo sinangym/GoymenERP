@@ -26,6 +26,7 @@ import {
   type AllocationAttemptScope,
 } from './allocationAttempt'
 import { ALLOCATION_TEXT as T } from './allocationText'
+import { AllocationLabelPicker, type AllocationLabelChoice } from './AllocationLabelPicker'
 import styles from './SalesPages.module.css'
 
 export interface SalesDraftAllocationPanelProps {
@@ -80,8 +81,10 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       return outcome
     },
   })
-  const [labelId, setLabelId] = useState('')
-  const [labelVersion, setLabelVersion] = useState('')
+  const [selectedLabel, setSelectedLabel] = useState<AllocationLabelChoice | null>(null)
+  // A recorded allocation or a version conflict makes the picked label's version stale: the picker is
+  // remounted empty so the next allocation starts from a fresh Inventory read.
+  const [pickerGeneration, setPickerGeneration] = useState(0)
   const [quantityKg, setQuantityKg] = useState('')
   const [reason, setReason] = useState('')
   const [releaseReason, setReleaseReason] = useState('')
@@ -130,8 +133,8 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       allocationId: globalThis.crypto.randomUUID(),
       salesOrderId,
       salesOrderLineId: line.lineId,
-      labelId: labelId.trim(),
-      expectedLabelVersion: labelVersion.trim(),
+      labelId: selectedLabel?.labelId ?? '',
+      expectedLabelVersion: selectedLabel?.labelVersion ?? '',
       quantityKg: quantityKg.trim(),
       reason: reason.trim(),
       reservedUntilUtc: null,
@@ -150,7 +153,12 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
     const authSnapshot = boundary.capture()
     setBusy(true)
     try {
-      await settle(await createPhysicalAllocation(scope, attempt), createScope, attempt.idempotencyKey, authSnapshot, T.saved)
+      const outcome = await createPhysicalAllocation(scope, attempt)
+      await settle(outcome, createScope, attempt.idempotencyKey, authSnapshot, T.saved)
+      if (outcome.type === 'recorded' || (outcome.type === 'http' && outcome.status === 409)) {
+        setSelectedLabel(null)
+        setPickerGeneration((value) => value + 1)
+      }
     } finally {
       setBusy(false)
     }
@@ -231,11 +239,11 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
               </table>
             </div>
           )}
+          {pendingCreate === null ? (
+            <AllocationLabelPicker key={pickerGeneration} companyId={companyId} productId={line.productId}
+              lineId={line.lineId} disabled={busy} selected={selectedLabel} onSelect={setSelectedLabel} />
+          ) : null}
           <div className={styles.grid}>
-            <label htmlFor={`allocation-label-${line.lineId}`}>{T.labelId}</label>
-            <input id={`allocation-label-${line.lineId}`} value={labelId} onChange={(event) => setLabelId(event.target.value)} />
-            <label htmlFor={`allocation-label-version-${line.lineId}`}>{T.labelVersion}</label>
-            <input id={`allocation-label-version-${line.lineId}`} value={labelVersion} onChange={(event) => setLabelVersion(event.target.value)} />
             <label htmlFor={`allocation-quantity-${line.lineId}`}>{T.quantity}</label>
             <input id={`allocation-quantity-${line.lineId}`} inputMode="decimal" value={quantityKg} onChange={(event) => setQuantityKg(event.target.value)} />
             <label htmlFor={`allocation-reason-${line.lineId}`}>{T.reason}</label>

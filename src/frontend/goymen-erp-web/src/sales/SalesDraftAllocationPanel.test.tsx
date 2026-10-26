@@ -32,6 +32,33 @@ const allocation = (status: 'Active' | 'Released', version: string) => ({
   reservedUntilUtc: null, createdAtUtc: '2026-09-24T10:00:00Z', updatedAtUtc: '2026-09-24T10:00:00Z',
 })
 
+const LOT = '80000000-0000-4000-8000-000000000001'
+const LOCATION = '90000000-0000-4000-8000-000000000001'
+const POSITIONS_PATH = '/api/v1/inventory/positions'
+
+const position = (overrides: Record<string, unknown> = {}) => ({
+  companyId: COMPANY, labelId: LABEL, labelVersion: '11', labelCode: 'ETK-001', productId: PRODUCT,
+  lot: { id: LOT, heatNumber: 'D-1', coilNumber: null }, heatNumber: 'D-1', coilNumber: null,
+  documentStatus: 'Posted', ownerKind: 'Company', ownerId: COMPANY, custodianKind: 'Company', custodianId: COMPANY,
+  locationId: LOCATION, physicalKg: '20', freePhysicalKg: '20', blockedPhysicalKg: '0', activeAllocationKg: '0',
+  availableKg: '20', ...overrides,
+})
+
+type FetchHandler = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+/** Answers the picker's Inventory label search; every other request goes to the allocation handler. */
+function withPositions(handler: FetchHandler,
+  positions: FetchHandler = async () => answer({ items: [position()], searchWindowFull: false })) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    new URL(String(input), 'http://localhost').pathname === POSITIONS_PATH ? positions(input, init) : handler(input, init))
+}
+
+async function pickLabel(card: HTMLElement) {
+  await userEvent.type(within(card).getByLabelText('Etiket kodu ara'), 'ETK')
+  await userEvent.click(within(card).getByRole('button', { name: 'Etiketleri getir' }))
+  await userEvent.click(await within(card).findByRole('button', { name: 'ETK-001 etiketini seç' }))
+}
+
 function answer(body: unknown, status = 200, replayed = false) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json',
     ...(replayed ? { 'Idempotency-Replayed': 'true' } : {}) } })
@@ -64,15 +91,14 @@ function declaredCreate422Codes(): readonly string[] {
 }
 
 async function submitCreate(card: HTMLElement) {
-  await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
-  await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+  await pickLabel(card)
   await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
   await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
   await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
 }
 
 function refuseCreateWith(status: number, body: unknown) {
-  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+  const fetch = withPositions(async (_input: RequestInfo | URL, init?: RequestInit) => {
     if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
     return answer(body, status)
   })
@@ -119,7 +145,7 @@ describe('Sales physical allocation consumer', () => {
     let stored: ReturnType<typeof allocation> | null = null
     let hideRecordedOnNextGet = false
     const calls: { readonly method: string; readonly url: string; readonly body: any; readonly headers: Headers }[] = []
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    vi.stubGlobal('fetch', withPositions(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
       const body = init?.body === undefined ? null : JSON.parse(String(init.body))
@@ -147,8 +173,7 @@ describe('Sales physical allocation consumer', () => {
     const first = mount()
     const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
     expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
-    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
-    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await pickLabel(card)
     await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
     await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
     await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
@@ -175,7 +200,7 @@ describe('Sales physical allocation consumer', () => {
 
   it('keeps the fresher GET state when the recorded allocation already exists', async () => {
     let createdId: string | null = null
-    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    vi.stubGlobal('fetch', withPositions(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const method = init?.method ?? 'GET'
       if (method === 'GET') {
         const fresh = createdId === null ? [] : [{
@@ -191,8 +216,7 @@ describe('Sales physical allocation consumer', () => {
     mount()
     const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
     expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
-    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
-    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await pickLabel(card)
     await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
     await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
     await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
@@ -206,7 +230,7 @@ describe('Sales physical allocation consumer', () => {
   })
 
   it('drops a recorded fallback when the authorization scope generation changes', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    vi.stubGlobal('fetch', withPositions(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
       const body = JSON.parse(String(init?.body))
       return answer({ ...allocation('Active', '1'), allocationId: body.allocationId }, 201)
@@ -215,8 +239,7 @@ describe('Sales physical allocation consumer', () => {
     const first = mount()
     const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
     expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
-    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
-    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await pickLabel(card)
     await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
     await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
     await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
@@ -232,7 +255,7 @@ describe('Sales physical allocation consumer', () => {
   })
 
   it('drops a recorded fallback and reads again when the product scope changes', async () => {
-    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const fetch = withPositions(async (_input: RequestInfo | URL, init?: RequestInit) => {
       if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
       const body = JSON.parse(String(init?.body))
       return answer({ ...allocation('Active', '1'), allocationId: body.allocationId }, 201)
@@ -242,8 +265,7 @@ describe('Sales physical allocation consumer', () => {
     const first = mount()
     const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
     expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
-    await userEvent.type(within(card).getByLabelText('Etiket kimliği'), LABEL)
-    await userEvent.type(within(card).getByLabelText('Etiket sürümü'), '11')
+    await pickLabel(card)
     await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
     await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
     await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
@@ -330,10 +352,79 @@ describe('Sales physical allocation consumer', () => {
   })
 
   it('fails closed when server truth crosses the company boundary', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => answer({ items: [{ allocation: { ...allocation('Active', '1'),
+    vi.stubGlobal('fetch', withPositions(async () => answer({ items: [{ allocation: { ...allocation('Active', '1'),
       companyId: '99999999-9999-4999-8999-999999999999' }, labelVersion: '12' }], searchWindowFull: false })))
     mount()
     expect(await screen.findByText('Tahsis yanıtı doğrulanamadı; hiçbir kayıt gösterilmedi.')).toBeTruthy()
     expect(screen.queryByText(ALLOCATION)).toBeNull()
+  })
+})
+
+describe('UI-13 allocation label picker in the panel', () => {
+  it('reads no label until the user searches, then sends the picked label id and version', async () => {
+    const posts: any[] = []
+    const fetch = withPositions(async (_input, init) => {
+      if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
+      const body = JSON.parse(String(init?.body))
+      posts.push(body)
+      return answer({ ...allocation('Active', '1'), allocationId: body.allocationId }, 201)
+    }, async () => answer({ items: [position(), position({ labelId: '50000000-0000-4000-8000-000000000002',
+      labelCode: 'ETK-002', labelVersion: '4', availableKg: '7.5', freePhysicalKg: '20', activeAllocationKg: '12.5' })],
+    searchWindowFull: false }))
+    vi.stubGlobal('fetch', fetch)
+
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    const searches = () => fetch.mock.calls.filter(([input]) => String(input).includes(POSITIONS_PATH))
+    expect(searches()).toHaveLength(0)
+    expect(within(card).queryByLabelText('Etiket kimliği')).toBeNull()
+
+    await userEvent.type(within(card).getByLabelText('Etiket kodu ara'), 'ETK{Enter}')
+    await userEvent.click(await within(card).findByRole('button', { name: 'ETK-002 etiketini seç' }))
+    expect(searches()).toHaveLength(1)
+    const url = new URL(String(searches()[0][0]), 'http://localhost')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ limit: '25', productId: PRODUCT, q: 'ETK' })
+    expect(new Headers(searches()[0][1]?.headers).get('X-Company-Id')).toBe(COMPANY)
+    expect(within(card).getByTestId(`sales-allocation-label-selected-${LINE}`).textContent)
+      .toContain('ETK-002 · sürüm 4 · kullanılabilir 7.5 kg')
+    expect(within(card).getByRole('button', { name: 'ETK-002 etiketini seç' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(card).getByRole('button', { name: 'ETK-001 etiketini seç' }).getAttribute('aria-pressed')).toBe('false')
+
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
+    await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
+    await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
+    await waitFor(() => expect(posts).toHaveLength(1))
+    expect(posts[0]).toMatchObject({ labelId: '50000000-0000-4000-8000-000000000002', expectedLabelVersion: '4',
+      salesOrderId: ORDER, salesOrderLineId: LINE, quantityKg: '5' })
+    // The recorded allocation makes the picked version stale: the picker starts over from a fresh read.
+    await waitFor(() => expect(within(card).getByTestId(`sales-allocation-label-selected-${LINE}`).textContent)
+      .toBe('Henüz etiket seçilmedi.'))
+    expect(within(card).queryByRole('button', { name: 'ETK-002 etiketini seç' })).toBeNull()
+  })
+
+  it('refuses to save without a picked label and sends no command', async () => {
+    const fetch = withPositions(async () => answer({ items: [], searchWindowFull: false }))
+    vi.stubGlobal('fetch', fetch)
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
+    await userEvent.type(within(card).getByLabelText('Tahsis nedeni'), 'Sipariş için ayırıldı.')
+    await userEvent.click(within(card).getByRole('button', { name: 'Tahsis kaydet' }))
+    expect((await within(card).findByTestId('sales-allocation-notice')).textContent)
+      .toBe('Etiket seçimi, miktar ve neden zorunludur.')
+    expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+  })
+
+  it('clears a stale pick after a version conflict', async () => {
+    refuseCreateWith(409, { status: 409 })
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await submitCreate(card)
+    expect((await within(card).findByTestId('sales-allocation-notice')).textContent)
+      .toBe('Kayıt güncel sunucu durumuyla çakıştı; tahsisler yeniden okundu.')
+    expect(within(card).getByTestId(`sales-allocation-label-selected-${LINE}`).textContent).toBe('Henüz etiket seçilmedi.')
   })
 })
