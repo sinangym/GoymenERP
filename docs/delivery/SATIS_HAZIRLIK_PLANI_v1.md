@@ -164,7 +164,7 @@ alınır.
 | MOD-09 | Platform | Outbox/inbox (TEK-04) | CX | ERP-000F | K3 |
 | MOD-10 | Work | Talep, teklif, fatura onayları ve risk istisnası için onay kutusu adaptörleri | CX | mevcut Work native approval sözleşmesi | K2 |
 | MOD-11 | Muhasebe | Fatura vergi kontrolü (dispatch spec: muhasebe kontrol eder) | CX | Faz 6 sonrası | K3 |
-| MOD-12 | Stok | Tahsis paneli için şirket kapsamlı etiket okuma ucu (etiket kimliği yerine seçici) | CX | mevcut Inventory etiket kayıtları | K2 |
+| MOD-12 | Stok | Tahsis paneli için şirket kapsamlı etiket okuma ucu (etiket kimliği yerine seçici) | CX | mevcut Inventory etiket kayıtları | K2 · **karşılandı:** mevcut ST-01 `GET /api/v1/inventory/positions` (`q`, `productId`, `limit`; şirket kapsamlı, `labels.read` + `balances.read`); yeni uç yazılmaz (PR #816) |
 
 ---
 
@@ -218,3 +218,38 @@ Sevkiyatçı siparişi fiyatsız görür (fiyatsız okuma görünümü ayrıca g
 - S1 backend: API-01/02 zorla kapatma (Claude yazar; K3 iki bağımsız review gerekir).
 
 Her iş ayrı PR'dır; durumları PR açıklamalarında izlenir.
+
+---
+
+## 9. Durum (2026-10-26)
+
+Bu bölüm yalnız iş takibidir; karar değildir. Kararlar `SINAN_KARARLARI_2026-10-25_SATIS.md` ve
+`SINAN_KARARLARI_2026-10-26_SATIS_EK.md` (SAT-D13…D19) dosyalarındadır.
+
+| İş | PR | Durum |
+|---|---|---|
+| Karar kaydı SAT-D1…D12 + bu plan | #799 | merge edildi |
+| Merge yetkisi kararı (M1–M3) | #812 | merge edildi |
+| SAT-D13…D18, SAT-D19 | #814, #815 | merge edildi |
+| S0 frontend temizlik (TEK-06 UI, TEK-09, TEK-10, TEK-12) | #805 | review tamam; CI bekliyor |
+| UI-10 sekmeler + UI-11 Belgeler | #806 | review tamam; CI bekliyor (#805 üzerine) |
+| TEK-11 sipariş detayında birim adları | #810 | review tamam; CI bekliyor (#806 üzerine) |
+| API-01/02 + UI-12 zorla kapatma (K3) | #807 | iki review + DELTA-OK; CI bekliyor |
+| TEK-08, TEK-13 test borcu | #808 | review tamam; #807 sonrası güncellenecek |
+| MOD-03 dilim 1: Satış politika kaydı + GSP/GIN profilleri (K3) | #813 | iki review + DELTA-OK; #807 sonrası yeniden sabitleme ve CI |
+| MOD-12 + UI-13 tahsis etiket seçici | #816 | review + DELTA-OK; CI bekliyor |
+| API-10 siparişte onaylı müşteri iadeleri (K3; Lojistik port SQL çeviri düzeltmesi dahil) | #817 | iki review; P3 düzeltmeleri gönderildi; #807 sonrası yeniden sabitleme, delta review ve CI |
+
+Notlar:
+
+- **MOD-12:** yeni Stok ucu gerekmedi; mevcut ST-01 okuması tahsis yeteneğinin zaten istediği izinlerle
+  (`inventory.labels.read` + `inventory.balances.read`) kullanılıyor. Codex şeridi ayrı bir etiket ucu yazmaz.
+- **API-10 sınırı:** Lojistik portu satır başına yalnız onaylı toplamı veriyor. Siparişte tek tek iade numarası,
+  tarihi ve durumu gösterilecekse portun Lojistik sahibi tarafından genişletilmesi gerekir (K3 sözleşme işi). UI-70a
+  bu sürümde satır toplamını gösterir.
+- **Açık politika notu (karar değildir):** etiket seçici, karşı tarafa ait veya kullanılabilir miktarı 0 olan
+  etiketleri de listeliyor; Stok bunları kayıtta reddediyor. Seçicide süzülmeleri Stok/Satış politika kararıdır.
+- **CI kapasitesi:** tek self-hosted runner ve host belleği (16 GB) şu an teslimin darboğazı; PR'lar sıralı ve tek
+  push ile ilerletiliyor.
+
+Sıradaki işler (S1 kalanı): UI-70a (#806 sonrası), UI-71, TEK-01…03 ve TEK-05 (Codex şeridi), PRS-01/02.
