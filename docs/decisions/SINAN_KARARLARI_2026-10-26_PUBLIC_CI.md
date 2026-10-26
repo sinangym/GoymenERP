@@ -40,5 +40,13 @@ Kapsam: bütün dallar (860), PR referansları (821), 4.977 commit, 14.801 dosya
    bağımsız exact-head K3 review → koordinatör merge. Public yapılınca, bu PR merge edilene kadar
    self-hosted job'lar admission kontrolünde reddedilir (beklenen ve güvenli durum).
 
+Bu PR'ın dışında kalan, Sinan'ın Settings'ten yapacağı ayarlar (insan kapısı, öneri):
+
+- Settings → Actions → General → "Fork pull request workflows from outside collaborators":
+  **"Require approval for all outside collaborators"**. Dışarıdan gelen her PR'ın CI'ı onayla
+  başlar.
+- Settings → Actions → Runners: artık kullanılmayan self-hosted runner kaydının kaldırılması.
+- Branch protection kurallarının public depoya göre gözden geçirilmesi.
+
 Değişmeyen insan kapıları: deployment, environment, secret, grant/rol/Critical, production
 aktivasyonu ve `OPEN-*` kapatma.
