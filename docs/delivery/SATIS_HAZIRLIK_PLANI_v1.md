@@ -4,7 +4,7 @@ Tarih: 2026-10-25 · Hazırlayan: Claude (cloud oturumu) · Durum: **ÖNERİ** (
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.2, §8.1, §11; `docs/decisions/KARAR_SICILI.md`
 `DEC-SAL-001…008`; `SINAN_KARARLARI_2026-10-21.md` delegasyon satırları; **`SINAN_KARARLARI_2026-10-25_SATIS.md`
-(SAT-D1…D12)**; `src/backend/Modules/Sales/README.md`; `docs/ui/sources/dispatch-invoice/dispatch-invoice-design-spec-v1.0.md`;
+(SAT-D1…D12)** ve `SINAN_KARARLARI_2026-10-26_SATIS_EK.md` (SAT-D13…D19); `src/backend/Modules/Sales/README.md`; `docs/ui/sources/dispatch-invoice/dispatch-invoice-design-spec-v1.0.md`;
 `docs/backlog/DELIVERY_BACKLOG_v1.json` W2-SATIS, W2-IRSALIYE, W2-ACIKKALEM, W5-RAPOR.
 
 Bu plan kodun 2026-10-25 `main` durumuna göre yazıldı. İnceleme raporu:
@@ -175,7 +175,7 @@ alınır.
 | UI-10 | Sipariş 360'ı altı kilitli sekmeye böl | CL | K2 | – |
 | UI-11 | Sözleşme/Belgeler sekmesi (`DocumentsPanel`) | CL | K2 | MOD-07 |
 | UI-12 | Zorla kapatma paneli | CL | K2 | API-01/02 |
-| UI-13 | Tahsis panelinde etiket seçici | CL | K2 | MOD-12 (Stok etiket okuma ucu) |
+| UI-13 | Tahsis panelinde etiket seçici | CL | K2 | MOD-12 (karşılandı: ST-01) |
 | UI-14 | Yeni sipariş formunda fiyat girişi | CL | K2 | TEK-03 |
 | UI-15 | Toplamlar kartı, risk kartı, durum eksenleri | CL | K2 | API-03, 06, 08 |
 | UI-20 | S-01 Talep/Teklif Havuzu, "Siparişe dönüştür" | CL | K2 | API-20…24 |
@@ -236,7 +236,7 @@ Bu bölüm yalnız iş takibidir; karar değildir. Kararlar `SINAN_KARARLARI_202
 | TEK-11 sipariş detayında birim adları | #810 | review tamam; CI bekliyor (#806 üzerine) |
 | API-01/02 + UI-12 zorla kapatma (K3) | #807 | iki review + DELTA-OK; CI bekliyor |
 | TEK-08, TEK-13 test borcu | #808 | review tamam; #807 sonrası güncellenecek |
-| MOD-03 dilim 1: Satış politika kaydı + GSP/GIN profilleri (K3) | #813 | iki review + DELTA-OK; #807 sonrası yeniden sabitleme ve CI |
+| MOD-03 dilim 1: Satış politika kaydı + GSP/GIN profilleri (K3; S2 dalgasından öne alındı) | #813 | iki review + DELTA-OK; #807 sonrası yeniden sabitleme ve CI |
 | MOD-12 + UI-13 tahsis etiket seçici | #816 | review + DELTA-OK; CI bekliyor |
 | API-10 siparişte onaylı müşteri iadeleri (K3; Lojistik port SQL çeviri düzeltmesi dahil) | #817 | iki review; P3 düzeltmeleri gönderildi; #807 sonrası yeniden sabitleme, delta review ve CI |
 
@@ -252,4 +252,6 @@ Notlar:
 - **CI kapasitesi:** tek self-hosted runner ve host belleği (16 GB) şu an teslimin darboğazı; PR'lar sıralı ve tek
   push ile ilerletiliyor.
 
-Sıradaki işler (S1 kalanı): UI-70a (#806 sonrası), UI-71, TEK-01…03 ve TEK-05 (Codex şeridi), PRS-01/02.
+Sıradaki işler (S1 kalanı): UI-70a (#806 ve #817 sonrası), UI-71, MOD-07'nin backend kısmı (sipariş PDF'i, fatura
+dışa aktarım dosyası), TEK-13 kalan backend kanıtı (gerçek sahiplerle olumlu oluşturma), TEK-01…03 ve TEK-05
+(Codex şeridi), PRS-01/02.
