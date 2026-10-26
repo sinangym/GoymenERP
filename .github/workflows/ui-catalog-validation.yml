@@ -16,7 +16,7 @@ concurrency:
 jobs:
   validate-ui-catalog:
     name: UI catalog structure, references and hashes
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
