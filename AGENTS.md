@@ -19,7 +19,9 @@ vermez.
 **Governance/süreç dosyalarının merge'i (22 Ekim 2026 kullanıcı kararı; önceki "insan review
 kapısında kalır" kuralının yerine geçer):** `AGENTS.md`, `docs/governance/**`,
 `docs/decisions/**`, `.claude/**` ve `.github/**` kalite kapısı değişiklikleri, aşağıdaki
-şartlarla **`CODEX-ORCHESTRATOR` tarafından merge edilebilir**; Sinan'ın tıkı beklenmez:
+şartlarla **`CODEX-ORCHESTRATOR` tarafından merge edilebilir**; Sinan'ın tıkı beklenmez
+(25 Ekim 2026 istisnası: Claude şeridi kendi açtığı `claude/*` governance PR'ını aynı iki
+review ve kanıt şartıyla merge edebilir — `docs/decisions/SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md`):
 
 - Yazar ≠ koordinatör; iki bağımsız exact-head review; açık P0/P1 yok.
 - Yalnız doküman/governance/karar/ayar dosyası (`docs/**`, `AGENTS.md`, `.claude/**`)
@@ -32,9 +34,10 @@ kapısında kalır" kuralının yerine geçer):** `AGENTS.md`, `docs/governance/
   `tests/delivery_backlog_validator/recompute_delivery_backlog_provenance.py`
   üreticisinin çıktısından ve onaylı kaynak değişikliği incelendikten sonra güncellenir.
   Bu daraltma test veya uygulama dosyası içeren adayın normal fresh CI şartını kaldırmaz.
-- `.github/**` değişikliğinde iki review ayrıca şunu doğrular: her `runs-on` self-hosted
-  etikettir, hosted fallback yoktur, artifact/cache/Packages yüklemesi, secret, environment
-  veya deploy yüzeyi açılmamıştır.
+- `.github/**` değişikliğinde iki review ayrıca şunu doğrular: her `runs-on` GitHub-hosted
+  (`ubuntu-latest`/`windows-latest`) etikettir, self-hosted etiket yoktur, artifact yalnız
+  secret içermeyen CI kanıtıdır (saklama ≤ 7 gün); cache/Packages yüklemesi, secret,
+  environment veya deploy yüzeyi açılmamıştır (`SINAN_KARARLARI_2026-10-26_PUBLIC_CI.md`).
 - Merge sonrası Issue #66'ya tek satır makbuz (PR, merge SHA, iki review bağlantısı).
 - Sinan bu yetkiyi Issue #66'ya yazacağı tek satırla geri alabilir.
 
@@ -59,7 +62,9 @@ karşı-ajan review + merge edilecek son head için `DELTA-OK <sha>` imzası "ex
 bağımsız review" şartını sağlar. Çelişkide v4 süreç tarafında, v2/v3 güvenlik tarafında
 üstündür.
 
-- Pre-production PR'ı tek karşı-ajan review + fresh zorunlu CI ile coordinator merge edilir.
+- Pre-production PR'ı tek karşı-ajan review + fresh zorunlu CI ile coordinator merge edilir
+  (Claude şeridinin kendi PR'ları için 25 Ekim 2026 istisnası aşağıda; review yorumu
+  ASSUMPTION-MERGE-1 için bkz. `docs/decisions/SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md`).
   Yalnız doküman/governance/ayar dosyası değiştiren PR'da fresh CI şartı yoktur (yukarıdaki
   22 Ekim kuralı).
 - İki bağımsız exact-head review yalnız **K3**'te gerekir; K3 kapsamı dardır: DB
@@ -72,7 +77,8 @@ bağımsız review" şartını sağlar. Çelişkide v4 süreç tarafında, v2/v3
 - Şeritler (v3 §6): **Codex** = backend + endpoint + gerçek-SQL + OpenAPI + formül
   calculator. **Claude** = tüm frontend / React shell / ekranlar / generated-client
   tüketimi / browser-a11y. **ChatGPT** = iş spec + acceptance + formül golden + backlog +
-  hakemlik (tam-zamanında, bir dilim önde). **`CODEX-ORCHESTRATOR`** = merge. Üç ajan
+  hakemlik (tam-zamanında, bir dilim önde). **`CODEX-ORCHESTRATOR`** = merge (Claude
+  şeridi kendi PR'larını da merge edebilir; 25 Ekim 2026 kararı). Üç ajan
   aynı dikey dilimin farklı katmanında çalışır.
 
 En güncel kullanıcı kararları için `docs/decisions/` içindeki tarihli `SINAN_KARARLARI_*.md`
@@ -82,7 +88,13 @@ dosyaları `KARAR_SICILI.md`'den önce, "son kullanıcı kararı" seviyesinde ge
 alınabilir standing merge yetkisini verir:
 
 - Şerit yazarı kendi PR'ını merge etmez; merge'i ayrı `CODEX-ORCHESTRATOR` koordinatörü
-  expected-head ile yapar.
+  expected-head ile yapar. **İstisna (25 Ekim 2026 kullanıcı kararı,
+  `docs/decisions/SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md`):** Claude şeridi yalnız
+  kendi açtığı `claude/*` PR'larını, bu bölümdeki ve 22 Ekim kuralındaki bütün kapılarla
+  (fresh CI, exact-head bağımsız review, yeni davranış testi, K3 ve governance'ta iki
+  review, açık P0/P1 yok, `.claude/settings.json` için Sinan'ın #66 onayı)
+  `CODEX-ORCHESTRATOR`'ı beklemeden squash merge edebilir ve merge sonrası Issue #66
+  makbuzuyla `CODEX-ORCHESTRATOR`'ı bilgilendirir. İnsan kapıları değişmez.
 - K1/K2 implementation PR'ı ancak fresh zorunlu kontroller, exact-head bağımsız review,
   yeni davranış testi ve açık P0/P1 olmaması halinde coordinator tarafından squash merge
   edilebilir.
@@ -94,10 +106,11 @@ alınabilir standing merge yetkisini verir:
   aktivasyonu yetkisi değildir.
 - `.github/**` içinde yalnız build/test/contract/security kalite kapısı değişikliği aynı
   K3 kanıtıyla merge edilebilir (22 Ekim 2026 kuralı: CI koşumu olmadan da, iki review'un
-  self-hosted/secret/deploy doğrulamasıyla). Deployment, environment, secret ve production
+  GitHub-hosted/secret/deploy doğrulamasıyla). Deployment, environment, secret ve production
   yüzeyi her zaman somut kullanıcı kararı ister.
 
-GitHub teknik koruması kullanılamıyorsa lane self-merge kapalı kalır; coordinator aynı
+GitHub teknik koruması kullanılamıyorsa lane self-merge kapalı kalır (tek istisna: yukarıdaki
+25 Ekim 2026 Claude şeridi kararı); coordinator — ve bu istisnada Claude şeridi — aynı
 kapıları prosedürel olarak doğrular ve kanıtı GitHub'a yazmadan merge yapmaz.
 
 ## Mimari değişmezler
