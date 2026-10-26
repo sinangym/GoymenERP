@@ -367,7 +367,7 @@ def _records_by_id(records: list[dict[str, str]]) -> dict[str, dict[str, str]]:
 def _delegation_source(root: Path) -> tuple[list[dict[str, str]], str]:
     document = (root / "docs/decisions/SINAN_KARARLARI_2026-10-21.md").read_text(encoding="utf-8")
     digest = _sha256(document.encode("utf-8"))
-    if digest != "acb180768b01402a520216564f7ef615077da6c45917e2034b054698fc7ed674":
+    if digest != "2960feee2c98abf738ccb93b4f4488a797cc401dff92f0659de87edf85c39e42":
         raise ValueError("Delegation authority source digest changed")
     start = document.index("\n## 3.")
     end = document.index("\n## 4.", start)
