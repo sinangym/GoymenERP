@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
@@ -10,6 +11,7 @@ public sealed class PurchaseGoodsReceiptComparisonContractTests
     private static readonly Guid LineId = Guid.Parse("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
     private static readonly Guid ProductId = Guid.Parse("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
     private static readonly Guid UnitId = Guid.Parse("ffffffff-ffff-4fff-8fff-ffffffffffff");
+    private static readonly Guid ProfileId = Guid.Parse("11111111-2222-4333-8444-555555555555");
 
     [Fact]
     public void Same_kilogram_unit_exposes_exact_signed_difference_without_tolerance()
@@ -33,6 +35,93 @@ public sealed class PurchaseGoodsReceiptComparisonContractTests
         Assert.Null(result.MeasuredMinusAcceptedKg);
         Assert.Equal("4", result.AcceptedQuantity);
         Assert.Equal("101.75", result.MeasuredQuantityKg);
+    }
+
+    [Fact]
+    public void Legacy_explicit_null_snapshot_preserves_the_existing_flat_measurement_comparison()
+    {
+        var result = Create(Receipt() with { StockItemQuantity = null }, storedUnitIsKilogram: true);
+
+        Assert.Equal(PurchaseGoodsReceiptQuantityComparisonStatusesV1.SameKilogramUnit, result.ComparisonStatus);
+        Assert.Equal("101.75", result.MeasuredQuantityKg);
+        Assert.Equal("1.5", result.MeasuredMinusAcceptedKg);
+    }
+
+    [Theory]
+    [InlineData("flat-value")]
+    [InlineData("company")]
+    [InlineData("subject-kind")]
+    [InlineData("subject-id")]
+    [InlineData("source-kind")]
+    [InlineData("source-id")]
+    [InlineData("source-version")]
+    [InlineData("value")]
+    [InlineData("unit")]
+    [InlineData("profile")]
+    [InlineData("profile-version")]
+    [InlineData("dimension")]
+    [InlineData("scale")]
+    [InlineData("alternate")]
+    public void Non_null_snapshot_tampering_is_refused(string fault)
+    {
+        var receipt = Receipt();
+        var quantity = Assert.IsType<PurchaseGoodsReceiptQuantityV2>(receipt.StockItemQuantity);
+        receipt = fault switch
+        {
+            "flat-value" => receipt with { MeasuredQuantityKg = "101.5" },
+            "company" => WithQuantity(receipt, quantity with { CompanyId = Guid.NewGuid() }),
+            "subject-kind" => WithQuantity(receipt, quantity with
+            {
+                Subject = quantity.Subject with { Kind = "Service" }
+            }),
+            "subject-id" => WithQuantity(receipt, quantity with
+            {
+                Subject = quantity.Subject with { Id = Guid.NewGuid() }
+            }),
+            "source-kind" => WithQuantity(receipt, quantity with
+            {
+                Source = quantity.Source with { Kind = "other" }
+            }),
+            "source-id" => WithQuantity(receipt, quantity with
+            {
+                Source = quantity.Source with { Id = Guid.NewGuid() }
+            }),
+            "source-version" => WithQuantity(receipt, quantity with
+            {
+                Source = quantity.Source with { Version = "6" }
+            }),
+            "value" => WithQuantity(receipt, quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { Value = "101.5" }
+            }),
+            "unit" => WithQuantity(receipt, quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { UnitId = Guid.NewGuid() }
+            }),
+            "profile" => WithQuantity(receipt, quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { ProfileId = Guid.Empty }
+            }),
+            "profile-version" => WithQuantity(receipt, quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { ProfileVersion = "01" }
+            }),
+            "dimension" => WithQuantity(receipt, quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { Dimension = "Volume" }
+            }),
+            "scale" => WithQuantity(receipt, quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { Scale = 4 }
+            }),
+            "alternate" => WithQuantity(receipt, quantity with
+            {
+                AlternateQuantity = new(quantity.BaseQuantity, quantity.Source)
+            }),
+            _ => throw new ArgumentOutOfRangeException(nameof(fault)),
+        };
+
+        Assert.Throws<ArgumentException>(() => Create(receipt, storedUnitIsKilogram: true));
     }
 
     [Fact]
@@ -86,5 +175,18 @@ public sealed class PurchaseGoodsReceiptComparisonContractTests
             Guid.Parse("55555555-5555-4555-8555-555555555555"),
             "101.75",
             "Free",
-            new DateTimeOffset(2026, 10, 5, 8, 0, 0, TimeSpan.Zero));
+            new DateTimeOffset(2026, 10, 5, 8, 0, 0, TimeSpan.Zero),
+            Quantity());
+
+    private static PurchaseGoodsReceiptViewV1 WithQuantity(
+        PurchaseGoodsReceiptViewV1 receipt,
+        PurchaseGoodsReceiptQuantityV2 quantity) => receipt with { StockItemQuantity = quantity };
+
+    private static PurchaseGoodsReceiptQuantityV2 Quantity() => new(
+        CompanyId,
+        new(PurchaseGoodsReceiptApiV1.QuantitySubjectKind, ProductId),
+        new(PurchaseGoodsReceiptApiV1.QuantitySourceKind, AcceptanceId, "7"),
+        new("101.75", SettingsUnitIdentitiesV1.Kilogram, ProfileId, "5",
+            PurchaseGoodsReceiptApiV1.QuantityDimension, 2),
+        null);
 }
