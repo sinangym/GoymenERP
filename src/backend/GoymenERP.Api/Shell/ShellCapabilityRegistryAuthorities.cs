@@ -285,6 +285,16 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string FullNormalHostWithProductPriceListsAndSalesFloorApproval =
         "sha256:pApB0lTOmnsZu6O0W1ZRqwmNC2neEZzSLVQ5pl94fgc";
 
+    // AL-04: preserve all three existing normal-host compositions with Inventory 1.8.
+    // Its original nine declarations keep their access; only allocation detail is dormant.
+    // Derived with ComputeCandidateRevision over source 463e3e4f, not by changing availability.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndInventoryV18WithDormantAllocationDetail =
+        "sha256:Dgn_XHijgRWBu2ozQZe85EgqTJM0e5dUTdTsd94xzLg";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13InventoryV18WithDormantAllocationDetailAndPublishedIdentityV10 =
+        "sha256:EXqE9ZqLG4E3fvTXLcBzfidh4oBfEZJzVOxWetVju8k";
+    internal const string FullNormalHostWithProductPriceListsSalesFloorApprovalAndInventoryV18WithDormantAllocationDetail =
+        "sha256:0VycwT8gqQhoDhjaU7bIMUwWUIxjCMCtCEjZ4q7bquA";
+
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
 

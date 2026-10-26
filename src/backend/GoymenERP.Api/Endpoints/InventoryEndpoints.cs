@@ -1059,6 +1059,51 @@ public static partial class InventoryEndpoints
 
     private static void MapPhysicalAllocationEndpoints(RouteGroupBuilder group)
     {
+        group.MapGet(ExactPhysicalAllocationPath, async (
+                Guid allocationId,
+                HttpContext httpContext,
+                IInventoryPhysicalAllocationExactReadsV1 reads,
+                CancellationToken cancellationToken) =>
+            {
+                SetPrivateNoStore(httpContext.Response);
+                try
+                {
+                    return Results.Ok(await reads.ReadAsync(allocationId, cancellationToken));
+                }
+                catch (InventoryPhysicalAllocationReadException exception)
+                {
+                    return exception.StatusCode switch
+                    {
+                        StatusCodes.Status400BadRequest when exception.Code == InventoryPhysicalAllocationReadCodesV1.InvalidQuery =>
+                            PhysicalAllocationReadProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status404NotFound => PhysicalAllocationReadProblem(exception.StatusCode),
+                        StatusCodes.Status409Conflict when exception.Code == InventoryPhysicalAllocationReadCodesV1.ReadConflict =>
+                            PhysicalAllocationReadProblem(exception.StatusCode, exception.Code),
+                        StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden =>
+                            PhysicalAllocationReadProblem(exception.StatusCode),
+                        _ => PhysicalAllocationReadProblem(StatusCodes.Status503ServiceUnavailable),
+                    };
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    return PhysicalAllocationReadProblem(StatusCodes.Status503ServiceUnavailable);
+                }
+            })
+            .WithName("GetInventoryPhysicalAllocationByIdV1")
+            .WithMetadata(new PrivateNoStoreOnAuthorizationFailureMetadata())
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.InventoryPhysicalAllocationWrite)
+            .Produces<InventoryPhysicalAllocationExactReadV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(InventoryPhysicalAllocationReadCodesV1.InvalidQuery)
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(InventoryPhysicalAllocationReadCodesV1.ReadConflict)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         group.MapGet(PhysicalAllocationsPath, async (
                 HttpContext httpContext,
                 IInventoryPhysicalAllocationReadsV1 reads,
@@ -1693,6 +1738,7 @@ public static partial class InventoryEndpoints
 
     private const string OpeningCountsPath = "/opening-counts";
     private const string PhysicalAllocationsPath = "/physical-allocations";
+    private const string ExactPhysicalAllocationPath = "/physical-allocations/{allocationId:guid}";
     private const string LabelPhysicalAllocationsPath = "/labels/{labelId:guid}/physical-allocations";
     private const string IdempotencyHeaderName = "Idempotency-Key";
     private const int MaximumIdempotencyKeyLength = 128;

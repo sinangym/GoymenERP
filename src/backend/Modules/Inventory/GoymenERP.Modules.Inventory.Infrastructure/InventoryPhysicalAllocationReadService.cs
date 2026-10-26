@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain;
 using GoymenERP.Modules.Inventory.Domain.Allocations;
+using GoymenERP.Modules.Inventory.Domain.Stock;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure;
 
@@ -32,12 +33,62 @@ internal interface IInventoryPhysicalAllocationReader
         CancellationToken cancellationToken);
 }
 
+/// <summary>Optional exact capability; existing bounded-reader adapters remain valid.</summary>
+internal interface IInventoryPhysicalAllocationExactReader
+{
+    Task<InventoryPhysicalAllocationExactReadV1?> ReadExactAsync(
+        Guid companyId,
+        Guid allocationId,
+        CancellationToken cancellationToken);
+}
+
 internal sealed class InventoryPhysicalAllocationReadService(
     ICompanyContext company,
     ICurrentUser user,
     IErpAuthorityRevalidationService authority,
-    IInventoryPhysicalAllocationReader? reader) : IInventoryPhysicalAllocationReadsV1
+    IInventoryPhysicalAllocationReader? reader) : IInventoryPhysicalAllocationReadsV1, IInventoryPhysicalAllocationExactReadsV1
 {
+    public async Task<InventoryPhysicalAllocationExactReadV1> ReadAsync(
+        Guid allocationId,
+        CancellationToken cancellationToken = default)
+    {
+        var scope = await RequireAsync(null, cancellationToken);
+        if (allocationId == Guid.Empty)
+        {
+            throw Error(400, InventoryPhysicalAllocationReadCodesV1.InvalidQuery);
+        }
+
+        var source = reader as IInventoryPhysicalAllocationExactReader
+            ?? throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
+        var answer = await FencedAsync(
+            () => source.ReadExactAsync(scope.CompanyId, allocationId, cancellationToken), scope, cancellationToken)
+            ?? throw Error(404, InventoryPhysicalAllocationReadCodesV1.NotFound);
+        if (answer.Allocation is not { } allocation)
+        {
+            throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
+        }
+
+        if (allocation.AllocationId != allocationId || allocation.DemandId == Guid.Empty || allocation.DemandLineId == Guid.Empty
+            || !PositiveVersion(answer.LabelVersion)
+            || !Enum.TryParse<StockAllocationStatus>(allocation.Status, false, out var status) || !Enum.IsDefined(status)
+            || status.ToString() != allocation.Status
+            || !Enum.TryParse<StockPartyKind>(answer.OwnerKind, false, out var owner) || !Enum.IsDefined(owner)
+            || owner.ToString() != answer.OwnerKind || answer.OwnerId == Guid.Empty
+            || !Enum.TryParse<StockPartyKind>(answer.CustodianKind, false, out var custodian) || !Enum.IsDefined(custodian)
+            || custodian.ToString() != answer.CustodianKind || answer.CustodianId == Guid.Empty || answer.LocationId == Guid.Empty
+            || (status == StockAllocationStatus.Released) != (answer.ReleasedAtUtc is not null)
+            || (answer.ReleasedAtUtc is null) != (answer.ReleaseReason is null)
+            || answer.ReleasedAtUtc is { } released && (released.Offset != TimeSpan.Zero || released < allocation.CreatedAtUtc
+                || released > allocation.UpdatedAtUtc || string.IsNullOrWhiteSpace(answer.ReleaseReason)))
+        {
+            throw Error(503, InventoryPhysicalAllocationReadCodesV1.Unavailable);
+        }
+
+        _ = Item(new(allocation, long.Parse(answer.LabelVersion, CultureInfo.InvariantCulture)), scope.CompanyId,
+            new(allocation.DemandId, allocation.DemandLineId));
+        return answer;
+    }
+
     public async Task<InventoryPhysicalAllocationReadsV1> SearchAsync(
         InventoryPhysicalAllocationReadQueryV1 query,
         CancellationToken cancellationToken = default)

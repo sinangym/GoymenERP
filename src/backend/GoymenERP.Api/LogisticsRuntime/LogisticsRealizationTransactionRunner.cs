@@ -108,11 +108,15 @@ internal sealed class LogisticsRealizationTransactionRunner(
             Guid allocationId,
             CancellationToken cancellationToken = default)
         {
-            InventoryPhysicalAllocationReadsV1 page;
+            InventoryPhysicalAllocationExactReadV1 exact;
             try
             {
-                page = await services.GetRequiredService<IInventoryPhysicalAllocationReadsV1>()
-                    .SearchAsync(new InventoryPhysicalAllocationReadQueryV1(salesOrderId, salesOrderLineId, 100), cancellationToken);
+                exact = await services.GetRequiredService<IInventoryPhysicalAllocationExactReadsV1>()
+                    .ReadAsync(allocationId, cancellationToken);
+            }
+            catch (InventoryPhysicalAllocationReadException exception) when (exception.StatusCode == 404)
+            {
+                return null;
             }
             catch (InventoryPhysicalAllocationReadException exception) when (exception.StatusCode is 401 or 403)
             {
@@ -127,31 +131,23 @@ internal sealed class LogisticsRealizationTransactionRunner(
                 throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
             }
 
-            var matches = page.Items.Where(item => item.Allocation.AllocationId == allocationId).ToArray();
-            if (matches.Length == 0)
-            {
-                if (page.SearchWindowFull)
-                {
-                    throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
-                }
-
-                return null;
-            }
-
-            if (matches.Length != 1)
+            if (exact is not { Allocation: { } allocation })
             {
                 throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
             }
 
-            var allocation = matches[0].Allocation;
             if (allocation.CompanyId != companyId
+                || allocation.AllocationId != allocationId
                 || allocation.DemandKind != InventoryAllocationDemandKindsV1.SalesOrderLine
-                || allocation.DemandId != salesOrderId
-                || allocation.DemandLineId != salesOrderLineId
                 || allocation.LabelId == Guid.Empty
                 || allocation.ProductId == Guid.Empty)
             {
                 throw new LogisticsInstructionServiceException(503, LogisticsRealizationCodesV1.Unavailable);
+            }
+
+            if (allocation.DemandId != salesOrderId || allocation.DemandLineId != salesOrderLineId)
+            {
+                return null;
             }
 
             return new LogisticsShipmentAllocationV1(

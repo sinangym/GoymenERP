@@ -14,6 +14,8 @@ public static class InventoryPhysicalAllocationReadRegistration
         services.AddScoped<InventoryPhysicalAllocationReadService>(CreateService);
         services.AddScoped<IInventoryPhysicalAllocationReadsV1>(provider =>
             provider.GetRequiredService<InventoryPhysicalAllocationReadService>());
+        services.AddScoped<IInventoryPhysicalAllocationExactReadsV1>(provider =>
+            provider.GetRequiredService<InventoryPhysicalAllocationReadService>());
         return services;
     }
 

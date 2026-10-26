@@ -12,12 +12,23 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.8";
     public const string StockPositionsCapabilityId = "inventory.stock-positions.list";
     public const string StockPositionsRouteId = "inventory.stock-positions";
     public const string StockPositionsRoutePath = "/stok/pozisyonlar";
     public const string StockPositionsScreenId = "ST-01";
     public const string PhysicalAllocationCapabilityId = ErpPermissions.InventoryPhysicalAllocationWrite;
+
+    // Dormant AL-04 source only. The new declaration/version changes the registry revision
+    // even while unavailable; central authority admission remains on HOLD before publication.
+    public const string AllocationDetailCapabilityId = "inventory.allocations.detail";
+    public const string AllocationDetailRouteId = "inventory.allocations.detail";
+    public const string AllocationDetailRoutePath = "/stok/tahsisler/:allocationId";
+    public const string AllocationDetailScreenId = "AL-04";
+
+    // R03.3 exact-ID reads reuse this existing control's company-wide permission.
+    // AL-04 frontend route/capability publication is a separate owner gate: the
+    // backend read port does not advertise a new available React workspace here.
 
     /// <summary>
     /// R19 split/merge: a CONTROL of the label detail reached from ST-01 (no route of its own). It keeps the
@@ -165,6 +176,16 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.InventoryOpeningStockRecord],
             ImplementationAvailable: true),
+        new(
+            AllocationDetailCapabilityId,
+            AllocationDetailRouteId,
+            AllocationDetailRoutePath,
+            AllocationDetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [ErpPermissions.InventoryPhysicalAllocationWrite],
+            ImplementationAvailable: false),
         ];
     }
 }

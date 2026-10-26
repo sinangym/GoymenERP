@@ -9,6 +9,27 @@ namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class ShellCapabilityRegistryTests
 {
+    [Theory]
+    [InlineData(10, ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndInventoryV18WithDormantAllocationDetail)]
+    [InlineData(11, ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV16PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13InventoryV18WithDormantAllocationDetailAndPublishedIdentityV10)]
+    [InlineData(12, ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesFloorApprovalAndInventoryV18WithDormantAllocationDetail)]
+    public void Inventory18_normal_host_tuples_accept_the_dormant_detail_without_extra_read_permissions(
+        int providerCount,
+        string authority)
+    {
+        var providers = InventoryShellAuthorityTests.CreateNormalHostProviders(providerCount);
+        Assert.Equal(authority, ShellCapabilityRegistry.ComputeCandidateRevision(providers));
+        var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
+        Assert.Equal(authority, registry.Revision);
+        var detail = Assert.Single(registry.Registrations,
+            item => item.Declaration.CapabilityId == "inventory.allocations.detail");
+        Assert.Equal("INVENTORY", detail.Owner);
+        Assert.Equal("1.8", detail.OwnerContractVersion);
+        Assert.Equal([ErpPermissions.InventoryPhysicalAllocationWrite], detail.Declaration.RequiredPermissions);
+        Assert.False(detail.Declaration.ImplementationAvailable);
+        Assert.Null(detail.Declaration.ParentCapabilityId);
+    }
+
     [Fact]
     public void AcceptedCounterpartyProvider_MatchesExactOwnerSourceAndAuthority()
     {
