@@ -388,7 +388,7 @@ describe('UI-13 allocation label picker in the panel', () => {
     expect(new Headers(searches()[0][1]?.headers).get('X-Company-Id')).toBe(COMPANY)
     expect(within(card).getByTestId(`sales-allocation-label-selected-${LINE}`).textContent)
       .toContain('ETK-002 · sürüm 4 · kullanılabilir 7.5 kg')
-    expect(within(card).getByRole('button', { name: 'ETK-002 etiketini seç' }).getAttribute('aria-pressed')).toBe('true')
+    expect(within(card).getByRole('button', { name: 'ETK-002 etiketi seçildi' }).getAttribute('aria-pressed')).toBe('true')
     expect(within(card).getByRole('button', { name: 'ETK-001 etiketini seç' }).getAttribute('aria-pressed')).toBe('false')
 
     await userEvent.type(within(card).getByLabelText('Tahsis kg'), '5')
@@ -415,6 +415,32 @@ describe('UI-13 allocation label picker in the panel', () => {
     expect((await within(card).findByTestId('sales-allocation-notice')).textContent)
       .toBe('Etiket seçimi, miktar ve neden zorunludur.')
     expect(fetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+  })
+
+  it('hides the picker while an unverified create waits and retries the stored body with the same key', async () => {
+    const posts: { body: string; key: string | null }[] = []
+    const fetch = withPositions(async (_input, init) => {
+      if ((init?.method ?? 'GET') === 'GET') return answer({ items: [], searchWindowFull: false })
+      posts.push({ body: String(init?.body), key: new Headers(init?.headers).get('Idempotency-Key') })
+      if (posts.length === 1) return answer({ status: 503 }, 503)
+      return answer({ ...allocation('Active', '1'), allocationId: JSON.parse(String(init?.body)).allocationId }, 201)
+    })
+    vi.stubGlobal('fetch', fetch)
+    mount()
+    const card = await screen.findByTestId(`sales-allocation-line-${LINE}`)
+    expect(await within(card).findByText('Bu sipariş satırı için tahsis yok.')).toBeTruthy()
+    await submitCreate(card)
+
+    const retry = await within(card).findByRole('button', { name: 'Aynı tahsis denemesini tekrar gönder' })
+    expect(within(card).queryByTestId(`sales-allocation-label-picker-${LINE}`)).toBeNull()
+    await userEvent.click(retry)
+    await waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts[1]).toEqual(posts[0])
+    expect(posts[0].key).toBeTruthy()
+    expect(JSON.parse(posts[1].body)).toMatchObject({ labelId: LABEL, expectedLabelVersion: '11' })
+    // After the recorded answer the picker is back, empty.
+    await waitFor(() => expect(within(card).getByTestId(`sales-allocation-label-selected-${LINE}`).textContent)
+      .toBe('Henüz etiket seçilmedi.'))
   })
 
   it('clears a stale pick after a version conflict', async () => {

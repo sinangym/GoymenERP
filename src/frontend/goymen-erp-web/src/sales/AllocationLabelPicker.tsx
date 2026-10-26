@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import type { ViewOutcome } from '../shell/uiState'
 import type { InventoryStockPositions } from '../inventory/contract'
+import { LABEL_CODE_MAX_LENGTH } from '../inventory/labelTransformationContract'
 import { searchAllocationLabels } from './allocationLabelApi'
 import { ALLOCATION_TEXT as T } from './allocationText'
 import styles from './SalesPages.module.css'
@@ -73,8 +74,8 @@ export function AllocationLabelPicker({ companyId, productId, lineId, disabled, 
       <legend>{T.pickerLegend}</legend>
       <label htmlFor={searchId}>{T.labelSearch}</label>
       <div className={styles.actions}>
-        <input id={searchId} type="search" value={q} aria-describedby={hintId} aria-controls={resultsId}
-          disabled={disabled}
+        <input id={searchId} type="search" value={q} aria-describedby={hintId}
+          maxLength={LABEL_CODE_MAX_LENGTH} disabled={disabled}
           onChange={(event) => setQ(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== 'Enter') return
@@ -112,7 +113,8 @@ export function AllocationLabelPicker({ companyId, productId, lineId, disabled, 
               <th scope="col">{T.labelChoose}</th>
             </tr></thead>
             <tbody>{state.page.items.map((item) => {
-              const chosen = selected?.labelId.toLowerCase() === item.labelId.toLowerCase()
+              const chosen = selected !== null && selected.labelId.toLowerCase() === item.labelId.toLowerCase()
+                && selected.labelVersion === item.labelVersion
               return (
                 <tr key={item.labelId}>
                   <td className={styles.identifier}>{item.labelCode}</td>
@@ -121,7 +123,7 @@ export function AllocationLabelPicker({ companyId, productId, lineId, disabled, 
                   <td>{item.labelVersion}</td>
                   <td>
                     <button type="button" className={styles.secondaryButton} aria-pressed={chosen}
-                      aria-label={`${item.labelCode} ${T.labelChooseAria}`} disabled={disabled}
+                      aria-label={`${item.labelCode} ${chosen ? T.labelChosenAria : T.labelChooseAria}`} disabled={disabled}
                       data-testid={`sales-allocation-label-option-${item.labelId}`}
                       onClick={() => onSelect({ labelId: item.labelId, labelVersion: item.labelVersion,
                         labelCode: item.labelCode, availableKg: item.availableKg })}>

@@ -28,6 +28,7 @@ export const ALLOCATION_TEXT = {
   labelChoose: 'Seç',
   labelChooseAria: 'etiketini seç',
   labelChosen: 'Seçildi',
+  labelChosenAria: 'etiketi seçildi',
   labelNoneSelected: 'Henüz etiket seçilmedi.',
   labelSelected: 'Seçili etiket:',
   labelSelectedVersion: 'sürüm',
