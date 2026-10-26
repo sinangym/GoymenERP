@@ -12,6 +12,7 @@ public static class ProductInitialTechnicalDefinitionV1
 {
     public const string SourceRef = "issue66-5973142585-4A";
     public const string CutSheetPlateSourceRef = "issue66-6180299892-product-tech-family-02";
+    public const string WeldedTubeProfileSourceRef = "issue66-6210091477-p013-a";
 
     public static readonly Guid HotRolledCoilFamilyId = Guid.Parse("b2b7079a-14ad-41ee-8d3a-35d55d1a21e9");
     public static readonly Guid ColdRolledCoilFamilyId = Guid.Parse("75e15f39-bfcb-4fea-9065-a602e2539439");
@@ -20,6 +21,18 @@ public static class ProductInitialTechnicalDefinitionV1
     public static readonly Guid TemplateId = Guid.Parse("ca5be23e-1f56-40c7-9e4a-6cdfc5e884b2");
     public static readonly Guid HotRolledCutSheetPlateFamilyId = Guid.Parse("075d01d5-c57c-44b9-903a-89c00e4db029");
     public static readonly Guid HotRolledCutSheetPlateTemplateId = Guid.Parse("57937348-393e-4982-a5a4-63eff8be40c9");
+    public static readonly Guid WeldedRoundPipeFamilyId = Guid.Parse("b5f197c1-9d8f-4d75-a170-4dd1cf0a6a99");
+    public static readonly Guid WeldedSquareProfileFamilyId = Guid.Parse("b5d078ba-dbb8-4ada-9b6f-28a5ecdeac54");
+    public static readonly Guid WeldedRectangleProfileFamilyId = Guid.Parse("f3ebc5b8-d55c-44dd-af7c-bfe2285f44df");
+    public static readonly Guid WeldedRoundPipeTemplateId = Guid.Parse("f944d764-56f6-4a04-9a31-65074b2c06c1");
+    public static readonly Guid WeldedSquareProfileTemplateId = Guid.Parse("93772f5f-5be9-4dba-8c61-f9942f4e523d");
+    public static readonly Guid WeldedRectangleProfileTemplateId = Guid.Parse("b97f74f3-11d8-4dc8-b5ba-bd1254e5fcc2");
+
+    public static bool RequiresCompleteTechnicalReferences(Guid? familyId) => familyId.HasValue
+        && (familyId == HotRolledCutSheetPlateFamilyId
+            || familyId == WeldedRoundPipeFamilyId
+            || familyId == WeldedSquareProfileFamilyId
+            || familyId == WeldedRectangleProfileFamilyId);
 
     // A fresh graph prevents consumers from mutating the definition used by another call.
     public static ProductFamilyDefinitionV2 Definition()
@@ -37,6 +50,15 @@ public static class ProductInitialTechnicalDefinitionV1
             new(HotRolledCutSheetPlateFamilyId, "hr-cut-sheet-plate", "Sıcak Haddelenmiş Kesilmiş Sac/Levha", "Sac",
                 "Sıcak Haddelenmiş", "Kesilmiş Sac/Levha", ProductFamilyRuleSetsV2.GdcCutSheetPlate,
                 CutSheetPlateSourceRef),
+            new(WeldedRoundPipeFamilyId, "welded-round-pipe", "Kaynaklı Yuvarlak Boru", "Boru",
+                "Kaynaklı", "Yuvarlak", ProductFamilyRuleSetsV2.GdcWeldedRoundPipe,
+                WeldedTubeProfileSourceRef),
+            new(WeldedSquareProfileFamilyId, "welded-square-profile", "Kaynaklı Kare Profil", "Profil",
+                "Kaynaklı", "Kare", ProductFamilyRuleSetsV2.GdcWeldedSquareProfile,
+                WeldedTubeProfileSourceRef),
+            new(WeldedRectangleProfileFamilyId, "welded-rectangle-profile", "Kaynaklı Dikdörtgen Profil", "Profil",
+                "Kaynaklı", "Dikdörtgen", ProductFamilyRuleSetsV2.GdcWeldedRectangleProfile,
+                WeldedTubeProfileSourceRef),
         };
 
         var template = new ProductTemplateV2(
@@ -87,6 +109,46 @@ public static class ProductInitialTechnicalDefinitionV1
             ],
             CutSheetPlateSourceRef);
 
+        var weldedRoundPipeTemplate = new ProductTemplateV2(
+            WeldedRoundPipeTemplateId,
+            "1",
+            "gdc-welded-round-pipe-v1",
+            "GDC Kaynaklı Yuvarlak Boru Teknik Kartı",
+            new HashSet<Guid> { WeldedRoundPipeFamilyId },
+            [
+                new("outside-diameter-mm", ProductTemplateFieldKindV2.MeasureMillimetre,
+                    ProductTemplateFieldRolesV2.OutsideDiameter, true, null, false, null, null, null),
+                new("wall-thickness-mm", ProductTemplateFieldKindV2.MeasureMillimetre,
+                    ProductTemplateFieldRolesV2.WallThickness, true, null, false, null, null, null),
+                new("length-mm", ProductTemplateFieldKindV2.MeasureMillimetre,
+                    ProductTemplateFieldRolesV2.Length, true, null, false, null, null, null),
+                new("steel-grade", ProductTemplateFieldKindV2.DictionaryReference,
+                    ProductTemplateFieldRolesV2.Quality, true, "gdc-steel-grades", false, null, null, null),
+                new("coating", ProductTemplateFieldKindV2.DictionaryReference,
+                    ProductTemplateFieldRolesV2.Coating, true, "gdc-coatings", false, null, null, null),
+                new("producer-grade", ProductTemplateFieldKindV2.DictionaryReference,
+                    null, false, "gdc-producer-grades", true, null, null, "steel-grade"),
+            ],
+            WeldedTubeProfileSourceRef);
+
+        var weldedSquareProfileTemplate = new ProductTemplateV2(
+            WeldedSquareProfileTemplateId,
+            "1",
+            "gdc-welded-square-profile-v1",
+            "GDC Kaynaklı Kare Profil Teknik Kartı",
+            new HashSet<Guid> { WeldedSquareProfileFamilyId },
+            ProfileFields(),
+            WeldedTubeProfileSourceRef);
+
+        var weldedRectangleProfileTemplate = new ProductTemplateV2(
+            WeldedRectangleProfileTemplateId,
+            "1",
+            "gdc-welded-rectangle-profile-v1",
+            "GDC Kaynaklı Dikdörtgen Profil Teknik Kartı",
+            new HashSet<Guid> { WeldedRectangleProfileFamilyId },
+            ProfileFields(),
+            WeldedTubeProfileSourceRef);
+
         var entries = new ProductDictionaryEntryV2[]
         {
             new("gdc-steel-grades", "S235JR", "S235JR", ProductDefinitionEntryStatusV2.Approved,
@@ -101,8 +163,28 @@ public static class ProductInitialTechnicalDefinitionV1
                 "product-source-40eb0b82", null, null, true),
         };
 
-        var definition = new ProductFamilyDefinitionV2(families, [template, cutSheetPlateTemplate], entries);
+        var definition = new ProductFamilyDefinitionV2(families,
+            [template, cutSheetPlateTemplate, weldedRoundPipeTemplate, weldedSquareProfileTemplate,
+             weldedRectangleProfileTemplate], entries);
         ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
         return definition;
     }
+
+    private static ProductTemplateFieldV2[] ProfileFields() =>
+    [
+        new("section-width-mm", ProductTemplateFieldKindV2.MeasureMillimetre,
+            ProductTemplateFieldRolesV2.SectionWidth, true, null, false, null, null, null),
+        new("section-height-mm", ProductTemplateFieldKindV2.MeasureMillimetre,
+            ProductTemplateFieldRolesV2.SectionHeight, true, null, false, null, null, null),
+        new("wall-thickness-mm", ProductTemplateFieldKindV2.MeasureMillimetre,
+            ProductTemplateFieldRolesV2.WallThickness, true, null, false, null, null, null),
+        new("length-mm", ProductTemplateFieldKindV2.MeasureMillimetre,
+            ProductTemplateFieldRolesV2.Length, true, null, false, null, null, null),
+        new("steel-grade", ProductTemplateFieldKindV2.DictionaryReference,
+            ProductTemplateFieldRolesV2.Quality, true, "gdc-steel-grades", false, null, null, null),
+        new("coating", ProductTemplateFieldKindV2.DictionaryReference,
+            ProductTemplateFieldRolesV2.Coating, true, "gdc-coatings", false, null, null, null),
+        new("producer-grade", ProductTemplateFieldKindV2.DictionaryReference,
+            null, false, "gdc-producer-grades", true, null, null, "steel-grade"),
+    ];
 }

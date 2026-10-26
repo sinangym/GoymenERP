@@ -86,9 +86,9 @@ internal static class ProductDraftOperation
                 .Select(group => group.Name).SingleOrDefaultAsync(cancellationToken)
                 ?? throw new InvalidOperationException("The stored Product code group is missing.");
             var beforeCard = Card(before, groupName);
-            // PRODUCT-TECH-FAMILY-02 adds one exact activation prerequisite for the accepted cut-sheet/plate
-            // family. Family-less and the four legacy coil/slit families retain DEC-PRD-010 activation semantics.
-            if (product.FamilyId == ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId)
+            // Source-released families with complete nominal geometry validate their exact template before
+            // activation. Family-less and the four legacy coil/slit families retain DEC-PRD-010 semantics.
+            if (ProductInitialTechnicalDefinitionV1.RequiresCompleteTechnicalReferences(product.FamilyId))
             {
                 var errors = await new ProductPurchaseFamilyRequirementPolicyV1(
                     new SqlProductFamilyDefinitionSource(context)).ValidateAsync(beforeCard, cancellationToken);

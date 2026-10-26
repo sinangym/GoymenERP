@@ -18,6 +18,12 @@ public static class ProductFamilyDefinitionRulesV2
         [ProductTemplateFieldRolesV2.Thickness, ProductTemplateFieldRolesV2.Width];
     private static readonly string[] CutSheetPlateMeasureRoles =
         [ProductTemplateFieldRolesV2.Thickness, ProductTemplateFieldRolesV2.Width, ProductTemplateFieldRolesV2.Length];
+    private static readonly string[] WeldedRoundPipeMeasureRoles =
+        [ProductTemplateFieldRolesV2.OutsideDiameter, ProductTemplateFieldRolesV2.WallThickness,
+         ProductTemplateFieldRolesV2.Length];
+    private static readonly string[] WeldedProfileMeasureRoles =
+        [ProductTemplateFieldRolesV2.SectionWidth, ProductTemplateFieldRolesV2.SectionHeight,
+         ProductTemplateFieldRolesV2.WallThickness, ProductTemplateFieldRolesV2.Length];
     private static readonly string[] RequiredReferenceRoles = [ProductTemplateFieldRolesV2.Quality, ProductTemplateFieldRolesV2.Coating];
 
     /// <summary>
@@ -91,6 +97,8 @@ public static class ProductFamilyDefinitionRulesV2
             }
         }
 
+        ValidateCanonicalSectionGeometry(definition, template, attributes, errors);
+
         return errors;
     }
 
@@ -123,9 +131,10 @@ public static class ProductFamilyDefinitionRulesV2
             return ProductFamilyPolicyCodesV1.ValueCandidate;
         }
 
-        if (field.ParentField is { } parentField && entry.ParentCode is { } parentCode
-            && !(TryGet(attributes, parentField, out var parent) && parent.ValueKind == JsonValueKind.String
-                && string.Equals(parent.GetString(), parentCode, StringComparison.Ordinal)))
+        if (field.ParentField is { } parentField
+            && (entry.ParentCode is not { } parentCode
+                || !(TryGet(attributes, parentField, out var parent) && parent.ValueKind == JsonValueKind.String
+                    && string.Equals(parent.GetString(), parentCode, StringComparison.Ordinal))))
         {
             return ProductFamilyPolicyCodesV1.ParentMismatch;
         }
@@ -151,6 +160,47 @@ public static class ProductFamilyDefinitionRulesV2
             && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined);
     }
 
+    private static void ValidateCanonicalSectionGeometry(ProductFamilyDefinitionV2 definition,
+        ProductTemplateV2 template, IReadOnlyDictionary<string, JsonElement>? attributes,
+        ICollection<ProductFieldError> errors)
+    {
+        var ruleSet = template.FamilyIds
+            .Select(id => definition.Families.Single(family => family.Id == id).RuleSet)
+            .Distinct(StringComparer.Ordinal)
+            .Single();
+        if (ruleSet is not (ProductFamilyRuleSetsV2.GdcWeldedSquareProfile
+            or ProductFamilyRuleSetsV2.GdcWeldedRectangleProfile))
+        {
+            return;
+        }
+
+        var widthField = template.Fields.Single(field => field.Role == ProductTemplateFieldRolesV2.SectionWidth);
+        var heightField = template.Fields.Single(field => field.Role == ProductTemplateFieldRolesV2.SectionHeight);
+        if (!TryGetValidMeasure(attributes, widthField.Key, out var width)
+            || !TryGetValidMeasure(attributes, heightField.Key, out var height))
+        {
+            return;
+        }
+
+        if (ruleSet == ProductFamilyRuleSetsV2.GdcWeldedSquareProfile && width != height)
+        {
+            errors.Add(new(Field(heightField.Key), ProductFamilyPolicyCodesV1.InvalidValue));
+        }
+        else if (ruleSet == ProductFamilyRuleSetsV2.GdcWeldedRectangleProfile && width <= height)
+        {
+            errors.Add(new(Field(widthField.Key), ProductFamilyPolicyCodesV1.InvalidValue));
+        }
+    }
+
+    private static bool TryGetValidMeasure(IReadOnlyDictionary<string, JsonElement>? attributes, string key,
+        out decimal value)
+    {
+        value = default;
+        return TryGet(attributes, key, out var element)
+            && MeasureError(element) is null
+            && element.TryGetDecimal(out value);
+    }
+
     private static bool IsWellFormed(ProductFamilyDefinitionV2 definition)
     {
         if (definition.Families is not { Count: > 0 } families || definition.Templates is not { Count: > 0 } templates
@@ -162,7 +212,10 @@ public static class ProductFamilyDefinitionRulesV2
         if (families.Any(family => family is null || family.Id == Guid.Empty
                 || Blank(family.Code, family.Name, family.Cins, family.Tur, family.Tip, family.SourceRef)
                 || family.RuleSet is not (ProductFamilyRuleSetsV2.GdcBandCoil
-                    or ProductFamilyRuleSetsV2.GdcCutSheetPlate))
+                    or ProductFamilyRuleSetsV2.GdcCutSheetPlate
+                    or ProductFamilyRuleSetsV2.GdcWeldedRoundPipe
+                    or ProductFamilyRuleSetsV2.GdcWeldedSquareProfile
+                    or ProductFamilyRuleSetsV2.GdcWeldedRectangleProfile))
             || families.Select(family => family.Id).Distinct().Count() != families.Count
             || families.Select(family => family.Code).Distinct(StringComparer.Ordinal).Count() != families.Count)
         {
@@ -224,6 +277,9 @@ public static class ProductFamilyDefinitionRulesV2
         {
             ProductFamilyRuleSetsV2.GdcBandCoil => BandCoilMeasureRoles,
             ProductFamilyRuleSetsV2.GdcCutSheetPlate => CutSheetPlateMeasureRoles,
+            ProductFamilyRuleSetsV2.GdcWeldedRoundPipe => WeldedRoundPipeMeasureRoles,
+            ProductFamilyRuleSetsV2.GdcWeldedSquareProfile => WeldedProfileMeasureRoles,
+            ProductFamilyRuleSetsV2.GdcWeldedRectangleProfile => WeldedProfileMeasureRoles,
             _ => [],
         };
         if (requiredMeasureRoles.Length == 0)
@@ -272,7 +328,7 @@ public static class ProductFamilyDefinitionRulesV2
         }
 
         // Every rule set's measure roles and the shared controlled-reference roles occur exactly once,
-        // required and unconditional. Length belongs only to the cut-sheet/plate rule set.
+        // required and unconditional. Each geometry exposes only the roles accepted for its rule set.
         foreach (var role in requiredMeasureRoles.Concat(RequiredReferenceRoles))
         {
             var holders = fields.Where(field => field.Role == role).ToArray();

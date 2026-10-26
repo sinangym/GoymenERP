@@ -282,8 +282,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Q16 / AT-020: +3 Product import API SQL facts (d434c2b8… -> 9958c91f…).
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             // PRODUCT-TECH-FAMILY-02: replace one renamed runtime fact and add two cut-sheet/plate facts.
+            // P01.3: +2 welded-tube/profile exact release, activation, rollback, and replay SQL facts.
             ["tools/relational_inventory/product.txt"] =
-                "f99d1623cf8e8a302690007a3eeb5629193b9ebb243b966bf18fa9ad1caef4f1",
+                "a3d5800cc6e1c9bea1c940e972088e881abfa289fbbefcd784b52a2e95c3686e",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
@@ -1439,6 +1440,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs"] =
                     new(
                         "2972fbf7027788026a2d589785190b7087eef97d40c7b6f5fe4e8d29ed4245a8",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
+                        }),
+                // P01.3 publishes the exact welded-tube/profile family surface. Up refuses prerequisite or
+                // identity drift; Down refuses changed cards/replays before deleting only the exact footprint.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/Persistence/Migrations/"
+                 + "20261016100000_ReleaseWeldedTubeProfileTechnicalDefinition.cs"] =
+                    new(
+                        "0b213835b34a3d04c4314608f90749e190b16511a433a4d8d6f06673b825bdae",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 2
