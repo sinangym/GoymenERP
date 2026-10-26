@@ -31,7 +31,7 @@ P0/P1 bulunmaması şartlarıyla koordinatör merge edebilir. Bu yetki otomatik 
 | K1/K2'de her push'ta tam yeniden review | **Review dondurma + delta review:** yazar `REVIEW-READY <sha>` yazar, review gelene kadar push yapmaz; bulgular yeni commit'le kapanır; reviewer `git diff <REVIEW-READY sha>..<yeni head>` deltasını okur ve `DELTA-OK <yeni-sha>` yazar. `DELTA-OK <sha>` o head için **exact-head imzasıdır**: koordinatörün expected-head'i = son DELTA-OK sha'sı; DELTA-OK'tan sonraki her push yeni `REVIEW-READY` ister; delta `origin/main` merge'i veya REVIEW-READY diff'i dışındaki dosyayı içeriyorsa delta modu düşer, tam review gerekir. |
 | K3'te de aynı | **Değişmez:** K3'te delta review uygulanmaz; her yeni head için iki bağımsız tam exact-head review yeniden alınır. Review dondurma (aynı anda tek aday head) K3'te de uygulanır. |
 | NEEDS-SINAN → bekleme | **P8 delegasyonu** (`SINAN_KARARLARI_2026-10-21.md` §1): bir karardan veya P1–P7'den doğrudan türeyen soruyu koordinatör `DELEGE-*` olarak cevaplar (GECICI_VARSAYIM; registry v1 değeri; Sinan geri alabilir), devam eder; sicile KILITLI yalnız Sinan'ın açık onayıyla — sessizlik onay değildir. Politika/`OPEN-*` sorusu `NEEDS-SINAN` kalır, haftalık listede Sinan'a gider. |
-| Hosted CI / bütçe tartışması | `CI_SIFIR_MALIYET_MODELI_20261021.md`: self-hosted, artifact/cache yok, bütçe `$0`. `.github/**` PR'ında Sinan `MERGE-OK` aranmaz; koordinatör iki bağımsız exact-head review'un bütün `runs-on` değerlerinin self-hosted kaldığını, hosted fallback ile artifact/cache/Packages/secret/environment/deploy yüzeyi açılmadığını doğrulamasından sonra merge edebilir. |
+| Hosted CI / bütçe tartışması | `CI_SIFIR_MALIYET_MODELI_20261021.md` + `SINAN_KARARLARI_2026-10-26_PUBLIC_CI.md`: public depo, GitHub-hosted runner, yalnız CI kanıtı artifact'ı (≤ 7 gün), cache yok, bütçe `$0`. `.github/**` PR'ında Sinan `MERGE-OK` aranmaz; koordinatör iki bağımsız exact-head review'un bütün `runs-on` değerlerinin GitHub-hosted olduğunu, self-hosted etiket ile cache/Packages/secret/environment/deploy yüzeyi açılmadığını doğrulamasından sonra merge edebilir. |
 | Her komut için izin onayı | Repo `.claude/settings.json` izin listesi (Ek A; koordinatör ayrı dar PR ile hazırlar); bu dosyanın PR'ı genel koordinatör merge yetkisinin dar istisnasıdır ve Sinan'ın Issue #66'daki açık tek satırlık onayı olmadan merge edilmez. Cloud oturumlarında Auto modu kullanıcı seçimi olarak kalır. |
 
 ## 2. Dur koşulları (değişmedi, 3 tane)
@@ -48,8 +48,8 @@ arkaya 2 davranışsız tur.
   veya sonraki `DELTA-OK <sha>` = aday head); K3 iki tam review; P0/P1 yok. Yalnız
   doküman/governance/karar/ayar dosyası değiştiren PR'da fresh CI aranmaz; `NOT_RUN` PASS
   değildir. `.github/**` değişikliğinde iki review ayrıca bütün `runs-on` değerlerinin
-  self-hosted kaldığını ve hosted fallback ile artifact/cache/Packages/secret/environment/deploy
-  yüzeyi açılmadığını doğrular. Koordinatör expected-head squash merge; expected-head ≠ son
+  GitHub-hosted olduğunu ve self-hosted etiket ile cache/Packages/secret/environment/deploy
+  yüzeyi açılmadığını doğrular (artifact yalnız ≤ 7 günlük CI kanıtı). Koordinatör expected-head squash merge; expected-head ≠ son
   imzalı sha ise merge yok.
 
 ## 4. Her zaman, sıralı ağır koşular
