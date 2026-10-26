@@ -95,6 +95,10 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
             .Where(allocation => allocation.CompanyId == companyId && labelIds.Contains(allocation.LabelId)
                 && allocation.Status == (int)StockAllocationStatus.Active)
             .ToListAsync(cancellationToken);
+        var physicalHolds = await db.PhysicalHolds.AsNoTracking()
+            .Where(hold => hold.CompanyId == companyId && labelIds.Contains(hold.LabelId)
+                && hold.Status == InventoryStore.PhysicalHoldActive)
+            .ToListAsync(cancellationToken);
         var versions = await db.Labels.AsNoTracking()
             .Where(label => label.CompanyId == companyId && labelIds.Contains(label.Id))
             .Select(label => new { label.Id, label.Version })
@@ -104,7 +108,7 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
             throw new InventoryStockPositionException(409, InventoryStockPositionCodesV1.ReadConflict);
         }
 
-        return labels.Select(row => Capture(row, lots, documents, balances, allocations)).ToArray();
+        return labels.Select(row => Capture(row, lots, documents, balances, allocations, physicalHolds)).ToArray();
     }
 
     private static InventoryStockPositionRecord Capture(
@@ -112,7 +116,8 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
         IReadOnlyDictionary<Guid, LotRow> lots,
         IReadOnlyList<LabelDocumentRow> documents,
         IReadOnlyList<BalanceRow> balances,
-        IReadOnlyList<AllocationRow> allocations)
+        IReadOnlyList<AllocationRow> allocations,
+        IReadOnlyList<InventoryPhysicalHoldRow> physicalHolds)
     {
         if (!lots.TryGetValue(row.LotId, out var lot))
         {
@@ -163,11 +168,26 @@ internal sealed class SqlInventoryStockPositionReader(InventoryDbContext db) : I
                 allocation.RemainingKg))
             .ToArray();
 
+        var activePhysicalHolds = physicalHolds.Where(hold => hold.LabelId == row.Id)
+            .Select(hold => new InventoryActivePhysicalHoldRecord(
+                hold.OwnerKind,
+                hold.SourceKind,
+                hold.SourceId,
+                ((StockPartyKind)hold.PositionOwnerKind).ToString(),
+                hold.PositionOwnerId,
+                ((StockPartyKind)hold.CustodianKind).ToString(),
+                hold.CustodianId,
+                hold.LocationId,
+                hold.ProductId,
+                hold.QuantityKg))
+            .ToArray();
+
         return new InventoryStockPositionRecord(
             row.Version,
             label,
             new MaterialLot(lot.Id, lot.CompanyId, lot.ProductId, lot.HeatNumber, lot.CoilNumber),
             storedBalances,
-            activeAllocations);
+            activeAllocations,
+            activePhysicalHolds);
     }
 }

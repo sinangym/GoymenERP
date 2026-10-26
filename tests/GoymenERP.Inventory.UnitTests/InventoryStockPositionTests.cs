@@ -7,6 +7,7 @@ using GoymenERP.Modules.Inventory.Domain.Lots;
 using GoymenERP.Modules.Inventory.Domain.Quantities;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure;
+using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 
 namespace GoymenERP.Inventory.UnitTests;
 
@@ -31,6 +32,51 @@ public sealed class InventoryStockPositionTests
         Assert.Null(item.ProductVersion);
         Assert.Null(item.Classification);
         Assert.Equal(new InventoryLotV1(item.Lot.Id, "HEAT-1", null), item.Lot);
+    }
+
+    [Fact]
+    public async Task Whole_label_quality_hold_and_active_allocation_are_composed_without_double_subtraction()
+    {
+        var world = new World();
+        world.Reader.Record = Record(freeKg: 10m, blockedKg: 20m, allocatedKg: 10m,
+            activeQualityHold: true);
+
+        var item = Assert.Single((await world.Service().SearchAsync(new())).Items);
+
+        Assert.Equal(("30", "10", "20", "10", "0"),
+            (item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                item.ActiveAllocationKg, item.AvailableKg));
+    }
+
+    [Fact]
+    public async Task Fully_allocated_quality_hold_keeps_truthful_free_components_and_zero_available()
+    {
+        var world = new World();
+        world.Reader.Record = Record(freeKg: 30m, blockedKg: 0m, allocatedKg: 30m,
+            activeQualityHold: true);
+
+        var item = Assert.Single((await world.Service().SearchAsync(new())).Items);
+
+        Assert.Equal(("30", "30", "0", "30", "0"),
+            (item.PhysicalKg, item.FreePhysicalKg, item.BlockedPhysicalKg,
+                item.ActiveAllocationKg, item.AvailableKg));
+    }
+
+    [Theory]
+    [InlineData("missing-hold")]
+    [InlineData("partial-hold")]
+    [InlineData("over-allocation")]
+    public async Task Allocation_overlap_requires_exact_whole_label_quality_hold_evidence(string corruption)
+    {
+        var world = new World();
+        world.Reader.Record = Record(
+            freeKg: corruption == "missing-hold" ? 0m : 10m,
+            blockedKg: corruption == "missing-hold" ? 30m : 20m,
+            allocatedKg: corruption == "over-allocation" ? 31m : 10m,
+            activeQualityHold: corruption != "missing-hold",
+            qualityHoldKg: corruption == "partial-hold" ? 20m : null);
+
+        await Refused(world.Service().SearchAsync(new()), 503, InventoryStockPositionCodesV1.Unavailable);
     }
 
     [Fact]
@@ -407,7 +453,9 @@ public sealed class InventoryStockPositionTests
         decimal allocatedKg = 0m,
         bool customerOwned = false,
         LabelClassification? classification = null,
-        string? productVersion = null)
+        string? productVersion = null,
+        bool activeQualityHold = false,
+        decimal? qualityHoldKg = null)
     {
         var productId = Guid.NewGuid();
         var lot = new MaterialLot(Guid.NewGuid(), Company, productId, "HEAT-1", null);
@@ -440,7 +488,20 @@ public sealed class InventoryStockPositionTests
             : [new InventoryActiveAllocationRecord(
                 owner.Kind.ToString(), owner.Id, custodian.Kind.ToString(), custodian.Id,
                 locationId, BlockState.Free.ToString(), allocatedKg)];
-        return new InventoryStockPositionRecord(3, label, lot, balances, allocations);
+        var holds = activeQualityHold
+            ? [new InventoryActivePhysicalHoldRecord(
+                InventoryStore.QualityPhysicalHoldOwner,
+                InventoryPhysicalHoldTokensV1.QualityInspectionSource,
+                Guid.NewGuid(),
+                owner.Kind.ToString(),
+                owner.Id,
+                custodian.Kind.ToString(),
+                custodian.Id,
+                locationId,
+                productId,
+                qualityHoldKg ?? freeKg + blockedKg)]
+            : Array.Empty<InventoryActivePhysicalHoldRecord>();
+        return new InventoryStockPositionRecord(3, label, lot, balances, allocations, holds);
     }
 
     private sealed class World

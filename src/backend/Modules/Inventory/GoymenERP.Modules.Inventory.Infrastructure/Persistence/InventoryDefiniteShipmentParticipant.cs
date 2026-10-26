@@ -132,6 +132,11 @@ public sealed class InventoryDefiniteShipmentParticipant : IInventoryDefiniteShi
         {
             throw Refused(409, InventoryDefiniteShipmentCodesV1.LabelVersionConflict);
         }
+        if (await context.PhysicalHolds.AsNoTracking().AnyAsync(row => row.LabelId == labelRow.Id
+                && row.Status == InventoryStore.PhysicalHoldActive, cancellationToken))
+        {
+            throw Refused(409, InventoryDefiniteShipmentCodesV1.LabelNotReleasable);
+        }
 
         MaterialLabel label;
         StockPosition position;

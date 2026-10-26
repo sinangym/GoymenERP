@@ -73,6 +73,9 @@
     <Project Path="src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/GoymenERP.Modules.Purchasing.Domain.csproj" />
     <Project Path="src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/GoymenERP.Modules.Purchasing.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/backend/Modules/Quality/">
+    <Project Path="src/backend/Modules/Quality/GoymenERP.Modules.Quality.Application/GoymenERP.Modules.Quality.Application.csproj" />
+  </Folder>
   <Folder Name="/src/backend/Modules/Sales/">
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
     <Project Path="src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/GoymenERP.Modules.Sales.Domain.csproj" />
@@ -100,6 +103,7 @@
     <Project Path="tests/GoymenERP.Organization.UnitTests/GoymenERP.Organization.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Product.UnitTests/GoymenERP.Product.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Purchasing.UnitTests/GoymenERP.Purchasing.UnitTests.csproj" />
+    <Project Path="tests/GoymenERP.Quality.UnitTests/GoymenERP.Quality.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj" />
     <Project Path="tests/GoymenERP.SqlServerRcsiReadiness.Tests/GoymenERP.SqlServerRcsiReadiness.Tests.csproj" />
     <Project Path="tests/GoymenERP.Identity.UnitTests/GoymenERP.Identity.UnitTests.csproj" />

@@ -122,6 +122,12 @@ public sealed partial class InventoryStore
         {
             throw AllocationError(422, InventoryAllocationCodesV1.InvalidReference);
         }
+        if (await dbContext.PhysicalHolds.AsNoTracking().AnyAsync(hold =>
+                (hold.LabelId == sourceLabel.Id || hold.LabelId == targetLabel.Id)
+                && hold.Status == PhysicalHoldActive, cancellationToken))
+        {
+            throw AllocationError(409, InventoryAllocationCodesV1.AllocationStateConflict);
+        }
 
         if (!isMove && quantity.Value == allocation.Remaining.Value)
         {

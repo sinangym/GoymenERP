@@ -113,6 +113,49 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Active_quality_hold_refuses_allocation_change_without_history_or_balance_effect_on_real_SQL()
+    {
+        await using var run = await Run.StartAsync();
+        var source = await SeedFreePhysicalSourceAsync(run, CompanyA, "SYN-ALLOC-HOLD-CHANGE", 30m);
+        var create = AllocationRequest(source, "30");
+        await using (var scope = run.Store(CompanyA))
+        {
+            await scope.Store.CreateAsync(create, Metadata(run));
+        }
+        await PlaceAsync(run,
+            new(Guid.NewGuid(), source.LabelId, Version(await LabelVersionAsync(run, source.LabelId)), Guid.NewGuid(),
+                "SENTETIK tahsis değişiklik engeli", null),
+            HoldMetadata(run, "allocation-change-hold-maker", "allocation-change-hold-place"));
+
+        var labelVersion = await LabelVersionAsync(run, source.LabelId);
+        var before = (
+            Effects: await AllocationChangeEffectsAsync(run),
+            Movements: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            Allocation: await run.ScalarAsync<string>(
+                "SELECT CONCAT(Version, N'|', Status, N'|', RemainingKg) FROM inventory.Allocations WHERE Id = @id",
+                ("@id", create.AllocationId)),
+            LabelVersion: labelVersion);
+
+        await using (var scope = run.Store(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<InventoryAllocationException>(() => scope.Store.ChangeAsync(
+                create.AllocationId,
+                ChangeRequest(create, "1", source.LabelId, labelVersion, "20", null), Metadata(run)));
+            Assert.Equal((409, InventoryAllocationCodesV1.AllocationStateConflict),
+                (refused.Status, refused.Code));
+        }
+
+        var after = (
+            Effects: await AllocationChangeEffectsAsync(run),
+            Movements: await run.ScalarAsync<int>("SELECT COUNT(*) FROM inventory.Movements"),
+            Allocation: await run.ScalarAsync<string>(
+                "SELECT CONCAT(Version, N'|', Status, N'|', RemainingKg) FROM inventory.Allocations WHERE Id = @id",
+                ("@id", create.AllocationId)),
+            LabelVersion: await LabelVersionAsync(run, source.LabelId));
+        Assert.Equal(before, after);
+    }
+
+    [SqlServerFact]
     public async Task Allocation_move_releases_the_source_and_reserves_the_target_in_one_save_with_history()
     {
         await using var run = await Run.StartAsync();

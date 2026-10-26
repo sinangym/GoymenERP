@@ -187,6 +187,11 @@ public sealed partial class InventoryStore
         {
             throw AllocationError(422, InventoryAllocationCodesV1.InvalidReference);
         }
+        if (await dbContext.PhysicalHolds.AsNoTracking().AnyAsync(hold => hold.LabelId == row.LabelId
+                && hold.Status == PhysicalHoldActive, cancellationToken))
+        {
+            throw AllocationError(409, InventoryAllocationCodesV1.AllocationStateConflict);
+        }
 
         var label = await dbContext.Labels.SingleOrDefaultAsync(candidate => candidate.Id == row.LabelId, cancellationToken)
             ?? throw new InvalidOperationException("Kayıtlı tahsisin etiketi bulunamadı.");
