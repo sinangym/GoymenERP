@@ -568,4 +568,3 @@ describe('normal journal draft accounts (BLG-05b)', () => {
     expect(screen.queryByText('Normal taslağı onayla')).toBeNull()
   })
 })
-
