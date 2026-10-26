@@ -14,8 +14,36 @@
 Her yeni çalışma döngüsünde `docs/governance/CODEX_OTONOM_PROJE_ORKESTRATORU_v1.md`
 varsa okunur ve görev/branch/PR/doğrulama akışında uygulanır. Bu protokol yukarıdaki kaynak
 önceliğini veya iş kurallarını değiştirmez ve kendi başına dış yazma ya da merge yetkisi
-vermez. `AGENTS.md`, governance, CI veya merge politikası değişiklikleri otomatik merge
-edilemez; insan review kapısında kalır.
+vermez.
+
+**Governance/süreç dosyalarının merge'i (22 Ekim 2026 kullanıcı kararı; önceki "insan review
+kapısında kalır" kuralının yerine geçer):** `AGENTS.md`, `docs/governance/**`,
+`docs/decisions/**`, `.claude/**` ve `.github/**` kalite kapısı değişiklikleri, aşağıdaki
+şartlarla **`CODEX-ORCHESTRATOR` tarafından merge edilebilir**; Sinan'ın tıkı beklenmez
+(25 Ekim 2026 istisnası: Claude şeridi kendi açtığı `claude/*` governance PR'ını aynı iki
+review ve kanıt şartıyla merge edebilir — `docs/decisions/SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md`):
+
+- Yazar ≠ koordinatör; iki bağımsız exact-head review; açık P0/P1 yok.
+- Yalnız doküman/governance/karar/ayar dosyası (`docs/**`, `AGENTS.md`, `.claude/**`)
+  değiştiren PR'da **CI koşumu şartı aranmaz**; `git diff --check` + iki review yeter.
+- `docs/decisions/**`, `docs/backlog/**` veya `.github/**` değiştiren adaylarda merge
+  öncesi `tools/validate_delivery_backlog.py`, `tests/delivery_backlog_validator/`
+  (bağımsız sicil MD/CSV eşliği dahil) ve `tests/dotnet_bootstrap_integrity/`
+  hafif kontrolleri yerelde çalıştırılır; komut, exit code ve kaynak commit'i PR'a
+  kaydedilir. Kaynak değişirse bu kanıt yenilenir. Sicil hash'i yalnız mevcut
+  `tests/delivery_backlog_validator/recompute_delivery_backlog_provenance.py`
+  üreticisinin çıktısından ve onaylı kaynak değişikliği incelendikten sonra güncellenir.
+  Bu daraltma test veya uygulama dosyası içeren adayın normal fresh CI şartını kaldırmaz.
+- `.github/**` değişikliğinde iki review ayrıca şunu doğrular: her `runs-on` GitHub-hosted
+  (`ubuntu-latest`/`windows-latest`) etikettir, self-hosted etiket yoktur, artifact yalnız
+  secret içermeyen CI kanıtıdır (saklama ≤ 7 gün); cache/Packages yüklemesi, secret,
+  environment veya deploy yüzeyi açılmamıştır (`SINAN_KARARLARI_2026-10-26_PUBLIC_CI.md`).
+- Merge sonrası Issue #66'ya tek satır makbuz (PR, merge SHA, iki review bağlantısı).
+- Sinan bu yetkiyi Issue #66'ya yazacağı tek satırla geri alabilir.
+
+**Değişmeyen insan kapıları:** deployment, environment, secret, workflow'ların Settings →
+Actions'ta etkinleştirilmesi, grant/rol/Critical, production aktivasyonu ve `OPEN-*`
+kapatma her zaman somut kullanıcı kararı ister.
 
 `docs/governance/GOYMEN_ERP_OTONOM_TESLIM_PLANI_v2.md` merge edilmişse ayrıca okunur.
 
@@ -25,7 +53,20 @@ güvenlik değişmezleri (bu dosyanın "Mimari değişmezler" ve "Yasaklar" böl
 `KARAR_SICILI.md` önceliği, production aktivasyonunun insanda kalması) aynen korunur.
 Çelişkide v3 süreç tarafında, v2 güvenlik tarafında üstündür.
 
-- Pre-production PR'ı tek karşı-ajan review + fresh zorunlu CI ile coordinator merge edilir.
+`docs/governance/GOYMEN_ERP_HIZLI_TESLIM_v4.md` merge edilmişse v3'ten **önce** okunur ve
+uygulanır. v4 (2026-10-21 kullanıcı kararı §2), v3'ün tören seviyesini ve karar akışını
+günceller (dalga START-GO, review dondurma + K1/K2 delta review `DELTA-OK`, P8 `DELEGE-*`
+delegasyonu, yorum disiplini); güvenlik değişmezleri, K3 tanımı ve K3'teki iki bağımsız
+exact-head review aynen korunur. K1/K2'de dondurulmuş `REVIEW-READY <sha>` üzerindeki tam
+karşı-ajan review + merge edilecek son head için `DELTA-OK <sha>` imzası "exact-head
+bağımsız review" şartını sağlar. Çelişkide v4 süreç tarafında, v2/v3 güvenlik tarafında
+üstündür.
+
+- Pre-production PR'ı tek karşı-ajan review + fresh zorunlu CI ile coordinator merge edilir
+  (Claude şeridinin kendi PR'ları için 25 Ekim 2026 istisnası aşağıda; review yorumu
+  ASSUMPTION-MERGE-1 için bkz. `docs/decisions/SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md`).
+  Yalnız doküman/governance/ayar dosyası değiştiren PR'da fresh CI şartı yoktur (yukarıdaki
+  22 Ekim kuralı).
 - İki bağımsız exact-head review yalnız **K3**'te gerekir; K3 kapsamı dardır: DB
   migration/constraint · para/formül/tolerans · permission/rol · cross-module contract ·
   `.github/**` · production activation. Diğer her şey K1/K2.
@@ -36,7 +77,8 @@ güvenlik değişmezleri (bu dosyanın "Mimari değişmezler" ve "Yasaklar" böl
 - Şeritler (v3 §6): **Codex** = backend + endpoint + gerçek-SQL + OpenAPI + formül
   calculator. **Claude** = tüm frontend / React shell / ekranlar / generated-client
   tüketimi / browser-a11y. **ChatGPT** = iş spec + acceptance + formül golden + backlog +
-  hakemlik (tam-zamanında, bir dilim önde). **`CODEX-ORCHESTRATOR`** = merge. Üç ajan
+  hakemlik (tam-zamanında, bir dilim önde). **`CODEX-ORCHESTRATOR`** = merge (Claude
+  şeridi kendi PR'larını da merge edebilir; 25 Ekim 2026 kararı). Üç ajan
   aynı dikey dilimin farklı katmanında çalışır.
 
 En güncel kullanıcı kararları için `docs/decisions/` içindeki tarihli `SINAN_KARARLARI_*.md`
@@ -46,7 +88,13 @@ dosyaları `KARAR_SICILI.md`'den önce, "son kullanıcı kararı" seviyesinde ge
 alınabilir standing merge yetkisini verir:
 
 - Şerit yazarı kendi PR'ını merge etmez; merge'i ayrı `CODEX-ORCHESTRATOR` koordinatörü
-  expected-head ile yapar.
+  expected-head ile yapar. **İstisna (25 Ekim 2026 kullanıcı kararı,
+  `docs/decisions/SINAN_KARARLARI_2026-10-25_MERGE_YETKISI.md`):** Claude şeridi yalnız
+  kendi açtığı `claude/*` PR'larını, bu bölümdeki ve 22 Ekim kuralındaki bütün kapılarla
+  (fresh CI, exact-head bağımsız review, yeni davranış testi, K3 ve governance'ta iki
+  review, açık P0/P1 yok, `.claude/settings.json` için Sinan'ın #66 onayı)
+  `CODEX-ORCHESTRATOR`'ı beklemeden squash merge edebilir ve merge sonrası Issue #66
+  makbuzuyla `CODEX-ORCHESTRATOR`'ı bilgilendirir. İnsan kapıları değişmez.
 - K1/K2 implementation PR'ı ancak fresh zorunlu kontroller, exact-head bağımsız review,
   yeni davranış testi ve açık P0/P1 olmaması halinde coordinator tarafından squash merge
   edilebilir.
@@ -57,10 +105,12 @@ alınabilir standing merge yetkisini verir:
   karar/master/task durumunu sessiz değiştirme, secret/deployment veya production
   aktivasyonu yetkisi değildir.
 - `.github/**` içinde yalnız build/test/contract/security kalite kapısı değişikliği aynı
-  K3 kanıtıyla merge edilebilir. Deployment, environment, secret ve production yüzeyi
-  her zaman somut kullanıcı kararı ister.
+  K3 kanıtıyla merge edilebilir (22 Ekim 2026 kuralı: CI koşumu olmadan da, iki review'un
+  GitHub-hosted/secret/deploy doğrulamasıyla). Deployment, environment, secret ve production
+  yüzeyi her zaman somut kullanıcı kararı ister.
 
-GitHub teknik koruması kullanılamıyorsa lane self-merge kapalı kalır; coordinator aynı
+GitHub teknik koruması kullanılamıyorsa lane self-merge kapalı kalır (tek istisna: yukarıdaki
+25 Ekim 2026 Claude şeridi kararı); coordinator — ve bu istisnada Claude şeridi — aynı
 kapıları prosedürel olarak doğrular ve kanıtı GitHub'a yazmadan merge yapmaz.
 
 ## Mimari değişmezler
