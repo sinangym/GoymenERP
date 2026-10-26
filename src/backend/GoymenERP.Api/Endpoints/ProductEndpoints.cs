@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Product.Application;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Domain.Products;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
@@ -92,6 +93,28 @@ public static class ProductEndpoints
                 var card = await service.GetAsync(id, cancellationToken);
                 return card is null ? Problem(ProductApiV1.NotFound, 404) : Results.Ok(card);
             })).WithName("GetProductV1").Produces<ProductCardView>().WithProductRuntimeContract(notFound: true);
+
+        group.MapGet(ProductManufacturingTechnicalHttpApiV2.Route, async (Guid id,
+            [AsParameters] ProductManufacturingTechnicalHttpQueryV2 query,
+            IProductManufacturingTechnicalSnapshotV2 snapshots,
+            HttpContext context,
+            CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
+            {
+                try
+                {
+                    var result = await snapshots.ReadAsync(new(id, query.ExpectedProductVersion, query.EffectiveOn),
+                        cancellationToken);
+                    return Results.Ok(ProductManufacturingTechnicalHttpProjectionV2.From(result));
+                }
+                catch (SettingsPrerequisiteException exception)
+                {
+                    throw new ProductOperationException(exception.Code,
+                        string.Equals(exception.Code, "settings_access_denied", StringComparison.Ordinal) ? 403 : 503);
+                }
+            }))
+            .WithName(ProductManufacturingTechnicalHttpApiV2.OperationId)
+            .Produces<ProductManufacturingTechnicalHttpResultV2>()
+            .WithProductRuntimeContract(primitiveBinding: true, operationalSelection: true, unavailable: true);
 
         group.MapPost("/", async (CreateProductDraftRequest request, IProductService service,
             HttpContext context, CancellationToken cancellationToken) => await ExecuteAsync(context, async () =>
