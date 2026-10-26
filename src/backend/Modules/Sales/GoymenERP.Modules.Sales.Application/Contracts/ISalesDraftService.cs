@@ -70,6 +70,11 @@ public interface ISalesDraftService
     Task<SalesOrderDraftLoadingProgressResponse> GetDraftLoadingProgressAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
+    // SAT-D8 / API-10 — per line the approved customer-return total from Logistics (through
+    // ISalesOrderCustomerReturnReadPortV1), under the draft read; read-only, nothing is written in either module.
+    Task<SalesOrderDraftCustomerReturnsResponse> GetDraftCustomerReturnsAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+
     // DEC-SAL-005 / AT-007 — the impact preview and the cancellation of an approved order under `sales.orders.cancel`
     // (owners read through their ports; fail-closed: any recorded effect or an unreadable owner refuses), and the read of the
     // recorded cancellation (`sales.drafts.read`).

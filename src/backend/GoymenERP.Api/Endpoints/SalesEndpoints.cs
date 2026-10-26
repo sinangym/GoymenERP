@@ -373,6 +373,7 @@ public static class SalesEndpoints
         MapDeliverySchedules(drafts);
         MapDeliveryProgress(drafts);
         MapLoadingProgress(drafts);
+        MapCustomerReturns(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
@@ -862,6 +863,37 @@ public static class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftLoadingProgressV1")
             .Produces<SalesOrderDraftLoadingProgressResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// SAT-D8 / API-10: per line the approved customer-return total from Logistics, read through the Sales-declared owner
+    /// port under <c>sales.drafts.read</c> (returns live on the order; no separate menu). Another company's draft is 404;
+    /// the read writes nothing in either module.
+    /// </summary>
+    private static void MapCustomerReturns(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/customer-returns", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftCustomerReturnsAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftCustomerReturnsV1")
+            .Produces<SalesOrderDraftCustomerReturnsResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

@@ -92,7 +92,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOrderLoadingReadPortV1>(),
         // AT-018 / AT-021: the Product price-list reference read, registered by the Product owner's AddProductPriceLists;
         // until it is, a list-price reference is 503, never an assumed "no price".
-        serviceProvider.GetService<IProductQuantityPriceReferenceReaderV1>());
+        serviceProvider.GetService<IProductQuantityPriceReferenceReaderV1>(),
+        // SAT-D8 / API-10: the customer-return owner's read port, registered by that owner's module (Logistics); until it
+        // is, the order's approved-returns read is 503, never an assumed "nothing returned".
+        serviceProvider.GetService<ISalesOrderCustomerReturnReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

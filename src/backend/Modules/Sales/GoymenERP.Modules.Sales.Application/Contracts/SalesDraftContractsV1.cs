@@ -302,6 +302,10 @@ public static class SalesDraftApiV1
     // DEC-SAL-005: Logistics-owned loading-instruction facts per Sales line, read under the draft-read authority.
     public const string LoadingProgressPath = "/api/v1/sales/drafts/{id}/loading-progress";
 
+    // SAT-D8 / API-10: the order's approved customer returns per Sales line (Logistics-owned), read under the draft-read
+    // authority. Returns are shown on the order; there is no separate menu.
+    public const string CustomerReturnsPath = "/api/v1/sales/drafts/{id}/customer-returns";
+
     // DEC-SAL-005 / AT-007: the impact preview (GET, the cancel permission), the cancel command (POST, 200 with the detail
     // after the change; same-key replay 200 + `Idempotency-Replayed`) and the recorded cancellation (GET, the draft read).
     // The detail wire is unchanged apart from the lifecycle `state` ("Cancelled"): the facts live on their own route so the

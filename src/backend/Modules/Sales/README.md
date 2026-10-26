@@ -207,6 +207,20 @@ order; the delivery facts are the delivery owner's (Logistics), never a Sales co
 | Effects | Read-only in both modules. Existing `sales.drafts.read` is the only authority; the route creates no Logistics permission, Work command, attempt, audit or stock movement. |
 | Evidence | Sales unit and HTTP wire tests; the existing two inventoried `SalesDeliveryProgressSqlServerRelationalAcceptanceTests` cases additionally exercise this route through the real composed host and real Logistics SQL records. |
 
+## Customer returns on the Sales order (SAT-D8, API-10)
+
+SAT-D8: returns have no separate menu; they are a lifecycle view on the order (and, later, the invoice). This read shows
+the Logistics-owned approved returns; the return invoice (API-40) is a separate slice.
+
+| Concern | Rule |
+|---|---|
+| Source | The accepted `ISalesOrderCustomerReturnReadPortV1`, answered by `LogisticsSalesOrderCustomerReturnReadPort`: the APPROVED customer returns of this order, summed per Sales order line and stored unit. Pending and rejected requests are not counted. Sales reads no Logistics table and stores no copy. |
+| Route | `GET /api/v1/sales/drafts/{id}/customer-returns` (`GetSalesOrderDraftCustomerReturnsV1`) under `sales.drafts.read`: `{draftVersion, lines[{lineId, lineNo, orderUnitId, ordered, approvedReturned}]}`. Every Sales line appears once; a zero is emitted only after the owner answered successfully. Private/no-store, company-bound; 404/503 are code-less (`customer_return_provider_unavailable` / `reference_provider_invalid` stay server-side). |
+| Exactness | No conversion or rounding: an entry of an unknown line, another unit, a non-positive total or above the Ö2 scale, or an answer of another company/order, fails closed with 503 instead of showing a plausible number. |
+| Effects | Read-only in both modules. Existing `sales.drafts.read` is the only authority; no credit note, invoice, stock or remainder effect is derived. |
+| Port limit | The port publishes per-line approved totals only — no return number, date, status or dispatch link. A per-return list on the order needs a port extension by the Logistics owner (cross-module contract, K3), not a Sales read of Logistics tables. |
+| Evidence | Unit: `SalesDraftServiceTests.CustomerReturns`. HTTP: `SalesDraftHttpAcceptanceTests.Customer_returns_are_a_private_read_…`. Real SQL + real host: `SalesCustomerReturnsSqlServerRelationalAcceptanceTests` (two inventoried cases; they also prove the Logistics port's SQL translation). |
+
 ## Cancellation of an approved order (DEC-SAL-005, AT-007)
 
 DEC-SAL-005 (KILITLI, K1, verbatim): "Sipariş iptalinde aktif tahsis, bağlı satın alma/üretim, irsaliyesiz yükleme,
