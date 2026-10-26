@@ -6,8 +6,9 @@ namespace GoymenERP.Modules.Settings.Application;
 
 /// <summary>
 /// The real Settings provider for what is approved today: unit profiles, from
-/// <see cref="ApprovedUnitProfileCatalog"/> (T02-a — GDC kg), and money profiles, from
-/// <see cref="ApprovedMoneyProfileCatalog"/> (T02-b — GDC/TRY). Period eligibility is NOT an
+/// <see cref="ApprovedUnitProfileCatalog"/> (T02-a — GDC kg; SAT-D18 — GSP and GIN kg), and money
+/// profiles, from <see cref="ApprovedMoneyProfileCatalog"/> (T02-b — GDC/TRY; SAT-D18 — GSP and GIN
+/// TRY for the Sales draft operation only). Period eligibility is NOT an
 /// approved source yet and stays exactly as <see cref="UnavailableSettingsPrerequisiteProvider"/>
 /// answers it.
 /// <para>
@@ -33,14 +34,14 @@ namespace GoymenERP.Modules.Settings.Application;
 /// <para>
 /// <see cref="GetMoneyProfileAsync"/> follows the same order, with the operation in it: access
 /// → <c>settings_access_denied</c>; a company without an approved money source, or an operation key
-/// no approved profile answers for → <c>settings_provider_unavailable</c> (nothing approved to
-/// ask); an approved operation but no profile for the currency (USD, EUR or an empty id for GDC
+/// no approved profile of that company answers for (e.g. Accounting/Finance keys for GSP/GIN,
+/// SAT-D18) → <c>settings_provider_unavailable</c> (nothing approved to ask); an approved operation but no profile for the currency (USD, EUR or an empty id for GDC
 /// today) → <see cref="SettingsPrerequisiteCodesV1.MoneyProfileNotFound"/>; otherwise the exact
 /// version for the date, answered for the requested operation, with its real window.
 /// </para>
 /// <para>
 /// <see cref="GetMoneyCurrencyCandidatesAsync"/> lists, from the same approved money catalog, each
-/// currency that has an approved profile for the server company (GDC: TRY). Access first; a
+/// currency that has an approved profile for the server company (GDC, GSP, GIN: TRY). Access first; a
 /// company without an approved money source → <c>settings_provider_unavailable</c>, never an
 /// empty list or a default; the list passes <see cref="MoneyCurrencyCandidatesV1.EnsureWellFormed"/>.
 /// Being listed is not validity: a consumer still resolves the chosen currency with
@@ -203,7 +204,7 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
         }
 
         var companyId = _companyContext.CompanyId;
-        if (!_money.Serves(companyId) || !_money.Approves(operation))
+        if (!_money.Serves(companyId) || !_money.Approves(companyId, operation))
         {
             return Task.FromException<MoneyProfileV1>(
                 new SettingsPrerequisiteException("settings_provider_unavailable"));

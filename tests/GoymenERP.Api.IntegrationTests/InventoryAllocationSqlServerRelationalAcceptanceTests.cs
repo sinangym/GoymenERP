@@ -746,9 +746,9 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             }
         }
 
-        // Only GDC/CompanyA has an approved Settings kilogram profile. The foreign-company
-        // isolation fixture therefore stores its pre-existing balance directly, as the definite-
-        // shipment foreign fixture below already does; it must not invent a CompanyB profile.
+        // Only GDC/CompanyA's Settings kilogram profile is in effect on this fixture's date (GSP/GIN
+        // profiles start 2026-10-26, SAT-D18). The foreign-company isolation fixture therefore stores its
+        // pre-existing balance directly, as the definite-shipment foreign fixture below already does.
         if (company != CompanyA)
         {
             await using var foreign = run.Context(company);

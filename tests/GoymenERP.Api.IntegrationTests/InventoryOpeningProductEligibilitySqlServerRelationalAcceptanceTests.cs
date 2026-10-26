@@ -31,7 +31,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// grant itself is not what is under test here.
 /// <list type="bullet">
 /// <item>Company A (GDC, the approved kg profile): the counted kg card is stock-eligible.</item>
-/// <item>Company B (no approved kg source): Settings' own answer passes through the port
+/// <item>A company with no approved kg source (not a seed company: GDC, GSP and GIN all have one since
+/// SAT-D18): Settings' own answer passes through the port
 /// (<c>settings_provider_unavailable</c>) — never <c>invalid_reference</c>, never eligible — and the opening
 /// command answers any port failure as 503 <c>inventory_product_eligibility_unavailable</c>.</item>
 /// </list>
@@ -42,7 +43,8 @@ public sealed class InventoryOpeningProductEligibilitySqlServerRelationalAccepta
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
-    private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
+    // Not a seed company: since SAT-D18 GSP (TestCompanyIds.CompanyB) has its own kg profile too.
+    private static readonly Guid CompanyB = Guid.Parse("10000000-0000-0000-0000-0000000000ee");
     private static readonly Guid GroupId = Guid.Parse("84000000-0000-0000-0000-000000000031");
     private static readonly Guid HotCoil = Guid.Parse("84000000-0000-4000-8000-000000000041");
     private static readonly Guid TemplateId = Guid.Parse("84000000-0000-4000-8000-000000000051");
@@ -94,7 +96,7 @@ public sealed class InventoryOpeningProductEligibilitySqlServerRelationalAccepta
                 Assert.Equal(StatusCodes.Status503ServiceUnavailable, unavailable.StatusCode);
             }
 
-            // Company B has no approved kg source: the Settings code passes through; it is not a field error.
+            // A company with no approved kg source: the Settings code passes through; it is not a field error.
             var inB = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
                 () => PortIn(factory, CompanyB).EvaluateAsync(productId, version, CountedOn, default));
             Assert.Equal("settings_provider_unavailable", inB.Code);

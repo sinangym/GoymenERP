@@ -472,8 +472,8 @@ public sealed class ApprovedSalesPolicyProviderTests
         Assert.True(catalog.Serves(Gsp));
         Assert.True(catalog.Serves(Gin));
         Assert.False(catalog.Serves(Unserved));
-        Assert.Equal(Gsp, ApprovedSalesPolicyCatalog.GspCompanyId);
-        Assert.Equal(Gin, ApprovedSalesPolicyCatalog.GinCompanyId);
+        Assert.Equal(Gsp, ApprovedUnitProfileCatalog.GspCompanyId);
+        Assert.Equal(Gin, ApprovedUnitProfileCatalog.GinCompanyId);
         Assert.Contains("SAT-D14", ApprovedSalesPolicyCatalog.GspDeliveryToleranceV1.Source, StringComparison.Ordinal);
         Assert.Contains("SAT-D14", ApprovedSalesPolicyCatalog.GinTurkishLiraApprovalThresholdV1.Source, StringComparison.Ordinal);
         Assert.Contains("SAT-D5", ApprovedSalesPolicyCatalog.GdcDeliveryToleranceV1.Source, StringComparison.Ordinal);

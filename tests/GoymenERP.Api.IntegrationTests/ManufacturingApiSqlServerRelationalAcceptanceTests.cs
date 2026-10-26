@@ -439,10 +439,11 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         using (var client = run.ClientFor(userB, CompanyB))
         {
             Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{Base}/orders/{orderId}")).StatusCode);
-            // Company B has no approved kilogram source: the write stops at Settings (503), before the order is looked up.
+            // Company B's own kg profile (GSP, SAT-D18) is in effect only from 2026-10-26, after the fact's date:
+            // the write stops at the Settings check (422 not in effect), before the order is looked up.
             var fact = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/input-issues",
                 Run.Issue(1, roll, "10", At));
-            Assert.Equal(HttpStatusCode.ServiceUnavailable, fact.StatusCode);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, fact.StatusCode);
         }
 
         // B's user naming company A is refused before anything is read.

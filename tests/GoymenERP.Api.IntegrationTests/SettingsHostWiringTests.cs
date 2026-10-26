@@ -26,6 +26,9 @@ public sealed class SettingsHostWiringTests
     private static readonly Guid Gdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Gsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid Gin = Guid.Parse("10000000-0000-0000-0000-000000000003");
+    // Not a seed company: GDC, GSP and GIN all have approved unit/money/Sales sources since SAT-D14/D18.
+    private static readonly Guid Unserved = Guid.Parse("71000000-0000-4000-8000-0000000000ee");
+    private static readonly DateOnly ExtraApproval = new(2026, 10, 26);
     private static readonly DateOnly Approval = new(2026, 9, 18);
 
     [Fact]
@@ -159,7 +162,7 @@ public sealed class SettingsHostWiringTests
     public async Task A_company_without_an_approved_sales_policy_source_stays_unavailable_through_the_host()
     {
         // Not a seed company: GDC, GSP and GIN are all served since SAT-D14.
-        using var factory = Host(Guid.Parse("71000000-0000-4000-8000-0000000000ee"));
+        using var factory = Host(Unserved);
         using var scope = factory.Services.CreateScope();
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsSalesPolicyProviderV1>();
 
@@ -195,17 +198,35 @@ public sealed class SettingsHostWiringTests
         Assert.Equal(1, profile.Profile.Version);
     }
 
-    [Theory]
-    [InlineData("gsp")]
-    [InlineData("gin")]
-    public async Task A_company_without_an_approved_source_stays_unavailable_through_the_host(string company)
+    [Fact]
+    public async Task A_company_without_an_approved_source_stays_unavailable_through_the_host()
     {
-        using var factory = Host(company == "gsp" ? Gsp : Gin);
+        using var factory = Host(Unserved);
         using var scope = factory.Services.CreateScope();
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
 
         Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => provider.GetUnitProfileAsync(SettingsUnitIdentitiesV1.Kilogram, Approval))).Code);
+    }
+
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task GSP_and_GIN_kilogram_resolve_to_their_own_approved_profile_through_the_host(string company)
+    {
+        // SAT-D18: GSP and GIN get GDC's kg values as their own per-company version.
+        var companyId = company == "gsp" ? Gsp : Gin;
+        using var factory = Host(companyId);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
+
+        var profile = await provider.GetUnitProfileAsync(SettingsUnitIdentitiesV1.Kilogram, ExtraApproval);
+
+        Assert.Equal(companyId, profile.CompanyId);
+        Assert.True(profile.IsKilogram);
+        Assert.Equal(3, profile.Scale);
+        Assert.Equal(ExtraApproval, profile.EffectiveFrom);
+        Assert.NotEqual(ApprovedUnitProfileCatalog.GdcKilogramV1.ProfileId, profile.Profile.ProfileId);
     }
 
     [Fact]
@@ -277,18 +298,51 @@ public sealed class SettingsHostWiringTests
             ApprovedMoneyProfileCatalog.GdcTurkishLiraV1.Operations.Order(StringComparer.Ordinal));
     }
 
-    [Theory]
-    [InlineData("gsp")]
-    [InlineData("gin")]
-    public async Task A_company_without_an_approved_money_source_stays_unavailable_through_the_host(string company)
+    [Fact]
+    public async Task A_company_without_an_approved_money_source_stays_unavailable_through_the_host()
     {
-        using var factory = Host(company == "gsp" ? Gsp : Gin);
+        using var factory = Host(Unserved);
         using var scope = factory.Services.CreateScope();
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
 
         Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => provider.GetMoneyProfileAsync(
-                SettingsCurrencyIdentitiesV1.TurkishLira, FinanceMoneyOperations.ManualBankReceiptV1, Approval))).Code);
+                SettingsCurrencyIdentitiesV1.TurkishLira, SalesMoneyOperations.OrderDraftV1, Approval))).Code);
+    }
+
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task GSP_and_GIN_TRY_answers_only_the_Sales_owner_s_key_through_the_host(string company)
+    {
+        // SAT-D18: the GSP/GIN TRY profile covers sales.order-draft.v1 only; the Accounting and Finance
+        // owners' keys need a separate decision and stay unavailable there.
+        var companyId = company == "gsp" ? Gsp : Gin;
+        using var factory = Host(companyId);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsPrerequisiteProvider>();
+
+        var profile = await provider.GetMoneyProfileAsync(
+            SettingsCurrencyIdentitiesV1.TurkishLira, SalesMoneyOperations.OrderDraftV1, ExtraApproval);
+
+        Assert.Equal((companyId, "TRY", SalesMoneyOperations.OrderDraftV1, 2),
+            (profile.CompanyId, profile.CurrencyCode, profile.Operation, profile.Scale));
+        foreach (var operation in new[]
+                 {
+                     FinanceMoneyOperations.ManualBankReceiptV1, FinanceMoneyOperations.ManualBankPaymentV1,
+                     AccountingMoneyOperations.JournalAmountV1,
+                 })
+        {
+            Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => provider.GetMoneyProfileAsync(SettingsCurrencyIdentitiesV1.TurkishLira, operation, ExtraApproval))).Code);
+        }
+    }
+
+    [Fact]
+    public void The_GSP_and_GIN_money_profiles_answer_exactly_the_Sales_owner_s_published_key()
+    {
+        Assert.Equal([SalesMoneyOperations.OrderDraftV1], ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.ToArray());
+        Assert.Equal([SalesMoneyOperations.OrderDraftV1], ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.ToArray());
     }
 
     [Fact]
@@ -308,9 +362,20 @@ public sealed class SettingsHostWiringTests
     [Theory]
     [InlineData("gsp")]
     [InlineData("gin")]
-    public async Task A_company_without_an_approved_money_source_gets_no_candidate_list_through_the_host(string company)
+    public async Task GSP_and_GIN_get_their_approved_TRY_as_the_only_candidate_through_the_host(string company)
     {
         using var factory = Host(company == "gsp" ? Gsp : Gin);
+        using var scope = factory.Services.CreateScope();
+        var reader = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReader>();
+
+        Assert.Equal(new MoneyCurrencyCandidateV1(SettingsCurrencyIdentitiesV1.TurkishLira, "TRY", "TRY"),
+            Assert.Single(await reader.GetMoneyCurrencyCandidatesAsync()));
+    }
+
+    [Fact]
+    public async Task A_company_without_an_approved_money_source_gets_no_candidate_list_through_the_host()
+    {
+        using var factory = Host(Unserved);
         using var scope = factory.Services.CreateScope();
         var reader = scope.ServiceProvider.GetRequiredService<ISettingsMoneyCandidateReader>();
 

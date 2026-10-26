@@ -74,11 +74,41 @@ public sealed class ApprovedMoneyProfileCatalog
         EffectiveThrough: null,
         Source: "Sinan Ö2 2026-09-18 (#66 5722637822); operation keys: Finance/Sales/Accounting owners (Business #254 5654539215)");
 
-    public static ApprovedMoneyProfileCatalog Approved { get; } = new([GdcTurkishLiraV1]);
+    /// <summary>
+    /// GSP/TRY, version 1: scale 2 (final amount, Ö2) as GDC's, as its own per-company version, but
+    /// answering ONLY the Sales owner's <c>sales.order-draft.v1</c>. SAT-D18 (Sinan, 2026-10-26,
+    /// <c>docs/decisions/SINAN_KARARLARI_2026-10-26_SATIS_EK.md</c>): Accounting and Finance operations
+    /// for GSP/GIN need a separate decision, so they are not listed and stay unavailable. Effective from
+    /// 2026-10-26 with no end. Profile id: UUIDv5 name "money-profile:10000000-0000-0000-0000-000000000002:TRY:v1".
+    /// </summary>
+    public static readonly ApprovedMoneyProfileEntry GspTurkishLiraV1 = GdcTurkishLiraV1 with
+    {
+        CompanyId = ApprovedUnitProfileCatalog.GspCompanyId,
+        Operations = new HashSet<string>(StringComparer.Ordinal) { "sales.order-draft.v1" },
+        ProfileId = Guid.Parse("5b863ed2-e21a-5c43-b219-fa113dcc50b3"),
+        EffectiveFrom = new DateOnly(2026, 10, 26),
+        Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); scale Sinan Ö2 2026-09-18; operation key: Sales owner",
+    };
+
+    /// <summary>
+    /// GIN/TRY, version 1: as <see cref="GspTurkishLiraV1"/> (SAT-D18), Sales draft operation only. GIN
+    /// stays invoice-closed (DEC-ORG-005); this profile does not change that. Profile id: UUIDv5 name
+    /// "money-profile:10000000-0000-0000-0000-000000000003:TRY:v1".
+    /// </summary>
+    public static readonly ApprovedMoneyProfileEntry GinTurkishLiraV1 = GdcTurkishLiraV1 with
+    {
+        CompanyId = ApprovedUnitProfileCatalog.GinCompanyId,
+        Operations = new HashSet<string>(StringComparer.Ordinal) { "sales.order-draft.v1" },
+        ProfileId = Guid.Parse("d78eee0d-4940-52e3-bd80-3b5ebdb6d760"),
+        EffectiveFrom = new DateOnly(2026, 10, 26),
+        Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); scale Sinan Ö2 2026-09-18; operation key: Sales owner",
+    };
+
+    public static ApprovedMoneyProfileCatalog Approved { get; } = new([GdcTurkishLiraV1, GspTurkishLiraV1, GinTurkishLiraV1]);
 
     private readonly IReadOnlyDictionary<(Guid CompanyId, Guid CurrencyId), ApprovedMoneyProfileEntry[]> _versions;
     private readonly IReadOnlySet<Guid> _companies;
-    private readonly IReadOnlySet<string> _operations;
+    private readonly IReadOnlySet<(Guid CompanyId, string Operation)> _operations;
 
     /// <summary>Internal on purpose, as the unit catalog's: only Settings' own tests build another one.</summary>
     internal ApprovedMoneyProfileCatalog(IEnumerable<ApprovedMoneyProfileEntry> entries)
@@ -119,7 +149,8 @@ public sealed class ApprovedMoneyProfileCatalog
 
         _versions = versions;
         _companies = all.Select(entry => entry.CompanyId).ToHashSet();
-        _operations = all.SelectMany(entry => entry.Operations).ToHashSet(StringComparer.Ordinal);
+        _operations = all.SelectMany(entry => entry.Operations.Select(operation => (entry.CompanyId, operation)))
+            .ToHashSet();
     }
 
     public IReadOnlyCollection<ApprovedMoneyProfileEntry> Entries =>
@@ -128,8 +159,13 @@ public sealed class ApprovedMoneyProfileCatalog
     /// <summary>Whether any money profile is approved for the company at all.</summary>
     public bool Serves(Guid companyId) => _companies.Contains(companyId);
 
-    /// <summary>Whether the operation key is one any approved profile answers for (exact, ordinal).</summary>
-    public bool Approves(string? operation) => operation is not null && _operations.Contains(operation);
+    /// <summary>
+    /// Whether the operation key is one any approved profile OF THIS COMPANY answers for (exact,
+    /// ordinal). Per company since SAT-D18: GSP/GIN's TRY profiles answer only the Sales draft key, so
+    /// GDC's Accounting/Finance keys are not approved for them and stay unavailable there.
+    /// </summary>
+    public bool Approves(Guid companyId, string? operation) =>
+        operation is not null && _operations.Contains((companyId, operation));
 
     /// <summary>
     /// The company's currencies that have an approved profile, one candidate each (any version),

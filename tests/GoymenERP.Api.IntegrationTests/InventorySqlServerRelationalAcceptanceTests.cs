@@ -117,11 +117,12 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             // B cannot write a record of company A.
             Assert.Equal(InventoryStoreCodes.CompanyContextMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
                 () => b.Labels.SaveLabelAsync(NewLabel(CompanyA, "SYN-FROM-B"), Metadata(run)))).Code);
-            // B has no approved kilogram profile (only GDC does): a movement is refused fail-closed,
-            // with the Settings owner's own code, and nothing is stored.
+            // B's own kg profile (GSP, SAT-D18) is in effect only from 2026-10-26, after this movement's
+            // date: the real version comes back with its real window, so the movement is refused
+            // fail-closed as an unusable profile, and nothing is stored.
             var locationB = await run.LocationOfAsync(CompanyB);
             var receipt = Movement(CompanyB, StockMovementKind.Receipt, In(Position(CompanyB, locationB, labelB, BlockState.Free), 5m));
-            Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<InventoryStoreException>(
+            Assert.Equal(InventoryScaleCodes.ProfileUnusable, (await Assert.ThrowsAsync<InventoryStoreException>(
                 () => b.Movements.RecordMovementAsync(receipt, Metadata(run)))).Code);
         }
 
@@ -938,8 +939,8 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         {
             Assert.Equal(InventoryStoreCodes.CompanyContextMismatch, (await Assert.ThrowsAsync<InventoryStoreException>(
                 () => b.Opening.RecordAsync(countOfA, Metadata(run)))).Code);
-            // B has no approved kilogram profile (only GDC does): refused with the Settings owner's own code.
-            Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<InventoryStoreException>(
+            // B's own kg profile (GSP, SAT-D18) starts 2026-10-26, after the counted-on date: refused fail-closed.
+            Assert.Equal(InventoryScaleCodes.ProfileUnusable, (await Assert.ThrowsAsync<InventoryStoreException>(
                 () => b.Opening.RecordAsync(countOfB, Metadata(run)))).Code);
         }
 

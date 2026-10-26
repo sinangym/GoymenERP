@@ -415,7 +415,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
     /// <summary>
     /// SİPARİŞ #337 P3 (#333 mapping): a count id company B holds collides for company A at the primary key,
     /// invisible to A. A gets <c>inventory_opening_conflict</c> with no retry advice, nothing of A is stored and
-    /// nothing of B is disclosed. (B has no approved kg profile in this database, so B's count is a raw row.)
+    /// nothing of B is disclosed. (B's count is a raw row, not written through B's kg profile.)
     /// </summary>
     [SqlServerFact]
     public async Task A_count_id_another_company_holds_is_an_opening_conflict_that_stores_nothing()

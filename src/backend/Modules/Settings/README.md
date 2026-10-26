@@ -94,8 +94,8 @@ OpenAPI, DI registration, persistent provider, database, seed, currency data or 
 is introduced.
 
 Outstanding approved-source data: the company/operation/date period eligibility
-source. Unit and money profiles now have one approved source each (GDC kg and
-GDC/TRY, below), and since T02-b the approved provider also serves this candidate
+source. Unit and money profiles now have one approved source each (kg and TRY for
+GDC, and since SAT-D18 for GSP and GIN, below), and since T02-b the approved provider also serves this candidate
 port from the money catalog (see "Approved money profiles"); Master 28.1's rounding (`AwayFromZero`) is still a proposal, not
 approved data. No default-open period, FX or Finance OPEN-009 permission is inferred.
 
@@ -109,7 +109,9 @@ Master §28.1 for the dimension. Task: coordinator T02-a.
 unit profiles, and since T02-b money profiles (next section). Period eligibility
 stays exactly as the unavailable adapter answers it.
 
-The one approved profile, `ApprovedUnitProfileCatalog.GdcKilogramV1`:
+The approved profiles: `ApprovedUnitProfileCatalog.GdcKilogramV1`, and since SAT-D18
+(Sinan, 2026-10-26, `docs/decisions/SINAN_KARARLARI_2026-10-26_SATIS_EK.md`) `GspKilogramV1` and
+`GinKilogramV1` with the same values, each its own per-company version. GDC's:
 
 | Field | Value | Source |
 |---|---|---|
@@ -123,11 +125,20 @@ The one approved profile, `ApprovedUnitProfileCatalog.GdcKilogramV1`:
 Technical ids are UUIDv5 in namespace `18b5cbb9-98ca-5999-b418-aa53c41f0ffb`
 (= UUIDv5(URL, "https://github.com/sinangym/GoymenERP/settings/unit-profiles")),
 names `unit:kg` and `unit-profile:<company id>:kg:v1`; assigned once, never reused.
-A unit identity is company-independent; the profile is per company. GSP and other
-companies have no approved profile yet.
+A unit identity is company-independent; the profile is per company.
 
-**Data source: versioned source code, not a table.** One profile is approved and
-nothing may edit it at runtime; a new approval is a new version, reviewed like code.
+| Company | Profile (version 1, kg, weight, scale 3, no end) | Effective from | Source |
+|---|---|---|---|
+| GDC `10000000-0000-0000-0000-000000000001` | `4a790fdc-2a6b-5126-835f-d3a13d28b71c` | 2026-09-18 | Ö1/Ö2 |
+| GSP `10000000-0000-0000-0000-000000000002` | `0002612c-0804-5b12-a3bc-d94d1e84f25a` | 2026-10-26 | SAT-D18 |
+| GIN `10000000-0000-0000-0000-000000000003` | `220904ee-a6ff-5cc4-9169-336c66328cd5` | 2026-10-26 | SAT-D18 |
+
+Any other company has no approved profile (`settings_provider_unavailable`). A GSP/GIN date
+before 2026-10-26 gets the real window and the consumer rejects it. GIN stays invoice-closed
+(DEC-ORG-005); a unit profile changes nothing about that.
+
+**Data source: versioned source code, not a table.** Profiles are approved per company and
+nothing may edit them at runtime; a new approval is a new version, reviewed like code.
 So there is no migration, seed write or DbContext, and every value is visible in the
 diff that introduces it; the only host change is the registration described under
 "Host wiring" below. When profiles become
@@ -182,13 +193,14 @@ birim fiyat gerektiğinde 6 ondalığa kadar … İlk kabul profili GDC/TRY; pro
 geçerliliği açık onaydan itibaren sürümlü ve bitişsizse açıkça süresiz". Task:
 coordinator T02-b.
 
-The one approved profile, `ApprovedMoneyProfileCatalog.GdcTurkishLiraV1`:
+The approved profiles: `ApprovedMoneyProfileCatalog.GdcTurkishLiraV1`, and since SAT-D18
+`GspTurkishLiraV1` and `GinTurkishLiraV1` (below). GDC's:
 
 | Field | Value | Source |
 |---|---|---|
 | Company | GDC `10000000-0000-0000-0000-000000000001` | Ö2 "ilk kabul profili GDC/TRY" |
 | Currency | TRY `9e60dcf0-f4bd-5bca-b464-f9a2db98e31a` (`SettingsCurrencyIdentitiesV1.TurkishLira`) | Ö2; id is technical |
-| Operations | `accounting.journal-amount.v1`, `finance.manual-bank-receipt.v1`, `sales.order-draft.v1` | the Accounting, Finance and Sales owners' keys (Business #254 5654539215); a journal amount is a final TRY amount (ACC-V0a, Ö2 "nihai tutar 2") |
+| Operations | `accounting.journal-amount.v1`, `finance.manual-bank-payment.v1`, `finance.manual-bank-receipt.v1`, `sales.order-draft.v1` | the Accounting, Finance and Sales owners' keys (Business #254 5654539215); a journal amount is a final TRY amount (ACC-V0a, Ö2 "nihai tutar 2") |
 | Scale | 2 (final amount) | Ö2 "nihai tutar 2" |
 | Profile | `7f836492-a54f-512f-a8f4-5f556b3f0f9d`, version 1 | technical (Ö2) |
 | Window | from 2026-09-18, no end (explicitly open-ended) | Ö2 |
@@ -197,6 +209,19 @@ Technical ids are UUIDv5 in namespace `9df84417-8c25-59c8-a67a-959ac880a890`
 (= UUIDv5(URL, "https://github.com/sinangym/GoymenERP/settings/money-profiles")),
 names `currency:TRY` and `money-profile:<company id>:TRY:v1`; assigned once, never
 reused. The data source is versioned source code, as for units, for the same reasons.
+
+**GSP and GIN (SAT-D18).** Each has its own TRY profile, version 1, scale 2 (final amount,
+Ö2), effective from 2026-10-26 with no end, answering **only** `sales.order-draft.v1`. SAT-D18
+leaves the Accounting (`accounting.journal-amount.v1`) and Finance
+(`finance.manual-bank-payment.v1`, `finance.manual-bank-receipt.v1`) operations for GSP/GIN to a
+separate decision, so those keys answer `settings_provider_unavailable` there: the operation
+check is per company. GIN stays invoice-closed (DEC-ORG-005).
+
+| Company | Profile | Operations | Effective from |
+|---|---|---|---|
+| GDC | `7f836492-a54f-512f-a8f4-5f556b3f0f9d` | Accounting, Finance (payment, receipt), Sales draft | 2026-09-18 |
+| GSP | `5b863ed2-e21a-5c43-b219-fa113dcc50b3` | `sales.order-draft.v1` only | 2026-10-26 |
+| GIN | `d78eee0d-4940-52e3-bd80-3b5ebdb6d760` | `sales.order-draft.v1` only | 2026-10-26 |
 
 **Operations belong to their owners.** A profile answers only for the operation keys
 listed on it. Settings references neither Finance nor Sales; the API integration test
@@ -216,7 +241,7 @@ Outcomes of `GetMoneyProfileAsync`, in order:
 |---|---|
 | cancelled | `OperationCanceledException` |
 | no authenticated actor / actor id, unresolved or empty company, not a member | `settings_access_denied` |
-| no approved money source for the company, or an operation key no approved profile answers for (exact, ordinal) | `settings_provider_unavailable` |
+| no approved money source for the company, or an operation key no approved profile of that company answers for (exact, ordinal; e.g. Accounting/Finance keys for GSP/GIN) | `settings_provider_unavailable` |
 | approved operation, but no profile for the currency (USD, EUR, an empty or unknown id) | `settings_money_profile_not_found` (`SettingsPrerequisiteCodesV1.MoneyProfileNotFound`) |
 | malformed catalog | `settings_profile_invalid`, raised when the catalog is built |
 | otherwise | the exact version in force on the date, with its real window |
@@ -226,12 +251,13 @@ rejects it; a later version takes over from its own start date.
 
 **Candidates.** The same provider implements `ISettingsMoneyCandidateReader` from the
 same catalog: each currency with an approved profile for the server company, one
-candidate per currency — GDC: `(TRY id, "TRY", "TRY")`. The label is the approved code
+candidate per currency — GDC, GSP and GIN: `(TRY id, "TRY", "TRY")`. The label is the approved code
 itself, since no approved source names a longer one. Access first
-(`settings_access_denied`); a company without an approved money source (GSP, GIN) →
-`settings_provider_unavailable`, never an empty list or GDC's TRY; the list passes
+(`settings_access_denied`); a company without an approved money source (any company other
+than GDC, GSP and GIN) → `settings_provider_unavailable`, never an empty list or GDC's TRY; the list passes
 `MoneyCurrencyCandidatesV1.EnsureWellFormed`. Being listed is not validity: consumers
-still resolve the chosen currency with `GetMoneyProfileAsync`. FS0 (#312) checks a bank
+still resolve the chosen currency with `GetMoneyProfileAsync` (for GSP/GIN, a Finance
+operation still answers `settings_provider_unavailable` for the listed TRY). FS0 (#312) checks a bank
 account's currency against this list.
 
 **Host wiring.** `ISettingsMoneyCandidateReader` is registered as the approved provider,
@@ -254,7 +280,8 @@ removing unused project references; there is no data or migration rollback.
 
 Source: Sinan's Sales decisions of 2026-10-25, SAT-D2, SAT-D5 and SAT-D6
 (`docs/decisions/SINAN_KARARLARI_2026-10-25_SATIS.md`), and of 2026-10-26, SAT-D14 (GSP and GIN
-use GDC's Sales policies) and SAT-D15 (tolerance bands)
+start with GDC's Sales policy values, each as its own versioned entry) and SAT-D15–D17
+(tolerance bands, measurement and line closing)
 (`docs/decisions/SINAN_KARARLARI_2026-10-26_SATIS_EK.md`); plan items MOD-03 and API-50…52 of
 `docs/delivery/SATIS_HAZIRLIK_PLANI_v1.md`.
 
@@ -344,9 +371,21 @@ against the currency's money profile.
   | approval ≤ d < block (2 % ≤ d < 3 %) | approval required |
   | ≥ block (3 %) | block |
 
+  Measurement and line closing (consumer rules, no calculator in this slice):
+
+  - SAT-D16: per order line, in the line's order unit (e.g. kg); delivered = the sum of all the
+    line's shipments. Over-delivery is checked on every shipment. Under-delivery is measured
+    only when the line is closed or its last shipment is marked; the open remainder is not a
+    shortfall.
+  - SAT-D17 (shortfall at close): within tolerance (< warn) the line becomes "Tamamlandı"
+    directly (SAT-D5); in the warn band it becomes "Tamamlandı" directly; in the approval band
+    after approval. In each case the remainder is a cancelled remainder. In the block band the
+    line is not closed this way: the rest is shipped, or force-close (No 30, SAT-D12) applies.
+  - Over-delivery additionally follows delegation No 57 (sales owner review queue, no automatic
+    invoice).
+
   The percents come from this port, never from code constants; the deviation and band are
-  computed by the consuming backend calculator (no calculator in this slice), which UI and
-  reports reuse. The read takes no product or operation input: SAT-D5's per-product/operation
+  computed by the consuming backend calculator, which UI and reports reuse. The read takes no product or operation input: SAT-D5's per-product/operation
   overrides need a new versioned method or interface later, not a change to this one.
 - A returned policy is reference metadata, not an authorization: the consuming use case still
   checks its own permission and persists the applied profile id/version with its decision.

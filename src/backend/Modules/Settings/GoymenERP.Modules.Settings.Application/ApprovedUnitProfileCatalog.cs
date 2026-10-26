@@ -39,6 +39,13 @@ public sealed class ApprovedUnitProfileCatalog
     /// Organization seed and its <c>AddCompanyFiscalRuntimeSeed</c> migration guard.</summary>
     public static readonly Guid GdcCompanyId = Guid.Parse("10000000-0000-0000-0000-000000000001");
 
+    /// <summary>GSP — the permanent company identity pinned by the same Organization seed migration.</summary>
+    public static readonly Guid GspCompanyId = Guid.Parse("10000000-0000-0000-0000-000000000002");
+
+    /// <summary>GIN — the permanent company identity pinned by the same Organization seed migration.
+    /// It stays invoice-closed (DEC-ORG-005); a unit profile does not change that.</summary>
+    public static readonly Guid GinCompanyId = Guid.Parse("10000000-0000-0000-0000-000000000003");
+
     /// <summary>
     /// GDC kg, version 1. Values and sources:
     /// <list type="bullet">
@@ -69,7 +76,33 @@ public sealed class ApprovedUnitProfileCatalog
         EffectiveThrough: null,
         Source: "Sinan Ö1/Ö2 2026-09-18 (#66 5722637822); Master §28.1");
 
-    public static ApprovedUnitProfileCatalog Approved { get; } = new([GdcKilogramV1]);
+    /// <summary>
+    /// GSP kg, version 1: the same kg profile as GDC (dimension weight, scale 3), as its own
+    /// per-company version. SAT-D18 (Sinan, 2026-10-26,
+    /// <c>docs/decisions/SINAN_KARARLARI_2026-10-26_SATIS_EK.md</c>); effective from that date with no
+    /// end. Profile id: UUIDv5 name "unit-profile:10000000-0000-0000-0000-000000000002:kg:v1".
+    /// </summary>
+    public static readonly ApprovedUnitProfileEntry GspKilogramV1 = GdcKilogramV1 with
+    {
+        CompanyId = GspCompanyId,
+        ProfileId = Guid.Parse("0002612c-0804-5b12-a3bc-d94d1e84f25a"),
+        EffectiveFrom = new DateOnly(2026, 10, 26),
+        Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); values Sinan Ö1/Ö2 2026-09-18; Master §28.1",
+    };
+
+    /// <summary>
+    /// GIN kg, version 1: as <see cref="GspKilogramV1"/> (SAT-D18). GIN stays invoice-closed
+    /// (DEC-ORG-005). Profile id: UUIDv5 name "unit-profile:10000000-0000-0000-0000-000000000003:kg:v1".
+    /// </summary>
+    public static readonly ApprovedUnitProfileEntry GinKilogramV1 = GdcKilogramV1 with
+    {
+        CompanyId = GinCompanyId,
+        ProfileId = Guid.Parse("220904ee-a6ff-5cc4-9169-336c66328cd5"),
+        EffectiveFrom = new DateOnly(2026, 10, 26),
+        Source = "SAT-D18 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md); values Sinan Ö1/Ö2 2026-09-18; Master §28.1",
+    };
+
+    public static ApprovedUnitProfileCatalog Approved { get; } = new([GdcKilogramV1, GspKilogramV1, GinKilogramV1]);
 
     private readonly IReadOnlyDictionary<(Guid CompanyId, Guid UnitId), ApprovedUnitProfileEntry[]> _versions;
     private readonly IReadOnlySet<Guid> _companies;

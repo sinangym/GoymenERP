@@ -14,6 +14,10 @@ public sealed class ApprovedMoneyProfileProviderTests
 {
     private static readonly Guid Gdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Gsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
+    private static readonly Guid Gin = Guid.Parse("10000000-0000-0000-0000-000000000003");
+    // Not a seed company: GDC, GSP and GIN all have approved TRY profiles since SAT-D18.
+    private static readonly Guid Unserved = Guid.Parse("7d0c7c2e-2b0e-4d8e-9b2a-2f1f0c9a6e11");
+    private static readonly DateOnly ExtraApproval = new(2026, 10, 26);
     private static readonly Guid Try = Guid.Parse("9e60dcf0-f4bd-5bca-b464-f9a2db98e31a");
     private static readonly DateOnly Approval = new(2026, 9, 18);
     private const string FinancePayment = "finance.manual-bank-payment.v1";
@@ -101,9 +105,58 @@ public sealed class ApprovedMoneyProfileProviderTests
     public async Task A_company_without_an_approved_money_source_is_unavailable_not_given_GDC_s_profile()
     {
         var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
-            () => Provider(Gsp).GetMoneyProfileAsync(Try, FinanceReceipt, Approval));
+            () => Provider(Unserved).GetMoneyProfileAsync(Try, SalesDraft, Approval));
 
         Assert.Equal("settings_provider_unavailable", failure.Code);
+    }
+
+    [Theory]
+    [InlineData("10000000-0000-0000-0000-000000000002", "5b863ed2-e21a-5c43-b219-fa113dcc50b3")] // GSP
+    [InlineData("10000000-0000-0000-0000-000000000003", "d78eee0d-4940-52e3-bd80-3b5ebdb6d760")] // GIN
+    public async Task GSP_and_GIN_TRY_answers_the_Sales_draft_operation_from_SAT_D18(string company, string profileId)
+    {
+        var companyId = Guid.Parse(company);
+
+        var profile = await Provider(companyId).GetMoneyProfileAsync(Try, SalesDraft, ExtraApproval);
+
+        Assert.Equal(companyId, profile.CompanyId);
+        Assert.Equal((Try, "TRY", SalesDraft), (profile.CurrencyId, profile.CurrencyCode, profile.Operation));
+        // UUIDv5 name "money-profile:<company>:TRY:v1" in the money-profiles namespace.
+        Assert.Equal(new ProfileVersionV1(Guid.Parse(profileId), 1), profile.Profile);
+        Assert.Equal(2, profile.Scale);
+        Assert.True(profile.IsActive);
+        Assert.Equal(ExtraApproval, profile.EffectiveFrom);
+        Assert.Null(profile.EffectiveThrough);
+    }
+
+    [Theory]
+    [InlineData("gsp", AccountingJournalAmount)]
+    [InlineData("gsp", FinancePayment)]
+    [InlineData("gsp", FinanceReceipt)]
+    [InlineData("gin", AccountingJournalAmount)]
+    [InlineData("gin", FinancePayment)]
+    [InlineData("gin", FinanceReceipt)]
+    public async Task GSP_and_GIN_Accounting_and_Finance_operations_stay_unavailable(string company, string operation)
+    {
+        // SAT-D18: GSP/GIN's TRY profile covers only sales.order-draft.v1; GDC's Accounting and
+        // Finance keys need a separate decision and are not borrowed from GDC.
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => Provider(company == "gsp" ? Gsp : Gin).GetMoneyProfileAsync(Try, operation, ExtraApproval));
+
+        Assert.Equal("settings_provider_unavailable", failure.Code);
+    }
+
+    [Fact]
+    public void The_approved_money_catalog_holds_exactly_the_approved_profiles()
+    {
+        var entries = ApprovedMoneyProfileCatalog.Approved.Entries;
+
+        Assert.Equal(3, entries.Count);
+        Assert.Contains(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1, entries);
+        Assert.Contains(ApprovedMoneyProfileCatalog.GspTurkishLiraV1, entries);
+        Assert.Contains(ApprovedMoneyProfileCatalog.GinTurkishLiraV1, entries);
+        Assert.Equal([SalesDraft], ApprovedMoneyProfileCatalog.GspTurkishLiraV1.Operations.ToArray());
+        Assert.Equal([SalesDraft], ApprovedMoneyProfileCatalog.GinTurkishLiraV1.Operations.ToArray());
     }
 
     [Theory]
@@ -138,9 +191,9 @@ public sealed class ApprovedMoneyProfileProviderTests
     }
 
     [Fact]
-    public void The_approved_catalog_holds_exactly_the_one_approved_profile_and_its_owner_keys()
+    public void GDC_s_approved_profile_keeps_its_owner_keys()
     {
-        var entry = Assert.Single(ApprovedMoneyProfileCatalog.Approved.Entries);
+        var entry = Assert.Single(ApprovedMoneyProfileCatalog.Approved.Entries, entry => entry.CompanyId == Gdc);
         Assert.Same(ApprovedMoneyProfileCatalog.GdcTurkishLiraV1, entry);
         Assert.Equal(new[] { FinancePayment, FinanceReceipt, SalesDraft, AccountingJournalAmount }.Order(StringComparer.Ordinal),
             entry.Operations.Order(StringComparer.Ordinal));
@@ -210,10 +263,23 @@ public sealed class ApprovedMoneyProfileProviderTests
         Assert.Equal(new MoneyCurrencyCandidateV1(Try, "TRY", "TRY"), Assert.Single(candidates));
     }
 
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task GSP_and_GIN_candidates_are_exactly_their_approved_TRY(string company)
+    {
+        ISettingsMoneyCandidateReader reader = Provider(company == "gsp" ? Gsp : Gin);
+
+        var candidates = await reader.GetMoneyCurrencyCandidatesAsync();
+
+        // Listed is not validity: an Accounting/Finance consumer still gets unavailable for TRY there.
+        Assert.Equal(new MoneyCurrencyCandidateV1(Try, "TRY", "TRY"), Assert.Single(candidates));
+    }
+
     [Fact]
     public async Task A_company_without_an_approved_money_source_gets_unavailable_not_an_empty_list()
     {
-        ISettingsMoneyCandidateReader reader = Provider(Gsp);
+        ISettingsMoneyCandidateReader reader = Provider(Unserved);
 
         var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
             () => reader.GetMoneyCurrencyCandidatesAsync());

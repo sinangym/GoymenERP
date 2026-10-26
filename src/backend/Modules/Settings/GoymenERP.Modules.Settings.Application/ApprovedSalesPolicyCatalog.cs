@@ -65,14 +65,6 @@ public sealed record ApprovedSalesApprovalAmountThresholdEntry(
 /// </summary>
 public sealed class ApprovedSalesPolicyCatalog
 {
-    /// <summary>GSP — the permanent company identity pinned by the Organization
-    /// <c>AddCompanyFiscalRuntimeSeed</c> migration.</summary>
-    public static readonly Guid GspCompanyId = Guid.Parse("10000000-0000-0000-0000-000000000002");
-
-    /// <summary>GIN — the permanent company identity pinned by the Organization
-    /// <c>AddCompanyFiscalRuntimeSeed</c> migration.</summary>
-    public static readonly Guid GinCompanyId = Guid.Parse("10000000-0000-0000-0000-000000000003");
-
     private const string SalesExtraDecisions = "SAT-D14 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md)";
 
     /// <summary>
@@ -114,12 +106,13 @@ public sealed class ApprovedSalesPolicyCatalog
 
     /// <summary>
     /// GSP delivery tolerance, version 1: the same 1 / 2 / 3 % as GDC. SAT-D14 (Sinan, 2026-10-26):
-    /// GSP and GIN run on GDC's Sales policies; effective from that decision's date with no end.
+    /// GSP and GIN start with GDC's Sales policy values, each as its own company-scoped versioned entry
+    /// (never inherited live from GDC); effective from that decision's date with no end.
     /// Profile id: UUIDv5 name "sales-delivery-tolerance:10000000-0000-0000-0000-000000000002:v1".
     /// </summary>
     public static readonly ApprovedSalesDeliveryToleranceEntry GspDeliveryToleranceV1 = GdcDeliveryToleranceV1 with
     {
-        CompanyId = GspCompanyId,
+        CompanyId = ApprovedUnitProfileCatalog.GspCompanyId,
         ProfileId = Guid.Parse("e5ba2cba-1f1e-5ba0-b801-7b66d21190af"),
         EffectiveFrom = new DateOnly(2026, 10, 26),
         Source = SalesExtraDecisions + "; values SAT-D5",
@@ -131,7 +124,7 @@ public sealed class ApprovedSalesPolicyCatalog
     /// </summary>
     public static readonly ApprovedSalesDeliveryToleranceEntry GinDeliveryToleranceV1 = GdcDeliveryToleranceV1 with
     {
-        CompanyId = GinCompanyId,
+        CompanyId = ApprovedUnitProfileCatalog.GinCompanyId,
         ProfileId = Guid.Parse("c5fd5cfa-b37f-5464-a920-152eb96c8c84"),
         EffectiveFrom = new DateOnly(2026, 10, 26),
         Source = SalesExtraDecisions + "; values SAT-D5",
@@ -145,7 +138,7 @@ public sealed class ApprovedSalesPolicyCatalog
     public static readonly ApprovedSalesApprovalAmountThresholdEntry GspTurkishLiraApprovalThresholdV1 =
         GdcTurkishLiraApprovalThresholdV1 with
         {
-            CompanyId = GspCompanyId,
+            CompanyId = ApprovedUnitProfileCatalog.GspCompanyId,
             ProfileId = Guid.Parse("320e06e3-0408-51f1-92e6-f8905e7b674f"),
             EffectiveFrom = new DateOnly(2026, 10, 26),
             Source = SalesExtraDecisions + "; values SAT-D6; OPEN-009 KISMEN",
@@ -158,7 +151,7 @@ public sealed class ApprovedSalesPolicyCatalog
     public static readonly ApprovedSalesApprovalAmountThresholdEntry GinTurkishLiraApprovalThresholdV1 =
         GdcTurkishLiraApprovalThresholdV1 with
         {
-            CompanyId = GinCompanyId,
+            CompanyId = ApprovedUnitProfileCatalog.GinCompanyId,
             ProfileId = Guid.Parse("3cd01981-8511-5dc1-b21b-6c632425d915"),
             EffectiveFrom = new DateOnly(2026, 10, 26),
             Source = SalesExtraDecisions + "; values SAT-D6; OPEN-009 KISMEN",

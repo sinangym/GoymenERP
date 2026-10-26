@@ -53,6 +53,19 @@ public interface ISettingsSalesPolicyProviderV1
 /// <item><see cref="ApprovalPercent"/> ≤ deviation &lt; <see cref="BlockPercent"/>: approval required;</item>
 /// <item>deviation ≥ <see cref="BlockPercent"/>: block.</item>
 /// </list>
+/// </para>
+/// <para>
+/// Measurement (SAT-D16): per order line, in the line's order unit; delivered is the sum of all the
+/// line's shipments. Over-delivery is checked on every shipment; under-delivery only when the line is
+/// closed or its last shipment is marked — the open remainder is not a shortfall.
+/// </para>
+/// <para>
+/// Shortfall at close (SAT-D17): within tolerance or in the warn band the line becomes "Tamamlandı"
+/// directly, in the approval band after approval; the remainder is a cancelled remainder. In the
+/// block band the line is not closed this way: the rest is shipped or force-close (No 30, SAT-D12)
+/// applies.
+/// </para>
+/// <para>
 /// This port computes nothing: the deviation and its band belong to the consuming backend calculator,
 /// which UI and reports reuse; no percent is a code constant there.
 /// </para>
