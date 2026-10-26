@@ -217,7 +217,7 @@ Sevkiyatçı siparişi fiyatsız görür (fiyatsız okuma görünümü ayrıca g
 - S0 frontend: TEK-09, TEK-10, TEK-12 (frontend), TEK-06'nın UI etiketi, UI-10 sekmeler.
 - S1 backend: API-01/02 zorla kapatma (Claude yazar; K3 iki bağımsız review gerekir).
 
-Her iş ayrı PR'dır; durumları PR açıklamalarında izlenir.
+Her iş ayrı PR'dır; güncel durum §9'da ve PR açıklamalarında izlenir.
 
 ---
 
@@ -238,17 +238,17 @@ Bu bölüm yalnız iş takibidir; karar değildir. Kararlar `SINAN_KARARLARI_202
 | TEK-08, TEK-13 test borcu | #808 | review tamam; #807 sonrası güncellenecek |
 | MOD-03 dilim 1: Satış politika kaydı + GSP/GIN profilleri (K3; S2 dalgasından öne alındı) | #813 | iki review + DELTA-OK; #807 sonrası yeniden sabitleme ve CI |
 | MOD-12 + UI-13 tahsis etiket seçici | #816 | review + DELTA-OK; CI bekliyor |
-| API-10 siparişte onaylı müşteri iadeleri (K3; Lojistik port SQL çeviri düzeltmesi dahil) | #817 | iki review; P3 düzeltmeleri gönderildi; #807 sonrası yeniden sabitleme, delta review ve CI |
+| API-10 siparişte onaylı müşteri iadeleri (§3'te K2; Lojistik port SQL çeviri düzeltmesi modüller arası olduğu için K3 ele alındı) | #817 | iki review; P3 düzeltmeleri gönderildi; #807 sonrası yeniden sabitleme, delta review ve CI |
 
 Notlar:
 
-- **MOD-12:** yeni Stok ucu gerekmedi; mevcut ST-01 okuması tahsis yeteneğinin zaten istediği izinlerle
-  (`inventory.labels.read` + `inventory.balances.read`) kullanılıyor. Codex şeridi ayrı bir etiket ucu yazmaz.
+- **MOD-12:** yeni Stok ucu gerekmedi; mevcut ST-01 okumasının izinleri (`inventory.labels.read` +
+  `inventory.balances.read`) tahsis yeteneğinin zaten istediği izinlerin alt kümesi; yeni grant gerekmez. Codex şeridi ayrı bir etiket ucu yazmaz.
 - **API-10 sınırı:** Lojistik portu satır başına yalnız onaylı toplamı veriyor. Siparişte tek tek iade numarası,
   tarihi ve durumu gösterilecekse portun Lojistik sahibi tarafından genişletilmesi gerekir (K3 sözleşme işi). UI-70a
   bu sürümde satır toplamını gösterir.
 - **Açık politika notu (karar değildir):** etiket seçici, karşı tarafa ait veya kullanılabilir miktarı 0 olan
-  etiketleri de listeliyor; Stok bunları kayıtta reddediyor. Seçicide süzülmeleri Stok/Satış politika kararıdır.
+  etiketleri de listeliyor; Stok bunları kayıtta reddediyor. Seçicide süzülmeleri Stok/Satış politika kararıdır (Issue #66'ya `NEEDS-SINAN` olarak yazıldı).
 - **CI kapasitesi:** tek self-hosted runner ve host belleği (16 GB) şu an teslimin darboğazı; PR'lar sıralı ve tek
   push ile ilerletiliyor.
 
