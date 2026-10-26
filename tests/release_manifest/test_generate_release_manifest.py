@@ -218,8 +218,8 @@ class ReleaseManifestTests(unittest.TestCase):
 
     def test_feature_list_is_the_exact_backend_module_source_surface(self) -> None:
         expected = [
-            "Accounting", "Audit", "Counterparty", "Documents", "Finance",
-            "Idempotency", "Identity", "Inventory", "Logistics", "Manufacturing",
+            "Accounting", "Audit", "BusinessPurchasing", "Counterparty", "Documents",
+            "Finance", "Idempotency", "Identity", "Inventory", "Logistics", "Manufacturing",
             "Organization", "Product", "Purchasing", "Sales", "Settings", "Work",
         ]
         self.assertEqual(expected, [item["id"] for item in self.manifest["features"]])
