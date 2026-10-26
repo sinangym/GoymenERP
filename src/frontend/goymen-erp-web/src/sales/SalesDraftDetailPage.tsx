@@ -256,6 +256,7 @@ export function SalesDraftDetailPage() {
             enabled={outcome.data.draft.approvalState === APPROVAL_STATE.approved
               && outcome.data.draft.state !== CANCELLED_STATE
               && hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)}
+            canOpenLabelHistory={hasCapability(shell, CAPABILITY.inventoryStockPositionsList)}
             companyId={companyId}
             namespace={namespace}
             routeEntryGeneration={shell.routeEntryGeneration}
