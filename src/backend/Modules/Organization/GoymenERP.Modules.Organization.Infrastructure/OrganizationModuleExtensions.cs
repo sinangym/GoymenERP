@@ -48,6 +48,9 @@ public static class OrganizationModuleExtensions
         services.AddScoped<IOrganizationTransferDestinationSourceV1, OrganizationTransferDestinationSourceV1>();
         // The module read for other modules' commands: company-scoped, no user permission gate.
         services.AddScoped<IOrganizationLocationStatusReaderV1, OrganizationLocationStatusReader>();
+        services.AddScoped<
+            IOrganizationLocationAuthorityRevalidationV1,
+            OrganizationLocationAuthorityRevalidationV1>();
         services.AddScoped<IOrganizationLocationCandidatesV1, OrganizationLocationCandidateReader>();
         services.AddScoped<IOrganizationLocationDisplayReaderV1, OrganizationLocationDisplayReader>();
         services.AddOrganizationWorkCenterPlanningReferences();
