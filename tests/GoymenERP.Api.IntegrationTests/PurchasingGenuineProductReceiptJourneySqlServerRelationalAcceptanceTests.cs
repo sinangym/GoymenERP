@@ -194,6 +194,14 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
 
             var receiptDetailPath =
                 $"/api/v1/purchasing/orders/{approved.Detail.Order.Id:D}/goods-receipts/{receipt.AcceptanceId:D}";
+            var comparisonPath = receiptDetailPath + "/quantity-comparison";
+            using var comparisonResponse = await companyA.GetAsync(comparisonPath);
+            Assert.Equal(HttpStatusCode.OK, comparisonResponse.StatusCode);
+            var comparison = (await comparisonResponse.Content
+                .ReadFromJsonAsync<PurchaseGoodsReceiptQuantityComparisonV1>())!;
+            AssertReceiptComparison(comparison, recorded.Receipt, approvedLine.LineId);
+            Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
+
             using var detailResponse = await companyA.GetAsync(receiptDetailPath);
             Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
             var detail = (await detailResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>())!;
@@ -215,6 +223,12 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             var reopenedDetail = (await reopenedDetailResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>())!;
             Assert.Equal(recorded.Receipt, reopenedDetail.Receipt);
             Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
+            using var reopenedComparisonResponse = await freshA.GetAsync(comparisonPath);
+            Assert.Equal(HttpStatusCode.OK, reopenedComparisonResponse.StatusCode);
+            var reopenedComparison = (await reopenedComparisonResponse.Content
+                .ReadFromJsonAsync<PurchaseGoodsReceiptQuantityComparisonV1>())!;
+            Assert.Equal(comparison, reopenedComparison);
+            Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
 
             using var listResponse = await freshA.GetAsync(
                 $"/api/v1/purchasing/orders/{approved.Detail.Order.Id:D}/goods-receipts?limit=100");
@@ -232,6 +246,32 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
                 var legacy = (await legacyResponse.Content.ReadFromJsonAsync<PurchaseGoodsReceiptDetailV1>())!;
                 Assert.Null(legacy.Receipt.StockItemQuantity);
                 Assert.Equal(recorded.Receipt.MeasuredQuantityKg, legacy.Receipt.MeasuredQuantityKg);
+                using var legacyComparisonResponse = await freshA.GetAsync(comparisonPath);
+                Assert.Equal(HttpStatusCode.OK, legacyComparisonResponse.StatusCode);
+                var legacyComparison = (await legacyComparisonResponse.Content
+                    .ReadFromJsonAsync<PurchaseGoodsReceiptQuantityComparisonV1>())!;
+                Assert.Equal(comparison, legacyComparison);
+                Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
+            }
+            finally
+            {
+                await RestoreReceiptResultJsonAsync(
+                    factory.DatabaseConnectionString, receipt.AcceptanceId, storedResultJson);
+            }
+
+            try
+            {
+                await SetTamperedReceiptQuantitySourceAsync(
+                    factory.DatabaseConnectionString, receipt.AcceptanceId);
+                using var tamperedComparisonResponse = await freshA.GetAsync(comparisonPath);
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, tamperedComparisonResponse.StatusCode);
+                var payload = await tamperedComparisonResponse.Content.ReadAsStringAsync();
+                using var problem = JsonDocument.Parse(payload);
+                Assert.Equal("service_unavailable", problem.RootElement.GetProperty("code").GetString());
+                Assert.DoesNotContain(PurchaseGoodsReceiptCodesV1.SourceInvalid, payload, StringComparison.Ordinal);
+                Assert.DoesNotContain(receipt.AcceptanceId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(active.Card.Product.Id.ToString(), payload, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(receipt.LabelId.ToString(), payload, StringComparison.OrdinalIgnoreCase);
                 Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
             }
             finally
@@ -287,6 +327,14 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             using var foreignReceiptList = await companyB.GetAsync(
                 $"/api/v1/purchasing/orders/{approved.Detail.Order.Id:D}/goods-receipts?limit=100");
             Assert.Equal(HttpStatusCode.NotFound, foreignReceiptList.StatusCode);
+            using var foreignComparison = await companyB.GetAsync(comparisonPath);
+            Assert.Equal(HttpStatusCode.NotFound, foreignComparison.StatusCode);
+            var foreignComparisonPayload = await foreignComparison.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(receipt.AcceptanceId.ToString(), foreignComparisonPayload,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(active.Card.Product.Id.ToString(), foreignComparisonPayload,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(stored, await StoredEffectsAsync(factory.DatabaseConnectionString, receipt));
         }
         finally
         {
@@ -409,6 +457,20 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
         Assert.Null(quantity.AlternateQuantity);
     }
 
+    private static void AssertReceiptComparison(PurchaseGoodsReceiptQuantityComparisonV1 comparison,
+        PurchaseGoodsReceiptViewV1 receipt, Guid lineId)
+    {
+        Assert.Equal((receipt.CompanyId, receipt.AcceptanceId, receipt.PurchaseOrderId, lineId,
+                receipt.PurchaseOrderVersion, receipt.ProductId, receipt.ProductVersion, receipt.UnitId),
+            (comparison.CompanyId, comparison.AcceptanceId, comparison.PurchaseOrderId,
+                comparison.PurchaseOrderLineId, comparison.PurchaseOrderVersion, comparison.ProductId,
+                comparison.ProductVersion, comparison.UnitId));
+        Assert.Equal((PurchaseGoodsReceiptQuantityComparisonStatusesV1.SameKilogramUnit,
+                receipt.AcceptedQuantity, receipt.MeasuredQuantityKg, receipt.AcceptedQuantity, "0"),
+            (comparison.ComparisonStatus, comparison.AcceptedQuantity, comparison.MeasuredQuantityKg,
+                comparison.AcceptedQuantityKg, comparison.MeasuredMinusAcceptedKg));
+    }
+
     private static async Task<StoredEffects> StoredEffectsAsync(string connectionString,
         RecordPurchaseGoodsReceiptV1 receipt)
     {
@@ -451,6 +513,21 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
         await using var command = connection.CreateCommand();
         command.CommandText = "UPDATE inventory.Commands "
             + "SET ResultJson = JSON_MODIFY(ResultJson, '$.stockItemQuantity', NULL) "
+            + "WHERE CompanyId = @company AND CommandName = @command AND TargetId = @acceptance;";
+        command.Parameters.AddWithValue("@company", CompanyA);
+        command.Parameters.AddWithValue("@command", InventoryGoodsReceiptContractV1.CommandName);
+        command.Parameters.AddWithValue("@acceptance", acceptanceId);
+        Assert.Equal(1, await command.ExecuteNonQueryAsync());
+    }
+
+    private static async Task SetTamperedReceiptQuantitySourceAsync(string connectionString,
+        Guid acceptanceId)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE inventory.Commands "
+            + "SET ResultJson = JSON_MODIFY(ResultJson, '$.stockItemQuantity.sourceVersion', N'999') "
             + "WHERE CompanyId = @company AND CommandName = @command AND TargetId = @acceptance;";
         command.Parameters.AddWithValue("@company", CompanyA);
         command.Parameters.AddWithValue("@command", InventoryGoodsReceiptContractV1.CommandName);
