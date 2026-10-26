@@ -29,6 +29,8 @@ public static class SettingsModuleExtensions
         });
         services.Replace(ServiceDescriptor.Scoped<ISettingsManufacturingToleranceProviderV1,
             SettingsManufacturingToleranceProviderV1>());
+        services.AddScoped<ISettingsManufacturingToleranceProfileCommandServiceV1,
+            SettingsManufacturingToleranceProfileCommandServiceV1>();
         return services;
     }
 

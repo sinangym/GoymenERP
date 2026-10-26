@@ -1,8 +1,10 @@
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Accounting.Application;
+using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Inventory.Application;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
@@ -10,6 +12,7 @@ using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -27,6 +30,7 @@ public sealed class SettingsHostWiringTests
     private static readonly Guid Gsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
     private static readonly Guid Gin = Guid.Parse("10000000-0000-0000-0000-000000000003");
     private static readonly DateOnly Approval = new(2026, 9, 18);
+    private const string HostActor = "20000000-0000-0000-0000-0000000000aa";
 
     [Fact]
     public void The_host_registers_the_inventory_parent_roll_validation_port_once()
@@ -61,6 +65,66 @@ public sealed class SettingsHostWiringTests
 
         Assert.IsType<SettingsManufacturingToleranceProviderV1>(provider);
         Assert.Single(scope.ServiceProvider.GetServices<ISettingsManufacturingToleranceProviderV1>());
+    }
+
+    [Fact]
+    public void The_host_registers_one_source_owned_manufacturing_tolerance_lifecycle_command_service()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        var command = scope.ServiceProvider
+            .GetRequiredService<ISettingsManufacturingToleranceProfileCommandServiceV1>();
+
+        Assert.IsType<SettingsManufacturingToleranceProfileCommandServiceV1>(command);
+        Assert.Single(scope.ServiceProvider
+            .GetServices<ISettingsManufacturingToleranceProfileCommandServiceV1>());
+    }
+
+    [Fact]
+    public async Task The_host_command_service_persists_and_replays_a_draft_without_activating_the_runtime_provider()
+    {
+        using var factory = Host(Gdc, authority: new GrantAllSettingsProfileActions());
+        using var scope = factory.Services.CreateScope();
+        var service = scope.ServiceProvider
+            .GetRequiredService<ISettingsManufacturingToleranceProfileCommandServiceV1>();
+        var profileId = Guid.NewGuid();
+        var request = new PrepareManufacturingToleranceProfileCommandV1(
+            profileId,
+            SettingsManufacturingProcessesV1.Slitting,
+            1,
+            1.250000m,
+            new DateOnly(2030, 1, 1),
+            new DateOnly(2030, 12, 31),
+            new ManufacturingToleranceProfilePersistenceContextV1(
+                Gdc,
+                HostActor,
+                0,
+                "settings-host-profile-prepare-0001",
+                "synthetic host persistence evidence",
+                new DateTimeOffset(2026, 10, 16, 12, 30, 0, TimeSpan.Zero),
+                "settings-host-profile-correlation-0001",
+                null,
+                "Web",
+                "127.0.0.1",
+                "synthetic-settings-host"));
+
+        var created = await service.PrepareAsync(request);
+        var replay = await service.PrepareAsync(request);
+
+        Assert.False(created.IsReplay);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(created.Profile, replay.Profile);
+        var database = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        Assert.Single(await database.ManufacturingToleranceProfileLifecycles.AsNoTracking().ToArrayAsync());
+        Assert.Single(await database.Set<CommandExecution>().AsNoTracking().ToArrayAsync());
+        Assert.Single(await database.Set<AuditEvent>().AsNoTracking().ToArrayAsync());
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsManufacturingToleranceProviderV1>();
+        Assert.Equal("settings_provider_unavailable",
+            (await Assert.ThrowsAsync<SettingsPrerequisiteException>(() =>
+                provider.GetManufacturingToleranceAsync(
+                    SettingsManufacturingProcessesV1.Slitting,
+                    new DateOnly(2030, 6, 1)))).Code);
     }
 
     [Theory]
@@ -315,15 +379,21 @@ public sealed class SettingsHostWiringTests
             scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>().ProductPermission);
     }
 
-    private static WebApplicationFactoryWithFixedContext Host(Guid company, Guid? actorAllowedIn = null) =>
-        new(company, actorAllowedIn ?? company);
+    private static WebApplicationFactoryWithFixedContext Host(
+        Guid company,
+        Guid? actorAllowedIn = null,
+        IErpAuthorityRevalidationService? authority = null) =>
+        new(company, actorAllowedIn ?? company, authority);
 
     private sealed class WebApplicationFactoryWithFixedContext : IDisposable
     {
         private readonly GoymenErpApiFactory _factory = new();
         private readonly Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> _host;
 
-        public WebApplicationFactoryWithFixedContext(Guid company, Guid actorAllowedIn)
+        public WebApplicationFactoryWithFixedContext(
+            Guid company,
+            Guid actorAllowedIn,
+            IErpAuthorityRevalidationService? authority)
         {
             _host = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
             {
@@ -331,6 +401,11 @@ public sealed class SettingsHostWiringTests
                 services.AddScoped<ICurrentUser>(_ => new FixedActor(actorAllowedIn));
                 services.RemoveAll<ICompanyContext>();
                 services.AddScoped<ICompanyContext>(_ => new FixedCompany(company));
+                if (authority is not null)
+                {
+                    services.RemoveAll<IErpAuthorityRevalidationService>();
+                    services.AddScoped(_ => authority);
+                }
             }));
         }
 
@@ -377,8 +452,25 @@ public sealed class SettingsHostWiringTests
     private sealed class FixedActor(Guid allowedCompany) : ICurrentUser
     {
         public bool IsAuthenticated => true;
-        public string? UserId => "20000000-0000-0000-0000-0000000000aa";
+        public string? UserId => HostActor;
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid> { allowedCompany };
         public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+    }
+
+    private sealed class GrantAllSettingsProfileActions : IErpAuthorityRevalidationService
+    {
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(
+            string permission,
+            Guid companyId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PermissionScope(
+                ManufacturingToleranceProfileActionsV1.Prepare == permission
+                    || ManufacturingToleranceProfileActionsV1.Approve == permission
+                    || ManufacturingToleranceProfileActionsV1.Publish == permission,
+                true,
+                new HashSet<string>(["settings-profile-test"], StringComparer.Ordinal),
+                new HashSet<Guid>(),
+                new HashSet<Guid>(),
+                new HashSet<Guid>()));
     }
 }
