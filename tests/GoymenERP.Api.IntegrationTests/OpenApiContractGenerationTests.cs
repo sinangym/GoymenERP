@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.OpenApi;
+using GoymenERP.Api.OrganizationRuntime;
 using GoymenERP.Api.Contracts;
 using GoymenERP.Api.WorkRuntime;
 using GoymenERP.BuildingBlocks.OpenApi;
@@ -58,6 +59,19 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/organization/locations/{id}", "GetOrganizationLocationV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/organization/locations/{id}/operator", "GetOrganizationLocationOperatorV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        new("get", "/api/v1/organization/locations/{id}/operator-candidates",
+            "GetOrganizationLocationOperatorCandidatesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "path:id:true:type:string;format:uuid",
+                "query:q:false:type:string",
+                "query:pageSize:false:type:string",
+                "query:cursor:false:type:string",
+            ]),
         new("get", "/api/v1/inventory/labels/{labelId}", "GetInventoryLabelV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json"),
             ParameterValues: ["path:labelId:true:type:string;format:uuid"]),
@@ -929,6 +943,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetOrganizationSitesV1"] = "array:SiteSummary",
             ["GetOrganizationLocationsV1"] = "ref:PageResultOfLocationSummary",
             ["GetOrganizationLocationV1"] = "ref:LocationSummary",
+            ["GetOrganizationLocationOperatorV1"] = "ref:OrganizationLocationOperatorContextV1",
+            ["GetOrganizationLocationOperatorCandidatesV1"] =
+                "ref:OrganizationLocationOperatorCandidatePageV1",
             ["GetInventoryLabelV1"] = "ref:InventoryLabelViewV1",
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
@@ -1166,6 +1183,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetOrganizationSitesV1",
         "GetOrganizationLocationsV1",
         "GetOrganizationLocationV1",
+        "GetOrganizationLocationOperatorV1",
+        "GetOrganizationLocationOperatorCandidatesV1",
         "SetOrganizationLocationActiveStateV1",
         "SetOrganizationLocationOperatorV1",
         "CreateOrganizationSiteV1",
@@ -1705,6 +1724,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordInventoryStockScrapV1",
         "DecideInventoryStockScrapV1",
         "GetOrganizationLocationsV1",
+        "GetOrganizationLocationOperatorCandidatesV1",
         "SetOrganizationLocationActiveStateV1",
         "SetOrganizationLocationOperatorV1",
         "CreateOrganizationSiteV1",
@@ -1836,6 +1856,8 @@ public sealed partial class OpenApiContractGenerationTests
         "GetWorkApprovalsV1:404",
         "GetWorkApprovalV1:404",
         "GetOrganizationLocationV1:404",
+        "GetOrganizationLocationOperatorV1:404",
+        "GetOrganizationLocationOperatorCandidatesV1:404",
         "GetOrganizationWorkCenterV1:404",
         "GetIdentityAccessUserV1:404",
         "GetIdentityAccessRoleV1:404",
@@ -1968,6 +1990,7 @@ public sealed partial class OpenApiContractGenerationTests
         "ProposeAccountingJournalReversalV1:400",
         "ApproveAccountingJournalReversalV1:400",
         "GetAuditEventsV1:400",
+        "GetOrganizationLocationOperatorCandidatesV1:400",
         "SetOrganizationLocationActiveStateV1:400",
         "SetOrganizationLocationOperatorV1:400",
         "CreateOrganizationSiteV1:400",
@@ -2102,6 +2125,13 @@ public sealed partial class OpenApiContractGenerationTests
             // ORG master edit: the one stable 422 code, the owner's constant.
             ["SetOrganizationLocationOperatorV1:422"] = [OrganizationProblemCodesV1.LocationOperatorIneligible],
             ["SetOrganizationLocationOperatorV1:503"] =
+                [OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable],
+            ["GetOrganizationLocationOperatorV1:503"] =
+                [OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable],
+            ["GetOrganizationLocationOperatorCandidatesV1:400"] =
+                [OrganizationLocationOperatorReadCodesV1.InvalidCursor,
+                    OrganizationLocationOperatorReadCodesV1.ValidationFailed],
+            ["GetOrganizationLocationOperatorCandidatesV1:503"] =
                 [OrganizationProblemCodesV1.LocationOperatorDependencyUnavailable],
             ["CreateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
             ["UpdateOrganizationSiteV1:422"] = [OrganizationProblemCodesV1.CodeInUse],
@@ -5080,6 +5110,28 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isActive", "type:boolean"),
                     ("version", "type:integer;format:int64"),
                     ("operatorPartyId", "type:null|string;format:uuid")),
+                ["OrganizationLocationOperatorContextV1"] = ObjectSchema(
+                    ["locationId", "operator"],
+                    ("locationId", "type:string;format:uuid"),
+                    ("operator", "oneOf:ref:OrganizationLocationOperatorDisplayV1|type:null")),
+                ["OrganizationLocationOperatorDisplayV1"] = ObjectSchema(
+                    ["partyId", "code", "legalName", "tradeName", "isCurrentlyEligible"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("legalName", "type:string"),
+                    ("tradeName", "type:null|string"),
+                    ("isCurrentlyEligible", "type:boolean")),
+                ["OrganizationLocationOperatorCandidatePageV1"] = ObjectSchema(
+                    ["items", "nextCursor", "hasMore"],
+                    ("items", "type:array;items:ref:OrganizationLocationOperatorCandidateV1"),
+                    ("nextCursor", "type:null|string"),
+                    ("hasMore", "type:boolean")),
+                ["OrganizationLocationOperatorCandidateV1"] = ObjectSchema(
+                    ["partyId", "code", "legalName", "tradeName"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("code", "type:string"),
+                    ("legalName", "type:string"),
+                    ("tradeName", "type:null|string")),
                 ["PageResultOfLocationSummary"] = ObjectSchema(
                     ["items", "page", "pageSize", "totalCount"],
                     ("items", "type:array;items:ref:LocationSummary"),
