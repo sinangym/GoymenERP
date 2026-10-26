@@ -67,44 +67,51 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
     public async Task An_approved_customer_return_shows_on_the_sales_order_after_reopen_and_pending_or_rejected_requests_do_not_on_real_sql()
     {
         await using var run = await Run.StartAsync();
-        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
-        var orderLine = Assert.Single(draft.Lines);
-        var source = await run.DeliveredInstructionAsync(CompanyA, draft, "k", delivered: 4m);
+        // Two order lines, each delivered through its own instruction: the owner groups per line on SQL Server and the
+        // read answers every line once, in line order, a definite "0" next to a returned line.
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6", "3");
+        var (orderLine, secondLine) = (draft.Lines.Single(line => line.LineNo == 1), draft.Lines.Single(line => line.LineNo == 2));
+        var source = await run.DeliveredInstructionAsync(CompanyA, draft, orderLine, "k", delivered: 4m);
+        var secondSource = await run.DeliveredInstructionAsync(CompanyA, draft, secondLine, "k2", delivered: 3m);
 
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
         using var client = run.Client(reader, CompanyA);
         var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/customer-returns";
 
-        // Delivered, nothing returned yet: the owner answered and the line shows a definite zero.
-        Assert.Equal(("6", "0"), Line(await run.ReadAsync(client, path), orderLine.Id));
+        // Delivered, nothing returned yet: the owner answered and every line shows a definite zero.
+        Assert.Equal([(orderLine.Id, 1, "6", "0"), (secondLine.Id, 2, "3", "0")], Lines(await run.ReadAsync(client, path)));
 
         // A pending request is not a return yet: nothing is counted.
         var first = await run.RequestReturnAsync(CompanyA, source, 1.5m, "k-r1");
-        Assert.Equal(("6", "0"), Line(await run.ReadAsync(client, path), orderLine.Id));
+        Assert.Equal([(orderLine.Id, 1, "6", "0"), (secondLine.Id, 2, "3", "0")], Lines(await run.ReadAsync(client, path)));
 
-        // Approved in Logistics: the order, opened again, shows the exact approved quantity in its order unit.
+        // Approved in Logistics: the order, opened again, shows the exact approved quantity in its order unit on that line
+        // only; the other line stays a definite zero.
         await run.DecideReturnAsync(CompanyA, first, approve: true, "k-r1-approve");
         var opened = await run.ReadAsync(client, path);
-        Assert.Equal(("6", "1.5"), Line(opened, orderLine.Id));
-        Assert.Equal("4", opened.GetProperty("draftVersion").GetString());
+        Assert.Equal([(orderLine.Id, 1, "6", "1.5"), (secondLine.Id, 2, "3", "0")], Lines(opened));
+        Assert.Equal("5", opened.GetProperty("draftVersion").GetString());
 
-        // A rejected request adds nothing; a second approved return adds exactly its quantity.
+        // A rejected request adds nothing; a second approved return adds exactly its quantity to its own line, and an
+        // approved return of the other line is grouped on that line alone.
         var rejected = await run.RequestReturnAsync(CompanyA, source, 0.5m, "k-r2");
         await run.DecideReturnAsync(CompanyA, rejected, approve: false, "k-r2-reject");
-        Assert.Equal(("6", "1.5"), Line(await run.ReadAsync(client, path), orderLine.Id));
+        Assert.Equal([(orderLine.Id, 1, "6", "1.5"), (secondLine.Id, 2, "3", "0")], Lines(await run.ReadAsync(client, path)));
         var second = await run.RequestReturnAsync(CompanyA, source, 0.75m, "k-r3");
         await run.DecideReturnAsync(CompanyA, second, approve: true, "k-r3-approve");
-        Assert.Equal(("6", "2.25"), Line(await run.ReadAsync(client, path), orderLine.Id));
+        var other = await run.RequestReturnAsync(CompanyA, secondSource, 1m, "k-r4");
+        await run.DecideReturnAsync(CompanyA, other, approve: true, "k-r4-approve");
+        Assert.Equal([(orderLine.Id, 1, "6", "2.25"), (secondLine.Id, 2, "3", "1")], Lines(await run.ReadAsync(client, path)));
 
         // The read writes nothing in either module (no attempt, audit, return or version effect).
         var before = await run.EffectsAsync(draft.Id);
         await run.ReadAsync(client, path);
         Assert.Equal(before, await run.EffectsAsync(draft.Id));
-        Assert.Equal((3, 2), (before.Returns, await run.ScalarAsync<int>(
+        Assert.Equal((4, 3), (before.Returns, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [logistics].[CustomerReturns] WHERE [SourceOrderId] = @id AND [Status] = @approved",
             ("@id", draft.Id), ("@approved", (int)CustomerReturnStatus.Approved))));
-        // Sales holds no copy: the approved draft is untouched (version 4, Approved, Rev.0).
-        Assert.Equal((4L, 3, 0), (await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+        // Sales holds no copy: the approved draft is untouched (version 5, Approved, Rev.0).
+        Assert.Equal((5L, 3, 0), (await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
             await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
             await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
     }
@@ -168,14 +175,27 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
         return (line.GetProperty("ordered").GetString()!, line.GetProperty("approvedReturned").GetString()!);
     }
 
+    private static (Guid LineId, int LineNo, string Ordered, string ApprovedReturned)[] Lines(JsonElement returns) =>
+    [
+        .. returns.GetProperty("lines").EnumerateArray().Select(line =>
+        {
+            Assert.Equal(KgUnit.ToString("D"), line.GetProperty("orderUnitId").GetString());
+            return (Guid.Parse(line.GetProperty("lineId").GetString()!), line.GetProperty("lineNo").GetInt32(),
+                line.GetProperty("ordered").GetString()!, line.GetProperty("approvedReturned").GetString()!);
+        }),
+    ];
+
     private static LogisticsQuantity Kg(decimal value) => LogisticsQuantity.Of(value, LogisticsQuantityUnit.Kilogram);
 
     private static LogisticsQuantity PositiveKg(decimal value) => LogisticsQuantity.Positive(value, LogisticsQuantityUnit.Kilogram);
 
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
-    /// <summary>A one-line draft (the given kg quantity, no slices) from SYNTHETIC owner snapshots in the approved kg unit: version 2.</summary>
-    private static SalesOrderDraft Draft(Guid company, string documentNo, string quantity)
+    /// <summary>
+    /// A draft of one line per given kg quantity (in line order, no slices) from SYNTHETIC owner snapshots in the approved kg
+    /// unit: version 1 + the number of lines.
+    /// </summary>
+    private static SalesOrderDraft Draft(Guid company, string documentNo, IReadOnlyList<string> quantities)
     {
         var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10));
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
@@ -183,8 +203,12 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
         var binding = new UnitBindingSnapshot(company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
-        draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, quantity,
-            decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture), Day.AddDays(3)), T0);
+        foreach (var quantity in quantities)
+        {
+            draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, quantity,
+                decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture), Day.AddDays(3)), T0);
+        }
+
         return draft;
     }
 
@@ -243,26 +267,35 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
             return run;
         }
 
-        /// <summary>A stored draft of the company, submitted and approved (version 4), through the real Sales store.</summary>
-        public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, string keyPrefix, string quantity)
+        /// <summary>
+        /// A stored draft of the company with one line per given kg quantity, submitted and approved (version 3 + the number of
+        /// lines), through the real Sales store.
+        /// </summary>
+        public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, string keyPrefix, params string[] quantities)
         {
             await using var scope = SalesStore(company);
             var draft = (await scope.Store.StoreDraftAsync(SalesEnvelope($"{keyPrefix}-create"), Hash($"{keyPrefix}-create"),
-                documentNo => Draft(company, documentNo, quantity))).Draft;
-            await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-submit"), Hash($"{keyPrefix}-submit"), SalesDraftCommands.SubmitV1, draft.Id,
-                (d, now) => d.Submit(2, Actor, now), Submitted);
+                documentNo => Draft(company, documentNo, quantities))).Draft;
+            var submitted = await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-submit"), Hash($"{keyPrefix}-submit"),
+                SalesDraftCommands.SubmitV1, draft.Id, (d, now) => d.Submit(draft.Version, Actor, now), Submitted);
             var approved = await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-approve", actor: "SENTETIK-approver"), Hash($"{keyPrefix}-approve"),
-                SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
+                SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(submitted!.Draft.Version, "SENTETIK-approver", now), Approved);
             return approved!.Draft;
         }
 
         /// <summary>
-        /// An instruction of <paramref name="company"/> for the draft's one line (6 kg, the approved kg unit), created, issued,
+        /// An instruction of <paramref name="company"/> for one order line of the draft (its single line unless
+        /// <paramref name="orderLine"/> names one; planned at the line's kg quantity, the approved kg unit), created, issued,
         /// loaded in full, shipped and delivered <paramref name="delivered"/> kg through the real Logistics store.
         /// </summary>
-        public async Task<ReturnSource> DeliveredInstructionAsync(Guid company, SalesOrderDraft draft, string keyPrefix, decimal delivered)
+        public Task<ReturnSource> DeliveredInstructionAsync(Guid company, SalesOrderDraft draft, string keyPrefix, decimal delivered) =>
+            DeliveredInstructionAsync(company, draft, Assert.Single(draft.Lines), keyPrefix, delivered);
+
+        /// <inheritdoc cref="DeliveredInstructionAsync(Guid, SalesOrderDraft, string, decimal)"/>
+        public async Task<ReturnSource> DeliveredInstructionAsync(Guid company, SalesOrderDraft draft, SalesOrderDraftLine orderLine,
+            string keyPrefix, decimal delivered)
         {
-            var orderLine = Assert.Single(draft.Lines);
+            var planned = orderLine.Quantity.Value;
             var shipmentId = Guid.NewGuid();
             var deliveryId = Guid.NewGuid();
             await using var scope = LogisticsStore(company);
@@ -270,7 +303,7 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
             {
                 var instruction = LoadingInstruction.Create(Guid.NewGuid(), company, draft.Header.PartyId, draft.Header.CompanyAccountId, T0);
                 instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(draft.Id, orderLine.Id, draft.Revision),
-                    orderLine.Product.ProductId, KgUnit, null, Kg(6m), T0);
+                    orderLine.Product.ProductId, KgUnit, null, Kg(planned), T0);
                 return instruction;
             })).Instruction.Instruction;
             var lineId = Assert.Single(stored.Lines).Id;
@@ -278,7 +311,7 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
             var issued = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-issue"), Hash($"{keyPrefix}-l-issue"),
                 LogisticsCommands.IssueV1, id, (instruction, now) => instruction.Issue(stored.Version, now), Issued))!.Instruction.Instruction;
             var loaded = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-load"), Hash($"{keyPrefix}-l-load"),
-                LogisticsCommands.RecordLoadV1, id, (instruction, now) => instruction.RecordLoad(issued.Version, Guid.NewGuid(), lineId, Kg(6m),
+                LogisticsCommands.RecordLoadV1, id, (instruction, now) => instruction.RecordLoad(issued.Version, Guid.NewGuid(), lineId, Kg(planned),
                     MeasurementKind.Measured, now), Loaded))!.Instruction.Instruction;
             var shipped = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship"), Hash($"{keyPrefix}-l-ship"),
                 LogisticsCommands.RecordShipmentV1, id, (instruction, now) => instruction.MarkShipped(loaded.Version, shipmentId, lineId,
@@ -339,7 +372,7 @@ public sealed class SalesCustomerReturnsSqlServerRelationalAcceptanceTests
         {
             using var response = await client.GetAsync(path);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            Assert.Contains("no-store", response.Headers.CacheControl!.ToString(), StringComparison.Ordinal);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
             return await response.Content.ReadFromJsonAsync<JsonElement>();
         }
 

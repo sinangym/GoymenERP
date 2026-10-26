@@ -85,9 +85,17 @@ public sealed partial class SalesDraftService
                 throw CustomerReturnAnswerInvalid();
             }
 
-            returned[line.Id] = returned.TryGetValue(line.Id, out var sum)
-                ? sum + entry.ApprovedReturnedQuantity
-                : entry.ApprovedReturnedQuantity;
+            try
+            {
+                returned[line.Id] = returned.TryGetValue(line.Id, out var sum)
+                    ? sum + entry.ApprovedReturnedQuantity
+                    : entry.ApprovedReturnedQuantity;
+            }
+            catch (OverflowException)
+            {
+                // A malformed owner answer must not escape as a server error or be shown as a plausible quantity.
+                throw CustomerReturnAnswerInvalid();
+            }
         }
 
         return new SalesOrderDraftCustomerReturnsResponse(draft.Version.ToString(CultureInfo.InvariantCulture),

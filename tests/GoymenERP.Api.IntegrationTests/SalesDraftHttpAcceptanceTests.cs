@@ -1085,7 +1085,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         using (var response = await client.GetAsync(path))
         {
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            Assert.Contains("no-store", response.Headers.CacheControl!.ToString(), StringComparison.Ordinal);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
             var body = await response.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(["draftVersion", "lines"], body.EnumerateObject().Select(member => member.Name));
             Assert.Equal("5", body.GetProperty("draftVersion").GetString());
@@ -1104,6 +1104,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         using (var missing = await client.GetAsync(path))
         {
             Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
             Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         }
 
@@ -1112,6 +1113,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             service.CustomerReturns = _ => throw new SalesDraftServiceException(503, code);
             using var unavailable = await client.GetAsync(path);
             Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.True(unavailable.Headers.CacheControl is { Private: true, NoStore: true });
             Assert.DoesNotContain(code, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         }
     }

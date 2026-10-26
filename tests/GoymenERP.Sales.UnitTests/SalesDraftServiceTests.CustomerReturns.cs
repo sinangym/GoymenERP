@@ -58,7 +58,8 @@ public sealed partial class SalesDraftServiceTests
         var owner = new FakeCustomerReturns(order => new(Company, order, []));
         world.CustomerReturns = owner;
 
-        // Another company's draft is null under the tenant filter, exactly like an unknown one.
+        // An unknown draft id and the empty id are 404 before the owner is asked (the cross-company 404 under the tenant
+        // filter is proven on SQL Server in SalesCustomerReturnsSqlServerRelationalAcceptanceTests).
         Assert.Equal((404, "not_found"), Status(await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             world.Service().GetDraftCustomerReturnsAsync(Guid.NewGuid()))));
         Assert.Equal(404, (await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
@@ -104,7 +105,7 @@ public sealed partial class SalesDraftServiceTests
     public static TheoryData<string> MalformedCustomerReturnAnswers => new()
     {
         "null-answer", "another-company", "another-order", "null-lines", "null-entry", "unknown-line", "another-unit", "zero",
-        "negative", "above-scale",
+        "negative", "above-scale", "sum-overflow",
     };
 
     [Theory]
@@ -129,6 +130,8 @@ public sealed partial class SalesDraftServiceTests
             "negative" => new(Company, order, [new(line, KgUnit, -1m)]),
             // Ö2: kilograms carry at most three decimals; a fourth is refused, never rounded to fit.
             "above-scale" => new(Company, order, [new(line, KgUnit, 1.0001m)]),
+            // Two entries of the same line whose exact sum exceeds decimal: malformed, never an unhandled server error.
+            "sum-overflow" => new(Company, order, [new(line, KgUnit, decimal.MaxValue), new(line, KgUnit, decimal.MaxValue)]),
             _ => throw new ArgumentOutOfRangeException(nameof(fault)),
         });
 
