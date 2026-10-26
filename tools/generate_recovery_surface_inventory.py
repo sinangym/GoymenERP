@@ -49,18 +49,18 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 96
+EXPECTED_MIGRATION_COUNT = 97
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "27ac7349e65da82402f838b812e279ebcef7a5b8d76dba1e67839aef19ad7c9f"
+    "34bc258f7e710668d0bed57fcf09b24f5e6eb88a91173a297920673cc38f2317"
 )
 EXPECTED_DURABLE_STORE_COUNT = 21
 # The source-only inventory is reviewed for one frozen backend compilation surface.  A
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
 # lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1074
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1079
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "3767ca6d1d87faf9b6ef88daa0314c922defb87cef61939bddcddef621159bea"
+    "de0b85fc7cc2322dbc4b059890c161d2d438bd9abfff6e531b5d36b0ab292a74"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -739,7 +739,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "ea3481d674648b893796c93b15dab32e0a7a49b7c9ba0a1ef686f2d8a6afac2d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "dcd91635cea0a3eaf85e19590b5168e6b0da20a647576ba3ce98b130803a9d69",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "52a9cb9c3f6b709bc89a5ef0a1286f1b902cb36f5f4099123027d2a3f1036a49",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
 }
 
