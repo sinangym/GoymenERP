@@ -24,13 +24,13 @@ assert VERIFIER_SPEC is not None and VERIFIER_SPEC.loader is not None
 VERIFIER = importlib.util.module_from_spec(VERIFIER_SPEC)
 VERIFIER_SPEC.loader.exec_module(VERIFIER)
 REVIEWED_CONTINUOUS_INTEGRATION_WORKFLOW_FINGERPRINT = (
-    "145e65fcc543e614143d24e4d5388ac7cd625e2dc1d4b493ab4d8b59b81dec6a"
+    "b6a7efaa216e80647a4ed586b7c44b19bc63f321f2c084e05e9cdaffa064ac76"
 )
 REVIEWED_RECOVERY_SURFACE_INVENTORY_JOB_FINGERPRINT = (
-    "5a37d122520aee8e55e2a2c79570dfc9df131b6737d179d8acff001145b0490d"
+    "cd305f39ce3483947044ca1a28bb9ce9deea69c820e5b7f7d1a00e1777e7234d"
 )
 REVIEWED_RELEASE_MANIFEST_JOB_FINGERPRINT = (
-    "66546a275450bddd4676ce5552f45a146e3005380bb6e967e895b58c70c7a416"
+    "d20f56609a1f034815a34502584a5258c711d1f3ec65195c5c5f5d467e2b1138"
 )
 
 
@@ -1060,7 +1060,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
         no_op_job = (
             "    name: Recovery surface inventory exact-source proof\n"
-            "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
+            "    runs-on: ubuntu-latest\n"
             "    steps:\n"
             "      - run: echo ok\n\n"
         )
@@ -1246,8 +1246,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "job condition disabled",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n    if: false\n",
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n    if: false\n",
             ),
             (
                 "proof step condition disabled",
@@ -1367,7 +1367,7 @@ class SafeTrxSummaryTests(unittest.TestCase):
 
         no_op_job = (
             "    name: Release manifest exact-source proof\n"
-            "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
+            "    runs-on: ubuntu-latest\n"
             "    steps:\n"
             "      - run: echo ok\n\n"
         )
@@ -1561,8 +1561,8 @@ class SafeTrxSummaryTests(unittest.TestCase):
             ),
             (
                 "job condition disabled",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n    if: false\n",
+                "    runs-on: ubuntu-latest\n",
+                "    runs-on: ubuntu-latest\n    if: false\n",
             ),
             (
                 "proof step condition disabled",

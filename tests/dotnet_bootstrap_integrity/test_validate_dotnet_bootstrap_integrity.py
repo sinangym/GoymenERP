@@ -1054,26 +1054,28 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
 
     def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
+        # #789/#794 replaced cloud transfer with local, run/attempt/head-bound
+        # evidence. Keep exact job pins as well as the semantic/mutation guards.
         expected_job_fingerprints = {
-            "backend-build": "641b61cfa11ebac1105f1e259c12e5d053c16027c83a0a94c7f972a068679f66",
-            "backend-test-group": "3566ea60fc73bd77bc94bd4efbaafd9c6b50dea6b65ab9ce93751faf8edb79a7",
+            "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
+            "backend-test-group": "4138b2c1aa82cb51ccbaf6cbe3a42a54416a93b61b598ca776a0a9207272be58",
             "backend": (
-                "234a8fb95d086d8c8e4a5981ad6d3f92adbdbfa4a900e8ea2e0fb34826afc6f7"
+                "e2e37178376493f6a14224f36a3682680223ee9ce509742a7ef287e80bda78d3"
             ),
             "frontend": (
-                "e9c3e81fab8292129ef6889eab3cc426dece83c2d5f40acbf8e78d1a91a48b6f"
+                "202453e576ee28ee342819117d1533b9b0aa3aacd7348bc893cb21672fa789df"
             ),
             "relational-shard": (
-                "47327ffd439f6308051591a7feb4dc1c3d1893fa4e997491a9518bbcd76cab79"
+                "f8414c3df38ceeddf840369521891220587c981491d11ad11df60447dd77fa7b"
             ),
             "relational-rcsi": (
-                "146acd198b1bf61ba9314a5ab675033972ddbba8801570b62c9613f1a5ef5bb7"
+                "4b0f81dd06932cdce3ce52a87798361eb7004a38270f51438497952d3f78caea"
             ),
             "relational": (
-                "cca5d1491c5951a2ebe2adf7580a424dea027ae0e7d102c84a5c3c53a7cd7d63"
+                "0e13b8a66d7f02d8e5ea545d028ea37daffe5a5d5d31bbc4be6b4ff67dd47412"
             ),
             "contract-drift": (
-                "9411969b92693589ca31561dff55eefeff4eeed2332355e4b68a92b08dfad494"
+                "067e1d19ce60a40f11e34e4dba7bae591e33c3ef06d271a8a557ca9226fffcea"
             ),
         }
 
@@ -1142,7 +1144,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "npm ci",
                 "npm audit --audit-level=high",
                 "npm run lint",
-                "npm test",
+                "npm test -- --maxWorkers=1 --no-file-parallelism",
                 "npm run build",
             ],
         )
@@ -1156,7 +1158,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", build, re.M),
             ["    name: Backend full build, vulnerability and migrations",
-             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    steps:"],
+             "    runs-on: ubuntu-latest", "    steps:"],
         )
         self.assertIn("dotnet build GoymenERP.slnx -noAutoResponse", build)
         self.assertIn(
@@ -1176,7 +1178,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", worker, re.M),
             ["    name: Backend test group (${{ matrix.group }})",
-             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    strategy:", "    steps:"],
+             "    runs-on: ubuntu-latest", "    strategy:", "    steps:"],
         )
         self.assertIn(
             "    strategy:\n      fail-fast: false\n      matrix:\n"
@@ -1224,9 +1226,9 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", aggregate, re.M),
             ["    name: Backend build, test and migration",
-             "    needs: [backend-build, backend-test-group]",
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "    if: ${{ always() }}",
-             "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]", "    steps:"],
+             "    runs-on: ubuntu-latest", "    steps:"],
         )
         self.assertNotIn("continue-on-error:", aggregate)
         self.assertNotIn("dotnet ", aggregate)
@@ -1235,6 +1237,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "Verify backend group proof parser",
                 "Download exact backend group proofs",
+                "Download same-run SQL proofs for excluded backend tests",
                 "Verify complete backend build and test groups",
             ],
         )
@@ -1261,6 +1264,17 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
         self.assertEqual(
             self.read_step_lines(
+                self.step_body(aggregate, "Download same-run SQL proofs for excluded backend tests")
+            ),
+            [
+                "uses: actions/download-artifact@v8",
+                "with:",
+                "pattern: ci-relational-shard-proof-*",
+                "path: artifacts/ci-relational-proofs",
+            ],
+        )
+        self.assertEqual(
+            self.read_step_lines(
                 self.step_body(aggregate, "Verify complete backend build and test groups")
             ),
             [
@@ -1271,7 +1285,10 @@ class WorkflowOrderingTests(unittest.TestCase):
                 f'--source-head "{head_ref}" \\',
                 '--tested-commit "$(git rev-parse HEAD)" \\',
                 '--build-result "${{ needs.backend-build.result }}" \\',
-                '--worker-result "${{ needs.backend-test-group.result }}"',
+                '--worker-result "${{ needs.backend-test-group.result }}" \\',
+                '--relational-proof-directory artifacts/ci-relational-proofs \\',
+                '--relational-worker-result "${{ needs.relational-shard.result }}" \\',
+                '--rcsi-result "${{ needs.relational-rcsi.result }}"',
             ],
         )
 
@@ -1286,15 +1303,23 @@ class WorkflowOrderingTests(unittest.TestCase):
              "  backend-test-group:\n    if: ${{ false }}\n    name:"),
             ("soft worker", "  backend-test-group:\n    name:",
              "  backend-test-group:\n    continue-on-error: true\n    name:"),
-            ("missing build", "needs: [backend-build, backend-test-group]",
+            ("missing build", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "needs: [backend-test-group]"),
             ("not always", "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group]\n    if: ${{ always() }}",
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ always() }}",
              "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group]\n    if: ${{ success() }}"),
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ success() }}"),
+            ("missing SQL dependency", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
+             "needs: [backend-build, backend-test-group, relational-rcsi]"),
+            ("missing SQL proof", "pattern: ci-relational-shard-proof-*\n          path: artifacts/ci-relational-proofs\n\n      - name: Verify complete backend",
+             "pattern: ci-relational-shard-proof-A\n          path: artifacts/ci-relational-proofs\n\n      - name: Verify complete backend"),
+            ("foreign SQL directory", "--relational-proof-directory artifacts/ci-relational-proofs",
+             "--relational-proof-directory artifacts/other-proofs"),
+            ("constant RCSI success", '--rcsi-result "${{ needs.relational-rcsi.result }}"',
+             '--rcsi-result "success"'),
             ("untrusted restore", "dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config",
              "dotnet restore GoymenERP.slnx -noAutoResponse --configfile other.config"),
-            ("missing proof download", "pattern: ci-backend-test-group-proof-*",
+            ("summary substituted for proof", "pattern: ci-backend-test-group-proof-*",
              "pattern: ci-backend-test-group-summary-*"),
             ("aggregate no-op", '--worker-result "${{ needs.backend-test-group.result }}"',
              '--worker-result "${{ needs.backend-test-group.result }}" || true'),
@@ -1405,7 +1430,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "    name: SQL Server relational acceptance",
                 "    needs: [relational-shard, relational-rcsi]",
                 "    if: ${{ always() }}",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]",
+                "    runs-on: ubuntu-latest",
                 "    steps:",
             ],
         )
@@ -1570,7 +1595,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "      - frontend\n"
                 "      - relational\n"
                 "      - contract-drift\n"
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]\n"
+                "    runs-on: ubuntu-latest\n"
                 "    env:\n"
                 "      MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!\n"
                 "    steps:\n"
@@ -1602,7 +1627,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "    name: Container build",
                 "    needs:",
-                "    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]",
+                "    runs-on: ubuntu-latest",
                 "    env:",
                 "    steps:",
             ],

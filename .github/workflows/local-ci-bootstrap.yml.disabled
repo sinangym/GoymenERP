@@ -15,7 +15,7 @@ concurrency:
 jobs:
   backend-build:
     name: Backend full build, vulnerability and migrations
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -134,7 +134,7 @@ jobs:
 
   backend-test-group:
     name: Backend test group (${{ matrix.group }})
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -199,9 +199,9 @@ jobs:
 
   backend:
     name: Backend build, test and migration
-    needs: [backend-build, backend-test-group]
+    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]
     if: ${{ always() }}
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -215,6 +215,12 @@ jobs:
           pattern: ci-backend-test-group-proof-*
           path: artifacts/ci-backend-group-proofs
 
+      - name: Download same-run SQL proofs for excluded backend tests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: ci-relational-shard-proof-*
+          path: artifacts/ci-relational-proofs
+
       - name: Verify complete backend build and test groups
         run: |
           python3 -I -S -B tools/verify_backend_test_groups.py \
@@ -223,11 +229,14 @@ jobs:
           --source-head "${{ github.event.pull_request.head.sha || github.sha }}" \
           --tested-commit "$(git rev-parse HEAD)" \
           --build-result "${{ needs.backend-build.result }}" \
-          --worker-result "${{ needs.backend-test-group.result }}"
+          --worker-result "${{ needs.backend-test-group.result }}" \
+          --relational-proof-directory artifacts/ci-relational-proofs \
+          --relational-worker-result "${{ needs.relational-shard.result }}" \
+          --rcsi-result "${{ needs.relational-rcsi.result }}"
 
   recovery-surface-inventory:
     name: Recovery surface inventory exact-source proof
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -306,7 +315,7 @@ jobs:
 
   release-manifest:
     name: Release manifest exact-source proof
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -390,7 +399,7 @@ jobs:
 
   frontend:
     name: Frontend lint, test and build
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: src/frontend/goymen-erp-web
@@ -405,12 +414,14 @@ jobs:
       - run: npm ci
       - run: npm audit --audit-level=high
       - run: npm run lint
-      - run: npm test
+      # Leave memory headroom on the isolated runner.
+      # Keep every test, without competing jsdom workers or longer assertions.
+      - run: npm test -- --maxWorkers=1 --no-file-parallelism
       - run: npm run build
 
   relational-shard:
     name: SQL Server relational shard (${{ matrix.shard }})
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -425,14 +436,17 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
@@ -494,7 +508,7 @@ jobs:
 
   relational-rcsi:
     name: Exact RCSI relational acceptance
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     env:
       GOYMEN_ERP_TEST_SQLSERVER_CONNECTION: >-
         Server=localhost,1433;Database=master;User Id=sa;Password=Ci_Relational_Only_2026;Encrypt=True;TrustServerCertificate=True
@@ -505,14 +519,17 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_PID: Developer
           MSSQL_SA_PASSWORD: Ci_Relational_Only_2026
+          MSSQL_MEMORY_LIMIT_MB: "2048"
         ports:
           - 1433:1433
+        # Keep readiness strict while allowing a bounded startup grace.
+        # Successful probes admit the service before this grace ends.
         options: >-
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Ci_Relational_Only_2026' -C -Q 'SELECT 1'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 12
-          --health-start-period 20s
+          --health-start-period 300s
     steps:
       - uses: actions/checkout@v7
 
@@ -565,7 +582,7 @@ jobs:
     name: SQL Server relational acceptance
     needs: [relational-shard, relational-rcsi]
     if: ${{ always() }}
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -591,7 +608,7 @@ jobs:
 
   contract-drift:
     name: OpenAPI contract drift
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
@@ -638,7 +655,7 @@ jobs:
       - frontend
       - relational
       - contract-drift
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     env:
       MSSQL_SA_PASSWORD: Local_Only_Strong_Password_123!
     steps:
@@ -665,7 +682,7 @@ jobs:
 
   validate-ui-catalog:
     name: UI catalog structure, references and hashes
-    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -686,7 +703,7 @@ jobs:
 
   cari-c006-backend:
     name: Cari C006 backend envelope
-    runs-on: [self-hosted, Windows, X64, goymen-ci-windows]
+    runs-on: windows-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -727,4 +744,4 @@ jobs:
           name: cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/cari-c006-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7

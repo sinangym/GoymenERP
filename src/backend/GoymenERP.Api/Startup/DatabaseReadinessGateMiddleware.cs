@@ -1,4 +1,5 @@
 using GoymenERP.Api.Errors;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace GoymenERP.Api.Startup;
@@ -9,7 +10,12 @@ internal sealed class DatabaseReadinessGateMiddleware(RequestDelegate next)
         HttpContext httpContext,
         HealthCheckService healthCheckService)
     {
-        if (IsDiagnosticEndpoint(httpContext.Request.Path))
+        // AllowAnonymous does not skip authentication or DB-backed claims transformation.
+        // Complete only the selected public readiness endpoint before that dependency.
+        var isPublicReadinessEndpoint = httpContext.Request.Path.Equals(
+                new PathString("/health/ready"))
+            && httpContext.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null;
+        if (IsDiagnosticEndpoint(httpContext.Request.Path) && !isPublicReadinessEndpoint)
         {
             await next(httpContext);
             return;
@@ -19,6 +25,15 @@ internal sealed class DatabaseReadinessGateMiddleware(RequestDelegate next)
             registration => registration.Tags.Contains(
                 DatabaseSchemaCompatibilityHealthCheck.ReadinessTag),
             httpContext.RequestAborted);
+        if (isPublicReadinessEndpoint)
+        {
+            httpContext.Response.StatusCode = report.Status == HealthStatus.Unhealthy
+                ? StatusCodes.Status503ServiceUnavailable
+                : StatusCodes.Status200OK;
+            await ErpHealthCheckResponseWriter.WriteAsync(httpContext, report);
+            return;
+        }
+
         if (report.Status == HealthStatus.Healthy)
         {
             await next(httpContext);
