@@ -49,6 +49,21 @@ runtime veya kullanıcı kabulü değildir.
 | OPEN-021 | **KISMEN** | Fiziksel silmeyi yalnız en yüksek yetkili kullanıcının gerçekleştirebilmesi sınırı idempotency/retention verisi için de korunur. | Idempotency replay saklama süresi, partition/archival ve dönemler arası temsil tasarımı; bu kayıtların çok-yıllı okuma kapsamı; legal-hold, ikinci onay, audit ve otomatik purge davranışı; belge/audit/idempotency türü bazlı süre matrisi. | [Issue #66 comment 5496849206 — Q5](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5496849206); `DEC-DATA-001`, `DEC-DOC-008`. | Retention/partition/purge runtime ve yöntem ADR'si henüz yok. |
 | OPEN-030 | **KISMEN** | VKN ilk kayıttan sonra değiştirilebilir olmalıdır; saklanan her `NULL` olmayan VKN `DEC-ORG-005` grup çapı benzersizlik kuralına tabidir. | Placeholder'ın `NULL` mı yoksa geçici bir değer mi taşıyacağı; VKN değiştirme yetkisi/onayı/audit izi; başka şirkete ait VKN ile çakışan yazmanın kullanıcıya gösterilecek hata ve düzeltme akışı. | [Issue #66 comment 5506986884 — Q1 kaynak eki](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5506986884); `DEC-ORG-005`. | Runtime VKN düzenleme akışı yoktur; benzersizlik migration/write kapısı ayrı K3 implementation işidir. |
 
+## 21 Ekim §3 DELEGE kaynak uzlaştırma eki
+
+- [2026-10-21 §3](SINAN_KARARLARI_2026-10-21.md) içindeki görünme sıralı 96 kaynak
+  kaydı, `DELEGE-20261021-<No>` teknik kimlikleriyle sicile `GECICI_VARSAYIM` olarak
+  eklenmiştir. Bunlar kullanıcı tarafından geri alınabilir kaynak kayıtlarıdır; runtime,
+  CI, grant, production veya PROGRAM-128 kabulü değildir.
+- Aynı belgenin §4'ü `OPEN-004/005/007/009/010/012/015/018/019/020/021/030`
+  satırlarının `KISMEN` kaldığını ve yalnız açıkça kapanmış alt bölümlerin yeniden
+  sorulmayacağını belirtir. Exact satır eşlemesi bulunmayan hiçbir kapanan bölüm bu ekle
+  üretilmemiştir; bu dosyadaki 22 `OPEN-*` satırının durumu ve açık kalan içeriği değişmemiştir.
+- No 133 kaynak satırı iki hücreli birleşik `EK-38: <Karar>` biçimindedir. Teknik kaynak
+  normalizasyonu bunu `Madde=EK-38`, `Karar=<tam kalan metin>`, kaynakta bulunmayan
+  `Yer=-` olarak ayırır; birleşim özgün hücreyi aynen yeniden üretir. Bu ayrım izin,
+  grant, politika veya aktivasyon oluşturmaz.
+
 ## Ajan çalışma kuralı
 
 - `KAPANDI` karar yeniden sorulmaz; eksik implementation ilgili delivery/backlog diliminde izlenir.
