@@ -19,10 +19,13 @@ public sealed class IdempotencyHeaderBoundaryAcceptanceTests(GoymenErpApiFactory
         new[] { $" {new string('b', 129)} " },
         new[] { "idempotency-a,idempotency-b" },
         new[] { "idempotency-a, idempotency-b" },
+        // Two separate header values. Fixed literals on purpose: theory data is enumerated at
+        // discovery and again at execution, and a random value changes the native case identity
+        // (B-798-2). The keys are rejected before any effect, so they need not be unique.
         new[]
         {
-            $"idempotency-a-{Guid.NewGuid():N}",
-            $"idempotency-b-{Guid.NewGuid():N}",
+            "idempotency-a-multiple-header-5c2e9d71",
+            "idempotency-b-multiple-header-a6f3048b",
         },
     };
 
