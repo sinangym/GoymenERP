@@ -330,7 +330,10 @@ export function installFetch(config: HarnessConfig = {}) {
  */
 export function renderProductApp(
   initialPath: string,
-): RenderResult & { readonly router: ReturnType<typeof createMemoryRouter> } {
+): RenderResult & {
+  readonly router: ReturnType<typeof createMemoryRouter>
+  readonly queryClient: QueryClient
+} {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0, refetchOnWindowFocus: false } },
   })
@@ -345,5 +348,6 @@ export function renderProductApp(
       </ShellProvider>,
     ),
     router,
+    queryClient,
   }
 }
