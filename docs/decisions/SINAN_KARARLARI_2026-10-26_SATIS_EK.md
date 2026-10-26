@@ -6,7 +6,7 @@ dosyalarını silmez. Kaydettikleri:
 - Issue #66'daki üç `NEEDS-SINAN` sorusunun cevabı:
   [6404080004](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6404080004) ve
   [6404405195](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6404405195);
-- aynı oturumda bağımsız review'ların ortaya çıkardığı üç ek soru.
+- aynı oturumda bağımsız review'ların ortaya çıkardığı dört ek soru.
 
 **Kaynak:** Sinan'ın 26 Ekim 2026 Claude Code cloud oturumundaki doğrudan cevapları
 (oturum `session_01SPADrzecggx3apH2gfNW7b`). Soru ve cevaplar kelimesi kelimesine:
@@ -30,6 +30,10 @@ dosyalarını silmez. Kaydettikleri:
 > - "GSP ve GIN'de satış yapılabilmesi için kg birim profili ve TRY para profili de GDC ile aynı
 >   açılsın mı?" → "Evet, GDC ile aynı (Önerilen)": kg (3 ondalık) ve TRY (tutar 2 ondalık)
 >   profilleri GSP ve GIN için de açılır; GIN'in faturaya kapalı olması (DEC-ORG-005) değişmez.
+> - "GSP ve GIN'e kg birim profilini açmak, Satış'la birlikte Stok (giriş, açılış sayımı) ve Üretim kg
+>   kayıtlarını da Ayarlar tarafında açıyor (yetkiler yine ayrıca gerekir). Nasıl olsun?" → "Stok ve Üretim
+>   de açık (Önerilen)": GDC ile tamamen aynı; GSP/GIN'de satış, stok ve üretim kg kayıtları Ayarlar'dan
+>   geçer. Satışın stoktan sevk edilmesi için de gerekir.
 
 ## Kararlar
 
@@ -41,6 +45,7 @@ dosyalarını silmez. Kaydettikleri:
 | SAT-D16 | Sapmanın ölçüm esası | **Sipariş satırı başına**, satırın sipariş biriminde (ör. kg) ölçülür. Teslim = o satırın bütün sevklerinin toplamı. Sapma = \|teslim − sipariş\| / sipariş × 100. **Fazla teslim her sevkte** kontrol edilir. **Eksik teslim** yalnız satır kapatılırken veya son sevk işaretlenince ölçülür; açık kalan miktar eksik sayılmaz | SAT-D15; Lojistik sevk; gerçekleşme ekseni |
 | SAT-D17 | Banttaki eksik satırın kapanışı | Uyarı bandında satır doğrudan, onay bandında onaydan sonra **"Tamamlandı"** olur; kalan miktar **iptal edilen kalan** sayılır. Tolerans içi (< %1) eksik teslimde satır SAT-D5 uyarınca doğrudan "Tamamlandı" olur ve kalan yine iptal edilen kalandır. Blok bandında satır bu yolla kapanmaz; kalan sevk edilir ya da zorla kapatma (No 30, SAT-D12) uygulanır | SAT-D15/D16; zorla kapatma (No 30) ile aynı "iptal edilen kalan" kavramı |
 | SAT-D18 | GSP/GIN birim ve para profili | **GSP ve GIN için kg birim profili ve TRY para profili GDC ile aynı açılır.** kg 3 ondalık, TRY tutar 2 ondalık (Ö2). Profiller her şirket için ayrı ve sürümlüdür. **TRY para profilinin işlem kapsamı GSP/GIN için yalnız `sales.order-draft.v1`'dir**; muhasebe (`accounting.journal-amount.v1`) ve finans (`finance.manual-bank-receipt.v1`) işlemleri ayrı karar ister. GIN'in faturaya kapalı olması (`DEC-ORG-005`, `IsPlaceholder`, `InvoiceCapable=false`) değişmez | Ayarlar `ApprovedUnitProfileCatalog`, `ApprovedMoneyProfileCatalog` |
+| SAT-D19 | GSP/GIN kg profilinin kapsamı | **kg birim profili GSP ve GIN'de GDC ile tamamen aynı kapsamdadır:** Satış, Stok (giriş, açılış sayımı) ve Üretim kg kayıtları Ayarlar kontrolünden geçer. Birim profili işlem kapsamı taşımadığı için "tamamen aynı", aynı portu okuyan Satın Alma (sipariş satırı) ve Lojistik (yükleme) kg doğrulamalarını da kapsar; soruda yalnız Satış/Stok/Üretim adı geçtiğinden bu sonuç Sinan'a ayrıca bildirilir. Her işlem için yetki (grant) yine ayrıca ve insan kapısında gerekir (`OPEN-013`). TRY para profilinin yalnız satışla sınırlı kapsamı (SAT-D18) değişmez. Üretim tolerans kataloğu ve stok tolerans politikası (`OPEN-004` stok tarafı) bu kararın kapsamında değildir; GSP/GIN için ayrı kayıt ister, yoksa ilgili yazımlar Ayarlar'da kullanılamaz (`settings_provider_unavailable`) kalır | Ayarlar `ApprovedUnitProfileCatalog`; Satış; Stok; Üretim; Satın Alma; Lojistik |
 
 ### SAT-D15 bantları
 
