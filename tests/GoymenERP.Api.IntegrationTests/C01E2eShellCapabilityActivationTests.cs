@@ -79,8 +79,11 @@ public sealed class C01E2eShellCapabilityActivationTests
     [Theory]
     [MemberData(nameof(InvalidTestingEnvelopes))]
     public void PartialOrMalformedTestingEnvelope_FailsStartup(
-        IReadOnlyDictionary<string, string?> values)
+        bool partialEnvelope, string key, string invalidValue)
     {
+        var values = partialEnvelope ? new Dictionary<string, string?>() : ExactEnvelope();
+        values[key] = invalidValue;
+
         Assert.Throws<InvalidOperationException>(() =>
             C01E2eShellCapabilityActivation.Configure(
                 CreateCanonicalServices(),
@@ -109,10 +112,9 @@ public sealed class C01E2eShellCapabilityActivationTests
 
     public static IEnumerable<object[]> InvalidTestingEnvelopes()
     {
-        yield return [new Dictionary<string, string?>
-        {
-            [C01E2eShellCapabilityActivation.EnableConfigurationKey] = "true",
-        }];
+        // xUnit v2 discovers primitive data rows separately. Construct the same
+        // six dictionaries during execution so CI can verify exact case counts.
+        yield return [true, C01E2eShellCapabilityActivation.EnableConfigurationKey, "true"];
 
         foreach (var (key, invalidValue) in new[]
                  {
@@ -123,9 +125,7 @@ public sealed class C01E2eShellCapabilityActivationTests
                      (C01E2eShellCapabilityActivation.ComposeProjectConfigurationKey, "goymen-c01-101-1"),
                  })
         {
-            var values = ExactEnvelope();
-            values[key] = invalidValue;
-            yield return [values];
+            yield return [false, key, invalidValue];
         }
     }
 
