@@ -1,0 +1,52 @@
+name: Local runner connectivity
+
+on:
+  push:
+    branches:
+      - chatgpt/local-ci-20261016
+    paths:
+      - .github/workflows/local-runner-smoke.yml
+
+permissions: {}
+
+jobs:
+  linux-connectivity:
+    name: Local Linux connectivity only
+    runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]
+    timeout-minutes: 5
+    steps:
+      - name: Verify dedicated Linux runtime without checking out ERP code
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = self-hosted
+          test "$(uname -s)" = Linux
+          if mountpoint -q /mnt/c || mountpoint -q /mnt/e; then
+            echo 'Unexpected host drive mount' >&2
+            exit 1
+          fi
+          test "$(docker context show)" = default
+          python3 --version
+          git --version
+          docker version --format 'Docker server {{.Server.Version}}'
+          docker buildx version
+          echo 'LOCAL_LINUX_CONNECTIVITY_PASS; not full ERP CI'
+
+  windows-connectivity:
+    name: Local Windows connectivity only
+    needs: linux-connectivity
+    runs-on: [self-hosted, Windows, X64, goymen-ci-windows]
+    timeout-minutes: 5
+    steps:
+      - name: Verify Windows tooling without checking out ERP code
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_ENVIRONMENT -ne 'self-hosted' -or -not $IsWindows) { throw 'Wrong runtime' }
+          python --version
+          if ($LASTEXITCODE -ne 0) { throw 'Python unavailable' }
+          git --version
+          if ($LASTEXITCODE -ne 0) { throw 'Git unavailable' }
+          dotnet --version
+          if ($LASTEXITCODE -ne 0) { throw '.NET unavailable' }
+          Write-Output 'LOCAL_WINDOWS_CONNECTIVITY_PASS; not full ERP CI'
