@@ -66,6 +66,8 @@ Review metni PR'a yazılır. Sinan bu yorumu tek satırla daraltabilir; örneği
 Bu varsayımda ChatGPT hakemliği yoktur. Bu yüzden Issue #66'ya `NEEDS-SINAN` satırı olarak yazılır ve
 Sinan döndüğünde teyit edilir; teyide kadar varsayım geri alınabilir durumda yürürlüktedir.
 
+**Teyit (2026-10-26):** Sinan bu yorumu onayladı — `SINAN_KARARLARI_2026-10-26_SATIS_EK.md` SAT-D13.
+
 ## M3. İnsan kapıları
 
 Aşağıdakiler her zaman somut kullanıcı kararı ister; merge yetkisi bunlardan hiçbirini vermez:
