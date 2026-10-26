@@ -1445,8 +1445,7 @@ class WorkflowTests(unittest.TestCase):
             "timeout-minutes: 45",
             "timeout-minutes: 5",
             "cancel-in-progress: true",
-            "/home/ci/local-ci-evidence",
-            "manifest_sha256=",
+            "retention-days: 7",
             "SUITE_NOT_READY",
             "BROWSER_NOT_CLEAN",
             "BROWSER_NO_CASES",
@@ -1460,25 +1459,13 @@ class WorkflowTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, self.workflow)
 
-    def test_local_evidence_paths_are_exactly_the_allowlist(self):
-        publication = self.workflow.split("      - name: Preserve exact-head browser evidence locally", 1)[1]
-        path_block = publication.split("          LOCAL_EVIDENCE_FILES: |", 1)[1].split("        run: |", 1)[0]
+    def test_upload_paths_are_exactly_the_allowlist(self):
+        upload = self.workflow.split("      - name: Upload exact-head browser evidence", 1)[1]
+        path_block = upload.split("          path: |", 1)[1].split("          if-no-files-found:", 1)[0]
         uploaded = {line.strip().removeprefix("artifacts/") for line in path_block.splitlines() if line.strip()}
         template = "${{ needs.resolve.outputs.suite }}"
         expected = {entry.replace("smoke", template) for entry in validator.upload_allowlist("smoke")}
         self.assertEqual(uploaded, expected)
-        self.assertNotIn("actions/upload-artifact@", self.workflow)
-        for required in (
-            'test ! -L "$ancestor"',
-            'test ! -e "$destination"',
-            'tested="$(git rev-parse HEAD)"',
-            'if [[ "$lock_acquired" = true ]]',
-            'mv -T --no-clobber -- "$temporary" "$destination"',
-            'test ! -e "$temporary"',
-            'test "$(grep -c \'^file=\' "$temporary/manifest.txt")" = 6',
-            'manifest_sha256=',
-        ):
-            self.assertIn(required, publication)
 
     def test_disposable_names_follow_the_c01_tooling(self):
         # The C-01 compose validator and fixture tool derive the database from run id + attempt
