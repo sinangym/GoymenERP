@@ -204,6 +204,8 @@ export interface HarnessOptions {
   readonly respond?: (url: string, init: RequestInit | undefined) => Response | Promise<Response> | undefined
   /** The signed-in identity's user id (defaults to the neutral synthetic user). */
   readonly identityUserId?: string
+  /** The capability snapshot generation per read (defaults to a fixed one); lets a case model a fresh grant. */
+  readonly capabilityGeneration?: () => string
 }
 
 export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
@@ -234,7 +236,7 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
       if (url.endsWith('/identity/me')) return json({ ...IDENTITY, userId: options.identityUserId ?? IDENTITY.userId })
       if (url.endsWith('/organization/companies')) return json(DIRECTORY)
       if (url.endsWith('/shell/capabilities')) {
-        return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: 'acc-cap-gen-1', capabilities })
+        return json({ contractVersion: SHELL_CAPABILITY_CONTRACT_VERSION, generation: options.capabilityGeneration?.() ?? 'acc-cap-gen-1', capabilities })
       }
       return (await options.respond?.(url, init)) ?? problem(404)
     }),
