@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Quantities;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
@@ -18,8 +19,22 @@ public sealed partial class PurchasingServiceTests
         var detail = await world.Service(reads: reader).GetGoodsReceiptAsync(orderId, receipt.AcceptanceId);
 
         Assert.Equal(receipt, detail.Receipt);
+        Assert.Equal(ReceiptQuantity(receipt), detail.Receipt.StockItemQuantity);
         Assert.Equal(1, reader.Calls);
         Assert.Equal((version, acceptances), (stored.Order.Version, stored.Order.Acceptances.Count));
+    }
+
+    [Fact]
+    public async Task Receipt_list_returns_the_same_quantity_snapshot_and_legacy_null_remains_explicit()
+    {
+        var (world, reader, orderId, _, receipt) = await ReceiptDetailWorldAsync();
+
+        var page = await world.Service(reads: reader).GetGoodsReceiptsAsync(orderId);
+        Assert.Equal(receipt, Assert.Single(page.Items));
+
+        reader.Receipt = receipt with { StockItemQuantity = null };
+        var legacy = await world.Service(reads: reader).GetGoodsReceiptsAsync(orderId);
+        Assert.Null(Assert.Single(legacy.Items).StockItemQuantity);
     }
 
     [Fact]
@@ -67,6 +82,19 @@ public sealed partial class PurchasingServiceTests
     [InlineData("remaining")]
     [InlineData("block")]
     [InlineData("time")]
+    [InlineData("quantity-company")]
+    [InlineData("quantity-subject-kind")]
+    [InlineData("quantity-product")]
+    [InlineData("quantity-source-kind")]
+    [InlineData("quantity-source")]
+    [InlineData("quantity-source-version")]
+    [InlineData("quantity-value")]
+    [InlineData("quantity-unit")]
+    [InlineData("quantity-profile")]
+    [InlineData("quantity-profile-version")]
+    [InlineData("quantity-dimension")]
+    [InlineData("quantity-scale")]
+    [InlineData("quantity-alternate")]
     public async Task Receipt_detail_refuses_an_inconsistent_owner_source(string fault)
     {
         var (world, reader, orderId, _, receipt) = await ReceiptDetailWorldAsync();
@@ -91,6 +119,55 @@ public sealed partial class PurchasingServiceTests
             "remaining" => receipt with { RemainingQuantity = "08" },
             "block" => receipt with { InitialBlock = "Unknown" },
             "time" => receipt with { OccurredAtUtc = receipt.OccurredAtUtc.AddMinutes(1) },
+            "quantity-company" => WithQuantity(receipt, quantity => quantity with { CompanyId = Guid.NewGuid() }),
+            "quantity-subject-kind" => WithQuantity(receipt, quantity => quantity with
+            {
+                Subject = quantity.Subject with { Kind = "Service" }
+            }),
+            "quantity-product" => WithQuantity(receipt, quantity => quantity with
+            {
+                Subject = quantity.Subject with { Id = Guid.NewGuid() }
+            }),
+            "quantity-source-kind" => WithQuantity(receipt, quantity => quantity with
+            {
+                Source = quantity.Source with { Kind = "other" }
+            }),
+            "quantity-source" => WithQuantity(receipt, quantity => quantity with
+            {
+                Source = quantity.Source with { Id = Guid.NewGuid() }
+            }),
+            "quantity-source-version" => WithQuantity(receipt, quantity => quantity with
+            {
+                Source = quantity.Source with { Version = "8" }
+            }),
+            "quantity-value" => WithQuantity(receipt, quantity => quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { Value = "1.8" }
+            }),
+            "quantity-unit" => WithQuantity(receipt, quantity => quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { UnitId = Guid.NewGuid() }
+            }),
+            "quantity-profile" => WithQuantity(receipt, quantity => quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { ProfileId = Guid.Empty }
+            }),
+            "quantity-profile-version" => WithQuantity(receipt, quantity => quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { ProfileVersion = "01" }
+            }),
+            "quantity-dimension" => WithQuantity(receipt, quantity => quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { Dimension = "Volume" }
+            }),
+            "quantity-scale" => WithQuantity(receipt, quantity => quantity with
+            {
+                BaseQuantity = quantity.BaseQuantity with { Scale = 4 }
+            }),
+            "quantity-alternate" => WithQuantity(receipt, quantity => quantity with
+            {
+                AlternateQuantity = new(quantity.BaseQuantity, quantity.Source)
+            }),
             _ => throw new ArgumentOutOfRangeException(nameof(fault)),
         };
 
@@ -108,6 +185,7 @@ public sealed partial class PurchasingServiceTests
         var result = await world.Service(runner).RecordGoodsReceiptAsync(orderId, lineId, request, Metadata("receipt-1"));
         Assert.Equal(("4", "2", "1.9", "Free"), (result.Receipt.PurchaseOrderVersion, result.Receipt.AcceptedQuantity,
             result.Receipt.MeasuredQuantityKg, result.Receipt.InitialBlock));
+        Assert.Equal(ReceiptQuantity(result.Receipt), result.Receipt.StockItemQuantity);
         Assert.Equal("4", runner.Stock!.PurchaseOrderVersionAfter);
         Assert.Equal("Free", runner.Stock.InitialBlock);
         Assert.False(PurchaseGoodsReceiptDocumentPolicyV1.MandatoryDocumentsEnabled);
@@ -144,6 +222,7 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal(["SYNTHETIC-ORIGINAL-DOCUMENT"], runner.Stock.RequiredDocuments);
         Assert.Equal(["receipt-read", "purchase", "inventory", "fence", "commit"], runner.Events);
         Assert.Equal("synthetic-correlation", result.OriginalCorrelationId);
+        Assert.Equal(ReceiptQuantity(result.Receipt), result.Receipt.StockItemQuantity);
     }
 
     [Theory]
@@ -262,7 +341,9 @@ public sealed partial class PurchasingServiceTests
             request.LocationId,
             request.MeasuredQuantityKg,
             "Free",
-            request.OccurredAtUtc);
+            request.OccurredAtUtc,
+            ReceiptQuantity(Company, line.ProductId, request.AcceptanceId,
+                stored.Order.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), request.MeasuredQuantityKg));
         return (world, new ReceiptReader(receipt), orderId, lineId, receipt);
     }
 
@@ -335,7 +416,27 @@ public sealed partial class PurchasingServiceTests
             return Task.FromResult(new PurchaseReceiptStockResultV1(Company, request.AcceptanceId, request.PurchaseOrderId,
                 request.PurchaseOrderLineId, request.PurchaseOrderVersionAfter, request.ProductId, request.ExpectedProductVersion,
                 request.PurchaseUnitId, request.LotId, request.LabelId, "1", request.MovementId, request.QuantityKg,
-                Original is not null, "synthetic-correlation"));
+                Original is not null, "synthetic-correlation",
+                ReceiptQuantity(Company, request.ProductId, request.AcceptanceId, request.PurchaseOrderVersionAfter,
+                    request.QuantityKg)));
         }
     }
+
+    private static PurchaseGoodsReceiptViewV1 WithQuantity(PurchaseGoodsReceiptViewV1 receipt,
+        Func<PurchaseGoodsReceiptQuantityV2, PurchaseGoodsReceiptQuantityV2> mutate) =>
+        receipt with { StockItemQuantity = mutate(Assert.IsType<PurchaseGoodsReceiptQuantityV2>(receipt.StockItemQuantity)) };
+
+    private static PurchaseGoodsReceiptQuantityV2 ReceiptQuantity(PurchaseGoodsReceiptViewV1 receipt) =>
+        ReceiptQuantity(receipt.CompanyId, receipt.ProductId, receipt.AcceptanceId, receipt.PurchaseOrderVersion,
+            receipt.MeasuredQuantityKg);
+
+    private static PurchaseGoodsReceiptQuantityV2 ReceiptQuantity(Guid companyId, Guid productId, Guid acceptanceId,
+        string sourceVersion, string value) => new(
+        companyId,
+        new(PurchaseGoodsReceiptApiV1.QuantitySubjectKind, productId),
+        new(PurchaseGoodsReceiptApiV1.QuantitySourceKind, acceptanceId, sourceVersion),
+        new(value, SettingsUnitIdentitiesV1.Kilogram,
+            Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), "3",
+            PurchaseGoodsReceiptApiV1.QuantityDimension, PurchaseGoodsReceiptApiV1.MaximumKilogramScale),
+        null);
 }

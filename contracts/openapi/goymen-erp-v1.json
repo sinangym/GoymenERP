@@ -79513,6 +79513,21 @@
         },
         "additionalProperties": false
       },
+      "PurchaseGoodsReceiptAlternateQuantityV2": {
+        "required": [
+          "quantity",
+          "conversionSource"
+        ],
+        "type": "object",
+        "properties": {
+          "quantity": {
+            "$ref": "#/components/schemas/PurchaseGoodsReceiptQuantityValueV2"
+          },
+          "conversionSource": {
+            "$ref": "#/components/schemas/PurchaseGoodsReceiptQuantitySourceV2"
+          }
+        }
+      },
       "PurchaseGoodsReceiptDetailV1": {
         "required": [
           "receipt"
@@ -79635,6 +79650,115 @@
           }
         }
       },
+      "PurchaseGoodsReceiptQuantitySourceV2": {
+        "required": [
+          "kind",
+          "id",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "PurchaseGoodsReceiptQuantitySubjectV2": {
+        "required": [
+          "kind",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "PurchaseGoodsReceiptQuantityV2": {
+        "required": [
+          "companyId",
+          "subject",
+          "source",
+          "baseQuantity",
+          "alternateQuantity"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/PurchaseGoodsReceiptQuantitySubjectV2"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PurchaseGoodsReceiptQuantitySourceV2"
+          },
+          "baseQuantity": {
+            "$ref": "#/components/schemas/PurchaseGoodsReceiptQuantityValueV2"
+          },
+          "alternateQuantity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseGoodsReceiptAlternateQuantityV2"
+              }
+            ]
+          }
+        }
+      },
+      "PurchaseGoodsReceiptQuantityValueV2": {
+        "required": [
+          "value",
+          "unitId",
+          "profileId",
+          "profileVersion",
+          "dimension",
+          "scale"
+        ],
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "unitId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profileVersion": {
+            "type": "string"
+          },
+          "dimension": {
+            "type": "string"
+          },
+          "scale": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "PurchaseGoodsReceiptResponseV1": {
         "required": [
           "receipt",
@@ -79674,7 +79798,8 @@
           "locationId",
           "measuredQuantityKg",
           "initialBlock",
-          "occurredAtUtc"
+          "occurredAtUtc",
+          "stockItemQuantity"
         ],
         "type": "object",
         "properties": {
@@ -79745,6 +79870,16 @@
           "occurredAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "stockItemQuantity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PurchaseGoodsReceiptQuantityV2"
+              }
+            ]
           }
         }
       },

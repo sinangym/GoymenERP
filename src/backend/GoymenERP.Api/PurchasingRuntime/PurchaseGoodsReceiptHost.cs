@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Domain.Stock;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -86,7 +87,8 @@ internal sealed class PurchaseGoodsReceiptHost(
                 request.PurchaseOrderLineId, request.PurchaseOrderVersionAfter, request.ProductId,
                 request.ExpectedProductVersion, request.PurchaseUnitId, purchase.AcceptedQuantity,
                 purchase.RemainingQuantity, request.LotId, request.LabelId, request.LabelCode, result.LabelVersion,
-                request.MovementId, request.LocationId, request.QuantityKg, request.InitialBlock.ToString(), request.OccurredAtUtc);
+                request.MovementId, request.LocationId, request.QuantityKg, request.InitialBlock.ToString(), request.OccurredAtUtc,
+                QuantityProjection(result.StockItemQuantity));
         }
         catch (InventoryGoodsReceiptException exception)
         {
@@ -150,7 +152,7 @@ internal sealed class PurchaseGoodsReceiptHost(
             return new(result.CompanyId, result.AcceptanceId, result.PurchaseOrderId, result.PurchaseOrderLineId,
                 result.PurchaseOrderVersion, result.ProductId, result.ProductVersion, result.PurchaseUnitId,
                 result.LotId, result.LabelId, result.LabelVersion, result.MovementId, result.QuantityKg,
-                result.IsReplay, result.OriginalCorrelationId);
+                result.IsReplay, result.OriginalCorrelationId, QuantityProjection(result.StockItemQuantity));
         }
 
         private static InventoryCommandMetadata Metadata(PurchasingWriteEnvelope envelope) => new(
@@ -158,4 +160,21 @@ internal sealed class PurchaseGoodsReceiptHost(
             envelope.CausationId, envelope.IdempotencyKey, envelope.SourceChannel,
             envelope.ClientIpAddress, envelope.UserAgent);
     }
+
+    private static PurchaseGoodsReceiptQuantityV2? QuantityProjection(InventoryGoodsReceiptQuantityV2? quantity) =>
+        quantity is null
+            ? null
+            : new PurchaseGoodsReceiptQuantityV2(
+                quantity.CompanyId,
+                new PurchaseGoodsReceiptQuantitySubjectV2(quantity.ItemKind.ToString(), quantity.ItemId),
+                new PurchaseGoodsReceiptQuantitySourceV2(
+                    quantity.SourceKind, quantity.SourceId, quantity.SourceVersion),
+                new PurchaseGoodsReceiptQuantityValueV2(
+                    quantity.Value.ToString(CultureInfo.InvariantCulture),
+                    quantity.UnitId,
+                    quantity.ProfileId,
+                    quantity.ProfileVersion.ToString(CultureInfo.InvariantCulture),
+                    quantity.Dimension.ToString(),
+                    quantity.Scale),
+                AlternateQuantity: null);
 }
