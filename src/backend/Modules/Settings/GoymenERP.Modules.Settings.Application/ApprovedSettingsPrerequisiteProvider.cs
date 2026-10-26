@@ -51,7 +51,8 @@ namespace GoymenERP.Modules.Settings.Application;
 /// <see cref="ApprovedSalesPolicyCatalog"/> in the same order: access → <c>settings_access_denied</c>;
 /// an empty limit group or currency id → <see cref="SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid"/>
 /// (after the access check, before any lookup, never "not found"); a company without an approved
-/// Sales policy source → <c>settings_provider_unavailable</c>; a
+/// Sales policy source (any company other than GDC, GSP and GIN today, SAT-D14) →
+/// <c>settings_provider_unavailable</c>; a
 /// reachable source without a policy for the identity asked about (every discount limit group
 /// today, a non-empty currency other than TRY for the threshold) →
 /// <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/>; otherwise the exact version for the

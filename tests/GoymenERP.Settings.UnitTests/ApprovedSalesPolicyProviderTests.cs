@@ -15,6 +15,10 @@ public sealed class ApprovedSalesPolicyProviderTests
 {
     private static readonly Guid Gdc = Guid.Parse("10000000-0000-0000-0000-000000000001");
     private static readonly Guid Gsp = Guid.Parse("10000000-0000-0000-0000-000000000002");
+    private static readonly Guid Gin = Guid.Parse("10000000-0000-0000-0000-000000000003");
+    // Not a seed company: since SAT-D14 GDC, GSP and GIN are all served, so only such a company is unserved.
+    private static readonly Guid Unserved = Guid.Parse("71000000-0000-4000-8000-0000000000ee");
+    private static readonly DateOnly ExtraApproval = new(2026, 10, 26);
     private static readonly Guid Try = Guid.Parse("9e60dcf0-f4bd-5bca-b464-f9a2db98e31a");
     private static readonly Guid SyntheticGroup = Guid.Parse("71000000-0000-4000-8000-000000000001");
     private static readonly Guid SyntheticProfile = Guid.Parse("71000000-0000-4000-8000-0000000000aa");
@@ -107,11 +111,11 @@ public sealed class ApprovedSalesPolicyProviderTests
     [Theory]
     [InlineData("discount", "gdc")]
     [InlineData("threshold", "gdc")]
-    [InlineData("discount", "gsp")]
-    [InlineData("threshold", "gsp")]
+    [InlineData("discount", "unserved")]
+    [InlineData("threshold", "unserved")]
     public async Task An_empty_identity_is_an_invalid_request_never_not_found(string read, string company)
     {
-        var provider = Provider(company == "gdc" ? Gdc : Gsp);
+        var provider = Provider(company == "gdc" ? Gdc : Unserved);
 
         var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => read == "discount"
             ? provider.GetSalesDiscountLimitAsync(Guid.Empty, Approval)
@@ -202,9 +206,61 @@ public sealed class ApprovedSalesPolicyProviderTests
     [InlineData("threshold")]
     public async Task A_company_without_an_approved_sales_source_is_unavailable_not_given_GDC_s_policy(string read)
     {
-        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => Read(Provider(Gsp), read));
+        var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => Read(Provider(Unserved), read));
 
         Assert.Equal("settings_provider_unavailable", failure.Code);
+    }
+
+    [Theory]
+    [InlineData("gsp", "e5ba2cba-1f1e-5ba0-b801-7b66d21190af", "320e06e3-0408-51f1-92e6-f8905e7b674f")]
+    [InlineData("gin", "c5fd5cfa-b37f-5464-a920-152eb96c8c84", "3cd01981-8511-5dc1-b21b-6c632425d915")]
+    public async Task GSP_and_GIN_get_GDC_s_sales_policies_from_SAT_D14(
+        string company, string toleranceProfile, string thresholdProfile)
+    {
+        var companyId = company == "gsp" ? Gsp : Gin;
+        var provider = Provider(companyId);
+
+        var tolerance = await provider.GetSalesDeliveryToleranceAsync(ExtraApproval);
+        var threshold = await provider.GetSalesApprovalAmountThresholdAsync(Try, ExtraApproval);
+        var discount = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetSalesDiscountLimitAsync(SyntheticGroup, ExtraApproval));
+
+        Assert.Equal(companyId, tolerance.CompanyId);
+        // UUIDv5 in the sales-policies namespace, names "sales-delivery-tolerance:<company>:v1" and
+        // "sales-approval-amount-threshold:<company>:TRY:v1".
+        Assert.Equal(new ProfileVersionV1(Guid.Parse(toleranceProfile), 1), tolerance.Profile);
+        Assert.Equal((1m, 2m, 3m), (tolerance.WarnPercent, tolerance.ApprovalPercent, tolerance.BlockPercent));
+        Assert.True(tolerance.IsActive);
+        Assert.Equal(ExtraApproval, tolerance.EffectiveFrom);
+        Assert.Null(tolerance.EffectiveThrough);
+
+        Assert.Equal(companyId, threshold.CompanyId);
+        Assert.Equal(Try, threshold.CurrencyId);
+        Assert.Equal(new ProfileVersionV1(Guid.Parse(thresholdProfile), 1), threshold.Profile);
+        Assert.False(threshold.IsEnabled);
+        Assert.Null(threshold.ThresholdAmountText);
+        Assert.True(threshold.IsActive);
+        Assert.Equal(ExtraApproval, threshold.EffectiveFrom);
+        Assert.Null(threshold.EffectiveThrough);
+
+        // SAT-D2 via SAT-D14: no limit defined, every discount goes to approval.
+        Assert.Equal(SettingsPrerequisiteCodesV1.SalesPolicyNotFound, discount.Code);
+    }
+
+    [Theory]
+    [InlineData("gsp")]
+    [InlineData("gin")]
+    public async Task GSP_and_GIN_before_SAT_D14_get_their_real_window_so_the_consumer_rejects_it(string company)
+    {
+        var provider = Provider(company == "gsp" ? Gsp : Gin);
+
+        // GDC's start date (SAT-D5) is the day before GSP/GIN's (SAT-D14); never widened.
+        var tolerance = await provider.GetSalesDeliveryToleranceAsync(Approval);
+        var threshold = await provider.GetSalesApprovalAmountThresholdAsync(Try, Approval);
+
+        Assert.Equal(ExtraApproval, tolerance.EffectiveFrom);
+        Assert.Equal(ExtraApproval, threshold.EffectiveFrom);
+        Assert.True(Approval < tolerance.EffectiveFrom);
     }
 
     [Theory]
@@ -224,7 +280,7 @@ public sealed class ApprovedSalesPolicyProviderTests
             "unresolved company" => new ApprovedSettingsPrerequisiteProvider(new Context(Gdc, false), new Actor(true, "x", Gdc)),
             "empty company" => new ApprovedSettingsPrerequisiteProvider(new Context(Guid.Empty, true), new Actor(true, "x", Guid.Empty)),
             "not a member" => new ApprovedSettingsPrerequisiteProvider(new Context(Gdc, true), new Actor(true, "x", Gsp)),
-            _ => new ApprovedSettingsPrerequisiteProvider(new Context(Gsp, true), new Actor(true, "x", Gdc)),
+            _ => new ApprovedSettingsPrerequisiteProvider(new Context(Unserved, true), new Actor(true, "x", Gdc)),
         };
 
         var failure = await Assert.ThrowsAsync<SettingsPrerequisiteException>(() => Read(provider, read));
@@ -397,11 +453,29 @@ public sealed class ApprovedSalesPolicyProviderTests
     {
         var catalog = ApprovedSalesPolicyCatalog.Approved;
 
-        Assert.Equal([ApprovedSalesPolicyCatalog.GdcDeliveryToleranceV1], catalog.DeliveryTolerances);
+        Assert.True(new HashSet<ApprovedSalesDeliveryToleranceEntry>
+        {
+            ApprovedSalesPolicyCatalog.GdcDeliveryToleranceV1,
+            ApprovedSalesPolicyCatalog.GspDeliveryToleranceV1,
+            ApprovedSalesPolicyCatalog.GinDeliveryToleranceV1,
+        }.SetEquals(catalog.DeliveryTolerances));
+        Assert.Equal(3, catalog.DeliveryTolerances.Count);
         Assert.Empty(catalog.DiscountLimits);
-        Assert.Equal([ApprovedSalesPolicyCatalog.GdcTurkishLiraApprovalThresholdV1], catalog.ApprovalAmountThresholds);
+        Assert.True(new HashSet<ApprovedSalesApprovalAmountThresholdEntry>
+        {
+            ApprovedSalesPolicyCatalog.GdcTurkishLiraApprovalThresholdV1,
+            ApprovedSalesPolicyCatalog.GspTurkishLiraApprovalThresholdV1,
+            ApprovedSalesPolicyCatalog.GinTurkishLiraApprovalThresholdV1,
+        }.SetEquals(catalog.ApprovalAmountThresholds));
+        Assert.Equal(3, catalog.ApprovalAmountThresholds.Count);
         Assert.True(catalog.Serves(Gdc));
-        Assert.False(catalog.Serves(Gsp));
+        Assert.True(catalog.Serves(Gsp));
+        Assert.True(catalog.Serves(Gin));
+        Assert.False(catalog.Serves(Unserved));
+        Assert.Equal(Gsp, ApprovedSalesPolicyCatalog.GspCompanyId);
+        Assert.Equal(Gin, ApprovedSalesPolicyCatalog.GinCompanyId);
+        Assert.Contains("SAT-D14", ApprovedSalesPolicyCatalog.GspDeliveryToleranceV1.Source, StringComparison.Ordinal);
+        Assert.Contains("SAT-D14", ApprovedSalesPolicyCatalog.GinTurkishLiraApprovalThresholdV1.Source, StringComparison.Ordinal);
         Assert.Contains("SAT-D5", ApprovedSalesPolicyCatalog.GdcDeliveryToleranceV1.Source, StringComparison.Ordinal);
         Assert.Contains("SAT-D6", ApprovedSalesPolicyCatalog.GdcTurkishLiraApprovalThresholdV1.Source, StringComparison.Ordinal);
     }

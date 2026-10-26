@@ -65,6 +65,16 @@ public sealed record ApprovedSalesApprovalAmountThresholdEntry(
 /// </summary>
 public sealed class ApprovedSalesPolicyCatalog
 {
+    /// <summary>GSP — the permanent company identity pinned by the Organization
+    /// <c>AddCompanyFiscalRuntimeSeed</c> migration.</summary>
+    public static readonly Guid GspCompanyId = Guid.Parse("10000000-0000-0000-0000-000000000002");
+
+    /// <summary>GIN — the permanent company identity pinned by the Organization
+    /// <c>AddCompanyFiscalRuntimeSeed</c> migration.</summary>
+    public static readonly Guid GinCompanyId = Guid.Parse("10000000-0000-0000-0000-000000000003");
+
+    private const string SalesExtraDecisions = "SAT-D14 (SINAN_KARARLARI_2026-10-26_SATIS_EK.md)";
+
     /// <summary>
     /// GDC delivery tolerance, version 1: warn 1 %, approval 2 %, block 3 %. SAT-D5 (Sinan,
     /// 2026-10-25) carries OPEN-004's stock starting values over to Sales; effective from the
@@ -103,13 +113,65 @@ public sealed class ApprovedSalesPolicyCatalog
         Source: "SAT-D6 (SINAN_KARARLARI_2026-10-25_SATIS.md); OPEN-009 KISMEN");
 
     /// <summary>
-    /// The reviewed catalog. Discount limits are deliberately empty: no limit value is approved,
-    /// and SAT-D2 sends every discount of a group without a limit to approval.
+    /// GSP delivery tolerance, version 1: the same 1 / 2 / 3 % as GDC. SAT-D14 (Sinan, 2026-10-26):
+    /// GSP and GIN run on GDC's Sales policies; effective from that decision's date with no end.
+    /// Profile id: UUIDv5 name "sales-delivery-tolerance:10000000-0000-0000-0000-000000000002:v1".
+    /// </summary>
+    public static readonly ApprovedSalesDeliveryToleranceEntry GspDeliveryToleranceV1 = GdcDeliveryToleranceV1 with
+    {
+        CompanyId = GspCompanyId,
+        ProfileId = Guid.Parse("e5ba2cba-1f1e-5ba0-b801-7b66d21190af"),
+        EffectiveFrom = new DateOnly(2026, 10, 26),
+        Source = SalesExtraDecisions + "; values SAT-D5",
+    };
+
+    /// <summary>
+    /// GIN delivery tolerance, version 1: as <see cref="GspDeliveryToleranceV1"/> (SAT-D14). Profile id:
+    /// UUIDv5 name "sales-delivery-tolerance:10000000-0000-0000-0000-000000000003:v1".
+    /// </summary>
+    public static readonly ApprovedSalesDeliveryToleranceEntry GinDeliveryToleranceV1 = GdcDeliveryToleranceV1 with
+    {
+        CompanyId = GinCompanyId,
+        ProfileId = Guid.Parse("c5fd5cfa-b37f-5464-a920-152eb96c8c84"),
+        EffectiveFrom = new DateOnly(2026, 10, 26),
+        Source = SalesExtraDecisions + "; values SAT-D5",
+    };
+
+    /// <summary>
+    /// GSP/TRY order-approval amount threshold, version 1: disabled, no amount, as GDC's (SAT-D14,
+    /// SAT-D6). Profile id: UUIDv5 name
+    /// "sales-approval-amount-threshold:10000000-0000-0000-0000-000000000002:TRY:v1".
+    /// </summary>
+    public static readonly ApprovedSalesApprovalAmountThresholdEntry GspTurkishLiraApprovalThresholdV1 =
+        GdcTurkishLiraApprovalThresholdV1 with
+        {
+            CompanyId = GspCompanyId,
+            ProfileId = Guid.Parse("320e06e3-0408-51f1-92e6-f8905e7b674f"),
+            EffectiveFrom = new DateOnly(2026, 10, 26),
+            Source = SalesExtraDecisions + "; values SAT-D6; OPEN-009 KISMEN",
+        };
+
+    /// <summary>
+    /// GIN/TRY order-approval amount threshold, version 1: as <see cref="GspTurkishLiraApprovalThresholdV1"/>.
+    /// Profile id: UUIDv5 name "sales-approval-amount-threshold:10000000-0000-0000-0000-000000000003:TRY:v1".
+    /// </summary>
+    public static readonly ApprovedSalesApprovalAmountThresholdEntry GinTurkishLiraApprovalThresholdV1 =
+        GdcTurkishLiraApprovalThresholdV1 with
+        {
+            CompanyId = GinCompanyId,
+            ProfileId = Guid.Parse("3cd01981-8511-5dc1-b21b-6c632425d915"),
+            EffectiveFrom = new DateOnly(2026, 10, 26),
+            Source = SalesExtraDecisions + "; values SAT-D6; OPEN-009 KISMEN",
+        };
+
+    /// <summary>
+    /// The reviewed catalog: GDC, GSP and GIN (SAT-D14). Discount limits are deliberately empty: no
+    /// limit value is approved, and SAT-D2 sends every discount of a group without a limit to approval.
     /// </summary>
     public static ApprovedSalesPolicyCatalog Approved { get; } = new(
-        [GdcDeliveryToleranceV1],
+        [GdcDeliveryToleranceV1, GspDeliveryToleranceV1, GinDeliveryToleranceV1],
         [],
-        [GdcTurkishLiraApprovalThresholdV1]);
+        [GdcTurkishLiraApprovalThresholdV1, GspTurkishLiraApprovalThresholdV1, GinTurkishLiraApprovalThresholdV1]);
 
     private const decimal MaximumPercent = 100m;
 

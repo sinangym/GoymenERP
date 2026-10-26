@@ -43,8 +43,19 @@ public interface ISettingsSalesPolicyProviderV1
 
 /// <summary>
 /// Delivery tolerance percents relative to the ordered quantity, with 0 ≤ warn ≤ approval ≤ block ≤ 100.
-/// How a deviation is compared with them (inclusive or exclusive bounds, over and under delivery)
-/// is the consuming calculator's contract, not implied here.
+/// <para>
+/// Consumer contract (SAT-D15, <c>docs/decisions/SINAN_KARARLARI_2026-10-26_SATIS_EK.md</c>): the
+/// deviation is |delivered − ordered| / ordered × 100, so over and under delivery are evaluated with
+/// the same thresholds, and every bound is inclusive — a bound value falls into the band it starts:
+/// <list type="bullet">
+/// <item>deviation &lt; <see cref="WarnPercent"/>: within tolerance;</item>
+/// <item><see cref="WarnPercent"/> ≤ deviation &lt; <see cref="ApprovalPercent"/>: warn;</item>
+/// <item><see cref="ApprovalPercent"/> ≤ deviation &lt; <see cref="BlockPercent"/>: approval required;</item>
+/// <item>deviation ≥ <see cref="BlockPercent"/>: block.</item>
+/// </list>
+/// This port computes nothing: the deviation and its band belong to the consuming backend calculator,
+/// which UI and reports reuse; no percent is a code constant there.
+/// </para>
 /// </summary>
 public sealed record SalesDeliveryTolerancePolicyV1(
     Guid CompanyId,

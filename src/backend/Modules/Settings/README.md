@@ -253,7 +253,9 @@ removing unused project references; there is no data or migration rollback.
 ## Approved Sales policies (MOD-03 slice 1)
 
 Source: Sinan's Sales decisions of 2026-10-25, SAT-D2, SAT-D5 and SAT-D6
-(`docs/decisions/SINAN_KARARLARI_2026-10-25_SATIS.md`); plan items MOD-03 and API-50…52 of
+(`docs/decisions/SINAN_KARARLARI_2026-10-25_SATIS.md`), and of 2026-10-26, SAT-D14 (GSP and GIN
+use GDC's Sales policies) and SAT-D15 (tolerance bands)
+(`docs/decisions/SINAN_KARARLARI_2026-10-26_SATIS_EK.md`); plan items MOD-03 and API-50…52 of
 `docs/delivery/SATIS_HAZIRLIK_PLANI_v1.md`.
 
 `ISettingsSalesPolicyProviderV1` is a separate V1 port with three reads. The company is always
@@ -263,11 +265,24 @@ table, migration, seed or DbContext); the catalog-taking constructors are intern
 `GoymenERP.Settings.UnitTests` only. The unavailable adapter implements the port too and always
 answers `settings_access_denied` or `settings_provider_unavailable`.
 
-| Read | GDC `10000000-0000-0000-0000-000000000001` | Profile | Window | Source |
-|---|---|---|---|---|
-| `GetSalesDeliveryToleranceAsync(effectiveOn)` | warn 1 %, approval 2 %, block 3 % | `c088f8d5-26c4-5ed9-ae6f-f47e73a26b11`, version 1 | from 2026-10-25, no end | SAT-D5; OPEN-004 sales part |
-| `GetSalesDiscountLimitAsync(limitGroupId, effectiveOn)` | **none approved** — every group answers `settings_sales_policy_not_found` | — | — | SAT-D2 (no limit value approved) |
-| `GetSalesApprovalAmountThresholdAsync(currencyId, effectiveOn)` | TRY (`SettingsCurrencyIdentitiesV1.TurkishLira`): `IsEnabled = false`, amount `null` | `5c0ec7f4-2116-59c6-82fc-9c2a737a4342`, version 1 | from 2026-10-25, no end | SAT-D6; OPEN-009 KISMEN |
+The same values for all three seed companies (SAT-D14):
+
+| Read | Value (GDC, GSP, GIN) | Source |
+|---|---|---|
+| `GetSalesDeliveryToleranceAsync(effectiveOn)` | warn 1 %, approval 2 %, block 3 % | SAT-D5; OPEN-004 sales part; SAT-D14 for GSP/GIN |
+| `GetSalesDiscountLimitAsync(limitGroupId, effectiveOn)` | **none approved** — every group answers `settings_sales_policy_not_found` | SAT-D2 (no limit value approved); SAT-D14 |
+| `GetSalesApprovalAmountThresholdAsync(currencyId, effectiveOn)` | TRY (`SettingsCurrencyIdentitiesV1.TurkishLira`): `IsEnabled = false`, amount `null` | SAT-D6; OPEN-009 KISMEN; SAT-D14 for GSP/GIN |
+
+Profiles, all version 1 with no end date:
+
+| Company | Delivery tolerance profile | TRY threshold profile | Effective from |
+|---|---|---|---|
+| GDC `10000000-0000-0000-0000-000000000001` | `c088f8d5-26c4-5ed9-ae6f-f47e73a26b11` | `5c0ec7f4-2116-59c6-82fc-9c2a737a4342` | 2026-10-25 (SAT-D5/D6) |
+| GSP `10000000-0000-0000-0000-000000000002` | `e5ba2cba-1f1e-5ba0-b801-7b66d21190af` | `320e06e3-0408-51f1-92e6-f8905e7b674f` | 2026-10-26 (SAT-D14) |
+| GIN `10000000-0000-0000-0000-000000000003` | `c5fd5cfa-b37f-5464-a920-152eb96c8c84` | `3cd01981-8511-5dc1-b21b-6c632425d915` | 2026-10-26 (SAT-D14) |
+
+SAT-D14's "same permissions" covers these policy values only; it assigns no role or grant to
+GSP/GIN users.
 
 Technical ids are UUIDv5 in namespace `eb68fb11-2146-5285-9cc5-6ce5f3981184`
 (= UUIDv5(URL, "https://github.com/sinangym/GoymenERP/settings/sales-policies")), names
@@ -281,12 +296,13 @@ Outcomes of each read, in order:
 | cancelled | `OperationCanceledException` |
 | no authenticated actor / actor id, unresolved or empty company, not a member | `settings_access_denied`, before anything about the source is revealed |
 | empty `limitGroupId` / `currencyId` | `settings_sales_policy_request_invalid` (`SettingsPrerequisiteCodesV1.SalesPolicyRequestInvalid`), after the access check and before any lookup — never "not found" |
-| no approved Sales policy source for the company (GSP, GIN) | `settings_provider_unavailable` |
+| no approved Sales policy source for the company (any company other than GDC, GSP and GIN) | `settings_provider_unavailable` |
 | source reachable, but no policy for the identity (any non-empty discount limit group, a non-TRY currency) | `settings_sales_policy_not_found` (`SettingsPrerequisiteCodesV1.SalesPolicyNotFound`) |
 | malformed catalog | `settings_profile_invalid`, raised when the catalog is built; nothing repaired or skipped |
 | otherwise | the exact version in force on the date, with its real window |
 
-A company is "served" when it has any approved Sales policy. As for units and money, a date
+A company is "served" when it has any approved Sales policy; today GDC, GSP and GIN all are
+(SAT-D14), so the unserved, fail-closed path remains only for any other company. As for units and money, a date
 before the approval returns the real version with its real window; the consumer checks
 activity and window and rejects it.
 
@@ -302,11 +318,11 @@ against the currency's money profile.
 
 - Discount limit: `settings_sales_policy_not_found` is SAT-D2's "no limit defined for the role"
   and means **every discount requires approval** — never "unlimited", never a zero limit that
-  blocks. `settings_provider_unavailable` (including a company with no Sales policy source at
-  all), `settings_profile_invalid`, `settings_sales_policy_request_invalid` and
-  `settings_access_denied` are not that answer: the consumer refuses on them. For an unserved
-  company that refusal is the DEC-SET-001 fail-closed default, held until NEEDS-SINAN Q1 (#66
-  comment 6404405195: refuse, or route to approval like SAT-D2's "no limit"?) is answered.
+  blocks. This holds for GDC, GSP and GIN alike (SAT-D14). `settings_provider_unavailable`
+  (a company with no Sales policy source at all — none of the three seed companies),
+  `settings_profile_invalid`, `settings_sales_policy_request_invalid` and
+  `settings_access_denied` are not that answer: the consumer refuses on them (DEC-SET-001
+  fail-closed).
 - What the discount percent is relative to (its price base) is defined by the consuming
   contract (API-12), not by this port.
 - `limitGroupId` is an opaque id. Settings never receives a role name; mapping a user's role
@@ -317,17 +333,28 @@ against the currency's money profile.
   e.g. USD/EUR for GDC today) is **not** "disabled": per DEC-SET-001 fail-closed the consumer
   must not silently skip amount routing for that currency. What it does instead is
   **NEEDS-SINAN (#66 comment 6404405195 follow-up)**, an open consumer question.
-- Tolerance: the percents are reference data; how a deviation is compared with them (bounds,
-  over vs. under delivery) belongs to the consuming backend calculator, which UI and reports
-  reuse. The read takes no product or operation input: SAT-D5's per-product/operation
+- Tolerance (SAT-D15): bounds are inclusive and over and under delivery use the same
+  thresholds. Deviation = |delivered − ordered| / ordered × 100, and a bound value falls into
+  the band it starts:
+
+  | Deviation | Result |
+  |---|---|
+  | < warn (1 %) | within tolerance ("Tamamlandı" may count on the realization axis) |
+  | warn ≤ d < approval (1 % ≤ d < 2 %) | warn |
+  | approval ≤ d < block (2 % ≤ d < 3 %) | approval required |
+  | ≥ block (3 %) | block |
+
+  The percents come from this port, never from code constants; the deviation and band are
+  computed by the consuming backend calculator (no calculator in this slice), which UI and
+  reports reuse. The read takes no product or operation input: SAT-D5's per-product/operation
   overrides need a new versioned method or interface later, not a change to this one.
 - A returned policy is reference metadata, not an authorization: the consuming use case still
   checks its own permission and persists the applied profile id/version with its decision.
 
 **Host wiring.** The API host registers `ISettingsSalesPolicyProviderV1` as
 `ApprovedSettingsPrerequisiteProvider` (scoped, next to the other Settings ports).
-`SettingsHostWiringTests` proves the registration and the GDC/GSP/denied answers through the
-host. Reachable effect today: none — no module consumes the port yet. This registration is
+`SettingsHostWiringTests` proves the registration and the GDC/GSP/GIN, unserved-company and
+denied answers through the host. Reachable effect today: none — no module consumes the port yet. This registration is
 not final: when the policies become user-maintained, a persistent provider replaces it through
 `services.Replace` in `SettingsModuleExtensions.AddSettingsModule`, as the Manufacturing
 tolerance provider does.

@@ -131,9 +131,35 @@ public sealed class SettingsHostWiringTests
     [Theory]
     [InlineData("gsp")]
     [InlineData("gin")]
-    public async Task A_company_without_an_approved_sales_policy_source_stays_unavailable_through_the_host(string company)
+    public async Task GSP_and_GIN_get_GDC_s_sales_policies_through_the_host(string company)
     {
-        using var factory = Host(company == "gsp" ? Gsp : Gin);
+        // SAT-D14 (2026-10-26): GSP and GIN run on GDC's Sales policies.
+        var companyId = company == "gsp" ? Gsp : Gin;
+        using var factory = Host(companyId);
+        using var scope = factory.Services.CreateScope();
+        var provider = scope.ServiceProvider.GetRequiredService<ISettingsSalesPolicyProviderV1>();
+        var extraApproval = new DateOnly(2026, 10, 26);
+
+        var tolerance = await provider.GetSalesDeliveryToleranceAsync(extraApproval);
+        var threshold = await provider.GetSalesApprovalAmountThresholdAsync(
+            SettingsCurrencyIdentitiesV1.TurkishLira, extraApproval);
+        var discount = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetSalesDiscountLimitAsync(Guid.NewGuid(), extraApproval));
+
+        Assert.Equal(companyId, tolerance.CompanyId);
+        Assert.Equal((1m, 2m, 3m), (tolerance.WarnPercent, tolerance.ApprovalPercent, tolerance.BlockPercent));
+        Assert.Equal(extraApproval, tolerance.EffectiveFrom);
+        Assert.Equal(companyId, threshold.CompanyId);
+        Assert.False(threshold.IsEnabled);
+        Assert.Null(threshold.ThresholdAmountText);
+        Assert.Equal(SettingsPrerequisiteCodesV1.SalesPolicyNotFound, discount.Code);
+    }
+
+    [Fact]
+    public async Task A_company_without_an_approved_sales_policy_source_stays_unavailable_through_the_host()
+    {
+        // Not a seed company: GDC, GSP and GIN are all served since SAT-D14.
+        using var factory = Host(Guid.Parse("71000000-0000-4000-8000-0000000000ee"));
         using var scope = factory.Services.CreateScope();
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsSalesPolicyProviderV1>();
 
