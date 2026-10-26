@@ -1,5 +1,6 @@
 from __future__ import annotations
 import copy
+import re
 import importlib.util
 from pathlib import Path
 import unittest
@@ -100,13 +101,29 @@ class MigrationRoutingTests(unittest.TestCase):
         allowed = {'runs-on: ubuntu-latest', 'runs-on: windows-latest'}
         count = 0
         # Only active workflows can run; *.disabled templates never register.
-        for path in workflows.glob('*.yml'):
+        active = sorted([*workflows.glob('*.yml'), *workflows.glob('*.yaml')])
+        for path in active:
             for line in path.read_text(encoding='utf-8').splitlines():
                 if line.lstrip().startswith('runs-on:'):
                     count += 1
                     self.assertIn(line.strip(), allowed, str(path))
         self.assertGreater(count, 0)
 
+
+    def test_active_workflows_open_no_cache_secret_environment_or_target_surface(self):
+        # SINAN_KARARLARI_2026-10-26_PUBLIC_CI: artifacts carry only short-lived,
+        # secret-free CI evidence; cache, secrets, environments and
+        # pull_request_target stay closed on the public repository.
+        workflows = ROOT.parents[1] / '.github' / 'workflows'
+        forbidden = ('actions/cache', 'secrets.', 'environment:', 'pull_request_target')
+        active = sorted([*workflows.glob('*.yml'), *workflows.glob('*.yaml')])
+        self.assertTrue(active)
+        for path in active:
+            text = path.read_text(encoding='utf-8')
+            for marker in forbidden:
+                self.assertNotIn(marker, text, f'{path.name}: {marker}')
+            for days in re.findall(r'retention-days:\s*(\d+)', text):
+                self.assertLessEqual(int(days), 7, path.name)
 
 if __name__ == '__main__':
     unittest.main()

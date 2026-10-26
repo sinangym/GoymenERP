@@ -36,7 +36,7 @@ review ve kanıt şartıyla merge edebilir — `docs/decisions/SINAN_KARARLARI_2
   Bu daraltma test veya uygulama dosyası içeren adayın normal fresh CI şartını kaldırmaz.
 - `.github/**` değişikliğinde iki review ayrıca şunu doğrular: her `runs-on` GitHub-hosted
   (`ubuntu-latest`/`windows-latest`) etikettir, self-hosted etiket yoktur, artifact yalnız
-  secret içermeyen CI kanıtıdır (`retention-days: 7`); cache/Packages yüklemesi, secret,
+  secret içermeyen CI kanıtıdır (saklama ≤ 7 gün); cache/Packages yüklemesi, secret,
   environment veya deploy yüzeyi açılmamıştır (`SINAN_KARARLARI_2026-10-26_PUBLIC_CI.md`).
 - Merge sonrası Issue #66'ya tek satır makbuz (PR, merge SHA, iki review bağlantısı).
 - Sinan bu yetkiyi Issue #66'ya yazacağı tek satırla geri alabilir.

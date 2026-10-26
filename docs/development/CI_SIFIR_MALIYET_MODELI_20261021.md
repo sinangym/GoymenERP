@@ -1,5 +1,9 @@
 # Sıfır maliyetli CI modeli — 2026-10-21 (r2)
 
+> **26 Ekim 2026:** Depo public oldu. "Yalnız self-hosted runner, artifact yok" kuralının yerini
+> `docs/decisions/SINAN_KARARLARI_2026-10-26_PUBLIC_CI.md` aldı (GitHub-hosted runner, ≤ 7 günlük
+> CI kanıtı artifact'ı). `$0` bütçe kuralı aynen geçerli. Aşağıdaki metin tarihsel kayıttır.
+
 Karar: Sinan, 21 Ekim 2026 ("GitHub Actions bütçesini açmayalım; maliyetsiz en mantıklı çözümü
 bul ve uygula"). Makbuz: #66/6313909467; bu belge `SINAN_KARARLARI_2026-10-21.md` §2'nin
 teknik ekidir. `.github/**` değişikliği K3'tür: iki bağımsız exact-head review **ve Sinan'ın
