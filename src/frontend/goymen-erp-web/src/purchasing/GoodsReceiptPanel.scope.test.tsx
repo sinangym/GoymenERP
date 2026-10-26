@@ -58,12 +58,21 @@ function request(): GoodsReceiptRequest {
     labelId: UNIT, labelCode: 'PRIVATE-LABEL', heatNumber: null, coilNumber: null,
     movementId: PRODUCT, occurredAtUtc: '2026-09-25T10:00:00Z' }
 }
+/** P05.1D: Inventory's stored stock quantity of a receipt (`PurchaseGoodsReceiptQuantityV2`, #774), synthetic ids. */
+function snapshot(companyId: string, acceptanceId: string, measuredQuantityKg: string) {
+  return { companyId, subject: { kind: 'Product', id: PRODUCT },
+    source: { kind: 'purchasing.goods-acceptance', id: acceptanceId, version: '4' },
+    baseQuantity: { value: measuredQuantityKg, unitId: 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983',
+      profileId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', profileVersion: '3', dimension: 'Mass', scale: 3 },
+    alternateQuantity: null } as GoodsReceipt['stockItemQuantity']
+}
 function receipt(payload = request()): GoodsReceipt {
   return { companyId: COMPANY, acceptanceId: payload.acceptanceId, purchaseOrderId: ORDER, purchaseOrderLineId: LINE,
     purchaseOrderVersion: '4', productId: PRODUCT, productVersion: '7', unitId: UNIT,
     acceptedQuantity: payload.acceptedQuantity, remainingQuantity: '8', lotId: payload.lotId, labelId: payload.labelId,
     labelCode: payload.labelCode, labelVersion: '1', movementId: payload.movementId, locationId: payload.locationId,
-    measuredQuantityKg: payload.measuredQuantityKg, initialBlock: 'Free', occurredAtUtc: payload.occurredAtUtc }
+    measuredQuantityKg: payload.measuredQuantityKg, initialBlock: 'Free', occurredAtUtc: payload.occurredAtUtc,
+    stockItemQuantity: snapshot(COMPANY, payload.acceptanceId, payload.measuredQuantityKg) }
 }
 function comparison(source = receipt()) {
   return { companyId: source.companyId, acceptanceId: source.acceptanceId, purchaseOrderId: source.purchaseOrderId,
@@ -122,6 +131,27 @@ describe('Goods receipt scope and late-result protection, synthetic NOT_ENV', ()
     expect((screen.getByRole('button', { name: T.save }) as HTMLButtonElement).disabled).toBe(true)
   })
 
+  it('P05.1D: refuses a history item whose stored stock quantity names another company, even when the receipt does not', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => json(url.endsWith('goods-receipt-options')
+      ? options() : { items: [{ ...receipt(), stockItemQuantity: snapshot(OTHER_COMPANY, LOCATION, '1.9') }], searchWindowFull: false })))
+    const page = mount()
+    await settled(page.client)
+    expect(screen.queryByText('PRIVATE-LABEL')).toBeNull()
+    expect(screen.queryByTestId(`goods-receipt-${LOCATION}`)).toBeNull()
+    // The receipt form stays bound to the authorized company's own options.
+    expect(await screen.findByRole('option', { name: 'SITE / D-01 Receipt' })).toBeTruthy()
+  })
+
+  it('P05.1D: a stored stock quantity does not widen authority — a 403 history read still shows nothing of it', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => (url.endsWith('goods-receipt-options')
+      ? json(options()) : json({ items: [receipt()], searchWindowFull: false }, 403))))
+    const page = mount()
+    await settled(page.client)
+    expect(boundary.report).toHaveBeenCalledWith(403, { token: 1 })
+    expect(screen.queryByText('PRIVATE-LABEL')).toBeNull()
+    expect(screen.queryByText(/1\.9 kg/)).toBeNull()
+  })
+
   it('does not publish a late history answer from the previous company', async () => {
     const oldHistory = deferred<Response>()
     const next: PurchaseOrderDetail = { ...detail, order: { ...detail.order, id: OTHER_ORDER, companyId: OTHER_COMPANY },
@@ -137,7 +167,33 @@ describe('Goods receipt scope and late-result protection, synthetic NOT_ENV', ()
     await act(async () => { oldHistory.resolve(json({ items: [receipt()], searchWindowFull: false })) })
     expect(screen.queryByText('PRIVATE-LABEL')).toBeNull()
     expect(screen.queryByTestId(`goods-receipt-${LOCATION}`)).toBeNull()
+    expect(screen.queryByText(T.stockSummary('1.9'))).toBeNull()
     expect(page.onRecorded).not.toHaveBeenCalled()
+  })
+
+  it.each<[string, Partial<ComponentProps<typeof GoodsReceiptPanel>>]>([
+    ['another actor/session of the same company', { binding: ACTOR_B }],
+    ['another company', { binding: `actor-a:session-a:${OTHER_COMPANY}`, detail: { ...detail,
+      order: { ...detail.order, id: OTHER_ORDER, companyId: OTHER_COMPANY }, lines: [{ ...detail.lines[0], lineId: OTHER_LINE }] } }],
+  ])('P05.1D: a shown save message with its stock quantity disappears when the scope changes to %s', async (_name, next) => {
+    const posts: GoodsReceiptRequest[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method !== 'POST') {
+        if (url.includes(OTHER_ORDER)) return json(url.endsWith('goods-receipt-options') ? options(next.detail ?? detail) : { items: [], searchWindowFull: false })
+        return reads(url)
+      }
+      const payload = JSON.parse(init.body as string) as GoodsReceiptRequest
+      posts.push(payload)
+      return json({ receipt: receipt(payload), isReplay: false, originalCorrelationId: 'original' }, 201)
+    }))
+    const page = mount()
+    await fill()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    expect(await screen.findByText(T.stockSummary('1.9'))).toBeTruthy()
+    page.change(next)
+    await waitFor(() => expect(screen.queryByText(T.stockSummary('1.9'))).toBeNull())
+    expect(screen.queryByText(new RegExp(T.saved))).toBeNull()
+    expect(posts).toHaveLength(1)
   })
 
   it('does not publish a late comparison after the actor binding changes and the fresh read is denied', async () => {

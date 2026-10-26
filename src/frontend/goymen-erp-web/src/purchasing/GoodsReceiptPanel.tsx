@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchGoodsReceiptOptions, fetchGoodsReceiptQuantityComparison, fetchGoodsReceipts, recordGoodsReceipt } from './goodsReceiptApi'
-import { receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
+import { receiptQuantityInput, stockQuantityOf, type GoodsReceipt, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
 import { recallReceiptAttempt, receiptIdentity, reserveReceiptAttempt, settleReceiptAttempt, type ReceiptAttempt } from './goodsReceiptAttempt'
 import { GoodsReceiptQuantityComparison } from './GoodsReceiptQuantityComparison'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
@@ -61,6 +61,7 @@ function ReceiptHistoryItem({ binding, detail, receipt }: {
   })
   return <li data-testid={`goods-receipt-${receipt.acceptanceId}`}>
     <strong>{receipt.labelCode}</strong>: {T.accepted} {receipt.acceptedQuantity}; {T.measured} {receipt.measuredQuantityKg}. {receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
+    {' '}<ReceiptStockQuantity receipt={receipt} />
     {comparison.data?.type === 'ok-single'
       ? <GoodsReceiptQuantityComparison comparison={comparison.data.data} />
       : <StateBlock subject={T.comparisonHeading}
@@ -69,13 +70,27 @@ function ReceiptHistoryItem({ binding, detail, receipt }: {
   </li>
 }
 
+/**
+ * P05.1D: Inventory's stored stock quantity in one line, exactly as the decoder validated it, with the same meaning and
+ * terms as the receipt detail. Nothing is converted, recomputed or reread; a legacy receipt says so instead of zero.
+ */
+function ReceiptStockQuantity({ receipt }: { readonly receipt: GoodsReceipt }) {
+  const state = stockQuantityOf(receipt)
+  return <span data-stock-quantity={state.kind}>
+    {state.kind === 'snapshot' ? T.stockSummary(state.quantity.baseQuantity.value)
+      : state.kind === 'legacy' ? T.stockSummaryLegacy : T.stockUnreadable}
+  </span>
+}
+
 function ReceiptLine({ binding, detail, line, onRecorded }: Props & { readonly line: PurchaseOrderLine }) {
   const boundary = useAuthBoundary()
   const scope = `${binding}:receipt:${detail.order.id}:${line.lineId}`
   const [initial] = useState(() => recallReceiptAttempt(scope))
   const [pending, setPending] = useState<ReceiptAttempt | null>(initial)
   const [phase, setPhase] = useState<'idle' | 'sending' | 'unknown' | 'failed' | 'done'>(initial === null ? 'idle' : 'unknown')
-  const [answer, setAnswer] = useState<GoodsReceiptResponse | null>(null)
+  // The answer remembers the actor/session/order line it was recorded for; it is never shown under another scope.
+  const [answer, setAnswer] = useState<{ readonly scope: string; readonly response: GoodsReceiptResponse } | null>(null)
+  const shown = answer?.scope === scope ? answer.response : null
   const [locationId, setLocationId] = useState(initial?.payload.locationId ?? '')
   const [accepted, setAccepted] = useState(initial?.payload.acceptedQuantity ?? '')
   const [measured, setMeasured] = useState(initial?.payload.measuredQuantityKg ?? '')
@@ -120,7 +135,7 @@ function ReceiptLine({ binding, detail, line, onRecorded }: Props & { readonly l
     settleReceiptAttempt(snapshot)
     setPending(null)
     if (outcome.type === 'applied') {
-      setAnswer(outcome.response)
+      setAnswer({ scope: snapshot.binding, response: outcome.response })
       setPhase('done')
       onRecorded()
       void options.refetch()
@@ -153,8 +168,9 @@ function ReceiptLine({ binding, detail, line, onRecorded }: Props & { readonly l
     {phase === 'unknown' && pending !== null ? <div className={styles.warningCard}><p role="alert">{T.unknown}</p>
       <button type="button" onClick={() => void send(pending)}>{T.retry}</button></div> : null}
     {phase === 'failed' ? <p role="alert" className={styles.error}>{T.failed}</p> : null}
-    {phase === 'done' && answer !== null ? <p role="status" className={styles.success}>
-      {answer.isReplay ? T.replayed : T.saved} {answer.receipt.labelCode}: {answer.receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
+    {phase === 'done' && shown !== null ? <p role="status" className={styles.success}>
+      {shown.isReplay ? T.replayed : T.saved} {shown.receipt.labelCode}: {shown.receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
+      {' '}<ReceiptStockQuantity receipt={shown.receipt} />
     </p> : null}
     {active && options.data?.type !== 'ok-single' ? <StateBlock subject={T.location}
       state={options.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(options.data)} onRetry={() => void options.refetch()} /> : null}

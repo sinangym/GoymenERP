@@ -2,7 +2,7 @@ import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useInRouterContext, useSearchParams } from 'react-router'
 import { fetchGoodsReceiptDetail } from './goodsReceiptApi'
-import type { GoodsReceipt } from './goodsReceiptContract'
+import { stockQuantityOf, type GoodsReceipt } from './goodsReceiptContract'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail } from './contract'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
@@ -154,5 +154,28 @@ function Facts({ detail, receipt, linked }: {
     <div><dt>{T.detailRemaining}</dt><dd className={styles.quantity}>{receipt.remainingQuantity}</dd></div>
     <div><dt>{T.detailMeasured}</dt><dd className={styles.quantity}>{receipt.measuredQuantityKg} kg</dd></div>
     <div><dt>{T.detailInitial}</dt><dd>{receipt.initialBlock === 'Free' ? T.detailFree : T.detailBlocked}</dd></div>
+    <StockQuantityFact receipt={receipt} />
   </dl>
+}
+
+/**
+ * P05.1D: Inventory's stored stock quantity for this receipt, exactly as the decoder validated it. Nothing is reread
+ * from Product or Settings; a legacy receipt says so instead of showing zero or a value derived from today's masters.
+ * No raw id is shown: the profile is named by its stored version, the source by this acceptance and its order version.
+ */
+function StockQuantityFact({ receipt }: { readonly receipt: GoodsReceipt }) {
+  const state = stockQuantityOf(receipt)
+  return <div className={styles.wide} data-stock-quantity={state.kind}>
+    <dt>{T.stockHeading}</dt>
+    {state.kind === 'snapshot'
+      ? <dd>
+          <div className={styles.quantity}>{T.stockValue(state.quantity.baseQuantity.value)}</div>
+          <div>{T.stockNote}</div>
+          <div>{T.stockSource(state.quantity.source.version)}</div>
+          <div>{T.stockProfile(state.quantity.baseQuantity.profileVersion)}</div>
+          <div>{T.stockScale(state.quantity.baseQuantity.scale)}</div>
+          <div>{T.stockAlternate}</div>
+        </dd>
+      : <dd>{state.kind === 'legacy' ? T.stockLegacy : T.stockUnreadable}</dd>}
+  </div>
 }

@@ -2,9 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { GoodsReceiptDetail, GoodsReceiptDetailRow } from './GoodsReceiptDetail'
-import { decodeGoodsReceiptDetail, type GoodsReceipt } from './goodsReceiptContract'
+import { decodeGoodsReceiptDetail, type GoodsReceipt, type GoodsReceiptStockQuantity } from './goodsReceiptContract'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail } from './contract'
 import { INVENTORY_STOCK_POSITIONS_CAPABILITY } from '../inventory/capabilities'
@@ -39,12 +39,23 @@ const order: PurchaseOrderDetail = {
     productVersion: '7', unitId: UNIT, ordered: '10', technical: '0', committed: '10', accepted: '2', remaining: '8' }],
   acceptances: [{ acceptanceId: ACCEPTANCE, lineId: LINE, quantity: '2', recordedAtUtc: '2026-09-25T10:00:00Z' }],
 }
+// P05.1D: synthetic ids of the stored quantity snapshot (`PurchaseGoodsReceiptQuantityV2`, #774); never printed.
+const KG_UNIT = 'c5ef643e-a6e8-51f3-89f2-8e68b00cb983'
+const PROFILE = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+type Stock = NonNullable<GoodsReceipt['stockItemQuantity']>
+const stock = (patch: Record<string, unknown> = {}, base: Record<string, unknown> = {}): Stock => ({
+  companyId: COMPANY, subject: { kind: 'Product', id: PRODUCT },
+  source: { kind: 'purchasing.goods-acceptance', id: ACCEPTANCE, version: '4' },
+  baseQuantity: { value: '1934.125', unitId: KG_UNIT, profileId: PROFILE, profileVersion: '3', dimension: 'Mass', scale: 3, ...base },
+  alternateQuantity: null, ...patch,
+} as unknown as Stock)
 const receipt = (patch: Partial<GoodsReceipt> = {}): GoodsReceipt => ({
   companyId: COMPANY, acceptanceId: ACCEPTANCE, purchaseOrderId: ORDER, purchaseOrderLineId: LINE, purchaseOrderVersion: '4',
   productId: PRODUCT, productVersion: '7', unitId: UNIT, acceptedQuantity: '2', remainingQuantity: '8', lotId: OTHER, labelId: LABEL,
   labelCode: LABEL_CODE, labelVersion: '1', movementId: OTHER, locationId: OTHER, measuredQuantityKg: '1934.125',
-  initialBlock: 'Free', occurredAtUtc: '2026-09-25T10:00:00Z', ...patch,
+  initialBlock: 'Free', occurredAtUtc: '2026-09-25T10:00:00Z', stockItemQuantity: stock(), ...patch,
 })
+const withoutStock = () => Object.fromEntries(Object.entries(receipt()).filter(([key]) => key !== 'stockItemQuantity'))
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 interface Call { readonly url: string; readonly method: string }
@@ -107,6 +118,134 @@ describe('decodeGoodsReceiptDetail (PurchaseGoodsReceiptDetailV1)', () => {
     ['a zero accepted quantity', { receipt: receipt({ acceptedQuantity: '0' }) }],
   ])('refuses %s', (_name, body) => {
     expect(decodeGoodsReceiptDetail(body, order, ACCEPTANCE)).toBeNull()
+  })
+})
+
+/**
+ * P05.1D (backend #774 6f6968d6): `stockItemQuantity` is required and nullable. Explicit null = legacy receipt; an object
+ * must be exactly this receipt's stored snapshot. Synthetic NOT_ENV decoder tests — not SQL or browser evidence.
+ */
+describe('decodeGoodsReceiptDetail — P05.1D stored stock quantity', () => {
+  const decode = (stockItemQuantity: unknown) => decodeGoodsReceiptDetail({ receipt: { ...receipt(), stockItemQuantity } }, order, ACCEPTANCE)
+
+  it('keeps the validated snapshot as stored, and an explicit null as a legacy receipt', () => {
+    expect(decode(stock())?.stockItemQuantity).toEqual(stock())
+    expect(decode(null)?.stockItemQuantity).toBeNull()
+    expect(decode(null)).not.toBeNull()
+  })
+
+  it('accepts the int32 scale also as its canonical string, and keeps it a number', () => {
+    expect(decode(stock({}, { scale: '3' }))?.stockItemQuantity?.baseQuantity.scale).toBe(3)
+    expect(decode(stock({}, { scale: 0 }))?.stockItemQuantity?.baseQuantity.scale).toBe(0)
+  })
+
+  it('refuses a receipt without the key — it is not a legacy receipt', () => {
+    expect(decodeGoodsReceiptDetail({ receipt: withoutStock() }, order, ACCEPTANCE)).toBeNull()
+  })
+
+  it('keeps the key required in the static type too: explicit null is the only legacy form', () => {
+    // Checked by the type checker (tsc -b): an optional member would widen this to include undefined.
+    expectTypeOf<GoodsReceipt['stockItemQuantity']>().toEqualTypeOf<GoodsReceiptStockQuantity | null>()
+    const omitted: Omit<GoodsReceipt, 'stockItemQuantity'> = receipt()
+    // @ts-expect-error a receipt without `stockItemQuantity` is not a GoodsReceipt (missing is not legacy)
+    const missing: GoodsReceipt = omitted
+    expect(missing).toBe(omitted)
+    expect(receipt({ stockItemQuantity: null }).stockItemQuantity).toBeNull()
+  })
+
+  it.each([
+    ['zero instead of null', 0],
+    ['an empty object', {}],
+    ['a string', 'legacy'],
+    ['another company', stock({ companyId: OTHER })],
+    ['a subject that is not a Product', stock({ subject: { kind: 'Service', id: PRODUCT } })],
+    ['another product', stock({ subject: { kind: 'Product', id: OTHER } })],
+    ['an extra subject key', stock({ subject: { kind: 'Product', id: PRODUCT, version: '7' } })],
+    ['another source kind', stock({ source: { kind: 'inventory.opening-count', id: ACCEPTANCE, version: '4' } })],
+    ['another acceptance as source', stock({ source: { kind: 'purchasing.goods-acceptance', id: OTHER, version: '4' } })],
+    ['the pre-receipt order version', stock({ source: { kind: 'purchasing.goods-acceptance', id: ACCEPTANCE, version: '3' } })],
+    ['a non-canonical source version', stock({ source: { kind: 'purchasing.goods-acceptance', id: ACCEPTANCE, version: '04' } })],
+    ['a value equal as a number but not as text', stock({}, { value: '1934.1250' })],
+    ['a rounded value', stock({}, { value: '1934.13' })],
+    ['a numeric value', stock({}, { value: 1934.125 })],
+    ['a unit that is not a GUID', stock({}, { unitId: 'kg' })],
+    ['an empty profile id', stock({}, { profileId: '00000000-0000-0000-0000-000000000000' })],
+    ['profile version 0', stock({}, { profileVersion: '0' })],
+    ['a non-canonical profile version', stock({}, { profileVersion: '03' })],
+    ['a numeric profile version', stock({}, { profileVersion: 3 })],
+    ['another dimension', stock({}, { dimension: 'Volume' })],
+    ['scale 4', stock({}, { scale: 4 })],
+    ['a negative scale', stock({}, { scale: -1 })],
+    ['a fractional scale', stock({}, { scale: 1.5 })],
+    ['a non-canonical scale string', stock({}, { scale: '03' })],
+    ['an extra quantity key', stock({}, { nominal: '2000' })],
+    ['a missing quantity key', { ...stock(), baseQuantity: { value: '1934.125', unitId: KG_UNIT, profileId: PROFILE, profileVersion: '3', dimension: 'Mass' } }],
+    ['a converted alternate quantity', stock({ alternateQuantity: { quantity: stock().baseQuantity, conversionSource: stock().source } })],
+    ['a missing alternateQuantity key', Object.fromEntries(Object.entries(stock()).filter(([key]) => key !== 'alternateQuantity'))],
+    ['an extra snapshot key', stock({ currentProfileVersion: '4' })],
+  ])('refuses %s', (_name, value) => {
+    expect(decode(value)).toBeNull()
+  })
+})
+
+describe('GoodsReceiptDetail — P05.1D "Stok miktarı" from the stored snapshot', () => {
+  it('shows the stored stock quantity apart from the measured and order-unit facts, with its source and profile version', async () => {
+    const calls = serve(() => json({ receipt: receipt() }))
+    mount()
+    await userEvent.click(toggle())
+    await waitFor(() => expect(fact(T.detailLabel)).toBe(LABEL_CODE))
+    const shown = within(region()).getByText(T.stockHeading).parentElement!
+    expect(shown.getAttribute('data-stock-quantity')).toBe('snapshot')
+    const text = shown.querySelector('dd')!.textContent
+    expect(text).toContain(T.stockValue('1934.125'))
+    expect(text).toContain(T.stockNote)
+    expect(text).toContain(T.stockSource('4'))
+    expect(text).toContain(T.stockProfile('3'))
+    expect(text).toContain(T.stockScale(3))
+    expect(text).toContain(T.stockAlternate)
+    // The other facts keep their own meaning.
+    expect(fact(T.detailMeasured)).toBe('1934.125 kg')
+    expect(fact(T.detailAccepted)).toBe('2')
+    // Only the receipt's own detail is read: no Product or Settings master is reread to describe the snapshot.
+    expect(calls).toEqual([{ url: DETAIL_URL, method: 'GET' }])
+    for (const id of [PROFILE, KG_UNIT, ACCEPTANCE, PRODUCT, COMPANY]) expect(region().textContent).not.toContain(id)
+  })
+
+  it('says a legacy receipt has no stored stock quantity instead of showing zero', async () => {
+    serve(() => json({ receipt: receipt({ stockItemQuantity: null }) }))
+    mount()
+    await userEvent.click(toggle())
+    await waitFor(() => expect(fact(T.detailLabel)).toBe(LABEL_CODE))
+    const shown = within(region()).getByText(T.stockHeading).parentElement!
+    expect(shown.getAttribute('data-stock-quantity')).toBe('legacy')
+    expect(shown.querySelector('dd')!.textContent).toBe(T.stockLegacy)
+    expect(region().textContent).not.toContain('0 kg')
+    expect(region().textContent).not.toContain(T.stockProfile('3'))
+  })
+
+  it.each([
+    ['a missing key', () => withoutStock()],
+    ['a snapshot of another company', () => receipt({ stockItemQuantity: stock({ companyId: OTHER }) })],
+    ['a snapshot of another product', () => receipt({ stockItemQuantity: stock({ subject: { kind: 'Product', id: OTHER } }) })],
+    ['a snapshot of another version', () => receipt({ stockItemQuantity: stock({ source: { kind: 'purchasing.goods-acceptance', id: ACCEPTANCE, version: '5' } }) })],
+    ['a snapshot with another quantity', () => receipt({ stockItemQuantity: stock({}, { value: '1934' }) })],
+  ])('treats a 200 with %s as malformed: no receipt facts and no stock quantity', async (_name, body) => {
+    serve(() => json({ receipt: body() }))
+    mount()
+    await userEvent.click(toggle())
+    const alert = await within(await screen.findByRole('region', { name: T.detailHeading })).findByRole('alert')
+    expect(alert.getAttribute('data-state')).toBe('malformed-response')
+    expect(region().textContent).not.toContain(LABEL_CODE)
+    expect(within(region()).queryByText(T.stockHeading)).toBeNull()
+  })
+
+  it('reopens from the address with the same stored snapshot, read again from the receipt detail only', async () => {
+    const calls = serve(() => json({ receipt: receipt() }))
+    mount(`${ORDER_PATH}?kabul=${ACCEPTANCE}`)
+    await waitFor(() => expect(fact(T.detailLabel)).toBe(LABEL_CODE))
+    expect(within(region()).getByText(T.stockHeading).parentElement!.querySelector('dd')!.textContent)
+      .toContain(T.stockValue('1934.125'))
+    expect(calls).toEqual([{ url: DETAIL_URL, method: 'GET' }])
   })
 })
 
