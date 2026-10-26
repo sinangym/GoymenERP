@@ -36,6 +36,7 @@ export const STOCK_TEXT = {
   measureMode: { exact: 'Tam değer', range: 'Aralık' },
   measureProblem: {
     format: 'Yalnız rakam yazın; ondalık için virgül kullanın, binlik ayırıcı kullanmayın (ör. 1250 veya 1,5).',
+    leadingZero: 'Sayının başına sıfır yazmayın (ör. 3 veya 0,5).',
     precision: 'En çok üç ondalık basamak yazılabilir; değer yuvarlanmaz.',
     zero: 'Sıfırdan büyük bir değer yazın.',
   } satisfies Record<StockMeasureInputProblem, string>,

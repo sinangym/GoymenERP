@@ -933,7 +933,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetInventoryLabelBalancesV1"] = "ref:InventoryLabelBalancesV1",
             ["GetInventoryLabelDetailV1"] = "ref:InventoryLabelDetailV1",
             ["GetInventoryParentRollCandidatesV1"] = "ref:InventoryParentRollCandidatesV1",
-            ["GetInventoryStockPositionsV1"] = "anyOf:inline:items,searchWindowFull|InventoryStockPositionPageV1|InventoryStockPositionLocationPageV2|InventoryStockPositionOwnerPageV3",
+            ["GetInventoryStockPositionsV1"] = "anyOf:inline:items,searchWindowFull|InventoryStockPositionPageV1|InventoryStockPositionLocationPageV2|InventoryStockPositionOwnerPageV3|InventoryStockPositionLengthPageV4",
             ["GetInventoryMovementTimelineV1"] = "ref:InventoryMovementTimelinePageV1",
             ["GetInventoryPhysicalAllocationsV1"] = "ref:InventoryPhysicalAllocationReadsV1",
             ["GetInventoryProductCandidatesV1"] = "ref:ProductStockCandidatesV1",
@@ -2697,6 +2697,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
                     ("createdAtUtc", "type:string;format:date-time"),
                     ("approvedAtUtc", "type:null|string;format:date-time")),
+                ["CutToLengthLineViewV1"] = ObjectSchema(
+                    ["lineId", "sequence", "lengthMm", "count"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("sequence", "type:integer|string;format:int32"),
+                    ("lengthMm", "type:string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["CutToLengthSpecViewV1"] = ObjectSchema(
+                    ["lines"],
+                    ("lines", "type:array;items:ref:CutToLengthLineViewV1")),
                 // MFG-PLAN-EDIT: every appended revision of a Draft plan, in order, with its reason and author.
                 ["PlanRevisionListViewV1"] = ObjectSchema(
                     ["planId", "revisions"],
@@ -2709,6 +2718,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array;items:ref:PlanRevisionInputViewV1"),
                     ("target", "oneOf:ref:TargetViewV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecViewV1|type:null"),
                     ("reason", "type:null|string"),
                     ("revisedBy", "type:null|string"),
                     ("recordedAtUtc", "type:string;format:date-time")),
@@ -4232,13 +4242,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("partyVersion", "type:string"),
                     ("accountVersion", "type:string")),
                 ["CapturedPlanTechnicalSnapshotViewV1"] = ObjectSchema(
-                    ["productId", "productVersion", "family", "template", "thicknessMm", "widthMm", "unitKg", "effectiveOn"],
+                    ["productId", "productVersion", "family", "template", "thicknessMm", "widthMm", "lengthMm", "unitKg", "effectiveOn"],
                     ("productId", "type:string;format:uuid"),
                     ("productVersion", "type:string"),
                     ("family", "ref:CapturedPlanFamilyRevisionViewV1"),
                     ("template", "ref:CapturedPlanTemplateRevisionViewV1"),
                     ("thicknessMm", "type:string"),
                     ("widthMm", "type:string"),
+                    ("lengthMm", "type:null|string"),
                     ("unitKg", "ref:CapturedPlanKilogramUnitViewV1"),
                     ("effectiveOn", "type:string;format:date")),
                 ["OrderViewV1"] = ObjectSchema(
@@ -4275,7 +4286,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("approvedByUserId", "type:null|string;format:uuid"),
                     ("approvedAtUtc", "type:null|string;format:date-time"),
                     ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null"),
-                    ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null")),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecViewV1|type:null")),
                 ["SlitLineViewV1"] = ObjectSchema(
                     ["bandWidthMm", "count"],
                     ("bandWidthMm", "type:string"),
@@ -4624,11 +4636,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ("legalName", "type:string"),
                     ("isPlaceholder", "type:boolean")),
                 ["IdentityProfile"] = ObjectSchema(
-                    ["userId", "displayName", "email", "allowedCompanyIds"],
+                    ["userId", "displayName", "email", "allowedCompanyIds", "authenticationSessionBinding"],
                     ("userId", "type:string;format:uuid"),
                     ("displayName", "type:string"),
                     ("email", "type:null|string"),
-                    ("allowedCompanyIds", "type:array;items:type:string;format:uuid")),
+                    ("allowedCompanyIds", "type:array;items:type:string;format:uuid"),
+                    ("authenticationSessionBinding", "type:null|string")),
                 ["InventoryLabelViewV1"] = ObjectSchema(
                     ["labelId", "companyId", "code", "productId", "lotId", "heatNumber", "coilNumber",
                         "classification", "documentStatus", "requiredDocuments", "documents", "prints", "lot"],
@@ -4804,6 +4817,41 @@ public sealed partial class OpenApiContractGenerationTests
                     ("productDisplay", "ref:ProductStockDisplayResultV1"),
                     ("locationDisplay", "ref:OrganizationLocationDisplayV1"),
                     ("ownerDisplay", "oneOf:ref:InventoryStockOwnerDisplayV1|type:null")),
+                ["InventoryStockPositionLengthPageV4"] = ObjectSchema(
+                    ["items", "searchWindowFull"],
+                    ("items", "type:array;items:ref:InventoryStockPositionLengthDisplayV4"),
+                    ("searchWindowFull", "type:boolean"),
+                    ("nextCursor", "type:null|string")),
+                ["InventoryStockPositionLengthDisplayV4"] = ObjectSchema(
+                    ["companyId", "labelId", "labelVersion", "labelCode", "productId", "productVersion",
+                        "classification", "lot", "heatNumber", "coilNumber", "documentStatus", "ownerKind", "ownerId",
+                        "custodianKind", "custodianId", "locationId", "physicalKg", "freePhysicalKg",
+                        "blockedPhysicalKg", "activeAllocationKg", "availableKg", "productDisplay", "locationDisplay",
+                        "ownerDisplay"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("labelId", "type:string;format:uuid"),
+                    ("labelVersion", "type:string"),
+                    ("labelCode", "type:string"),
+                    ("productId", "type:string;format:uuid"),
+                    ("productVersion", "type:null|string"),
+                    ("classification", "type:null|string"),
+                    ("lot", "ref:InventoryLotV1"),
+                    ("heatNumber", "type:null|string"),
+                    ("coilNumber", "type:null|string"),
+                    ("documentStatus", "type:string"),
+                    ("ownerKind", "type:string"),
+                    ("ownerId", "type:string;format:uuid"),
+                    ("custodianKind", "type:string"),
+                    ("custodianId", "type:string;format:uuid"),
+                    ("locationId", "type:string;format:uuid"),
+                    ("physicalKg", "type:string"),
+                    ("freePhysicalKg", "type:string"),
+                    ("blockedPhysicalKg", "type:string"),
+                    ("activeAllocationKg", "type:string"),
+                    ("availableKg", "type:string"),
+                    ("productDisplay", "ref:ProductStockDisplayResultV2"),
+                    ("locationDisplay", "ref:OrganizationLocationDisplayV1"),
+                    ("ownerDisplay", "oneOf:ref:InventoryStockOwnerDisplayV1|type:null")),
                 ["InventoryStockOwnerDisplayV1"] = ObjectSchema(
                     ["partyId", "code", "legalName", "tradeName"],
                     ("partyId", "type:string;format:uuid"),
@@ -4843,6 +4891,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("identity", "oneOf:ref:ProductStockDisplayIdentityV1|type:null"),
                     ("technical", "oneOf:ref:ProductStockNominalTechnicalV1|type:null"),
                     ("errors", "type:array;items:ref:ProductFieldError")),
+                ["ProductStockDisplayResultV2"] = ObjectSchema(
+                    ["productId", "expectedProductVersion", "identity", "technical", "errors"],
+                    ("productId", "type:string;format:uuid"),
+                    ("expectedProductVersion", "type:string"),
+                    ("identity", "oneOf:ref:ProductStockDisplayIdentityV1|type:null"),
+                    ("technical", "oneOf:ref:ProductStockNominalTechnicalV2|type:null"),
+                    ("errors", "type:array;items:ref:ProductFieldError")),
                 ["ProductStockDisplayIdentityV1"] = ObjectSchema(
                     ["productId", "productVersion", "code", "name"],
                     ("productId", "type:string;format:uuid"), ("productVersion", "type:string"),
@@ -4861,6 +4916,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("template", "ref:ProductManufacturingTemplateRevisionV1"),
                     ("thicknessMm", "type:number|string;format:double"),
                     ("widthMm", "type:number|string;format:double")),
+                ["ProductStockNominalTechnicalV2"] = ObjectSchema(
+                    ["family", "template", "thicknessMm", "widthMm", "lengthMm"],
+                    ("family", "ref:ProductManufacturingFamilyRevisionV1"),
+                    ("template", "ref:ProductManufacturingTemplateRevisionV1"),
+                    ("thicknessMm", "type:number|string;format:double"),
+                    ("widthMm", "type:number|string;format:double"),
+                    ("lengthMm", "type:null|number|string;format:double")),
                 ["ProductManufacturingFamilyRevisionV1"] = ObjectSchema(
                     ["familyId", "familyCode", "sourceRevision"],
                     ("familyId", "type:string;format:uuid"), ("familyCode", "type:string"),
@@ -5801,6 +5863,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ["lines"],
                     ("lines", "type:array|null;items:ref:SlitLineRequestV1"),
                     ("windingTargetKg", "type:null|string")),
+                ["CutToLengthLineRequestV1"] = ObjectSchema(
+                    ["lineId", "sequence", "lengthMm", "count"],
+                    ("lineId", "type:string;format:uuid"),
+                    ("sequence", "type:integer|string;format:int32"),
+                    ("lengthMm", "type:null|string"),
+                    ("count", "type:integer|string;format:int32")),
+                ["CutToLengthSpecRequestV1"] = ObjectSchema(
+                    ["lines"],
+                    ("lines", "type:array|null;items:ref:CutToLengthLineRequestV1")),
                 ["RecordFactRequestV1"] = ObjectSchema(
                     ["factId", "expectedVersion", "parentRollId", "kg", "occurredAtUtc"],
                     ("factId", "type:string;format:uuid"),
@@ -5814,14 +5885,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
-                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null")),
                 // AT-061: the preview takes the save's grammar without the plan id (nothing is created).
                 ["PlanPreviewRequestV1"] = ObjectSchema(
                     ["workCenterId", "inputs", "target"],
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
-                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null")),
+                    ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null")),
                 // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
                 ["RevisePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion", "workCenterId", "inputs", "target", "reason"],
@@ -5829,6 +5902,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("workCenterId", "type:string;format:uuid"),
                     ("inputs", "type:array|null;items:ref:PlannedInputRequestV1"),
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null"),
                     ("reason", "type:null|string")),
                 ["TargetRequestV1"] = ObjectSchema(
                     ["basis", "kg"],
@@ -6026,6 +6100,13 @@ public sealed partial class OpenApiContractGenerationTests
                 await File.ReadAllBytesAsync(canonicalArtifactPath));
 
             var contractText = Encoding.UTF8.GetString(first.Bytes);
+            using var contract = JsonDocument.Parse(first.Bytes);
+            var contractSurfaces = ReadContractStrings(contract.RootElement).Append(contractText).ToArray();
+            // A short OS username can be public contract text ("CI/AS", "official").
+            // Unique configured secret markers cover credential values; full host
+            // paths, including decoded JSON escapes, cover sensitive locations.
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            Assert.False(string.IsNullOrWhiteSpace(userProfile));
             foreach (var forbiddenValue in new[]
                      {
                          first.SecretMarker,
@@ -6035,8 +6116,9 @@ public sealed partial class OpenApiContractGenerationTests
                          repositoryRoot.Replace('\\', '/'),
                          temporaryRoot,
                          temporaryRoot.Replace('\\', '/'),
+                         userProfile,
+                         userProfile.Replace('\\', '/'),
                          Environment.MachineName,
-                         Environment.UserName,
                          "openapi.invalid",
                          "127.0.0.1",
                          "DB_CONNECTION_STRING",
@@ -6044,10 +6126,10 @@ public sealed partial class OpenApiContractGenerationTests
                          "SELECT ",
                      })
             {
-                Assert.DoesNotContain(
-                    forbiddenValue,
-                    contractText,
-                    StringComparison.OrdinalIgnoreCase);
+                foreach (var surface in contractSurfaces)
+                {
+                    Assert.DoesNotContain(forbiddenValue, surface, StringComparison.OrdinalIgnoreCase);
+                }
             }
 
             AssertContractShape(first.Bytes);
@@ -6055,6 +6137,45 @@ public sealed partial class OpenApiContractGenerationTests
         finally
         {
             Directory.Delete(temporaryRoot, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("{\"path\":\"C:\\\\Users\\\\private-user\"}", "C:\\Users\\private-user")]
+    [InlineData("{\"metadata\":[{\"path\":\"\\u002fhome\\u002fprivate-user\"}]}", "/home/private-user")]
+    [InlineData("{\"\\u0073ecret-key\":\"public\"}", "secret-key")]
+    public void ContractPrivacySurfaces_DecodeEscapedHostPathsAndPropertyNames(string json, string marker)
+    {
+        using var contract = JsonDocument.Parse(json);
+        Assert.Contains(marker, ReadContractStrings(contract.RootElement));
+    }
+
+    private static IEnumerable<string> ReadContractStrings(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            yield return element.GetString()!;
+        }
+        else if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                yield return property.Name;
+                foreach (var value in ReadContractStrings(property.Value))
+                {
+                    yield return value;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                foreach (var value in ReadContractStrings(item))
+                {
+                    yield return value;
+                }
+            }
         }
     }
 
@@ -7299,7 +7420,7 @@ public sealed partial class OpenApiContractGenerationTests
         var contract = Assert.Single(operation.GetProperty("parameters").EnumerateArray(), parameter =>
             parameter.GetProperty("in").GetString() == "header"
             && parameter.GetProperty("name").GetString() == InventoryStockPositionApiV1.ProductDisplayContractHeader);
-        Assert.Equal("^(?:1\\.0|2\\.0|3\\.0)$", contract.GetProperty("schema").GetProperty("pattern").GetString());
+        Assert.Equal("^(?:1\\.0|2\\.0|3\\.0|4\\.0)$", contract.GetProperty("schema").GetProperty("pattern").GetString());
         var success = operation.GetProperty("responses").GetProperty("200").GetProperty("content")
             .GetProperty("application/json").GetProperty("schema").GetProperty("anyOf");
         var alternatives = success.EnumerateArray().ToArray();
@@ -7319,6 +7440,8 @@ public sealed partial class OpenApiContractGenerationTests
             alternatives[2].GetProperty("$ref").GetString());
         Assert.Equal("#/components/schemas/InventoryStockPositionOwnerPageV3",
             alternatives[3].GetProperty("$ref").GetString());
+        Assert.Equal("#/components/schemas/InventoryStockPositionLengthPageV4",
+            alternatives[4].GetProperty("$ref").GetString());
         var locationItem = root.GetProperty("components").GetProperty("schemas")
             .GetProperty("InventoryStockPositionLocationDisplayV2");
         Assert.Contains("locationDisplay", locationItem.GetProperty("required")
@@ -7333,6 +7456,26 @@ public sealed partial class OpenApiContractGenerationTests
         Assert.Equal("#/components/schemas/InventoryStockOwnerDisplayV1",
             ownerItem.GetProperty("properties").GetProperty("ownerDisplay")
                 .GetProperty("oneOf")[0].GetProperty("$ref").GetString());
+        var lengthItem = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("InventoryStockPositionLengthDisplayV4");
+        Assert.Equal("#/components/schemas/ProductStockDisplayResultV2",
+            lengthItem.GetProperty("properties").GetProperty("productDisplay")
+                .GetProperty("$ref").GetString());
+        Assert.Equal("#/components/schemas/OrganizationLocationDisplayV1",
+            lengthItem.GetProperty("properties").GetProperty("locationDisplay")
+                .GetProperty("$ref").GetString());
+        Assert.Equal("#/components/schemas/InventoryStockOwnerDisplayV1",
+            lengthItem.GetProperty("properties").GetProperty("ownerDisplay")
+                .GetProperty("oneOf")[0].GetProperty("$ref").GetString());
+        var lengthTechnical = root.GetProperty("components").GetProperty("schemas")
+            .GetProperty("ProductStockNominalTechnicalV2");
+        Assert.Contains("lengthMm", lengthTechnical.GetProperty("required")
+            .EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal(["null", "number", "string"],
+            lengthTechnical.GetProperty("properties").GetProperty("lengthMm")
+                .GetProperty("type").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal("double", lengthTechnical.GetProperty("properties").GetProperty("lengthMm")
+            .GetProperty("format").GetString());
 
         using var legacyEmpty = JsonDocument.Parse("""{"items":[],"searchWindowFull":false}""");
         using var enrichedEmpty = JsonDocument.Parse("""{"items":[],"nextCursor":null,"searchWindowFull":false}""");

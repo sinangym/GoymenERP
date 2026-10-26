@@ -12,7 +12,12 @@
  * would show one edit's content under another's reason.
  */
 
-import { decodeTechnicalSnapshot, type CapturedPlanTechnicalSnapshot } from './contract'
+import {
+  decodeCutToLengthSpec,
+  decodeTechnicalSnapshot,
+  type CapturedPlanTechnicalSnapshot,
+  type CutToLengthSpecView,
+} from './contract'
 
 export interface PlanRevisionInput {
   readonly parentRollId: string
@@ -41,6 +46,8 @@ export interface PlanRevision {
   readonly reason: string | null
   readonly revisedBy: string | null
   readonly recordedAtUtc: string
+  /** M01.2: the ordered cut lines this revision set; null without cut lines and for legacy omitted JSON. */
+  readonly cutToLengthSpec: CutToLengthSpecView | null
 }
 
 export interface PlanRevisionList {
@@ -49,7 +56,7 @@ export interface PlanRevisionList {
 }
 
 const LIST_KEYS = ['planId', 'revisions'] as const
-const REVISION_KEYS = [
+const LEGACY_REVISION_KEYS = [
   'revision',
   'planVersion',
   'workCenterId',
@@ -59,6 +66,8 @@ const REVISION_KEYS = [
   'revisedBy',
   'recordedAtUtc',
 ] as const
+/** The current wire always emits the additive cut spec member, explicit null included; old stored JSON omits it. */
+const REVISION_KEYS = [...LEGACY_REVISION_KEYS, 'cutToLengthSpec'] as const
 const LEGACY_INPUT_KEYS = ['parentRollId', 'plannedKg', 'expectedLabelVersion'] as const
 const COMMERCIAL_INPUT_KEYS = [...LEGACY_INPUT_KEYS, 'commercialContext'] as const
 const INPUT_KEYS = [...COMMERCIAL_INPUT_KEYS, 'technicalSnapshot'] as const
@@ -143,7 +152,10 @@ function decodeTarget(value: unknown): PlanRevision['target'] | undefined {
 }
 
 function decodeRevision(value: unknown, expectedRevision: number): PlanRevision | null {
-  if (!isObject(value) || !hasExactKeys(value, REVISION_KEYS)) return null
+  if (!isObject(value)) return null
+  const isCurrent = hasExactKeys(value, REVISION_KEYS)
+  if (!isCurrent && !hasExactKeys(value, LEGACY_REVISION_KEYS)) return null
+  const cutToLengthSpec = isCurrent ? decodeCutToLengthSpec(value.cutToLengthSpec) : null
   const revision = wholeNumber(value.revision, 0)
   const planVersion = wholeNumber(value.planVersion, 1)
   const workCenterId = nonNilGuid(value.workCenterId)
@@ -157,6 +169,7 @@ function decodeRevision(value: unknown, expectedRevision: number): PlanRevision 
     planVersion === null ||
     workCenterId === null ||
     target === undefined ||
+    cutToLengthSpec === undefined ||
     recordedAtUtc === null ||
     !Array.isArray(value.inputs) ||
     value.inputs.length === 0
@@ -191,6 +204,7 @@ function decodeRevision(value: unknown, expectedRevision: number): PlanRevision 
     reason: revision === 0 ? null : (reason as string),
     revisedBy: revision === 0 ? null : (revisedBy as string),
     recordedAtUtc,
+    cutToLengthSpec,
   }
 }
 

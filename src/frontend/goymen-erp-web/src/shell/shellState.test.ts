@@ -263,6 +263,82 @@ describe('session + capability', () => {
   })
 })
 
+/**
+ * M01.3 r5 (#66/6187473245): the server's `authenticationSessionBinding`. The reducer never mints one — it only carries
+ * the value SESSION_READY brings from the identity response (null when the server answered null) and drops it at every
+ * session boundary, in the same transition that advances the epoch, so no render can pair a new session with the old
+ * binding.
+ */
+describe('session binding', () => {
+  const BINDING = `v1.${'3'.repeat(64)}`
+  const bound = run(initialShellState, {
+    type: 'SESSION_READY',
+    forSessionEpoch: 0,
+    context: fixtureContext('fixture-company-a'),
+    sessionBinding: BINDING,
+  })
+  const outcome401 = (state: ShellState): ShellEvent => ({
+    type: 'BUSINESS_AUTH_OUTCOME',
+    status: 401,
+    authenticatedActorId: 'fixture-user',
+    snapshot: {
+      actorId: 'fixture-user',
+      sessionEpoch: state.sessionEpoch,
+      companyId: 'fixture-company-a',
+      committedContextRevision: state.committedContextRevision,
+      capabilityGeneration: 'fixture-cap-gen-1',
+      namespace: null,
+    },
+  })
+
+  it('starts without a binding and takes the one SESSION_READY carries, opaque and unchanged', () => {
+    expect(initialShellState.sessionBinding).toBeNull()
+    expect(bound.sessionBinding).toBe(BINDING)
+    expect(ready.sessionBinding).toBeNull()
+  })
+
+  it('a null server binding stays null: the reducer substitutes nothing for it', () => {
+    const unbound = run(initialShellState, {
+      type: 'SESSION_READY',
+      forSessionEpoch: 0,
+      context: fixtureContext('fixture-company-a'),
+      sessionBinding: null,
+    })
+    expect(unbound.phase).toBe('idle')
+    expect(unbound.sessionBinding).toBeNull()
+  })
+
+  it('keeps it across a company switch: the authenticated session is the same', () => {
+    expect(switchTo(bound, 'fixture-company-b').sessionBinding).toBe(BINDING)
+  })
+
+  it('a stale SESSION_READY cannot install its binding into a newer session', () => {
+    const reset = run(initialShellState, { type: 'SESSION_RESET' })
+    const stale = run(reset, {
+      type: 'SESSION_READY',
+      forSessionEpoch: 0,
+      context: fixtureContext('fixture-company-a'),
+      sessionBinding: BINDING,
+    })
+    expect(stale.sessionBinding).toBeNull()
+  })
+
+  it.each([
+    ['SESSION_RESET', (state: ShellState) => run(state, { type: 'SESSION_RESET' })],
+    ['SESSION_INVALIDATED', (state: ShellState) => run(state, { type: 'SESSION_INVALIDATED' })],
+    ['a business 401', (state: ShellState) => run(state, outcome401(state))],
+    ['REAUTH_FAIL applying a held 401', (state: ShellState) => {
+      const switching = run(state, { type: 'REQUEST_SWITCH', target: { scopeMode: 'single', companyId: 'fixture-company-b' } })
+      const held = run(switching, outcome401(switching))
+      return run(held, { type: 'REAUTH_FAIL', forGeneration: held.requestFenceGeneration })
+    }],
+  ])('%s drops the binding in the same transition that advances the epoch', (_case, boundary) => {
+    const after = boundary(bound)
+    expect(after.sessionEpoch).toBe(bound.sessionEpoch + 1)
+    expect(after.sessionBinding).toBeNull()
+  })
+})
+
 describe('contextActorMismatch — Codex #139 P1-1 synchronous gate', () => {
   it('flags a bound context that belongs to another actor', () => {
     expect(contextActorMismatch(ready, 'fixture-user')).toBe(false)

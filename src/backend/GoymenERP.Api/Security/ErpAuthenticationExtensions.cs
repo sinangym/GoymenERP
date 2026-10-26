@@ -36,6 +36,11 @@ public static class ErpAuthenticationExtensions
                     "DevelopmentBootstrap yalnız Development ve Testing ortamlarında kullanılabilir.");
             }
 
+            var bootstrapIdentityOptions = configuration
+                .GetSection(BootstrapIdentityOptions.SectionName)
+                .Get<BootstrapIdentityOptions>() ?? new BootstrapIdentityOptions();
+            ValidateDevelopmentBootstrapHeaders(bootstrapIdentityOptions);
+
             services
                 .AddAuthentication(DevelopmentAuthenticationHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, DevelopmentAuthenticationHandler>(
@@ -117,6 +122,30 @@ public static class ErpAuthenticationExtensions
         });
 
         return services;
+    }
+
+    private static void ValidateDevelopmentBootstrapHeaders(BootstrapIdentityOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.HeaderName))
+        {
+            throw new InvalidOperationException(
+                "DevelopmentBootstrap için BootstrapIdentity:HeaderName zorunludur.");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.SessionHeaderName))
+        {
+            throw new InvalidOperationException(
+                "DevelopmentBootstrap için BootstrapIdentity:SessionHeaderName zorunludur.");
+        }
+
+        if (string.Equals(
+                options.HeaderName,
+                options.SessionHeaderName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "DevelopmentBootstrap kullanıcı ve oturum header adları farklı olmalıdır.");
+        }
     }
 
     private static bool IsSafeHttpsAuthority(string authority)

@@ -32,6 +32,7 @@ export const IDENTITY = {
   displayName: 'Yönetici',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
+  authenticationSessionBinding: null,
 }
 
 export const DIRECTORY = [

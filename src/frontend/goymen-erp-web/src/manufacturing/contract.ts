@@ -98,6 +98,11 @@ export interface CapturedPlanTechnicalSnapshot {
   }
   readonly thicknessMm: string
   readonly widthMm: string
+  /**
+   * The captured Product nominal length, kept as the server's exact decimal text. Null is a captured
+   * absence (legacy or no nominal length); never derived from cut lines, a lot or the current Product card.
+   */
+  readonly lengthMm: string | null
   readonly unitKg: {
     readonly companyId: string
     readonly unitId: string
@@ -128,6 +133,23 @@ export interface SlittingSpecView {
 }
 
 /**
+ * One stored coil-to-sheet cut line (`CutToLengthLineViewV1`). The line id, the explicit signed sequence and the
+ * array position are the client's content: kept as read, never renumbered or re-sorted here.
+ */
+export interface CutToLengthLineView {
+  readonly lineId: string
+  readonly sequence: number
+  /** The server's canonical millimetre text: positive, at most three decimals. */
+  readonly lengthMm: string
+  readonly count: number
+}
+
+/** Ordered cut lines a CutToLength plan carries (`CutToLengthSpecViewV1`). Null also covers legacy omitted JSON. */
+export interface CutToLengthSpecView {
+  readonly lines: readonly CutToLengthLineView[]
+}
+
+/**
  * Wire contract of `GET /api/v1/manufacturing/plans/{planId}` (`PlanViewV1`).
  *
  * The same shape the create and approve answers return — by construction on the server, not by
@@ -149,6 +171,8 @@ export interface ProductionPlanView {
   readonly calculation: PlanPreview | null
   /** Null for plans without a slitting spec and for legacy command JSON that omitted the additive field. */
   readonly slittingSpec: SlittingSpecView | null
+  /** M01.2: null for plans without cut lines and for legacy JSON that omitted the additive member. */
+  readonly cutToLengthSpec: CutToLengthSpecView | null
 }
 
 export interface ProductionOrderView {
@@ -175,6 +199,7 @@ const NIL_GUID = '00000000-0000-0000-0000-000000000000'
 const KG_OUT = /^(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
 const MM_OUT = /^(0|[1-9][0-9]*)(\.[0-9]{0,2}[1-9])?$/
 const INT32_MAX = 2_147_483_647
+const INT32_MIN = -2_147_483_648
 const SIGNED_KG_OUT = /^-?(0|[1-9][0-9]*)(\.[0-9]*[1-9])?$/
 /**
  * The command's input grammar, the same as the server's (`KilogramText`): plain,
@@ -425,6 +450,39 @@ function decodeSlittingSpec(value: unknown): SlittingSpecView | null | undefined
   return { lines, windingTargetKg }
 }
 
+function int32(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= INT32_MIN && value <= INT32_MAX
+}
+
+const CUT_SPEC_KEYS = ['lines'] as const
+const CUT_LINE_KEYS = ['lineId', 'sequence', 'lengthMm', 'count'] as const
+
+/**
+ * Strict `CutToLengthSpecViewV1` decoding, shared by the plan read and its history. `null` is the contract's absence
+ * (an omitted legacy member or the current explicit null); `undefined` is not this contract and fails the whole read.
+ * The server's own rules (CutToLengthSpec/CutToLengthLine) bound what is trusted: at least one line, a non-nil id
+ * unique in the plan, any int32 sequence, a positive canonical length with at most three decimals, a positive int32
+ * count — and no member the contract does not declare.
+ */
+export function decodeCutToLengthSpec(value: unknown): CutToLengthSpecView | null | undefined {
+  if (value === undefined || value === null) return null
+  if (!isObject(value) || !hasExactKeys(value, CUT_SPEC_KEYS)
+    || !Array.isArray(value.lines) || value.lines.length === 0) return undefined
+  const lines: CutToLengthLineView[] = []
+  const ids = new Set<string>()
+  for (const raw of value.lines) {
+    if (!isObject(raw) || !hasExactKeys(raw, CUT_LINE_KEYS)) return undefined
+    const lineId = nonNilGuid(raw.lineId)
+    if (lineId === null || ids.has(lineId.toLowerCase())
+      || !int32(raw.sequence)
+      || typeof raw.lengthMm !== 'string' || !MM_OUT.test(raw.lengthMm) || raw.lengthMm === '0'
+      || !int32(raw.count) || raw.count <= 0) return undefined
+    ids.add(lineId.toLowerCase())
+    lines.push({ lineId, sequence: raw.sequence, lengthMm: raw.lengthMm, count: raw.count })
+  }
+  return { lines }
+}
+
 /** A positive safe integer: the version is compared and sent back, never computed. */
 function version(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
@@ -450,7 +508,7 @@ function decodePlannedInput(value: unknown): PlannedInput | null {
 
 export function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSnapshot | undefined {
   if (!isObject(value) || !hasExactKeys(value, [
-    'productId', 'productVersion', 'family', 'template', 'thicknessMm', 'widthMm', 'unitKg', 'effectiveOn',
+    'productId', 'productVersion', 'family', 'template', 'thicknessMm', 'widthMm', 'lengthMm', 'unitKg', 'effectiveOn',
   ])) return undefined
   if (!isObject(value.family) || !hasExactKeys(value.family, ['familyId', 'familyCode', 'sourceRevision'])) return undefined
   if (!isObject(value.template) || !hasExactKeys(value.template,
@@ -465,8 +523,9 @@ export function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSn
   const profileId = nonNilGuid(value.unitKg.profileId)
   const thicknessMm = snapshotMeasure(value.thicknessMm)
   const widthMm = snapshotMeasure(value.widthMm)
+  const lengthMm = value.lengthMm === null ? null : snapshotMeasure(value.lengthMm) ?? undefined
   if (productId === null || familyId === null || templateId === null || companyId === null
-    || unitId === null || profileId === null || thicknessMm === null || widthMm === null
+    || unitId === null || profileId === null || thicknessMm === null || widthMm === null || lengthMm === undefined
     || !boundedSnapshotText(value.productVersion, 128)
     || !boundedSnapshotText(value.family.familyCode, 64)
     || !boundedSnapshotText(value.family.sourceRevision, 64)
@@ -488,6 +547,7 @@ export function decodeTechnicalSnapshot(value: unknown): CapturedPlanTechnicalSn
     },
     thicknessMm,
     widthMm,
+    lengthMm,
     unitKg: {
       companyId,
       unitId,
@@ -522,6 +582,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     ? null
     : decodePlanPreview(body.calculation)
   const slittingSpec = decodeSlittingSpec(body.slittingSpec)
+  const cutToLengthSpec = decodeCutToLengthSpec(body.cutToLengthSpec)
   if (
     planId === null ||
     companyId === null ||
@@ -531,6 +592,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     approvedByUserId === undefined ||
     approvedAtUtc === undefined ||
     slittingSpec === undefined ||
+    cutToLengthSpec === undefined ||
     (body.calculation !== undefined && body.calculation !== null && calculation === null) ||
     typeof body.process !== 'string' ||
     (body.status !== 'Draft' && body.status !== 'Approved') ||
@@ -578,6 +640,7 @@ export function decodePlan(body: unknown): ProductionPlanView | null {
     approvedAtUtc,
     calculation,
     slittingSpec,
+    cutToLengthSpec,
   }
 }
 

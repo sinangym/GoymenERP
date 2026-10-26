@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Identity.Application.Contracts;
 
 public interface IIdentityProfileService
@@ -9,4 +11,5 @@ public sealed record IdentityProfile(
     Guid UserId,
     string DisplayName,
     string? Email,
-    IReadOnlyList<Guid> AllowedCompanyIds);
+    IReadOnlyList<Guid> AllowedCompanyIds,
+    [property: JsonRequired] string? AuthenticationSessionBinding = null);

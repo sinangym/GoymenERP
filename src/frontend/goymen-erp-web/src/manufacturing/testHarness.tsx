@@ -35,12 +35,29 @@ export const APPROVER = '99999999-9999-9999-9999-999999999999'
 export const ROLL_1 = 'e0000000-0000-4000-8000-000000000001'
 export const ROLL_2 = 'e0000000-0000-4000-8000-000000000002'
 
+/**
+ * Controlled `authenticationSessionBinding` values (M01.3 r5, #66/6187473245), shaped like the server's opaque
+ * `v1.<sha256>` but chosen by the case: one per authenticated server session. They are fixtures, never derived from an
+ * actor, a token or anything stored locally.
+ */
+export function sessionBinding(session: number): string {
+  return `v1.${session.toString(16).padStart(64, '0')}`
+}
+/** The server session the default identity is authenticated in. */
+export const SESSION_1 = sessionBinding(1)
+/** The same actor's next authenticated session (a real logout/login). */
+export const SESSION_2 = sessionBinding(2)
+
 export const IDENTITY = {
   userId: '99999999-9999-9999-9999-999999999999',
   displayName: 'SENTETIK Kullanıcı',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
+  authenticationSessionBinding: SESSION_1 as string | null,
 }
+
+/** What the stubbed `/identity/me` answers with; a record lets a case send a deliberately malformed body. */
+export type IdentityFixture = typeof IDENTITY | Record<string, unknown>
 
 export const DIRECTORY = [
   { id: COMPANY_A, code: 'GDC', legalName: 'Göymen Demir Çelik', isPlaceholder: false },
@@ -94,6 +111,8 @@ export function technicalSnapshot(overrides: Record<string, unknown> = {}) {
     },
     thicknessMm: '2',
     widthMm: '1500',
+    // Required key in the server shape: a coil source has no captured nominal length, so it is an explicit null.
+    lengthMm: null,
     unitKg: {
       companyId: COMPANY_A,
       unitId: 'f0000000-0000-4000-8000-000000000004',
@@ -141,6 +160,25 @@ export function plan(overrides: Record<string, unknown> = {}) {
     approvedAtUtc: null,
     calculation: null,
     slittingSpec: null,
+    // M01.2: the current server always emits the member, explicit null when the plan carries no cut lines.
+    cutToLengthSpec: null,
+    ...overrides,
+  }
+}
+
+export const CUT_LINE_1 = 'c0000000-0000-4000-8000-000000000001'
+export const CUT_LINE_2 = 'c0000000-0000-4000-8000-000000000002'
+
+/**
+ * A synthetic stored `CutToLengthSpecViewV1`: ordered as the client sent it, the sequence explicit, signed and not
+ * contiguous, so a client that renumbers or re-sorts it shows up.
+ */
+export function cutToLengthSpec(overrides: Record<string, unknown> = {}) {
+  return {
+    lines: [
+      { lineId: CUT_LINE_2, sequence: 20, lengthMm: '1250.5', count: 3 },
+      { lineId: CUT_LINE_1, sequence: -1, lengthMm: '0.001', count: 2147483647 },
+    ],
     ...overrides,
   }
 }
@@ -173,6 +211,7 @@ export function planRevision(overrides: Record<string, unknown> = {}) {
     reason: null,
     revisedBy: null,
     recordedAtUtc: '2026-09-27T08:00:00Z',
+    cutToLengthSpec: null,
     ...overrides,
   }
 }
@@ -321,6 +360,11 @@ export interface HarnessOptions {
   readonly capabilities?: readonly string[] | (() => readonly string[])
   /** Feature-endpoint responder. Return undefined to fall through to a 404. */
   readonly respond?: (url: string, init: RequestInit | undefined) => Response | Promise<Response> | undefined
+  /**
+   * The actor and server session binding the server authenticates, read on every identity request. Defaults to
+   * {@link IDENTITY}. The binding is the server's answer: the shell takes it from this response and mints none.
+   */
+  readonly identity?: () => IdentityFixture
 }
 
 export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
@@ -328,6 +372,8 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
   // Module state that deliberately outlives unmounts: never inherited across cases.
   clearPendingFacts()
   clearPendingPlanLifecycles()
+  // The tab's sessionStorage (pending create/revise slots) starts empty in every case.
+  sessionStorage.clear()
   const capabilities = options.capabilities ?? RECORDER_CAPABILITIES
   const recorded: RecordedRequest[] = []
 
@@ -349,7 +395,7 @@ export function installFetch(options: HarnessOptions = {}): RecordedRequest[] {
       }
       recorded.push({ method: init?.method ?? 'GET', url, headers, body })
 
-      if (url.endsWith('/identity/me')) return json(IDENTITY)
+      if (url.endsWith('/identity/me')) return json(options.identity?.() ?? IDENTITY)
       if (url.endsWith('/organization/companies')) return json(DIRECTORY)
       if (url.endsWith('/shell/capabilities')) {
         return json({
@@ -388,6 +434,18 @@ export function renderAt(path: string, options: { readonly staleTime?: number } 
     </ShellProvider>,
   )
   return { queryClient, router, view }
+}
+
+/**
+ * An F5 of the same tab: this document's React tree and every module's memory end; only sessionStorage — and the stubbed
+ * server — carry over. The returned harness is a fresh module graph, so its `renderAt` mounts a new provider whose shell
+ * state, epoch included, starts from the beginning. Whether the next document is the same server session is decided by
+ * what the stubbed `/identity/me` answers next, nothing local. Its views are not auto-cleaned: unmount them in the case.
+ */
+export async function reloadDocument(view: { readonly unmount: () => void }): Promise<typeof import('./testHarness')> {
+  view.unmount()
+  vi.resetModules()
+  return import('./testHarness')
 }
 
 export function requestsFor(recorded: readonly RecordedRequest[], fragment: string, method?: string) {

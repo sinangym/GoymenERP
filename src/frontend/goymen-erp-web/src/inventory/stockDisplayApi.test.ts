@@ -296,10 +296,19 @@ describe('stock measures — decimal text, never floating point', () => {
   })
 
   it.each([
-    ['1.5', 'format'], ['1.250', 'format'], ['1 250', 'format'], ['abc', 'format'], ['-1', 'format'], ['01', 'format'],
+    ['1.5', 'format'], ['1.250', 'format'], ['1 250', 'format'], ['abc', 'format'], ['-1', 'format'], ['0 3', 'format'], ['0.3', 'format'],
+    ['01', 'leadingZero'], ['03', 'leadingZero'], ['00', 'leadingZero'], ['03,5', 'leadingZero'], ['000,125', 'leadingZero'],
+    ['03,', 'format'], ['03,1234', 'precision'], [`0${'1'.repeat(40)}`, 'format'],
     ['1,', 'format'], [',5', 'format'], ['', 'format'], ['1,2345', 'precision'], ['0', 'zero'], ['0,000', 'zero'],
   ])('refuses "%s" (%s) rather than guessing or rounding it', (text, problem) => {
     expect(stockMeasureFromInput(text)).toEqual({ problem })
+  })
+
+  it('names the leading zero without accepting it, and keeps a fraction below one valid', () => {
+    // The reason is new; the refusal is not: "03" is never read as 3.
+    expect(stockMeasureFromInput('03')).not.toHaveProperty('wire')
+    expect(stockMeasureFromInput('0,5')).toEqual({ wire: '0.5' })
+    expect(stockMeasureFromInput('3')).toEqual({ wire: '3' })
   })
 
   it('shows a wire value in the field again with the same digits', () => {

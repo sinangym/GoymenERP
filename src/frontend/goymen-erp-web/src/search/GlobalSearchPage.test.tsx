@@ -34,7 +34,7 @@ const SALES_LIST = 'sales.drafts.list' as CapabilityId
 const SALES_DETAIL = 'sales.drafts.detail' as CapabilityId
 const MONEY_WORDS = ['₺', 'fiyat', 'Fiyat', 'price', 'iskonto', 'tutar', 'Tutar']
 
-const IDENTITY = { userId: '77777777-7777-7777-7777-777777777777', displayName: 'Arama kullanıcısı', email: null, allowedCompanyIds: [COMPANY_A] }
+const IDENTITY = { userId: '77777777-7777-7777-7777-777777777777', displayName: 'Arama kullanıcısı', email: null, allowedCompanyIds: [COMPANY_A], authenticationSessionBinding: null }
 const DIRECTORY = [{ id: COMPANY_A, code: 'GDC', legalName: 'Göymen A', isPlaceholder: true }]
 
 const json = (body: unknown, status = 200) =>

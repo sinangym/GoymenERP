@@ -1,7 +1,7 @@
 # Açık Kararlar ve Geçici Varsayımlar — Uzlaştırılmış Görünüm v1
 
 - Uzlaştırma entegrasyon tabanı: `main@80c567a63da8e059ce92aa1b23dad9f4568ad2ca`
-- Son kullanıcı karar kaynağı: [Issue #66 comment 5496849206](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5496849206), [Q1 yetkili kaynak eki — comment 5506986884](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5506986884) ve daha önceki tarihli kullanıcı kararları
+- Son kullanıcı karar kaynağı: [Issue #66 comment 5496849206](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5496849206), [Q1 yetkili kaynak eki — comment 5506986884](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-5506986884), [22 Ekim bütün dalgalar kararı — comment 6342711040](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342711040) ve daha önceki tarihli kullanıcı kararları
 - Uzlaştırma tarihi: `2026-09-01`
 - Amaç: kullanıcının cevapladığı kararları yeniden sormamak; karar doğrusu ile uygulama/teslim durumunu birbirine karıştırmadan yalnız gerçekten açık alt kararları görünür tutmak.
 
@@ -12,6 +12,15 @@
 - **AÇIK:** İstenen işletme kararı kullanıcı tarafından verilmemiştir. Geçici teknik davranış kullanıcı kararı sayılmaz.
 
 > Bu dosya `KARAR_SICILI.md` yerine geçmez. Karar doğrusu ile delivery kanıtı ayrıdır. Kanıtsız hiçbir satır `KAPANDI` yapılmamıştır; `KAPANDI` satırındaki kalan kod/seed/UI işi yalnız son sütunda delivery backlog'u olarak izlenir.
+
+### 22 Ekim süreç kararı etkisi
+
+[Bütün dalgalar kararı](https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6342711040)
+Finance STOP'u ve AI `A-contract-only` faz kapısını **geliştirme için** kaldırdı; Finance Dalga D
+ile AI W05.2/W06 kaynak/test işleri bağımlılık sırasıyla ilerleyebilir. Bu süreç kararı aşağıdaki
+hiçbir `OPEN-*` durumunu değiştirmez. Gerçek tutar/eşik/formül, provider, grant, production,
+saklama ve diğer açık alt kararlar kendi satırlarında aynen açık kalır; development açılışı
+runtime veya kullanıcı kabulü değildir.
 
 ## `OPEN-001…OPEN-021 ve OPEN-030` uzlaştırma tablosu
 

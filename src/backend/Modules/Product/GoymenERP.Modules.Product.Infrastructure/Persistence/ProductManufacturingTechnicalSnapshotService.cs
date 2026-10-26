@@ -89,7 +89,12 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
 
         var thickness = ReadMeasure(card.References, template, ProductTemplateFieldRolesV2.Thickness);
         var width = ReadMeasure(card.References, template, ProductTemplateFieldRolesV2.Width);
-        ProductFieldError[] measureErrors = [.. new[] { thickness.Error, width.Error }.OfType<ProductFieldError>()];
+        var length = template.Fields.Any(field => string.Equals(field.Role, ProductTemplateFieldRolesV2.Length,
+                StringComparison.Ordinal))
+            ? ReadMeasure(card.References, template, ProductTemplateFieldRolesV2.Length)
+            : new ProductManufacturingMeasureReadV1(null, null);
+        ProductFieldError[] measureErrors =
+            [.. new[] { thickness.Error, width.Error, length.Error }.OfType<ProductFieldError>()];
         if (measureErrors.Length > 0) return new(null, measureErrors);
         var profile = unit.Profile;
         var snapshot = new ProductManufacturingTechnicalSnapshotV1(
@@ -101,7 +106,8 @@ public sealed class ProductManufacturingTechnicalSnapshotService(
             width.Millimetres!.Value,
             new(profile.CompanyId, profile.UnitId, profile.UnitCode, profile.Profile.ProfileId,
                 profile.Profile.Version.ToString(CultureInfo.InvariantCulture)),
-            selection.EffectiveOn);
+            selection.EffectiveOn,
+            length.Millimetres);
         return new(snapshot, []);
     }
 

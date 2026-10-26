@@ -56,13 +56,14 @@ public sealed record ProductManufacturingTechnicalSnapshotResultV1(
     IReadOnlyList<ProductFieldError> Errors);
 
 /// <summary>
-/// Exact Product facts available from accepted sources. Package identity and profile geometry
-/// (including length/perimeter) are deliberately absent: no accepted real owner source currently
-/// validates them, so consumers must treat those facts as unavailable rather than infer them.
+/// Exact Product facts available from accepted sources. Package identity and profile geometry other
+/// than the accepted cut-sheet/plate nominal length (including perimeter) are deliberately absent:
+/// consumers must treat unavailable facts as unavailable rather than infer them.
 /// <para>
-/// <b>Measure scale.</b> <c>ThicknessMm</c> and <c>WidthMm</c> are the card's stored nominal millimetres, exact,
-/// positive and with at most three decimals (Ö2, the scale the Manufacturing engines accept). A stored value
-/// outside that is refused as a field error, never rounded or cut.
+/// <b>Measure scale.</b> <c>ThicknessMm</c>, <c>WidthMm</c> and, when defined by the family, <c>LengthMm</c>
+/// are the card's stored nominal millimetres, exact, positive and with at most three decimals (Ö2, the
+/// scale the Manufacturing engines accept). Legacy families do not define length and publish null. A
+/// stored value outside the accepted scale is refused as a field error, never rounded or cut.
 /// </para>
 /// </summary>
 public sealed record ProductManufacturingTechnicalSnapshotV1(
@@ -73,7 +74,8 @@ public sealed record ProductManufacturingTechnicalSnapshotV1(
     decimal ThicknessMm,
     decimal WidthMm,
     ProductManufacturingKilogramUnitV1 UnitKg,
-    DateOnly EffectiveOn);
+    DateOnly EffectiveOn,
+    decimal? LengthMm = null);
 
 public sealed record ProductManufacturingFamilyRevisionV1(
     Guid FamilyId,

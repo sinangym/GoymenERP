@@ -10,7 +10,8 @@ namespace GoymenERP.Api.OpenApi;
 public static partial class ErpOpenApiContract
 {
     public static RouteHandlerBuilder WithProductRuntimeContract(this RouteHandlerBuilder builder,
-        bool mutation = false, bool notFound = false, bool primitiveBinding = false)
+        bool mutation = false, bool notFound = false, bool primitiveBinding = false,
+        bool activationValidation = false)
     {
         builder.Produces<ProductRuntimeProblemContract>(400, "application/problem+json")
             .Produces<ProductRuntimeProblemContract>(401, "application/problem+json")
@@ -21,6 +22,8 @@ public static partial class ErpOpenApiContract
             builder.Produces<ProductRuntimeProblemContract>(409, "application/problem+json")
                 .Produces<ProductRuntimeProblemContract>(503, "application/problem+json")
                 .Produces(415);
+        if (activationValidation)
+            builder.Produces<ProductRuntimeProblemContract>(422, "application/problem+json");
         if (primitiveBinding) builder.AllowsEmptyErpBadRequestBody();
         builder.Add(endpoint => endpoint.Metadata.Add(new ProductRuntimeContractMetadata()));
         return builder;
@@ -68,6 +71,7 @@ public static partial class ErpOpenApiContract
                 "409" => versioned ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
                 "500" => ["internal_error"],
                 "503" => ["product_write_contention"],
+                "422" => ["validation_failed"],
                 _ => [],
             };
             if (codes.Length > 0)

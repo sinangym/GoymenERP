@@ -24,7 +24,8 @@ public sealed class ProductionPlan
         ManufacturingProcess process,
         IEnumerable<PlannedInput> inputs,
         ProductionTarget? target = null,
-        SlittingSpec? spec = null)
+        SlittingSpec? spec = null,
+        CutToLengthSpec? cutToLengthSpec = null)
     {
         Id = RequireId(id, nameof(id));
         CompanyId = RequireId(companyId, nameof(companyId));
@@ -37,6 +38,11 @@ public sealed class ProductionPlan
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
             throw new ArgumentException("Dilme planı ayrıntıları yalnız Dilme/Sarım sürecinde kullanılabilir.", nameof(spec));
+        }
+
+        if (process != ManufacturingProcess.CutToLength && cutToLengthSpec is not null)
+        {
+            throw new ArgumentException("Boy kesme ayrıntıları yalnız Boy Kesme sürecinde kullanılabilir.", nameof(cutToLengthSpec));
         }
 
         Process = process;
@@ -63,6 +69,7 @@ public sealed class ProductionPlan
 
         Target = target;
         Spec = spec;
+        CutToLengthSpec = cutToLengthSpec;
         Status = PlanStatus.Draft;
     }
 
@@ -87,6 +94,9 @@ public sealed class ProductionPlan
     /// carries one is approved only through <see cref="SlittingApprovalGate"/>.
     /// </summary>
     public SlittingSpec? Spec { get; }
+
+    /// <summary>Ordered coil-to-sheet cut lines; null on legacy plans and every other process.</summary>
+    public CutToLengthSpec? CutToLengthSpec { get; private set; }
 
     public PlanStatus Status { get; private set; }
 
@@ -124,7 +134,8 @@ public sealed class ProductionPlan
         DateTimeOffset? approvedAtUtc,
         long version,
         SlittingSpec? spec = null,
-        IEnumerable<PlanRevisionContent>? revisions = null)
+        IEnumerable<PlanRevisionContent>? revisions = null,
+        CutToLengthSpec? cutToLengthSpec = null)
     {
         if (process != ManufacturingProcess.Slitting && spec is not null)
         {
@@ -133,13 +144,22 @@ public sealed class ProductionPlan
                 "Kayıtlı dilme planı ayrıntıları Dilme/Sarım dışındaki bir sürece bağlı olamaz.");
         }
 
-        var plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target, spec);
+
+        if (process != ManufacturingProcess.CutToLength && cutToLengthSpec is not null)
+        {
+            throw new ManufacturingRuleException(
+                ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı boy kesme ayrıntıları Boy Kesme dışındaki bir sürece bağlı olamaz.");
+        }
+
+        var plan = new ProductionPlan(id, companyId, workCenterId, process, inputs, target, spec, cutToLengthSpec);
         foreach (var revision in revisions ?? [])
         {
             ArgumentNullException.ThrowIfNull(revision);
             try
             {
-                plan.Revise(plan.Version, revision.WorkCenterId, process, revision.Inputs, revision.Target);
+                plan.Revise(plan.Version, revision.WorkCenterId, process, revision.Inputs, revision.Target,
+                    revision.CutToLengthSpec);
             }
             catch (ManufacturingRuleException exception)
             {
@@ -204,7 +224,7 @@ public sealed class ProductionPlan
     /// </list>
     /// </summary>
     public void Revise(long expectedVersion, Guid workCenterId, ManufacturingProcess workCenterProcess,
-        IEnumerable<PlannedInput> inputs, ProductionTarget? target)
+        IEnumerable<PlannedInput> inputs, ProductionTarget? target, CutToLengthSpec? cutToLengthSpec = null)
     {
         RequireRevisable(expectedVersion);
         var newWorkCenter = RequireId(workCenterId, nameof(workCenterId));
@@ -217,6 +237,12 @@ public sealed class ProductionPlan
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanProcessFixed,
                 "Planın süreci değişmez; yeni iş merkezi planın kendi sürecini yürütmelidir.");
+        }
+
+
+        if (Process != ManufacturingProcess.CutToLength && cutToLengthSpec is not null)
+        {
+            throw new ArgumentException("Boy kesme ayrıntıları yalnız Boy Kesme sürecinde kullanılabilir.", nameof(cutToLengthSpec));
         }
 
         ArgumentNullException.ThrowIfNull(inputs);
@@ -240,7 +266,8 @@ public sealed class ProductionPlan
 
         RequireConsistentCommercialContext(newInputs, nameof(inputs));
 
-        if (newWorkCenter == WorkCenterId && Equals(target, Target) && newInputs.SequenceEqual(_inputs))
+        if (newWorkCenter == WorkCenterId && Equals(target, Target) && newInputs.SequenceEqual(_inputs)
+            && CutSpecsEqual(cutToLengthSpec, CutToLengthSpec))
         {
             throw new ManufacturingRuleException(ManufacturingRuleCodes.PlanRevisionNoChange,
                 "Düzenleme planda hiçbir şeyi değiştirmiyor.");
@@ -248,6 +275,7 @@ public sealed class ProductionPlan
 
         WorkCenterId = newWorkCenter;
         Target = target;
+        CutToLengthSpec = cutToLengthSpec;
         _inputs.Clear();
         _inputs.AddRange(newInputs);
         RevisionCount++;
@@ -303,6 +331,10 @@ public sealed class ProductionPlan
     private static Guid RequireId(Guid value, string parameterName) =>
         value == Guid.Empty ? throw new ArgumentException("Kimlik boş olamaz.", parameterName) : value;
 
+    private static bool CutSpecsEqual(CutToLengthSpec? left, CutToLengthSpec? right) =>
+        ReferenceEquals(left, right)
+        || left is not null && right is not null && left.Lines.SequenceEqual(right.Lines);
+
     private static void RequireConsistentCommercialContext(
         IReadOnlyList<PlannedInput> inputs,
         string parameterName)
@@ -331,4 +363,5 @@ public sealed class ProductionPlan
 /// MFG-PLAN-EDIT: one stored Draft revision's content — the work center, the planned inputs and the target that
 /// replaced the previous ones as a whole. <see cref="ProductionPlan.Restore"/> replays them in their order.
 /// </summary>
-public sealed record PlanRevisionContent(Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target);
+public sealed record PlanRevisionContent(Guid WorkCenterId, IReadOnlyList<PlannedInput> Inputs, ProductionTarget? Target,
+    CutToLengthSpec? CutToLengthSpec = null);

@@ -499,6 +499,27 @@ Central publication must register
 `inventory.stock-transfer.write`, provide the destination-owner adapter, route/OpenAPI mapping and authority
 classification before runtime activation.
 
+### I01.1 — typed transfer-document proof boundary (contract only)
+
+Before a later dispatch package may create its stock movement, Inventory must receive a current-effective proof from
+the Logistics outgoing-document owner. The proof binds the context company, transfer, outgoing document, exact
+document version and the complete ordered transfer-line identity set. Before a later target-acceptance package may
+create its stock movement, Inventory must receive the distinct Inventory target-acceptance document proof bound to
+the context company, transfer, exact transfer line, document and document version. The two ports are typed separately;
+callers cannot select an owner with a free-form document kind.
+
+Only `CurrentEffective` carries its exact binding. Missing, stale, draft, cancelled, reversed, foreign-company,
+wrong-transfer/line and unavailable reads fail closed; binding mismatches share the non-disclosing `BindingMismatch`
+outcome and carry no proof body. Proof reads create no stock, audit or outbox effect. The contract package registers no
+producer, permission, route or host binding and changes neither the existing transfer DTO/runtime nor its whole-label
+grain. A caller request cannot authorize itself: a positive proof is created only when the matcher compares it with a
+separate owner-authoritative snapshot and every company/transfer/document/version and ordered-line or target-line
+field matches exactly. A later runtime package must keep its existing company/actor/permission fence around the
+awaited proof and must consume an owner implementation that reads that snapshot from its authoritative source.
+
+I02.1 remains separate: the accepted partial-acceptance invariant does not by itself decide per-line quantity grain.
+No quantity, migration or stock-effect wiring is introduced by this contract-only slice.
+
 ## Movement kinds and rollback signal (reference)
 
 `StockMovementKind` (stored as `inventory.Movements.Kind`, `CK_Movements_Kind` = `[Kind] BETWEEN 1 AND 9`):

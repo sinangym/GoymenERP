@@ -91,6 +91,57 @@ public sealed class StoredRecordTests
         Assert.Equal(ManufacturingProcess.ColdRolling, coldRolling.Process);
     }
 
+    [Fact]
+    public void Cut_to_length_lines_keep_client_identity_explicit_non_contiguous_sequence_and_input_order()
+    {
+        var first = Guid.Parse("50000000-0000-0000-0000-000000000001");
+        var second = Guid.Parse("50000000-0000-0000-0000-000000000002");
+        var spec = new CutToLengthSpec(
+        [
+            new CutToLengthLine(first, 40, 6000.000m, 3),
+            new CutToLengthLine(second, 7, 2500.5m, 2),
+        ]);
+
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.CutToLength,
+            Inputs(), cutToLengthSpec: spec);
+        var restored = ProductionPlan.Restore(plan.Id, Company, WorkCenter, ManufacturingProcess.CutToLength,
+            Inputs(), target: null, approvedByUserId: null, approvedAtUtc: null, version: 1,
+            cutToLengthSpec: spec);
+
+        Assert.Equal(
+            [(first, 40, 6000m, 3), (second, 7, 2500.5m, 2)],
+            plan.CutToLengthSpec!.Lines.Select(line => (line.LineId, line.Sequence, line.LengthMm, line.Count)));
+        Assert.Equal(plan.CutToLengthSpec.Lines, restored.CutToLengthSpec!.Lines);
+    }
+
+    [Theory]
+    [InlineData(ManufacturingProcess.Slitting)]
+    [InlineData(ManufacturingProcess.ColdRolling)]
+    [InlineData(ManufacturingProcess.TubeProfile)]
+    [InlineData(ManufacturingProcess.Paint)]
+    public void Another_process_cannot_carry_cut_to_length_content(ManufacturingProcess process)
+    {
+        var spec = CutToLengthSpec();
+
+        Assert.Equal("cutToLengthSpec", Assert.Throws<ArgumentException>(() => new ProductionPlan(
+            Guid.NewGuid(), Company, WorkCenter, process, Inputs(), cutToLengthSpec: spec)).ParamName);
+        Assert.Equal(ManufacturingRuleCodes.StoredRecordInvalid,
+            Assert.Throws<ManufacturingRuleException>(() => ProductionPlan.Restore(
+                Guid.NewGuid(), Company, WorkCenter, process, Inputs(), target: null,
+                approvedByUserId: null, approvedAtUtc: null, version: 1,
+                cutToLengthSpec: spec)).Code);
+    }
+
+    [Fact]
+    public void Legacy_cut_to_length_plan_keeps_absent_lines_absent()
+    {
+        var restored = ProductionPlan.Restore(Guid.NewGuid(), Company, WorkCenter,
+            ManufacturingProcess.CutToLength, Inputs(), target: null,
+            approvedByUserId: null, approvedAtUtc: null, version: 1);
+
+        Assert.Null(restored.CutToLengthSpec);
+    }
+
     [Theory]
     [InlineData("approver-without-instant")]
     [InlineData("instant-without-approver")]
@@ -257,6 +308,42 @@ public sealed class StoredRecordTests
     }
 
     [Fact]
+    public void Cut_to_length_lines_are_canonical_content_and_legacy_absence_keeps_the_old_hash()
+    {
+        var planId = Guid.NewGuid();
+        var lineA = Guid.Parse("50000000-0000-0000-0000-000000000001");
+        var lineB = Guid.Parse("50000000-0000-0000-0000-000000000002");
+        ProductionPlan Plan(params CutToLengthLine[] lines) => new(
+            planId, Company, WorkCenter, ManufacturingProcess.CutToLength,
+            [new PlannedInput(RollA, Kg(10_000m))], cutToLengthSpec: new CutToLengthSpec(lines));
+
+        var captured = Plan(new CutToLengthLine(lineA, 40, 6000.000m, 3),
+            new CutToLengthLine(lineB, 7, 2500.5m, 2));
+        var same = Plan(new CutToLengthLine(lineA, 40, 6000m, 3),
+            new CutToLengthLine(lineB, 7, 2500.500m, 2));
+
+        Assert.Equal(ManufacturingStore.PlanHash(captured), ManufacturingStore.PlanHash(same));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured), ManufacturingStore.PlanHash(
+            Plan(new CutToLengthLine(lineB, 7, 2500.5m, 2), new CutToLengthLine(lineA, 40, 6000m, 3))));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured), ManufacturingStore.PlanHash(
+            Plan(new CutToLengthLine(Guid.NewGuid(), 40, 6000m, 3), new CutToLengthLine(lineB, 7, 2500.5m, 2))));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured), ManufacturingStore.PlanHash(
+            Plan(new CutToLengthLine(lineA, 41, 6000m, 3), new CutToLengthLine(lineB, 7, 2500.5m, 2))));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured), ManufacturingStore.PlanHash(
+            Plan(new CutToLengthLine(lineA, 40, 6000.001m, 3), new CutToLengthLine(lineB, 7, 2500.5m, 2))));
+        Assert.NotEqual(ManufacturingStore.PlanHash(captured), ManufacturingStore.PlanHash(
+            Plan(new CutToLengthLine(lineA, 40, 6000m, 4), new CutToLengthLine(lineB, 7, 2500.5m, 2))));
+
+        const string legacyCanonical = "manufacturing.plan.v1|10000000-0000-0000-0000-000000000001|"
+            + "20000000-0000-0000-0000-00000000c001|5|-|30000000-0000-0000-0000-00000000a001:10000;";
+        var legacy = new ProductionPlan(planId, Company, WorkCenter, ManufacturingProcess.CutToLength,
+            [new PlannedInput(RollA, Kg(10_000m))]);
+        var legacyExpected = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(legacyCanonical))).ToLowerInvariant();
+        Assert.Equal(legacyExpected, ManufacturingStore.PlanHash(legacy));
+    }
+
+    [Fact]
     public void A_captured_technical_snapshot_is_versioned_plan_content_while_legacy_hash_bytes_stay_exact()
     {
         var planId = Guid.NewGuid();
@@ -362,4 +449,7 @@ public sealed class StoredRecordTests
 
     private static SlittingSpec SlittingSpec() =>
         new([new SlitLine(150m, 4), new SlitLine(240m, 3)], Kg(2_000m));
+
+    private static CutToLengthSpec CutToLengthSpec() =>
+        new([new CutToLengthLine(Guid.Parse("50000000-0000-0000-0000-000000000001"), 40, 6000m, 3)]);
 }

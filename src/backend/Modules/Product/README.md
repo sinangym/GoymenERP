@@ -483,12 +483,14 @@ firm transaction; "Stok/planlama rolü onaylayabilir; yetki ayarlanabilir."
 |---|---|
 | Only Draft becomes Active, at the version the approver read; one version up; every card value kept | `Product.Activate`, `ProductRow.ApplyActivation` |
 | A stale version is `409 version_conflict`; a card that is not a Draft is `409 lifecycle_conflict`; an unknown card `404`; an Active card is not edited as a draft (`409 lifecycle_conflict`) | `ProductDraftOperation` |
+| Only the accepted `Sac -> Sıcak Haddelenmiş -> Kesilmiş Sac/Levha` family must satisfy its released required-reference policy before activation; missing fields are structured `422 validation_failed`. The expected version is checked first, so a stale caller still receives `409` without learning current field completeness. | `ProductDraftOperation`, `ProductActivationValidationException` |
 | Authority is the global Product operation `Activate`, measured fresh on every attempt and again before commit (a revocation in flight is `403`, nothing written); no company permission | `ProductCommandGateway`, the host runner |
 | `POST /api/v1/products/{id}/activation` with `{expectedVersion}` and `Idempotency-Key`: the same key and request replays the stored `200` with `Idempotency-Replayed` and the first correlation; another request under the key is `409 idempotency_conflict`; two racing callers of one key leave one transition, the loser replays it | the shared command boundary (`product.card.activate.v1`) |
 | One canonical audit event `product.card.activated.v1`, before/after card, in the same transaction | the host's audit session |
 
-- **No completeness precondition.** No source makes one; the eligibility reads (sales/stock) still judge
-  the whole card at the moment of use, and without the GDC family data they stay `503`.
+- **No general completeness precondition.** Family-less cards and the four released coil/slit families keep
+  DEC-PRD-010 activation semantics. PRODUCT-TECH-FAMILY-02 adds only the exact cut-sheet/plate exception above;
+  other eligibility reads (sales/stock) still judge the whole card at the moment of use.
 - **Not here:** maker != checker (not in the sources), Excel import, deactivation (Active -> Inactive),
   bulk approval, the UI and its shell control (the registry's global-Product table and control rule are
   central; they come with the U-01-360 control slice), the role mapping and any grant (a human decision).

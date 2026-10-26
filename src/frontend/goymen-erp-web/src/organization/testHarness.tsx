@@ -49,6 +49,7 @@ export const IDENTITY = {
   displayName: 'Kullanıcı A',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
+  authenticationSessionBinding: null,
 }
 
 export const DIRECTORY = [

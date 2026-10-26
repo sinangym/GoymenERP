@@ -7,6 +7,13 @@
  * every rule again (`ProductionPlan.Revise`) and revalidates each roll's exact label version; this form only refuses
  * what it can already see (missing fields, a roll with no label version, a change of nothing) so nothing is sent for
  * it. Reads follow the create form's pattern: the auth boundary hears a 401/403 and a superseded read is dropped.
+ *
+ * M01.2: a plan's stored cut lines (the current revision's) travel in every revision it sends — the server would read
+ * an omitted member as "no cut lines" and clear them.
+ *
+ * M01.3: the cut lines are edited here with the shared editor: the stored rows open with their ids, list order and
+ * values; a row's value, its place in the list, an added row (explicit `Sıra no`, new id minted once) or a removed row
+ * is a real change. A stored definition keeps at least one row — r1 has no clear — and an invalid row sends nothing.
  */
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
@@ -17,9 +24,18 @@ import { isKilogramText, type ProductionPlanView } from './contract'
 import { PLAN_EDIT_TEXT } from './planEditText'
 import type { CapturedPlanCommercialContext, PlanRevision } from './planRevisionContract'
 import type { PlanTargetBasis, RevisePlanRequest } from './planCommandApi'
+import { CutToLengthLinesEditor } from './CutToLengthLinesEditor'
+import { CUT_LINE_TEXT } from './planEditText'
 import { fetchParentRollCandidates, type ParentRollCandidate, type ParentRollCandidates } from './planReferences'
 import { PlanPreviewPanel } from './PlanPreviewPanel'
-import { planPreviewInput, usePlanPreview } from './usePlanPreview'
+import {
+  cutToLengthDraftInput,
+  cutToLengthDrafts,
+  cutToLengthSpecRequest,
+  planPreviewInput,
+  usePlanPreview,
+  type CutToLengthLineDraft,
+} from './usePlanPreview'
 import styles from './PlanPage.module.css'
 
 type ReadState<T> =
@@ -81,6 +97,24 @@ function readFailure(subject: string, outcome: { readonly type: string; readonly
     : `${subject} kaynağına ulaşılamadı.`
 }
 
+/** Exact cut-line equality against the current revision: list order, ids, signed sequences, lengths and counts. */
+function sameCutLines(current: PlanRevision, request: RevisePlanRequest): boolean {
+  const sent = request.cutToLengthSpec
+  if (sent === undefined || current.cutToLengthSpec === null) return sent === undefined && current.cutToLengthSpec === null
+  return (
+    current.cutToLengthSpec.lines.length === sent.lines.length &&
+    current.cutToLengthSpec.lines.every((line, index) => {
+      const requested = sent.lines[index]
+      return (
+        line.lineId.toLowerCase() === requested.lineId.toLowerCase() &&
+        line.sequence === requested.sequence &&
+        line.lengthMm === canonicalKilograms(requested.lengthMm) &&
+        line.count === requested.count
+      )
+    })
+  )
+}
+
 function sameContent(current: PlanRevision, request: RevisePlanRequest): boolean {
   const target = request.target
   const sameTarget = target === null
@@ -89,6 +123,7 @@ function sameContent(current: PlanRevision, request: RevisePlanRequest): boolean
   return (
     current.workCenterId === request.workCenterId &&
     sameTarget &&
+    sameCutLines(current, request) &&
     current.inputs.length === request.inputs.length &&
     current.inputs.every((input, index) => {
       const sent = request.inputs[index]
@@ -121,6 +156,13 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
   )
   const [targetKg, setTargetKg] = useState(current.target?.kg ?? '')
   const [reason, setReason] = useState('')
+  // M01.3: the stored lines as authored rows (same ids, order and values); a null plan starts with none.
+  const [cutLines, setCutLines] = useState<readonly CutToLengthLineDraft[]>(() => cutToLengthDrafts(current.cutToLengthSpec))
+  const storedCut = current.cutToLengthSpec !== null
+  const cutEditable = plan.process === 'CutToLength' || storedCut
+  // A stored definition is always sent (an empty one is refused, never a clear); a plan without one sends rows only
+  // when the user explicitly added some.
+  const cutInput = storedCut || cutLines.length > 0 ? cutToLengthDraftInput(cutLines) : null
   const [search, setSearch] = useState('')
   const [candidates, setCandidates] = useState<ReadState<ParentRollCandidates>>({ type: 'idle' })
   const [formError, setFormError] = useState<string | null>(null)
@@ -177,6 +219,8 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
     })),
     targetBasis,
     targetKg,
+    undefined,
+    cutInput,
   ), authBoundary)
 
   function labelOf(parentRollId: string): string {
@@ -223,6 +267,12 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       setFormError(PLAN_EDIT_TEXT.targetPair)
       return
     }
+    const cutReasons: string[] = []
+    const cutToLengthSpec = cutInput === null ? null : cutToLengthSpecRequest(cutInput, cutReasons)
+    if (cutReasons.length > 0) {
+      setFormError(cutReasons.join(' '))
+      return
+    }
     const trimmed = reason.trim()
     if (trimmed.length === 0 || trimmed.length > 256) {
       setFormError(PLAN_EDIT_TEXT.reasonRequired)
@@ -239,6 +289,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       })),
       target: targetBasis === '' ? null : { basis: targetBasis, kg: targetKg },
       reason: trimmed,
+      ...(cutToLengthSpec === null ? {} : { cutToLengthSpec }),
     }
     if (sameContent(current, request)) {
       setFormError(PLAN_EDIT_TEXT.noChange)
@@ -392,6 +443,13 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
             <input id="plan-edit-target-kg" inputMode="decimal" value={targetKg} onChange={(event) => setTargetKg(event.target.value)} />
           </div>
         </fieldset>
+
+        {cutEditable ? (
+          <fieldset disabled={busy}>
+            <legend>{CUT_LINE_TEXT.legend}</legend>
+            <CutToLengthLinesEditor idPrefix="plan-edit-cut" lines={cutLines} onChange={setCutLines} keepOne={storedCut} />
+          </fieldset>
+        ) : null}
 
         <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />
 

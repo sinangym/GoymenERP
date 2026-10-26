@@ -18,6 +18,7 @@ import {
   decodeOrder,
   decodeOrderList,
   decodePlan,
+  decodeTechnicalSnapshot,
   FACT_KINDS,
   OUTPUT_CLASSES,
 } from './contract'
@@ -25,7 +26,9 @@ import { MANUFACTURING_BASE } from './api'
 import { decodePlanList } from './planListContract'
 import { decodePlanRevisions } from './planRevisionContract'
 import type { RevisePlanRequest } from './planCommandApi'
+import { planPreviewInput } from './usePlanPreview'
 import {
+  cutToLengthSpec,
   massBalance,
   order,
   orderList,
@@ -81,6 +84,23 @@ function names(name: string): string[] {
   return Object.keys(schema(name).properties ?? {}).sort()
 }
 
+/**
+ * M01.2 cut-to-length: an additive property the fixtures and the edit request deliberately omit. It must be declared,
+ * nullable to the given component schema and outside the required set, so a body or view without it stays valid.
+ */
+const CUT_TO_LENGTH = 'cutToLengthSpec'
+
+function withoutCutToLength(name: string): string[] {
+  return names(name).filter((property) => property !== CUT_TO_LENGTH)
+}
+
+function expectOptionalCutToLength(name: string, component: string): void {
+  expect(schema(name).properties?.[CUT_TO_LENGTH], name).toEqual({
+    oneOf: [{ type: 'null' }, { $ref: `#/components/schemas/${component}` }],
+  })
+  expect(schema(name).required ?? [], name).not.toContain(CUT_TO_LENGTH)
+}
+
 function requestSchemaName(pathName: string): string {
   const operation = document.paths[pathName]?.post as {
     readonly requestBody?: {
@@ -119,14 +139,26 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(Object.keys(plan()).sort()).toEqual(names('PlanViewV1'))
     expect(Object.keys(inputView).sort()).toEqual(names('PlannedInputViewV1'))
     expect([...(schema('PlanViewV1').required ?? [])].sort()).toEqual(
-      names('PlanViewV1').filter((name) => name !== 'calculation' && name !== 'slittingSpec'),
+      names('PlanViewV1').filter(
+        (name) => name !== 'calculation' && name !== 'slittingSpec' && name !== CUT_TO_LENGTH,
+      ),
     )
+    expectOptionalCutToLength('PlanViewV1', 'CutToLengthSpecViewV1')
     expect([...(schema('PlannedInputViewV1').required ?? [])].sort()).toEqual(
       names('PlannedInputViewV1').filter(
         (name) => name !== 'technicalSnapshot' && name !== 'commercialContext',
       ),
     )
-    expect(plan()).toMatchObject({ calculation: null, slittingSpec: null })
+    expect(plan()).toMatchObject({ calculation: null, slittingSpec: null, cutToLengthSpec: null })
+    // The server's current null, the legacy omission and stored ordered cut lines all decode.
+    const { cutToLengthSpec: _omitted, ...legacyPlan } = plan()
+    expect(decodePlan(legacyPlan)?.cutToLengthSpec).toBeNull()
+    expect(decodePlan(plan())?.cutToLengthSpec).toBeNull()
+    expect(decodePlan(plan({ process: 'CutToLength', cutToLengthSpec: cutToLengthSpec() }))?.cutToLengthSpec)
+      .toEqual(cutToLengthSpec())
+    expect(names('CutToLengthSpecViewV1')).toEqual(['lines'])
+    expect(names('CutToLengthLineViewV1')).toEqual(['count', 'lengthMm', 'lineId', 'sequence'])
+    expect(Object.keys(cutToLengthSpec().lines[0]).sort()).toEqual(names('CutToLengthLineViewV1'))
     expect(inputView).toMatchObject({ technicalSnapshot: null, commercialContext: null })
     // The fixture the screen tests use decodes, so the decoder reads these very names — and the
     // approved shape decodes too, which the Draft fixture alone would not show.
@@ -303,9 +335,46 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     }
     const plans = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/plans`
     expect(requestSchemaName(`${plans}/{planId}/revision`)).toBe('RevisePlanRequestV1')
-    expect(Object.keys(request).sort()).toEqual(names('RevisePlanRequestV1'))
+    expect(Object.keys(request).sort()).toEqual(withoutCutToLength('RevisePlanRequestV1'))
+    expect([...(schema('RevisePlanRequestV1').required ?? [])].sort()).toEqual(withoutCutToLength('RevisePlanRequestV1'))
+    expectOptionalCutToLength('RevisePlanRequestV1', 'CutToLengthSpecRequestV1')
     expect(Object.keys(request.inputs[0]).sort()).toEqual(names('PlannedInputRequestV1'))
     expect(Object.keys(request.target ?? {}).sort()).toEqual(names('TargetRequestV1'))
+    // A plan carrying cut lines sends the member; its lines are exactly CutToLengthLineRequestV1.
+    const cutRequest: RevisePlanRequest = { ...request, cutToLengthSpec: { lines: cutToLengthSpec().lines } }
+    expect(Object.keys(cutRequest).sort()).toEqual(names('RevisePlanRequestV1'))
+    expect(Object.keys(cutRequest.cutToLengthSpec ?? {}).sort()).toEqual(names('CutToLengthSpecRequestV1'))
+    expect(Object.keys(cutRequest.cutToLengthSpec?.lines[0] ?? {}).sort()).toEqual(names('CutToLengthLineRequestV1'))
+  })
+
+  it('sends exactly the properties PlanPreviewRequestV1 declares, the cut lines optional and nullable', () => {
+    const plans = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/plans`
+    expect(requestSchemaName(`${plans}/preview`)).toBe('PlanPreviewRequestV1')
+    expect([...(schema('PlanPreviewRequestV1').required ?? [])].sort()).toEqual(['inputs', 'target', 'workCenterId'])
+    expectOptionalCutToLength('PlanPreviewRequestV1', 'CutToLengthSpecRequestV1')
+    // The preview and the revision declare the very same cut-line member.
+    expect(schema('PlanPreviewRequestV1').properties?.[CUT_TO_LENGTH])
+      .toEqual(schema('RevisePlanRequestV1').properties?.[CUT_TO_LENGTH])
+
+    const rows = [{
+      parentRollId: ROLL_1,
+      label: 'LBL-0001',
+      labelVersion: '7',
+      commercialContext: null,
+      plannedKg: '800',
+    }]
+    const workCenterId = 'd0000000-0000-4000-8000-000000000003'
+    const legacy = planPreviewInput(workCenterId, rows, '', '')
+    const cut = planPreviewInput(workCenterId, rows, '', '', undefined, { lines: cutToLengthSpec().lines })
+    if (legacy.type !== 'ready' || cut.type !== 'ready') throw new Error('the preview content is not ready')
+    // Legacy: exactly the required members, no cut member at all.
+    expect(Object.keys(legacy.request).sort()).toEqual(['inputs', 'target', 'workCenterId'])
+    // A cut plan's edit preview: every declared member except the slitting one an edit never sends.
+    expect(Object.keys(cut.request).sort())
+      .toEqual(names('PlanPreviewRequestV1').filter((property) => property !== 'slittingSpec'))
+    expect(Object.keys(cut.request.inputs[0]).sort()).toEqual(names('PlannedInputRequestV1'))
+    expect(Object.keys(cut.request.cutToLengthSpec ?? {}).sort()).toEqual(names('CutToLengthSpecRequestV1'))
+    expect(Object.keys(cut.request.cutToLengthSpec?.lines[0] ?? {}).sort()).toEqual(names('CutToLengthLineRequestV1'))
   })
 
   it('reads exactly the properties PlanRevisionListViewV1 and its parts declare, all required, on the history route', () => {
@@ -322,19 +391,39 @@ describe('Manufacturing port ↔ canonical OpenAPI', () => {
     expect(Object.keys(history).sort()).toEqual(names('PlanRevisionListViewV1'))
     expect(Object.keys(history.revisions[0] as object).sort()).toEqual(names('PlanRevisionViewV1'))
     expect(Object.keys(revisionInput(ROLL_1)).sort()).toEqual(names('PlanRevisionInputViewV1'))
-    for (const name of ['PlanRevisionListViewV1', 'PlanRevisionViewV1']) {
-      expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
-    }
+    expect([...(schema('PlanRevisionListViewV1').required ?? [])].sort()).toEqual(names('PlanRevisionListViewV1'))
+    expect([...(schema('PlanRevisionViewV1').required ?? [])].sort()).toEqual(withoutCutToLength('PlanRevisionViewV1'))
+    expectOptionalCutToLength('PlanRevisionViewV1', 'CutToLengthSpecViewV1')
     expect([...(schema('PlanRevisionInputViewV1').required ?? [])].sort()).toEqual(
       ['parentRollId', 'plannedKg', 'expectedLabelVersion'].sort(),
     )
     expect(schema('PlanRevisionInputViewV1').properties).toHaveProperty('technicalSnapshot')
     expect(decodePlanRevisions(history)).not.toBeNull()
+    // The real serialized shapes: explicit null (above), stored lines, and the legacy omitted member.
+    expect(decodePlanRevisions(planRevisions([planRevision({ cutToLengthSpec: cutToLengthSpec() })]))
+      ?.revisions[0].cutToLengthSpec).toEqual(cutToLengthSpec())
+    const { cutToLengthSpec: _omitted, ...legacyRevision } = planRevision()
+    expect(decodePlanRevisions(planRevisions([legacyRevision]))?.revisions[0].cutToLengthSpec).toBeNull()
     const plans = `${MANUFACTURING_BASE.replace(/^.*\/api\/v1/, '/api/v1')}/plans`
     const operation = document.paths[`${plans}/{planId}/revisions`]?.get as { readonly operationId?: string } | undefined
     expect(operation?.operationId).toBe('ListManufacturingPlanRevisionsV1')
     expect((document.paths[`${plans}/{planId}/revision`]?.post as { readonly operationId?: string } | undefined)
       ?.operationId).toBe('ReviseManufacturingPlanV1')
+  })
+
+  it('reads exactly the properties CapturedPlanTechnicalSnapshotViewV1 declares, lengthMm required and nullable text', () => {
+    const name = 'CapturedPlanTechnicalSnapshotViewV1'
+    for (const reference of ['PlannedInputViewV1', 'PlanRevisionInputViewV1']) {
+      expect(JSON.stringify(schema(reference).properties?.technicalSnapshot), reference).toContain(
+        `#/components/schemas/${name}`,
+      )
+    }
+    expect(Object.keys(technicalSnapshot()).sort()).toEqual(names(name))
+    expect([...(schema(name).required ?? [])].sort()).toEqual(names(name))
+    expect(schema(name).properties?.lengthMm).toEqual({ type: ['null', 'string'] })
+    // Both real serialized values decode: a captured nominal length kept as text, and the explicit null.
+    expect(decodeTechnicalSnapshot(technicalSnapshot({ lengthMm: '2500.125' }))?.lengthMm).toBe('2500.125')
+    expect(decodeTechnicalSnapshot(technicalSnapshot())?.lengthMm).toBeNull()
   })
 
   it('knows the five output classes by the server names the domain uses', () => {

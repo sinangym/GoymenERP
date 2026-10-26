@@ -169,7 +169,7 @@ export function AppShell() {
     bootstrapFailure,
     switchFailure,
     sessionInvalid,
-    actorMismatch,
+    sessionMismatch,
     retry,
   } = useShellOrchestrator()
   // The states in which no shell is drawn, in order. Computed before the hooks below so the drawer
@@ -181,10 +181,14 @@ export function AppShell() {
     }
 
     // Codex #139 P1-1: the authenticated actor no longer matches the bound context.
-    // This is a SYNCHRONOUS gate on purpose — the reset runs in an effect, which is one
-    // paint too late, and that paint would have shown the new user the previous user's
-    // company, nav and capabilities. Nothing context-bound may render below this line.
-    if (actorMismatch) {
+    // M01.3 r6 (K3-A #728/6191815033): or the same actor is in another server session —
+    // the binding of the latest identity answer is not the one the context was committed
+    // with. This is a SYNCHRONOUS gate on purpose — the reset runs in an effect, which is
+    // one paint too late, and that paint would have shown the new user the previous user's
+    // company, nav and capabilities, or the previous session's pending create/revise retry
+    // and save controls, which could still send that session's command. Nothing
+    // context-bound — no route, no control — may render below this line.
+    if (sessionMismatch) {
       return <StateBlock state={{ kind: 'initial-loading' }} subject="oturum" />
     }
 

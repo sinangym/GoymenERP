@@ -114,7 +114,8 @@ public static class ProductEndpoints
             await ExecuteAsync(context, async () => Results.Ok(await service.ActivateAsync(id, request,
                 ReadIdempotencyKey(context), cancellationToken))))
             .WithName("ActivateProductV1").Produces<ProductMutationResponse>()
-            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true).WithIdempotencyContract(200);
+            .WithProductRuntimeContract(mutation: true, notFound: true, primitiveBinding: true,
+                activationValidation: true).WithIdempotencyContract(200);
 
         // DEC-CAR-003 / #98 §7.9: an Active card is taken out of new use with a reason (Active -> Inactive); nothing
         // is deleted. PRD-PERM-001 (#99): each move needs its own explicit global grant (Deactivate / Reactivate).
@@ -160,6 +161,14 @@ public static class ProductEndpoints
         catch (ProductValidationException exception)
         {
             return Results.Problem(statusCode: 400, extensions: new Dictionary<string, object?>
+            {
+                ["code"] = ProductApiV1.ValidationFailed,
+                ["errors"] = exception.Errors,
+            });
+        }
+        catch (ProductActivationValidationException exception)
+        {
+            return Results.Problem(statusCode: 422, extensions: new Dictionary<string, object?>
             {
                 ["code"] = ProductApiV1.ValidationFailed,
                 ["errors"] = exception.Errors,

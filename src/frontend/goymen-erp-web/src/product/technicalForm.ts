@@ -8,7 +8,20 @@ export const TECHNICAL_TEXT = {
   unitUnavailable: 'Birim kataloğu okunamıyor.', invalidMeasure: 'Sıfırdan büyük, en fazla üç ondalıklı mm değeri giriniz.',
   invalidChoice: 'Yayımlanmış listeden geçerli bir değer seçiniz.', candidateRequired: 'Aday değer zorunlu alanı karşılamaz.',
   kilogram: 'Stok birimi kilogram olmalıdır.',
+  familyFacts: 'Ailenin sabit sınıflandırması', cins: 'Cins', tur: 'Tür', tip: 'Tip',
+  closedUnitMismatch: 'Sözleşme uyumsuzluğu: bu kartta henüz yazmaya açık olmayan bir birim rolünde kayıtlı değer var. Bu ekran o değeri değiştirmez ve göndermez; sunucu kaydı reddedebilir.',
+  closedUnitStored: 'Kayıtlı değer',
+  closedUnitUnknown: 'birim kataloğunda bulunamadı', closedUnitNone: 'atanmadı',
 } as const
+
+/**
+ * PRD-UNIT-1: the write contract opens only these three unit roles. Price, production and
+ * package stay closed on the server (`ProductDraftValidator.OpenUnitRoles`), so they are read
+ * here but never authored or sent — not even as a copy of the stock unit.
+ */
+export const OPEN_UNIT_ROLES = ['stock', 'purchase', 'sales'] as const
+export const CLOSED_UNIT_ROLES = ['price', 'production', 'package'] as const
+export type ClosedUnitRole = (typeof CLOSED_UNIT_ROLES)[number]
 
 export interface TechnicalDraft {
   readonly sourceTemplateId: string | null
@@ -21,12 +34,28 @@ export interface TechnicalDraft {
   readonly stockChanged: boolean
   readonly purchaseChanged: boolean
   readonly salesChanged: boolean
+  /** A closed role that already holds a value on the stored card: shown as a mismatch, kept, never written. */
+  readonly closedUnits: Readonly<Partial<Record<ClosedUnitRole, string>>>
 }
 export function technicalDraft(references?: ProductReferences): TechnicalDraft {
   return { attributes: references?.attributes ?? {}, stock: references?.units.stock ?? '',
     sourceTemplateId: references?.templateId ?? null, sourceTemplateVersion: references?.templateVersion ?? null,
     purchase: references?.units.purchase ?? '', sales: references?.units.sales ?? '',
-    attributesChanged: false, stockChanged: false, purchaseChanged: false, salesChanged: false }
+    attributesChanged: false, stockChanged: false, purchaseChanged: false, salesChanged: false,
+    closedUnits: closedUnitsOf(references) }
+}
+function closedUnitsOf(references?: ProductReferences): Partial<Record<ClosedUnitRole, string>> {
+  const stored: Partial<Record<ClosedUnitRole, string>> = {}
+  for (const role of CLOSED_UNIT_ROLES) {
+    const id = references?.units[role]
+    if (id !== null && id !== undefined) stored[role] = id
+  }
+  return stored
+}
+/** The released family's fixed Cins/Tür/Tip, exactly as the server registry resolves them. */
+export function familyFactsOf(options: ProductReferenceOptions | null, familyId: string) {
+  if (familyId === '' || options?.unavailableCatalogs.includes('families')) return undefined
+  return options?.technical?.familyFacts.find(f => f.id === familyId)
 }
 export const technicalDirty = (draft: TechnicalDraft) => draft.attributesChanged || draft.stockChanged || draft.purchaseChanged || draft.salesChanged
 export function familyTemplate(options: ProductReferenceOptions | null, familyId: string) {
@@ -82,7 +111,7 @@ export function technicalWrite(draft: TechnicalDraft, options: ProductReferenceO
       }
     }
   }
-  for (const role of ['stock', 'purchase', 'sales'] as const) {
+  for (const role of OPEN_UNIT_ROLES) {
     if (!draft[`${role}Changed`]) continue
     const value = draft[role]
     const unit = options?.technical?.units.find(u => u.id === value)

@@ -96,17 +96,21 @@ export function compareStockMeasures(left: string, right: string): number {
   return a === b ? 0 : a < b ? -1 : 1
 }
 
-export type StockMeasureInputProblem = 'format' | 'precision' | 'zero'
+export type StockMeasureInputProblem = 'format' | 'leadingZero' | 'precision' | 'zero'
 
 /**
  * What a person typed for a measure, as the wire decimal. Turkish writing: the fraction follows a comma. A dot is
  * refused rather than guessed, because "1.250" is 1250 in the table and 1,25 on a calculator. The digits are sent
- * as typed: nothing is rounded, cut or padded, and a fourth fraction digit is an error the person sees.
+ * as typed: nothing is rounded, cut or padded, and a fourth fraction digit is an error the person sees. A number
+ * written with zeros in front ("03") is refused exactly as before; it only gets its own reason.
  */
 export function stockMeasureFromInput(text: string): { readonly wire: string } | { readonly problem: StockMeasureInputProblem } {
   const trimmed = text.trim()
   if (/^[0-9]+,[0-9]{4,}$/.test(trimmed)) return { problem: 'precision' }
-  if (!/^(?:0|[1-9][0-9]*)(?:,[0-9]{1,3})?$/.test(trimmed) || trimmed.length > WIRE_MEASURE_MAX_LENGTH) return { problem: 'format' }
+  if (!/^(?:0|[1-9][0-9]*)(?:,[0-9]{1,3})?$/.test(trimmed) || trimmed.length > WIRE_MEASURE_MAX_LENGTH) {
+    const leadingZero = /^0[0-9]+(?:,[0-9]{1,3})?$/.test(trimmed) && trimmed.length <= WIRE_MEASURE_MAX_LENGTH
+    return { problem: leadingZero ? 'leadingZero' : 'format' }
+  }
   const wire = trimmed.replace(',', '.')
   return isStockMeasure(wire) ? { wire } : { problem: 'zero' }
 }

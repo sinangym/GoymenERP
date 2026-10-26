@@ -9,4 +9,6 @@ public static class GoymenClaimTypes
     public const string IdentityIssuer = "goymen:identity_issuer";
 
     public const string IdentitySubject = "goymen:identity_subject";
+
+    public const string AuthenticationSession = "goymen:authentication_session";
 }

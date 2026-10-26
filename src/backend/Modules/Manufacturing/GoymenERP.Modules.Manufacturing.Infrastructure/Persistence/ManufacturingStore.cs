@@ -74,6 +74,11 @@ public sealed class ManufacturingStore(
         {
             throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Bant eni kayıt sütununa sığmıyor.");
         }
+        if (plan.CutToLengthSpec is { } cutSpec
+            && cutSpec.Lines.Any(line => line.LengthMm >= Decimal18Scale3Limit))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kesim boyu kayıt sütununa sığmıyor.");
+        }
 
         var payloadHash = PlanHash(plan);
         var existing = await dbContext.Plans.AsNoTracking().SingleOrDefaultAsync(row => row.Id == plan.Id, cancellationToken);
@@ -128,6 +133,21 @@ public sealed class ManufacturingStore(
                 Sequence = ++lineSequence,
                 BandWidthMm = line.BandWidthMm,
                 BandCount = line.Count,
+            });
+        }
+
+        var cutOrdinal = 0;
+        foreach (var line in plan.CutToLengthSpec?.Lines ?? Array.Empty<CutToLengthLine>())
+        {
+            dbContext.PlanCutLines.Add(new PlanCutLineRow
+            {
+                CompanyId = plan.CompanyId,
+                PlanId = plan.Id,
+                LineId = line.LineId,
+                Ordinal = ++cutOrdinal,
+                Sequence = line.Sequence,
+                LengthMm = line.LengthMm,
+                Count = line.Count,
             });
         }
 
@@ -299,7 +319,14 @@ public sealed class ManufacturingStore(
     /// </summary>
     public async Task<ProductionPlan> RevisePlanAsync(Guid planId, long expectedVersion, Guid workCenterId,
         ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
-        string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        string reason, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        await RevisePlanWithCutLinesAsync(planId, expectedVersion, workCenterId, workCenterProcess, inputs, target,
+            cutToLengthSpec: null, reason, metadata, cancellationToken);
+
+    public async Task<ProductionPlan> RevisePlanWithCutLinesAsync(Guid planId, long expectedVersion, Guid workCenterId,
+        ManufacturingProcess workCenterProcess, IReadOnlyList<PlannedInput> inputs, ProductionTarget? target,
+        CutToLengthSpec? cutToLengthSpec, string reason, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
     {
         RequireMetadata(metadata);
         ArgumentNullException.ThrowIfNull(inputs);
@@ -322,6 +349,10 @@ public sealed class ManufacturingStore(
 
         RequireFits(inputs.Select(input => input.PlannedMass).Concat(target is { } declared ? [declared.Mass] : []));
         RequireTechnicalSnapshotFits(inputs);
+        if (cutToLengthSpec is { } cutSpec && cutSpec.Lines.Any(line => line.LengthMm >= Decimal18Scale3Limit))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Kesim boyu kayıt sütununa sığmıyor.");
+        }
 
         var row = await dbContext.Plans.SingleOrDefaultAsync(candidate => candidate.Id == planId, cancellationToken)
             ?? throw Refused(ManufacturingStoreCodes.PlanNotFound, "Bu şirketin böyle bir planı yok.");
@@ -330,7 +361,7 @@ public sealed class ManufacturingStore(
         var versionBefore = plan.Version;
 
         // The domain decides: the version fence first, then "only a draft", the spec, the process, the inputs.
-        plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target);
+        plan.Revise(expectedVersion, workCenterId, workCenterProcess, inputs, target, cutToLengthSpec);
 
         if (await dbContext.Orders.AsNoTracking().AnyAsync(order => order.PlanId == planId, cancellationToken))
         {
@@ -372,6 +403,22 @@ public sealed class ManufacturingStore(
             dbContext.PlanRevisionInputs.Add(inputRow);
         }
 
+        var cutOrdinal = 0;
+        foreach (var line in plan.CutToLengthSpec?.Lines ?? Array.Empty<CutToLengthLine>())
+        {
+            dbContext.PlanRevisionCutLines.Add(new PlanRevisionCutLineRow
+            {
+                CompanyId = companyId,
+                PlanId = plan.Id,
+                RevisionNo = revisionNo,
+                LineId = line.LineId,
+                Ordinal = ++cutOrdinal,
+                Sequence = line.Sequence,
+                LengthMm = line.LengthMm,
+                Count = line.Count,
+            });
+        }
+
         row.Version = plan.Version;
         row.UpdatedAtUtc = now;
         Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.revised.v1", "Update",
@@ -399,20 +446,26 @@ public sealed class ManufacturingStore(
             .Where(input => input.PlanId == row.Id)
             .OrderBy(input => input.Sequence)
             .ToListAsync(cancellationToken);
-        var (headers, revisionInputs) = await ReadRevisionsAsync(row, cancellationToken);
+        var createdCutLines = await dbContext.PlanCutLines.AsNoTracking()
+            .Where(line => line.PlanId == row.Id)
+            .OrderBy(line => line.Ordinal)
+            .ToListAsync(cancellationToken);
+        var (headers, revisionInputs, revisionCutLines) = await ReadRevisionsAsync(row, cancellationToken);
         var history = new List<ManufacturingPlanRevision>(headers.Count + 1)
         {
             new ManufacturingPlanRevision(0, 1, row.WorkCenterId,
                 [.. created.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                     input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
-                Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc),
+                Target(row.TargetBasis, row.TargetKg), Reason: null, RevisedBy: null, row.CreatedAtUtc,
+                CutSpec(createdCutLines)),
         };
         history.AddRange(headers.Select(header => new ManufacturingPlanRevision(header.RevisionNo, header.PlanVersion,
             header.WorkCenterId,
             [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                 .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                     input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
-            Target(header.TargetBasis, header.TargetKg), header.Reason, header.RevisedBy, header.RevisedAtUtc)));
+            Target(header.TargetBasis, header.TargetKg), header.Reason, header.RevisedBy, header.RevisedAtUtc,
+            CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)))));
         return history;
     }
 
@@ -889,7 +942,11 @@ public sealed class ManufacturingStore(
             .Where(line => line.PlanId == row.Id)
             .OrderBy(line => line.Sequence)
             .ToListAsync(cancellationToken);
-        var (headers, revisionInputs) = await ReadRevisionsAsync(row, cancellationToken);
+        var cutLines = await dbContext.PlanCutLines.AsNoTracking()
+            .Where(line => line.PlanId == row.Id)
+            .OrderBy(line => line.Ordinal)
+            .ToListAsync(cancellationToken);
+        var (headers, revisionInputs, revisionCutLines) = await ReadRevisionsAsync(row, cancellationToken);
         // MFG-PLAN-EDIT: the revisions are replayed through the domain's own rule, in their order, before the approval.
         return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
@@ -900,7 +957,9 @@ public sealed class ManufacturingStore(
                 [.. revisionInputs.Where(input => input.RevisionNo == header.RevisionNo)
                     .Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
                         input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
-                Target(header.TargetBasis, header.TargetKg))));
+                Target(header.TargetBasis, header.TargetKg),
+                CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)))),
+            CutSpec(cutLines));
     }
 
     /// <summary>
@@ -915,13 +974,14 @@ public sealed class ManufacturingStore(
     /// The revisions the row's version counts, with their complete inputs, oldest first. Numbered 1..n without a gap,
     /// or the stored plan is refused, never repaired.
     /// </summary>
-    private async Task<(IReadOnlyList<PlanRevisionRow> Headers, IReadOnlyList<PlanRevisionInputRow> Inputs)> ReadRevisionsAsync(
+    private async Task<(IReadOnlyList<PlanRevisionRow> Headers, IReadOnlyList<PlanRevisionInputRow> Inputs,
+        IReadOnlyList<PlanRevisionCutLineRow> CutLines)> ReadRevisionsAsync(
         PlanRow row, CancellationToken cancellationToken)
     {
         var count = RevisionCountOf(row);
         if (count == 0)
         {
-            return ([], []);
+            return ([], [], []);
         }
 
         var headers = await dbContext.PlanRevisions.AsNoTracking()
@@ -938,7 +998,11 @@ public sealed class ManufacturingStore(
             .Where(input => input.PlanId == row.Id && input.RevisionNo <= count)
             .OrderBy(input => input.RevisionNo).ThenBy(input => input.Sequence)
             .ToListAsync(cancellationToken);
-        return (headers, inputs);
+        var cutLines = await dbContext.PlanRevisionCutLines.AsNoTracking()
+            .Where(line => line.PlanId == row.Id && line.RevisionNo <= count)
+            .OrderBy(line => line.RevisionNo).ThenBy(line => line.Ordinal)
+            .ToListAsync(cancellationToken);
+        return (headers, inputs, cutLines);
     }
 
     private async Task<ProductionOrder> RestoreOrderAsync(OrderRow row, CancellationToken cancellationToken)
@@ -1052,6 +1116,20 @@ public sealed class ManufacturingStore(
             windingTargetKg is { } target ? new Kilograms(target) : null);
     }
 
+    private static CutToLengthSpec? CutSpec(IReadOnlyList<PlanCutLineRow> lines) => lines.Count == 0
+        ? null
+        : new CutToLengthSpec(lines.Select(line =>
+            new CutToLengthLine(line.LineId, line.Sequence, line.LengthMm, line.Count)));
+
+    private static CutToLengthSpec? CutRevisionSpec(IEnumerable<PlanRevisionCutLineRow> lines)
+    {
+        var materialized = lines.ToArray();
+        return materialized.Length == 0
+            ? null
+            : new CutToLengthSpec(materialized.Select(line =>
+                new CutToLengthLine(line.LineId, line.Sequence, line.LengthMm, line.Count)));
+    }
+
     private static ProductionTarget? Target(int? basis, decimal? kilograms) =>
         basis is null && kilograms is null
             ? null
@@ -1134,6 +1212,20 @@ public sealed class ManufacturingStore(
             }
         }
 
+
+        // Only plans carrying cut lines extend the historical hash bytes. Explicit sequence and list order are content.
+        if (plan.CutToLengthSpec is { } cutSpec)
+        {
+            builder.Append("|cut-to-length.v1|");
+            foreach (var line in cutSpec.Lines)
+            {
+                builder.Append(line.LineId.ToString("D")).Append(':')
+                    .Append(line.Sequence.ToString(CultureInfo.InvariantCulture)).Append(':')
+                    .Append(Canonical(line.LengthMm)).Append('x')
+                    .Append(line.Count.ToString(CultureInfo.InvariantCulture)).Append(';');
+            }
+        }
+
         return Hash(builder.ToString());
     }
 
@@ -1183,6 +1275,7 @@ public sealed class ManufacturingStore(
         row.TechnicalEffectiveOn = snapshot.EffectiveOn;
         row.TechnicalThicknessMm = snapshot.ThicknessMm;
         row.TechnicalWidthMm = snapshot.WidthMm;
+        row.TechnicalLengthMm = snapshot.LengthMm;
     }
 
     private static PlanTechnicalParameterSnapshotV1? RestoreTechnicalSnapshot(IPlanTechnicalSnapshotRow row)
@@ -1196,7 +1289,7 @@ public sealed class ManufacturingStore(
             row.TechnicalKilogramProfileVersion, row.TechnicalEffectiveOn, row.TechnicalThicknessMm,
             row.TechnicalWidthMm,
         };
-        if (values.All(value => value is null))
+        if (values.All(value => value is null) && row.TechnicalLengthMm is null)
         {
             return null;
         }
@@ -1226,7 +1319,8 @@ public sealed class ManufacturingStore(
                 row.TechnicalKilogramProfileVersion!,
                 row.TechnicalEffectiveOn!.Value,
                 row.TechnicalThicknessMm!.Value,
-                row.TechnicalWidthMm!.Value);
+                row.TechnicalWidthMm!.Value,
+                row.TechnicalLengthMm);
         }
         catch (ArgumentException exception)
         {
@@ -1308,6 +1402,30 @@ public sealed class ManufacturingStore(
             {
                 lines = spec.Lines.Select(line => new { bandWidthMm = line.BandWidthMm, count = line.Count }),
                 windingTargetKg = spec.WindingTargetKg?.Value,
+            },
+            plan.ApprovedByUserId,
+            plan.ApprovedAtUtc,
+        }, Json)
+        : plan.CutToLengthSpec is { } cutSpec
+        ? JsonSerializer.Serialize(new
+        {
+            plan.Id,
+            plan.WorkCenterId,
+            process = plan.Process.ToString(),
+            status = plan.Status.ToString(),
+            target = plan.Target is null ? null : new { basis = plan.Target.Basis.ToString(), kg = plan.Target.Mass.Value },
+            inputs = plan.Inputs.Select(input => new
+            {
+                input.ParentRollId,
+                kg = input.PlannedMass.Value,
+                input.ExpectedLabelVersion,
+                technical = input.TechnicalSnapshot,
+                commercial = input.CommercialContext,
+            }),
+            cutToLength = new
+            {
+                lines = cutSpec.Lines.Select(line => new
+                    { line.LineId, line.Sequence, line.LengthMm, line.Count }),
             },
             plan.ApprovedByUserId,
             plan.ApprovedAtUtc,

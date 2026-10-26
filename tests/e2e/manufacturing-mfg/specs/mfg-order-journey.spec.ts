@@ -698,6 +698,11 @@ test.describe('MFG order screen (real API, real SQL)', () => {
         labelId: string
         labelCode: string
         locationId: string
+        locationDisplay: {
+          locationId: string
+          locationCode: string
+          locationName: string
+        }
         ownerKind: string
         ownerId: string
         custodianKind: string
@@ -715,6 +720,11 @@ test.describe('MFG order screen (real API, real SQL)', () => {
       custodianId: env.seed.companyId,
       physicalKg: '300',
     }))
+    const outputPosition = positionPage.items.find((item) => item.labelId === outputBody.labelId)
+    if (outputPosition === undefined) throw new Error('The manufactured output position was not returned.')
+    expect(outputPosition.locationDisplay.locationId).toBe(outputPosition.locationId)
+    expect(outputPosition.locationDisplay.locationCode.trim()).not.toBe('')
+    expect(outputPosition.locationDisplay.locationName.trim()).not.toBe('')
 
     const outputRow = page.locator(`tr[data-label-id="${outputBody.labelId as string}"]`)
     await expect(outputRow).toBeVisible({ timeout: 30_000 })
@@ -723,7 +733,8 @@ test.describe('MFG order screen (real API, real SQL)', () => {
     await expect(outputRow.getByText('Malı tutan: Şirket', { exact: true })).toBeVisible()
     await expect(outputRow).not.toContainText(beforeRoll.commercialContext.partyId)
     const cells = outputRow.getByRole('cell')
-    await expect(cells.nth(3).getByText('—', { exact: true })).toBeVisible()
+    await expect(cells.nth(3).getByText(outputPosition.locationDisplay.locationCode, { exact: true })).toBeVisible()
+    await expect(cells.nth(3).getByText(outputPosition.locationDisplay.locationName, { exact: true })).toBeVisible()
     await expect(cells.nth(5)).toHaveText('300')
 
     const exactLocation = page.waitForResponse((response) => {

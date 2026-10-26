@@ -44,7 +44,7 @@ public sealed partial class OpenApiContractGenerationTests
             "#/components/schemas/EditProductDraftRequest", ["path:id:true:type:string;format:uuid"]),
         // DEC-PRD-010 (#329): the Draft -> Active card approval.
         new("post", "/api/v1/products/{id}/activation", "ActivateProductV1",
-            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/ActivateProductRequest", ["path:id:true:type:string;format:uuid"]),
         // DEC-CAR-003 / PRD-PERM-001: Active -> Inactive and back, each under its own global operation and a reason.
         new("post", "/api/v1/products/{id}/deactivation", "DeactivateProductV1",
@@ -130,6 +130,7 @@ public sealed partial class OpenApiContractGenerationTests
                 401 => ["authentication_required"], 404 => ["not_found"],
                 409 => expected.OperationId is "EditProductDraftV1" or "ActivateProductV1" or "DeactivateProductV1" or "ReactivateProductV1"
                     ? ["idempotency_conflict", "lifecycle_conflict", "version_conflict"] : ["idempotency_conflict"],
+                422 => ["validation_failed"],
                 500 => ["internal_error"], 503 => ["product_write_contention"], _ => [],
             };
             Assert.Equal(codes.Length > 0, response.Value.TryGetProperty("x-erp-problem-codes", out var actualCodes));

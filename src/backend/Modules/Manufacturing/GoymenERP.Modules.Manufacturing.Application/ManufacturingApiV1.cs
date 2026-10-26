@@ -26,7 +26,7 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 
 public sealed record SavePlanRequestV1(
     Guid PlanId, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
-    SlittingSpecRequestV1? SlittingSpec = null);
+    SlittingSpecRequestV1? SlittingSpec = null, CutToLengthSpecRequestV1? CutToLengthSpec = null);
 
 public sealed record SlitLineRequestV1(string? BandWidthMm, int Count);
 
@@ -38,6 +38,10 @@ public sealed record SlitLineRequestV1(string? BandWidthMm, int Count);
 public sealed record SlittingSpecRequestV1(
     IReadOnlyList<SlitLineRequestV1>? Lines,
     string? WindingTargetKg = null);
+
+public sealed record CutToLengthLineRequestV1(Guid LineId, int Sequence, string? LengthMm, int Count);
+
+public sealed record CutToLengthSpecRequestV1(IReadOnlyList<CutToLengthLineRequestV1>? Lines);
 
 public sealed record PlanCommercialContextRequestV1(
     Guid PartyId,
@@ -63,7 +67,7 @@ public sealed record ApprovePlanRequestV1(long ExpectedVersion);
 /// </summary>
 public sealed record RevisePlanRequestV1(
     long ExpectedVersion, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
-    string? Reason);
+    string? Reason, CutToLengthSpecRequestV1? CutToLengthSpec = null);
 
 public sealed record CreateOrderRequestV1(Guid OrderId, Guid PlanId);
 
@@ -115,6 +119,7 @@ public sealed record CapturedPlanTechnicalSnapshotViewV1(
     CapturedPlanTemplateRevisionViewV1 Template,
     string ThicknessMm,
     string WidthMm,
+    string? LengthMm,
     CapturedPlanKilogramUnitViewV1 UnitKg,
     DateOnly EffectiveOn);
 
@@ -140,10 +145,15 @@ public sealed record SlitLineViewV1(string BandWidthMm, int Count);
 
 public sealed record SlittingSpecViewV1(IReadOnlyList<SlitLineViewV1> Lines, string? WindingTargetKg);
 
+public sealed record CutToLengthLineViewV1(Guid LineId, int Sequence, string LengthMm, int Count);
+
+public sealed record CutToLengthSpecViewV1(IReadOnlyList<CutToLengthLineViewV1> Lines);
+
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
     IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
-    PlanPreviewViewV1? Calculation = null, SlittingSpecViewV1? SlittingSpec = null);
+    PlanPreviewViewV1? Calculation = null, SlittingSpecViewV1? SlittingSpec = null,
+    CutToLengthSpecViewV1? CutToLengthSpec = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -164,7 +174,8 @@ public sealed record PlanRevisionInputViewV1(
 /// </summary>
 public sealed record PlanRevisionViewV1(
     int Revision, long PlanVersion, Guid WorkCenterId, IReadOnlyList<PlanRevisionInputViewV1> Inputs,
-    TargetViewV1? Target, string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc);
+    TargetViewV1? Target, string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc,
+    CutToLengthSpecViewV1? CutToLengthSpec = null);
 
 /// <summary>MFG-PLAN-EDIT: the plan's history, oldest first.</summary>
 public sealed record PlanRevisionListViewV1(Guid PlanId, IReadOnlyList<PlanRevisionViewV1> Revisions);
@@ -381,7 +392,7 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("plan"));
         }
 
-        var content = ParsePlanContent(request.Inputs, request.Target, request.SlittingSpec);
+        var content = ParsePlanContent(request.Inputs, request.Target, request.SlittingSpec, request.CutToLengthSpec);
         if (content.InvalidField is { } invalidField)
         {
             return Task.FromResult(Invalid<PlanViewV1>(invalidField));
@@ -390,7 +401,7 @@ public sealed partial class ManufacturingCommandService(
         var inputs = content.Inputs!;
         var targetKg = content.TargetKg;
         var canonical = CanonicalSavePlan(request.PlanId, request.WorkCenterId, inputs, request.Target, targetKg,
-            content.SlittingSpec);
+            content.SlittingSpec, content.CutToLengthSpec);
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
             ManufacturingApiStatus.Created, async (metadata, actorId, companyId) =>
@@ -405,6 +416,11 @@ public sealed partial class ManufacturingCommandService(
                 if (content.SlittingSpec is not null && process.Value != ManufacturingProcess.Slitting)
                 {
                     return Invalid<PlanViewV1>("slittingSpec");
+                }
+
+                if (content.CutToLengthSpec is not null && process.Value != ManufacturingProcess.CutToLength)
+                {
+                    return Invalid<PlanViewV1>("cutToLengthSpec");
                 }
 
                 var verified = await VerifyPlanContentAsync(
@@ -430,7 +446,8 @@ public sealed partial class ManufacturingCommandService(
                 // roll) map like every other refusal.
                 var plan = new ProductionPlan(request.PlanId, companyId, request.WorkCenterId,
                     process.Value, PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass),
-                    BuildSlittingSpec(content.SlittingSpec, slittingSpec.WindingTarget));
+                    BuildSlittingSpec(content.SlittingSpec, slittingSpec.WindingTarget),
+                    BuildCutToLengthSpec(content.CutToLengthSpec));
                 var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
                 var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
                 return stored is null
@@ -477,7 +494,7 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("reason"));
         }
 
-        var content = ParsePlanContent(request.Inputs, request.Target, slittingSpec: null);
+        var content = ParsePlanContent(request.Inputs, request.Target, slittingSpec: null, request.CutToLengthSpec);
         if (content.InvalidField is { } invalidField)
         {
             return Task.FromResult(Invalid<PlanViewV1>(invalidField));
@@ -485,15 +502,28 @@ public sealed partial class ManufacturingCommandService(
 
         var inputs = content.Inputs!;
         var targetKg = content.TargetKg;
-        var canonical = new
-        {
-            planId,
-            expectedVersion = request.ExpectedVersion,
-            workCenterId = request.WorkCenterId,
-            inputs = CanonicalPlanInputs(inputs),
-            target = request.Target is null ? null : new { basis = request.Target.Basis, kg = Text(targetKg!.Value) },
-            reason,
-        };
+        var canonicalInputs = CanonicalPlanInputs(inputs);
+        var canonicalTarget = request.Target is null ? null : new { basis = request.Target.Basis, kg = Text(targetKg!.Value) };
+        object canonical = content.CutToLengthSpec is null
+            ? new
+            {
+                planId,
+                expectedVersion = request.ExpectedVersion,
+                workCenterId = request.WorkCenterId,
+                inputs = canonicalInputs,
+                target = canonicalTarget,
+                reason,
+            }
+            : new
+            {
+                planId,
+                expectedVersion = request.ExpectedVersion,
+                workCenterId = request.WorkCenterId,
+                inputs = canonicalInputs,
+                target = canonicalTarget,
+                reason,
+                cutToLengthSpec = CanonicalCutToLengthSpec(content.CutToLengthSpec),
+            };
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.RevisePlan, canonical,
             ManufacturingApiStatus.Ok, async (metadata, actorId, companyId) =>
@@ -520,6 +550,11 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(process.Refusal);
                 }
 
+                if (content.CutToLengthSpec is not null && process.Value != ManufacturingProcess.CutToLength)
+                {
+                    return Invalid<PlanViewV1>("cutToLengthSpec");
+                }
+
                 var verified = await VerifyPlanContentAsync(
                     inputs, targetKg, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
@@ -532,9 +567,9 @@ public sealed partial class ManufacturingCommandService(
                     return fenced;
                 }
 
-                var revised = await planRevisions.RevisePlanAsync(planId, request.ExpectedVersion, request.WorkCenterId,
+                var revised = await planRevisions.RevisePlanWithCutLinesAsync(planId, request.ExpectedVersion, request.WorkCenterId,
                     process.Value, [.. PlannedInputs(verified.Inputs)], Target(request.Target, verified.TargetMass),
-                    reason, metadata, cancellationToken);
+                    BuildCutToLengthSpec(content.CutToLengthSpec), reason, metadata, cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(revised), false, null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
@@ -612,6 +647,10 @@ public sealed partial class ManufacturingCommandService(
 
     private sealed record ParsedSlittingSpec(IReadOnlyList<ParsedSlitLine> Lines, decimal? WindingTargetKg);
 
+    private sealed record ParsedCutToLengthLine(Guid LineId, int Sequence, decimal LengthMm, int Count);
+
+    private sealed record ParsedCutToLengthSpec(IReadOnlyList<ParsedCutToLengthLine> Lines);
+
     /// <summary>
     /// ADR-011 compatibility: the published plan command predates commercial context. A null context therefore keeps
     /// the exact old per-input JSON object; only a supplied context adds the new member to the immutable request hash.
@@ -637,13 +676,14 @@ public sealed partial class ManufacturingCommandService(
     /// A supplied spec adds only its ordered canonical lines and optional canonical winding target.
     /// </summary>
     private static object CanonicalSavePlan(Guid planId, Guid workCenterId, IEnumerable<ParsedPlanInput> inputs,
-        TargetRequestV1? target, decimal? targetKg, ParsedSlittingSpec? slittingSpec)
+        TargetRequestV1? target, decimal? targetKg, ParsedSlittingSpec? slittingSpec,
+        ParsedCutToLengthSpec? cutToLengthSpec)
     {
         var canonicalInputs = CanonicalPlanInputs(inputs);
         var canonicalTarget = target is null ? null : new { basis = target.Basis, kg = Text(targetKg!.Value) };
-        return slittingSpec is null
-            ? new { planId, workCenterId, inputs = canonicalInputs, target = canonicalTarget }
-            : new
+        if (slittingSpec is not null)
+        {
+            return new
             {
                 planId,
                 workCenterId,
@@ -659,15 +699,44 @@ public sealed partial class ManufacturingCommandService(
                     windingTargetKg = slittingSpec.WindingTargetKg is { } winding ? Text(winding) : null,
                 },
             };
+        }
+
+        return cutToLengthSpec is null
+            ? new { planId, workCenterId, inputs = canonicalInputs, target = canonicalTarget }
+            : new
+            {
+                planId,
+                workCenterId,
+                inputs = canonicalInputs,
+                target = canonicalTarget,
+                cutToLengthSpec = CanonicalCutToLengthSpec(cutToLengthSpec),
+            };
     }
 
-    private static (List<ParsedPlanInput>? Inputs, decimal? TargetKg, ParsedSlittingSpec? SlittingSpec,
-        string? InvalidField) ParsePlanContent(IReadOnlyList<PlannedInputRequestV1> requested, TargetRequestV1? target,
-        SlittingSpecRequestV1? slittingSpec)
+    private static object CanonicalCutToLengthSpec(ParsedCutToLengthSpec spec) => new
     {
+        lines = spec.Lines.Select(line => new
+        {
+            lineId = line.LineId,
+            sequence = line.Sequence,
+            lengthMm = Text(line.LengthMm),
+            count = line.Count,
+        }),
+    };
+
+    private static (List<ParsedPlanInput>? Inputs, decimal? TargetKg, ParsedSlittingSpec? SlittingSpec,
+        ParsedCutToLengthSpec? CutToLengthSpec,
+        string? InvalidField) ParsePlanContent(IReadOnlyList<PlannedInputRequestV1> requested, TargetRequestV1? target,
+        SlittingSpecRequestV1? slittingSpec, CutToLengthSpecRequestV1? cutToLengthSpec)
+    {
+        if (slittingSpec is not null && cutToLengthSpec is not null)
+        {
+            return (null, null, null, null, "plan");
+        }
+
         if (target is not null && ParseBasis(target.Basis) is null)
         {
-            return (null, null, null, "target.basis");
+            return (null, null, null, null, "target.basis");
         }
 
         var inputs = new List<ParsedPlanInput>();
@@ -676,34 +745,34 @@ public sealed partial class ManufacturingCommandService(
             var input = requested[index];
             if (ParseKg(input.PlannedKg) is not { } kg)
             {
-                return (null, null, null, "inputs.plannedKg");
+                return (null, null, null, null, "inputs.plannedKg");
             }
 
             if (!IsPositiveCanonicalInt64(input.ExpectedLabelVersion))
             {
-                return (null, null, null, $"inputs[{index}].expectedLabelVersion");
+                return (null, null, null, null, $"inputs[{index}].expectedLabelVersion");
             }
 
             if (input.CommercialContext is { } commercial)
             {
                 if (commercial.PartyId == Guid.Empty)
                 {
-                    return (null, null, null, $"inputs[{index}].commercialContext.partyId");
+                    return (null, null, null, null, $"inputs[{index}].commercialContext.partyId");
                 }
 
                 if (commercial.CompanyPartyAccountId == Guid.Empty)
                 {
-                    return (null, null, null, $"inputs[{index}].commercialContext.companyPartyAccountId");
+                    return (null, null, null, null, $"inputs[{index}].commercialContext.companyPartyAccountId");
                 }
 
                 if (string.IsNullOrEmpty(commercial.PartyVersion))
                 {
-                    return (null, null, null, $"inputs[{index}].commercialContext.partyVersion");
+                    return (null, null, null, null, $"inputs[{index}].commercialContext.partyVersion");
                 }
 
                 if (string.IsNullOrEmpty(commercial.AccountVersion))
                 {
-                    return (null, null, null, $"inputs[{index}].commercialContext.accountVersion");
+                    return (null, null, null, null, $"inputs[{index}].commercialContext.accountVersion");
                 }
             }
 
@@ -716,7 +785,7 @@ public sealed partial class ManufacturingCommandService(
         {
             if (ParseKg(target.Kg) is not { } kg)
             {
-                return (null, null, null, "target.kg");
+                return (null, null, null, null, "target.kg");
             }
 
             targetKg = kg;
@@ -727,7 +796,7 @@ public sealed partial class ManufacturingCommandService(
         {
             if (slittingSpec.Lines is null)
             {
-                return (null, null, null, "slittingSpec.lines");
+                return (null, null, null, null, "slittingSpec.lines");
             }
 
             var lines = new List<ParsedSlitLine>();
@@ -736,12 +805,12 @@ public sealed partial class ManufacturingCommandService(
                 var line = slittingSpec.Lines[index];
                 if (line is null || ParsePositiveMillimetres(line.BandWidthMm) is not { } width)
                 {
-                    return (null, null, null, $"slittingSpec.lines[{index}].bandWidthMm");
+                    return (null, null, null, null, $"slittingSpec.lines[{index}].bandWidthMm");
                 }
 
                 if (line.Count <= 0)
                 {
-                    return (null, null, null, $"slittingSpec.lines[{index}].count");
+                    return (null, null, null, null, $"slittingSpec.lines[{index}].count");
                 }
 
                 lines.Add(new ParsedSlitLine(width, line.Count));
@@ -752,7 +821,7 @@ public sealed partial class ManufacturingCommandService(
             {
                 if (ParseKg(slittingSpec.WindingTargetKg) is not { } winding || winding <= 0m)
                 {
-                    return (null, null, null, "slittingSpec.windingTargetKg");
+                    return (null, null, null, null, "slittingSpec.windingTargetKg");
                 }
 
                 windingTargetKg = winding;
@@ -761,7 +830,46 @@ public sealed partial class ManufacturingCommandService(
             parsedSpec = new ParsedSlittingSpec(lines, windingTargetKg);
         }
 
-        return (inputs, targetKg, parsedSpec, null);
+        ParsedCutToLengthSpec? parsedCutSpec = null;
+        if (cutToLengthSpec is not null)
+        {
+            if (cutToLengthSpec.Lines is null || cutToLengthSpec.Lines.Count == 0)
+            {
+                return (null, null, null, null, "cutToLengthSpec.lines");
+            }
+
+            var lines = new List<ParsedCutToLengthLine>();
+            var ids = new HashSet<Guid>();
+            for (var index = 0; index < cutToLengthSpec.Lines.Count; index++)
+            {
+                var line = cutToLengthSpec.Lines[index];
+                if (line is null || line.LineId == Guid.Empty)
+                {
+                    return (null, null, null, null, $"cutToLengthSpec.lines[{index}].lineId");
+                }
+
+                if (!ids.Add(line.LineId))
+                {
+                    return (null, null, null, null, $"cutToLengthSpec.lines[{index}].lineId");
+                }
+
+                if (ParsePositiveMillimetres(line.LengthMm) is not { } length)
+                {
+                    return (null, null, null, null, $"cutToLengthSpec.lines[{index}].lengthMm");
+                }
+
+                if (line.Count <= 0)
+                {
+                    return (null, null, null, null, $"cutToLengthSpec.lines[{index}].count");
+                }
+
+                lines.Add(new ParsedCutToLengthLine(line.LineId, line.Sequence, length, line.Count));
+            }
+
+            parsedCutSpec = new ParsedCutToLengthSpec(lines);
+        }
+
+        return (inputs, targetKg, parsedSpec, parsedCutSpec, null);
     }
 
     private async Task<(Kilograms? WindingTarget, ManufacturingApiResult<object>? Refusal)> VerifySlittingSpecAsync(
@@ -782,6 +890,11 @@ public sealed partial class ManufacturingCommandService(
     private static SlittingSpec? BuildSlittingSpec(ParsedSlittingSpec? spec, Kilograms? windingTarget) => spec is null
         ? null
         : new SlittingSpec(spec.Lines.Select(line => new SlitLine(line.BandWidthMm, line.Count)), windingTarget);
+
+    private static CutToLengthSpec? BuildCutToLengthSpec(ParsedCutToLengthSpec? spec) => spec is null
+        ? null
+        : new CutToLengthSpec(spec.Lines.Select(line =>
+            new CutToLengthLine(line.LineId, line.Sequence, line.LengthMm, line.Count)));
 
     /// <summary>
     /// The owners' checks of a plan content, shared by the save and the revision in the save's order: each roll's mass
@@ -2228,7 +2341,8 @@ public sealed partial class ManufacturingCommandService(
                 snapshot.UnitKg.ProfileVersion,
                 snapshot.EffectiveOn,
                 snapshot.ThicknessMm,
-                snapshot.WidthMm), null);
+                snapshot.WidthMm,
+                snapshot.LengthMm), null);
         }
         catch (OperationCanceledException)
         {
@@ -2418,7 +2532,13 @@ public sealed partial class ManufacturingCommandService(
             PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))),
         plan.Spec is { } spec ? new SlittingSpecViewV1(
             [.. spec.Lines.Select(line => new SlitLineViewV1(Text(line.BandWidthMm), line.Count))],
-            spec.WindingTargetKg is { } winding ? Text(winding.Value) : null) : null);
+            spec.WindingTargetKg is { } winding ? Text(winding.Value) : null) : null,
+        CutSpecView(plan.CutToLengthSpec));
+
+    private static CutToLengthSpecViewV1? CutSpecView(CutToLengthSpec? spec) => spec is null
+        ? null
+        : new CutToLengthSpecViewV1([.. spec.Lines.Select(line =>
+            new CutToLengthLineViewV1(line.LineId, line.Sequence, Text(line.LengthMm), line.Count))]);
 
     private static CapturedPlanTechnicalSnapshotViewV1? TechnicalSnapshotView(
         PlanTechnicalParameterSnapshotV1? snapshot) => snapshot is null ? null : new(
@@ -2428,6 +2548,7 @@ public sealed partial class ManufacturingCommandService(
         new(snapshot.TemplateId, snapshot.TemplateVersion, snapshot.TemplateCode, snapshot.TemplateSourceRevision),
         Text(snapshot.ThicknessMm),
         Text(snapshot.WidthMm),
+        snapshot.LengthMm is { } lengthMm ? Text(lengthMm) : null,
         new(snapshot.KilogramUnitCompanyId, snapshot.KilogramUnitId, snapshot.KilogramUnitCode,
             snapshot.KilogramProfileId, snapshot.KilogramProfileVersion),
         snapshot.EffectiveOn);
@@ -2446,7 +2567,7 @@ public sealed partial class ManufacturingCommandService(
             input.ExpectedLabelVersion?.ToString(CultureInfo.InvariantCulture),
             CommercialContextView(input.CommercialContext), TechnicalSnapshotView(input.TechnicalSnapshot)))],
         revision.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
-        revision.Reason, revision.RevisedBy, revision.RecordedAtUtc);
+        revision.Reason, revision.RevisedBy, revision.RecordedAtUtc, CutSpecView(revision.CutToLengthSpec));
 
     /// <summary>The stored plan summary as text: the same lossless kilogram text as every other mass here.</summary>
     internal static PlanSummaryViewV1 PlanSummaryView(ManufacturingPlanSummary summary) => new(

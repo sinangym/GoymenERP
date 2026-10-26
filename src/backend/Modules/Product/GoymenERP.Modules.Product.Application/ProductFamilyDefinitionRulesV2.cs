@@ -14,7 +14,10 @@ public static class ProductFamilyDefinitionRulesV2
     public const string InvalidDefinitionCode = "product_family_policy_invalid";
     public const int MaximumMillimetreDecimals = 3;
 
-    private static readonly string[] RequiredMeasureRoles = [ProductTemplateFieldRolesV2.Thickness, ProductTemplateFieldRolesV2.Width];
+    private static readonly string[] BandCoilMeasureRoles =
+        [ProductTemplateFieldRolesV2.Thickness, ProductTemplateFieldRolesV2.Width];
+    private static readonly string[] CutSheetPlateMeasureRoles =
+        [ProductTemplateFieldRolesV2.Thickness, ProductTemplateFieldRolesV2.Width, ProductTemplateFieldRolesV2.Length];
     private static readonly string[] RequiredReferenceRoles = [ProductTemplateFieldRolesV2.Quality, ProductTemplateFieldRolesV2.Coating];
 
     /// <summary>
@@ -158,7 +161,8 @@ public static class ProductFamilyDefinitionRulesV2
 
         if (families.Any(family => family is null || family.Id == Guid.Empty
                 || Blank(family.Code, family.Name, family.Cins, family.Tur, family.Tip, family.SourceRef)
-                || family.RuleSet != ProductFamilyRuleSetsV2.GdcBandCoil)
+                || family.RuleSet is not (ProductFamilyRuleSetsV2.GdcBandCoil
+                    or ProductFamilyRuleSetsV2.GdcCutSheetPlate))
             || families.Select(family => family.Id).Distinct().Count() != families.Count
             || families.Select(family => family.Code).Distinct(StringComparer.Ordinal).Count() != families.Count)
         {
@@ -207,6 +211,27 @@ public static class ProductFamilyDefinitionRulesV2
         }
 
         var byKey = fields.ToDictionary(field => field.Key, StringComparer.Ordinal);
+        var ruleSets = familyIds
+            .Select(id => definition.Families.Single(family => family.Id == id).RuleSet)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (ruleSets.Length != 1)
+        {
+            return false;
+        }
+
+        var requiredMeasureRoles = ruleSets[0] switch
+        {
+            ProductFamilyRuleSetsV2.GdcBandCoil => BandCoilMeasureRoles,
+            ProductFamilyRuleSetsV2.GdcCutSheetPlate => CutSheetPlateMeasureRoles,
+            _ => [],
+        };
+        if (requiredMeasureRoles.Length == 0)
+        {
+            return false;
+        }
+
+        var permittedRoles = requiredMeasureRoles.Concat(RequiredReferenceRoles).ToHashSet(StringComparer.Ordinal);
         foreach (var field in fields)
         {
             var reference = field.Kind == ProductTemplateFieldKindV2.DictionaryReference;
@@ -221,7 +246,7 @@ public static class ProductFamilyDefinitionRulesV2
                     || (field.Role is not null && definition.Entries.All(entry => entry.Dictionary != field.Dictionary))
                     : field.Dictionary is not null || field.AllowsCandidate || field.ParentField is not null)
                 || (field.AppliesWhenField is null) != (field.AppliesWhenCode is null)
-                || (field.Role is not null && !RequiredMeasureRoles.Concat(RequiredReferenceRoles).Contains(field.Role)))
+                || (field.Role is not null && !permittedRoles.Contains(field.Role)))
             {
                 return false;
             }
@@ -246,12 +271,12 @@ public static class ProductFamilyDefinitionRulesV2
             }
         }
 
-        // The GDC band/coil rule set: each of its four roles exactly once, required, unconditional,
-        // and of the right kind; the controlled fields take approved values only.
-        foreach (var role in RequiredMeasureRoles.Concat(RequiredReferenceRoles))
+        // Every rule set's measure roles and the shared controlled-reference roles occur exactly once,
+        // required and unconditional. Length belongs only to the cut-sheet/plate rule set.
+        foreach (var role in requiredMeasureRoles.Concat(RequiredReferenceRoles))
         {
             var holders = fields.Where(field => field.Role == role).ToArray();
-            var expected = RequiredMeasureRoles.Contains(role)
+            var expected = requiredMeasureRoles.Contains(role)
                 ? ProductTemplateFieldKindV2.MeasureMillimetre
                 : ProductTemplateFieldKindV2.DictionaryReference;
             if (holders.Length != 1 || holders[0].Kind != expected || !holders[0].Required

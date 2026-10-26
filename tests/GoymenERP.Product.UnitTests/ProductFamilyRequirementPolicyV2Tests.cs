@@ -147,6 +147,46 @@ public sealed class ProductFamilyRequirementPolicyV2Tests
     [Theory]
     [InlineData("missing", ProductFamilyPolicyCodesV1.Required)]
     [InlineData("null", ProductFamilyPolicyCodesV1.Required)]
+    [InlineData("zero", ProductFamilyPolicyCodesV1.InvalidValue)]
+    [InlineData("four-decimals", ProductFamilyPolicyCodesV1.PrecisionExceeded)]
+    public async Task Cut_sheet_plate_requires_exact_positive_length_while_coil_cards_remain_length_free(
+        string fault, string code)
+    {
+        var definition = ProductInitialTechnicalDefinitionV1.Definition();
+        var attributes = new Dictionary<string, object?>
+        {
+            ["thickness-mm"] = 1.5m,
+            ["width-mm"] = 1250m,
+            ["length-mm"] = 2500.125m,
+            ["steel-grade"] = "S235JR",
+            ["coating"] = "uncoated",
+        };
+        Apply(attributes, "length-mm", fault);
+
+        var error = Assert.Single(await Policy(definition).ValidateAsync(
+            Card(attributes,
+                family: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId,
+                useFamily: true,
+                templateId: ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId,
+                templateVersion: "1",
+                overrideTemplate: true), default));
+
+        Assert.Equal(("references.attributes.length-mm", code), (error.Field, error.Code));
+
+        var legacy = new Dictionary<string, object?>(attributes, StringComparer.Ordinal);
+        legacy.Remove("length-mm");
+        Assert.Empty(await Policy(definition).ValidateAsync(
+            Card(legacy,
+                family: ProductInitialTechnicalDefinitionV1.HotRolledCoilFamilyId,
+                useFamily: true,
+                templateId: ProductInitialTechnicalDefinitionV1.TemplateId,
+                templateVersion: "1",
+                overrideTemplate: true), default));
+    }
+
+    [Theory]
+    [InlineData("missing", ProductFamilyPolicyCodesV1.Required)]
+    [InlineData("null", ProductFamilyPolicyCodesV1.Required)]
     [InlineData("unknown-reference", ProductFamilyPolicyCodesV1.NotControlled)]
     [InlineData("number", ProductFamilyPolicyCodesV1.NotControlled)]
     public async Task Grade_and_coating_must_be_controlled_references(string fault, string code)

@@ -40,6 +40,25 @@ export const PLAN_EDIT_TEXT = {
   created: 'Oluşturma',
 } as const
 
+/** M01.3: the shared cut-line editor's labels (create and edit). The user's words: Sıra no, Uzunluk (mm), Adet. */
+export const CUT_LINE_TEXT = {
+  legend: 'Boy kesme satırları',
+  note:
+    'Satırlar listedeki sırayla kaydedilir. Sıra no her satır için açıkça girilir (işaretli tam sayı); satırı taşımak yalnız listedeki yerini değiştirir.',
+  empty: 'Boy kesme satırı yok.',
+  position: 'Satır',
+  sequence: 'Sıra no',
+  length: 'Uzunluk (mm)',
+  count: 'Adet',
+  actions: 'İşlem',
+  row: (position: number) => `Kesim satırı ${position}`,
+  moveUp: 'yukarı taşı',
+  moveDown: 'aşağı taşı',
+  remove: 'kaldır',
+  add: 'Kesim satırı ekle',
+  keepOne: 'Kayıtlı boy kesme tanımı en az bir satır korur; tanımı temizleme bu sürümde yok.',
+} as const
+
 /** The server's refusal, in the user's terms. */
 export function revisionFailureText(status: number, code: string | null, field: string | null, process: string): string {
   if (status === 401 || status === 403) return 'Plan düzenleme yetkiniz artık geçerli değil.'
@@ -74,6 +93,12 @@ export function revisionFailureText(status: number, code: string | null, field: 
   return `Plan düzenlemesi uygulanmadı (${code ?? status}).`
 }
 
+function cutLinesText(spec: PlanRevision['cutToLengthSpec']): string {
+  return spec === null
+    ? 'yok'
+    : spec.lines.map((line) => `Sıra no ${line.sequence}: ${line.lengthMm} mm × ${line.count}`).join('; ')
+}
+
 function targetText(target: PlanRevision['target']): string {
   return target === null ? 'hedef yok' : `${TARGET_BASIS_LABEL[target.basis] ?? target.basis} ${target.kg} kg`
 }
@@ -104,6 +129,18 @@ export function describeRevisionChanges(previous: PlanRevision, next: PlanRevisi
   }
   for (const input of previous.inputs) {
     if (!after.has(input.parentRollId)) changes.push(`Çıkarılan ana rulo ${input.parentRollId}: ${input.plannedKg} kg`)
+  }
+  // M01.3: the ordered cut lines are content — list order, Sıra no, length and count are described as stored.
+  const cutBefore = cutLinesText(previous.cutToLengthSpec)
+  const cutAfter = cutLinesText(next.cutToLengthSpec)
+  if (cutBefore !== cutAfter) {
+    changes.push(`Boy kesme ayrıntısı: ${cutBefore} → ${cutAfter}`)
+  } else if (
+    previous.cutToLengthSpec !== null && next.cutToLengthSpec !== null &&
+    previous.cutToLengthSpec.lines.some((line, index) =>
+      line.lineId.toLowerCase() !== next.cutToLengthSpec?.lines[index].lineId.toLowerCase())
+  ) {
+    changes.push('Boy kesme ayrıntısı: aynı değerli satırların kimliği değişti.')
   }
   if (changes.length === 0) changes.push('Ana rulo sırası değişti.')
   return changes

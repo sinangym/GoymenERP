@@ -34,7 +34,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 function identity(userId = USER_A) {
-  return { userId, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [A_ID, B_ID] }
+  return { userId, displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [A_ID, B_ID], authenticationSessionBinding: null }
 }
 const DIRECTORY = [
   { id: A_ID, code: 'GDC', legalName: 'Göymen A', isPlaceholder: false },

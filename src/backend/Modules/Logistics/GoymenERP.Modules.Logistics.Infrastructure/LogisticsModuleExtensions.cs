@@ -77,6 +77,16 @@ public static class LogisticsModuleExtensions
             LogisticsPermissionManifestV1.CustomerReturnsRead,
             ErpPermissions.InventoryPhysicalAllocationWrite));
         services.AddScoped<ILogisticsCustomerReturnServiceV1, LogisticsCustomerReturnService>();
+        services.AddScoped<LogisticsTransferOutgoingDocumentStore>();
+        services.AddScoped<ILogisticsTransferOutgoingDocumentStoreV1>(provider =>
+            provider.GetRequiredService<LogisticsTransferOutgoingDocumentStore>());
+        services.AddScoped<ILogisticsTransferOutgoingDocumentProofSourceV1>(provider =>
+            provider.GetRequiredService<LogisticsTransferOutgoingDocumentStore>());
+        services.TryAddSingleton(new LogisticsTransferOutgoingDocumentBindingsV1(
+            LogisticsPermissionManifestV1.DispatchNotesCreate,
+            LogisticsPermissionManifestV1.DispatchNotesApprove,
+            LogisticsPermissionManifestV1.DispatchNotesCancel));
+        services.AddScoped<ILogisticsTransferOutgoingDocumentServiceV1, LogisticsTransferOutgoingDocumentService>();
         return services;
     }
 

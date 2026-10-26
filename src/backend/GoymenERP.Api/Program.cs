@@ -138,6 +138,7 @@ builder.Services.AddScoped<ICurrentUser, HttpCurrentUser>();
 builder.Services.AddSingleton<ShellCapabilityGenerationProtector>();
 builder.Services.AddSingleton<ShellCapabilityRegistry>();
 builder.Services.AddScoped<IActorSessionBindingResolver, ActorSessionBindingResolver>();
+builder.Services.AddScoped<IAuthenticationSessionBindingResolver, AuthenticationSessionBindingResolver>();
 builder.Services.AddScoped<ShellCapabilityService>();
 // FIN-T04b (#320): Finance persistence (with the audit interceptor) and its services: the real
 // permission port, the persisted bank-account reader and the draft service.
@@ -308,6 +309,8 @@ builder.Services.AddScoped<ILogisticsPartyAccountPortV1, CounterpartyLogisticsPa
 builder.Services.AddScoped<ILogisticsRealizationTransactionRunnerV1, LogisticsRealizationTransactionRunner>();
 builder.Services.AddScoped<ILogisticsCustomerReturnScopeV1, LogisticsCustomerReturnScope>();
 builder.Services.AddScoped<ILogisticsCustomerReturnTransactionRunnerV1, LogisticsCustomerReturnTransactionRunner>();
+builder.Services.AddScoped<ILogisticsTransferOutgoingDocumentScopeV1, LogisticsTransferOutgoingDocumentScope>();
+builder.Services.AddScoped<IInventoryTransferOutgoingDocumentProofPortV1, InventoryTransferOutgoingDocumentProofAdapter>();
 builder.Services.AddLogisticsModule(
     builder.Configuration,
     (services, options) => options.AddInterceptors(

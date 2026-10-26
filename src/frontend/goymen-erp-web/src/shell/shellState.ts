@@ -107,6 +107,18 @@ export interface ShellState {
   /** The sessionEpoch a context was last committed for; null = this session never bootstrapped. */
   readonly bootstrappedSessionEpoch: number | null
   /**
+   * The SERVER's identity of this authenticated session (`IdentityProfile.authenticationSessionBinding`, M01.3 r5
+   * #66/6187473245), for anything PERSISTED across an F5. `sessionEpoch` restarts at 0 in every document, so a stored
+   * command keyed on it read as absent after a reload (K2 #728/6180459736); a client-minted binding could be revived
+   * by a transient storage failure (#66/6187473245). The reducer mints nothing: SESSION_READY carries the value the
+   * identity response gave, from the same response as the actor, and every transition that advances the epoch drops it
+   * in the same step, so no render pairs a new session with the old binding. null = no session yet, or the server
+   * answered null: persisted commands then fail closed.
+   *
+   * In-memory fences keep using `sessionEpoch`; this is only for what outlives the document.
+   */
+  readonly sessionBinding: string | null
+  /**
    * The server rejected this session (401). TERMINAL until a real re-login.
    *
    * This lives in the reducer, not in a component, because a SESSION_RESET alone
@@ -209,7 +221,17 @@ export type ShellEvent =
    * SESSION_RESET could commit the OLD actor's context into the NEW session.
    * REAUTH_OK/REAUTH_FAIL already carry `forGeneration`; this closes the last hole.
    */
-  | { type: 'SESSION_READY'; forSessionEpoch: number; context: CompanyContext }
+  | {
+      type: 'SESSION_READY'
+      forSessionEpoch: number
+      context: CompanyContext
+      /**
+       * The server's binding from the identity response that named `context.userId`; null = the server gave none.
+       * The orchestrator, the only production dispatcher, always passes it explicitly. It stays optional only for the
+       * reducer's direct test drivers outside this lane; an omitted value is null, never anything minted here.
+       */
+      sessionBinding?: string | null
+    }
   | { type: 'REQUEST_SWITCH'; target: SwitchTarget }
   | { type: 'CONFIRM_SWITCH_DISCARD' }
   | { type: 'CONFIRM_SWITCH_STAY' }
@@ -263,6 +285,7 @@ export const initialShellState: ShellState = {
   committedContextRevision: 0,
   sessionEpoch: 0,
   bootstrappedSessionEpoch: null,
+  sessionBinding: null,
   sessionInvalid: false,
   lastSecurityEffect: null,
   pendingFormerSessionFailure: null,
@@ -317,6 +340,7 @@ export function shellReducer(state: ShellState, event: ShellEvent): ShellState {
         pendingTarget: null,
         verifiedFormerContext: null,
         bootstrappedSessionEpoch: state.sessionEpoch,
+        sessionBinding: event.sessionBinding ?? null,
         committedContextRevision: state.committedContextRevision + 1,
         freshCapabilityRevision: state.committedContextRevision + 1,
       }

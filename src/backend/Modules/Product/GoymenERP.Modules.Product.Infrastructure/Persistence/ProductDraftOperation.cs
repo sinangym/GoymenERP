@@ -79,14 +79,26 @@ internal static class ProductDraftOperation
             var product = before.RestoreProduct();
             if (product.Lifecycle != ProductLifecycle.Draft)
                 throw new ProductOperationException(ProductApiV1.LifecycleConflict, 409);
-            product.Activate(ProductVersion.Parse(request.ExpectedVersion), clock.GetUtcNow());
-            var after = ProductStoredRecord.Capture(product, before.RestoreReferences());
-            row.ApplyActivation(after);
+            var expectedVersion = ProductVersion.Parse(request.ExpectedVersion);
+            if (expectedVersion != product.Version)
+                throw new ProductVersionConflictException(expectedVersion, product.Version);
             var groupName = await context.CodeGroups.AsNoTracking().Where(group => group.Id == row.GroupId)
                 .Select(group => group.Name).SingleOrDefaultAsync(cancellationToken)
                 ?? throw new InvalidOperationException("The stored Product code group is missing.");
+            var beforeCard = Card(before, groupName);
+            // PRODUCT-TECH-FAMILY-02 adds one exact activation prerequisite for the accepted cut-sheet/plate
+            // family. Family-less and the four legacy coil/slit families retain DEC-PRD-010 activation semantics.
+            if (product.FamilyId == ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId)
+            {
+                var errors = await new ProductPurchaseFamilyRequirementPolicyV1(
+                    new SqlProductFamilyDefinitionSource(context)).ValidateAsync(beforeCard, cancellationToken);
+                if (errors.Count > 0) throw new ProductActivationValidationException(errors);
+            }
+            product.Activate(expectedVersion, clock.GetUtcNow());
+            var after = ProductStoredRecord.Capture(product, before.RestoreReferences());
+            row.ApplyActivation(after);
             // System action label, as for creation: the approval carries no user-supplied reason.
-            return new(Card(before, groupName), Card(after, groupName), "Ürün kartı onayı", "product.card.activated.v1");
+            return new(beforeCard, Card(after, groupName), "Ürün kartı onayı", "product.card.activated.v1");
         }
         if (operation is ProductCommandIntent.DeactivateOperation or ProductCommandIntent.ReactivateOperation)
         {

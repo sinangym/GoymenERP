@@ -42,6 +42,7 @@ export const IDENTITY = {
   displayName: 'SENTETIK Kullanıcı',
   email: null,
   allowedCompanyIds: [COMPANY_A, COMPANY_B],
+  authenticationSessionBinding: null,
 }
 
 export const DIRECTORY = [

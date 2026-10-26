@@ -716,6 +716,7 @@ public static partial class InventoryEndpoints
                 HttpContext httpContext,
                 IInventoryStockPositionsV1 positions,
                 IProductStockDisplayReferencesV1 productDisplays,
+                IProductStockDisplayReferencesV2 productDisplaysV2,
                 IOrganizationLocationDisplayReaderV1 locationDisplays,
                 IInventoryStockOwnerDisplaySourceV1 ownerDisplays,
                 ICompanyContext companyContext,
@@ -757,6 +758,13 @@ public static partial class InventoryEndpoints
                     {
                         return Results.Ok(await InventoryStockPositionDisplayHost.ComposeWithOwnerAuthorizedAsync(
                             scope!, page, productDisplays, locationDisplays, ownerDisplays, companyContext,
+                            currentUser, authority, cancellationToken));
+                    }
+
+                    if (displayContract == InventoryStockPositionDisplayContract.ProductLocationOwnerAndLength)
+                    {
+                        return Results.Ok(await InventoryStockPositionDisplayHost.ComposeWithLengthAuthorizedAsync(
+                            scope!, page, productDisplaysV2, locationDisplays, ownerDisplays, companyContext,
                             currentUser, authority, cancellationToken));
                     }
 
@@ -831,6 +839,8 @@ public static partial class InventoryEndpoints
                 InventoryStockPositionDisplayContract.ProductAndLocation,
             InventoryStockPositionApiV1.OwnerDisplayContractVersion =>
                 InventoryStockPositionDisplayContract.ProductLocationAndOwner,
+            InventoryStockPositionApiV1.NominalLengthDisplayContractVersion =>
+                InventoryStockPositionDisplayContract.ProductLocationOwnerAndLength,
             _ => InventoryStockPositionDisplayContract.Invalid,
         };
         return contract != InventoryStockPositionDisplayContract.Invalid;
@@ -843,6 +853,7 @@ public static partial class InventoryEndpoints
         Product,
         ProductAndLocation,
         ProductLocationAndOwner,
+        ProductLocationOwnerAndLength,
     }
 
     private static bool TryReadStockPositionQuery(

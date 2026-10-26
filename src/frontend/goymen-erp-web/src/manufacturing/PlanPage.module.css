@@ -4,6 +4,11 @@
 .header h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.65rem, 4vw, 2.35rem); }
 .eyebrow { margin: 0 0 .25rem; color: #8a5319; font-size: .75rem; font-weight: 800; letter-spacing: .13em; }
 .form { display: grid; gap: 1rem; max-width: 68rem; }
+/* M01.3: the form's single grid column is as wide as its widest item's minimum content. A native fieldset
+   (`min-inline-size: min-content`) and the preview card refused to shrink below their tables, so at 390px the
+   column — and with it the document — overflowed instead of the tables scrolling in their own `.tableWrap`.
+   Every grid item may shrink to the column; wide tables keep scrolling inside their wrapper. */
+.form > * { min-width: 0; }
 .form fieldset { display: grid; gap: .75rem; border: 1px solid #b8c8bb; border-radius: .8rem; background: #fff; padding: 1rem; }
 .form legend { padding: 0 .35rem; color: #294535; font-weight: 800; }
 .form input, .form select { width: 100%; border: 1px solid #9cae9f; border-radius: .45rem; background: #fffdf5; padding: .6rem .7rem; font: inherit; }
@@ -11,6 +16,8 @@
 .searchRow, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .7rem; }
 .actions button, .primaryLink { border: 1px solid #236442; border-radius: .45rem; background: #236442; color: #fff; padding: .55rem .9rem; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
 .actions button:disabled { cursor: progress; opacity: .65; }
+/* M01.3: an end cut-line row's impossible move stays focusable (aria-disabled) but must look unavailable; focus ring kept. */
+.actions button[aria-disabled="true"] { border-color: #a9b5ad; background: #e4e9e5; color: #4f5f55; cursor: not-allowed; }
 .secondary { border: 1px solid #63766b; border-radius: .45rem; background: #fff; color: #294535; padding: .5rem .85rem; text-decoration: none; }
 .tableWrap { overflow-x: auto; border: 1px solid #d7ddd8; border-radius: .8rem; background: #fff; }
 .table { width: 100%; border-collapse: collapse; }

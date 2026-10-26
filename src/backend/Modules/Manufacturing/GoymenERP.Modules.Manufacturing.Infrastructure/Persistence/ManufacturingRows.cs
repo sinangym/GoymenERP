@@ -26,6 +26,7 @@ internal interface IPlanTechnicalSnapshotRow
     DateOnly? TechnicalEffectiveOn { get; set; }
     decimal? TechnicalThicknessMm { get; set; }
     decimal? TechnicalWidthMm { get; set; }
+    decimal? TechnicalLengthMm { get; set; }
 }
 
 /// <summary>The nullable-on-legacy, all-or-none commercial context shared by plan and order input rows.</summary>
@@ -92,6 +93,7 @@ internal sealed class PlanInputRow : IManufacturingTenantRow, IPlanTechnicalSnap
     public DateOnly? TechnicalEffectiveOn { get; set; }
     public decimal? TechnicalThicknessMm { get; set; }
     public decimal? TechnicalWidthMm { get; set; }
+    public decimal? TechnicalLengthMm { get; set; }
     public Guid? CommercialPartyId { get; set; }
     public Guid? CommercialCompanyPartyAccountId { get; set; }
     public string? CommercialPartyVersion { get; set; }
@@ -109,6 +111,18 @@ internal sealed class PlanSlitLineRow : IManufacturingTenantRow
     public int Sequence { get; set; }
     public decimal BandWidthMm { get; set; }
     public int BandCount { get; set; }
+}
+
+/// <summary>One ordered coil-to-sheet cut line of the plan as created. Never changes.</summary>
+internal sealed class PlanCutLineRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public Guid LineId { get; set; }
+    public int Ordinal { get; set; }
+    public int Sequence { get; set; }
+    public decimal LengthMm { get; set; }
+    public int Count { get; set; }
 }
 
 /// <summary>
@@ -161,10 +175,24 @@ internal sealed class PlanRevisionInputRow : IManufacturingTenantRow, IPlanTechn
     public DateOnly? TechnicalEffectiveOn { get; set; }
     public decimal? TechnicalThicknessMm { get; set; }
     public decimal? TechnicalWidthMm { get; set; }
+    public decimal? TechnicalLengthMm { get; set; }
     public Guid? CommercialPartyId { get; set; }
     public Guid? CommercialCompanyPartyAccountId { get; set; }
     public string? CommercialPartyVersion { get; set; }
     public string? CommercialAccountVersion { get; set; }
+}
+
+/// <summary>One ordered coil-to-sheet cut line of an append-only Draft revision.</summary>
+internal sealed class PlanRevisionCutLineRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public int RevisionNo { get; set; }
+    public Guid LineId { get; set; }
+    public int Ordinal { get; set; }
+    public int Sequence { get; set; }
+    public decimal LengthMm { get; set; }
+    public int Count { get; set; }
 }
 
 /// <summary>

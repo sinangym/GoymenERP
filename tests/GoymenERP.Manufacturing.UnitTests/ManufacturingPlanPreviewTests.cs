@@ -7,6 +7,7 @@ using GoymenERP.Modules.Manufacturing.Application;
 using GoymenERP.Modules.Manufacturing.Domain.Common;
 using GoymenERP.Modules.Manufacturing.Domain.Engines;
 using GoymenERP.Modules.Manufacturing.Domain.Engines.ColdRolling;
+using GoymenERP.Modules.Manufacturing.Domain.Engines.CutToLength;
 using GoymenERP.Modules.Manufacturing.Domain.Engines.Slitting;
 using GoymenERP.Modules.Manufacturing.Domain.Orders;
 using GoymenERP.Modules.Manufacturing.Domain.Plans;
@@ -186,6 +187,45 @@ public sealed class ManufacturingPlanPreviewTests
     }
 
     [Fact]
+    public void Cut_to_length_content_feeds_the_engine_without_inventing_density_or_other_parameters()
+    {
+        var first = Guid.Parse("50000000-0000-0000-0000-000000000001");
+        var second = Guid.Parse("50000000-0000-0000-0000-000000000002");
+        var spec = new CutToLengthSpec(
+        [
+            new CutToLengthLine(first, 40, 6000m, 3),
+            new CutToLengthLine(second, 7, 2500.5m, 2),
+        ]);
+        var plan = new ProductionPlan(Guid.NewGuid(), Company, WorkCenter, ManufacturingProcess.CutToLength,
+            [new PlannedInput(RollA, new Kilograms(1000m), 3)], cutToLengthSpec: spec);
+        var parameters = new PlanCalculationParameters(Plan: new Dictionary<string, decimal>
+        {
+            ["thicknessMm"] = 2m,
+            ["widthMm"] = 1000m,
+            ["densityKgPerCubicMetre"] = 7850m,
+        });
+
+        var calculation = ProductionPlanCalculatorV1.Calculate(plan, parameters);
+        var answer = Assert.Single(Assert.Single(calculation.Rolls).Answers);
+        var engine = CutToLengthEngineV1.Plan(new CutPlanInputV1(1000m, 2m, 1000m, 7850m,
+            [new CutLineInputV1(6000m, 3), new CutLineInputV1(2500.5m, 2)])).Value!;
+
+        Assert.Equal(EngineOutcome.Computed, answer.Outcome);
+        Assert.Equal(
+            [
+                ("inputMetres", engine.InputMetres),
+                ("planKg", engine.PlanKg),
+                ("planMetres", engine.PlanMetres),
+                ("remainingKg", engine.RemainingKg),
+                ("remainingMetres", engine.RemainingMetres),
+            ],
+            answer.Values.Select(value => (value.Name, value.Value)));
+        Assert.DoesNotContain(calculation.MissingParameters, parameter => parameter.StartsWith("lines[", StringComparison.Ordinal));
+        Assert.Equal([(first, 40), (second, 7)],
+            plan.CutToLengthSpec!.Lines.Select(line => (line.LineId, line.Sequence)));
+    }
+
+    [Fact]
     public void A_supplied_wrong_value_is_a_refusal_not_a_number()
     {
         var parameters = new PlanCalculationParameters(Plan: new Dictionary<string, decimal>
@@ -297,6 +337,96 @@ public sealed class ManufacturingPlanPreviewTests
         Assert.Contains("netUsableWidthMm", preview.Resource.MissingParameters);
         Assert.DoesNotContain(fixture.Store.Commands,
             command => command.Value.CommandName != ManufacturingCommandNames.SavePlan);
+    }
+
+    [Fact]
+    public async Task A_cut_to_length_spec_is_shared_by_preview_save_and_read_with_lossless_client_sequence()
+    {
+        var fixture = new Fixture();
+        fixture.WorkCenters.Kind = ManufacturingProcess.CutToLength.ToString();
+        var first = Guid.Parse("50000000-0000-0000-0000-000000000001");
+        var second = Guid.Parse("50000000-0000-0000-0000-000000000002");
+        var inputs = new[] { new PlannedInputRequestV1(RollA, "1000", "7") };
+        var spec = new CutToLengthSpecRequestV1(
+        [
+            new CutToLengthLineRequestV1(first, 40, "6000.000", 3),
+            new CutToLengthLineRequestV1(second, -7, "2500.5", 2),
+        ]);
+
+        var preview = await fixture.Service.PreviewPlanAsync(
+            new PlanPreviewRequestV1(WorkCenter, inputs, null, CutToLengthSpec: spec),
+            Permission, CancellationToken.None);
+        var saved = await fixture.Service.SavePlanAsync(
+            new SavePlanRequestV1(Guid.NewGuid(), WorkCenter, inputs, null, CutToLengthSpec: spec),
+            "cut-to-length-spec", Permission, CancellationToken.None);
+
+        Assert.Equal(ManufacturingApiStatus.Ok, preview.Status);
+        Assert.Equal(ManufacturingApiStatus.Created, saved.Status);
+        Assert.DoesNotContain(preview.Resource!.MissingParameters,
+            parameter => parameter.StartsWith("lines[", StringComparison.Ordinal));
+        Assert.Equal(
+            [(first, 40, "6000", 3), (second, -7, "2500.5", 2)],
+            saved.Resource!.CutToLengthSpec!.Lines.Select(line =>
+                (line.LineId, line.Sequence, line.LengthMm, line.Count)));
+        var stored = fixture.Store.Plans[saved.Resource.PlanId];
+        Assert.Equal(
+            [(first, 40, 6000m, 3), (second, -7, 2500.5m, 2)],
+            stored.CutToLengthSpec!.Lines.Select(line =>
+                (line.LineId, line.Sequence, line.LengthMm, line.Count)));
+
+        var ofStored = ManufacturingCommandService.PlanPreviewView(stored.WorkCenterId,
+            ProductionPlanCalculatorV1.Calculate(stored, PlanCalculationParameters.FromCapturedSnapshots(stored.Inputs)));
+        Assert.Equal(JsonSerializer.Serialize(ofStored, Json), JsonSerializer.Serialize(preview.Resource, Json));
+    }
+
+    [Fact]
+    public async Task Cut_to_length_spec_grammar_is_precise_and_other_processes_refuse_it()
+    {
+        var lineId = Guid.Parse("50000000-0000-0000-0000-000000000001");
+        var invalid = new (CutToLengthSpecRequestV1 Spec, string Field)[]
+        {
+            (new CutToLengthSpecRequestV1(null), "cutToLengthSpec.lines"),
+            (new CutToLengthSpecRequestV1([]), "cutToLengthSpec.lines"),
+            (new CutToLengthSpecRequestV1([new CutToLengthLineRequestV1(Guid.Empty, 1, "6000", 1)]),
+                "cutToLengthSpec.lines[0].lineId"),
+            (new CutToLengthSpecRequestV1([
+                new CutToLengthLineRequestV1(lineId, 1, "6000", 1),
+                new CutToLengthLineRequestV1(lineId, 9, "2500", 2),
+            ]), "cutToLengthSpec.lines[1].lineId"),
+            (new CutToLengthSpecRequestV1([new CutToLengthLineRequestV1(lineId, 1, null, 1)]),
+                "cutToLengthSpec.lines[0].lengthMm"),
+            (new CutToLengthSpecRequestV1([new CutToLengthLineRequestV1(lineId, 1, "1,5", 1)]),
+                "cutToLengthSpec.lines[0].lengthMm"),
+            (new CutToLengthSpecRequestV1([new CutToLengthLineRequestV1(lineId, 1, "1.0001", 1)]),
+                "cutToLengthSpec.lines[0].lengthMm"),
+            (new CutToLengthSpecRequestV1([new CutToLengthLineRequestV1(lineId, 1, "0", 1)]),
+                "cutToLengthSpec.lines[0].lengthMm"),
+            (new CutToLengthSpecRequestV1([new CutToLengthLineRequestV1(lineId, 1, "6000", 0)]),
+                "cutToLengthSpec.lines[0].count"),
+        };
+
+        foreach (var (spec, field) in invalid)
+        {
+            var fixture = new Fixture();
+            fixture.WorkCenters.Kind = ManufacturingProcess.CutToLength.ToString();
+            var answer = await fixture.Service.PreviewPlanAsync(
+                Request("10") with { CutToLengthSpec = spec }, Permission, CancellationToken.None);
+            Assert.Equal((ManufacturingApiStatus.Invalid, field), (answer.Status, answer.Field));
+            Assert.Empty(fixture.Calls);
+        }
+
+        var otherProcess = new Fixture();
+        otherProcess.WorkCenters.Kind = ManufacturingProcess.ColdRolling.ToString();
+        var refused = await otherProcess.Service.PreviewPlanAsync(
+            Request("10") with
+            {
+                CutToLengthSpec = new CutToLengthSpecRequestV1(
+                    [new CutToLengthLineRequestV1(lineId, -7, "6000", 1)]),
+            },
+            Permission, CancellationToken.None);
+        Assert.Equal((ManufacturingApiStatus.Invalid, "cutToLengthSpec"), (refused.Status, refused.Field));
+        Assert.Equal(["authority", "work-center", "authority"], otherProcess.Calls);
+        Assert.Empty(otherProcess.Store.Writes);
     }
 
     [Fact]

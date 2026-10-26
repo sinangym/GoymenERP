@@ -8,6 +8,7 @@ public static class InventoryStockPositionApiV1
     public const string ProductDisplayContractHeader = "X-ERP-Inventory-Stock-Display";
     public const string ProductDisplayContractVersion = "1.0";
     public const string OwnerDisplayContractVersion = "3.0";
+    public const string NominalLengthDisplayContractVersion = "4.0";
 }
 
 /// <summary>

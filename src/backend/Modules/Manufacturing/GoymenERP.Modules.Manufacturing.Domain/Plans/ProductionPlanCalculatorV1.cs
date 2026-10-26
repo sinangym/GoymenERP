@@ -150,11 +150,16 @@ public static class ProductionPlanCalculatorV1
     public static PlanCalculation Calculate(ProductionPlan plan, PlanCalculationParameters? parameters = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        return Calculate(plan.Process, plan.Inputs, plan.Target, plan.Spec, parameters);
+        return Calculate(plan.Process, plan.Inputs, plan.Target, plan.Spec, plan.CutToLengthSpec, parameters);
     }
 
     public static PlanCalculation Calculate(ManufacturingProcess process, IReadOnlyList<PlannedInput> inputs,
-        ProductionTarget? target, SlittingSpec? spec, PlanCalculationParameters? parameters = null)
+        ProductionTarget? target, SlittingSpec? spec, PlanCalculationParameters? parameters = null) =>
+        Calculate(process, inputs, target, spec, cutToLengthSpec: null, parameters);
+
+    public static PlanCalculation Calculate(ManufacturingProcess process, IReadOnlyList<PlannedInput> inputs,
+        ProductionTarget? target, SlittingSpec? spec, CutToLengthSpec? cutToLengthSpec,
+        PlanCalculationParameters? parameters)
     {
         ArgumentNullException.ThrowIfNull(inputs);
         if (!Enum.IsDefined(process))
@@ -166,7 +171,7 @@ public static class ProductionPlanCalculatorV1
         var total = inputs.Aggregate(Kilograms.Zero, (sum, input) => sum + input.PlannedMass);
         var rolls = inputs
             .Select(input => new PlanRollCalculation(input.ParentRollId, input.PlannedMass,
-                RollAnswers(process, input, spec, parameters)))
+                RollAnswers(process, input, spec, cutToLengthSpec, parameters)))
             .ToArray();
         var planAnswers = PlanAnswers(process, parameters);
         var targetCalculation = target is null ? null : TargetOf(target, total);
@@ -193,7 +198,7 @@ public static class ProductionPlanCalculatorV1
                 [TheoreticalGoodOutputParameter]);
 
     private static PlanFormulaAnswer[] RollAnswers(ManufacturingProcess process, PlannedInput input, SlittingSpec? spec,
-        PlanCalculationParameters parameters)
+        CutToLengthSpec? cutToLengthSpec, PlanCalculationParameters parameters)
     {
         var roll = input.ParentRollId;
         var kg = input.PlannedMass.Value;
@@ -247,12 +252,14 @@ public static class ProductionPlanCalculatorV1
                 ];
 
             case ManufacturingProcess.CutToLength:
-                // The plan carries no cut lines (§28.3's target lengths and counts): the engine names them missing.
+                IReadOnlyList<CutLineInputV1> cutLines = cutToLengthSpec is null
+                    ? [new CutLineInputV1(null, null)]
+                    : [.. cutToLengthSpec.Lines.Select(line => new CutLineInputV1(line.LengthMm, line.Count))];
                 return
                 [
                     Answer("CUT-001…006", CutToLengthEngineV1.FormulaVersion,
                         CutToLengthEngineV1.Plan(new CutPlanInputV1(kg, P("thicknessMm"), P("widthMm"),
-                            P("densityKgPerCubicMetre"), [new CutLineInputV1(null, null)])),
+                            P("densityKgPerCubicMetre"), cutLines)),
                         result =>
                         [
                             new("inputMetres", result.InputMetres),

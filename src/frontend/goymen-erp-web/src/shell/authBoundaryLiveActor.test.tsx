@@ -74,6 +74,7 @@ function installFetch() {
           displayName: 'Kullanıcı A',
           email: null,
           allowedCompanyIds: [A_ID, B_ID],
+          authenticationSessionBinding: null,
         })
       if (url.includes('/organization/companies')) return json(DIRECTORY)
       if (url.includes('/shell/capabilities'))
@@ -165,7 +166,7 @@ async function bootShellAsA() {
 function serverNowAuthenticates(queryClient: QueryClient, userId: string) {
   queryClient.setQueryData(identityQueryKey(queryClient), {
     type: 'ok-single',
-    data: { userId, displayName: 'Kullanıcı B', email: null, allowedCompanyIds: [A_ID, B_ID] },
+    data: { userId, displayName: 'Kullanıcı B', email: null, allowedCompanyIds: [A_ID, B_ID], authenticationSessionBinding: null },
   })
 }
 

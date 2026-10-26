@@ -56,7 +56,7 @@ function installServer(documentsStatus = 200) {
       const headers = (init?.headers ?? {}) as Record<string, string>
       const companyId = headers['X-Company-Id'] ?? null
       if (url.includes('/identity/me'))
-        return json({ userId: '99999999-9999-4999-8999-999999999999', displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [A_ID, B_ID] })
+        return json({ userId: '99999999-9999-4999-8999-999999999999', displayName: 'Kullanıcı A', email: null, allowedCompanyIds: [A_ID, B_ID], authenticationSessionBinding: null })
       if (url.includes('/organization/companies'))
         return json([
           { id: A_ID, code: 'GDC', legalName: 'Göymen Demir Çelik', isPlaceholder: false },

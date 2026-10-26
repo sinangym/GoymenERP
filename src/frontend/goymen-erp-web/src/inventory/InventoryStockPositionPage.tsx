@@ -223,11 +223,17 @@ function readDraft(draft: MeasureDraft): { readonly value: StockMeasureFilter } 
 
 const NO_MEASURE_ERRORS: Record<StockMeasure, MeasureErrors> = { thickness: {}, width: {} }
 
+/** One measure's applied filter as a comparable value. */
+function appliedMeasureKey(filters: StockPositionFilters, measure: StockMeasure): string {
+  return Object.values(stockMeasureFilter(filters, measure)).join('|')
+}
+
 /**
  * Kalınlık and En. Typing reads nothing: the two measures are applied together with "Ölçüleri uygula" (or Enter in a
  * field), so a half-typed number is never sent. A value that cannot be sent keeps its field, says why next to it and
- * takes the focus; nothing is rounded or corrected for the person. The parent remounts this form when the applied
- * measures change elsewhere (a chip, "Filtreleri temizle", Back).
+ * takes the focus; nothing is rounded or corrected for the person. When an applied measure changes elsewhere (a chip,
+ * "Filtreleri temizle", Back) only THAT measure's fields follow it; what was typed for the other measure and not yet
+ * applied stays.
  */
 function MeasureFilterForm({ filters, onApply }: {
   readonly filters: StockPositionFilters
@@ -238,6 +244,24 @@ function MeasureFilterForm({ filters, onApply }: {
     width: draftOf(stockMeasureFilter(filters, 'width')),
   }))
   const [errors, setErrors] = useState(NO_MEASURE_ERRORS)
+  const [seen, setSeen] = useState<Record<StockMeasure, string>>(() => ({
+    thickness: appliedMeasureKey(filters, 'thickness'),
+    width: appliedMeasureKey(filters, 'width'),
+  }))
+  const moved = STOCK_MEASURES.filter((measure) => seen[measure] !== appliedMeasureKey(filters, measure))
+  if (moved.length > 0) {
+    setSeen({ thickness: appliedMeasureKey(filters, 'thickness'), width: appliedMeasureKey(filters, 'width') })
+    setDrafts((previous) => {
+      const next = { ...previous }
+      for (const measure of moved) next[measure] = draftOf(stockMeasureFilter(filters, measure))
+      return next
+    })
+    setErrors((previous) => {
+      const next = { ...previous }
+      for (const measure of moved) next[measure] = {}
+      return next
+    })
+  }
   const [refusals, setRefusals] = useState(0)
   const formRef = useRef<HTMLFormElement>(null)
   useEffect(() => {
@@ -311,6 +335,9 @@ function MeasureFilterForm({ filters, onApply }: {
     </div>
   </form>
 }
+
+/** The family selector's loading or failure text, which the selector is described by. */
+const FAMILY_STATUS_ID = 'stock-family-filter-status'
 
 type FamilyState =
   | { readonly type: 'pending' }
@@ -427,6 +454,8 @@ function InventoryStockPositionView({
   const [showFreePhysical, setShowFreePhysical] = useState(false)
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)
   const [families, setFamilies] = useState<FamilyState>({ type: 'pending' })
+  // "Filtreleri temizle" empties the measure fields too, typed-and-unapplied ones included; a single chip does not.
+  const [measureFormEpoch, setMeasureFormEpoch] = useState(0)
   const familiesLoaded = useRef(false)
   const familyFence = useRef(createRequestFence())
   const listFence = useRef(createRequestFence())
@@ -434,6 +463,7 @@ function InventoryStockPositionView({
   // Focus needs a stable place when the control holding it goes away with the list it changed: the result region
   // after a filter, the first appended label after "Daha fazla göster".
   const resultsRef = useRef<HTMLElement>(null)
+  const filtersButtonRef = useRef<HTMLButtonElement>(null)
   const focusLabelRef = useRef<string | null>(null)
   useEffect(() => {
     if (state.type !== 'ready' || focusLabelRef.current === null) return
@@ -620,9 +650,20 @@ function InventoryStockPositionView({
     }
   }
   const retryFamilies = () => {
+    // The retry button leaves with the failure it belongs to; the focus goes to the control that owns the family filter.
+    filtersButtonRef.current?.focus()
     setFamilies({ type: 'pending' })
     void loadFamilies()
   }
+  const familyStatusShown = families.type === 'failed' || (families.type === 'pending' && openPanel === 'filters')
+  const familyProblem = families.type === 'failed'
+    ? <>
+      <p id={FAMILY_STATUS_ID} role="alert" className={styles.error}>{families.forbidden ? STOCK_TEXT.familyForbidden : STOCK_TEXT.familyUnreadable}</p>
+      {families.forbidden
+        ? null
+        : <Button type="button" variant="ghost" size="sm" onClick={retryFamilies}>{STOCK_TEXT.familyRetry}</Button>}
+    </>
+    : null
 
   const filterButton = (label: string, next: StockPositionFilters) => <button
     type="button"
@@ -768,6 +809,7 @@ function InventoryStockPositionView({
       </form>
       <div className={styles.disclosures}>
         <Button
+          ref={filtersButtonRef}
           type="button"
           variant={openPanel === 'filters' ? 'secondary' : 'ghost'}
           className={styles.disclosure}
@@ -805,7 +847,12 @@ function InventoryStockPositionView({
         </select>}
       </Field>
       <div className={styles.familyGroup}>
-        <Field label={STOCK_TEXT.familyFilter} id="stock-family-filter" className={styles.panelField}>
+        <Field
+          label={STOCK_TEXT.familyFilter}
+          id="stock-family-filter"
+          className={styles.panelField}
+          describedBy={familyStatusShown ? FAMILY_STATUS_ID : undefined}
+        >
           {(control) => <select
             {...control}
             className={styles.select}
@@ -825,23 +872,16 @@ function InventoryStockPositionView({
           </select>}
         </Field>
         {families.type === 'pending' && openPanel === 'filters'
-          ? <p role="status" className={styles.panelNote}>{STOCK_TEXT.familyLoading}</p>
+          ? <p id={FAMILY_STATUS_ID} role="status" className={styles.panelNote}>{STOCK_TEXT.familyLoading}</p>
           : null}
-        {families.type === 'failed'
-          ? <>
-            <p role="alert" className={styles.error}>{families.forbidden ? STOCK_TEXT.familyForbidden : STOCK_TEXT.familyUnreadable}</p>
-            {families.forbidden
-              ? null
-              : <Button type="button" variant="ghost" size="sm" onClick={retryFamilies}>{STOCK_TEXT.familyRetry}</Button>}
-          </>
-          : null}
+        {openPanel === 'filters' ? familyProblem : null}
       </div>
-      <MeasureFilterForm
-        key={STOCK_MEASURES.map((measure) => Object.values(stockMeasureFilter(filters, measure)).join('|')).join('/')}
-        filters={filters}
-        onApply={(next) => applyFilters(next, true)}
-      />
+      <MeasureFilterForm key={measureFormEpoch} filters={filters} onApply={(next) => applyFilters(next, true)} />
     </div>
+    {/* A family named by the address is read with the panel closed; its failure and retry are said here, not hidden. */}
+    {openPanel !== 'filters' && filters.productFamilyId !== null && familyProblem !== null
+      ? <div className={styles.familyGroup}>{familyProblem}</div>
+      : null}
     <fieldset id="stock-columns" className={styles.panel} hidden={openPanel !== 'columns'}>
       <legend>{STOCK_TEXT.visibleColumns}</legend>
       <label className={styles.check}><input type="checkbox" aria-label={STOCK_TEXT.columnToggle(STOCK_TEXT.column.classification)} checked={showClassification} onChange={(event) => setShowClassification(event.target.checked)} /> {STOCK_TEXT.column.classification}</label>
@@ -856,7 +896,7 @@ function InventoryStockPositionView({
             <button type="button" aria-label={STOCK_TEXT.filterChip.remove(chip.label)} onClick={() => applyFilters(chip.remove, true)}>×</button>
           </li>)}</ul>
           : null}
-        <Button type="button" variant="ghost" size="sm" onClick={() => { setQ(''); applyFilters(NO_STOCK_FILTERS, true) }}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => { setQ(''); setMeasureFormEpoch((epoch) => epoch + 1); applyFilters(NO_STOCK_FILTERS, true) }}>
           {STOCK_TEXT.clearFilters}
         </Button>
       </div>

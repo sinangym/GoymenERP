@@ -58,14 +58,59 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
         var definition = await new SqlProductFamilyDefinitionSource(
             read.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default);
         ProductFamilyDefinitionRulesV2.RequireWellFormed(definition);
-        Assert.Equal(5, definition.Families.Count);
-        Assert.Equal(2, definition.Templates.Count);
+        Assert.Equal(6, definition.Families.Count);
+        Assert.Equal(3, definition.Templates.Count);
         Assert.Equal(8, definition.Entries.Count);
         Assert.Equal(4, definition.Families.Count(row => row.SourceRef == ProductInitialTechnicalDefinitionV1.SourceRef));
+        Assert.Equal(ProductInitialTechnicalDefinitionV1.CutSheetPlateSourceRef,
+            definition.Families.Single(row =>
+                row.Id == ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId).SourceRef);
         Assert.Equal(ProductTechnicalCardFixture.SourceRef,
             definition.Families.Single(row => row.Id == ProductTechnicalCardFixture.FamilyId).SourceRef);
         Assert.Equal(ProductTechnicalCardFixture.SourceRef,
             definition.Templates.Single(row => row.Id == ProductTechnicalCardFixture.TemplateId).SourceRef);
+    }
+
+    [SqlServerFact]
+    public async Task Cut_sheet_plate_release_refuses_a_referenced_card_then_replays_without_touching_legacy_rows()
+    {
+        await using var run = await Run.StartAsync();
+        await ExecuteAsync(run.Factory.DatabaseConnectionString, """
+            INSERT INTO [product].[CodeGroups] ([Id], [Name], [Prefix])
+                VALUES ('b7100000-0000-4000-8000-000000000101', N'SENTETIK cut-sheet rollback group', 'CSG');
+            INSERT INTO [product].[Products]
+                ([Id], [Code], [Name], [GroupId], [ClassId], [FamilyId],
+                 [PurchasableValue], [PurchasableProvenance], [SellableValue], [SellableProvenance],
+                 [ProductionInputValue], [ProductionInputProvenance], [ProductionOutputValue], [ProductionOutputProvenance],
+                 [Lifecycle], [Version], [CreatedAtUtc], [UpdatedAtUtc], [ReferencesJson])
+            VALUES
+                ('b7100000-0000-4000-8000-000000000401', 'CSG-1', N'SENTETIK kesilmiş sac Product',
+                 'b7100000-0000-4000-8000-000000000101', NULL, '075d01d5-c57c-44b9-903a-89c00e4db029',
+                 NULL, 0, NULL, 0, NULL, 0, NULL, 0, 0, 1,
+                 '2026-10-15T11:00:00+00:00', '2026-10-15T11:00:00+00:00',
+                 N'{"templateId":"57937348-393e-4982-a5a4-63eff8be40c9","templateVersion":"1","attributes":{"thickness-mm":3,"width-mm":1250,"length-mm":2500,"steel-grade":"S235JR","coating":"uncoated"}}');
+            """);
+
+        var refusal = await Assert.ThrowsAsync<SqlException>(() =>
+            MigrateAsync(run.Factory, ReleaseInitialProductTechnicalDefinition.MigrationId));
+        Assert.Equal(51044, refusal.Number);
+        Assert.Contains("Product cards reference the hot-rolled cut-sheet/plate release", refusal.Message,
+            StringComparison.Ordinal);
+
+        await ExecuteAsync(run.Factory.DatabaseConnectionString, $"""
+            DELETE FROM [product].[Products] WHERE [Id] = '{ProductId:D}';
+            DELETE FROM [product].[CodeGroups] WHERE [Id] = '{GroupId:D}';
+            """);
+        await MigrateAsync(run.Factory, ReleaseInitialProductTechnicalDefinition.MigrationId);
+        Assert.Equal(4, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Families]"));
+        Assert.Equal(1, await ScalarAsync<int>(run.Factory.DatabaseConnectionString,
+            "SELECT COUNT(*) FROM [product].[Templates]"));
+
+        await MigrateAsync(run.Factory);
+        await using var replayed = run.Factory.Services.CreateAsyncScope();
+        AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
+            replayed.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
     }
 
     [SqlServerFact]
@@ -108,7 +153,7 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
             Assert.Equal(51044, refusal.Number);
             Assert.Contains("Product cards reference", refusal.Message, StringComparison.Ordinal);
             await using (var preserved = run.Factory.Services.CreateAsyncScope())
-                AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
+                AssertExactInitialRelease(await new SqlProductFamilyDefinitionSource(
                     preserved.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
 
             failurePhase = RollbackReplayPrerequisitePhase;
@@ -155,7 +200,7 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
                 "SELECT COUNT(*) FROM [product].[DictionaryEntries]"));
 
             failurePhase = RollbackReapplyPhase;
-            await MigrateAsync(run.Factory, ReleaseInitialProductTechnicalDefinition.MigrationId);
+            await MigrateAsync(run.Factory);
             await using var replayed = run.Factory.Services.CreateAsyncScope();
             AssertExactGenuine(await new SqlProductFamilyDefinitionSource(
                 replayed.ServiceProvider.GetRequiredService<ProductDbContext>()).GetAsync(default));
@@ -192,17 +237,36 @@ public sealed class ProductInitialTechnicalDefinitionSqlServerRelationalAcceptan
 
     private static void AssertExactGenuine(ProductFamilyDefinitionV2 actual)
     {
-        ProductFamilyDefinitionRulesV2.RequireWellFormed(actual);
         var expected = ProductInitialTechnicalDefinitionV1.Definition();
+        AssertExact(expected, actual);
+    }
+
+    private static void AssertExactInitialRelease(ProductFamilyDefinitionV2 actual)
+    {
+        var full = ProductInitialTechnicalDefinitionV1.Definition();
+        var expected = new ProductFamilyDefinitionV2(
+            [.. full.Families.Where(row => row.Id != ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateFamilyId)],
+            [.. full.Templates.Where(row => row.Id != ProductInitialTechnicalDefinitionV1.HotRolledCutSheetPlateTemplateId)],
+            full.Entries);
+        AssertExact(expected, actual);
+    }
+
+    private static void AssertExact(ProductFamilyDefinitionV2 expected, ProductFamilyDefinitionV2 actual)
+    {
+        ProductFamilyDefinitionRulesV2.RequireWellFormed(actual);
         Assert.Equal(expected.Families.OrderBy(row => row.Id), actual.Families.OrderBy(row => row.Id));
         Assert.Equal(expected.Entries.OrderBy(row => row.Dictionary).ThenBy(row => row.Code),
             actual.Entries.OrderBy(row => row.Dictionary).ThenBy(row => row.Code));
-        var expectedTemplate = Assert.Single(expected.Templates);
-        var actualTemplate = Assert.Single(actual.Templates);
-        Assert.Equal((expectedTemplate.Id, expectedTemplate.Version, expectedTemplate.Code, expectedTemplate.Name, expectedTemplate.SourceRef),
-            (actualTemplate.Id, actualTemplate.Version, actualTemplate.Code, actualTemplate.Name, actualTemplate.SourceRef));
-        Assert.Equal(expectedTemplate.FamilyIds.Order(), actualTemplate.FamilyIds.Order());
-        Assert.Equal(expectedTemplate.Fields, actualTemplate.Fields);
+        Assert.Equal(expected.Templates.Count, actual.Templates.Count);
+        foreach (var expectedTemplate in expected.Templates)
+        {
+            var actualTemplate = actual.Templates.Single(candidate =>
+                candidate.Id == expectedTemplate.Id && candidate.Version == expectedTemplate.Version);
+            Assert.Equal((expectedTemplate.Code, expectedTemplate.Name, expectedTemplate.SourceRef),
+                (actualTemplate.Code, actualTemplate.Name, actualTemplate.SourceRef));
+            Assert.Equal(expectedTemplate.FamilyIds.Order(), actualTemplate.FamilyIds.Order());
+            Assert.Equal(expectedTemplate.Fields, actualTemplate.Fields);
+        }
     }
 
     private static async Task MigrateAsync(SqlServerRelationalApiFactory factory, string? targetMigration = null)

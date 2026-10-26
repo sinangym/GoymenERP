@@ -20,6 +20,10 @@ public static class ProductStockDisplayRuntimeRegistration
             runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
                 ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
                 : new UnavailableProductStockDisplayReferences());
+        services.AddScoped<IProductStockDisplayReferencesV2>(provider =>
+            runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
+                ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
+                : new UnavailableProductStockDisplayReferences());
         services.AddScoped<IProductStockTechnicalMatcherV1>(provider =>
             runtimeEnabled(provider) && provider.GetService<IProductFamilyDefinitionSourceV2>() is not null
                 ? provider.GetRequiredService<ProductStockDisplayReferenceService>()
@@ -33,7 +37,7 @@ public static class ProductStockDisplayRuntimeRegistration
 }
 
 internal sealed class UnavailableProductStockDisplayReferences
-    : IProductStockDisplayReferencesV1, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
+    : IProductStockDisplayReferencesV1, IProductStockDisplayReferencesV2, IProductStockTechnicalMatcherV1, IProductStockFamilyOptionsV1
 {
     public Task<ProductStockFamilyOptionsV1> ReadFamilyOptionsAsync(CancellationToken cancellationToken = default)
     {
@@ -48,6 +52,15 @@ internal sealed class UnavailableProductStockDisplayReferences
     {
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromException<ProductStockDisplayBatchV1>(
+            new ProductOperationException("product_runtime_unconfigured", 503));
+    }
+
+    Task<ProductStockDisplayBatchV2> IProductStockDisplayReferencesV2.ReadAsync(
+        ProductStockDisplayBatchQueryV1 query,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromException<ProductStockDisplayBatchV2>(
             new ProductOperationException("product_runtime_unconfigured", 503));
     }
 
