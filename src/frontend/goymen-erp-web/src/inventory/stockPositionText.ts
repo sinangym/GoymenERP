@@ -155,9 +155,20 @@ export function formatMm(value: string): string {
   return formatted === null ? STOCK_TEXT.unknown : `${negative ? '-' : ''}${formatted}`
 }
 
-/** "kalınlık × en", or "—" when the Product owner published no accepted nominal measures. */
-export function dimensionText(technical: { readonly thicknessMm: string; readonly widthMm: string } | null): string {
-  return technical === null ? STOCK_TEXT.unknown : `${formatMm(technical.thicknessMm)} × ${formatMm(technical.widthMm)}`
+/**
+ * "kalınlık × en", plus "× boy" when the Product card publishes a nominal length (`4.0`); "—" when the Product owner
+ * published no accepted nominal measures. A null length (a coil, a strip) adds nothing: no 0, no lot measurement.
+ */
+export function dimensionText(technical: {
+  readonly thicknessMm: string
+  readonly widthMm: string
+  readonly lengthMm?: string | null
+} | null): string {
+  if (technical === null) return STOCK_TEXT.unknown
+  const section = `${formatMm(technical.thicknessMm)} × ${formatMm(technical.widthMm)}`
+  return technical.lengthMm === null || technical.lengthMm === undefined
+    ? section
+    : `${section} × ${formatMm(technical.lengthMm)}`
 }
 
 /**

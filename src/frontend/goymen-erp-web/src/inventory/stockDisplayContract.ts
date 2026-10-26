@@ -128,6 +128,29 @@ export interface StockOwnerDisplayPage {
   readonly nextCursor: string | null
 }
 
+/**
+ * P03.2 / #738: the `4.0` technical block — the `1.0` block plus the Product card's nominal length as decimal text.
+ * Null is the published absence (a coil or strip has none); never `0`, a lot measurement or a cut-line length.
+ */
+export interface StockLengthProductTechnical extends StockProductTechnical {
+  readonly lengthMm: string | null
+}
+
+export interface StockLengthProductDisplay extends StockProductDisplay {
+  readonly technical: StockLengthProductTechnical | null
+}
+
+/** A `4.0` row: every `3.0` member unchanged; only the Product display's technical block carries `lengthMm`. */
+export interface StockLengthDisplayRow extends StockOwnerDisplayRow {
+  readonly productDisplay: StockLengthProductDisplay
+}
+
+export interface StockLengthDisplayPage {
+  readonly items: readonly StockLengthDisplayRow[]
+  readonly searchWindowFull: boolean
+  readonly nextCursor: string | null
+}
+
 type JsonObject = Record<string, unknown>
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -203,10 +226,12 @@ function identityOf(value: unknown, productId: string, expectedVersion: string):
   return { productId, productVersion: expectedVersion, code: source.code, name: source.name }
 }
 
-function technicalOf(value: unknown): StockProductTechnical | null | undefined {
+const TECHNICAL_KEYS = ['family', 'template', 'thicknessMm', 'widthMm'] as const
+
+function technicalOf(value: unknown, keys: readonly string[] = TECHNICAL_KEYS): StockProductTechnical | null | undefined {
   if (value === null) return null
   const source = record(value)
-  if (source === null || !exact(source, ['family', 'template', 'thicknessMm', 'widthMm'])) return undefined
+  if (source === null || !exact(source, keys)) return undefined
   const family = record(source.family)
   const template = record(source.template)
   const thicknessMm = millimetres(source.thicknessMm)
@@ -230,13 +255,34 @@ function technicalOf(value: unknown): StockProductTechnical | null | undefined {
   }
 }
 
-function productDisplayOf(value: unknown, productId: string, productVersion: string): StockProductDisplay | null {
+/**
+ * The `4.0` technical block (`ProductStockNominalTechnicalV2`): the `1.0` block unchanged plus the required-nullable
+ * nominal length. The key must be present; null stays null, and anything else must be a nominal millimetre value.
+ */
+function lengthTechnicalOf(value: unknown): StockLengthProductTechnical | null | undefined {
+  const technical = technicalOf(value, LENGTH_TECHNICAL_KEYS)
+  if (technical === null || technical === undefined) return technical
+  const raw = (value as JsonObject).lengthMm
+  const lengthMm = raw === null ? null : millimetres(raw)
+  return raw !== null && lengthMm === null ? undefined : { ...technical, lengthMm }
+}
+
+const LENGTH_TECHNICAL_KEYS = [...TECHNICAL_KEYS, 'lengthMm'] as const
+
+type TechnicalDecoder<T> = (value: unknown) => T | null | undefined
+
+function productDisplayOf<T extends StockProductTechnical>(
+  value: unknown,
+  productId: string,
+  productVersion: string,
+  decodeTechnical: TechnicalDecoder<T>,
+): (StockProductDisplay & { readonly technical: T | null }) | null {
   const source = record(value)
   if (source === null || !exact(source, ['productId', 'expectedProductVersion', 'identity', 'technical', 'errors']) ||
     source.productId !== productId || source.expectedProductVersion !== productVersion ||
     !Array.isArray(source.errors)) return null
   const identity = identityOf(source.identity, productId, productVersion)
-  const technical = technicalOf(source.technical)
+  const technical = decodeTechnical(source.technical)
   if (identity === undefined || technical === undefined) return null
   const errors: { readonly field: string; readonly code: string }[] = []
   for (const entry of source.errors) {
@@ -256,7 +302,11 @@ function locationDisplayOf(value: unknown, locationId: string): StockLocationDis
   return { locationId: source.locationId, locationCode: source.locationCode, locationName: source.locationName }
 }
 
-function rowOf(value: unknown, keys: readonly string[] = ROW_KEYS): StockDisplayRow | null {
+function rowOf(
+  value: unknown,
+  keys: readonly string[] = ROW_KEYS,
+  decodeTechnical: TechnicalDecoder<StockProductTechnical> = technicalOf,
+): StockDisplayRow | null {
   const source = record(value)
   if (source === null || !exact(source, keys)) return null
   const {
@@ -280,7 +330,7 @@ function rowOf(value: unknown, keys: readonly string[] = ROW_KEYS): StockDisplay
   // #588: physical = blocked + free-physical; free-physical = allocated + available. Exact, in thousandths.
   if (thousandths(physicalKg) !== thousandths(blockedPhysicalKg) + thousandths(freePhysicalKg) ||
     thousandths(freePhysicalKg) !== thousandths(activeAllocationKg) + thousandths(availableKg)) return null
-  const productDisplay = productDisplayOf(source.productDisplay, productId, productVersion)
+  const productDisplay = productDisplayOf(source.productDisplay, productId, productVersion, decodeTechnical)
   if (productDisplay === null) return null
   return {
     companyId, labelId, labelVersion, labelCode, productId, productVersion, classification,
@@ -314,8 +364,11 @@ export function decodeStockDisplayPage(value: unknown): StockDisplayPage | null 
 
 const LOCATION_ROW_KEYS = [...ROW_KEYS, 'locationDisplay'] as const
 
-function locationRowOf(value: unknown): StockLocationDisplayRow | null {
-  const row = rowOf(value, LOCATION_ROW_KEYS)
+function locationRowOf(
+  value: unknown,
+  decodeTechnical: TechnicalDecoder<StockProductTechnical> = technicalOf,
+): StockLocationDisplayRow | null {
+  const row = rowOf(value, LOCATION_ROW_KEYS, decodeTechnical)
   if (row === null) return null
   const locationDisplay = locationDisplayOf((value as JsonObject).locationDisplay, row.locationId)
   return locationDisplay === null ? null : { ...row, locationDisplay }
@@ -327,7 +380,7 @@ function locationRowOf(value: unknown): StockLocationDisplayRow | null {
  * the whole page; the `1.0` decoder above is never used for a `2.0` answer.
  */
 export function decodeStockLocationDisplayPage(value: unknown): StockLocationDisplayPage | null {
-  return pageOf(value, locationRowOf)
+  return pageOf(value, (row) => locationRowOf(row))
 }
 
 const OWNER_ROW_KEYS = [...LOCATION_ROW_KEYS, 'ownerDisplay'] as const
@@ -349,12 +402,15 @@ function ownerDisplayOf(value: unknown, ownerKind: StockPartyKind, ownerId: stri
   return { partyId: source.partyId, code: source.code, legalName: source.legalName, tradeName: source.tradeName }
 }
 
-function ownerRowOf(value: unknown): StockOwnerDisplayRow | null {
+function ownerRowOf(
+  value: unknown,
+  decodeTechnical: TechnicalDecoder<StockProductTechnical> = technicalOf,
+): StockOwnerDisplayRow | null {
   const source = record(value)
   // The key must be present: a missing `ownerDisplay` is not the same answer as a null one.
   if (source === null || !exact(source, OWNER_ROW_KEYS)) return null
   const { ownerDisplay: rawOwnerDisplay, ...locationRow } = source
-  const row = locationRowOf(locationRow)
+  const row = locationRowOf(locationRow, decodeTechnical)
   if (row === null) return null
   const ownerDisplay = ownerDisplayOf(rawOwnerDisplay, row.ownerKind, row.ownerId)
   return ownerDisplay === undefined ? null : { ...row, ownerDisplay }
@@ -367,5 +423,15 @@ function ownerRowOf(value: unknown): StockOwnerDisplayRow | null {
  * for a `3.0` answer, and a `2.0` answer is never accepted here.
  */
 export function decodeStockOwnerDisplayPage(value: unknown): StockOwnerDisplayPage | null {
-  return pageOf(value, ownerRowOf)
+  return pageOf(value, (row) => ownerRowOf(row))
+}
+
+/**
+ * The `4.0` (Product nominal length) opt-in page (#738): the `3.0` rules unchanged for every row, and the Product
+ * display's technical block read as `ProductStockNominalTechnicalV2` with its required-nullable `lengthMm`. A missing
+ * key, a value outside the millimetre pattern or an extra member refuses the whole page. The `1.0`–`3.0` decoders above
+ * are never used for a `4.0` answer, and a `3.0` answer is never accepted here.
+ */
+export function decodeStockLengthDisplayPage(value: unknown): StockLengthDisplayPage | null {
+  return pageOf(value, (row) => ownerRowOf(row, lengthTechnicalOf) as StockLengthDisplayRow | null)
 }
