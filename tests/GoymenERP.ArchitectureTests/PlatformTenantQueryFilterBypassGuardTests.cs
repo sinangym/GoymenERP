@@ -318,7 +318,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "213d2e710c7adccb01a6eb0ce67ada82979aae9ec91ce742e178d9e9a15d9e34";
+        "b6a7efaa216e80647a4ed586b7c44b19bc63f321f2c084e05e9cdaffa064ac76";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -3055,17 +3055,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                          "          --aggregate \\",
                          "          # --aggregate \\"),
                      (
-                         "      - name: Preserve exact SQL shard proof locally\n"
-                         + "        shell: bash",
-                         "      - name: Preserve exact SQL shard proof locally\n"
+                         "      - name: Upload exact SQL shard proof\n"
+                         + "        uses: actions/upload-artifact@v7",
+                         "      - name: Upload exact SQL shard proof\n"
                          + "        if: ${{ false }}\n"
-                         + "        shell: bash"),
+                         + "        uses: actions/upload-artifact@v7"),
                      (
-                         "      - name: Restore exact SQL shard proofs from local evidence\n"
-                         + "        shell: bash",
-                         "      - name: Restore exact SQL shard proofs from local evidence\n"
+                         "      - name: Download exact SQL shard proofs\n"
+                         + "        uses: actions/download-artifact@v8",
+                         "      - name: Download exact SQL shard proofs\n"
                          + "        shell: echo {0}\n"
-                         + "        run: *restore-local-proofs"),
+                         + "        uses: actions/download-artifact@v8"),
                  })
         {
             Assert.Contains(
@@ -6688,7 +6688,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || !backendBuildJob.Contains("Check vulnerable dependencies", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("if: ${{ always() }}", StringComparison.Ordinal)
-            || !backendAggregateJob.Contains("Restore same-run SQL proofs for excluded backend tests", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("Download same-run SQL proofs for excluded backend tests", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("--relational-proof-directory artifacts/ci-relational-proofs", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("--relational-worker-result \"${{ needs.relational-shard.result }}\"", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("--rcsi-result \"${{ needs.relational-rcsi.result }}\"", StringComparison.Ordinal)
@@ -6720,9 +6720,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         var aggregateStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
             "\n      - name: Verify complete SQL Server relational acceptance\n", StringComparison.Ordinal));
         var proofUploadStep = ExtractYamlStep(shardJob, shardJob.IndexOf(
-            "\n      - name: Preserve exact SQL shard proof locally\n", StringComparison.Ordinal));
+            "\n      - name: Upload exact SQL shard proof\n", StringComparison.Ordinal));
         var proofDownloadStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
-            "\n      - name: Restore exact SQL shard proofs from local evidence\n", StringComparison.Ordinal));
+            "\n      - name: Download exact SQL shard proofs\n", StringComparison.Ordinal));
         var expectedShardStepLines = new[]
         {
             "- name: Run exact SQL Server relational shard",
@@ -6758,26 +6758,21 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         };
         var expectedProofUploadStepLines = new[]
         {
-            "- name: Preserve exact SQL shard proof locally",
-            "shell: bash",
-            "env:",
-            "LOCAL_EVIDENCE_SCOPE: relational-proof-${{ matrix.shard }}",
-            "LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
-            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
-            "run: *publish-local-evidence",
+            "- name: Upload exact SQL shard proof",
+            "uses: actions/upload-artifact@v7",
+            "with:",
+            "name: ci-relational-shard-proof-${{ matrix.shard }}",
+            "path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+            "if-no-files-found: error",
+            "retention-days: 7",
         };
         var expectedProofDownloadStepLines = new[]
         {
-            "- name: Restore exact SQL shard proofs from local evidence",
-            "shell: bash",
-            "env:",
-            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
-            "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
-            "LOCAL_PROOF_IDS: A,B,C",
-            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
-            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
-            "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
-            "run: *restore-local-proofs",
+            "- name: Download exact SQL shard proofs",
+            "uses: actions/download-artifact@v8",
+            "with:",
+            "pattern: ci-relational-shard-proof-*",
+            "path: artifacts/ci-relational-proofs",
         };
         if (shardJob.Length == 0 || rcsiJob.Length == 0 || relationalJob.Length == 0
             || !shardLines.Contains("name: SQL Server relational shard (${{ matrix.shard }})",
@@ -6802,8 +6797,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(shardStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(rcsiStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(aggregateStep))
-            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(proofUploadStep))
-            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(proofDownloadStep))
             || aggregateLines.Count(line => line.StartsWith("if:", StringComparison.Ordinal)) != 1
             || aggregateLines.Any(line => line.StartsWith("continue-on-error:", StringComparison.Ordinal)))
         {

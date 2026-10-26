@@ -34,9 +34,10 @@ review ve kanıt şartıyla merge edebilir — `docs/decisions/SINAN_KARARLARI_2
   `tests/delivery_backlog_validator/recompute_delivery_backlog_provenance.py`
   üreticisinin çıktısından ve onaylı kaynak değişikliği incelendikten sonra güncellenir.
   Bu daraltma test veya uygulama dosyası içeren adayın normal fresh CI şartını kaldırmaz.
-- `.github/**` değişikliğinde iki review ayrıca şunu doğrular: her `runs-on` self-hosted
-  etikettir, hosted fallback yoktur, artifact/cache/Packages yüklemesi, secret, environment
-  veya deploy yüzeyi açılmamıştır.
+- `.github/**` değişikliğinde iki review ayrıca şunu doğrular: her `runs-on` GitHub-hosted
+  (`ubuntu-latest`/`windows-latest`) etikettir, self-hosted etiket yoktur, artifact yalnız
+  secret içermeyen CI kanıtıdır (`retention-days: 7`); cache/Packages yüklemesi, secret,
+  environment veya deploy yüzeyi açılmamıştır (`SINAN_KARARLARI_2026-10-26_PUBLIC_CI.md`).
 - Merge sonrası Issue #66'ya tek satır makbuz (PR, merge SHA, iki review bağlantısı).
 - Sinan bu yetkiyi Issue #66'ya yazacağı tek satırla geri alabilir.
 
@@ -105,7 +106,7 @@ alınabilir standing merge yetkisini verir:
   aktivasyonu yetkisi değildir.
 - `.github/**` içinde yalnız build/test/contract/security kalite kapısı değişikliği aynı
   K3 kanıtıyla merge edilebilir (22 Ekim 2026 kuralı: CI koşumu olmadan da, iki review'un
-  self-hosted/secret/deploy doğrulamasıyla). Deployment, environment, secret ve production
+  GitHub-hosted/secret/deploy doğrulamasıyla). Deployment, environment, secret ve production
   yüzeyi her zaman somut kullanıcı kararı ister.
 
 GitHub teknik koruması kullanılamıyorsa lane self-merge kapalı kalır (tek istisna: yukarıdaki

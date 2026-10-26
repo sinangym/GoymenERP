@@ -92,12 +92,15 @@ class MigrationRoutingTests(unittest.TestCase):
             self.assertFalse((workflows / name).exists())
             self.assertTrue((workflows / (name + '.disabled')).is_file())
 
-    def test_all_workflow_jobs_use_explicit_local_runners(self):
+    def test_all_workflow_jobs_use_github_hosted_runners(self):
+        # SINAN_KARARLARI_2026-10-26: the repository is public and CI runs only on
+        # GitHub-hosted runners. A self-hosted label here would let a fork's pull
+        # request run code on the owner's computer, so none is allowed.
         workflows = ROOT.parents[1] / '.github' / 'workflows'
-        allowed = {'runs-on: [self-hosted, Linux, X64, goymen-ci-isolated]',
-                   'runs-on: [self-hosted, Windows, X64, goymen-ci-windows]'}
+        allowed = {'runs-on: ubuntu-latest', 'runs-on: windows-latest'}
         count = 0
-        for path in workflows.glob('*.yml*'):
+        # Only active workflows can run; *.disabled templates never register.
+        for path in workflows.glob('*.yml'):
             for line in path.read_text(encoding='utf-8').splitlines():
                 if line.lstrip().startswith('runs-on:'):
                     count += 1
