@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
@@ -8,6 +9,8 @@ using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -37,7 +40,7 @@ public sealed class ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests
 
     [SqlServerFact]
     public Task Exact_name_candidates_follow_the_Turkish_name_collation_across_lifecycles_and_never_list_the_card_itself() =>
-        WithDatabaseAsync(AllOperations, async (factory, _) =>
+        WithDatabaseAsync(AllOperations, async (factory, observer) =>
         {
             using var client = factory.CreateClientFor("group-bootstrap-admin", CompanyA);
             var upper = await CreateDraftAsync(client, "SENTETİK SİYAH SAC", "dup-upper");
@@ -47,8 +50,10 @@ public sealed class ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests
             var longer = await CreateDraftAsync(client, "SENTETİK SİYAH SAC 2", "dup-longer");
             var dotless = await CreateDraftAsync(client, "SENTETIK SIYAH SAC", "dup-dotless");
             var accent = await CreateDraftAsync(client, "SENTETİK SİYAH SAÇ", "dup-accent");
+            observer.ResetFailureDiagnostic();
             using (var activated = await ActivateAsync(client, upper.Id, "dup-activate-upper", upper.Version))
-                Assert.Equal(HttpStatusCode.OK, activated.StatusCode);
+                Assert.True(activated.StatusCode == HttpStatusCode.OK,
+                    $"Expected activation HTTP 200; received {(int)activated.StatusCode}. {observer.SafeFailureDiagnostic}");
             var writesBefore = await WriteCountsAsync(factory);
 
             // Surrounding blanks are the write path's trim; an Active card is still a candidate; nothing is written.
@@ -259,6 +264,8 @@ public sealed class ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests
                 new ProductPilotIssuerBinding(ActorId, ActorExternalId), Enumerable.Range(1, 32).Select(value => (byte)value).ToArray()));
             services.RemoveAll<IProductCommandAttemptObserver>();
             services.AddSingleton<IProductCommandAttemptObserver>(observer);
+            // Observe only this isolated factory; canonical redacted handling still runs.
+            services.Insert(0, ServiceDescriptor.Singleton<IExceptionHandler>(observer));
         }, databaseName: databaseName);
         try
         {
@@ -288,12 +295,58 @@ public sealed class ProductDuplicateCandidatesSqlServerRelationalAcceptanceTests
         }
     }
 
-    private sealed class TestObserver : IProductCommandAttemptObserver
+    private sealed class TestObserver : IProductCommandAttemptObserver, IExceptionHandler
     {
+        private readonly ConcurrentQueue<string> exceptionKinds = new();
+        private int lastStage = -1;
+
         public Func<ProductCommandAttemptStage, GroupSharedMasterCommandContext, CancellationToken, Task>? Callback { get; set; }
 
+        public string SafeFailureDiagnostic =>
+            $"stage={StageLabel()}; exceptionKinds={string.Join("|", exceptionKinds)}";
+
+        private string StageLabel() => Volatile.Read(ref lastStage) switch
+        {
+            (int)ProductCommandAttemptStage.ProductStaged => "product-staged",
+            (int)ProductCommandAttemptStage.ProductFlushed => "product-flushed",
+            (int)ProductCommandAttemptStage.AuditFlushed => "audit-flushed",
+            (int)ProductCommandAttemptStage.TerminalFlushed => "terminal-flushed",
+            (int)ProductCommandAttemptStage.BeforeCommit => "before-commit",
+            _ => "not-observed",
+        };
+
+        public void ResetFailureDiagnostic()
+        {
+            exceptionKinds.Clear();
+            Volatile.Write(ref lastStage, -1);
+        }
+
         public Task ObserveAsync(ProductCommandAttemptStage stage, GroupSharedMasterCommandContext authority,
-            CancellationToken cancellationToken) => Callback?.Invoke(stage, authority, cancellationToken) ?? Task.CompletedTask;
+            CancellationToken cancellationToken)
+        {
+            Volatile.Write(ref lastStage, (int)stage);
+            return Callback?.Invoke(stage, authority, cancellationToken) ?? Task.CompletedTask;
+        }
+
+        public ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception,
+            CancellationToken cancellationToken)
+        {
+            // Never emit messages, SQL text, stack traces, bodies or connection strings.
+            Exception? current = exception;
+            for (var depth = 0; current is not null && depth < 8; depth++, current = current.InnerException)
+                exceptionKinds.Enqueue(current switch
+                {
+                    SqlException sql => $"sql(Number={sql.Number},State={sql.State},Class={sql.Class})",
+                    DbUpdateConcurrencyException => "ef-concurrency",
+                    DbUpdateException => "ef-update",
+                    OperationCanceledException => "cancelled",
+                    TimeoutException => "timeout",
+                    InvalidOperationException => "invalid-operation",
+                    UnauthorizedAccessException => "unauthorized",
+                    _ => "unknown",
+                });
+            return ValueTask.FromResult(false);
+        }
     }
 
     private sealed class TwoAttemptStageBarrier
