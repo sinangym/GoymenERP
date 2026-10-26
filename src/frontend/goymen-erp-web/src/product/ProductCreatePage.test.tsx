@@ -939,7 +939,7 @@ describe('an unknown attempt across a REAL capability re-fence', () => {
    */
   async function directoryFailsWhileAsking() {
     installFetch({ capabilities: CREATE_ONLY, onCreate: () => json({}, 503) })
-    const { router } = renderProductApp(PATH)
+    const { router, queryClient } = renderProductApp(PATH)
 
     await formVisible()
     await fillMinimum()
@@ -949,6 +949,10 @@ describe('an unknown attempt across a REAL capability re-fence', () => {
     await userEvent.selectOptions(screen.getByLabelText('Şirket'), COMPANY_B)
     await waitFor(() => screen.getByRole('dialog'))
 
+    // A reconnect while ANY read is still in flight joins it instead of issuing a new one (see
+    // `referencesAnswered`), so the swapped 503 below would never be asked for. On a loaded runner the
+    // group pick's options read (or another) can still be pending here; wait until nothing is.
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0))
     installFetch({
       capabilities: CREATE_ONLY,
       onDirectory: () => json({}, 503),

@@ -349,10 +349,13 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
         new[] { "correlation-ğ" },
         new[] { "correlation/unsafe" },
         new[] { "correlation-a,correlation-b" },
+        // Two separate header values. Fixed literals on purpose: theory data is enumerated once at
+        // discovery and again at execution, and a random value gives each run a different native
+        // case identity (B-798-2). The values are rejected before any effect, so they need not be unique.
         new[]
         {
-            $"correlation-a-{Guid.NewGuid():N}",
-            $"correlation-b-{Guid.NewGuid():N}",
+            "correlation-a-multiple-header-0d5a2f4c",
+            "correlation-b-multiple-header-7b19e3a8",
         },
     };
 
@@ -374,10 +377,13 @@ public sealed class CorrelationBoundaryAcceptanceTests(GoymenErpApiFactory facto
         new[] { "causation-ğ" },
         new[] { "causation/unsafe" },
         new[] { "causation-a,causation-b" },
+        // Two separate header values. Fixed literals on purpose: theory data is enumerated once at
+        // discovery and again at execution, and a random value gives each run a different native
+        // case identity (B-798-2). The values are rejected before any effect, so they need not be unique.
         new[]
         {
-            $"cause-a-{Guid.NewGuid():N}",
-            $"cause-b-{Guid.NewGuid():N}",
+            "cause-a-multiple-header-4e8c1b6d",
+            "cause-b-multiple-header-92f07a3e",
         },
     };
 
