@@ -312,13 +312,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string BackendTestGroupVerifierTestsPath =
         "tests/backend_test_group_verifier/test_verify_backend_test_groups.py";
     private const string ReviewedBackendTestGroupVerifierFingerprint =
-        "7b5999d3529adaccd72c13d3c3412f6f4acae56616839f8ede77732150806f76";
+        "afa915d57531b4cdde513bf9023f03d0dedf2dc38011838c10b2d0dc07cd880d";
     private const string ReviewedBackendTestGroupVerifierTestsFingerprint =
-        "95abaadfa075a9f6077670a2e15660629e6b1073ade36b64e45d74404fd3f4cb";
+        "41d35d452fecd53aecd791c55c552cdb40a3ff0b686ba3e7506edd51e1a3f1b1";
     // Re-reviewed with the existing recovery proof intact and the release-manifest proof bound to the exact head:
     // both jobs are artifact-free, fail closed and do not deploy; ci_safe_trx_summary guards them separately.
     private const string ReviewedContinuousIntegrationWorkflowFingerprint =
-        "da02936a6fe108b1c7ee0ecf38f8bdc276b606fd55f03e6cadf313a2be8d8051";
+        "b6a7efaa216e80647a4ed586b7c44b19bc63f321f2c084e05e9cdaffa064ac76";
     // Re-fingerprinted for the ORG master edit: the seeder's three existing IgnoreQueryFilters projections also read
     // the row id, so a seeded record a user renamed is recognised by its deterministic id and never re-added under
     // its old code. No new bypass, query or write path; the IgnoreQueryFilters reads are the same three.
@@ -3055,17 +3055,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                          "          --aggregate \\",
                          "          # --aggregate \\"),
                      (
-                         "      - name: Preserve exact SQL shard proof locally\n"
-                         + "        shell: bash",
-                         "      - name: Preserve exact SQL shard proof locally\n"
+                         "      - name: Upload exact SQL shard proof\n"
+                         + "        uses: actions/upload-artifact@v7",
+                         "      - name: Upload exact SQL shard proof\n"
                          + "        if: ${{ false }}\n"
-                         + "        shell: bash"),
+                         + "        uses: actions/upload-artifact@v7"),
                      (
-                         "      - name: Restore exact SQL shard proofs from local evidence\n"
-                         + "        shell: bash",
-                         "      - name: Restore exact SQL shard proofs from local evidence\n"
+                         "      - name: Download exact SQL shard proofs\n"
+                         + "        uses: actions/download-artifact@v8",
+                         "      - name: Download exact SQL shard proofs\n"
                          + "        shell: echo {0}\n"
-                         + "        run: *restore-local-proofs"),
+                         + "        uses: actions/download-artifact@v8"),
                  })
         {
             Assert.Contains(
@@ -6686,8 +6686,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         if (!backendBuildJob.Contains("dotnet build GoymenERP.slnx -noAutoResponse", StringComparison.Ordinal)
             || !backendBuildJob.Contains("Architecture dependency guard", StringComparison.Ordinal)
             || !backendBuildJob.Contains("Check vulnerable dependencies", StringComparison.Ordinal)
-            || !backendAggregateJob.Contains("needs: [backend-build, backend-test-group]", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("if: ${{ always() }}", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("Download same-run SQL proofs for excluded backend tests", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("--relational-proof-directory artifacts/ci-relational-proofs", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("--relational-worker-result \"${{ needs.relational-shard.result }}\"", StringComparison.Ordinal)
+            || !backendAggregateJob.Contains("--rcsi-result \"${{ needs.relational-rcsi.result }}\"", StringComparison.Ordinal)
             || !backendAggregateJob.Contains("Verify complete backend build and test groups", StringComparison.Ordinal))
         {
             errors.Add("RCSI CLI/policy tests require the reviewed fail-closed backend build and aggregate jobs.");
@@ -6716,9 +6720,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         var aggregateStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
             "\n      - name: Verify complete SQL Server relational acceptance\n", StringComparison.Ordinal));
         var proofUploadStep = ExtractYamlStep(shardJob, shardJob.IndexOf(
-            "\n      - name: Preserve exact SQL shard proof locally\n", StringComparison.Ordinal));
+            "\n      - name: Upload exact SQL shard proof\n", StringComparison.Ordinal));
         var proofDownloadStep = ExtractYamlStep(relationalJob, relationalJob.IndexOf(
-            "\n      - name: Restore exact SQL shard proofs from local evidence\n", StringComparison.Ordinal));
+            "\n      - name: Download exact SQL shard proofs\n", StringComparison.Ordinal));
         var expectedShardStepLines = new[]
         {
             "- name: Run exact SQL Server relational shard",
@@ -6754,26 +6758,21 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         };
         var expectedProofUploadStepLines = new[]
         {
-            "- name: Preserve exact SQL shard proof locally",
-            "shell: bash",
-            "env:",
-            "LOCAL_EVIDENCE_SCOPE: relational-proof-${{ matrix.shard }}",
-            "LOCAL_EVIDENCE_FILE: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
-            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
-            "run: *publish-local-evidence",
+            "- name: Upload exact SQL shard proof",
+            "uses: actions/upload-artifact@v7",
+            "with:",
+            "name: ci-relational-shard-proof-${{ matrix.shard }}",
+            "path: artifacts/ci-relational-proofs/proof-${{ matrix.shard }}.json",
+            "if-no-files-found: error",
+            "retention-days: 7",
         };
         var expectedProofDownloadStepLines = new[]
         {
-            "- name: Restore exact SQL shard proofs from local evidence",
-            "shell: bash",
-            "env:",
-            "LOCAL_EVIDENCE_SOURCE_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}",
-            "LOCAL_PROOF_SCOPE_PREFIX: relational-proof-",
-            "LOCAL_PROOF_IDS: A,B,C",
-            "LOCAL_PROOF_ARTIFACT_PREFIX: ci-relational-shard-proof-",
-            "LOCAL_PROOF_RELATIVE_PREFIX: artifacts/ci-relational-proofs/proof-",
-            "LOCAL_PROOF_OUTPUT: artifacts/ci-relational-proofs",
-            "run: *restore-local-proofs",
+            "- name: Download exact SQL shard proofs",
+            "uses: actions/download-artifact@v8",
+            "with:",
+            "pattern: ci-relational-shard-proof-*",
+            "path: artifacts/ci-relational-proofs",
         };
         if (shardJob.Length == 0 || rcsiJob.Length == 0 || relationalJob.Length == 0
             || !shardLines.Contains("name: SQL Server relational shard (${{ matrix.shard }})",
@@ -6798,8 +6797,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(shardStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(rcsiStep))
             || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(aggregateStep))
-            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(proofUploadStep))
-            || ContainsConditionalOrSoftFailure(ReadActiveYamlLines(proofDownloadStep))
             || aggregateLines.Count(line => line.StartsWith("if:", StringComparison.Ordinal)) != 1
             || aggregateLines.Any(line => line.StartsWith("continue-on-error:", StringComparison.Ordinal)))
         {
