@@ -1,0 +1,349 @@
+{
+  "schemaVersion": "goymenerp.data-owner-register.v1",
+  "register": {
+    "ownerMatrix": "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6207373183",
+    "productPackage": "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6207285823",
+    "environmentPackage": "https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6209522696",
+    "assignmentAccountable": "Sinan Göymen",
+    "technicalTracking": "CODEX-ORCHESTRATOR"
+  },
+  "gates": [
+    {
+      "id": "DATA-OWNERS",
+      "responsibility": "Program veri yönetişimi kaydının sahibi: isimli primary/backup/kaynak sorumlusu kanıtını tutar ve eksikleri yükseltir. Finance/Product/MFG/UAT adına alan verisi onaylamaz.",
+      "unlocks": [
+        {
+          "item": "E03.1",
+          "scope": "DATA_ACTIVATION"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-FINANCE",
+      "responsibility": "Finance/Accounting iş verisi sahibi ve aynı yetkiye sahip yedek; banka ekstresi, POS, çek/senet, kredi/DBS/teminat/kart/nakit planı, hesap planı/fiş ve Mikro kaynak kimliklerinin sorumlusu. Yalnız veri kökeni ve onayı; para politikası, fiş kuralı, banka credential'ı, import veya grant değildir.",
+      "unlocks": [
+        {
+          "item": "F08.1",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "F08.2",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "F09.1",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "F09.2",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "F09.3",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "F09.4",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "F09.5",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "F10.1",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "F10.2",
+          "scope": "DATA_ACTIVATION"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-IDP",
+      "responsibility": "Kimlik/güvenlik aktivasyonu sahibi ve yedeği; seçilen issuer/tenant/uygulama kaydı ve MFA/erişim politikası kanıtının sorumlusu. Yalnız isim ve kaynak metadatası; provider seçimi, secret, redirect URI, kullanıcı aktarımı, grant, OIDC aktivasyonu veya deploy değildir.",
+      "unlocks": [
+        {
+          "item": "R01.2",
+          "scope": "DATA_ACTIVATION"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-KG-M",
+      "responsibility": "Mühendislik/teknik standart sahibi ve yedeği; onaylı kg/m tablosu/formül kökeni, standart/sürüm ve paket standardı kanıtının sorumlusu. Aynı kişiler DATA-PRODUCT ise sameAs DATA-PRODUCT yazılır. Yoğunluk, dönüşüm, yuvarlama, paket kuralı veya katalog değeri türetilmez.",
+      "unlocks": [
+        {
+          "item": "P01.3",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "P01.4",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "P04.2",
+          "scope": "DATA_ACTIVATION"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-MFG",
+      "responsibility": "Üretim/proses mühendisliği sahibi ve yedeği; onaylı reçete/profil/tolerans/formül girdi setleri ve golden örneklerin sorumlusu. Varsayılan profil, yüzde değer, maker-checker grant'i, yayın aktivasyonu veya production seed değildir.",
+      "unlocks": [
+        {
+          "item": "M04.1",
+          "scope": "REAL_INPUT"
+        },
+        {
+          "item": "M04.2",
+          "scope": "DATA_ACTIVATION"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-LEGACY",
+      "responsibility": "Eski kaynak sistem sahibi ve yedeği; eski kaynak adı/sürümü ve dışa aktarım kimliğinin sorumlusu. Salt-okunur envanter/eşleme onayı; uydurma PartyId, müşteri/ürün kimliği, import, birleştirme, production yazması veya aktivasyon değildir.",
+      "unlocks": [
+        {
+          "item": "R04.1",
+          "scope": "REAL_INPUT"
+        },
+        {
+          "item": "R04.2",
+          "scope": "REAL_INPUT"
+        },
+        {
+          "item": "R06.3",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "R07.1",
+          "scope": "DATA_ACTIVATION"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-PARTY",
+      "responsibility": "Depo/cari ana veri eşlemesinin sahibi ve yedeği; yetkili Counterparty/Organization eşleme kaynağının sorumlusu. Aynı kişi eski kaynağın da sahibiyse sameAs DATA-LEGACY yazılır.",
+      "unlocks": [
+        {
+          "item": "O02.3",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "R04.1",
+          "scope": "REAL_INPUT"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-OPS",
+      "responsibility": "İzole ortamı ve demo aktivasyonunu yöneten operasyon sahibi ve yedeği; altyapı/yedek/kaynak kimliği kaydının sorumlusu. Yalnız envanter ve aktivasyon planı; ortam yaratma, secret, bütçe, provider, restore, deploy veya production bağlantısı değildir.",
+      "unlocks": [
+        {
+          "item": "W06.3",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "R02.2",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "R03.1",
+          "scope": "REAL_INPUT"
+        },
+        {
+          "item": "R05.2",
+          "scope": "DATA_ACTIVATION"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-DEMO",
+      "responsibility": "Onaylı tek kullanımlık demo veri setinin sahibi. DATA-OPS ile aynı kişiler ise sameAs DATA-OPS yazılır. Demo verisinin gerçek şirket verisi olduğu iddia edilmez.",
+      "unlocks": [
+        {
+          "item": "R06.1",
+          "scope": "DATA_ACTIVATION"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-UAT",
+      "responsibility": "İsimli iş UAT lideri ve bağımsız yedek; sürümlü senaryo/veri paketi ve imzalı sonuç yerinin sorumlusu. Yalnız isimlenen kapsam/sürümü kabul eder; kod incelemesi, deploy, cutover, finans veya kimlik politikası onayı değildir.",
+      "unlocks": [
+        {
+          "item": "R06.2",
+          "scope": "UAT"
+        },
+        {
+          "item": "R06.3",
+          "scope": "UAT"
+        },
+        {
+          "item": "R07.1",
+          "scope": "UAT"
+        },
+        {
+          "item": "R07.2",
+          "scope": "UAT"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    },
+    {
+      "id": "DATA-PRODUCT",
+      "responsibility": "Ürün kataloğu ve doğrulanmış kg/m verisinin sahibi ve yedeği; katalog kaynağının sorumlusu. Ayrıntılı paket #66/6207285823'tedir ve burada çoğaltılmaz.",
+      "unlocks": [
+        {
+          "item": "P01.2",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "P01.3",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "P01.4",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "P01.5",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "P04.1",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "P04.2",
+          "scope": "DATA_ACTIVATION"
+        },
+        {
+          "item": "R04.1",
+          "scope": "REAL_INPUT"
+        }
+      ],
+      "blocksSourceDevelopment": false,
+      "status": "PENDING",
+      "primary": null,
+      "backup": null,
+      "sourceCustodian": null,
+      "targetDate": null,
+      "sameAs": null,
+      "decisionRecord": null,
+      "confirmationRecord": null
+    }
+  ],
+  "environmentOwners": {
+    "decision": "D-ENVIRONMENT=A",
+    "status": "PENDING",
+    "opsPrimary": null,
+    "opsBackup": null,
+    "infraCustodian": null,
+    "artifactCustodian": null,
+    "secretCustodian": null,
+    "dataCustodian": null,
+    "costOwner": null,
+    "targetDate": null,
+    "decisionRecord": null
+  },
+  "assertions": {
+    "grantsPermissions": false,
+    "authorizesDeployment": false,
+    "containsPartyIds": false,
+    "containsCredentials": false,
+    "isHumanApproval": false
+  }
+}
