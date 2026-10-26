@@ -1054,20 +1054,22 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
 
     def test_required_upstream_jobs_match_reviewed_exact_contracts(self) -> None:
+        # #789/#794 replaced cloud transfer with local, run/attempt/head-bound
+        # evidence. Keep exact job pins as well as the semantic/mutation guards.
         expected_job_fingerprints = {
             "backend-build": "f94065385869782118b7a0085581028daf7bd3289a0b1842d3b76db563173029",
             "backend-test-group": "4138b2c1aa82cb51ccbaf6cbe3a42a54416a93b61b598ca776a0a9207272be58",
             "backend": (
-                "05bb62fbf78799a5700b3f0ba221b307cd9cd9908399641c151ed157362a0172"
+                "e2e37178376493f6a14224f36a3682680223ee9ce509742a7ef287e80bda78d3"
             ),
             "frontend": (
-                "35f367ca26c395da8b82562519f4532ed750792a453d5840584ec082917f0895"
+                "202453e576ee28ee342819117d1533b9b0aa3aacd7348bc893cb21672fa789df"
             ),
             "relational-shard": (
-                "83e78c46fff384d3d3f42f75d5fe42ac06a8c59387b84d7e5c1532228c7aacb6"
+                "f8414c3df38ceeddf840369521891220587c981491d11ad11df60447dd77fa7b"
             ),
             "relational-rcsi": (
-                "54511265ef8c5306a868e698b9aacaffa784a8e8c8e7540366c532eb8425af77"
+                "4b0f81dd06932cdce3ce52a87798361eb7004a38270f51438497952d3f78caea"
             ),
             "relational": (
                 "0e13b8a66d7f02d8e5ea545d028ea37daffe5a5d5d31bbc4be6b4ff67dd47412"
@@ -1142,7 +1144,7 @@ class WorkflowOrderingTests(unittest.TestCase):
                 "npm ci",
                 "npm audit --audit-level=high",
                 "npm run lint",
-                "npm test",
+                "npm test -- --maxWorkers=1 --no-file-parallelism",
                 "npm run build",
             ],
         )
@@ -1224,7 +1226,7 @@ class WorkflowOrderingTests(unittest.TestCase):
         self.assertEqual(
             re.findall(r"^    \S.*$", aggregate, re.M),
             ["    name: Backend build, test and migration",
-             "    needs: [backend-build, backend-test-group]",
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "    if: ${{ always() }}",
              "    runs-on: ubuntu-latest", "    steps:"],
         )
@@ -1235,6 +1237,7 @@ class WorkflowOrderingTests(unittest.TestCase):
             [
                 "Verify backend group proof parser",
                 "Download exact backend group proofs",
+                "Download same-run SQL proofs for excluded backend tests",
                 "Verify complete backend build and test groups",
             ],
         )
@@ -1261,6 +1264,17 @@ class WorkflowOrderingTests(unittest.TestCase):
         )
         self.assertEqual(
             self.read_step_lines(
+                self.step_body(aggregate, "Download same-run SQL proofs for excluded backend tests")
+            ),
+            [
+                "uses: actions/download-artifact@v8",
+                "with:",
+                "pattern: ci-relational-shard-proof-*",
+                "path: artifacts/ci-relational-proofs",
+            ],
+        )
+        self.assertEqual(
+            self.read_step_lines(
                 self.step_body(aggregate, "Verify complete backend build and test groups")
             ),
             [
@@ -1271,7 +1285,10 @@ class WorkflowOrderingTests(unittest.TestCase):
                 f'--source-head "{head_ref}" \\',
                 '--tested-commit "$(git rev-parse HEAD)" \\',
                 '--build-result "${{ needs.backend-build.result }}" \\',
-                '--worker-result "${{ needs.backend-test-group.result }}"',
+                '--worker-result "${{ needs.backend-test-group.result }}" \\',
+                '--relational-proof-directory artifacts/ci-relational-proofs \\',
+                '--relational-worker-result "${{ needs.relational-shard.result }}" \\',
+                '--rcsi-result "${{ needs.relational-rcsi.result }}"',
             ],
         )
 
@@ -1286,15 +1303,23 @@ class WorkflowOrderingTests(unittest.TestCase):
              "  backend-test-group:\n    if: ${{ false }}\n    name:"),
             ("soft worker", "  backend-test-group:\n    name:",
              "  backend-test-group:\n    continue-on-error: true\n    name:"),
-            ("missing build", "needs: [backend-build, backend-test-group]",
+            ("missing build", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
              "needs: [backend-test-group]"),
             ("not always", "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group]\n    if: ${{ always() }}",
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ always() }}",
              "  backend:\n    name: Backend build, test and migration\n"
-             "    needs: [backend-build, backend-test-group]\n    if: ${{ success() }}"),
+             "    needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]\n    if: ${{ success() }}"),
+            ("missing SQL dependency", "needs: [backend-build, backend-test-group, relational-shard, relational-rcsi]",
+             "needs: [backend-build, backend-test-group, relational-rcsi]"),
+            ("missing SQL proof", "pattern: ci-relational-shard-proof-*\n          path: artifacts/ci-relational-proofs\n\n      - name: Verify complete backend",
+             "pattern: ci-relational-shard-proof-A\n          path: artifacts/ci-relational-proofs\n\n      - name: Verify complete backend"),
+            ("foreign SQL directory", "--relational-proof-directory artifacts/ci-relational-proofs",
+             "--relational-proof-directory artifacts/other-proofs"),
+            ("constant RCSI success", '--rcsi-result "${{ needs.relational-rcsi.result }}"',
+             '--rcsi-result "success"'),
             ("untrusted restore", "dotnet restore GoymenERP.slnx -noAutoResponse --configfile NuGet.Config",
              "dotnet restore GoymenERP.slnx -noAutoResponse --configfile other.config"),
-            ("missing proof download", "pattern: ci-backend-test-group-proof-*",
+            ("summary substituted for proof", "pattern: ci-backend-test-group-proof-*",
              "pattern: ci-backend-test-group-summary-*"),
             ("aggregate no-op", '--worker-result "${{ needs.backend-test-group.result }}"',
              '--worker-result "${{ needs.backend-test-group.result }}" || true'),
