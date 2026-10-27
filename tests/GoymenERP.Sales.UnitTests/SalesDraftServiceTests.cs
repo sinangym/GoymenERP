@@ -385,7 +385,7 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task An_approved_price_change_archives_the_approved_revision_advances_the_draft_and_is_read_back_and_a_resent_key_replays()
     {
-        var world = new World();
+        var world = new World().AllowDiscountsUpTo(10m);
         var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
@@ -562,7 +562,7 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task A_price_write_revoked_after_the_store_reads_is_refused_before_business_history_attempt_or_audit_changes()
     {
-        var world = new World();
+        var world = new World().AllowDiscountsUpTo(10m);
         var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
@@ -591,7 +591,7 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task A_reader_without_the_price_read_gets_the_withheld_marker_on_the_detail_and_the_history_and_with_it_the_texts()
     {
-        var world = new World();
+        var world = new World().AllowDiscountsUpTo(10m);
         var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
@@ -1224,7 +1224,7 @@ public sealed partial class SalesDraftServiceTests
             // new operation to an already-known test permission without creating a role, grant or admin exception.
             Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, ApprovePermission, PricePermission,
                 PriceReadPermission, SchedulePermission, CancelPermission, QuantityPermission, ApprovePermission),
-        };
+        }.AllowDiscountsUpTo(10m);
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         Assert.Equal((true, (string?)null, false), (created.CustomerAcceptance.Required,
             created.CustomerAcceptance.AcceptedRevision, created.CustomerAcceptance.IsCurrentRevisionAccepted));
@@ -1628,7 +1628,22 @@ public sealed partial class SalesDraftServiceTests
         public IProductQuantityPriceReferenceReaderV1? PriceReferences { get; set; }
         /// <summary>SAT-D8 / API-10: the customer-return owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderCustomerReturnReadPortV1? CustomerReturns { get; set; }
+        /// <summary>SAT-D2 / API-12: the Settings Sales policy port; null = not composed.</summary>
+        public ISettingsSalesPolicyProviderV1? SalesPolicies { get; set; }
+        /// <summary>SAT-D2 / API-12: the actor's discount limit groups (Identity's mapping); null = not composed (no limit defined).</summary>
+        public ISalesDiscountLimitGroupSourceV1? DiscountLimitGroups { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
+
+        /// <summary>
+        /// SAT-D2: a SENTETIK approved limit of <paramref name="percent"/> for one limit group of every actor, for the tests
+        /// whose subject is not the discount limit (a discount within it needs no exception approval).
+        /// </summary>
+        public World AllowDiscountsUpTo(decimal percent)
+        {
+            DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA]);
+            SalesPolicies = new FakeSalesPolicies { Limits = { [DiscountGroupA] = percent } };
+            return this;
+        }
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
 
@@ -1638,7 +1653,7 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences, CustomerReturns);
+                Allocations, Loadings, PriceReferences, CustomerReturns, SalesPolicies, DiscountLimitGroups);
         }
 
         public SalesDraftReadServiceV1 ReadService()
@@ -1994,7 +2009,8 @@ public sealed partial class SalesDraftServiceTests
             Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default,
             Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
         {
-            if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
+            if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
+                    or SalesDraftCommands.ApproveDiscountExceptionsV1))
                 throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,

@@ -92,15 +92,20 @@ public sealed record OwnerReference(Guid Id, string ExpectedVersion);
 /// a percent OR an amount, and a maturity surcharge (vade farkı) as a percent OR an amount. The net is never stored; it is
 /// <see cref="SalesLinePriceCalculator"/>'s answer from these values.
 /// </para>
+/// <para>
+/// SAT-D2 (API-12): <see cref="DiscountCheck"/> is the discount-limit check of a line with a positive discount, made for the
+/// actor who set the discount; a line without a positive discount carries none.
+/// </para>
 public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent,
     PriceReferenceSnapshot? Reference = null, string? DiscountAmount = null, string? SurchargePercent = null,
-    string? SurchargeAmount = null, PriceFloorExceptionSnapshot? FloorException = null)
+    string? SurchargeAmount = null, PriceFloorExceptionSnapshot? FloorException = null,
+    DiscountLimitCheckSnapshot? DiscountCheck = null)
 {
     public static CommercialDraftFields None { get; } = new(null, null, null);
 
-    /// <summary>Whether anything beyond K3's three fields is present (the reference or an AT-018 adjustment).</summary>
+    /// <summary>Whether anything beyond K3's three fields is present (the reference, an AT-018 adjustment or a check).</summary>
     public bool HasPricingDetail => Reference is not null || DiscountAmount is not null || SurchargePercent is not null
-        || SurchargeAmount is not null || FloorException is not null;
+        || SurchargeAmount is not null || FloorException is not null || DiscountCheck is not null;
 
     /// <summary>"Reference" when the unit price is the reference's list price, "Manual" when it was overwritten; null without a price.</summary>
     public string? PriceSource => UnitPrice is null ? null
@@ -131,6 +136,49 @@ public sealed record PriceFloorExceptionSnapshot(
 
 /// <summary>One current below-floor line and the approver's required reason.</summary>
 public sealed record LinePriceFloorExceptionApprovalInput(Guid LineId, string Reason);
+
+/// <summary>
+/// SAT-D2 ("Rol bazlı yüzde limiti, Ayarlar'dan; limiti aşan iskonto Müdür onayına gider. Limiti tanımlı olmayan rol için her
+/// iskonto onaya düşer (fail-closed)"): the discount limit that applies to the actor setting a discount, as the caller read it
+/// from the Settings owner (<c>ISettingsSalesPolicyProviderV1</c>). <see cref="MaximumPercent"/> is null when no limit is
+/// defined for the actor ("every discount goes to approval"), never zero and never "unlimited"; with a limit, the Settings
+/// profile and version it came from are kept. Built only by the caller; the domain checks its shape.
+/// </summary>
+public sealed record SalesDiscountLimit(decimal? MaximumPercent, Guid? ProfileId, long? ProfileVersion)
+{
+    /// <summary>No limit is defined for the actor: every positive discount needs approval (SAT-D2, fail-closed).</summary>
+    public static SalesDiscountLimit Undefined { get; } = new(null, null, null);
+
+    /// <summary>A defined limit: 0 ≤ percent ≤ 100, from one Settings profile version.</summary>
+    public static SalesDiscountLimit Defined(decimal maximumPercent, Guid profileId, long profileVersion)
+    {
+        if (maximumPercent < 0m || maximumPercent > 100m || profileId == Guid.Empty || profileVersion < 1)
+        {
+            throw new ArgumentException("İskonto limiti 0 ile 100 arasında olmalı ve onaylı bir profil sürümünü adlandırmalıdır.",
+                nameof(maximumPercent));
+        }
+
+        return new SalesDiscountLimit(maximumPercent, profileId, profileVersion);
+    }
+}
+
+/// <summary>
+/// SAT-D2 / API-12: the discount-limit check of one exact positive-discount commercial snapshot — who set the discount and
+/// when, the unit price and discount it was made for, the limit that applied (null = none defined, with its Settings profile
+/// and version otherwise) and whether the discount exceeds it. An exceeding discount needs a reasoned approval by another
+/// person (<see cref="ApprovedBy"/>, <see cref="ApprovedAtUtc"/>, <see cref="Reason"/>: all or none). Any commercial revision
+/// replaces this snapshot, so an approval never floats to another price or discount.
+/// </summary>
+public sealed record DiscountLimitCheckSnapshot(
+    string CheckedBy, DateTimeOffset CheckedAtUtc, string UnitPrice, string? DiscountPercent, string? DiscountAmount,
+    string? LimitPercent, Guid? LimitProfileId, long? LimitProfileVersion, bool RequiresApproval,
+    string? ApprovedBy = null, DateTimeOffset? ApprovedAtUtc = null, string? Reason = null)
+{
+    public bool IsApproved => ApprovedBy is not null && ApprovedAtUtc is not null && Reason is not null;
+}
+
+/// <summary>One current over-limit discount line and the approver's required reason.</summary>
+public sealed record LineDiscountExceptionApprovalInput(Guid LineId, string Reason);
 
 /// <summary>K3 Head B: one line's new commercial fields in a commercial revision, addressed by the client line id.</summary>
 public sealed record LineCommercialInput(Guid LineId, CommercialDraftFields Commercial);

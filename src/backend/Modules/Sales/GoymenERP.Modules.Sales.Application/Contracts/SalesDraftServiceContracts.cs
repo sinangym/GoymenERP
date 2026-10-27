@@ -162,6 +162,13 @@ public static class SalesDraftProblemCodesV1
     /// </summary>
     public const string RemainderFloorUnavailable = "remainder_floor_unavailable";
 
+    /// <summary>
+    /// 503 (SAT-D2 / API-12): a line carries a positive discount and the limit that applies to the actor cannot be read — the
+    /// Settings Sales policy source is not composed, not served for the company or malformed, or the actor's limit groups
+    /// cannot be read. No discount is accepted on an unread limit and none is guessed. Code-less on the wire.
+    /// </summary>
+    public const string DiscountLimitUnavailable = "sales_discount_limit_unavailable";
+
     /// <summary>503: the Sales permission name is not registered in the central catalogue yet (setup, not a refusal).</summary>
     public const string PermissionUnregistered = "permission_unregistered";
 
@@ -207,4 +214,5 @@ public sealed record SalesDraftServiceBindings(
     string? QuantityPermission = SalesPermissionManifestV1.OrdersQuantityWrite,
     string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
     string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
-    string? ForceClosePermission = SalesPermissionManifestV1.OrdersForceClose);
+    string? ForceClosePermission = SalesPermissionManifestV1.OrdersForceClose,
+    string? DiscountExceptionApprovePermission = SalesPermissionManifestV1.OrdersDiscountExceptionApprove);

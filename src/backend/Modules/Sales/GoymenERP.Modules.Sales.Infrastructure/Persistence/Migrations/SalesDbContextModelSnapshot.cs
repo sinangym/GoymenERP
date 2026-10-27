@@ -232,7 +232,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_DraftAttempts_Result",
-                    "([CommandName] = N'sales.order-draft.approve-price-floor-exceptions.v1' AND [Outcome] = 1 AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR (([CommandName] <> N'sales.order-draft.approve-price-floor-exceptions.v1' OR [Outcome] <> 1) AND [ResultJson] IS NULL)");
+                    "([CommandName] IN (N'sales.order-draft.approve-price-floor-exceptions.v1', N'sales.order-draft.approve-discount-exceptions.v1') AND [Outcome] = 1 AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR (([CommandName] NOT IN (N'sales.order-draft.approve-price-floor-exceptions.v1', N'sales.order-draft.approve-discount-exceptions.v1') OR [Outcome] <> 1) AND [ResultJson] IS NULL)");
             });
         });
 

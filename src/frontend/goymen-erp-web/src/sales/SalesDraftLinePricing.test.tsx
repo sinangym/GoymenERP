@@ -253,6 +253,32 @@ describe('AT-018 list price on the order line', () => {
       netUnitPrice: '39000', floorException: { ...floorException, reason: 'x'.repeat(4001) } }))).toBeNull()
   })
 
+  it('reads the SAT-D2 discount-limit check as an additive member and fails closed on a malformed one', () => {
+    const base = { unitPrice: '100', priceUnitId: KG, priceSource: 'Manual', discountPercent: '5', netUnitPrice: '95' }
+    const pending = {
+      checkedBy: 'maker', checkedAtUtc: '2026-10-27T08:00:00Z', limitPercent: null, requiresApproval: true,
+      approvedBy: null, approvedAtUtc: null, reason: null,
+    }
+    // Absent (an older server) and null both read as "no check".
+    expect(decodeDraftLinePricing(pricing('4', base))?.lines[0].discountCheck).toBeNull()
+    expect(decodeDraftLinePricing(pricing('4', { ...base, discountCheck: null }))?.lines[0].discountCheck).toBeNull()
+    expect(decodeDraftLinePricing(pricing('4', { ...base, discountCheck: pending }))?.lines[0].discountCheck).toEqual(pending)
+    const approved = { ...pending, approvedBy: 'checker', approvedAtUtc: '2026-10-27T08:05:00Z', reason: 'Yıllık anlaşma' }
+    expect(decodeDraftLinePricing(pricing('4', { ...base, discountCheck: approved }))?.lines[0].discountCheck?.approvedBy).toBe('checker')
+    const within = { ...pending, limitPercent: '10', requiresApproval: false }
+    expect(decodeDraftLinePricing(pricing('4', { ...base, discountCheck: within }))?.lines[0].discountCheck?.limitPercent).toBe('10')
+    for (const malformed of [
+      { ...within, approvedBy: 'checker', approvedAtUtc: '2026-10-27T08:05:00Z', reason: 'x' },
+      { ...pending, approvedBy: 'checker' },
+      { ...pending, limitPercent: 'on' },
+      { ...pending, requiresApproval: 'true' },
+      { ...pending, extra: true },
+    ]) {
+      expect(decodeDraftLinePricing(pricing('4', { ...base, discountCheck: malformed }))).toBeNull()
+    }
+    expect(decodeDraftLinePricing(pricing('4', { ...base, discountChecks: null }))).toBeNull()
+  })
+
   it('uses the list price as reference and default, adds a discount and a surcharge, and reads back the server net', async () => {
     let saved = false
     const posts: RecordedCall[] = []

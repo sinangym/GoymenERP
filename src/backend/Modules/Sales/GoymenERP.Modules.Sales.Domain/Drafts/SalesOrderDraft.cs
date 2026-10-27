@@ -401,6 +401,7 @@ public sealed partial class SalesOrderDraft
         }
 
         RequirePricingDetail(commercial, lineId);
+        ValidateDiscountCheck(commercial, lineId);
     }
 
     /// <summary>
@@ -579,6 +580,7 @@ public sealed partial class SalesOrderDraft
         var actor = RequireActor(actorId);
         RequireStorable();
         RequirePriceFloorExceptionsApproved();
+        RequireDiscountExceptionsApproved();
         if (ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.Rejected))
         {
             throw StateConflict("Yalnız hazırlanan ya da reddedilmiş taslak onaya gönderilir.");
@@ -603,6 +605,7 @@ public sealed partial class SalesOrderDraft
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
         RequirePriceFloorExceptionsApproved();
+        RequireDiscountExceptionsApproved();
         if (ApprovalState != InternalApprovalState.PendingApproval)
         {
             throw StateConflict("Yalnız onay bekleyen taslak onaylanır.");
@@ -838,11 +841,13 @@ public sealed partial class SalesOrderDraft
     /// snapshot when one was made (the store persists it in the same save as the draft), else null.
     /// </summary>
     public ApprovedRevisionSnapshot? ReviseCommercial(long expectedVersion, IReadOnlyList<LineCommercialInput> inputs, string actorId,
-        DateTimeOffset now)
+        DateTimeOffset now, SalesDiscountLimit? discountLimit = null)
     {
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
         ArgumentNullException.ThrowIfNull(inputs);
+        // SAT-D2: the reviser's discount limit as the caller read it; none given means none defined (every discount to approval).
+        var limit = discountLimit ?? SalesDiscountLimit.Undefined;
         // Not RequireDraft(): that guard closes the lines of an approved draft (DEC-SAL-002), and THIS command is the
         // revision that decision points to. Only the lifecycle state is required here; the approval axis is decided below.
         // DEC-SAL-005: a cancelled order is terminal - no revision re-opens it for approval (a 409, like Withdrawn).
@@ -886,10 +891,11 @@ public sealed partial class SalesOrderDraft
                 throw new SalesRuleException(exception.Code, exception.Message, line.Id);
             }
 
-            replacements.Add((line, PrepareFloorException(fields, actor, now)));
+            replacements.Add((line, WithDiscountLimitCheck(PrepareFloorException(fields, actor, now), limit, actor, now)));
         }
 
-        if (replacements.All(pair => pair.Line.Commercial == pair.Fields))
+        // The discount check is the revision's own record (who checked, when), not a value the person changed.
+        if (replacements.All(pair => pair.Line.Commercial with { DiscountCheck = null } == pair.Fields with { DiscountCheck = null }))
         {
             throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
                 "Fiyat revizyonu hiçbir değeri değiştirmiyor; onay boşuna düşürülmez.");

@@ -345,7 +345,8 @@ public sealed class SalesStore(
     {
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireCommand(commandName);
-        if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
+        if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
+            or SalesDraftCommands.ApproveDiscountExceptionsV1))
         {
             throw new ArgumentException("Yalnız fiyat revizyonu komutu satırların ticari alanlarını değiştirir.", nameof(commandName));
         }
@@ -443,10 +444,10 @@ public sealed class SalesStore(
         var now = timeProvider.GetUtcNow();
         var archived = mutate(draft, now);
         var result = replayResult(draft);
-        var resultRequired = commandName == SalesDraftCommands.ApprovePriceFloorExceptionsV1;
+        var resultRequired = StoresReplayResult(commandName);
         if (resultRequired != (result is not null))
         {
-            throw new InvalidOperationException("Yalnız taban fiyat onayı eksiksiz bir tekrar sonucu kaydeder.");
+            throw new InvalidOperationException("Yalnız taban fiyat ve iskonto istisnası onayları eksiksiz bir tekrar sonucu kaydeder.");
         }
         if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
         {
@@ -581,7 +582,7 @@ public sealed class SalesStore(
         }
 
         if (attempt.Outcome != AttemptOutcomeRecorded
-            || attempt.CommandName != SalesDraftCommands.ApprovePriceFloorExceptionsV1
+            || !StoresReplayResult(attempt.CommandName)
             || attempt.DraftId is not { } draftId)
         {
             throw new InvalidOperationException("Kayıtlı tekrar sonucu bu komut ve sonuç türüyle uyumlu değil.");
@@ -603,6 +604,13 @@ public sealed class SalesStore(
 
         return result;
     }
+
+    /// <summary>
+    /// The commands whose first complete answer is kept in both price visibility variants (CK_DraftAttempts_Result): the
+    /// price-floor exception approval (PL04) and the API-12 discount exception approval, its shape.
+    /// </summary>
+    internal static bool StoresReplayResult(string commandName) =>
+        commandName is SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesDraftCommands.ApproveDiscountExceptionsV1;
 
     internal static bool ReplaySummariesMatch(SalesOrderDraftSummaryView left, SalesOrderDraftSummaryView right) =>
         left.Id == right.Id
@@ -1358,6 +1366,8 @@ public sealed class SalesStore(
             // AT-018 / AT-021: the reference, the visible adjustments and the net in the audit trail.
             line.Commercial.Reference, line.Commercial.DiscountAmount, line.Commercial.SurchargePercent, line.Commercial.SurchargeAmount,
             line.Commercial.FloorException,
+            // SAT-D2 / API-12: the discount-limit check (who set the discount, the limit applied, the approval).
+            line.Commercial.DiscountCheck,
             netUnitPrice = SalesLinePriceCalculator.NetUnitPriceText(line.Commercial),
         }).ToArray(),
     };
@@ -1740,7 +1750,7 @@ public sealed class SalesStore(
             or SalesDraftCommands.ReviseQuantityV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
             or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1
-            or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
+            or SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesDraftCommands.ApproveDiscountExceptionsV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }

@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 11;
+    public const int Version = 12;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -56,6 +56,15 @@ public static class SalesPermissionManifestV1
     public const string OrdersPriceFloorExceptionApprove = "sales.orders.price-floor-exception.approve";
 
     /// <summary>
+    /// SAT-D2 / API-12 ("limiti aşan iskonto Müdür onayına gider"): approves, with a reason, every current line whose discount
+    /// exceeds the limit of the actor who set it (or for whom no limit is defined) — POST …/{id}/discount-exception-approval.
+    /// A SEPARATE name: price write, order approval and the price-floor exception approval do NOT confer it, and it confers
+    /// none of them. The approver is never the actor who set the discount (checked by the domain). Company-wide; registered,
+    /// not granted: which persona (Müdür) holds it is a human gate.
+    /// </summary>
+    public const string OrdersDiscountExceptionApprove = "sales.orders.discount-exception.approve";
+
+    /// <summary>
     /// DEC-SAL-003 (KILITLI): "termin güncellemesi planlama/sevkiyat rolündedir ve yeniden onay gerektirmez, ancak
     /// auditlidir" — POST …/{id}/delivery-schedule, moving the requested delivery dates of the header, the lines and
     /// their existing slices. A SEPARATE name because the decision gives the update to the planning/shipping role, not
@@ -96,6 +105,7 @@ public static class SalesPermissionManifestV1
 
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
-            OrdersPriceFloorExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite, OrdersForceClose }
+            OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
+            OrdersQuantityWrite, OrdersForceClose }
             .ToFrozenSet(StringComparer.Ordinal);
 }

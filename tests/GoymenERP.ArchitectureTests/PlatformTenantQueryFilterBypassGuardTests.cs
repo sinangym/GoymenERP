@@ -312,8 +312,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
             // TEK-13: +5 SalesRemainderChangeSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (5932b012… -> f2c6c3ac…).
             // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
+            // SAT-D2 / API-12: +2 SalesDiscountExceptionSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (aabdd034… -> 7a39dfe5…).
             ["tools/relational_inventory/sales.txt"] =
-                "aabdd034baeb20fe87c7d584eddfdb3a882aa81738667d8e6f79e907343b5ec5",
+                "7a39dfe58ae2f88c5bc9013dbd65f8844695ab75fcbcbb063669cfde29c39a3d",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -380,9 +381,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
             // Re-fingerprinted for No 30 / SAT-D12: the force-closure table (DraftForceClosures), with the same CompanyId
             // query filter and a company-leading key, the widened lifecycle CK (Closed = 3) and the Draft -> Closed guard.
+            // Re-fingerprinted for SAT-D2 / API-12: CK_DraftAttempts_Result admits the discount-exception approval's replay
+            // result on the same company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "524d03508fd0890a2809baec2471fed66e7abe76e057eb65057e1a42c3cafc03",
+                "eb88e2044e87fd48a8f3c9747c20c61d3d4c7fa8f9084a3059d848dd18ce63f3",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1270,8 +1273,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // branch and its database capability token counts are unchanged.
                     // Re-fingerprinted for SAT-D8 / API-10: the draft service also receives the optional Logistics
                     // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for SAT-D2 / API-12: the draft service also receives the optional Settings Sales policy
+                    // port and limit-group source (DI-only); the provider branch and its token counts are unchanged.
                     new(
-                        "d39bf8917ddd4503c57d6f76a2e03e62e7d30d9dfe6a187d70c76cdeefcac324",
+                        "d9431a467db9771db565708b1761a349c161020c79f5eca38381cbb6d8db11f5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1295,8 +1300,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // replaces record equality; no database, connection, command, raw SQL or filter-bypass API was added.
                     // Re-fingerprinted for No 30 / SAT-D12: the force-close write and its restore, company-resolved and saved
                     // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D2 / API-12: the discount-exception approval shares the commercial line save and
+                    // the replay-result path; no connection, command or raw SQL; SqlClient count unchanged.
                     new(
-                        "52a9cb9c3f6b709bc89a5ef0a1286f1b902cb36f5f4099123027d2a3f1036a49",
+                        "3ad266a5610b7692b280a886d11fec0fef68943d526f24112d6f8883145b4ade",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1703,6 +1710,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // order force-closure is stored; the THROW precedes the DropTable and the CK restore. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261025120000_AddDraftForceClosures.cs"] =
                     new("adaea424b2a2238dbd0a962f96c660c9855756b67148f774aa4463118a3fe8a6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D2 / API-12: the Down's only raw SQL refuses rollback (51065, used by no other migration) while a
+                // discount-exception approval replay result exists; the THROW precedes the constraint narrowing. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027093529_AddSalesDiscountExceptionApprovalReplayResults.cs"] =
+                    new("dd34ff5632db04a5588683e9c883cb97b5aadeb7f92b986e8f78d3109446f44f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

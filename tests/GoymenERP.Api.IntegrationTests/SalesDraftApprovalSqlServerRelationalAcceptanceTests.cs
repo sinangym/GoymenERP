@@ -411,7 +411,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             LineCommercialInput[] revisedPrice = [new(requiredLineId, new CommercialDraftFields("13.00", KgUnit, "5"))];
             await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-q9-revise", actor: "SENTETIK-pricer"), Hash("q9-revise"),
                 SalesDraftCommands.ReviseCommercialV1, required.Id,
-                (draft, now) => draft.ReviseCommercial(5, revisedPrice, "SENTETIK-pricer", now), Revised,
+                (draft, now) => draft.ReviseCommercial(5, revisedPrice, "SENTETIK-pricer", now, WithinTenPercent), Revised,
                 static _ => Task.CompletedTask);
             await a.Store.UpdateDraftStateAsync(run.Envelope("k-q9-submit-r1"), Hash("q9-submit-r1"), SalesDraftCommands.SubmitV1,
                 required.Id, (draft, now) => draft.Submit(6, run.Actor, now), Submitted);
@@ -666,7 +666,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
                 SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
             LineCommercialInput[] priced = [new(lineId, new CommercialDraftFields("13.00", KgUnit, "5"))];
             await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-revise", actor: pricer), Hash("revise-4"),
-                SalesDraftCommands.ReviseCommercialV1, draft.Id, (d, now) => d.ReviseCommercial(4, priced, pricer, now), Revised,
+                SalesDraftCommands.ReviseCommercialV1, draft.Id, (d, now) => d.ReviseCommercial(4, priced, pricer, now, WithinTenPercent), Revised,
                 static _ => Task.CompletedTask);
         }
 
@@ -1184,7 +1184,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             draft = (await a.Store.StoreDraftAsync(run.Envelope("k-pl-create"), Hash("payload-pl"), documentNo => PricedDraft(owners, documentNo, T0))).Draft;
             var lineId = draft.Lines[0].Id;
             var revised = await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-pl-price"), Hash("price-pl"), SalesDraftCommands.ReviseCommercialV1,
-                draft.Id, (d, now) => d.ReviseCommercial(d.Version, [new LineCommercialInput(lineId, fields)], run.Actor, now), Revised,
+                draft.Id, (d, now) => d.ReviseCommercial(d.Version, [new LineCommercialInput(lineId, fields)], run.Actor, now, WithinTenPercent), Revised,
                 _ => Task.CompletedTask);
             Assert.NotNull(revised);
         }
@@ -1193,7 +1193,10 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         {
             var reopened = (await b.Store.FindDraftAsync(draft.Id))!;
             var commercial = Assert.IsType<CommercialDraftFields>(reopened.Lines[0].Commercial);
-            Assert.Equal(fields, commercial);
+            Assert.Equal(fields, commercial with { DiscountCheck = null });
+            // SAT-D2 / API-12: the 0.50 discount (4 % of 12.50) was checked against the reviser's 10 % limit and kept with the line.
+            Assert.Equal((run.Actor, "10", false), (commercial.DiscountCheck!.CheckedBy, commercial.DiscountCheck.LimitPercent,
+                commercial.DiscountCheck.RequiresApproval));
             Assert.Equal(("10", "20"), (commercial.Reference!.LowerQuantity,
                 commercial.Reference.UpperQuantity));
             Assert.Equal(("Reference", "12.18"), (commercial.PriceSource, SalesLinePriceCalculator.NetUnitPriceText(commercial)));
@@ -1221,9 +1224,14 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var binding = new UnitBindingSnapshot(owners.Company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
         draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "1.25", 1.25m,
-            Commercial: new CommercialDraftFields("12.50", KgUnit, "5")), at);
+            Commercial: SalesOrderDraft.WithDiscountLimitCheck(new CommercialDraftFields("12.50", KgUnit, "5"), WithinTenPercent,
+                "SENTETIK-preparer", at)), at);
         return draft;
     }
+
+    /// <summary>SAT-D2 / API-12: a SENTETIK 10 % limit, so these orders' 5 % discounts need no exception approval.</summary>
+    private static readonly SalesDiscountLimit WithinTenPercent =
+        SalesDiscountLimit.Defined(10m, Guid.Parse("4d15c0a1-0000-4000-8000-0000000000a1"), 1);
 
     /// <summary>An authority that answers from a fixed set of granted names and RECORDS every question (name, company).</summary>
     private sealed class RecordingAuthority(params string[] granted) : IErpAuthorityRevalidationService
@@ -1485,8 +1493,10 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         // assigns all three, EF records what differs. What this pins: the changed column is inside the one save, and nothing
         // outside the commercial columns is. The guard's ADMITTED set (all three) is the unit persistence test's pin, not this
         // case's — the first version of this line asserted the admitted set here and was red on real SQL for that reason.
+        // SAT-D2 / API-12: the discount-limit check of the 5 % discount is the revision's own record (the reviser, the time and
+        // the new price it is bound to), so PricingJson moves with the price; the unit and discount columns still do not.
         var line = Assert.Single(save, entry => entry.Entity == nameof(DraftLineRow));
-        Assert.Equal([nameof(DraftLineRow.UnitPrice)], line.Modified);
+        Assert.Equal([nameof(DraftLineRow.PricingJson), nameof(DraftLineRow.UnitPrice)], line.Modified);
     }
 
     /// <summary>

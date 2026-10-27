@@ -342,10 +342,14 @@ public sealed class SalesOrderDraftTests
 
     // ---- K3 Head B: the commercial revision ----------------------------------------------------------
 
+    /// <summary>SAT-D2: a SENTETIK 10 % limit, so the revision mechanics below run with discounts within it (the boundary included).</summary>
+    private static readonly SalesDiscountLimit WithinTenPercent = SalesDiscountLimit.Defined(10m, Guid.Parse("0f0e0d0c-0b0a-4908-8706-050403020100"), 1);
+
     private static SalesOrderDraft PricedDraft(out SalesOrderDraftLine first, out SalesOrderDraftLine second)
     {
         var draft = Draft();
-        first = draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "5")), T0);
+        first = draft.AddLine(1, Line(1m, commercial: SalesOrderDraft.WithDiscountLimitCheck(
+            new CommercialDraftFields("12.50", KgUnit, "5"), WithinTenPercent, "prep", T0)), T0);
         second = draft.AddLine(2, Line(2m), T0);
         return draft;
     }
@@ -358,7 +362,8 @@ public sealed class SalesOrderDraftTests
     {
         var draft = PricedDraft(out var first, out var second);
 
-        var archived = draft.ReviseCommercial(3, [Input(first, "13.00", KgUnit, null), Input(second, "1", KgUnit, "10")], "pricer", T0.AddMinutes(1));
+        var archived = draft.ReviseCommercial(3, [Input(first, "13.00", KgUnit, null), Input(second, "1", KgUnit, "10")], "pricer", T0.AddMinutes(1),
+            WithinTenPercent);
 
         Assert.Null(archived);
         Assert.Empty(draft.ArchivedRevisions);
@@ -380,7 +385,8 @@ public sealed class SalesOrderDraftTests
         draft.Approve(4, "mgr", T0.AddMinutes(1));
         var approvedFacts = draft.Approval;
 
-        var archived = draft.ReviseCommercial(5, [Input(first, "13.00", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0.AddMinutes(2));
+        var archived = draft.ReviseCommercial(5, [Input(first, "13.00", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0.AddMinutes(2),
+            WithinTenPercent);
 
         // The snapshot is the approved revision AS IT WAS: Rev.0, its facts, its money profile, the OLD values.
         Assert.NotNull(archived);

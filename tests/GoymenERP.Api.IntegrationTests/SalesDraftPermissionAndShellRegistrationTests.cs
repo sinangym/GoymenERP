@@ -49,6 +49,10 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // DEC-SAL-002: the quantity revision of an approved order. Its own name, company-wide and not Critical (the reason is
     // on ErpPermissions.SalesOrdersQuantityWrite).
     [InlineData(SalesPermissionManifestV1.OrdersQuantityWrite, ErpPermissions.SalesOrdersQuantityWrite)]
+    // SAT-D2 / API-12: approving an over-limit discount. Its own name (price write, order approval and the floor approval do
+    // not confer it), company-wide, not Critical and granted to no role (the reason is on
+    // ErpPermissions.SalesOrdersDiscountExceptionApprove).
+    [InlineData(SalesPermissionManifestV1.OrdersDiscountExceptionApprove, ErpPermissions.SalesOrdersDiscountExceptionApprove)]
     // Q9 customer acceptance: registered company-wide, not Critical and not granted by this catalogue.
     [InlineData(SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, ErpPermissions.SalesOrdersCustomerAcceptanceRecord)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)

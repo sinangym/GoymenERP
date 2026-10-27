@@ -148,7 +148,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // No 30: the SEPARATE force-close name, the decision's own literal, distinct from the cancel name.
         Assert.Equal("sales.orders.force-close", SalesPermissionManifestV1.OrdersForceClose);
         Assert.NotEqual(SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersForceClose);
-        Assert.Equal((11, 11), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // SAT-D2 / API-12: the SEPARATE discount-exception approval name; price write, order approval and the floor approval do not confer it.
+        Assert.Equal("sales.orders.discount-exception.approve", SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
+        Assert.Equal((12, 12), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -158,6 +160,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersPriceWrite,
                 SalesPermissionManifestV1.OrdersPriceRead,
                 SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+                SalesPermissionManifestV1.OrdersDiscountExceptionApprove,
                 SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel,
                 SalesPermissionManifestV1.OrdersForceClose,

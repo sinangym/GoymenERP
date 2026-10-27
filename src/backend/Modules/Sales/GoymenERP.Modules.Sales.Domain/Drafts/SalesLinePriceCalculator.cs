@@ -38,6 +38,46 @@ public static class SalesLinePriceCalculator
             : throw new OverflowException("The exact net price is not representable by System.Decimal.");
     }
 
+    /// <summary>
+    /// SAT-D2: whether the line carries a discount above zero — a percent or an amount (a literal zero is no discount).
+    /// The texts are the line's validated exact texts.
+    /// </summary>
+    public static bool HasPositiveDiscount(CommercialDraftFields commercial)
+    {
+        ArgumentNullException.ThrowIfNull(commercial);
+        return (commercial.DiscountPercent is { } percent && Parse(percent) > 0m)
+            || (commercial.DiscountAmount is { } amount && Parse(amount) > 0m);
+    }
+
+    /// <summary>
+    /// SAT-D2 / API-12: whether the line's discount EXCEEDS <paramref name="limitPercent"/>, a percent of the line's unit price
+    /// (the base of this calculator's discount step). A discount exactly at the limit does not exceed it ("limiti aşan"). A
+    /// percent discount is compared as given; an amount is compared exactly as amount × 100 &gt; limit × unit price, so no
+    /// division ever rounds the decision. A line without a price or without a positive discount never exceeds.
+    /// </summary>
+    public static bool DiscountExceedsPercent(CommercialDraftFields commercial, decimal limitPercent)
+    {
+        ArgumentNullException.ThrowIfNull(commercial);
+        if (limitPercent < 0m || limitPercent > 100m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limitPercent), "İskonto limiti 0 ile 100 arasında olmalıdır.");
+        }
+
+        if (commercial.UnitPrice is not { } priceText || !HasPositiveDiscount(commercial))
+        {
+            return false;
+        }
+
+        var limit = ExactDecimal.Parse(Format(limitPercent));
+        if (commercial.DiscountPercent is { } percent)
+        {
+            return ExactDecimal.Parse(percent).CompareTo(limit) > 0;
+        }
+
+        var amountTimesHundred = ExactDecimal.Parse(commercial.DiscountAmount!).Multiply(ExactDecimal.Hundred);
+        return amountTimesHundred.CompareTo(limit.Multiply(ExactDecimal.Parse(priceText))) > 0;
+    }
+
     /// <summary>The net as exact text with no trailing zeros ("41790" / "41790.25"); null without a price.</summary>
     public static string? NetUnitPriceText(CommercialDraftFields commercial) =>
         NetUnitPrice(commercial) is { } net ? Format(net) : null;
@@ -93,6 +133,8 @@ public static class SalesLinePriceCalculator
     {
         public static ExactDecimal Zero { get; } = new(BigInteger.Zero, 0);
 
+        public static ExactDecimal Hundred { get; } = new(new BigInteger(100), 0);
+
         public static ExactDecimal Parse(string text)
         {
             var dot = text.IndexOf('.');
@@ -116,6 +158,8 @@ public static class SalesLinePriceCalculator
         public ExactDecimal Multiply(ExactDecimal other) => Create(Mantissa * other.Mantissa, checked(Scale + other.Scale));
 
         public ExactDecimal DivideBy100() => Create(Mantissa, checked(Scale + 2));
+
+        public int CompareTo(ExactDecimal other) => Subtract(other).Mantissa.Sign;
 
         public bool TryToDecimal(out decimal value) => TryParseExact(ToText(), out value);
 

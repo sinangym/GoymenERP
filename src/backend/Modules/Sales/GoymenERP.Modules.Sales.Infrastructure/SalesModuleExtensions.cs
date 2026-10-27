@@ -95,7 +95,12 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<IProductQuantityPriceReferenceReaderV1>(),
         // SAT-D8 / API-10: the customer-return owner's read port, registered by that owner's module (Logistics); until it
         // is, the order's approved-returns read is 503, never an assumed "nothing returned".
-        serviceProvider.GetService<ISalesOrderCustomerReturnReadPortV1>());
+        serviceProvider.GetService<ISalesOrderCustomerReturnReadPortV1>(),
+        // SAT-D2 / API-12: the Settings owner's Sales policy port (the host's registration) and the actor's discount limit groups
+        // (the Identity owner's role mapping, not registered yet). Without groups no limit is defined: every positive discount
+        // goes to approval; with groups but no Settings source, a positive discount is 503, never checked against a guess.
+        serviceProvider.GetService<ISettingsSalesPolicyProviderV1>(),
+        serviceProvider.GetService<ISalesDiscountLimitGroupSourceV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
