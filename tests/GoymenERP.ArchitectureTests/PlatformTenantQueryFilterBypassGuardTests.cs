@@ -163,8 +163,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for #391: two linked Compile items (the browser-suite runner's BrowserSuiteHost.cs
     // and its closed seed-output validator, both for BrowserSuiteHostEnvelopeTests), after the module SQL
     // acceptance ProjectReferences. Publish target and discovery contract unchanged.
+    // Re-fingerprinted for MOD-07: the PdfPig test package (the sales order PDF's text is read back from its bytes, as
+    // the PDF component's own tests do). Publish target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "042bd595603757b528ba7dca7bf77ecf6b2ec7ce75cb5d219c038504878fe7c3";
+        "82a6bb89fa2bacd24c30c92fd71f3927fbfff42c2d640630d3b76d1b7babbd05";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
@@ -325,8 +327,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // facts, kept ordinal-sorted (a9873855… -> 06afeb99…).
             // SAT-D2 / API-12: +2 SalesDiscountExceptionSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (06afeb99… -> b1a5335a…).
             // UI-20 shell 1.8: +1 S-01 pool capability SQL fact, ordinal-sorted (b1a5335a… -> efdb5edd…).
+            // MOD-07: +1 SalesOrderPdfSqlServerRelationalAcceptanceTests fact, kept ordinal-sorted (merged over UI-20 shell 1.8:
+            // efdb5edd… -> 87dc8166…).
             ["tools/relational_inventory/sales.txt"] =
-                "efdb5edda6b888a7967ff38cd27a958942c39e66e679a1a953627d3441233e84",
+                "87dc81663c7fa7263760c09f81e4ce9730f254c92756a1892192c798a25c3db1",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1298,8 +1302,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // policy port are DI-only seams; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for SAT-D2 / API-12: the draft service also receives the optional limit-group source
                     // (DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for MOD-07 (merged over SAT-D2 / API-12): the sales order PDF's print read is a DI-only
+                    // seam over the same SalesDraftService; the provider branch and its database token counts are unchanged.
                     new(
-                        "5f2da91d86eedfc2373b730da9f0315f83ca0df0cb1e41f7bfaa6217b57be99f",
+                        "9b5ae913f9105d16cebd7a158ca621a8298ff2add1d52ce19d9a3a7bbcbe0f9d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

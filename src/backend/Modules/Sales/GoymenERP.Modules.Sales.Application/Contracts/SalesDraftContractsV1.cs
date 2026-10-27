@@ -327,6 +327,10 @@ public static class SalesDraftApiV1
     // the SAT-D5 tolerance, invoicing, financial closure), read under the draft-read authority. The detail wire is unchanged.
     public const string StatusPath = "/api/v1/sales/drafts/{id}/status";
 
+    // MOD-07: the order's current revision as a PDF attachment (application/pdf), under the draft-read authority; prices only
+    // under the price read (otherwise the price-less variant). Rendered on request, stored nowhere.
+    public const string OrderPdfPath = "/api/v1/sales/drafts/{id}/pdf";
+
     // DEC-SAL-005 / AT-007: the impact preview (GET, the cancel permission), the cancel command (POST, 200 with the detail
     // after the change; same-key replay 200 + `Idempotency-Replayed`) and the recorded cancellation (GET, the draft read).
     // The detail wire is unchanged apart from the lifecycle `state` ("Cancelled"): the facts live on their own route so the
