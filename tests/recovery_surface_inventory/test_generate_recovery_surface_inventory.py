@@ -2258,7 +2258,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1128, len(source_paths))
+        self.assertEqual(1135, len(source_paths))
         # MOD-02 (SAT-D9 / SAT-D10): the Product price tier chain, its contracts, the Cari customer port adapter
         # and the AddPriceListScope migration.
         for mod02_source in (
