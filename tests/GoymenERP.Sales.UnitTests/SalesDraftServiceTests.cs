@@ -1632,6 +1632,8 @@ public sealed partial class SalesDraftServiceTests
         public IProductQuantityPriceReferenceReaderV1? PriceReferences { get; set; }
         /// <summary>SAT-D8 / API-10: the customer-return owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderCustomerReturnReadPortV1? CustomerReturns { get; set; }
+        /// <summary>DEC-SAL-001 / API-08 (SAT-D5): the Settings Sales policy port; null = not composed.</summary>
+        public ISettingsSalesPolicyProviderV1? SalesPolicies { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
@@ -1642,7 +1644,7 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests));
+                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests), SalesPolicies);
         }
 
         public SalesDraftReadServiceV1 ReadService()

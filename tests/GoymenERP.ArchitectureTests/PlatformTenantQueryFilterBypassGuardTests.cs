@@ -314,10 +314,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
             // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted
             // (merged over main's: aabdd034… -> 19d5e743…).
-            // API-22…24: +5 sales quote SQL facts (create/revise/convert exactly once + No 160/161, loss + two-key race, No 161 fail-closed +
-            // order submit/approve guard, in-save No 160 re-check + conversion/rejection race, isolation + routes + rollback) (19d5e743… -> eb4f63c5…).
+            // API-22…24: +5 sales quote SQL facts; merged over DEC-SAL-001 / API-08's +2 SalesOrderStatusSqlServerRelationalAcceptanceTests
+            // facts, kept ordinal-sorted (a9873855… -> 06afeb99…).
             ["tools/relational_inventory/sales.txt"] =
-                "eb4f63c5542b11307fa57b9523456e03e23351087c6ddc15d8fb36340e4790df",
+                "06afeb99fbe88b7b19eebeffd8404d3b89d434fcba73a56539cb1f4a5722f124",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1283,10 +1283,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
                     // Re-fingerprinted for API-20 / API-21: the request store and service are DI-only seams over the same
                     // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
-                    // Re-fingerprinted for API-22…24: the quote store and service are DI-only seams over the same SalesStore and
-                    // SalesDraftService; the provider branch and its database token counts are unchanged.
+                    // Re-fingerprinted for API-22…24 over DEC-SAL-001 / API-08: the quote store and the optional Settings Sales
+                    // policy port are DI-only seams; the provider branch and its database token counts are unchanged.
                     new(
-                        "3c1ae5b12e6f67a9199dc53e3a758f1fe3c3b99dc1fe9e4581d76daefe522473",
+                        "026fead741d82b5d030f07aec5c66a796ac67bafb75a1be7a0e633dd2d1ee267",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

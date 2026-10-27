@@ -107,7 +107,10 @@ public static class SalesModuleExtensions
         // API-20 / API-21: the sales request store (this module's own).
         serviceProvider.GetRequiredService<ISalesRequestStore>(),
         // API-22…24: the sales quote store (this module's own).
-        serviceProvider.GetRequiredService<ISalesQuoteStore>());
+        serviceProvider.GetRequiredService<ISalesQuoteStore>(),
+        // DEC-SAL-001 / API-08 (SAT-D5): the Settings Sales policy port, registered by the host from the Settings owner;
+        // until it is, the realization axis is "PolicyUnavailable", never a default tolerance.
+        serviceProvider.GetService<ISettingsSalesPolicyProviderV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

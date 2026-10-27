@@ -117,7 +117,7 @@ public sealed partial class SalesDraftServiceTests
     public static TheoryData<string> MalformedAnswers => new()
     {
         "another-company", "another-order", "null-lines", "unknown-line", "another-unit", "delivered-above-shipped",
-        "negative", "above-scale",
+        "negative", "above-scale", "sum-overflow",
     };
 
     [Theory]
@@ -139,6 +139,8 @@ public sealed partial class SalesDraftServiceTests
             "negative" => new(Company, order, [new(line, KgUnit, -1m, 0m)]),
             // Ö2: kilograms carry at most three decimals; a fourth is refused, never rounded to fit.
             "above-scale" => new(Company, order, [new(line, KgUnit, 1.0001m, 0m)]),
+            // Two entries of the same line whose exact sum exceeds decimal: malformed (503), never an unhandled server error.
+            "sum-overflow" => new(Company, order, [new(line, KgUnit, decimal.MaxValue, 0m), new(line, KgUnit, decimal.MaxValue, 0m)]),
             _ => throw new ArgumentOutOfRangeException(nameof(fault)),
         });
 
