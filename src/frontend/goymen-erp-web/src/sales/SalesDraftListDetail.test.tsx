@@ -164,6 +164,7 @@ describe('S-04 detail', () => {
   it('MOD-08: names the approval actors by the Identity directory, marks a former member and keeps an unnamed id raw', () => {
     const submitter = 'c8000000-0000-4000-8000-000000000001'
     const decider = 'c8000000-0000-4000-8000-000000000002'
+    const acceptor = 'c8000000-0000-4000-8000-000000000003'
     const rawDetail = JSON.parse(detailResponseRaw)
     rawDetail.draft.approvalState = 'Approved'
     rawDetail.approval = {
@@ -173,10 +174,20 @@ describe('S-04 detail', () => {
       decidedAtUtc: '2026-09-19T09:05:00Z',
       rejectionReason: null,
     }
+    rawDetail.customerAcceptance = {
+      required: true,
+      acceptedRevision: 'Rev.0',
+      acceptedBy: acceptor,
+      acceptedAtUtc: '2026-09-19T09:10:00Z',
+      isCurrentRevisionAccepted: true,
+    }
     const decoded = decodeDraftDetailWithParty({
       ...rawDetail,
       partyDisplay: { partyId: rawDetail.draft.partyId, code: HARNESS_PARTY_DISPLAY.code, legalName: 'ABC Demir', tradeName: null },
-      userDisplays: [{ userId: submitter, displayName: 'Ayşe Satış', isActiveInCompany: false }],
+      userDisplays: [
+        { userId: submitter, displayName: 'Ayşe Satış', isActiveInCompany: false },
+        { userId: acceptor, displayName: 'Mehmet Müşteri', isActiveInCompany: true },
+      ],
     }, DRAFT)
     expect(decoded).not.toBeNull()
     render(<DraftView detail={decoded!} canOpenParty={false} backLink={null} />)
@@ -186,6 +197,10 @@ describe('S-04 detail', () => {
     expect(submittedBy.querySelector('[title]')?.getAttribute('title')).toBe(submitter)
     // The directory did not answer the decider: the raw id stands, no name is invented.
     expect(screen.getByTestId('sales-approval-decided-by').textContent).toBe(decider)
+    // The customer-acceptance actor is named the same way; an active member carries no note.
+    const acceptedBy = screen.getByTestId('sales-customer-accepted-by')
+    expect(acceptedBy.textContent).toBe('Mehmet Müşteri')
+    expect(acceptedBy.querySelector('[title]')?.getAttribute('title')).toBe(acceptor)
   })
 
   it('keeps commercial revision and record version apart, and shows the 400 + 600 plan', async () => {
