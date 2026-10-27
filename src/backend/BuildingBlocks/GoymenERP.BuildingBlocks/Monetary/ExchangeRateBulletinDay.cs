@@ -12,17 +12,59 @@ public enum ExchangeRateBulletinSource
     Tcmb = 1,
 }
 
-/// <summary>What the official source says about one calendar day (SAT-D55).</summary>
+/// <summary>What is known about one calendar day of a source (SAT-D55).</summary>
 public enum ExchangeRateBulletinDayStatus
 {
     /// <summary>The source published a bulletin for the day: the day is a business day.</summary>
     Published = 1,
 
     /// <summary>
-    /// The source confirmed that no bulletin exists for the day (weekend, holiday, a non-published arife):
-    /// the day is skipped. An import failure (network, timeout) is never this status; that day has no record.
+    /// A definite answer that no bulletin exists for the day (the official source reports the dated bulletin
+    /// does not exist): the day is skipped. Weekends and holidays are recorded with this status.
     /// </summary>
     ConfirmedNoBulletin = 2,
+
+    /// <summary>
+    /// The day was attempted but the answer was not definite (network error, timeout, any other response).
+    /// It stops the walk exactly like a day without a record.
+    /// </summary>
+    Unconfirmed = 3,
+}
+
+/// <summary>Where a day record came from.</summary>
+public enum ExchangeRateBulletinDayProvenance
+{
+    /// <summary>Imported from the source's own bulletin (or its definite "no bulletin" answer).</summary>
+    Official = 1,
+
+    /// <summary>
+    /// A DEC-FIN-010 manual rate change: a manual rate, or a day marked "no bulletin" by hand (which moves the
+    /// resolver to an older rate). It carries a reason and an actor; the owning store authorises and audits it.
+    /// </summary>
+    Manual = 2,
+}
+
+/// <summary>Who made a manual change and why (DEC-FIN-010). Authority and audit are the owning store's; the limit is OPEN-012.</summary>
+public sealed record ExchangeRateManualEntry
+{
+    public ExchangeRateManualEntry(Guid actorUserId, string reason)
+    {
+        if (actorUserId == Guid.Empty)
+        {
+            throw new ArgumentException("Elle kur değişikliğini yapan kullanıcı belirtilmelidir.", nameof(actorUserId));
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw new ArgumentException("Elle kur değişikliği bir gerekçe taşır.", nameof(reason));
+        }
+
+        ActorUserId = actorUserId;
+        Reason = reason;
+    }
+
+    public Guid ActorUserId { get; }
+    public string Reason { get; }
 }
 
 /// <summary>
@@ -34,6 +76,11 @@ public enum ExchangeRateBulletinDayStatus
 /// <see cref="ExchangeRate"/> for one currency pair, per <b>one</b> source-currency unit (a bulletin line
 /// quoted per 100 units is normalised by whoever records it). At most one rate per pair.
 /// </para>
+/// <para>
+/// A day may have one <see cref="ExchangeRateBulletinDayProvenance.Official"/> record and, next to it, one
+/// <see cref="ExchangeRateBulletinDayProvenance.Manual"/> record. Only official records can be
+/// <see cref="ExchangeRateBulletinDayStatus.Unconfirmed"/>.
+/// </para>
 /// </summary>
 public sealed class ExchangeRateBulletinDay
 {
@@ -41,12 +88,14 @@ public sealed class ExchangeRateBulletinDay
         DateOnly bulletinDate,
         ExchangeRateBulletinSource source,
         ExchangeRateBulletinDayStatus status,
-        FrozenDictionary<(Guid Source, Guid Target), ExchangeRate> sellingRates)
+        FrozenDictionary<(Guid Source, Guid Target), ExchangeRate> sellingRates,
+        ExchangeRateManualEntry? manualEntry)
     {
         BulletinDate = bulletinDate;
         Source = source;
         Status = status;
         SellingRates = sellingRates;
+        ManualEntry = manualEntry;
     }
 
     /// <summary>The calendar date the bulletin is (or is confirmed not to be) published for.</summary>
@@ -59,11 +108,61 @@ public sealed class ExchangeRateBulletinDay
     /// <summary>The day's forex selling rates keyed by (source currency, target currency); empty unless published.</summary>
     public IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate> SellingRates { get; }
 
-    /// <summary>A day the source published, with its selling rates (at least one; one per currency pair).</summary>
+    /// <summary>Set only on a manual record.</summary>
+    public ExchangeRateManualEntry? ManualEntry { get; }
+
+    public ExchangeRateBulletinDayProvenance Provenance =>
+        ManualEntry is null ? ExchangeRateBulletinDayProvenance.Official : ExchangeRateBulletinDayProvenance.Manual;
+
+    /// <summary>An official day the source published, with its selling rates (at least one; one per currency pair).</summary>
     public static ExchangeRateBulletinDay Published(
         DateOnly bulletinDate,
         ExchangeRateBulletinSource source,
-        IEnumerable<ExchangeRate> sellingRates)
+        IEnumerable<ExchangeRate> sellingRates) =>
+        PublishedDay(bulletinDate, source, sellingRates, null);
+
+    /// <summary>An official definite answer that the dated bulletin does not exist; it carries no rate.</summary>
+    public static ExchangeRateBulletinDay ConfirmedNoBulletin(DateOnly bulletinDate, ExchangeRateBulletinSource source) =>
+        NoRateDay(bulletinDate, source, ExchangeRateBulletinDayStatus.ConfirmedNoBulletin, null);
+
+    /// <summary>An official attempt without a definite answer; the day stays unknown to the resolver.</summary>
+    public static ExchangeRateBulletinDay Unconfirmed(DateOnly bulletinDate, ExchangeRateBulletinSource source) =>
+        NoRateDay(bulletinDate, source, ExchangeRateBulletinDayStatus.Unconfirmed, null);
+
+    /// <summary>A DEC-FIN-010 manual rate change for the day (one or more pairs).</summary>
+    public static ExchangeRateBulletinDay ManualPublished(
+        DateOnly bulletinDate,
+        ExchangeRateBulletinSource source,
+        IEnumerable<ExchangeRate> sellingRates,
+        ExchangeRateManualEntry manualEntry)
+    {
+        ArgumentNullException.ThrowIfNull(manualEntry);
+        return PublishedDay(bulletinDate, source, sellingRates, manualEntry);
+    }
+
+    /// <summary>A day marked "no bulletin" by hand: a DEC-FIN-010 manual change, since it moves the resolver to an older rate.</summary>
+    public static ExchangeRateBulletinDay ManualNoBulletin(
+        DateOnly bulletinDate,
+        ExchangeRateBulletinSource source,
+        ExchangeRateManualEntry manualEntry)
+    {
+        ArgumentNullException.ThrowIfNull(manualEntry);
+        return NoRateDay(bulletinDate, source, ExchangeRateBulletinDayStatus.ConfirmedNoBulletin, manualEntry);
+    }
+
+    internal static void RequireSource(ExchangeRateBulletinSource source)
+    {
+        if (!Enum.IsDefined(source))
+        {
+            throw new ArgumentOutOfRangeException(nameof(source), "Kur bülteni kaynağı tanımlı değil.");
+        }
+    }
+
+    private static ExchangeRateBulletinDay PublishedDay(
+        DateOnly bulletinDate,
+        ExchangeRateBulletinSource source,
+        IEnumerable<ExchangeRate> sellingRates,
+        ExchangeRateManualEntry? manualEntry)
     {
         RequireSource(source);
         ArgumentNullException.ThrowIfNull(sellingRates);
@@ -81,22 +180,17 @@ public sealed class ExchangeRateBulletinDay
             throw new ArgumentException("Yayımlanmış bülten günü en az bir satış kuru taşır.", nameof(sellingRates));
         }
 
-        return new ExchangeRateBulletinDay(bulletinDate, source, ExchangeRateBulletinDayStatus.Published, rates.ToFrozenDictionary());
+        return new ExchangeRateBulletinDay(bulletinDate, source, ExchangeRateBulletinDayStatus.Published, rates.ToFrozenDictionary(), manualEntry);
     }
 
-    /// <summary>A day the source confirmed it did not publish (official "no bulletin" answer); it carries no rate.</summary>
-    public static ExchangeRateBulletinDay ConfirmedNoBulletin(DateOnly bulletinDate, ExchangeRateBulletinSource source)
+    private static ExchangeRateBulletinDay NoRateDay(
+        DateOnly bulletinDate,
+        ExchangeRateBulletinSource source,
+        ExchangeRateBulletinDayStatus status,
+        ExchangeRateManualEntry? manualEntry)
     {
         RequireSource(source);
-        return new ExchangeRateBulletinDay(bulletinDate, source, ExchangeRateBulletinDayStatus.ConfirmedNoBulletin,
-            FrozenDictionary<(Guid Source, Guid Target), ExchangeRate>.Empty);
-    }
-
-    internal static void RequireSource(ExchangeRateBulletinSource source)
-    {
-        if (!Enum.IsDefined(source))
-        {
-            throw new ArgumentOutOfRangeException(nameof(source), "Kur bülteni kaynağı tanımlı değil.");
-        }
+        return new ExchangeRateBulletinDay(bulletinDate, source, status,
+            FrozenDictionary<(Guid Source, Guid Target), ExchangeRate>.Empty, manualEntry);
     }
 }
