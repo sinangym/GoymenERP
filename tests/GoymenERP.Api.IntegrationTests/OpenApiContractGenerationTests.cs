@@ -612,6 +612,10 @@ public sealed partial class OpenApiContractGenerationTests
         new("post", "/api/v1/sales/drafts/{id}/below-floor-exception-approval", "ApproveSalesOrderDraftPriceFloorExceptionsV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SalesDraftPriceFloorExceptionApprovalRequest", ["path:id:true:type:string;format:uuid"]),
+        // SAT-D2 / API-12: the over-limit discount approval, the floor approval's shape.
+        new("post", "/api/v1/sales/drafts/{id}/discount-exception-approval", "ApproveSalesOrderDraftDiscountExceptionsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SalesDraftDiscountExceptionApprovalRequest", ["path:id:true:type:string;format:uuid"]),
         // DEC-SAL-002 / AT-023: the quantity revision of an approved order (Rev.N, re-approval).
         new("post", "/api/v1/sales/drafts/{id}/quantity-revision", "ReviseSalesOrderDraftQuantityV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "415:", "404:application/problem+json", "409:application/problem+json", "422:application/problem+json", "503:application/problem+json"),
@@ -1121,6 +1125,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesOrderDraftLinePricingV1"] = "ref:SalesOrderDraftLinePricingResponse",
             ["GetSalesOrderDraftLinePriceReferencesV1"] = "ref:SalesOrderDraftPriceReferencesResponse",
             ["ApproveSalesOrderDraftPriceFloorExceptionsV1"] = "ref:SalesOrderDraftResponse",
+            ["ApproveSalesOrderDraftDiscountExceptionsV1"] = "ref:SalesOrderDraftResponse",
             ["ReviseSalesOrderDraftQuantityV1"] = "ref:SalesOrderDraftResponse",
             ["GetSalesOrderDraftRevisionsV1"] = "ref:SalesOrderDraftRevisionsResponse",
             ["RescheduleSalesOrderDraftDeliveryV1"] = "ref:SalesOrderDraftResponse",
@@ -1358,6 +1363,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftLinePricingV1",
         "GetSalesOrderDraftLinePriceReferencesV1",
         "ApproveSalesOrderDraftPriceFloorExceptionsV1",
+        "ApproveSalesOrderDraftDiscountExceptionsV1",
         "ReviseSalesOrderDraftQuantityV1",
         "GetSalesOrderDraftRevisionsV1",
         "RescheduleSalesOrderDraftDeliveryV1",
@@ -1536,6 +1542,7 @@ public sealed partial class OpenApiContractGenerationTests
         "StartPriceListVersionV1",
         "PublishPriceListVersionV1",
         "ApproveSalesOrderDraftPriceFloorExceptionsV1",
+        "ApproveSalesOrderDraftDiscountExceptionsV1",
         "ReviseSalesOrderDraftQuantityV1",
         "RescheduleSalesOrderDraftDeliveryV1",
         "CancelSalesOrderDraftV1",
@@ -1735,6 +1742,7 @@ public sealed partial class OpenApiContractGenerationTests
                 ["RecordSalesQuoteLossV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["ConvertSalesQuoteV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
                 ["ApproveSalesOrderDraftPriceFloorExceptionsV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
+                ["ApproveSalesOrderDraftDiscountExceptionsV1"] = [StatusCodes.Status200OK, StatusCodes.Status409Conflict],
                 ["CreatePriceListV1"] = [StatusCodes.Status200OK],
                 ["RevisePriceListDraftV1"] = [StatusCodes.Status200OK],
                 ["StartPriceListVersionV1"] = [StatusCodes.Status200OK],
@@ -1795,6 +1803,7 @@ public sealed partial class OpenApiContractGenerationTests
         "StartPriceListVersionV1",
         "PublishPriceListVersionV1",
         "ApproveSalesOrderDraftPriceFloorExceptionsV1",
+        "ApproveSalesOrderDraftDiscountExceptionsV1",
         "CreateInventoryPhysicalAllocationV1",
         "ReleaseInventoryPhysicalAllocationV1",
         "ChangeInventoryPhysicalAllocationV1",
@@ -2023,6 +2032,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftLinePricingV1:404",
         "GetSalesOrderDraftLinePriceReferencesV1:404",
         "ApproveSalesOrderDraftPriceFloorExceptionsV1:404",
+        "ApproveSalesOrderDraftDiscountExceptionsV1:404",
         "ReviseSalesOrderDraftQuantityV1:404",
         "GetSalesOrderDraftRevisionsV1:404",
         "RescheduleSalesOrderDraftDeliveryV1:404",
@@ -2432,8 +2442,11 @@ public sealed partial class OpenApiContractGenerationTests
             ["ReviseSalesOrderDraftCommercialV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ReviseSalesOrderDraftCommercialV1:422"] = ["validation_failed"],
             ["ApproveSalesOrderDraftPriceFloorExceptionsV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["ApproveSalesOrderDraftDiscountExceptionsV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["ApproveSalesOrderDraftPriceFloorExceptionsV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["ApproveSalesOrderDraftDiscountExceptionsV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ApproveSalesOrderDraftPriceFloorExceptionsV1:422"] = ["validation_failed"],
+            ["ApproveSalesOrderDraftDiscountExceptionsV1:422"] = ["validation_failed"],
             ["GetPriceListsV1:400"] = ["invalid_cursor", "validation_failed"],
             ["GetPriceListsV1:503"] = ["product_price_list_permission_unregistered", "product_price_list_unavailable"],
             ["CreatePriceListV1:400"] = ["validation_failed"],
@@ -3914,7 +3927,15 @@ public sealed partial class OpenApiContractGenerationTests
                     ("priceSource", "type:null|string"), ("priceReference", "oneOf:ref:SalesDraftPriceReferenceV1|type:null"),
                     ("discountPercent", "type:null|string"), ("discountAmount", "type:null|string"),
                     ("surchargePercent", "type:null|string"), ("surchargeAmount", "type:null|string"),
-                    ("netUnitPrice", "type:null|string"), ("floorException", "oneOf:ref:SalesDraftPriceFloorExceptionV1|type:null")),
+                    ("netUnitPrice", "type:null|string"), ("floorException", "oneOf:ref:SalesDraftPriceFloorExceptionV1|type:null"),
+                    // SAT-D2 / API-12 (additive, optional): the line's discount-limit check.
+                    ("discountCheck", "oneOf:ref:SalesDraftDiscountLimitCheckV1|type:null")),
+                ["SalesDraftDiscountLimitCheckV1"] = ObjectSchema(
+                    ["checkedBy", "checkedAtUtc", "listUnitPrice", "limitPercent", "requiresApproval", "approvedBy", "approvedAtUtc", "reason"],
+                    ("checkedBy", "type:string"), ("checkedAtUtc", "type:string;format:date-time"), ("listUnitPrice", "type:null|string"),
+                    ("limitPercent", "type:null|string"),
+                    ("requiresApproval", "type:boolean"), ("approvedBy", "type:null|string"),
+                    ("approvedAtUtc", "type:null|string;format:date-time"), ("reason", "type:null|string")),
                 ["SalesOrderDraftLinePricingResponse"] = ObjectSchema(
                     ["version", "lines"], ("version", "type:string"), ("lines", "type:array;items:ref:SalesDraftLinePricingV1")),
                 ["SalesOrderDraftPriceReferencesResponse"] = ObjectSchema(
@@ -6066,6 +6087,11 @@ public sealed partial class OpenApiContractGenerationTests
                     ["expectedVersion", "lines"], ("expectedVersion", "type:string"),
                     ("lines", "type:array;items:ref:SalesDraftPriceFloorExceptionApprovalLineV1")),
                 ["SalesDraftPriceFloorExceptionApprovalLineV1"] = ObjectSchema(
+                    ["lineId", "reason"], ("lineId", "type:string;format:uuid"), ("reason", "type:string")),
+                ["SalesDraftDiscountExceptionApprovalRequest"] = ObjectSchema(
+                    ["expectedVersion", "lines"], ("expectedVersion", "type:string"),
+                    ("lines", "type:array;items:ref:SalesDraftDiscountExceptionApprovalLineV1")),
+                ["SalesDraftDiscountExceptionApprovalLineV1"] = ObjectSchema(
                     ["lineId", "reason"], ("lineId", "type:string;format:uuid"), ("reason", "type:string")),
                 ["SalesDraftLineCommercialV1"] = ObjectSchema(
                     ["lineId", "unitPrice", "priceUnitId", "discountPercent"],

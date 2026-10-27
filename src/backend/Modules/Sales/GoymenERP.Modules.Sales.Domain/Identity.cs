@@ -133,6 +133,17 @@ public static class SalesRuleCodes
     public const string PriceFloorExceptionSameActor = "sales_price_floor_exception_same_actor";
     /// <summary>An exception approval reason is required.</summary>
     public const string PriceFloorExceptionReasonRequired = "sales_price_floor_exception_reason_required";
+    /// <summary>
+    /// SAT-D2 / API-12: a line's positive discount exceeds the limit of the actor who set it (or no limit is defined for
+    /// them, or the line was never checked) and is not approved by another person yet.
+    /// </summary>
+    public const string DiscountExceptionPending = "sales_discount_exception_pending";
+    /// <summary>The discount exception command must name every current over-limit discount line exactly once.</summary>
+    public const string DiscountExceptionLinesMismatch = "sales_discount_exception_lines_mismatch";
+    /// <summary>The actor who set the over-limit discount cannot approve it (hazırlayan ≠ onaylayan).</summary>
+    public const string DiscountExceptionSameActor = "sales_discount_exception_same_actor";
+    /// <summary>A discount exception approval reason is required.</summary>
+    public const string DiscountExceptionReasonRequired = "sales_discount_exception_reason_required";
     /// <summary>A commercial revision must name every current line exactly once and no other line.</summary>
     public const string RevisionLinesMismatch = "sales_revision_lines_mismatch";
     /// <summary>A commercial revision that changes no value is refused: an approval is never discarded for nothing (ASSUMPTION-SALESP-5).</summary>

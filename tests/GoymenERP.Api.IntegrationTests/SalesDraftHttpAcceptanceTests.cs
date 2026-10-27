@@ -435,6 +435,20 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             CancellationToken cancellationToken = default) =>
             Task.FromResult(new SalesOrderDraftResponse(Detail(draftId), false, "SENTETIK-corr"));
 
+        /// <summary>SAT-D2 / API-12: what the stub answers a discount-exception approval with; the body and key reach <see cref="DiscountApprovalCalls"/>.</summary>
+        public Func<Guid, SalesDraftDiscountExceptionApprovalRequest, Task<SalesOrderDraftResponse>> DiscountApproval { get; set; } =
+            (id, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(id), false, "SENTETIK-corr"));
+
+        public List<(Guid DraftId, SalesDraftDiscountExceptionApprovalRequest Request, string Key)> DiscountApprovalCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> ApproveDiscountExceptionsAsync(Guid draftId,
+            SalesDraftDiscountExceptionApprovalRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            DiscountApprovalCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return DiscountApproval(draftId, request);
+        }
+
         public Func<Guid, Task<SalesOrderDraftRevisionsResponse>> Revisions { get; set; } =
             _ => Task.FromResult(new SalesOrderDraftRevisionsResponse([]));
 
@@ -1309,6 +1323,122 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, problem.GetProperty("code").GetString());
         Assert.Equal("expectedVersion", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+    }
+
+    /// <summary>
+    /// SAT-D2 / API-12: the discount-exception approval route's wire — one canonical key, a JSON body and the strict shape
+    /// {expectedVersion, lines[{lineId, reason}]} before the service is reached; 200 with the detail and the replay headers only
+    /// on a replay; a replayed terminal refusal carries its code, field and the first correlation; a line refusal is a coded
+    /// 422; a 503 (an unreadable discount limit included) stays code-less.
+    /// </summary>
+    [Fact]
+    public async Task Discount_exception_approval_uses_the_strict_owner_contract_replay_headers_and_code_less_503()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var service = new StubDraftService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/discount-exception-approval";
+        var valid = JsonSerializer.Serialize(new SalesDraftDiscountExceptionApprovalRequest("4",
+            [new SalesDraftDiscountExceptionApprovalLineV1(lineId, "SENTETIK müşteri anlaşması")]), SalesDraftJson.Options);
+
+        HttpRequestMessage Request(string json, string? key, string mediaType = "application/json")
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent(json, Encoding.UTF8, mediaType) };
+            if (key is not null)
+            {
+                request.Headers.Add("Idempotency-Key", key);
+            }
+
+            return request;
+        }
+
+        using (var noKey = Request(valid, null))
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.CommandMetadataInvalid,
+                (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        using (var notJson = Request(valid, "SENTETIK-discount-text", "text/plain"))
+        using (var response = await client.SendAsync(notJson))
+        {
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     "{\"expectedVersion\":4,\"lines\":[]}",
+                     $"{{\"expectedVersion\":\"4\",\"lines\":[{{\"lineId\":\"{lineId:D}\"}}]}}",
+                     $"{{\"expectedVersion\":\"4\",\"lines\":[{{\"lineId\":\"{lineId:D}\",\"reason\":\"x\",\"limitPercent\":\"100\"}}]}}",
+                 })
+        {
+            using var invalid = Request(json, "SENTETIK-discount-invalid");
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.DiscountApprovalCalls);
+
+        service.DiscountApproval = (id, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(id), true, "SENTETIK-discount-first"));
+        using (var replay = Request(valid, "SENTETIK-discount-1"))
+        using (var response = await client.SendAsync(replay))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-discount-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            Assert.Equal(draftId, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetProperty("draft").GetProperty("id").GetGuid());
+        }
+
+        var call = Assert.Single(service.DiscountApprovalCalls);
+        Assert.Equal((draftId, "4", "SENTETIK-discount-1"), (call.DraftId, call.Request.ExpectedVersion, call.Key));
+        Assert.Equal((lineId, "SENTETIK müşteri anlaşması"), (Assert.Single(call.Request.Lines).LineId, call.Request.Lines[0].Reason));
+
+        service.DiscountApproval = (id, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(id), false, "SENTETIK-discount-new"));
+        using (var first = Request(valid, "SENTETIK-discount-2"))
+        using (var response = await client.SendAsync(first))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        service.DiscountApproval = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.VersionConflict,
+            [new("expectedVersion", SalesDraftProblemCodesV1.VersionConflict)], true, "SENTETIK-discount-first");
+        using (var conflict = Request(valid, "SENTETIK-discount-3"))
+        using (var response = await client.SendAsync(conflict))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-discount-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, problem.GetProperty("code").GetString());
+            Assert.Equal("expectedVersion", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        service.DiscountApproval = (_, _) => throw new SalesDraftServiceException(422, "validation_failed",
+            [new("lines[0].reason", "sales_discount_exception_same_actor")]);
+        using (var sameActor = Request(valid, "SENTETIK-discount-4"))
+        using (var response = await client.SendAsync(sameActor))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("validation_failed", problem.GetProperty("code").GetString());
+            Assert.Equal("sales_discount_exception_same_actor", problem.GetProperty("errors")[0].GetProperty("code").GetString());
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        service.DiscountApproval = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DiscountLimitUnavailable);
+        using (var unavailable = Request(valid, "SENTETIK-discount-5"))
+        using (var response = await client.SendAsync(unavailable))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.DiscountLimitUnavailable, await response.Content.ReadAsStringAsync(),
+                StringComparison.Ordinal);
+        }
     }
 
     /// <summary>
