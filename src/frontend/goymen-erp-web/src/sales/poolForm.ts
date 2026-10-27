@@ -45,6 +45,13 @@ export interface PoolLineValues {
   readonly units: readonly PoolUnitOption[]
   /** True when the product and unit come from a stored record and are not re-chosen here. */
   readonly fixedProduct: boolean
+  /**
+   * The stored line's price is withheld from this viewer (`sales.orders.price.read`): the form cannot carry it, and a
+   * revision replaces every line — so such a row is never sent (it would write the price away).
+   */
+  readonly priceWithheld: boolean
+  /** The stored price unit when it is not one of `units` (a revision row), with its label; null otherwise. */
+  readonly storedPriceUnit: PoolUnitOption | null
   readonly orderUnitId: string
   readonly quantityText: string
   readonly unitPriceText: string
@@ -102,6 +109,8 @@ export function emptyPoolLine(lineId: string): PoolLineValues {
     productLabel: '',
     units: [],
     fixedProduct: false,
+    priceWithheld: false,
+    storedPriceUnit: null,
     orderUnitId: '',
     quantityText: '',
     unitPriceText: '',
@@ -163,11 +172,16 @@ export function lineFromRequest(lineId: string, line: SalesRequestLine): PoolLin
 }
 
 /**
- * A revision row from the quote's current line, under its own line id. A withheld price stays empty: the revision then
- * sends no price for that line — the person sees that they cannot read it, and the server judges the write.
+ * A revision row from the quote's current line, under its own line id. A withheld price is marked, never emptied into
+ * "no price": `validateQuoteRevision` refuses such a row (fail closed). `unitCodes` labels a stored price unit that is
+ * not the line's order unit (the quote's own order-unit codes); one it does not know reads as "the stored price unit".
  */
-export function lineFromQuote(line: SalesQuoteLine): PoolLineValues {
+export function lineFromQuote(line: SalesQuoteLine, unitCodes: ReadonlyMap<string, string> = new Map()): PoolLineValues {
   const units: PoolUnitOption[] = [{ unitId: line.orderUnitId, code: line.orderUnitCode }]
+  const storedPriceUnit =
+    line.priceUnitId === null || line.priceUnitId === line.orderUnitId
+      ? null
+      : { unitId: line.priceUnitId, code: unitCodes.get(line.priceUnitId) ?? POOL_TEXT.form.storedPriceUnit }
   return {
     ...emptyPoolLine(line.lineId),
     productId: line.productId,
@@ -175,6 +189,8 @@ export function lineFromQuote(line: SalesQuoteLine): PoolLineValues {
     productLabel: `${line.productCode} — ${line.productName}`,
     units,
     fixedProduct: true,
+    priceWithheld: line.priceDisclosure === 'Withheld',
+    storedPriceUnit,
     orderUnitId: line.orderUnitId,
     quantityText: line.quantity,
     unitPriceText: line.unitPrice ?? '',
@@ -186,10 +202,15 @@ export function lineFromQuote(line: SalesQuoteLine): PoolLineValues {
   }
 }
 
+/** P1: whether any current line's price is withheld from this viewer — then no revision may be sent from this screen. */
+export const hasWithheldPrice = (detail: { readonly lines: readonly Pick<SalesQuoteLine, 'priceDisclosure'>[] }): boolean =>
+  detail.lines.some((line) => line.priceDisclosure === 'Withheld')
+
 /** The price units a line may name: its own units plus, in a revision, the stored price unit. */
 export function priceUnitChoices(line: PoolLineValues): readonly PoolUnitOption[] {
-  if (line.priceUnitId === '' || line.units.some((unit) => unit.unitId === line.priceUnitId)) return line.units
-  return [...line.units, { unitId: line.priceUnitId, code: line.priceUnitId }]
+  const stored = line.storedPriceUnit
+  if (stored === null || line.units.some((unit) => unit.unitId === stored.unitId)) return line.units
+  return [...line.units, stored]
 }
 
 const QUANTITY_MESSAGE: Record<QuantityInputError, string> = {
@@ -322,6 +343,11 @@ function validateQuoteLines(lines: readonly PoolLineValues[], errors: Record<str
     }
     if (price.ok && discount.ok && unitPrice === null && discountPercent !== null) {
       errors[poolLineFieldId(line.lineId, 'discount')] = text.discountWithoutPrice
+      ok = false
+    }
+    // Fail closed: a row whose stored price this viewer cannot see would be sent without it and erase it.
+    if (line.priceWithheld) {
+      errors[poolLineRowId(line.lineId)] = text.priceWithheldRevision
       ok = false
     }
     const core = cores[index]

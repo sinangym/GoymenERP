@@ -21,6 +21,7 @@ import {
 } from './orderAttempt'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { POOL_TEXT, poolProblemText } from './poolText'
+import { recallPoolAttempt, rememberPoolAttempt } from './pendingPoolAttempts'
 
 export type PoolSend<P, R> = (snapshot: OrderAttemptSnapshot<P>) => Promise<OrderCommandOutcome<R>>
 
@@ -38,18 +39,47 @@ export interface PoolAttempt<P, R> {
   readonly reset: () => void
 }
 
+/**
+ * `persist` (the creates): the attempt and the form values it was sent from survive the screen
+ * (./pendingPoolAttempts.ts) — written before the send awaits, recalled under the same binding on the next visit, so an
+ * unknown outcome is never resent under a new key. The commands on a stored record need none: their expected version
+ * makes a second send a refusal, never a second record.
+ */
 export function usePoolAttempt<P, R>(
   scope: string,
   send: PoolSend<P, R>,
   onSettled?: (next: OrderAttemptState<P, R>) => void,
+  persist?: { readonly values: unknown },
 ): PoolAttempt<P, R> {
   const shell = useShellState()
-  const [state, setState] = useState<OrderAttemptState<P, R>>({ phase: 'idle' })
+  const persisted = persist !== undefined
+  const [state, setState] = useState<OrderAttemptState<P, R>>(
+    () => (persisted ? recallPoolAttempt<P, R, unknown>(orderAttemptBinding(shell, scope))?.attempt : undefined) ?? { phase: 'idle' },
+  )
   const [blockedChange, setBlockedChange] = useState(false)
   const ref = useRef(state)
+  // Mirrors for the async continuation, written in effects (render purity).
+  const valuesRef = useRef<unknown>(persist?.values)
+  const mountedRef = useRef(false)
+  useEffect(() => {
+    valuesRef.current = persist?.values
+  })
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+  // A recalled success has now been shown on this screen: it is settled.
+  useEffect(() => {
+    if (persisted && state.phase === 'completed') rememberPoolAttempt(state.snapshot.binding, state, valuesRef.current, true)
+  }, [persisted, state])
 
   const set = (next: OrderAttemptState<P, R>) => {
     ref.current = next
+    // Synchronously, before any await: a screen torn down mid-send leaves its key behind. A success that lands on a
+    // mounted screen is shown (its notice, or the record it opens); one that lands after the screen went is kept.
+    if (persisted && next.phase !== 'idle') rememberPoolAttempt(next.snapshot.binding, next, valuesRef.current, mountedRef.current)
     setState(next)
   }
 
@@ -60,7 +90,9 @@ export function usePoolAttempt<P, R>(
     const outcome = await send(snapshot)
     const next = applyOutcome(inFlight, snapshot, orderAttemptBinding(shell, scope), outcome, previous)
     set(next)
-    onSettled?.(next)
+    // A late answer for a screen that is gone changes nothing on screen (no navigation, no field errors); the held
+    // attempt above is what the next visit resumes.
+    if (mountedRef.current) onSettled?.(next)
   }
 
   return {

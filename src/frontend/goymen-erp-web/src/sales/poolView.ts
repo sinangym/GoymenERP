@@ -37,3 +37,10 @@ export function serverFieldErrors(
   })
   return errors
 }
+
+/** The quote create's attempt scope (the shell's dirty scope too). */
+export const SALES_QUOTE_CREATE_SCOPE = 'sales.quote.create'
+
+/** One attempt binding per covered request set: a held attempt never reappears under other requests. */
+export const quoteCreateScope = (requestIds: readonly string[]) =>
+  requestIds.length === 0 ? SALES_QUOTE_CREATE_SCOPE : `${SALES_QUOTE_CREATE_SCOPE}:${[...requestIds].sort().join(',')}`

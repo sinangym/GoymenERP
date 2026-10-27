@@ -311,6 +311,10 @@ export const recordQuoteLoss = (payload: SalesQuoteLossBody, context: QuoteConte
  * No 162: whether the created order is THIS quote's — the same company, customer and currency, the business date that
  * was sent, and every quoted line verbatim under its own line id (the conversion keeps them). A price the caller may not
  * see on either side is not compared.
+ *
+ * A REPLAY (the same key again, after an unknown outcome) answers the order as it stands NOW: it may have been revised
+ * since the conversion (quantity, price), so its lines are not compared — the header facts the order never changes
+ * (company, customer, currency, the sent business date) still bind it, and the server's replay is keyed on this attempt.
  */
 export function describesConversion(mutation: DraftMutation, quote: SalesQuoteDetail, sent: SalesQuoteConversionBody, companyId: string): boolean {
   const { detail } = mutation
@@ -320,11 +324,12 @@ export function describesConversion(mutation: DraftMutation, quote: SalesQuoteDe
     draft.partyId !== quote.quote.partyId ||
     draft.companyAccountId !== quote.quote.companyAccountId ||
     draft.currencyId !== quote.quote.currencyId ||
-    draft.businessDate !== sent.businessDate ||
-    detail.lines.length !== quote.lines.length
+    draft.businessDate !== sent.businessDate
   ) {
     return false
   }
+  if (mutation.isReplay) return true
+  if (detail.lines.length !== quote.lines.length) return false
   return quote.lines.every((line) => {
     const answered = detail.lines.find((candidate) => candidate.lineId === line.lineId)
     const pricesVisible = answered?.priceDisclosure === 'Visible' && line.priceDisclosure === 'Visible'

@@ -264,4 +264,3 @@ export function installPoolFetch(onSales: (call: PoolCall) => Response | Promise
   )
   return { calls, posts: () => calls.filter((call) => call.method === 'POST') }
 }
-

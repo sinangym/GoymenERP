@@ -41,6 +41,7 @@ import {
   useSalesPoolCapability,
 } from './poolCapabilities'
 import { poolNotice, usePoolAttempt, usePoolDirty } from './poolAttempt'
+import { recallPoolAttempt } from './pendingPoolAttempts'
 import { usePoolCurrencies, usePoolOptions } from './poolOptions'
 import {
   PoolAttemptNotice,
@@ -61,11 +62,10 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import styles from './SalesPool.module.css'
+import { SALES_QUOTE_CREATE_SCOPE, quoteCreateScope } from './poolView'
 
 const T = POOL_TEXT.quoteCreate
 const F = POOL_TEXT.form
-
-export const SALES_QUOTE_CREATE_SCOPE = 'sales.quote.create'
 
 export function SalesQuoteCreatePage() {
   const shell = useShellState()
@@ -171,7 +171,12 @@ function QuoteCreateForm({ companyId, requests }: { readonly companyId: string; 
   const canList = useSalesPoolCapability('quotesList')
   const canOpenRequest = useSalesPoolCapability('requestsDetail')
   const [initial] = useState<PoolFormValues>(() => initialValues(requests))
-  const [values, setValues] = useState<PoolFormValues>(initial)
+  const shell = useShellState()
+  const scope = quoteCreateScope(requests.map((detail) => detail.request.id))
+  // An attempt of this binding whose outcome is unknown comes back with the values it was sent from (its key is kept).
+  const [values, setValues] = useState<PoolFormValues>(
+    () => recallPoolAttempt<CreateSalesQuoteBody, SalesQuoteMutation, PoolFormValues>(orderAttemptBinding(shell, scope))?.values ?? initial,
+  )
   const [errors, setErrors] = useState<PoolFormErrors>({})
   const [summaryRequest, setSummaryRequest] = useState(0)
   const [accountSearch, setAccountSearch] = useState('')
@@ -182,7 +187,7 @@ function QuoteCreateForm({ companyId, requests }: { readonly companyId: string; 
   const requestIds = requests.map((detail) => detail.request.id)
 
   const attempt = usePoolAttempt<CreateSalesQuoteBody, SalesQuoteMutation>(
-    SALES_QUOTE_CREATE_SCOPE,
+    scope,
     (snapshot) => createQuote(snapshot.payload, { idempotencyKey: snapshot.key, companyId: snapshot.companyId }),
     (next) => {
       if (next.phase === 'completed' && canOpen) navigate(salesQuoteScreenPath(next.result.detail.quote.id))
@@ -191,8 +196,9 @@ function QuoteCreateForm({ companyId, requests }: { readonly companyId: string; 
         setSummaryRequest((n) => n + 1)
       }
     },
+    { values },
   )
-  usePoolDirty(SALES_QUOTE_CREATE_SCOPE, attempt.frozen || (attempt.state.phase !== 'completed' && values !== initial))
+  usePoolDirty(scope, attempt.frozen || (attempt.state.phase !== 'completed' && values !== initial))
 
   useEffect(() => {
     if (summaryRequest > 0) document.getElementById('pool-error-summary')?.focus()

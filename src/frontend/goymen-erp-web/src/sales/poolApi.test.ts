@@ -131,6 +131,11 @@ describe('quote commands', () => {
     expect((await convertQuote({ expectedVersion: '1', businessDate: '2026-10-27' }, quote, CONTEXT)).type).toBe('malformed')
     answer(json(orderMutation('2026-10-27', false, { quantity: '1' }), 201))
     expect((await convertQuote({ expectedVersion: '1', businessDate: '2026-10-27' }, quote, CONTEXT)).type).toBe('malformed')
+    // A late same-key replay answers the order as it stands now (revised since): its header still binds it.
+    answer(json(orderMutation('2026-10-27', true, { quantity: '1' }), 201, { 'Idempotency-Replayed': 'true' }))
+    expect((await convertQuote({ expectedVersion: '1', businessDate: '2026-10-27' }, quote, CONTEXT)).type).toBe('succeeded')
+    answer(json(orderMutation('2026-10-28', true), 201, { 'Idempotency-Replayed': 'true' }))
+    expect((await convertQuote({ expectedVersion: '1', businessDate: '2026-10-27' }, quote, CONTEXT)).type).toBe('malformed')
     answer(json(orderMutation('2026-10-27'), 201, { Location: `/api/v1/sales/quotes/${QUOTE_ID}` }))
     expect((await convertQuote({ expectedVersion: '1', businessDate: '2026-10-27' }, quote, CONTEXT)).type).toBe('malformed')
   })

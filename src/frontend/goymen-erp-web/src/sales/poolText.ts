@@ -3,7 +3,15 @@
  * Codes are never parsed from a problem `title`; an unknown code keeps the verdict without a reason.
  */
 
-import { POOL_PROBLEM_CODE, QUOTE_STATE, REQUEST_STATE, type PoolProblemCode, type QuoteState, type RequestState } from './poolContract'
+import {
+  POOL_PROBLEM_CODE,
+  QUOTE_MAXIMUM_REQUESTS,
+  QUOTE_STATE,
+  REQUEST_STATE,
+  type PoolProblemCode,
+  type QuoteState,
+  type RequestState,
+} from './poolContract'
 import { SALES_PROBLEM_CODE } from './contract'
 import { problemCodeText } from './salesText'
 
@@ -108,7 +116,7 @@ export const POOL_TEXT = {
     requestsUnreadable: 'Seçilen taleplerden biri okunamadı; teklif bu taleplerle hazırlanamaz.',
     requestRejected: (documentNo: string) => `${documentNo} reddedilmiş; teklif kapsamına alınamaz.`,
     requestsMixed: 'Seçilen talepler farklı carilere ait; bir teklif yalnız bir carinin taleplerini karşılar.',
-    requestsTooMany: 'Bir teklif en fazla 100 talep karşılar.',
+    requestsTooMany: `Bir teklif en fazla ${QUOTE_MAXIMUM_REQUESTS} talep karşılar.`,
     customerFromRequests: 'Cari, seçilen taleplerden gelir.',
     submit: 'Teklifi kaydet',
     submitting: 'Teklif kaydediliyor…',
@@ -121,7 +129,7 @@ export const POOL_TEXT = {
     back: 'Tekliflere dön',
     currency: 'Para birimi',
     validUntil: 'Geçerlilik tarihi',
-    validUntilNote: 'Geçerlilik tarihi bilgi amaçlıdır; dönüştürmede sunucu denetler.',
+    validUntilNote: 'Geçerlilik tarihi teklifte bilgi olarak saklanır.',
     coveredRequests: 'Karşılanan talepler',
     price: 'Birim fiyat',
     priceUnit: 'Fiyat birimi',
@@ -139,6 +147,8 @@ export const POOL_TEXT = {
     orderWithoutAccess: 'Sipariş oluşturuldu; sipariş ekranını açma yetkiniz yok.',
     commands: 'Teklif işlemleri',
     revise: 'Revizyon oluştur',
+    reviseWithheld:
+      'Bu teklifin fiyatlarını görme yetkiniz yok; revizyon her satırı yeniden yazdığı için gizli fiyatları silerdi. Revizyonu fiyatları görebilen biri oluşturmalıdır.',
     reviseHeading: 'Yeni revizyon',
     reviseSubmit: 'Revizyonu kaydet',
     reviseCancel: 'Vazgeç',
@@ -181,6 +191,7 @@ export const POOL_TEXT = {
     discount: 'İskonto % (isteğe bağlı)',
     lineDeliveryDate: 'Satır teslim tarihi (isteğe bağlı)',
     lineNote: 'Satır notu (isteğe bağlı)',
+    storedPriceUnit: 'Kayıtlı fiyat birimi',
     line: (index: number) => `${index}. satır`,
     addLine: 'Satır ekle',
     removeLine: (index: number) => `${index}. satırı kaldır`,
@@ -213,6 +224,7 @@ export const POOL_TEXT = {
     priceUnitRequired: 'Fiyat için fiyat birimini seçin.',
     discountInvalid: 'İskonto sayı olmalı (ör. 5 veya 2,5).',
     discountWithoutPrice: 'İskonto yalnız bir birim fiyatla verilebilir.',
+    priceWithheldRevision: 'Bu satırın fiyatını göremiyorsunuz; revizyon kaydedilirse fiyat silinir. Gönderim yapılmadı.',
   },
   attempt: {
     unknown: (noun: string) =>
@@ -225,7 +237,7 @@ export const POOL_TEXT = {
     unauthenticated: 'Oturumunuz sona erdi; işlem yapılmadı.',
     forbidden: 'Bu işlem için yetkiniz yok; işlem yapılmadı.',
     notFound: 'Kayıt bulunamadı; işlem yapılmadı.',
-    conflict: 'Kayıt siz açtıktan sonra değişti ya da bu işleme uygun değil; işlem yapılmadı. Güncel hali yeniden okundu.',
+    conflict: 'İşlem yapılmadı; kaydın güncel hali yeniden okundu.',
     createConflict: 'İşlem mevcut kayıtla çakıştı; kayıt yapılmadı.',
     unexpected: 'İşlem yapılmadı. Beklenmeyen bir yanıt alındı.',
     sending: 'Gönderiliyor…',
@@ -259,7 +271,7 @@ const POOL_PROBLEM_TEXT: Record<PoolProblemCode, string> = {
  */
 export function poolProblemText(code: string | null, onRecord = false): string | null {
   if (code === null) return null
-  if (onRecord && code === SALES_PROBLEM_CODE.versionConflict) return 'Kayıt siz açtıktan sonra değişti; güncel hali yeniden okundu.'
+  if (onRecord && code === SALES_PROBLEM_CODE.versionConflict) return 'Kayıt siz açtıktan sonra değişti.'
   if (onRecord && code === SALES_PROBLEM_CODE.stateConflict) return 'Bu işlem kaydın şu anki durumunda yapılamaz.'
   if (Object.hasOwn(POOL_PROBLEM_TEXT, code)) return POOL_PROBLEM_TEXT[code as PoolProblemCode]
   return problemCodeText(code)

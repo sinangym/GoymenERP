@@ -29,6 +29,7 @@ import { LIMITS } from './contract'
 import {
   POOL_FIELD,
   emptyPoolLine,
+  hasWithheldPrice,
   lineFromQuote,
   validateQuoteRevision,
   type PoolFormErrors,
@@ -264,20 +265,29 @@ function QuoteLines({ detail }: { readonly detail: SalesQuoteDetail }) {
 
 type OpenPanel = 'none' | 'revision' | 'loss' | 'conversion'
 
+/** The quote's own order-unit codes, to label a stored price unit by its code rather than its id. */
+const unitCodesOf = (detail: SalesQuoteDetail): ReadonlyMap<string, string> =>
+  new Map(detail.lines.map((line) => [line.orderUnitId, line.orderUnitCode]))
+
 function QuoteCommands({ detail, companyId, onReread }: { readonly detail: SalesQuoteDetail; readonly companyId: string; readonly onReread: () => void }) {
   const canWrite = useSalesPoolCapability('quotesWrite')
   const canConvert = useSalesPoolCapability('quotesConvert')
   const [panel, setPanel] = useState<OpenPanel>('none')
+  // Fail closed (P1): a revision replaces every line, and a price this viewer cannot see cannot be carried — it would be
+  // written away. The revision is not offered then; the loss and the conversion do not touch prices and stay.
+  const canRevise = canWrite && !hasWithheldPrice(detail)
   if (!canWrite && !canConvert) return null
   return (
     <section className={styles.section} aria-labelledby="pool-quote-commands-heading" data-testid="pool-quote-commands">
       <h2 id="pool-quote-commands-heading" className={styles.subtitle}>{T.commands}</h2>
       <div className={styles.actions}>
+        {canRevise ? (
+          <Button type="button" variant="secondary" aria-expanded={panel === 'revision'} onClick={() => setPanel(panel === 'revision' ? 'none' : 'revision')}>
+            {T.revise}
+          </Button>
+        ) : null}
         {canWrite ? (
           <>
-            <Button type="button" variant="secondary" aria-expanded={panel === 'revision'} onClick={() => setPanel(panel === 'revision' ? 'none' : 'revision')}>
-              {T.revise}
-            </Button>
             <Button type="button" variant="secondary" aria-expanded={panel === 'loss'} onClick={() => setPanel(panel === 'loss' ? 'none' : 'loss')}>
               {T.lose}
             </Button>
@@ -289,7 +299,12 @@ function QuoteCommands({ detail, companyId, onReread }: { readonly detail: Sales
           </Button>
         ) : null}
       </div>
-      {panel === 'revision' && canWrite ? <RevisionForm detail={detail} companyId={companyId} onReread={onReread} onClose={() => setPanel('none')} /> : null}
+      {canWrite && !canRevise ? (
+        <p className={styles.muted} data-testid="pool-quote-revise-withheld">
+          {T.reviseWithheld}
+        </p>
+      ) : null}
+      {panel === 'revision' && canRevise ? <RevisionForm detail={detail} companyId={companyId} onReread={onReread} onClose={() => setPanel('none')} /> : null}
       {panel === 'loss' && canWrite ? <LossForm detail={detail} onReread={onReread} /> : null}
       {panel === 'conversion' && canConvert ? <ConversionForm detail={detail} onReread={onReread} /> : null}
     </section>
@@ -305,7 +320,7 @@ function revisionValues(detail: SalesQuoteDetail): PoolFormValues {
     validUntil: detail.quote.validUntil ?? '',
     requestedDeliveryDate: detail.requestedDeliveryDate ?? '',
     note: detail.note ?? '',
-    lines: detail.lines.map(lineFromQuote),
+    lines: detail.lines.map((line) => lineFromQuote(line, unitCodesOf(detail))),
   }
 }
 

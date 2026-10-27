@@ -15,6 +15,7 @@ import { POOL_FIELD, emptyPoolForm, emptyPoolLine, validateRequestForm, type Poo
 import { POOL_TEXT } from './poolText'
 import { SALES_POOL_ROUTE, salesRequestScreenPath, useSalesPoolCapability } from './poolCapabilities'
 import { poolNotice, usePoolAttempt, usePoolDirty } from './poolAttempt'
+import { recallPoolAttempt } from './pendingPoolAttempts'
 import { usePoolOptions } from './poolOptions'
 import { PoolAttemptNotice, PoolCustomerField, PoolErrorSummary, PoolLinesEditor } from './SalesPoolShared'
 import { cssId, serverFieldErrors } from './poolView'
@@ -51,7 +52,11 @@ function RequestCreate({ companyId }: { readonly companyId: string }) {
   const navigate = useNavigate()
   const canOpen = useSalesPoolCapability('requestsDetail')
   const canList = useSalesPoolCapability('requestsList')
-  const [values, setValues] = useState<PoolFormValues>(() => emptyPoolForm(browserIds()))
+  const shell = useShellState()
+  // An attempt of this binding whose outcome is unknown comes back with the values it was sent from (its key is kept).
+  const [values, setValues] = useState<PoolFormValues>(
+    () => recallPoolAttempt<CreateSalesRequestBody, SalesRequestMutation, PoolFormValues>(orderAttemptBinding(shell, SALES_REQUEST_CREATE_SCOPE))?.values ?? emptyPoolForm(browserIds()),
+  )
   const [errors, setErrors] = useState<PoolFormErrors>({})
   const [summaryRequest, setSummaryRequest] = useState(0)
   const [accountSearch, setAccountSearch] = useState('')
@@ -68,6 +73,7 @@ function RequestCreate({ companyId }: { readonly companyId: string }) {
         setSummaryRequest((n) => n + 1)
       }
     },
+    { values },
   )
   usePoolDirty(SALES_REQUEST_CREATE_SCOPE, attempt.frozen || (attempt.state.phase !== 'completed' && isDirty(values)))
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   POOL_FIELD,
+  hasWithheldPrice,
+  priceUnitChoices,
   emptyPoolForm,
   lineFromQuote,
   lineFromRequest,
@@ -17,7 +19,7 @@ import {
 import { decodeQuoteDetail, decodeRequestDetail } from './poolContract'
 import { POOL_TEXT } from './poolText'
 import { OPTIONS_A } from './testHarness'
-import { ACCOUNT, CURRENCY, KG, PARTY, PRODUCT, QUOTE_ID, REQUEST_ID, quoteDetail, requestDetail } from './poolFixtures'
+import { ACCOUNT, CURRENCY, KG, PARTY, PRODUCT, QUOTE_ID, REQUEST_ID, quoteDetail, quoteLine, requestDetail } from './poolFixtures'
 
 const LINE = '0f0f0f0f-0000-4000-8000-000000000001'
 
@@ -93,12 +95,35 @@ describe('quote form', () => {
     const copied = lineFromRequest(LINE, request.lines[0])
     expect(copied).toMatchObject({ fixedProduct: true, productVersion: '7', orderUnitId: KG, quantityText: '1500', requestedDeliveryDate: '2026-11-01' })
     const quote = decodeQuoteDetail(quoteDetail(), QUOTE_ID)!
-    const values: PoolFormValues = { ...emptyPoolForm(LINE), businessDate: '2026-10-22', lines: quote.lines.map(lineFromQuote) }
+    const values: PoolFormValues = { ...emptyPoolForm(LINE), businessDate: '2026-10-22', lines: quote.lines.map((line) => lineFromQuote(line)) }
     const revision = validateQuoteRevision(values, '3')
     expect(revision.ok && revision.payload).toMatchObject({
       expectedVersion: '3',
       lines: [{ lineId: quote.lines[0].lineId, unitPrice: '42.5', priceUnitId: KG, quantity: '1500' }],
     })
+  })
+
+  it('P1: a row whose price is withheld is never sent in a revision (it would erase the price)', () => {
+    const withheld = decodeQuoteDetail(
+      quoteDetail({}, { lines: [quoteLine({ unitPrice: null, priceUnitId: null, priceDisclosure: 'Withheld' })] }),
+      QUOTE_ID,
+    )!
+    expect(hasWithheldPrice(withheld)).toBe(true)
+    expect(hasWithheldPrice(decodeQuoteDetail(quoteDetail(), QUOTE_ID)!)).toBe(false)
+    const row = lineFromQuote(withheld.lines[0])
+    expect(row.priceWithheld).toBe(true)
+    const result = validateQuoteRevision({ ...emptyPoolForm(LINE), businessDate: '2026-10-22', lines: [row] }, '1')
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.errors[poolLineRowId(row.lineId)]).toBe(POOL_TEXT.validation.priceWithheldRevision)
+  })
+
+  it('labels a stored price unit by its code, never by its id', () => {
+    const other = '44444444-4444-4444-4444-444444444445'
+    const line = decodeQuoteDetail(quoteDetail({}, { lines: [quoteLine({ priceUnitId: other })] }), QUOTE_ID)!.lines[0]
+    expect(priceUnitChoices(lineFromQuote(line, new Map([[other, 'ton']])))).toContainEqual({ unitId: other, code: 'ton' })
+    const unknown = priceUnitChoices(lineFromQuote(line))
+    expect(unknown).toContainEqual({ unitId: other, code: POOL_TEXT.form.storedPriceUnit })
+    expect(unknown.map((unit) => unit.code)).not.toContain(other)
   })
 
   it('keeps zero as a value and empty as unknown', () => {

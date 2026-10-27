@@ -8,6 +8,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import userEvent from '@testing-library/user-event'
 import { SALES_POOL_CAPABILITY } from './poolCapabilities'
 import { POOL_TEXT } from './poolText'
+import { resetPendingPoolAttempts } from './pendingPoolAttempts'
 import {
   ALL_POOL,
   COMPANY_A,
@@ -35,6 +36,7 @@ import { renderPool } from './poolTestHarness'
 
 afterEach(() => {
   cleanup()
+  resetPendingPoolAttempts()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -148,6 +150,50 @@ describe('Yeni talep', () => {
     expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
     expect(posts[1].body).toEqual(posts[0].body)
     expect(posts[0].body).toMatchObject({ businessDate: '2026-10-20', note: null, lines: [{ productId: PRODUCT, expectedProductVersion: '7', orderUnitId: KG, quantity: '1500' }] })
+  })
+
+  it('P2: an unknown outcome survives leaving the screen — the next visit resumes the SAME key and values', async () => {
+    const user = userEvent.setup()
+    let attempts = 0
+    const fetch = installPoolFetch((call) => {
+      if (call.method === 'POST') {
+        attempts += 1
+        if (attempts === 1) return json({ status: 503 }, 503)
+        const sent = call.body as { lines: { lineId: string }[] }
+        return json(requestMutation(requestDetail({}, {
+          lines: [{ ...(requestDetail().lines as Record<string, unknown>[])[0], lineId: sent.lines[0].lineId, requestedDeliveryDate: null }],
+        })), 201)
+      }
+      if (call.url.includes('/sales/requests?')) return json({ items: [], nextCursor: null })
+      return json(requestDetail())
+    })
+    const { router } = renderPool('/satis/talepler/yeni')
+    await user.selectOptions(await screen.findByLabelText(POOL_TEXT.form.customer), 'ABC Demir — A hesabı')
+    fireEvent.change(screen.getByLabelText(POOL_TEXT.form.businessDate), { target: { value: '2026-10-20' } })
+    await user.selectOptions(screen.getByLabelText(POOL_TEXT.form.product), PRODUCT)
+    await user.selectOptions(screen.getByLabelText(POOL_TEXT.form.unit), KG)
+    await user.type(screen.getByLabelText(POOL_TEXT.form.quantity), '1500')
+    await user.click(screen.getByRole('button', { name: POOL_TEXT.requestCreate.submit }))
+    expect((await screen.findByTestId('pool-request-create-notice')).textContent).toBe(POOL_TEXT.attempt.unknown(POOL_TEXT.requestCreate.noun))
+
+    // The screen goes (the person leaves through the list), then comes back.
+    await router.navigate('/satis/talepler')
+    expect(await screen.findByText(/Kayıt yok/)).toBeTruthy()
+    await router.navigate('/satis/talepler/yeni')
+    expect((await screen.findByTestId('pool-request-create-notice')).textContent).toBe(POOL_TEXT.attempt.unknown(POOL_TEXT.requestCreate.noun))
+    expect((screen.getByLabelText(POOL_TEXT.form.quantity) as HTMLInputElement).value).toBe('1500')
+    expect((screen.getByLabelText(POOL_TEXT.form.quantity) as HTMLInputElement).disabled).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: POOL_TEXT.common.retry }))
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/satis/talepler/${REQUEST_ID}`))
+    const [first, second] = fetch.posts()
+    expect(second.idempotencyKey).toBe(first.idempotencyKey)
+    expect(second.body).toEqual(first.body)
+
+    // Settled once shown: a later visit starts a fresh form.
+    await router.navigate('/satis/talepler/yeni')
+    expect(((await screen.findByLabelText(POOL_TEXT.form.quantity)) as HTMLInputElement).value).toBe('')
+    expect(screen.queryByTestId('pool-request-create-notice')).toBeNull()
   })
 
   it('shows the client errors in a summary and sends nothing', async () => {
@@ -367,6 +413,17 @@ describe('Teklif detayı', () => {
       note: null,
     })
     expect((await screen.findByTestId('pool-quote-revision-notice')).textContent).toContain('Rev.1')
+  })
+
+  it('P1: a viewer who cannot see the prices is not offered a revision (it would erase them); loss and conversion stay', async () => {
+    const fetch = installPoolFetch(() =>
+      json(quoteDetail({}, { lines: [quoteLine({ unitPrice: null, priceUnitId: null, priceDisclosure: 'Withheld' })] })))
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    expect((await screen.findByTestId('pool-quote-revise-withheld')).textContent).toBe(POOL_TEXT.quoteDetail.reviseWithheld)
+    expect(screen.queryByRole('button', { name: POOL_TEXT.quoteDetail.revise })).toBeNull()
+    expect(screen.getByRole('button', { name: POOL_TEXT.quoteDetail.lose })).toBeTruthy()
+    expect(screen.getByRole('button', { name: POOL_TEXT.quoteDetail.convert })).toBeTruthy()
+    expect(fetch.posts()).toHaveLength(0)
   })
 
   it('a withheld price reads "Gizli", and a converted quote links its one order', async () => {
