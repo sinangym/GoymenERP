@@ -79,16 +79,38 @@ public sealed class SalesQuoteTests
         Assert.Equal(SalesRuleCodes.QuoteLossReasonTooLong, CodeOf(() => lost.RecordLoss(1, Actor, new string('x', 4001), T0)));
         lost.RecordLoss(1, Actor, "Fiyat", T0);
         Assert.Equal((SalesQuoteState.Lost, 2L, "Fiyat"), (lost.State, lost.Version, lost.Loss!.Reason));
-        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => lost.Convert(2, Guid.NewGuid(), Actor, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => lost.Convert(2, Guid.NewGuid(), Actor, Day, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => lost.Revise(2, new SalesQuoteTerms(), [Line("1")], T0)));
 
         var converted = Create([Line("1")]);
         var draft = Guid.NewGuid();
         Assert.Throws<SalesVersionConflictException>(() => converted.RequireConvertible(2));
-        converted.Convert(1, draft, Actor, T0);
+        converted.Convert(1, draft, Actor, Day, T0);
         Assert.Equal((SalesQuoteState.Converted, draft, 2L), (converted.State, converted.Conversion!.DraftId, converted.Version));
-        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => converted.Convert(2, Guid.NewGuid(), Actor, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => converted.Convert(2, Guid.NewGuid(), Actor, Day, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => converted.RecordLoss(2, Actor, "geç", T0)));
+    }
+
+    [Fact]
+    public void An_expired_quote_is_not_converted_until_the_manager_approval_exists_and_the_validity_day_itself_still_converts()
+    {
+        // SAT-D24 (interim, fail-closed): the validity date is the last valid day; a later business date refuses the conversion.
+        var expired = Create([Line("1")], terms: new SalesQuoteTerms(Day.AddDays(3)));
+        expired.RequireValidOn(Day.AddDays(3));
+        Assert.Equal(SalesRuleCodes.QuoteExpired, CodeOf(() => expired.RequireValidOn(Day.AddDays(4))));
+        Assert.Equal(SalesRuleCodes.QuoteExpired, CodeOf(() => expired.Convert(1, Guid.NewGuid(), Actor, Day.AddDays(4), T0)));
+        Assert.Equal((SalesQuoteState.Open, 1L, (SalesQuoteConversion?)null), (expired.State, expired.Version, expired.Conversion));
+        // A stale version or a closed quote answers first (the recorded refusals), the expiry only on a convertible quote.
+        Assert.Throws<SalesVersionConflictException>(() => expired.Convert(2, Guid.NewGuid(), Actor, Day.AddDays(4), T0));
+
+        expired.Convert(1, Guid.NewGuid(), Actor, Day.AddDays(3), T0);
+        Assert.Equal(SalesQuoteState.Converted, expired.State);
+
+        // A quote without a validity date never expires (no default validity is decided).
+        var open = Create([Line("1")]);
+        open.RequireValidOn(Day.AddYears(5));
+        open.Convert(1, Guid.NewGuid(), Actor, Day.AddYears(5), T0);
+        Assert.Equal(SalesQuoteState.Converted, open.State);
     }
 
     [Fact]

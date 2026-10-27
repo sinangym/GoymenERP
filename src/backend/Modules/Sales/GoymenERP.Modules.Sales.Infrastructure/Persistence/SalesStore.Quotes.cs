@@ -31,7 +31,7 @@ public sealed partial class SalesStore
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
-        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+        var attempt = await dbContext.QuoteAttempts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == SalesQuoteCommands.CreateV1 && row.IdempotencyKeyHash == keyHash, cancellationToken);
         if (attempt is not null)
         {
@@ -68,7 +68,7 @@ public sealed partial class SalesStore
         RequireQuoteCommand(commandName);
         RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+        var attempt = await dbContext.QuoteAttempts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
         if (attempt is null)
         {
@@ -117,13 +117,12 @@ public sealed partial class SalesStore
         }
 
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        if (await dbContext.DraftAttempts.AsNoTracking()
-                .AnyAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken))
+        if (await QuoteAttemptExistsAsync(commandName, keyHash, cancellationToken))
         {
             throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
         }
 
-        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        dbContext.QuoteAttempts.Add(new QuoteAttemptRow
         {
             CompanyId = companyId,
             CommandName = commandName,
@@ -154,7 +153,7 @@ public sealed partial class SalesStore
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
-        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+        var attempt = await dbContext.QuoteAttempts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
         if (attempt is not null)
         {
@@ -300,9 +299,12 @@ public sealed partial class SalesStore
             ?? throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Teklif bu şirkette bulunamadı.");
         var quote = await RestoreQuoteAsync(row, cancellationToken);
         quote.RequireConvertible(expectedQuoteVersion);
-        await RequireApprovedRequestsAsync(quote, cancellationToken);
-
         var now = timeProvider.GetUtcNow();
+        // No 160 inside the one save (the service's earlier read can be stale) AND the serialization with a rejection (No 161):
+        // the covered request rows are read tracked here and touched in this save, so their row versions are this save's
+        // concurrency tokens — a rejection committed after this read makes this conversion the loser, and a rejection still
+        // in flight loses on its own row version once this commits (its re-read then finds the live order).
+        await RequireApprovedRequestsAsync(quote, now, cancellationToken);
         var counter = await dbContext.DraftNumbers.SingleOrDefaultAsync(cancellationToken);
         long number;
         if (counter is null)
@@ -328,7 +330,7 @@ public sealed partial class SalesStore
 
         var versionBefore = quote.Version;
         var before = QuoteAuditState(quote, withLines: false);
-        quote.Convert(expectedQuoteVersion, draft.Id, actorId, now);
+        quote.Convert(expectedQuoteVersion, draft.Id, actorId, draft.Header.BusinessDate, now);
         SalesDraftRows.Add(dbContext, draft, envelope.ActorId, envelope.CorrelationId, quote.Id, quote.Revision);
         draft.RestoreCreator(envelope.ActorId);
         row.State = (int)quote.State;
@@ -356,8 +358,12 @@ public sealed partial class SalesStore
         return new SalesDraftStoreResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
-    /// <summary>No 160 (default-deny), inside the conversion's own read: every request the quote covers is approved now.</summary>
-    private async Task RequireApprovedRequestsAsync(SalesQuote quote, CancellationToken cancellationToken)
+    /// <summary>
+    /// No 160 (default-deny), inside the conversion's own read: every request the quote covers is approved NOW. The rows are
+    /// tracked and their <c>UpdatedAtUtc</c> moves with the conversion, so each request's row version is a concurrency token of
+    /// the conversion's save (the request's own version, its decision and its lines do not change).
+    /// </summary>
+    private async Task RequireApprovedRequestsAsync(SalesQuote quote, DateTimeOffset now, CancellationToken cancellationToken)
     {
         if (quote.RequestIds.Count == 0)
         {
@@ -365,25 +371,55 @@ public sealed partial class SalesStore
         }
 
         var ids = quote.RequestIds.ToArray();
-        var approved = (int)SalesRequestState.Approved;
-        var count = await dbContext.Requests.AsNoTracking().CountAsync(row => ids.Contains(row.Id) && row.State == approved, cancellationToken);
-        if (count != ids.Length)
+        var rows = await dbContext.Requests.Where(row => ids.Contains(row.Id)).ToListAsync(cancellationToken);
+        if (rows.Count != ids.Length || rows.Any(row => row.State != (int)SalesRequestState.Approved))
         {
             throw new SalesRuleException(SalesRuleCodes.QuoteRequestNotApproved, "Teklifin karşıladığı her talep onaylı olmadan sipariş açılmaz.");
+        }
+
+        foreach (var row in rows)
+        {
+            row.UpdatedAtUtc = now;
+            // Forced: EF sends an UPDATE only for a changed value, and a clock that repeats the stored instant (a fixed test
+            // clock, a coarse host clock) would otherwise drop the row from the save and with it the serialization.
+            dbContext.Entry(row).Property(candidate => candidate.UpdatedAtUtc).IsModified = true;
         }
     }
 
     /// <summary>
-    /// No 161: whether the request's live quote became an APPROVED order that is not cancelled. Asked inside the rejection's
-    /// own save path, before the domain decides.
+    /// The order's submission and approval (belt and braces for No 160): an order converted from a quote moves towards
+    /// approval only while every request that quote covers is still approved. Read inside the transition's own save path.
     /// </summary>
-    private async Task<bool> HasApprovedOrderAsync(Guid requestId, CancellationToken cancellationToken)
+    private async Task RequireSourceRequestsApprovedAsync(Guid? sourceQuoteId, CancellationToken cancellationToken)
     {
-        var approved = (int)InternalApprovalState.Approved;
-        var live = (int)SalesDraftState.Draft;
-        var quoteIds = dbContext.QuoteRequests.AsNoTracking().Where(link => link.RequestId == requestId && link.IsActive).Select(link => link.QuoteId);
+        if (sourceQuoteId is not { } quoteId)
+        {
+            return;
+        }
+
+        var approved = (int)SalesRequestState.Approved;
+        var requestIds = dbContext.QuoteRequests.AsNoTracking().Where(link => link.QuoteId == quoteId).Select(link => link.RequestId);
+        if (await dbContext.Requests.AsNoTracking().AnyAsync(request => requestIds.Contains(request.Id) && request.State != approved,
+                cancellationToken))
+        {
+            throw new SalesRuleException(SalesRuleCodes.QuoteRequestNotApproved,
+                "Teklifin karşıladığı talep artık onaylı değil; bu sipariş onaya ilerlemez.");
+        }
+    }
+
+    /// <summary>
+    /// No 161, fail-closed: whether ANY order converted from a quote that covers the request is not cancelled — Preparing
+    /// (never approved), pending, revised back to Preparing, approved, rejected/withdrawn on its approval axis, or
+    /// force-closed (<see cref="SalesDraftState.Closed"/>). Only a cancelled order releases the request (SAT-D23:
+    /// every non-cancelled order blocks, the pending and force-closed ones included). Every link counts, active
+    /// or not: a converted quote's order stays the request's order.
+    /// </summary>
+    private async Task<bool> HasLiveOrderAsync(Guid requestId, CancellationToken cancellationToken)
+    {
+        var cancelled = (int)SalesDraftState.Cancelled;
+        var quoteIds = dbContext.QuoteRequests.AsNoTracking().Where(link => link.RequestId == requestId).Select(link => link.QuoteId);
         return await dbContext.Drafts.AsNoTracking().AnyAsync(draft => draft.SourceQuoteId != null && quoteIds.Contains(draft.SourceQuoteId.Value)
-            && draft.ApprovalState == approved && draft.State == live, cancellationToken);
+            && draft.State != cancelled, cancellationToken);
     }
 
     private async Task<SalesQuote> RestoreQuoteAsync(QuoteRow row, CancellationToken cancellationToken)
@@ -397,7 +433,7 @@ public sealed partial class SalesStore
         return SalesQuoteRows.Restore(row, revision, lines, requests);
     }
 
-    private async Task<SalesQuoteStoreResult> ReplayQuoteAttemptAsync(DraftAttemptRow attempt, string actorId, string requestHash,
+    private async Task<SalesQuoteStoreResult> ReplayQuoteAttemptAsync(QuoteAttemptRow attempt, string actorId, string requestHash,
         CancellationToken cancellationToken)
     {
         if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
@@ -416,9 +452,13 @@ public sealed partial class SalesStore
         return new SalesQuoteStoreResult(stored, SalesDraftWriteOutcome.Replayed, attempt.CorrelationId);
     }
 
+    private Task<bool> QuoteAttemptExistsAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
+        dbContext.QuoteAttempts.AsNoTracking()
+            .AnyAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+
     private void AddQuoteAttempt(Guid companyId, string commandName, string keyHash, string requestHash, string actorId, Guid quoteId,
         SalesDraftWriteEnvelope envelope, DateTimeOffset now) =>
-        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        dbContext.QuoteAttempts.Add(new QuoteAttemptRow
         {
             CompanyId = companyId,
             CommandName = commandName,

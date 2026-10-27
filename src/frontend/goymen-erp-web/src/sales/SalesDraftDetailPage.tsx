@@ -32,6 +32,11 @@
  * an order that is or was approved (approved now, or a revision above Rev.0): Logistics serves only approved lines, so
  * a never-approved draft has nothing delivered. Facts only — no tolerance, completion or warning (OPEN-004 is open).
  *
+ * SAT-D8 / UI-70a — "Müşteri iadeleri" in the same "Gerçekleşme / İrsaliye" tab: per line the APPROVED customer-return total
+ * the server reads from Logistics (API-10). A physical return is the reverse leg of the shipment, and returns have no menu
+ * of their own (DEC-SAL-007); the return INVOICE (API-40 / UI-70b) belongs to "Faturalar". Mounted like the delivery
+ * status (an order that is or was approved); an unreadable answer shows no quantity, never a zero.
+ *
  * An approved order may consume Inventory's existing physical-allocation surface when the shell
  * publishes its write capability. Inventory remains the owner: create/release and every reopen are
  * read from its server truth; this page creates no stock movement or local allocation projection.
@@ -45,13 +50,17 @@
  * and name published for THIS draft's party, linked to the Cari card only with that card's own capability.
  */
 
-import { useContext, useRef, useState } from 'react'
+import { useContext, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { fetchDraftDetail, sendDraftCommand } from './api'
+import { orderUnitCodes } from './unitNames'
+import { UnitName } from './UnitName'
 import {
   APPROVAL_STATE,
   CANCELLED_STATE,
+  CLOSED_STATE,
+  isTerminalState,
   OWNER_REFERENCE_FIELDS,
   REV_0,
   type ContactInformationOptions,
@@ -62,6 +71,8 @@ import {
   type DraftStateCommand,
   type DraftStateCommandRequest,
   type OwnerReference,
+  type UserDisplay,
+  userDisplayFor,
 } from './contract'
 import { unplannedQuantity } from './deliveryPlan'
 import { contactLabel, formatBusinessDate, formatInstant } from './format'
@@ -88,7 +99,7 @@ import {
   SALES_QUANTITY_WRITE_CAPABILITY,
   SALES_ROUTE,
 } from './capabilities'
-import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
+import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, ORDER_TABS_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -104,17 +115,41 @@ import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
+import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
+import { SalesDraftForceClose } from './SalesDraftForceClose'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import { SalesPartyDisplay } from './SalesDraftListPage'
 import { CAPABILITY } from '../shell/capabilities'
 import { Button } from '../ui/Button'
 import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
+import { ORDER_TAB, parseOrderTab, type OrderTab } from './orderTabs'
+import { SalesOrderTabs } from './SalesOrderTabs'
+import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
 import styles from './SalesDraftDetailPage.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
+
+/**
+ * MOD-08: a person the record names by id, shown by the Identity directory's name when the read carries one (a former
+ * member is marked as such); otherwise the raw id as before. Never a name invented on the screen.
+ */
+function ActorName({ displays, actorId }: { readonly displays: readonly UserDisplay[]; readonly actorId: string | null }) {
+  if (actorId === null) return <>{T.approval.notYet}</>
+  const person = userDisplayFor(displays, actorId)
+  if (person === null) return <>{actorId}</>
+  return (
+    <span title={actorId}>
+      {person.displayName}
+      {person.isActiveInCompany ? null : ` (${T.approval.formerMember})`}
+    </span>
+  )
+}
+
+/** The search parameter that keeps the open S-04 tab (Master §7.2 locked tabs). */
+const TAB_PARAM = 'sekme'
 
 function approvalTone(state: DraftDetail['draft']['approvalState'], cancelled: boolean): StatusTone {
   if (cancelled) return 'neutral'
@@ -132,6 +167,18 @@ export function SalesDraftDetailPage() {
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const boundary = useAuthBoundary()
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = parseOrderTab(searchParams.get(TAB_PARAM))
+  const changeTab = (tab: OrderTab) =>
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        if (tab === ORDER_TAB.lines) next.delete(TAB_PARAM)
+        else next.set(TAB_PARAM, tab)
+        return next
+      },
+      { replace: true },
+    )
 
   const queryKey = [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft', draftId ?? '']
   const query = useQuery({
@@ -154,11 +201,11 @@ export function SalesDraftDetailPage() {
   const outcome = query.data
   if (outcome === undefined || outcome.type !== 'ok-single') {
     return (
-      <section className={styles.page} aria-label="Sipariş taslağı">
+      <section className={styles.page} aria-label={T.pageLabel}>
         {backLink}
         <StateBlock
           state={outcome === undefined ? { kind: 'initial-loading' } : classifyOutcome(outcome)}
-          subject="sipariş taslağı"
+          subject={T.stateSubject}
           onRetry={() => void query.refetch()}
         />
       </section>
@@ -169,6 +216,22 @@ export function SalesDraftDetailPage() {
       detail={outcome.data}
       canOpenParty={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
       backLink={backLink}
+      activeTab={activeTab}
+      onTabChange={changeTab}
+      documents={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesOrderDocumentsWorkspace
+            key={`documents:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            orderId={outcome.data.draft.id}
+            orderDocumentNo={outcome.data.draft.documentNo}
+            party={outcome.data.partyDisplay}
+            canReadCustomer={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
+            companyId={companyId}
+            namespace={namespace}
+            entryGeneration={shell.routeEntryGeneration}
+          />
+        ) : null
+      }
       delivery={companyId === null ? null : <DeliveryBlock shell={shell} detail={outcome.data} companyId={companyId} />}
       revisionHistory={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
@@ -220,6 +283,15 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      customerReturns={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId
+          && (outcome.data.draft.approvalState === APPROVAL_STATE.approved || outcome.data.draft.revision !== REV_0) ? (
+          <SalesDraftCustomerReturns
+            key={`customer-returns:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            detail={outcome.data}
+          />
+        ) : null
+      }
       remainderChanges={
         namespace === null || companyId === null || shell.activeContext === null ? null : (
           <SalesDraftRemainderChangePanel
@@ -254,8 +326,9 @@ export function SalesDraftDetailPage() {
         namespace !== null && companyId !== null ? (
           <SalesDraftAllocationPanel
             enabled={outcome.data.draft.approvalState === APPROVAL_STATE.approved
-              && outcome.data.draft.state !== CANCELLED_STATE
+              && !isTerminalState(outcome.data.draft.state)
               && hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)}
+            canOpenLabelHistory={hasCapability(shell, CAPABILITY.inventoryStockPositionsList)}
             companyId={companyId}
             namespace={namespace}
             routeEntryGeneration={shell.routeEntryGeneration}
@@ -279,6 +352,17 @@ export function SalesDraftDetailPage() {
         companyId === null ? null : (
           <SalesDraftCancellation
             key={`cancellation:${namespace ?? ''}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
+      forceClose={
+        companyId === null ? null : (
+          <SalesDraftForceClose
+            key={`force-close:${namespace ?? ''}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
             shell={shell}
             detail={outcome.data}
             companyId={companyId}
@@ -325,9 +409,14 @@ export function DraftView({
   deliverySchedule = null,
   deliveryScheduleHistory = null,
   deliveryProgress = null,
+  customerReturns = null,
   remainderChanges = null,
   linkedEffects = null,
   cancellation = null,
+  forceClose = null,
+  documents = null,
+  activeTab,
+  onTabChange,
 }: {
   readonly detail: DraftDetailWithParty
   /** The shell publishes the Cari card's own detail capability: only then is the party a link. */
@@ -346,16 +435,41 @@ export function DraftView({
   readonly deliveryScheduleHistory?: React.ReactNode
   /** AT-024: delivered / remaining per line from Logistics' recorded deliveries (null: not mounted). */
   readonly deliveryProgress?: React.ReactNode
+  /**
+   * SAT-D8 / UI-70a: the approved customer returns per line (API-10, Logistics-owned), on the order — no separate menu
+   * (null: not mounted).
+   */
+  readonly customerReturns?: React.ReactNode
   /** AT-024: approved cancel/revise requests for a partly delivered line and their immutable decisions. */
   readonly remainderChanges?: React.ReactNode
   /** The owners' linked effects; without a bound company nothing is read and no number is shown. */
   readonly linkedEffects?: React.ReactNode
   /** DEC-SAL-005 / AT-007: the impact preview and cancel control, or the recorded cancellation of a cancelled order. */
   readonly cancellation?: React.ReactNode
+  /** No 30 / SAT-D12: the force-close preview and command, or the recorded closure of a closed order. */
+  readonly forceClose?: React.ReactNode
+  /**
+   * UI-11 / UI-71 (S-11): the "Sözleşme / Belgeler" workspace — the order's and the customer's Document Vault panels and
+   * their timeline; null when no single company is bound.
+   */
+  readonly documents?: React.ReactNode
+  /** The open tab; when omitted the view keeps its own (an isolated render has no router). */
+  readonly activeTab?: OrderTab
+  readonly onTabChange?: (tab: OrderTab) => void
 }) {
   const { draft, approval, customerAcceptance } = detail
+  const unitCodes = useMemo(() => orderUnitCodes(detail), [detail])
+  const [ownTab, setOwnTab] = useState<OrderTab>(ORDER_TAB.lines)
+  const tab = activeTab ?? ownTab
+  const setTab = onTabChange ?? setOwnTab
+  // The vault is asked only once its tab has been opened; afterwards the panel stays mounted like the others.
+  const [documentsOpened, setDocumentsOpened] = useState(tab === ORDER_TAB.documents)
+  if (tab === ORDER_TAB.documents && !documentsOpened) setDocumentsOpened(true)
+  const everApproved = draft.approvalState === APPROVAL_STATE.approved || draft.revision !== REV_0
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   const cancelled = draft.state === CANCELLED_STATE
+  const closed = draft.state === CLOSED_STATE
+  const lifecycleText = cancelled ? T.stateCancelled : closed ? T.stateClosed : T.stateDraft
   return (
     <article className={styles.page} aria-labelledby="sales-detail-heading">
       {backLink}
@@ -366,9 +480,9 @@ export function DraftView({
           </h1>
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
-        <StatusIndicator tone={approvalTone(draft.approvalState, cancelled)} className={styles.badge}>
+        <StatusIndicator tone={approvalTone(draft.approvalState, cancelled || closed)} className={styles.badge}>
           <span data-testid="sales-draft-state">
-            {cancelled ? T.stateCancelled : T.stateDraft} · {APPROVAL_STATE_TEXT[draft.approvalState]}
+            {lifecycleText} · {APPROVAL_STATE_TEXT[draft.approvalState]}
           </span>
         </StatusIndicator>
       </header>
@@ -380,7 +494,7 @@ export function DraftView({
         </div>
         <div>
           <dt>{T.state}</dt>
-          <dd data-testid="sales-draft-lifecycle-state">{cancelled ? T.stateCancelled : T.stateDraft}</dd>
+          <dd data-testid="sales-draft-lifecycle-state">{lifecycleText}</dd>
         </div>
         <div>
           <dt>{T.approval.state}</dt>
@@ -407,14 +521,6 @@ export function DraftView({
           <dd data-testid="sales-draft-party"><SalesPartyDisplay party={detail.partyDisplay} canOpen={canOpenParty} /></dd>
         </div>
         <div>
-          <dt>{T.account}</dt>
-          <dd className={styles.identifier}>{draft.companyAccountId}</dd>
-        </div>
-        <div>
-          <dt>{T.currency}</dt>
-          <dd className={styles.identifier}>{draft.currencyId}</dd>
-        </div>
-        <div>
           <dt>{T.requestedDeliveryDate}</dt>
           <dd data-testid="sales-draft-header-due">
             {detail.requestedDeliveryDate === null ? T.unknown : formatBusinessDate(detail.requestedDeliveryDate)}
@@ -425,6 +531,19 @@ export function DraftView({
           <dd>{orUnknown(detail.note)}</dd>
         </div>
       </dl>
+      <details className={styles.technicalIds} data-testid="sales-draft-technical-ids">
+        <summary>{T.technicalIds}</summary>
+        <dl className={styles.facts}>
+          <div>
+            <dt>{T.account}</dt>
+            <dd className={styles.identifier}>{draft.companyAccountId}</dd>
+          </div>
+          <div>
+            <dt>{T.currency}</dt>
+            <dd className={styles.identifier}>{draft.currencyId}</dd>
+          </div>
+        </dl>
+      </details>
 
       {delivery}
 
@@ -433,7 +552,9 @@ export function DraftView({
         <dl className={styles.facts}>
           <div>
             <dt>{T.approval.submittedBy}</dt>
-            <dd data-testid="sales-approval-submitted-by">{approval.submittedBy ?? T.approval.notYet}</dd>
+            <dd data-testid="sales-approval-submitted-by">
+              <ActorName displays={detail.userDisplays} actorId={approval.submittedBy} />
+            </dd>
           </div>
           <div>
             <dt>{T.approval.submittedAt}</dt>
@@ -441,7 +562,9 @@ export function DraftView({
           </div>
           <div>
             <dt>{withdrawn ? T.approval.withdrawnBy : T.approval.decidedBy}</dt>
-            <dd data-testid="sales-approval-decided-by">{approval.decidedBy ?? T.approval.notYet}</dd>
+            <dd data-testid="sales-approval-decided-by">
+              <ActorName displays={detail.userDisplays} actorId={approval.decidedBy} />
+            </dd>
           </div>
           <div>
             <dt>{withdrawn ? T.approval.withdrawnAt : T.approval.decidedAt}</dt>
@@ -466,7 +589,9 @@ export function DraftView({
           {customerAcceptance.acceptedBy === null ? null : (
             <div>
               <dt>{T.approval.customerAcceptedBy}</dt>
-              <dd>{customerAcceptance.acceptedBy}</dd>
+              <dd data-testid="sales-customer-accepted-by">
+                <ActorName displays={detail.userDisplays} actorId={customerAcceptance.acceptedBy} />
+              </dd>
             </div>
           )}
           {customerAcceptance.acceptedAtUtc === null ? null : (
@@ -477,45 +602,79 @@ export function DraftView({
           )}
         </dl>
         {linkedEffects ?? <SalesDraftLinkedEffectsUnbound />}
-        {draft.approvalState === APPROVAL_STATE.approved && !cancelled ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
+        {draft.approvalState === APPROVAL_STATE.approved && !cancelled && !closed ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
         {draft.approvalState === APPROVAL_STATE.rejected ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
         {withdrawn ? <p className={styles.muted}>{T.approval.withdrawnNote}</p> : null}
         {commands}
       </section>
 
       {cancellation}
+      {forceClose}
 
-      <section className={styles.section} aria-labelledby="sales-commercial-heading">
-        <h2 id="sales-commercial-heading">{T.commercialHeading}</h2>
-        <dl className={styles.facts}>
-          {OWNER_REFERENCE_FIELDS.map((field) => {
-            const reference = detail[field]
-            return (
-              <div key={field}>
-                <dt>{T.ownerReference[field]}</dt>
-                <dd data-testid={`sales-draft-${field}`} className={reference === null ? undefined : styles.identifier}>
-                  {reference === null ? T.unknown : `${reference.id} (${reference.expectedVersion})`}
-                </dd>
-              </div>
-            )
-          })}
-        </dl>
-        {commercialActions}
-      </section>
+      <SalesOrderTabs
+        active={tab}
+        onChange={setTab}
+        panels={{
+          [ORDER_TAB.lines]: (
+            <>
+              <section className={styles.section} aria-labelledby="sales-commercial-heading">
+                <h2 id="sales-commercial-heading">{T.commercialHeading}</h2>
+                <dl className={styles.facts}>
+                  {OWNER_REFERENCE_FIELDS.map((field) => {
+                    const reference = detail[field]
+                    return (
+                      <div key={field}>
+                        <dt>{T.ownerReference[field]}</dt>
+                        <dd data-testid={`sales-draft-${field}`} className={reference === null ? undefined : styles.identifier}>
+                          {reference === null ? T.unknown : `${reference.id} (${reference.expectedVersion})`}
+                        </dd>
+                      </div>
+                    )
+                  })}
+                </dl>
+                {commercialActions}
+              </section>
 
-      <section className={styles.section} aria-labelledby="sales-lines-heading">
-        <h2 id="sales-lines-heading">{T.linesHeading}</h2>
-        {detail.lines.map((line) => (
-          <LineView key={line.lineId} line={line} />
-        ))}
-        {quantityRevision}
-        {deliverySchedule}
-      </section>
-      {deliveryScheduleHistory}
-      {deliveryProgress}
-      {remainderChanges}
-      {allocations}
-      {revisionHistory}
+              <section className={styles.section} aria-labelledby="sales-lines-heading">
+                <h2 id="sales-lines-heading">{T.linesHeading}</h2>
+                {detail.lines.map((line) => (
+                  <LineView key={line.lineId} line={line} unitCodes={unitCodes} />
+                ))}
+                {quantityRevision}
+                {deliverySchedule}
+              </section>
+            </>
+          ),
+          [ORDER_TAB.allocation]: (
+            <>
+              <p className={styles.muted}>{ORDER_TABS_TEXT.allocationNote}</p>
+              {allocations}
+            </>
+          ),
+          [ORDER_TAB.realization]: (
+            <>
+              {everApproved ? null : <p className={styles.muted} data-testid="sales-realization-not-approved">{ORDER_TABS_TEXT.realizationNotApproved}</p>}
+              {deliveryProgress}
+              {customerReturns}
+              {remainderChanges}
+            </>
+          ),
+          [ORDER_TAB.invoices]: (
+            <p className={styles.muted} data-testid="sales-invoices-empty">
+              {ORDER_TABS_TEXT.invoicesEmpty}
+            </p>
+          ),
+          [ORDER_TAB.documents]: documents === null
+            ? <p className={styles.muted}>{ORDER_TABS_TEXT.documentsUnavailable}</p>
+            : documentsOpened ? documents : null,
+          [ORDER_TAB.history]: (
+            <>
+              {revisionHistory}
+              {deliveryScheduleHistory}
+            </>
+          ),
+        }}
+      />
     </article>
   )
 }
@@ -703,7 +862,7 @@ function ApprovalCommands({
   // A commercial revision can return an approved order to Preparing. D2's easy withdrawal
   // must not be offered once approved history exists; the server remains the authority.
   const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'
-  const offerCustomerAcceptance = canAcceptCustomer && draft.state !== CANCELLED_STATE
+  const offerCustomerAcceptance = canAcceptCustomer && !isTerminalState(draft.state)
     && draft.approvalState === APPROVAL_STATE.approved && detail.customerAcceptance.required
     && !detail.customerAcceptance.isCurrentRevisionAccepted
   if (!offerSubmit && !offerDecision && !offerWithdraw && !offerCustomerAcceptance && !ownDecisionWithheld && attempt.phase === 'idle') return null
@@ -863,7 +1022,7 @@ function commandNotice(attempt: CommandAttempt): string | null {
   }
 }
 
-function LineView({ line }: { readonly line: DraftLine }) {
+function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unitCodes: ReadonlyMap<string, string> }) {
   const plan = unplannedQuantity(line, line.requestedDeliverySlices)
   const headingId = `sales-line-${line.lineId}`
   return (
@@ -882,7 +1041,9 @@ function LineView({ line }: { readonly line: DraftLine }) {
         </div>
         <div>
           <dt>{T.orderUnit}</dt>
-          <dd className={styles.identifier}>{line.orderUnitId}</dd>
+          <dd data-testid={`sales-line-${line.lineNo}-order-unit`}>
+            <UnitName id={line.orderUnitId} unitCodes={unitCodes} />
+          </dd>
         </div>
         <div className={styles.lineDueFact} data-layout-field="delivery-date">
           <dt>{T.lineDeliveryDate}</dt>
@@ -893,7 +1054,21 @@ function LineView({ line }: { readonly line: DraftLine }) {
         <div className={styles.linePriceFact} data-layout-field="price">
           <dt>{T.price}</dt>
           <dd data-testid={`sales-line-${line.lineNo}-price`}>
-            {line.priceDisclosure === 'Withheld' ? T.priceWithheld : line.unitPrice === null ? T.notPriced : `${line.unitPrice} / ${line.priceUnitId}`}
+            {line.priceDisclosure === 'Withheld' ? (
+              T.priceWithheld
+            ) : line.unitPrice === null ? (
+              T.notPriced
+            ) : (
+              <>
+                {line.unitPrice}
+                {line.priceUnitId === null ? null : (
+                  <>
+                    {' / '}
+                    <UnitName id={line.priceUnitId} unitCodes={unitCodes} />
+                  </>
+                )}
+              </>
+            )}
           </dd>
         </div>
         <div>

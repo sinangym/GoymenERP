@@ -1,5 +1,5 @@
 /**
- * Sales draft transport, pinned to #257 @ 2c1239e. NOT live: no route is mapped.
+ * Sales draft transport over the live `/api/v1/sales` routes (first contract: #257 @ 2c1239e).
  *
  *   POST /api/v1/sales/drafts          → 201 SalesOrderDraftResponse (isReplay=false)
  *                                       → 200 same body, isReplay=true (same accepted attempt)
@@ -47,8 +47,11 @@ import {
   decodeDeliverySchedules,
   decodeDeliveryProgress,
   decodeLoadingProgress,
+  decodeCustomerReturns,
   decodeCancellation,
   decodeCancellationImpact,
+  decodeForceCloseImpact,
+  decodeForceClosure,
   decodeProblem,
   salesDraftCommercialRevisionPath,
   salesDraftPriceFloorExceptionApprovalPath,
@@ -56,8 +59,11 @@ import {
   salesDraftDeliverySchedulesPath,
   salesDraftDeliveryProgressPath,
   salesDraftLoadingProgressPath,
+  salesDraftCustomerReturnsPath,
   salesDraftCancellationImpactPath,
   salesDraftCancellationPath,
+  salesDraftForceCloseImpactPath,
+  salesDraftForceClosePath,
   salesDraftCommandPath,
   salesDraftDetailPath,
   salesDraftRevisionsPath,
@@ -75,9 +81,13 @@ import {
   type DeliveryProgress,
   type LoadingProgress,
   type LoadingProgressBinding,
+  type CustomerReturns,
   type CancellationImpact,
   type CancellationRead,
   type DraftCancelRequest,
+  type DraftForceCloseRequest,
+  type ForceCloseImpact,
+  type ForceClosureRead,
   type DraftDetail,
   type DraftDetailWithParty,
   type DraftMutation,
@@ -293,6 +303,23 @@ export async function fetchDraftLoadingProgress(
   return progress === null ? { type: 'malformed' } : { type: 'ok-single', data: progress }
 }
 
+/**
+ * SAT-D8 / API-10: the approved customer-return total per line of `detail`, read-only under the draft read; the server
+ * reads it from the return owner (Logistics) afresh on every request. Data only when it describes exactly this detail;
+ * anything else is `malformed`, and a failed read is never turned into zeros.
+ */
+export async function fetchDraftCustomerReturns(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CustomerReturns>> {
+  const raw = await request(salesDraftCustomerReturnsPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const returns = decodeCustomerReturns(raw.body, detail)
+  return returns === null ? { type: 'malformed' } : { type: 'ok-single', data: returns }
+}
+
 /** Partial-delivery remainder facts; owner quantities stay nullable when the Logistics read is unavailable. */
 export async function fetchDraftRemainderChanges(
   detail: DraftDetail,
@@ -332,6 +359,35 @@ export async function fetchDraftCancellation(
   if ('failure' in raw) return readFailure(raw.failure)
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const read = decodeCancellation(raw.body)
+  return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
+}
+
+/**
+ * No 30: the force-close impact preview of `detail`, read-only under the cancel control's name; the server reads every
+ * category afresh from its owner (Inventory allocations, Logistics loading). Data only when it describes exactly this detail.
+ */
+export async function fetchForceCloseImpact(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ForceCloseImpact>> {
+  const raw = await request(salesDraftForceCloseImpactPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const impact = decodeForceCloseImpact(raw.body, detail)
+  return impact === null ? { type: 'malformed' } : { type: 'ok-single', data: impact }
+}
+
+/** No 30: the recorded force-closure (or null), read-only under the draft read; company filtering stays on the server. */
+export async function fetchDraftForceClosure(
+  draftId: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<ForceClosureRead>> {
+  const raw = await request(salesDraftForceClosePath(draftId), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const read = decodeForceClosure(raw.body)
   return read === null ? { type: 'malformed' } : { type: 'ok-single', data: read }
 }
 
@@ -580,8 +636,13 @@ function sameSlices(answered: readonly DeliverySlice[] | null, sent: readonly De
  * Every request member the detail reflects is compared by value — ids alone prove
  * nothing. Decimal text is retained verbatim by the server, so it must come back as
  * sent. `productVersion` is the owner's snapshot of the version the line expected.
- * Price, discount and owner references are compared too: the client sends them null
- * today, and an answer that fills one in is not the draft this person saved.
+ * Price, discount and owner references are compared too: an answer that fills in or
+ * changes one is not the draft this person saved. UI-14: the one exception is the
+ * server's own `priceDisclosure: "Withheld"` marker — an actor may hold the price-write
+ * permission without the price-read one (K3 P2), and the create answer then carries the
+ * three price members as null BECAUSE of the marker (the decoder refuses a withheld line
+ * with a price). Such a line is compared on everything else; it never turns a recorded
+ * draft into an endless "unknown".
  */
 export function describesAttempt(mutation: DraftMutation, sent: DraftCreateRequest, companyId: string): boolean {
   const { detail } = mutation
@@ -609,11 +670,12 @@ export function describesAttempt(mutation: DraftMutation, sent: DraftCreateReque
       answered.productVersion === line.expectedProductVersion &&
       answered.orderUnitId === line.orderUnitId &&
       answered.quantity === line.quantity &&
-      answered.unitPrice === line.unitPrice &&
-      answered.priceUnitId === line.priceUnitId &&
+      (answered.priceDisclosure === 'Withheld' ||
+        (answered.unitPrice === line.unitPrice &&
+          answered.priceUnitId === line.priceUnitId &&
+          answered.discountPercent === line.discountPercent)) &&
       answered.requestedDeliveryDate === line.requestedDeliveryDate &&
       answered.note === line.note &&
-      answered.discountPercent === line.discountPercent &&
       sameSlices(answered.requestedDeliverySlices, line.requestedDeliverySlices)
     )
   })
@@ -922,6 +984,49 @@ export async function sendDraftCancel(
 ): Promise<OrderCommandOutcome<DraftMutation>> {
   const raw = await request(
     salesDraftCancellationPath(context.draftId),
+    {
+      method: 'POST',
+      headers: {
+        ...headers(context.companyId),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': context.idempotencyKey,
+      },
+      body: JSON.stringify(payload),
+    },
+    signal,
+  )
+  if ('failure' in raw) {
+    if (raw.failure === 'aborted') return { type: 'aborted' }
+    if (raw.failure === 'offline') return { type: 'offline' }
+    return { type: 'network-error' }
+  }
+  if (raw.status !== STATE_COMMAND_STATUS) {
+    if (raw.status >= 200 && raw.status < 300) return { type: 'malformed' }
+    return { type: 'http', status: raw.status, problem: decodeProblem(raw.body, raw.status) }
+  }
+  const mutation = decodeDraftMutation(raw.body)
+  if (
+    mutation === null ||
+    mutation.isReplay !== raw.replayed ||
+    mutation.detail.draft.id !== context.draftId ||
+    mutation.detail.draft.companyId !== context.companyId
+  ) {
+    return { type: 'malformed' }
+  }
+  return { type: 'succeeded', data: mutation }
+}
+
+/**
+ * No 30 / SAT-D12: the force-close — the delivery schedule's keyed-attempt and strict response rules. Success is the
+ * draft after the change, of this draft and this company, with the replay header and `isReplay` agreeing.
+ */
+export async function sendDraftForceClose(
+  payload: DraftForceCloseRequest,
+  context: CommandContext,
+  signal?: AbortSignal,
+): Promise<OrderCommandOutcome<DraftMutation>> {
+  const raw = await request(
+    salesDraftForceClosePath(context.draftId),
     {
       method: 'POST',
       headers: {

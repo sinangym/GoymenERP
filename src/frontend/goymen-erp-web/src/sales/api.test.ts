@@ -126,6 +126,34 @@ const detailWithParty = (change: (body: any) => void = () => {}) => tweak(detail
   change(b)
 })
 
+describe('UI-14 — a priced create answer describes the attempt', () => {
+  const PRICED: DraftCreateRequest = {
+    ...REQUEST,
+    lines: REQUEST.lines.map((line) => ({ ...line, unitPrice: '1250.5', priceUnitId: line.orderUnitId, discountPercent: '12.5' })),
+  }
+  const answer = (change: (line: any) => void) =>
+    tweak(createResponseRaw, (b) => {
+      Object.assign(b.detail.lines[0], { unitPrice: '1250.5', priceUnitId: PRICED.lines[0].orderUnitId, discountPercent: '12.5' })
+      change(b.detail.lines[0])
+    })
+
+  it('accepts the price texts echoed verbatim, and a line the server withheld from a writer without price read', async () => {
+    respond(201, answer(() => {}))
+    expect((await createDraft(PRICED, CONTEXT)).type).toBe('succeeded')
+    respond(201, answer((line) => Object.assign(line, { unitPrice: null, priceUnitId: null, discountPercent: null, priceDisclosure: 'Withheld' })))
+    expect((await createDraft(PRICED, CONTEXT)).type).toBe('succeeded')
+  })
+
+  it.each([
+    ['a rewritten price text', (line: any) => (line.unitPrice = '1250.50')],
+    ['another discount', (line: any) => (line.discountPercent = '10')],
+    ['a visible line without the sent price', (line: any) => Object.assign(line, { unitPrice: null, priceUnitId: null, discountPercent: null })],
+  ])('%s is not this attempt: the outcome stays unknown', async (_, change) => {
+    respond(201, answer(change))
+    expect((await createDraft(PRICED, CONTEXT)).type).toBe('malformed')
+  })
+})
+
 describe('reads are bound to their company and record', () => {
   it('reads a page and refuses one carrying another company’s row', async () => {
     const calls = respond(200, listWithParty(), ACK)

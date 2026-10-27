@@ -16,7 +16,7 @@ namespace GoymenERP.Sales.UnitTests;
 public sealed partial class SalesDraftServiceTests
 {
     private static CreateSalesQuoteRequest QuoteOf(IReadOnlyList<Guid>? requests = null, string price = "12.50", string? discount = "5",
-        Guid? party = null) => new(party ?? Party, Account, Currency, Day,
+        Guid? party = null, Guid? account = null) => new(party ?? Party, account ?? Account, Currency, Day,
         [new SalesQuoteLineRequest(Guid.Parse("0000000a-0000-4000-8000-00000000000b"), Product, "7", KgUnit, "1.25", price, KgUnit, discount,
             Note: "teklif satırı")],
         requests, new DateOnly(2026, 10, 18), new DateOnly(2026, 10, 1), "Sentetik teklif");
@@ -87,6 +87,11 @@ public sealed partial class SalesDraftServiceTests
         var otherCustomer = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             world.Service().CreateQuoteAsync(QuoteOf([first], party: Guid.NewGuid()), Metadata("q-5")));
         Assert.Equal(SalesQuoteProblemCodesV1.RequestCustomerMismatch, otherCustomer.Code);
+        // No 163 "the same customer" is the same party AND the same company account (the stricter, fail-closed reading).
+        var otherAccount = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().CreateQuoteAsync(QuoteOf([first], account: Guid.NewGuid()), Metadata("q-5b")));
+        Assert.Equal((422, SalesQuoteProblemCodesV1.RequestCustomerMismatch, "requestIds[0]"),
+            (otherAccount.Status, otherAccount.Code, otherAccount.Errors[0].Field));
         Assert.Single(world.Quotes!.Envelopes);
 
         // A lost quote no longer covers its requests: they may be quoted again.
@@ -126,6 +131,40 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task Quotes_an_actor_whose_prices_are_withheld_cannot_revise_or_write_a_price_and_nothing_is_read_or_recorded()
+    {
+        var world = new World();
+        var id = (await world.Service().CreateQuoteAsync(QuoteOf(), Metadata("q-1"))).Detail.Quote.Id;
+        world.Authority.Denied.Add(PriceReadPermission);
+        var productCalls = world.Products.Calls;
+
+        // A revision replaces every line: without the price read it would erase prices the actor cannot see — 403, fail-closed,
+        // whatever the lines carry, before the quote or any owner is read and without a recorded attempt.
+        var revision = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ReviseQuoteAsync(id, RevisionOf("1"), Metadata("q-revise")));
+        Assert.Equal((403, SalesQuoteProblemCodesV1.PriceReadRequired, "lines"), (revision.Status, revision.Code, Assert.Single(revision.Errors).Field));
+        var unpricedRevision = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseQuoteAsync(id,
+            new SalesQuoteRevisionRequest("1", [new SalesQuoteLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "2.5")]), Metadata("q-revise-unpriced")));
+        Assert.Equal(403, unpricedRevision.Status);
+
+        // A create that carries a price field is refused the same way, naming each price field; a price-less create is not.
+        var priced = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateQuoteAsync(QuoteOf(), Metadata("q-2")));
+        Assert.Equal((403, SalesQuoteProblemCodesV1.PriceReadRequired), (priced.Status, priced.Code));
+        Assert.Equal(["lines[0].unitPrice", "lines[0].priceUnitId", "lines[0].discountPercent"], priced.Errors.Select(error => error.Field));
+        Assert.Equal(productCalls, world.Products.Calls);
+        Assert.Single(world.Quotes!.Envelopes);
+        var unpriced = await world.Service().CreateQuoteAsync(QuoteOf() with
+        {
+            Lines = [new SalesQuoteLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "1.25")],
+        }, Metadata("q-3"));
+        Assert.Equal(SalesPriceDisclosure.Withheld, Assert.Single(unpriced.Detail.Lines).PriceDisclosure);
+
+        // With the price read the same actor revises.
+        world.Authority.Denied.Remove(PriceReadPermission);
+        Assert.Equal("Rev.1", (await world.Service().ReviseQuoteAsync(id, RevisionOf("1"), Metadata("q-revise-visible"))).Detail.Quote.Revision);
+    }
+
+    [Fact]
     public async Task Quotes_conversion_builds_one_order_from_the_quotes_snapshot_through_the_draft_path_and_replays_it()
     {
         var world = new World();
@@ -136,7 +175,7 @@ public sealed partial class SalesDraftServiceTests
         // No 160: no order from a quote whose request is not approved; nothing is recorded, the same key may come back.
         var unapproved = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("1", orderDay), Metadata("q-convert")));
-        Assert.Equal((409, SalesRuleCodes.QuoteRequestNotApproved, "requestIds[0]"), (unapproved.Status, unapproved.Code, unapproved.Errors[0].Field));
+        Assert.Equal((409, SalesQuoteProblemCodesV1.RequestNotApproved, "requestIds"), (unapproved.Status, unapproved.Code, Assert.Single(unapproved.Errors).Field));
         Assert.Empty(world.Store.Envelopes);
 
         await world.Service().ApproveRequestAsync(request, Decision("1"), Metadata("r-1-approve"));
@@ -162,6 +201,30 @@ public sealed partial class SalesDraftServiceTests
             world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("2", orderDay), Metadata("q-convert-2")));
         Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), (second.Status, second.Code));
         Assert.Single(world.Store.Envelopes);
+    }
+
+    [Fact]
+    public async Task Quotes_an_expired_quote_is_not_converted_its_409_is_not_recorded_and_the_validity_day_still_converts()
+    {
+        // SAT-D24 interim (fail-closed): QuoteOf's validity date is 2026-10-18; until the manager-approval step exists, a later
+        // business date is refused before any owner is asked and nothing is recorded, so the same key may convert later.
+        var world = new World();
+        var id = (await world.Service().CreateQuoteAsync(QuoteOf(), Metadata("q-1"))).Detail.Quote.Id;
+        world.ResetOwnerCalls();
+        var validUntil = new DateOnly(2026, 10, 18);
+
+        var expired = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("1", validUntil.AddDays(1)), Metadata("q-convert")));
+
+        Assert.Equal((409, SalesQuoteProblemCodesV1.Expired, "validUntil"), (expired.Status, expired.Code, Assert.Single(expired.Errors).Field));
+        Assert.Equal("sales_quote_expired", SalesQuoteProblemCodesV1.Expired);
+        Assert.Equal((0, 0), (world.Accounts.Calls, world.Products.Calls));
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Equal("Open", (await world.Service().GetQuoteDetailAsync(id)).Quote.State);
+
+        var converted = await world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("1", validUntil), Metadata("q-convert"));
+        Assert.Equal((false, validUntil), (converted.IsReplay, converted.Detail.Draft.BusinessDate));
+        Assert.Equal("Converted", (await world.Service().GetQuoteDetailAsync(id)).Quote.State);
     }
 
     [Theory]
@@ -276,7 +339,7 @@ public sealed partial class SalesDraftServiceTests
             }
 
             var stored = drafts.StoreUnder(SalesQuoteCommands.ConvertV1, envelope, requestHash, build);
-            quote.Convert(expectedQuoteVersion, stored.Draft.Id, envelope.ActorId, DateTimeOffset.UtcNow);
+            quote.Convert(expectedQuoteVersion, stored.Draft.Id, envelope.ActorId, stored.Draft.Header.BusinessDate, DateTimeOffset.UtcNow);
             return stored;
         }
 

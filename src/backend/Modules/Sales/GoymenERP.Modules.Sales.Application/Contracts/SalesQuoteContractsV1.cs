@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Quotes;
 
@@ -74,6 +75,27 @@ public static class SalesQuoteProblemCodesV1
 
     /// <summary>422: a named request is rejected, or already covered by another open or converted quote (talep → teklif N:1).</summary>
     public const string RequestUnavailable = "sales_quote_request_unavailable";
+
+    /// <summary>
+    /// 409 (No 160, default-deny; field <c>requestIds</c>): a request the quote covers is not approved — at the conversion, and
+    /// at the converted order's submission or approval. Not recorded: the request may still be approved and the key retried.
+    /// </summary>
+    public const string RequestNotApproved = SalesRuleCodes.QuoteRequestNotApproved;
+
+    /// <summary>
+    /// 409 (SAT-D24 interim, fail-closed; field <c>validUntil</c>): the quote's validity date precedes the conversion's
+    /// business date. SAT-D24 converts an expired quote only with a manager approval, which is a follow-up step; until it exists
+    /// the conversion is refused. Not recorded (the No 160 pattern): the approval is meant to clear it for the same request.
+    /// </summary>
+    public const string Expired = SalesRuleCodes.QuoteExpired;
+
+    /// <summary>
+    /// 403 (service code; the wire's 403 stays code-less like every platform 403): a quote revision, or a quote create that
+    /// carries a price field, by an actor whose prices are WITHHELD (no <c>sales.orders.price.read</c>). A revision replaces
+    /// every line, so a caller who cannot see the prices would erase them; fail-closed. Writing a quote price needs no more than
+    /// <c>sales.quotes.write</c> (SAT-D26).
+    /// </summary>
+    public const string PriceReadRequired = "price_read_required";
 }
 
 public static class SalesQuoteApiV1
@@ -229,7 +251,7 @@ public interface ISalesQuoteStore
     /// <summary>
     /// No 162: the conversion's ONE save. <paramref name="build"/> receives the order's document number and returns the order
     /// built by the draft's own rules; the store re-reads the quote (tracked), checks it with <see cref="SalesQuote.Convert"/>
-    /// (expected version, still open), checks that every request it covers is approved (No 160), writes the order with its
+    /// (expected version, still open, not expired on the order's business date — SAT-D24 interim), checks that every request it covers is approved (No 160), writes the order with its
     /// source-quote reference (UX_Drafts_SourceQuoteId: one order per quote), the quote's conversion, the attempt (answering
     /// the order) and both audit events. A same-key replay answers the stored order.
     /// </summary>

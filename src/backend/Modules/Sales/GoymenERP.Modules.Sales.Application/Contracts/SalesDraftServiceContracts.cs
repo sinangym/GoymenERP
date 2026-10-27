@@ -71,6 +71,9 @@ public static class SalesDraftProblemCodesV1
     /// <summary>503: the Cari account owner cannot answer.</summary>
     public const string CounterpartyProviderUnavailable = "counterparty_provider_unavailable";
 
+    /// <summary>503 (MOD-08): the Identity user directory cannot answer, or answered a malformed value. Code-less on the wire.</summary>
+    public const string IdentityProviderUnavailable = "identity_provider_unavailable";
+
     /// <summary>503: an owner answered a malformed value (another company, another unit, an empty identity).</summary>
     public const string ReferenceProviderInvalid = "reference_provider_invalid";
 
@@ -85,6 +88,12 @@ public static class SalesDraftProblemCodesV1
     /// Sales detail then shows no loading quantity, never an assumed zero. Code-less on the wire.
     /// </summary>
     public const string LoadingProviderUnavailable = "loading_provider_unavailable";
+
+    /// <summary>
+    /// 503 (SAT-D8 / API-10): the Logistics customer-return owner is not composed or cannot answer the order's approved
+    /// returns; the Sales order then shows no returned quantity, never an assumed zero. Code-less on the wire.
+    /// </summary>
+    public const string CustomerReturnProviderUnavailable = "customer_return_provider_unavailable";
 
     /// <summary>
     /// 503 (DEC-SAL-005): an impact owner that exists on main (Inventory allocations, Logistics loading) is not composed or
@@ -104,6 +113,26 @@ public static class SalesDraftProblemCodesV1
     /// never cancelled on a preview the user did not see. Terminal for the key; the user reads the preview again.
     /// </summary>
     public const string CancellationImpactChanged = "sales_cancellation_impact_changed";
+
+    /// <summary>
+    /// 503 (No 30): an impact owner that exists on main (Inventory allocations, Logistics loading and dispatch notes) is not
+    /// composed or cannot answer at the force-close command; the order is not closed on an unread impact. Code-less on the wire.
+    /// </summary>
+    public const string ForceCloseImpactUnavailable = "force_close_impact_unavailable";
+
+    /// <summary>
+    /// 409 (No 30 / SAT-D12, contract delta): a BLOCKING source is present (an active allocation, open loading — a line whose
+    /// instructed total exceeds its shipped total); the field errors name each blocking source. An uninvoiced approved dispatch
+    /// note does not block (SAT-D12). Terminal for the key (recorded, replayed): after the owner's record is resolved in its own
+    /// screen the user reads the preview again and closes with a new key.
+    /// </summary>
+    public const string ForceCloseBlocked = "sales_force_close_blocked";
+
+    /// <summary>
+    /// 409 (No 30, contract delta): the impact now differs from the preview the command names (its token): the order is never
+    /// force-closed on a preview the user did not see. Terminal for the key; the user reads the preview again.
+    /// </summary>
+    public const string ForceCloseImpactChanged = "sales_force_close_impact_changed";
 
     /// <summary>
     /// 409 (DEC-SAL-002 quantity revision, contract delta): an owner records a link to the order's lines (an active allocation,
@@ -178,6 +207,7 @@ public sealed record SalesDraftServiceBindings(
     string? QuantityPermission = SalesPermissionManifestV1.OrdersQuantityWrite,
     string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
     string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+    string? ForceClosePermission = SalesPermissionManifestV1.OrdersForceClose,
     // API-20 / API-21: the sales request names (record, read, decide).
     string? RequestWritePermission = SalesPermissionManifestV1.RequestsWrite,
     string? RequestReadPermission = SalesPermissionManifestV1.RequestsRead,

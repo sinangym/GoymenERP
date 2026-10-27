@@ -96,11 +96,13 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             DetailRead = _ => Task.FromResult(detail),
         };
         var display = new SalesPartyDisplayV1(summary.PartyId, "CAR-000001", "Sentetik Musteri A.S.", "Sentetik Musteri");
+        var submitter = Guid.NewGuid();
         var readService = new StubDraftReadService
         {
             List = _ => Task.FromResult(new SalesOrderDraftReadListResponseV1(
                 [ReadSummary(summary, display)], null)),
-            Detail = _ => Task.FromResult(ReadDetail(detail, display)),
+            Detail = _ => Task.FromResult(ReadDetail(detail, display,
+                [new SalesUserDisplayV1(submitter, "SENTETIK Gonderen", false)])),
         };
         using var host = CreateHost(service, readService);
         using var client = CreateClient(host);
@@ -129,6 +131,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             using var legacyDocument = JsonDocument.Parse(legacyBody);
             var legacy = legacyDocument.RootElement;
             Assert.False(legacy.TryGetProperty("partyDisplay", out _));
+            Assert.False(legacy.TryGetProperty("userDisplays", out _));
             Assert.Equal(summary.PartyId, legacy.GetProperty("draft").GetProperty("partyId").GetGuid());
         }
 
@@ -164,6 +167,13 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             var read = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(display.PartyId, read.GetProperty("partyDisplay").GetProperty("partyId").GetGuid());
             Assert.Equal(display.Code, read.GetProperty("partyDisplay").GetProperty("code").GetString());
+            // MOD-08: the enriched detail names the people it identifies, as the Identity directory shows them.
+            var person = Assert.Single(read.GetProperty("userDisplays").EnumerateArray().ToArray());
+            Assert.Equal(["displayName", "isActiveInCompany", "userId"],
+                person.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+            Assert.Equal((submitter, "SENTETIK Gonderen", false),
+                (person.GetProperty("userId").GetGuid(), person.GetProperty("displayName").GetString(),
+                    person.GetProperty("isActiveInCompany").GetBoolean()));
             var publishedLine = read.GetProperty("lines")[0];
             Assert.Equal("kg", publishedLine.GetProperty("orderUnitCode").GetString());
             Assert.Equal("Withheld", publishedLine.GetProperty("priceDisclosure").GetString());
@@ -351,10 +361,11 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
     private static SalesOrderDraftReadDetailViewV1 ReadDetail(
         SalesOrderDraftDetailView detail,
-        SalesPartyDisplayV1 display) => new(
+        SalesPartyDisplayV1 display,
+        IReadOnlyList<SalesUserDisplayV1>? users = null) => new(
         detail.Draft, detail.RequestedDeliveryDate, detail.Note, detail.Lines, detail.DeliveryAddress,
         detail.Contact, detail.Responsible, detail.PaymentTerms, detail.SourceStrategy, detail.Package,
-        detail.Approval, detail.CustomerAcceptance, detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display);
+        detail.Approval, detail.CustomerAcceptance, detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display, users ?? []);
 
     private WebApplicationFactory<Program> CreateHost(
         ISalesDraftService service,
@@ -497,6 +508,31 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return LoadingProgress(draftId);
         }
 
+        /// <summary>SAT-D8 / API-10: what the stub answers the customer-returns read with.</summary>
+        public Func<Guid, Task<SalesOrderDraftCustomerReturnsResponse>> CustomerReturns { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> CustomerReturnReads { get; } = [];
+
+        public Task<SalesOrderDraftCustomerReturnsResponse> GetDraftCustomerReturnsAsync(Guid draftId,
+            CancellationToken cancellationToken = default)
+        {
+            CustomerReturnReads.Add(draftId);
+            return CustomerReturns(draftId);
+        }
+
+        /// <summary>DEC-SAL-001 / API-08: what the stub answers the status-axes read with.</summary>
+        public Func<Guid, Task<SalesOrderDraftStatusResponse>> Status { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> StatusReads { get; } = [];
+
+        public Task<SalesOrderDraftStatusResponse> GetDraftStatusAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            StatusReads.Add(draftId);
+            return Status(draftId);
+        }
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 
@@ -537,6 +573,31 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
         public Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId, CancellationToken cancellationToken = default) =>
             Cancellation(draftId);
+
+        // No 30: the force-close preview, command and read, recorded like the cancellation's.
+        public Func<Guid, Task<SalesOrderDraftForceCloseImpactResponse>> ForceCloseImpact { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, SalesDraftForceCloseRequest, Task<SalesOrderDraftResponse>> ForceClose { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, Task<SalesOrderDraftForceClosureResponse>> ForceClosure { get; set; } =
+            _ => Task.FromResult(new SalesOrderDraftForceClosureResponse(null));
+
+        public List<(Guid DraftId, SalesDraftForceCloseRequest Request, string Key)> ForceCloseCalls { get; } = [];
+
+        public Task<SalesOrderDraftForceCloseImpactResponse> GetForceCloseImpactAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            ForceCloseImpact(draftId);
+
+        public Task<SalesOrderDraftResponse> ForceCloseDraftAsync(Guid draftId, SalesDraftForceCloseRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            ForceCloseCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return ForceClose(draftId, request);
+        }
+
+        public Task<SalesOrderDraftForceClosureResponse> GetDraftForceClosureAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+            ForceClosure(draftId);
 
         public Func<Guid, SalesDraftRemainderChangeRequest, Task<SalesOrderDraftResponse>> RemainderRequest { get; set; } =
             (_, _) => throw new SalesDraftServiceException(404, "not_found");
@@ -1054,6 +1115,147 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
     }
 
     [Fact]
+    public async Task Customer_returns_are_a_private_read_of_the_service_answer_and_their_404_and_503_stay_code_less()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            CustomerReturns = id => Task.FromResult(new SalesOrderDraftCustomerReturnsResponse("5",
+                [new SalesDraftLineCustomerReturnV1(lineId, 1, unitId, "6", "1.5")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/customer-returns";
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "lines"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal("5", body.GetProperty("draftVersion").GetString());
+            var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "approvedReturned"],
+                line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal((lineId.ToString("D"), 1, unitId.ToString("D"), "6", "1.5"),
+                (line.GetProperty("lineId").GetString(), line.GetProperty("lineNo").GetInt32(),
+                    line.GetProperty("orderUnitId").GetString(), line.GetProperty("ordered").GetString(),
+                    line.GetProperty("approvedReturned").GetString()));
+        }
+
+        Assert.Equal([draftId], service.CustomerReturnReads);
+
+        service.CustomerReturns = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        foreach (var code in new[] { SalesDraftProblemCodesV1.CustomerReturnProviderUnavailable, SalesDraftProblemCodesV1.ReferenceProviderInvalid })
+        {
+            service.CustomerReturns = _ => throw new SalesDraftServiceException(503, code);
+            using var unavailable = await client.GetAsync(path);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.True(unavailable.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.DoesNotContain(code, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Status_axes_are_a_private_read_of_the_service_answer_with_every_member_and_its_404_stays_code_less()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var profileId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            Status = id => Task.FromResult(new SalesOrderDraftStatusResponse("7", "Rev.0",
+                new SalesDraftStatusAxisV1("Closed"), new SalesDraftStatusAxisV1("Approved"),
+                new SalesDraftCustomerAcceptanceAxisV1("Accepted", "Rev.0"), new SalesDraftStatusAxisV1("NoSource"),
+                new SalesDraftRealizationAxisV1("ClosedWithRemainder", false, "Rev.0",
+                    new SalesDraftDeliveryToleranceV1(profileId, 1, "1", "2", "3", new DateOnly(2026, 10, 25), null, new DateOnly(2026, 10, 26)),
+                    [new SalesDraftLineRealizationV1(lineId, 1, unitId, "100", "97", "90", "ClosedWithRemainder", "Under", "3", "Block", false, false, "3", "1.5")]),
+                new SalesDraftStatusAxisV1("NoSource"), new SalesDraftStatusAxisV1("NoSource"), false)),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/status";
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "revision", "lifecycle", "internalApproval", "customerAcceptance", "source", "realization",
+                "invoicing", "financialClosure", "readyToClose"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(JsonValueKind.False, body.GetProperty("readyToClose").ValueKind);
+            Assert.Equal(("7", "Rev.0", "Closed", "Approved"), (body.GetProperty("draftVersion").GetString(),
+                body.GetProperty("revision").GetString(), body.GetProperty("lifecycle").GetProperty("state").GetString(),
+                body.GetProperty("internalApproval").GetProperty("state").GetString()));
+            Assert.Equal(["state", "acceptedRevision"], body.GetProperty("customerAcceptance").EnumerateObject().Select(member => member.Name));
+            foreach (var axis in new[] { "source", "invoicing", "financialClosure" })
+            {
+                Assert.Equal("NoSource", Assert.Single(body.GetProperty(axis).EnumerateObject()).Value.GetString());
+            }
+
+            var realization = body.GetProperty("realization");
+            Assert.Equal(["state", "warning", "basisRevision", "tolerance", "lines"], realization.EnumerateObject().Select(member => member.Name));
+            Assert.Equal("Rev.0", realization.GetProperty("basisRevision").GetString());
+            Assert.Equal(JsonValueKind.False, realization.GetProperty("warning").ValueKind);
+            var tolerance = realization.GetProperty("tolerance");
+            Assert.Equal(["profileId", "profileVersion", "warnPercent", "approvalPercent", "blockPercent", "effectiveFrom",
+                "effectiveThrough", "evaluatedOn"], tolerance.EnumerateObject().Select(member => member.Name));
+            Assert.Equal((profileId.ToString("D"), "1", "2", "3", "2026-10-25", JsonValueKind.Null, "2026-10-26"),
+                (tolerance.GetProperty("profileId").GetString(), tolerance.GetProperty("warnPercent").GetString(),
+                    tolerance.GetProperty("approvalPercent").GetString(), tolerance.GetProperty("blockPercent").GetString(),
+                    tolerance.GetProperty("effectiveFrom").GetString(), tolerance.GetProperty("effectiveThrough").ValueKind,
+                    tolerance.GetProperty("evaluatedOn").GetString()));
+            var line = Assert.Single(realization.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "state", "direction", "deviation", "band",
+                "warning", "approvedOverDelivery", "closedRemainder", "approvedReturned"], line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal((JsonValueKind.False, JsonValueKind.False, "1.5"), (line.GetProperty("warning").ValueKind,
+                line.GetProperty("approvedOverDelivery").ValueKind, line.GetProperty("approvedReturned").GetString()));
+            Assert.Equal((lineId.ToString("D"), "97", "ClosedWithRemainder", "Under", "3", "Block", "3"),
+                (line.GetProperty("lineId").GetString(), line.GetProperty("shipped").GetString(), line.GetProperty("state").GetString(),
+                    line.GetProperty("direction").GetString(), line.GetProperty("deviation").GetString(), line.GetProperty("band").GetString(),
+                    line.GetProperty("closedRemainder").GetString()));
+        }
+
+        Assert.Equal([draftId], service.StatusReads);
+
+        service.Status = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        // A 503 of this read is the service's own (the Sales store, an unregistered permission name); an owner failure is an
+        // axis state, never a 503.
+        service.Status = _ => throw new SalesDraftServiceException(503, "service_unavailable");
+        using (var unavailable = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.True(unavailable.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+
+        service.Status = _ => throw new SalesDraftServiceException(403, "forbidden");
+        using (var forbidden = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+            Assert.True(forbidden.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+    }
+
+    [Fact]
     public async Task Commercial_revision_refuses_invalid_envelopes_before_the_service_and_replays_a_terminal_conflict()
     {
         var draftId = Guid.NewGuid();
@@ -1233,6 +1435,164 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             var cancellation = body.GetProperty("cancellation");
             Assert.Equal(["revision", "cancelledBy", "cancelledAtUtc", "reason", "impactToken", "sources"], cancellation.EnumerateObject().Select(member => member.Name));
             Assert.Equal("SENTETIK neden", cancellation.GetProperty("reason").GetString());
+        }
+    }
+
+    /// <summary>
+    /// No 30 / SAT-D12: the three force-close routes' wire — the preview (each source with its status AND whether it blocks,
+    /// every line with the closed remainder a closure would record) and the record are private reads whose 404/503 stay
+    /// code-less; the command needs one canonical key and the strict body {expectedVersion, reason, impactToken} before the
+    /// service is reached, answers 200 with the detail after the change, and carries the replay headers on a replayed result
+    /// and on a replayed terminal refusal.
+    /// </summary>
+    [Fact]
+    public async Task Force_close_preview_command_and_record_use_the_strict_owner_contract_and_replay_headers()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var token = new string('e', 64);
+        var service = new StubDraftService
+        {
+            ForceCloseImpact = id => Task.FromResult(new SalesOrderDraftForceCloseImpactResponse("4", "Rev.0", true, token,
+                [new(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.None, false),
+                 new(SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.Present, false)],
+                [new(lineId, 1, unitId, "6", 0, "0", 1, "4", "4", "4", "4", "2")])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var impactPath = $"{SalesEndpoints.DraftsPath}/{draftId:D}/force-close-impact";
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/force-close";
+
+        using (var preview = await client.GetAsync(impactPath))
+        {
+            Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+            Assert.True(preview.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await preview.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "revision", "closable", "impactToken", "sources", "lines"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(["source", "status", "blocks"], body.GetProperty("sources")[0].EnumerateObject().Select(member => member.Name));
+            Assert.Equal(JsonValueKind.False, body.GetProperty("sources")[1].GetProperty("blocks").ValueKind);
+            var line = Assert.Single(body.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "activeAllocations", "allocatedKg", "loadingInstructionLines",
+                "instructed", "loaded", "shipped", "delivered", "closedRemainder"], line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(("4", "2"), (line.GetProperty("shipped").GetString(), line.GetProperty("closedRemainder").GetString()));
+        }
+
+        foreach (var status in new[] { 404, 503 })
+        {
+            service.ForceCloseImpact = _ => throw new SalesDraftServiceException(status, status == 404 ? "not_found" : SalesDraftProblemCodesV1.ForceCloseImpactUnavailable);
+            using var refused = await client.GetAsync(impactPath);
+            Assert.Equal(status, (int)refused.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.ForceCloseImpactUnavailable, await refused.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent($"{{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\"{token}\"}}", Encoding.UTF8, "application/json"),
+               })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        using (var notJson = new HttpRequestMessage(HttpMethod.Post, path)
+               {
+                   Content = new StringContent("expectedVersion=4", Encoding.UTF8, "text/plain"),
+               })
+        {
+            notJson.Headers.Add("Idempotency-Key", "SENTETIK-not-json");
+            using var response = await client.SendAsync(notJson);
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     $"{{\"expectedVersion\":4,\"reason\":\"x\",\"impactToken\":\"{token}\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"impactToken\":\"{token}\"}}",
+                     "{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\" \"}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"x\",\"impactToken\":\"{token}\",\"lines\":[]}}",
+                     $"{{\"expectedVersion\":\"04\",\"reason\":\"x\",\"impactToken\":\"{token}\"}}",
+                     $"{{\"expectedVersion\":\"4\",\"reason\":\"{new string('x', 4001)}\",\"impactToken\":\"{token}\"}}",
+                 })
+        {
+            using var invalid = StateCommand(draftId, "force-close", "SENTETIK-invalid", json);
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("validation_failed", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Empty(service.ForceCloseCalls);
+
+        var valid = JsonSerializer.Serialize(new SalesDraftForceCloseRequest("4", "SENTETIK neden", token), SalesDraftJson.Options);
+        service.ForceClose = (id, request) => Task.FromResult(new SalesOrderDraftResponse(Detail(id, "Approved"), request.Reason == "replayed", "SENTETIK-close-first"));
+        using (var closed = await client.SendAsync(StateCommand(draftId, "force-close", "SENTETIK-close", valid)))
+        {
+            Assert.Equal(HttpStatusCode.OK, closed.StatusCode);
+            Assert.False(closed.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal((draftId, "4", "SENTETIK neden", token, "SENTETIK-close"),
+            (service.ForceCloseCalls[0].DraftId, service.ForceCloseCalls[0].Request.ExpectedVersion, service.ForceCloseCalls[0].Request.Reason,
+                service.ForceCloseCalls[0].Request.ImpactToken, service.ForceCloseCalls[0].Key));
+        Assert.Empty(service.CancelCalls);
+
+        using (var replayed = await client.SendAsync(StateCommand(draftId, "force-close", "SENTETIK-close-2",
+                   JsonSerializer.Serialize(new SalesDraftForceCloseRequest("4", "replayed", token), SalesDraftJson.Options))))
+        {
+            Assert.Equal(HttpStatusCode.OK, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-close-first", Assert.Single(replayed.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        service.ForceClose = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.ForceCloseBlocked,
+            [new(SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, SalesCancellationImpactStatusesV1.Present)], true, "SENTETIK-blocked-first");
+        using (var blocked = await client.SendAsync(StateCommand(draftId, "force-close", "SENTETIK-blocked", valid)))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
+            Assert.Equal("true", Assert.Single(blocked.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-blocked-first", Assert.Single(blocked.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            var problem = await blocked.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(SalesDraftProblemCodesV1.ForceCloseBlocked, problem.GetProperty("code").GetString());
+            Assert.Equal(SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        service.ForceClose = (_, _) => throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ForceCloseImpactUnavailable);
+        using (var unavailable = await client.SendAsync(StateCommand(draftId, "force-close", "SENTETIK-503", valid)))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain(SalesDraftProblemCodesV1.ForceCloseImpactUnavailable, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        using (var none = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, none.StatusCode);
+            Assert.Equal(JsonValueKind.Null, (await none.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("forceClosure").ValueKind);
+        }
+
+        service.ForceClosure = id => Task.FromResult(new SalesOrderDraftForceClosureResponse(new SalesDraftForceClosureV1("Rev.0", "SENTETIK-closer",
+            new DateTimeOffset(2026, 10, 25, 12, 0, 0, TimeSpan.Zero), "SENTETIK neden", token,
+            [new(SalesCancellationImpactSourcesV1.UninvoicedDispatchNotes, SalesCancellationImpactStatusesV1.Present, false)],
+            [new(lineId, 1, "6", "4", "2")])));
+        using (var record = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, record.StatusCode);
+            Assert.True(record.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await record.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["forceClosure"], body.EnumerateObject().Select(member => member.Name));
+            var closure = body.GetProperty("forceClosure");
+            Assert.Equal(["revision", "closedBy", "closedAtUtc", "reason", "impactToken", "sources", "lines"], closure.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(["source", "status", "blocks"], closure.GetProperty("sources")[0].EnumerateObject().Select(member => member.Name));
+            var line = Assert.Single(closure.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "ordered", "shipped", "closedRemainder"], line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal("2", line.GetProperty("closedRemainder").GetString());
+        }
+
+        service.ForceClosure = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         }
     }
 

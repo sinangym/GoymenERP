@@ -75,11 +75,18 @@ function comparison(source = receipt()) {
 function mount(overrides: Partial<ComponentProps<typeof GoodsReceiptPanel>> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const onRecorded = vi.fn()
-  let props = { enabled: true, binding: ACTOR_A, detail, onRecorded, ...overrides }
+  // A test that names only `binding` changes the actor/session/company, so the attempt identity follows it; a test
+  // about a capability refresh names both (BLG-01).
+  const identity = (next: Partial<ComponentProps<typeof GoodsReceiptPanel>>, current?: string) =>
+    next.attemptBinding ?? next.binding ?? current ?? ACTOR_A
+  let props = { enabled: true, binding: ACTOR_A, detail, onRecorded, ...overrides, attemptBinding: identity(overrides) }
   const tree = () => <QueryClientProvider client={client}><GoodsReceiptPanel {...props} /></QueryClientProvider>
   const view = render(tree())
   return { ...view, client, onRecorded,
-    change(next: Partial<ComponentProps<typeof GoodsReceiptPanel>>) { props = { ...props, ...next }; view.rerender(tree()) },
+    change(next: Partial<ComponentProps<typeof GoodsReceiptPanel>>) {
+      props = { ...props, ...next, attemptBinding: identity(next, props.attemptBinding) }
+      view.rerender(tree())
+    },
   }
 }
 async function fill() {
@@ -200,6 +207,25 @@ describe('Goods receipt scope and late-result protection, synthetic NOT_ENV', ()
     expect((screen.getByLabelText(T.label) as HTMLInputElement).value).toBe('')
     other.unmount()
     mount()
+    await screen.findByText(T.unknown)
+    expect((screen.getByLabelText(T.label) as HTMLInputElement).value).toBe('PRIVATE-LABEL')
+    expect(screen.getByRole('button', { name: T.retry })).toBeTruthy()
+    expect(posts).toHaveLength(1)
+  })
+
+  it('keeps an unknown attempt across a capability refresh of the same actor/session/company (BLG-01)', async () => {
+    const posts: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method !== 'POST') return reads(url)
+      posts.push(init.body as string)
+      return json({}, 503)
+    }))
+    const first = mount({ binding: `${ACTOR_A}:gen-1`, attemptBinding: ACTOR_A })
+    await fill()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    await screen.findByText(T.unknown)
+    first.unmount()
+    mount({ binding: `${ACTOR_A}:gen-2`, attemptBinding: ACTOR_A })
     await screen.findByText(T.unknown)
     expect((screen.getByLabelText(T.label) as HTMLInputElement).value).toBe('PRIVATE-LABEL')
     expect(screen.getByRole('button', { name: T.retry })).toBeTruthy()

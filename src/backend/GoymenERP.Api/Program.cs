@@ -190,6 +190,10 @@ builder.Services.AddScoped<IFinanceDraftContextEndpointService, FinanceDraftCont
 builder.Services.AddSingleton<IFinanceDraftReadBinding, ManualReceiptDraftReadBinding>();
 builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrerequisiteProvider>();
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
+// SAT-D18: operation-aware currency candidates, so a Sales-only profile (GSP/GIN TRY) is listed for Sales only.
+builder.Services.AddScoped<ISettingsMoneyCandidateReaderV2, ApprovedSettingsPrerequisiteProvider>();
+// MOD-03 slice 1: the Settings-owned Sales policy registry (SAT-D2/D5/D6); no consumer is composed yet.
+builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
@@ -223,7 +227,8 @@ static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvid
     // SALES-A2a: both optional, and both answer 503 while absent — the currencies list is Settings'
     // approved candidates, the delivery address and contact the Cari owner's contact information.
     services.GetService<ISettingsMoneyCandidateReader>(),
-    services.GetService<ISalesPartyContactInformationPortV1>());
+    services.GetService<ISalesPartyContactInformationPortV1>(),
+    services.GetService<ISettingsMoneyCandidateReaderV2>());
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
     builder.Configuration,
@@ -299,6 +304,9 @@ builder.Services.AddSalesModule(
 // A Sales draft read may disclose only the code/name of the Cari record already linked to that
 // authorized Sales result. The adapter grants no generic Cari read and has no public lookup route.
 builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
+// MOD-08: the same read may name the people its approval and acceptance already identify by id, through Identity's
+// company-fenced user directory. The adapter has no route and passes only ids from the authorized record.
+builder.Services.AddScoped<ISalesUserDisplaySourceV1, SalesUserDisplayHost>();
 builder.Services.AddScoped<ISalesDraftReadServiceV1, SalesDraftReadServiceV1>();
 // STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
 // hands the derived command to Inventory's writer after fresh company-wide authority fences.

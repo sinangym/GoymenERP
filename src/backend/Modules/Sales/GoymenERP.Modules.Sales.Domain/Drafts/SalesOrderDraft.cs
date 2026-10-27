@@ -10,9 +10,10 @@ public enum SalesDraftKind
 
 /// <summary>
 /// The LIFECYCLE axis of an order (DEC-SAL-001: a separate axis from the internal approval; DURUM_MAKINELERI "Yaşam
-/// döngüsü: Taslak / Aktif / Kapalı / İptal"). Only the two states this code can reach exist: <see cref="Draft"/> (every
-/// order, approved or not — "Aktif"/"Kapalı" are not derived here) and <see cref="Cancelled"/> (DEC-SAL-005: an approved
-/// order cancelled after its impact preview; terminal, nothing deleted).
+/// döngüsü: Taslak / Aktif / Kapalı / İptal"). Only the states this code can reach exist: <see cref="Draft"/> (every
+/// order, approved or not — "Aktif" is not derived here), <see cref="Cancelled"/> (DEC-SAL-005: an approved order cancelled
+/// after its impact preview; terminal, nothing deleted) and <see cref="Closed"/> (No 30 / SAT-D12: an approved order
+/// force-closed after its impact preview; terminal, nothing deleted).
 /// </summary>
 public enum SalesDraftState
 {
@@ -23,6 +24,15 @@ public enum SalesDraftState
     /// The approval axis keeps its facts (who approved stays who approved); the lines, revisions and schedules stay.
     /// </summary>
     Cancelled = 2,
+
+    /// <summary>
+    /// SINAN_KARARLARI_2026-10-21 No 30 ("Zorla kapatma") as narrowed by SAT-D12 (2026-10-25): the approved order was
+    /// force-closed with a reason after its impact preview; the not-shipped remainder of every line is recorded as the
+    /// closed ("iptal edilen") remainder — a separate axis from the line quantities, which do not move (DEC-SAL-001).
+    /// Terminal like <see cref="Cancelled"/>: every mutation entry refuses it; the approval facts, lines, revisions and
+    /// schedules stay. No stock or money event exists.
+    /// </summary>
+    Closed = 3,
 }
 
 /// <summary>
@@ -174,7 +184,7 @@ public sealed partial class SalesOrderDraft
 
     public SalesDraftKind Kind => SalesDraftKind.Order;
 
-    /// <summary>The lifecycle axis: <see cref="SalesDraftState.Draft"/> until a recorded cancellation (DEC-SAL-005).</summary>
+    /// <summary>The lifecycle axis: <see cref="SalesDraftState.Draft"/> until a recorded cancellation (DEC-SAL-005) or force-closure (No 30).</summary>
     public SalesDraftState State { get; private set; } = SalesDraftState.Draft;
 
     /// <summary>DEC-SAL-005: the recorded cancellation (who, when, why, which revision); null while the order is not cancelled.</summary>
@@ -353,25 +363,40 @@ public sealed partial class SalesOrderDraft
     /// </summary>
     private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product, Guid lineId)
     {
+        RequireLineCommercialFields(commercial, product, Money.Scale);
+        RequirePricingDetail(commercial, lineId);
+    }
+
+    /// <summary>
+    /// The K3 line commercial rule in ONE place, shared by the order line and (API-22) the quote line whose prices become the
+    /// order's (No 162): the price/price-unit pairing, the price's decimals within the money profile's scale (never rounded),
+    /// the price unit as one of the product owner's three bindings, and a discount that needs a price and is 0..100. A quote
+    /// passes its client line id so the refusal names the line; the order keeps its draft-level refusal (null).
+    /// </summary>
+    public static void RequireLineCommercialFields(CommercialDraftFields commercial, ProductSnapshot product, int moneyScale,
+        Guid? lineId = null)
+    {
+        ArgumentNullException.ThrowIfNull(commercial);
+        ArgumentNullException.ThrowIfNull(product);
         if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
         {
             throw new SalesRuleException(SalesRuleCodes.PriceUnitPairing,
-                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.");
+                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.", lineId);
         }
 
         if (commercial.UnitPrice is { } price)
         {
-            if (DecimalPlaces(price) > Money.Scale)
+            if (DecimalPlaces(price) > moneyScale)
             {
                 throw new SalesRuleException(SalesRuleCodes.PriceScaleExceeded,
-                    $"Birim fiyat en fazla {Money.Scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.");
+                    $"Birim fiyat en fazla {moneyScale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.", lineId);
             }
 
             var priceUnit = commercial.PriceUnitId!.Value;
             if (priceUnit != product.StockUnit.UnitId && priceUnit != product.SalesUnit.UnitId && priceUnit != product.OrderUnit.UnitId)
             {
                 throw new SalesRuleException(SalesRuleCodes.PriceUnitUnsupported,
-                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır; Sales birim uydurmaz.");
+                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır; Sales birim uydurmaz.", lineId);
             }
         }
 
@@ -380,17 +405,15 @@ public sealed partial class SalesOrderDraft
             if (commercial.UnitPrice is null)
             {
                 throw new SalesRuleException(SalesRuleCodes.DiscountWithoutPrice,
-                    "İskonto uygulanacak bir birim fiyat olmadan verilemez.");
+                    "İskonto uygulanacak bir birim fiyat olmadan verilemez.", lineId);
             }
 
             if (!IsPercent(discount))
             {
                 throw new SalesRuleException(SalesRuleCodes.DiscountOutOfRange,
-                    "İskonto yüzdesi 0 ile 100 arasında olmalıdır.");
+                    "İskonto yüzdesi 0 ile 100 arasında olmalıdır.", lineId);
             }
         }
-
-        RequirePricingDetail(commercial, lineId);
     }
 
     /// <summary>
@@ -419,7 +442,7 @@ public sealed partial class SalesOrderDraft
             return;
         }
 
-        if (commercial.UnitPrice is not { } price)
+        if (commercial.UnitPrice is null)
         {
             throw new SalesRuleException(SalesRuleCodes.AdjustmentWithoutPrice,
                 "Referans fiyat, iskonto tutarı ve vade farkı bir birim fiyat olmadan verilemez.");
@@ -446,8 +469,10 @@ public sealed partial class SalesOrderDraft
             throw new SalesRuleException(SalesRuleCodes.SurchargeOutOfRange, "Vade farkı yüzdesi 0 ile 100 arasında olmalıdır.");
         }
 
-        if (commercial.DiscountAmount is { } discountAmount
-            && SalesLinePriceCalculator.Parse(discountAmount) > SalesLinePriceCalculator.Parse(price))
+        // TEK-03: the amounts are compared as money in the draft's currency at the profile's scale (the texts were
+        // checked above, so this never refuses on its own).
+        var amounts = SalesLineMoney.From(commercial, Header.CurrencyId, Money.Scale);
+        if (amounts.DiscountAmount is { } discountAmount && discountAmount.IsGreaterThan(amounts.UnitPrice!.Value))
         {
             throw new SalesRuleException(SalesRuleCodes.DiscountExceedsPrice, "İskonto tutarı birim fiyatı aşamaz.");
         }
@@ -764,7 +789,7 @@ public sealed partial class SalesOrderDraft
     {
         ArgumentNullException.ThrowIfNull(facts);
         RequireApprovalNotRestored();
-        if (State != SalesDraftState.Draft || Cancellation is not null || facts.Revision != Revision
+        if (State != SalesDraftState.Draft || Cancellation is not null || ForceClosure is not null || facts.Revision != Revision
             || string.IsNullOrWhiteSpace(facts.CancelledBy) || facts.CancelledBy.Length > MaximumActorLength
             || string.IsNullOrWhiteSpace(facts.Reason) || facts.Reason.Length > MaximumCancellationReasonLength
             || !IsImpact(facts.Impact))
@@ -791,11 +816,22 @@ public sealed partial class SalesOrderDraft
         && impact.Sources.All(entry => entry is not null && !string.IsNullOrWhiteSpace(entry.Source) && !string.IsNullOrWhiteSpace(entry.Status))
         && impact.Sources.Select(entry => entry.Source).Distinct(StringComparer.Ordinal).Count() == impact.Sources.Count;
 
+    /// <summary>
+    /// The terminal lifecycle guard of every mutation entry: a cancelled (DEC-SAL-005) or force-closed (No 30 / SAT-D12)
+    /// order is a <see cref="SalesRuleCodes.StateConflict"/>. <paramref name="message"/> names the cancelled case; the
+    /// closed case has its own text.
+    /// </summary>
     private void RequireNotCancelled(string message)
     {
         if (State == SalesDraftState.Cancelled)
         {
             throw new SalesRuleException(SalesRuleCodes.StateConflict, $"{message} (yaşam döngüsü: {State}).");
+        }
+
+        if (State == SalesDraftState.Closed)
+        {
+            throw new SalesRuleException(SalesRuleCodes.StateConflict,
+                $"Zorla kapatılmış sipariş değiştirilmez (yaşam döngüsü: {State}).");
         }
     }
 
@@ -1473,12 +1509,20 @@ public sealed partial class SalesOrderDraft
         }
 
         var cancellationTransitions = State == SalesDraftState.Cancelled ? 1L : 0L;
+        // No 30 / SAT-D12: a recorded force-closure was one step of its own, and only an APPROVED order without a pending
+        // remainder change is ever force-closed - a stored closure beside anything else is refused, not repaired.
+        if (State == SalesDraftState.Closed && (state != InternalApprovalState.Approved || PendingRemainderChange is not null))
+        {
+            throw new InvalidOperationException("Kayıtlı zorla kapatma yalnız karar bekleyen kalan değişikliği olmayan onaylı bir siparişin yanında durur.");
+        }
+
+        var forceClosureTransitions = State == SalesDraftState.Closed ? 1L : 0L;
         // Partial delivery (user decision 2026-09-30): every recorded remainder request was one step of its own, and so was
         // every decision on one (restored just before this).
         var remainderTransitions = RemainderTransitions;
         var customerAcceptanceTransitions = CustomerAcceptance is null ? 0L : 1L;
         var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
-            + cancellationTransitions + remainderTransitions + customerAcceptanceTransitions);
+            + cancellationTransitions + forceClosureTransitions + remainderTransitions + customerAcceptanceTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

@@ -111,6 +111,31 @@ internal sealed class QuoteLineRow : ISalesTenantRow
 }
 
 /// <summary>
+/// ADR-SAL-001 §2 (API-22 / API-24): the quote commands' attempt record (create / revise / lose) — the draft attempt's shape
+/// in the quote's own table: (company, command name, uppercase SHA-256 of the trimmed key) is the identity, the raw key is
+/// never stored, the request hash is its content and the actor is stored to be compared. Append-only: the EF write guard and
+/// the SQL trigger refuse every UPDATE and DELETE. The conversion's attempt is the ORDER's (<see cref="DraftAttemptRow"/>).
+/// </summary>
+internal sealed class QuoteAttemptRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string RequestHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+
+    /// <summary>1 = a stored quote (<see cref="QuoteId"/> set); 2 = a recorded terminal refusal (<see cref="RefusalJson"/> set) — ADR-011 §7.</summary>
+    public int Outcome { get; set; }
+    public Guid? QuoteId { get; set; }
+    public string? RefusalJson { get; set; }
+
+    /// <summary>ADR-SAL-001 §2: kept for the shape; no quote command stores a response snapshot (CK_QuoteAttempts_Result).</summary>
+    public string? ResultJson { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
+/// <summary>
 /// No 163: one request a quote covers. <see cref="IsActive"/> is true while the quote is open or converted (a request is
 /// covered by at most ONE such quote: filtered unique index) and false once the quote is lost — the only change admitted.
 /// </summary>

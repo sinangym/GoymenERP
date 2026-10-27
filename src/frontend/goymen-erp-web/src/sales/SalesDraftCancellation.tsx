@@ -22,6 +22,7 @@ import { fetchCancellationImpact, fetchDraftCancellation, sendDraftCancel } from
 import {
   APPROVAL_STATE,
   CANCELLED_STATE,
+  DRAFT_STATE,
   SALES_PROBLEM_CODE,
   type CancellationImpact,
   type CancellationImpactSource,
@@ -49,6 +50,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
 
 type CancelAttempt = OrderAttemptState<DraftCancelRequest, DraftMutation>
 
@@ -67,7 +69,8 @@ export function SalesDraftCancellation({
   readonly onRecorded: () => void
 }) {
   if (detail.draft.state === CANCELLED_STATE) return <CancellationRecordView shell={shell} detail={detail} companyId={companyId} />
-  if (!hasCapability(shell, SALES_CANCEL_CAPABILITY) || detail.draft.approvalState !== APPROVAL_STATE.approved) return null
+  // A closed order (No 30) is terminal like a cancelled one: no cancellation is offered.
+  if (detail.draft.state !== DRAFT_STATE || !hasCapability(shell, SALES_CANCEL_CAPABILITY) || detail.draft.approvalState !== APPROVAL_STATE.approved) return null
   return <CancellationPreview shell={shell} detail={detail} companyId={companyId} onRecorded={onRecorded} />
 }
 
@@ -179,20 +182,20 @@ function CancellationPreview({
       )}
       {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
         <div className={styles.actions}>
-          <button type="button" className={styles.secondaryButton} onClick={retry}>{T.retry}</button>
-          <button type="button" className={styles.linkButton} onClick={leave}>{T.abandon}</button>
+          <Button type="button" variant="secondary" onClick={retry}>{T.retry}</Button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={leave}>{T.abandon}</Button>
         </div>
       ) : null}
       {!open ? (
-        <button type="button" className={styles.secondaryButton} onClick={() => setOpen(true)} data-testid="sales-cancellation-open">
+        <Button type="button" variant="secondary" onClick={() => setOpen(true)} data-testid="sales-cancellation-open">
           {T.showImpact}
-        </button>
+        </Button>
       ) : outcome?.type === 'ok-single' ? (
         <div data-testid="sales-cancellation-impact">
           <ImpactView impact={outcome.data} />
-          <button type="button" className={styles.linkButton} disabled={frozen} onClick={() => void query.refetch()}>
+          <Button type="button" variant="ghost" className={styles.linkButton} disabled={frozen} onClick={() => void query.refetch()}>
             {T.refresh}
-          </button>
+          </Button>
           {outcome.data.cancellable ? (
             <div className={styles.actions}>
               {localError === null ? null : <p role="alert" className={styles.notice}>{localError}</p>}
@@ -204,10 +207,10 @@ function CancellationPreview({
                 disabled={frozen}
                 onChange={(event) => setReason(event.target.value)}
               />
-              <button type="button" className={styles.primaryButton} disabled={frozen} onClick={() => start(outcome.data)}
+              <Button type="button" variant="primary" disabled={frozen} onClick={() => start(outcome.data)}
                 data-testid="sales-cancellation-submit">
                 {T.submit}
-              </button>
+              </Button>
             </div>
           ) : (
             <p className={styles.notice} role="status" data-testid="sales-cancellation-blocked">{T.blocked}</p>

@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Requests;
 
 namespace GoymenERP.Modules.Sales.Application.Contracts;
@@ -60,7 +61,17 @@ public static class SalesRequestApiV1
     public const int CommandStatus = 200;
 }
 
-/// <summary>The versioned command names of the request attempts (ADR-011 §2), recorded in the Sales attempt table.</summary>
+/// <summary>The versioned problem codes of the sales request routes beyond the shared draft codes.</summary>
+public static class SalesRequestProblemCodesV1
+{
+    /// <summary>
+    /// 409 (No 161, fail-closed; recorded under the key): the rejection is refused while any order converted from a quote
+    /// covering the request is not cancelled. The value keeps its first wire name.
+    /// </summary>
+    public const string HasOrder = SalesRuleCodes.RequestHasApprovedOrder;
+}
+
+/// <summary>The versioned command names of the request attempts (ADR-011 §2), recorded in <c>sales.RequestAttempts</c> (ADR-SAL-001 §2).</summary>
 public static class SalesRequestCommands
 {
     public const string CreateV1 = "sales.request.create.v1";

@@ -152,11 +152,11 @@ public static partial class SalesEndpoints
         MapRequestDecision(requests, "approval", "ApproveSalesRequestV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveRequestAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [], extraConflictCodes: []);
-        // No 161: a request whose quote became an approved order is refused (409 sales_request_has_approved_order).
+        // No 161 (fail-closed): a request with any order that is not cancelled is refused (409 sales_request_has_approved_order).
         MapRequestDecision(requests, "rejection", "RejectSalesRequestV1", allowReason: true,
             (service, id, body, metadata, cancellationToken) => service.RejectRequestAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: ["sales_request_rejection_reason_required", "sales_request_rejection_reason_too_long"],
-            extraConflictCodes: ["sales_request_has_approved_order"]);
+            extraConflictCodes: [SalesRequestProblemCodesV1.HasOrder]);
     }
 
     private static void MapRequestDecision(RouteGroupBuilder requests, string segment, string name, bool allowReason,

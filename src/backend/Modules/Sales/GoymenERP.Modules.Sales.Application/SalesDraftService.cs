@@ -55,8 +55,10 @@ public sealed partial class SalesDraftService(
     ISalesOrderAllocationReadPortV1? allocations = null,
     ISalesOrderLoadingReadPortV1? loadings = null,
     IProductQuantityPriceReferenceReaderV1? priceReferences = null,
+    ISalesOrderCustomerReturnReadPortV1? customerReturns = null,
     ISalesRequestStore? requests = null,
-    ISalesQuoteStore? quotes = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
+    ISalesQuoteStore? quotes = null,
+    ISettingsSalesPolicyProviderV1? salesPolicies = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -903,6 +905,13 @@ public sealed partial class SalesDraftService(
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
         {
             throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, [new("reason", exception.Code)]);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteRequestNotApproved)
+        {
+            // No 160 (belt and braces): the order's source quote covers a request that is no longer approved. Not recorded,
+            // like the conversion's own refusal: the condition can change and the same key be retried.
+            throw new SalesDraftServiceException(409, SalesQuoteProblemCodesV1.RequestNotApproved,
+                [new("requestIds", SalesQuoteProblemCodesV1.RequestNotApproved)]);
         }
         catch (SalesRuleException exception)
         {

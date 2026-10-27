@@ -25,6 +25,11 @@
  * date, and the chosen account's delivery addresses / contact persons (the Cari owner's
  * contact information) — while the lines and the submit stay withheld until the product
  * list (E1); the withheld notice says so honestly.
+ *
+ * UI-14 (on TEK-03): each line takes a unit price, its price unit and a discount percent ONLY when the shell publishes the
+ * price-write control (`sales.orders.price.write`) to this actor; otherwise the fields are not rendered and nothing of a
+ * price is sent. The server measures the permission again on the send (403 `price_write_forbidden`), checks the scale
+ * against the currency's money profile and computes every amount; this screen shows no total or net (API-03 / UI-15).
  */
 
 import { useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
@@ -77,9 +82,9 @@ import {
   type ProductReadState,
   type ReferenceReadState,
 } from './referenceSource'
-import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
+import { SALES_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
 import { contactLabel, formatBusinessDate } from './format'
-import { ORDER_DRAFT_TEXT as T, problemCodeText } from './salesText'
+import { ORDER_DRAFT_TEXT as T, createFieldErrorText } from './salesText'
 import type { DraftCreateRequest, DraftMutation } from './contract'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
@@ -119,7 +124,7 @@ export function SalesDraftCreatePage() {
     return (
       <section className={styles.page}>
         <h1 className={styles.title}>{T.heading}</h1>
-        <p role="status">Taslak yalnız tek bir şirket seçiliyken oluşturulabilir.</p>
+        <p role="status">{T.singleCompanyOnly}</p>
       </section>
     )
   }
@@ -133,10 +138,26 @@ export function SalesDraftCreatePage() {
   )
 }
 
-/** A form remembered by an earlier build may predate the SALES-A2a members: nothing chosen, never undefined. */
+/**
+ * A form remembered by an earlier build may predate the SALES-A2a members or the UI-14 price members: nothing chosen,
+ * nothing typed, never undefined.
+ */
 function withDeliveryMembers(values: OrderDraftFormValues): OrderDraftFormValues {
   const remembered: Partial<Pick<OrderDraftFormValues, 'deliveryAddressId' | 'contactId'>> = values
-  return { ...values, deliveryAddressId: remembered.deliveryAddressId ?? '', contactId: remembered.contactId ?? '' }
+  return {
+    ...values,
+    deliveryAddressId: remembered.deliveryAddressId ?? '',
+    contactId: remembered.contactId ?? '',
+    lines: values.lines.map((line) => {
+      const price: Partial<Pick<LineValues, 'unitPriceText' | 'priceUnitId' | 'discountPercentText'>> = line
+      return {
+        ...line,
+        unitPriceText: price.unitPriceText ?? '',
+        priceUnitId: price.priceUnitId ?? '',
+        discountPercentText: price.discountPercentText ?? '',
+      }
+    }),
+  }
 }
 
 function CreateForm({ binding, companyId }: { readonly binding: string; readonly companyId: string }) {
@@ -145,6 +166,8 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const boundary = useAuthBoundary()
   const directory = useCompanyDirectory()
   const company = directory.find((entry) => entry.id === companyId)
+  // UI-14: the shell's price-write control, re-read on every render (a capability refresh hides the fields at once).
+  const priceWrite = hasCapability(shell, SALES_PRICE_WRITE_CAPABILITY)
 
   const [recalled] = useState(() => recallDraftAttempt(binding))
   const [values, setValues] = useState<OrderDraftFormValues>(() =>
@@ -240,7 +263,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
     setChosenProducts([])
     setValues((current) => ({
       ...current,
-      lines: current.lines.map((line) => ({ ...line, productId: '', orderUnitId: '' })),
+      lines: current.lines.map((line) => ({ ...line, productId: '', orderUnitId: '', priceUnitId: '' })),
     }))
   }, [values.businessDate])
 
@@ -260,7 +283,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
     setValues((current) => ({
       ...current,
       lines: current.lines.map((line) =>
-        staleIds.has(line.productId) ? { ...line, productId: '', orderUnitId: '' } : line,
+        staleIds.has(line.productId) ? { ...line, productId: '', orderUnitId: '', priceUnitId: '' } : line,
       ),
     }))
     setErrors((current) => ({
@@ -346,7 +369,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
           // A stale delivery address / contact is the Cari owner's version moving, not the product's.
           const referenceMoved =
             (field === ORDER_FIELD.deliveryAddress || field === ORDER_FIELD.contact) && error.code === SALES_PROBLEM_CODE.versionConflict
-          const message = referenceMoved ? T.references.versionConflict : (problemCodeText(error.code) ?? T.attempt.unexpected)
+          const message = referenceMoved ? T.references.versionConflict : (createFieldErrorText(error.code) ?? T.attempt.unexpected)
           if (field === null) unplaced.push(message)
           else fieldErrors[field] = message
         }
@@ -362,7 +385,12 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
     event.preventDefault()
     if (options === null) return
     // The same list the select renders from, the chosen account merged in: screen and payload never disagree.
-    const validation = validateOrderDraft(values, accounts === null ? options : { ...options, accounts }, deliveryOptions)
+    const validation = validateOrderDraft(
+      values,
+      accounts === null ? options : { ...options, accounts },
+      deliveryOptions,
+      priceWrite,
+    )
     if (!validation.ok) {
       // Nothing was sent, so no key is minted.
       setErrors(validation.errors)
@@ -399,7 +427,10 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
     setAttempt(next)
   }
 
-  const notice = attemptNotice(attempt, blockedChange)
+  const sentPrice =
+    attempt.phase === 'failed' &&
+    attempt.snapshot.payload.lines.some((line) => line.unitPrice !== null || line.priceUnitId !== null || line.discountPercent !== null)
+  const notice = attemptNotice(attempt, blockedChange, sentPrice)
   const errorEntries = useMemo(() => Object.entries(errors), [errors])
 
   // The optional header details stay closed until asked for — unless they already hold a value or an error.
@@ -803,6 +834,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                       index={index}
                       options={options}
                       errors={errors}
+                      priceWrite={priceWrite}
                       onChange={setValues}
                       onProductChange={(productId) => {
                         const candidate = options.products.find((product) => product.productId === productId)
@@ -849,10 +881,19 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                         const product = options.products.find((p) => p.productId === line.productId)
                         const unit = product?.orderUnits.find((u) => u.unitId === line.orderUnitId)
                         const quantity = [line.quantityText.trim(), unit?.label ?? ''].filter((part) => part !== '').join(' ')
+                        // UI-14: the price exactly as typed, beside its unit — no amount is derived here.
+                        const priceUnit = product?.orderUnits.find((u) => u.unitId === line.priceUnitId)
+                        const price = [
+                          !priceWrite || line.unitPriceText.trim() === ''
+                            ? null
+                            : T.summary.priceFact(line.unitPriceText.trim(), priceUnit?.label ?? T.notChosen),
+                          !priceWrite || line.discountPercentText.trim() === '' ? null : T.summary.discountFact(line.discountPercentText.trim()),
+                        ].filter((part): part is string => part !== null)
                         return (
                           <li key={line.lineId}>
                             {product?.label ?? T.notChosen}
                             {quantity === '' ? null : <span className={styles.quantity}> · {quantity}</span>}
+                            {price.length === 0 ? null : <span className={styles.quantity}> · {price.join(' · ')}</span>}
                           </li>
                         )
                       })}
@@ -862,7 +903,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
               )}
             </dl>
             <p className={styles.badges}>
-              <StatusIndicator tone="warning">{T.summary.notPriced}</StatusIndicator>
+              <PriceBadge priceWrite={priceWrite} lines={values.lines} />
               <StatusIndicator>{T.summary.notApproved}</StatusIndicator>
             </p>
             <p className={styles.muted}>{T.summary.noEffects}</p>
@@ -879,6 +920,13 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
       )}
     </section>
   )
+}
+
+/** UI-14: whether the lines carry a typed price — a count of filled fields, never an amount. */
+function PriceBadge({ priceWrite, lines }: { readonly priceWrite: boolean; readonly lines: readonly LineValues[] }) {
+  const priced = priceWrite ? lines.filter((line) => line.unitPriceText.trim() !== '').length : 0
+  if (priced > 0 && priced === lines.length) return <StatusIndicator>{T.summary.pricesEntered}</StatusIndicator>
+  return <StatusIndicator tone="warning">{priced > 0 ? T.summary.partlyPriced : T.summary.notPriced}</StatusIndicator>
 }
 
 /**
@@ -981,6 +1029,7 @@ function LineEditor({
   index,
   options,
   errors,
+  priceWrite,
   onChange,
   onProductChange,
 }: {
@@ -988,6 +1037,8 @@ function LineEditor({
   readonly index: number
   readonly options: OrderDraftOptions
   readonly errors: OrderDraftErrors
+  /** UI-14: render the price group only for an actor the shell published the price-write control to. */
+  readonly priceWrite: boolean
   readonly onChange: React.Dispatch<React.SetStateAction<OrderDraftFormValues>>
   readonly onProductChange: (productId: string) => void
 }) {
@@ -1057,6 +1108,8 @@ function LineEditor({
           )}
         </Field>
       </div>
+
+      {priceWrite ? <LinePrice line={line} index={index} product={product} errors={errors} onChange={onChange} /> : null}
 
       <More
         label={PAGE.lineMore}
@@ -1170,6 +1223,81 @@ function LineEditor({
           </div>
         </fieldset>
       </More>
+    </fieldset>
+  )
+}
+
+/**
+ * UI-14: one line's price group — the unit price and the discount as text (`inputMode="decimal"`, the quantity's separator
+ * rule), the price unit CHOSEN from the units the Product owner offers for the line's product. The help names what the
+ * server decides (scale, discount range, every amount); nothing here computes a net, a line amount or a total.
+ */
+function LinePrice({
+  line,
+  index,
+  product,
+  errors,
+  onChange,
+}: {
+  readonly line: LineValues
+  readonly index: number
+  readonly product: OrderDraftOptions['products'][number] | undefined
+  readonly errors: OrderDraftErrors
+  readonly onChange: React.Dispatch<React.SetStateAction<OrderDraftFormValues>>
+}) {
+  const id = (field: Parameters<typeof lineFieldId>[1]) => lineFieldId(line.lineId, field)
+  const helpId = `${line.lineId}-price-help`
+  return (
+    <fieldset className={styles.price} aria-describedby={helpId} data-testid={`sales-line-editor-${index + 1}-price`}>
+      <legend>{T.pricing.legend}</legend>
+      <p id={helpId} className={styles.readStatus}>
+        {T.pricing.help} {T.pricing.referenceLater}
+      </p>
+      <div className={styles.priceFields}>
+        <Field id={id('unitPrice')} label={T.field.unitPrice} error={errors[id('unitPrice')]}>
+          {(control) => (
+            <input
+              {...control}
+              className={styles.control}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              value={line.unitPriceText}
+              onChange={(event) => onChange((v) => updateLine(v, line.lineId, { unitPriceText: event.target.value }))}
+            />
+          )}
+        </Field>
+        <Field id={id('priceUnitId')} label={T.field.priceUnit} error={errors[id('priceUnitId')]}>
+          {(control) => (
+            <select
+              {...control}
+              className={styles.control}
+              value={line.priceUnitId}
+              onChange={(event) => onChange((v) => updateLine(v, line.lineId, { priceUnitId: event.target.value }))}
+            >
+              <option value="">{T.choose}</option>
+              {(product?.orderUnits ?? []).map((u) => (
+                <option key={u.unitId} value={u.unitId}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+        <Field id={id('discountPercent')} label={T.field.discountPercent} error={errors[id('discountPercent')]}>
+          {(control) => (
+            <input
+              {...control}
+              className={styles.control}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              value={line.discountPercentText}
+              onChange={(event) => onChange((v) => updateLine(v, line.lineId, { discountPercentText: event.target.value }))}
+            />
+          )}
+        </Field>
+      </div>
     </fieldset>
   )
 }

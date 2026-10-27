@@ -25,10 +25,10 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using LogisticsQuantity = GoymenERP.Modules.Logistics.Domain.Quantities.Quantity;
-using LogisticsQuantityUnit = GoymenERP.Modules.Logistics.Domain.Quantities.QuantityUnit;
-using PurchaseQuantity = GoymenERP.Modules.Purchasing.Domain.Quantities.Quantity;
-using PurchaseQuantityUnit = GoymenERP.Modules.Purchasing.Domain.Quantities.QuantityUnit;
+using LogisticsQuantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Logistics.Domain.Quantities.LogisticsQuantityRefusals>;
+using LogisticsQuantityUnit = GoymenERP.BuildingBlocks.Quantities.QuantityUnit;
+using PurchaseQuantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Purchasing.Domain.Quantities.PurchasingQuantityRefusals>;
+using PurchaseQuantityUnit = GoymenERP.BuildingBlocks.Quantities.QuantityUnit;
 
 namespace GoymenERP.Api.IntegrationTests;
 

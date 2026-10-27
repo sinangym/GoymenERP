@@ -164,6 +164,11 @@ public static class SalesRuleCodes
     /// <summary>A cancellation reason over the technical bound (the note's) is refused, never cut.</summary>
     public const string CancellationReasonTooLong = "sales_cancellation_reason_too_long";
 
+    /// <summary>No 30 ("Zorla kapatma … gerekçe zorunlu, audit"): a blank force-close reason is refused, never defaulted.</summary>
+    public const string ForceCloseReasonRequired = "sales_force_close_reason_required";
+    /// <summary>A force-close reason over the technical bound (the note's) is refused, never cut.</summary>
+    public const string ForceCloseReasonTooLong = "sales_force_close_reason_too_long";
+
     // Partial delivery (user decision 2026-09-30): the undelivered remainder of a partly delivered line is cancelled or its
     // quantity revised, with approval; the delivered and loaded part is kept.
     /// <summary>The line has no recorded shipment yet: it is not partly delivered, so its remainder is not this command's (a revision is).</summary>
@@ -189,7 +194,10 @@ public static class SalesRuleCodes
     public const string RequestRejectionReasonTooLong = "sales_request_rejection_reason_too_long";
 
     /// <summary>
-    /// No 161: a request whose quote became an APPROVED (not cancelled) order cannot be rejected; the order is cancelled first.
+    /// No 161 (fail-closed): a request with ANY order that is not cancelled — converted from a quote covering it, whatever its
+    /// approval state, force-closed included — cannot be rejected; the order is cancelled first. The wire value keeps its
+    /// first name (<c>…_has_approved_order</c>) so clients that decode it do not break; SAT-D23 confirms that a never-approved
+    /// (pending) order blocks as well.
     /// </summary>
     public const string RequestHasApprovedOrder = "sales_request_has_approved_order";
 
@@ -200,12 +208,17 @@ public static class SalesRuleCodes
     public const string QuoteValidUntilBeforeDate = "sales_quote_valid_until_before_date";
     /// <summary>A quote names the same request twice, or more requests than the technical bound.</summary>
     public const string QuoteRequestsInvalid = "sales_quote_requests_invalid";
-    /// <summary>A loss carries its reason (free text: no reason list is decided); a blank reason is refused, never defaulted.</summary>
+    /// <summary>A loss carries its reason (free text today; SAT-D25's closed Settings list is a follow-up); a blank reason is refused, never defaulted.</summary>
     public const string QuoteLossReasonRequired = "sales_quote_loss_reason_required";
     /// <summary>A loss reason over the technical bound (the note's) is refused, never cut.</summary>
     public const string QuoteLossReasonTooLong = "sales_quote_loss_reason_too_long";
     /// <summary>No 160: an order is not opened from a quote while any request it covers is not approved (default-deny).</summary>
     public const string QuoteRequestNotApproved = "sales_quote_request_not_approved";
+    /// <summary>
+    /// SAT-D24 (interim): the quote's validity date precedes the conversion's business date. SAT-D24 converts such a quote only
+    /// with a manager approval, which is a follow-up; until it exists the conversion is refused (fail-closed).
+    /// </summary>
+    public const string QuoteExpired = "sales_quote_expired";
 
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";

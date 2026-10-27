@@ -206,12 +206,23 @@ export interface HarnessConfig {
    * this harness last served for that draft — the owner's real zeros (a 404 when it served none).
    */
   readonly onLoadingProgress?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * SAT-D8 / API-10: GET `/sales/drafts/{id}/customer-returns`; default: no approved return on any line of the detail this
+   * harness last served for that draft — the owner's real zeros (a 404 when it served none).
+   */
+  readonly onCustomerReturns?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
   readonly onCommand?: (command: string, call: RecordedCall) => Response | Promise<Response>
   /** DEC-SAL-005: GET `/sales/drafts/{id}/cancellation-impact` (read only when the user asks for the preview). */
   readonly onCancellationImpact?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** No 30: GET `/sales/drafts/{id}/force-close-impact` (read only when the user asks for the preview). */
+  readonly onForceCloseImpact?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** No 30: a POST on `/sales/drafts/{id}/force-close`. */
+  readonly onForceClose?: (call: RecordedCall) => Response | Promise<Response>
+  /** No 30: GET `/sales/drafts/{id}/force-close`; default: no recorded closure. */
+  readonly onForceClosure?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-005: a POST on `/sales/drafts/{id}/cancellation`. */
   readonly onCancel?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-007: GET `/sales/drafts/{id}/cancellation`; default: no recorded cancellation. */
@@ -226,6 +237,8 @@ export interface HarnessConfig {
   readonly onPriceFloorExceptionApproval?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/line-pricing`; default: 404 (the pricing is shown as unreadable). */
   readonly onLinePricing?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** UI-11: GET `/documents?ownerKind=sales.order&ownerId=…` (read only once the "Sözleşme / Belgeler" tab is opened). */
+  readonly onDocuments?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/lines/{lineId}/price-references`. */
   readonly onPriceReferences?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
@@ -283,6 +296,17 @@ export function installFetch(config: HarnessConfig = {}) {
           if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')
           return config.onQuantityRevision(call)
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/force-close-impact$/.test(url)) {
+          if (config.onForceCloseImpact === undefined) throw new Error('unexpected force-close-impact read')
+          return config.onForceCloseImpact(url, call.companyId)
+        }
+        if (/\/sales\/drafts\/[^/?]+\/force-close$/.test(url)) {
+          if (call.method === 'POST') {
+            if (config.onForceClose === undefined) throw new Error('unexpected force-close')
+            return config.onForceClose(call)
+          }
+          return config.onForceClosure?.(url, call.companyId) ?? json({ forceClosure: null })
+        }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/cancellation-impact$/.test(url)) {
           if (config.onCancellationImpact === undefined) throw new Error('unexpected cancellation-impact read')
           return config.onCancellationImpact(url, call.companyId)
@@ -299,6 +323,9 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/loading-progress$/.test(url)) {
           return config.onLoadingProgress?.(url, call.companyId) ?? nothingLoaded(details.get(url.replace(/\/loading-progress$/, '')))
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/customer-returns$/.test(url)) {
+          return config.onCustomerReturns?.(url, call.companyId) ?? nothingReturned(details.get(url.replace(/\/customer-returns$/, '')))
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
@@ -326,6 +353,10 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (config.onList === undefined) throw new Error('unexpected list read')
         return asPartyDisplayRead(await config.onList(url, call.companyId), 'list', call)
+      }
+      if (call.method === 'GET' && url.includes('/documents?')) {
+        if (config.onDocuments === undefined) throw new Error('unexpected documents read')
+        return config.onDocuments(url, call.companyId)
       }
       if (call.method === 'GET' && url.includes('/logistics/dispatch-notes?')) {
         if (config.onDispatchNotes === undefined) throw new Error('unexpected dispatch-notes read')
@@ -359,6 +390,18 @@ function nothingLoaded(detail: unknown): Response {
     lines: body.lines.map((line) => ({
       lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
       loadingInstructionLines: 0, instructed: '0', loaded: '0', shipped: '0', delivered: '0',
+    })),
+  })
+}
+
+/** SAT-D8 / API-10: the default returns — every line of the served detail, nothing approved as returned. */
+function nothingReturned(detail: unknown): Response {
+  const body = detail as { draft?: { version?: unknown }; lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[] } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  return json({
+    draftVersion: body.draft.version,
+    lines: body.lines.map((line) => ({
+      lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity, approvedReturned: '0',
     })),
   })
 }

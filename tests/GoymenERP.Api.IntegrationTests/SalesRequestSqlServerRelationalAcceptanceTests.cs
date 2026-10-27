@@ -70,7 +70,7 @@ public sealed class SalesRequestSqlServerRelationalAcceptanceTests
             ("@id", id), ("@a", run.Actor)));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.RequestLines WHERE RequestId = @id", ("@id", id)));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.DraftAttempts WHERE CommandName = N'sales.request.create.v1' AND RequestId = @id AND DraftId IS NULL AND Outcome = 1",
+            "SELECT COUNT(*) FROM sales.RequestAttempts WHERE CommandName = N'sales.request.create.v1' AND RequestId = @id AND Outcome = 1 AND ResultJson IS NULL",
             ("@id", id)));
         Assert.Equal(2L, await run.ScalarAsync<long>("SELECT [Next] FROM sales.DocumentCounters WHERE CompanyId = @c AND Series = 'SR'", ("@c", CompanyA)));
         Assert.Equal(1, await run.ScalarAsync<int>(
@@ -108,7 +108,7 @@ public sealed class SalesRequestSqlServerRelationalAcceptanceTests
         }
 
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM sales.DraftAttempts WHERE CommandName = N'sales.request.approve.v1' AND RequestId = @id AND Outcome = 2 AND ISJSON(RefusalJson) = 1",
+            "SELECT COUNT(*) FROM sales.RequestAttempts WHERE CommandName = N'sales.request.approve.v1' AND RequestId = @id AND Outcome = 2 AND ISJSON(RefusalJson) = 1",
             ("@id", id)));
 
         // One approver approves; a blank rejection reason is refused and records nothing; a reasoned rejection of the approved request holds.
@@ -122,7 +122,7 @@ public sealed class SalesRequestSqlServerRelationalAcceptanceTests
             Assert.Equal((422, SalesRuleCodes.RequestRejectionReasonRequired), (blank.Status, blank.Code));
         }
 
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h",
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.RequestAttempts WHERE IdempotencyKeyHash = @h",
             ("@h", SalesStore.IdempotencyKeyHash("r-reject-blank"))));
         await using (var scope = run.Store(CompanyA))
         {
@@ -141,17 +141,27 @@ public sealed class SalesRequestSqlServerRelationalAcceptanceTests
         // The request's lines never moved.
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.RequestLines WHERE RequestId = @id AND QuantityText = N'1.25'", ("@id", id)));
 
-        // The schema binds the facts to the state and a request target to a request command — SQL Server itself refuses.
+        // The schema binds the facts to the state, and the request's own attempt table (ADR-SAL-001 §2/§6) takes only request
+        // commands and is append-only — SQL Server itself refuses.
         var decision = await Assert.ThrowsAsync<SqlException>(() =>
             run.ExecuteAsync("UPDATE sales.Requests SET RejectionReason = NULL WHERE Id = @id", ("@id", id)));
         Assert.Equal(547, decision.Number);
         Assert.Contains("CK_Requests_Decision", decision.Message, StringComparison.Ordinal);
         var target = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
-            "INSERT INTO sales.DraftAttempts (CompanyId, CommandName, IdempotencyKeyHash, RequestHash, ActorId, Outcome, RequestId, CorrelationId, RecordedAtUtc) "
+            "INSERT INTO sales.RequestAttempts (CompanyId, CommandName, IdempotencyKeyHash, RequestHash, ActorId, Outcome, RequestId, CorrelationId, RecordedAtUtc) "
             + "VALUES (@c, N'sales.order-draft.submit.v1', REPLICATE('B', 64), REPLICATE('0', 64), N'SENTETIK', 1, @id, N'SENTETIK', SYSUTCDATETIME())",
             ("@c", CompanyA), ("@id", id)));
         Assert.Equal(547, target.Number);
-        Assert.Contains("CK_DraftAttempts_RequestTarget", target.Message, StringComparison.Ordinal);
+        Assert.Contains("CK_RequestAttempts_Command", target.Message, StringComparison.Ordinal);
+        var attempts = await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.RequestAttempts WHERE RequestId = @id", ("@id", id));
+        var update = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE sales.RequestAttempts SET ActorId = N'SENTETIK-other' WHERE RequestId = @id", ("@id", id)));
+        Assert.Equal(51067, update.Number);
+        var delete = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "DELETE FROM sales.RequestAttempts WHERE RequestId = @id", ("@id", id)));
+        Assert.Equal(51067, delete.Number);
+        Assert.Equal(attempts, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM sales.RequestAttempts WHERE RequestId = @id AND ActorId <> N'SENTETIK-other'", ("@id", id)));
     }
 
     [SqlServerFact]
@@ -209,7 +219,7 @@ public sealed class SalesRequestSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesDraftWriteOutcome.Replayed, retry.Outcome);
         }
 
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h AND CompanyId = @c",
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.RequestAttempts WHERE IdempotencyKeyHash = @h AND CompanyId = @c",
             ("@h", SalesStore.IdempotencyKeyHash("r-race")), ("@c", CompanyA)));
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Requests WHERE CompanyId = @c", ("@c", CompanyA)));
     }
@@ -260,7 +270,7 @@ public sealed class SalesRequestSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.Forbidden, noDecision.StatusCode);
         }
 
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h",
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.RequestAttempts WHERE IdempotencyKeyHash = @h",
             ("@h", SalesStore.IdempotencyKeyHash("SENTETIK-reader-approves"))));
 
         var correlation = Guid.NewGuid().ToString("N");

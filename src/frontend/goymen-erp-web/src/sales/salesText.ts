@@ -2,10 +2,11 @@
  * User-facing Sales texts. Turkish, in one place, so they stay localizable.
  */
 
-import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CommercialStage, type SalesProblemCode } from './contract'
+import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CancellationStatus, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
   heading: 'Yeni satış siparişi taslağı',
+  singleCompanyOnly: 'Taslak yalnız tek bir şirket seçiliyken oluşturulabilir.',
   field: {
     customer: 'Cari ve şirket hesabı',
     businessDate: 'Sipariş tarihi',
@@ -24,6 +25,17 @@ export const ORDER_DRAFT_TEXT = {
     /** SALES-A2a: chosen from the Cari owner's contact information of the chosen account; optional. */
     deliveryAddress: 'Teslimat adresi',
     deliveryContact: 'Teslimat kişisi',
+    /** UI-14: the line's own price fields, shown only with the shell's price-write control (`sales.orders.price.write`). */
+    unitPrice: 'Birim fiyat',
+    priceUnit: 'Fiyat birimi',
+    discountPercent: 'İskonto %',
+  },
+  /** UI-14: the price group of a line. Texts only — every amount, the scale and the ranges are the server's (SAT-D11). */
+  pricing: {
+    legend: 'Fiyat',
+    help: 'Siparişin para biriminde, isteğe bağlı. Ondalık basamak sınırını ve iskonto aralığını sunucu denetler; satır tutarını ve toplamı yalnız sunucu hesaplar.',
+    /** Shown beside a line's price fields: a list-price reference is chosen on the saved order, not here. */
+    referenceLater: 'Liste fiyatı referansı ve taban fiyat kontrolü kaydedilen siparişin fiyat revizyonunda seçilir.',
   },
   choose: 'Seçin',
   /** SALES-A2a: the empty choice of an optional reference — nothing is sent, never a default. */
@@ -76,7 +88,7 @@ export const ORDER_DRAFT_TEXT = {
   errorSummaryUnresolved:
     'Şu alanları düzeltin. Önceki gönderimin sonucu hâlâ bilinmiyor; taslak kaydedilmiş olabilir.',
   referencesUnavailable:
-    'Cari hesabı, satışa uygun ürün, birim ve para birimi seçenekleri henüz yayımlanmadı. Seçenekler olmadan taslak oluşturulamaz.',
+    'Cari hesabı, satışa uygun ürün, birim ve para birimi seçenekleri şu anda okunamıyor. Seçenekler olmadan taslak oluşturulamaz.',
   /** Which reference source is missing and why, from the real answers — no source is guessed. */
   referencesMissing: (missing: readonly { readonly source: string; readonly reason: string }[]) =>
     'Sunulmayan kaynaklar: ' +
@@ -113,6 +125,14 @@ export const ORDER_DRAFT_TEXT = {
     sliceDateRequired: 'Dilimin terminini girin.',
     tooManySlices: 'Bir satırda en fazla 500 termin dilimi olabilir.',
     slicesExceedOrder: 'Termin dilimlerinin toplamı satır miktarını aşıyor.',
+    priceInvalid: 'Birim fiyat yalnız rakam ve tek ondalık ayırıcı içerebilir.',
+    priceAmbiguous: 'Nokta binlik ayırıcı mı ondalık mı anlaşılmıyor. 1250 ya da 1,25 biçiminde yazın.',
+    priceUnitRequired: 'Birim fiyatın hangi birim için olduğunu seçin.',
+    priceUnitWithoutPrice: 'Fiyat birimi seçildi ama birim fiyat boş. Fiyatı girin ya da fiyat birimini boşaltın.',
+    priceUnitNotOffered: 'Seçilen fiyat birimi bu ürün için sunulmuyor.',
+    discountInvalid: 'İskonto yüzdesi yalnız rakam ve tek ondalık ayırıcı içerebilir.',
+    discountAmbiguous: 'Nokta binlik ayırıcı mı ondalık mı anlaşılmıyor. 12,5 biçiminde yazın.',
+    discountWithoutPrice: 'İskonto için önce birim fiyatı girin.',
   },
   attempt: {
     submitting: 'Sipariş taslağı kaydediliyor…',
@@ -127,6 +147,12 @@ export const ORDER_DRAFT_TEXT = {
     validation: 'Taslak kaydedilmedi. İşaretli alanları düzeltin.',
     unauthenticated: 'Oturumunuz sona erdi; taslak kaydedilmedi.',
     forbidden: 'Bu şirkette sipariş taslağı oluşturma yetkiniz yok; taslak kaydedilmedi.',
+    /**
+     * UI-14: a 403 answering a send that carried a price. The wire's 403 is a bare problem (no code), so the screen cannot
+     * tell the create permission from the separate price-write permission — it names both, never only one.
+     */
+    forbiddenPriced:
+      'Taslak kaydedilmedi: bu şirkette sipariş taslağı oluşturma ya da sipariş satırına fiyat yazma yetkiniz yok. Fiyat yazma yetkiniz yoksa fiyat alanlarını boşaltıp yeniden kaydedebilirsiniz.',
     notFound: 'Seçilen kayıtlardan biri bulunamadı; taslak kaydedilmedi.',
     conflict: 'İşlem mevcut kayıtla çakıştı; taslak kaydedilmedi.',
     unexpected: 'Taslak kaydedilmedi. Beklenmeyen bir yanıt alındı.',
@@ -139,6 +165,11 @@ export const ORDER_DRAFT_TEXT = {
     heading: 'Kaydetmeden önce',
     company: 'Kaydedilecek şirket',
     notPriced: 'Henüz fiyatlandırılmadı',
+    /** UI-14: every line carries a typed price; the amounts are the server's. */
+    pricesEntered: 'Birim fiyatlar girildi; tutarları sunucu hesaplar',
+    partlyPriced: 'Bazı satırlar fiyatsız',
+    priceFact: (price: string, unit: string) => `birim fiyat ${price} / ${unit}`,
+    discountFact: (percent: string) => `iskonto %${percent}`,
     notApproved: 'Onaysız taslak',
     noEffects: 'Taslak kaydı onay, tahsis, stok, irsaliye, fatura veya tahsilat oluşturmaz.',
   },
@@ -176,11 +207,35 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.revisionBlocked]:
     'Siparişe bağlı kayıtlar var (tahsis ya da yükleme); miktar değiştirilmedi. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
+  [SALES_PROBLEM_CODE.forceCloseBlocked]:
+    'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
+  [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
+    'Kapatma etkisi siz gördükten sonra değişti; sipariş kapatılmadı. Güncel etkiyi yeniden okuyun.',
 }
 
 export function problemCodeText(code: string | null): string | null {
   if (code === null) return null
   return Object.hasOwn(PROBLEM_CODE_TEXT, code) ? PROBLEM_CODE_TEXT[code as SalesProblemCode] : null
+}
+
+/**
+ * UI-14: the line-price rule codes the create answers on `lines[i].unitPrice` / `priceUnitId` / `discountPercent` (or on
+ * `draft` when the domain refuses). The same codes as the commercial revision; the texts describe the server's rule.
+ */
+const CREATE_PRICE_FIELD_TEXT: Readonly<Record<string, string>> = {
+  sales_price_scale_exceeded: 'Birim fiyat para biriminin onaylı ondalık basamak sayısını aşıyor; fiyat yuvarlanmaz.',
+  sales_price_unit_unsupported: 'Fiyat birimi ürünün stok, satış ya da sipariş birimi olmalı.',
+  sales_price_unit_pairing: 'Birim fiyat ve fiyat birimi birlikte verilir.',
+  sales_discount_out_of_range: 'İskonto yüzdesi 0 ile 100 arasında olmalıdır.',
+  sales_discount_without_price: 'İskonto için birim fiyat gerekir.',
+}
+
+/** A server field error's text on the create form: the stable problem codes first, then the line-price rule codes. */
+export function createFieldErrorText(code: string | null): string | null {
+  const known = problemCodeText(code)
+  if (known !== null || code === null) return known
+  if (Object.hasOwn(CREATE_PRICE_FIELD_TEXT, code)) return CREATE_PRICE_FIELD_TEXT[code]
+  return Object.hasOwn(LINE_PRICING_TEXT.fieldError, code) ? LINE_PRICING_TEXT.fieldError[code] : null
 }
 
 /** SALES-A1: the internal approval axis, one label per `InternalApprovalState`. */
@@ -220,12 +275,15 @@ export const ORDER_LIST_TEXT = {
 } as const
 
 export const ORDER_DETAIL_TEXT = {
+  pageLabel: 'Satış siparişi',
+  stateSubject: 'satış siparişi',
   backToList: 'Sipariş taslakları',
   commercialStage: 'Ticari aşama',
   state: 'Durum',
   stateDraft: 'Taslak',
   /** DEC-SAL-005: the lifecycle of an approved order cancelled after its impact preview. */
   stateCancelled: 'İptal edildi',
+  stateClosed: 'Kapalı',
   /** SALES-A1: the approval facts and the commands on the detail. */
   approval: {
     heading: 'İç onay',
@@ -243,6 +301,8 @@ export const ORDER_DETAIL_TEXT = {
     customerAcceptedAt: 'Müşteri kabul zamanı',
     recordCustomerAcceptance: 'Müşteri kabulünü kaydet',
     notYet: 'Henüz yok',
+    /** MOD-08: beside the name of a person who is no longer an active member of the record's company. */
+    formerMember: 'artık bu şirkette aktif değil',
     noReason: 'Neden belirtilmedi',
     // DEC-SAL-001/005, Business 5737989917 item 4: the linked effects are read from their owners, never assumed.
     // Allocation is Inventory's server truth; a count is shown only after a successful read, never a default 0.
@@ -278,8 +338,8 @@ export const ORDER_DETAIL_TEXT = {
       loadingUnavailable: 'Yükleme bilgisi şu anda okunamıyor; sayı gösterilmedi.',
       loadingMalformed: 'Yükleme yanıtı bu siparişle doğrulanamadı; sayı gösterilmedi.',
     },
-    approvedNote: 'Onaylı taslağın satırları değişmez; değişiklik yeni bir revizyonla gelir (SALES-A2).',
-    rejectedNote: 'Reddedilen taslak aynı revizyonla yeniden onaya gönderilebilir; düzeltme SALES-A2 ile gelir.',
+    approvedNote: 'Onaylı siparişin satırları doğrudan değişmez; değişiklik yeni bir revizyonla yapılır ve yeniden onaya gider.',
+    rejectedNote: 'Reddedilen sipariş düzeltilip yeniden onaya gönderilebilir.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -529,12 +589,33 @@ export const ORDER_DETAIL_TEXT = {
     more: 'Daha fazla taslak var; tamamı yükleme talimatlarında görünür.',
     subject: 'irsaliye taslakları',
   },
+  /**
+   * SAT-D8 / UI-70a: per line the APPROVED customer-return total, read from Logistics through API-10. Returns have no menu
+   * of their own; they are shown on the order. The owner gives only the total per line (no return number, date or status).
+   */
+  customerReturns: {
+    heading: 'Müşteri iadeleri',
+    note:
+      'Lojistik modülünde onaylanan müşteri iadelerinin satır bazında toplamıdır; bekleyen ve reddedilen iade talepleri sayılmaz. ' +
+      'Sipariş her açıldığında yeniden okunur. Tek tek iade numarası, tarihi ve durumu bu görünümde henüz yer almaz.',
+    subject: 'müşteri iadeleri',
+    empty: 'Bu siparişte onaylı müşteri iadesi yok.',
+    unreadable: 'İade bilgisi okunamadığı için miktar gösterilmiyor.',
+    caption: 'Satır bazında sipariş miktarı ve onaylı iade miktarı',
+    lineNo: 'Satır',
+    product: 'Ürün',
+    ordered: 'Sipariş',
+    approvedReturned: 'Onaylı iade',
+    unit: 'Birim',
+  },
   revision: 'Ticari revizyon',
   version: 'Kayıt sürümü',
   businessDate: 'Sipariş tarihi',
   createdAt: 'Oluşturulma',
   /** The record-bound Cari code and name (no longer the bare id). */
   party: 'Cari',
+  /** TEK-11: the stored ids stay reachable for support, folded away below the names the user reads. */
+  technicalIds: 'Teknik kimlikler',
   account: 'Şirket hesabı kimliği',
   currency: 'Para birimi kimliği',
   requestedDeliveryDate: 'Üst termin',
@@ -545,7 +626,7 @@ export const ORDER_DETAIL_TEXT = {
   product: 'Ürün',
   productVersion: 'Ürün sürümü',
   quantity: 'Miktar',
-  orderUnit: 'Sipariş birimi kimliği',
+  orderUnit: 'Sipariş birimi',
   lineDeliveryDate: 'Satır termini',
   price: 'Birim fiyat',
   discount: 'İskonto %',
@@ -704,3 +785,137 @@ export const LINE_PRICING_TEXT = {
 export function partyDisplayText(party: { readonly code: string; readonly legalName: string; readonly tradeName: string | null }): string {
   return party.tradeName === null ? `${party.code} — ${party.legalName}` : `${party.code} — ${party.legalName} (${party.tradeName})`
 }
+
+/** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */
+export const FORCE_CLOSE_TEXT = {
+  heading: 'Siparişi kapat',
+  description:
+    'Teslim edilmeyen kalan "iptal edilen kalan" olarak kapatılır; teslim edilen bölüm, satırlar ve geçmiş değişmez. ' +
+    'Açık tahsis, sevk edilmemiş yükleme ya da okunamayan bir kaynak varken kapatma yapılmaz. Faturalanmamış irsaliye ' +
+    'kapatmayı engellemez, fatura işi açık kalır (SAT-D12). Stok ve para hareketi oluşmaz.',
+  showImpact: 'Kapatma etkisini göster',
+  refresh: 'Etkiyi yeniden oku',
+  subject: 'kapatma etkisi',
+  sourcesCaption: 'Kapatma etkisi kategorileri',
+  category: 'Kategori',
+  status: 'Durum',
+  effect: 'Etkisi',
+  blocks: 'Kapatmayı engeller',
+  warns: 'Uyarı; engellemez',
+  noEffect: '—',
+  linesCaption: 'Satır bazında kapatılacak kalan',
+  closedRemainder: 'Kapatılacak kalan',
+  blocked: 'Bu sipariş şu anda kapatılamaz. Engelleyen kayıtları kendi ekranlarında kapatın, sonra etkiyi yeniden okuyun.',
+  warning: 'Faturalanmamış irsaliye var. Kapatma bunu engellemez; fatura işi açık kalır.',
+  reasonLabel: 'Kapatma nedeni (zorunlu)',
+  reasonRequired: 'Kapatma nedeni zorunludur.',
+  submit: 'Siparişi kapat',
+  submitting: 'Kapatma gönderiliyor…',
+  unknown: 'Kapatmanın sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir kapatma oluşturmaz.',
+  completed: 'Sipariş kapatıldı; kalan iptal edilen kalan olarak kaydedildi.',
+  replayed: 'Bu kapatma daha önce kaydedilmişti; güncel durum gösteriliyor.',
+  retry: 'Aynı kapatmayı tekrar dene',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; kapatma uygulanmadı.',
+  forbidden: 'Bu şirkette sipariş kapatma yetkiniz yok; kapatma uygulanmadı.',
+  notFound: 'Sipariş bulunamadı; kapatma uygulanmadı.',
+  conflict: 'Kapatma uygulanmadı; sipariş ve etki yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+  validation: 'Kapatma uygulanmadı; gönderilen bilgi geçerli değil.',
+  unexpected: 'Kapatma uygulanmadı. Beklenmeyen bir yanıt alındı.',
+  recordHeading: 'Kapatma kaydı',
+  recordSubject: 'kapatma kaydı',
+  closedBy: 'Kapatan',
+  closedAt: 'Kapatma zamanı',
+  reason: 'Kapatma nedeni',
+  revision: 'Kapatılan revizyon',
+  recordNote: 'Kapatılan siparişin onay bilgileri, satırları ve geçmişi silinmez; sipariş başka işlem kabul etmez.',
+  recordSources: 'Kapatma anındaki etki',
+  recordLines: 'Kapatılan kalan',
+  recordMissing: 'Kapatma kaydı okunamadı.',
+  /** The status in neutral words: whether it blocks is the third column's (it differs from the cancellation's). */
+  sourceStatus: {
+    None: 'Kayıt yok (sahibi okundu)',
+    Present: 'Kayıt var',
+    Unreadable: 'Okunamadı; sıfır varsayılmaz',
+    NoSource: 'Kaynak yok; bu bağı tutan modül henüz yok',
+  } satisfies Record<CancellationStatus, string>,
+} as const
+
+/** AT-024: the partly delivered remainder panel (`SalesDraftRemainderChangePanel`). */
+export const REMAINDER_CHANGE_TEXT = {
+  heading: 'Kısmi teslimat kalanı',
+  note: 'Teslim edilen ve yüklenen bölüm korunur. Yalnız kalan miktar onayla iptal edilir veya revize edilir.',
+  unreadable: 'Lojistik miktarları şu anda okunamıyor; sıfır varsayılmadı ve değişiklik gönderilemez.',
+  empty: 'Kalan değişikliği kaydı yok.',
+  line: 'Sipariş satırı', kind: 'İşlem', cancel: 'Kalanı iptal et', revise: 'Kalan miktarı revize et',
+  quantity: 'Yeni sipariş miktarı', reason: 'Gerekçe', request: 'Onaya gönder',
+  approve: 'Onayla', reject: 'Reddet', decisionReason: 'Ret nedeni',
+  retry: 'Aynı işlemi tekrar dene', submitting: 'İşlem kaydediliyor…', completed: 'İşlem kaydedildi; güncel sipariş yeniden okunuyor.',
+  unknown: 'Sonuç alınamadı; kayıt yapılmış olabilir. Aynı anahtarla tekrar deneyin.',
+  failed: 'İşlem uygulanmadı.', invalid: 'Satır, miktar ve gerekçeyi kontrol edin.',
+  authorityLost: 'Bu işlem için güncel yetki bulunmuyor; kayıt gönderilmedi.',
+  /** The selected line's Logistics quantities; an unreadable one is named, never shown as zero. */
+  lineFacts: (line: {
+    readonly loaded: string | null
+    readonly shipped: string | null
+    readonly delivered: string | null
+    readonly minimumQuantity: string | null
+  }) =>
+    `Yüklenen: ${line.loaded ?? 'okunamadı'} · Sevk: ${line.shipped ?? 'okunamadı'} · Teslim: ${line.delivered ?? 'okunamadı'} · Alt sınır: ${line.minimumQuantity ?? 'okunamadı'}`,
+  stateUnavailable: 'Yalnız onaylı ve iptal edilmemiş siparişin kısmi teslimat kalanı değiştirilebilir.',
+} as const
+
+/** S-04 Sipariş 360: the six locked order-detail tabs (Master §7.2) and their empty states. */
+export const ORDER_TABS_TEXT = {
+  label: 'Sipariş bölümleri',
+  tab: {
+    satirlar: 'Satırlar',
+    tahsis: 'Tahsis / Kaynak',
+    gerceklesme: 'Gerçekleşme / İrsaliye',
+    faturalar: 'Faturalar',
+    belgeler: 'Sözleşme / Belgeler',
+    gecmis: 'Revizyon / Geçmiş',
+  },
+  allocationNote: 'Kaynak stratejisi (stok, satın alma, üretim) henüz bu ekrandan seçilmiyor; tahsisler Stok sahibinden okunur.',
+  realizationNotApproved: 'Teslimat ve irsaliye bilgisi sipariş onaylandıktan sonra gösterilir.',
+  invoicesEmpty: 'Satış faturası ekranı henüz hazır değil. Bu sipariş için fatura bilgisi burada gösterilecek.',
+  documentsUnavailable: 'Belgeler yalnız tek bir şirket seçiliyken gösterilir.',
+} as const
+
+/**
+ * UI-71 — S-11 Satış İletişimi ve Sözleşmeler, drawn in the S-04 "Sözleşme / Belgeler" tab (the S-11 visual is that tab).
+ * The order's own documents and the customer's Cari-card documents (where contracts valid across orders are kept), with
+ * one timeline over both. Document categories, a contract record and a communication log have no backend source yet;
+ * nothing here pretends they exist.
+ */
+export const SALES_DOCUMENTS_TEXT = {
+  note:
+    'Siparişe özel belgeler siparişe, siparişler arasında geçerli sözleşme gibi müşteri belgeleri müşterinin cari kartına eklenir. Zaman çizgisi ikisini birlikte gösterir.',
+  timelineHeading: 'Belge zaman çizgisi',
+  timelineCaption: 'Sipariş ve müşteri kartı belgeleri, en yeni üstte',
+  filterLabel: 'Bağlı kayda göre göster',
+  filter: {
+    all: (count: number) => `Tümü (${count})`,
+    order: (count: number) => `Sipariş (${count})`,
+    customer: (count: number) => `Müşteri kartı (${count})`,
+  },
+  columnDate: 'Tarih',
+  columnFile: 'Belge',
+  columnRelation: 'Bağlı kayıt',
+  columnVersion: 'Sürüm',
+  columnType: 'Tür',
+  columnScan: 'Güvenlik taraması',
+  relationOrder: (documentNo: string) => `Sipariş ${documentNo}`,
+  relationCustomer: (party: string) => `Müşteri kartı ${party}`,
+  loading: 'Belgeler getiriliyor…',
+  readFailed: 'Belgelerin bir kısmı getirilemedi. Gösterilenler eksik olabilir.',
+  readAgain: 'Belgeleri yeniden getir',
+  forbidden: 'Bu siparişin belgelerini görüntüleme yetkiniz yok.',
+  empty: 'Bu siparişe ve müşterinin cari kartına henüz belge eklenmedi.',
+  filterEmpty: 'Bu seçimde gösterilecek belge yok.',
+  customerHidden: 'Müşterinin cari kartı belgeleri sizin için görüntülenemiyor; zaman çizgisi yalnız sipariş belgelerini gösteriyor.',
+  orderHidden: 'Siparişin kendi belgeleri sizin için görüntülenemiyor; zaman çizgisi yalnız müşteri kartı belgelerini gösteriyor.',
+  orderPanelHeading: 'Sipariş belgeleri',
+  customerPanelHeading: 'Müşteri kartı belgeleri (sözleşmeler)',
+} as const

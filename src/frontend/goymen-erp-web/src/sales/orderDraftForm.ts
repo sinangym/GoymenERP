@@ -14,9 +14,15 @@
  *  - the company is not a form value: it is the committed shell context, sent as
  *    request context, never in the body;
  *  - quantities stay text end to end; an empty date is null — unknown — never today;
- *  - price, price unit and discount are NOT offered: the contract represents them,
- *    but price-read permission, a price-unit source and pricing policy do not exist,
- *    so they go out as null (unknown), which is not zero and not free of charge;
+ *  - UI-14 (on TEK-03): a line's unit price, its price unit and its discount percent
+ *    are offered ONLY to an actor the shell publishes the price-write control to
+ *    (`sales.orders.price.write`); without it they go out as null (unknown) whatever
+ *    the form holds. The price unit is CHOSEN from the units the Product owner offers
+ *    for the line's product. The client judges the text's shape only (the quantity's
+ *    separator rule; zero is an explicit price) and the pairings the wire requires
+ *    (price ↔ price unit, no discount without a price); the scale, the discount range
+ *    and every amount are the server's (money profile, SAT-D11) — no total or net is
+ *    computed here. Empty is null, never zero;
  *  - SALES-A2a: the delivery address and the contact person are CHOSEN from the Cari
  *    owner's contact information of the chosen account (id + the owner's version) and
  *    are optional — nothing chosen is null (unknown), never a default address;
@@ -36,7 +42,7 @@ import {
 } from './contract'
 import { unplannedQuantity } from './deliveryPlan'
 import { ORDER_DRAFT_TEXT } from './salesText'
-import { isDateOnly, parseQuantityInput, type QuantityInputError } from './wirePrimitives'
+import { isDateOnly, parseDecimalInput, parseQuantityInput, type DecimalInputError, type QuantityInputError } from './wirePrimitives'
 
 /** What the owners currently offer. Filled only from a real selection source. */
 export interface OrderDraftOptions {
@@ -86,6 +92,12 @@ export interface LineValues {
    * person who deleted their rows has not stated that nothing is planned.
    */
   readonly slices: readonly SliceValues[] | null
+  /** UI-14: the unit price as typed ('' = no price → null on the wire, never zero). */
+  readonly unitPriceText: string
+  /** UI-14: one of the product's offered units, or '' (nothing chosen). */
+  readonly priceUnitId: string
+  /** UI-14: the discount percent as typed ('' = null). */
+  readonly discountPercentText: string
 }
 
 export interface OrderDraftFormValues {
@@ -108,7 +120,16 @@ export interface DeliveryReferenceOptions {
   readonly contacts: readonly ContactOption[]
 }
 
-export type LineField = 'productId' | 'quantity' | 'orderUnitId' | 'requestedDeliveryDate' | 'note' | 'slices'
+export type LineField =
+  | 'productId'
+  | 'quantity'
+  | 'orderUnitId'
+  | 'requestedDeliveryDate'
+  | 'note'
+  | 'slices'
+  | 'unitPrice'
+  | 'priceUnitId'
+  | 'discountPercent'
 export type SliceField = 'quantity' | 'requestedDeliveryDate'
 
 export const ORDER_FIELD = {
@@ -157,6 +178,9 @@ export function emptyLine(lineId: string): LineValues {
     requestedDeliveryDate: '',
     note: '',
     slices: null,
+    unitPriceText: '',
+    priceUnitId: '',
+    discountPercentText: '',
   }
 }
 
@@ -196,7 +220,10 @@ export function isOrderDraftPristine(values: OrderDraftFormValues): boolean {
         line.orderUnitId === '' &&
         line.requestedDeliveryDate === '' &&
         line.note.trim() === '' &&
-        line.slices === null,
+        line.slices === null &&
+        line.unitPriceText.trim() === '' &&
+        line.priceUnitId === '' &&
+        line.discountPercentText.trim() === '',
     )
   )
 }
@@ -237,7 +264,9 @@ export const setAccount = (values: OrderDraftFormValues, partyId: string, compan
     : { ...values, partyId, companyAccountId, deliveryAddressId: '', contactId: '' }
 
 export const setLineProduct = (values: OrderDraftFormValues, lineId: string, productId: string) =>
-  mapLine(values, lineId, (line) => (line.productId === productId ? line : { ...line, productId, orderUnitId: '' }))
+  mapLine(values, lineId, (line) =>
+    line.productId === productId ? line : { ...line, productId, orderUnitId: '', priceUnitId: '' },
+  )
 
 export const addSlice = (values: OrderDraftFormValues, lineId: string, sliceId: string) =>
   mapLine(values, lineId, (line) => ({
@@ -271,6 +300,64 @@ const QUANTITY_MESSAGE: Record<QuantityInputError, string> = {
 
 const noteOrNull = (text: string) => (text.trim() === '' ? null : text)
 
+const PRICE_MESSAGE: Record<Exclude<DecimalInputError, 'required'>, string> = {
+  invalid: ORDER_DRAFT_TEXT.validation.priceInvalid,
+  'ambiguous-separator': ORDER_DRAFT_TEXT.validation.priceAmbiguous,
+}
+
+const DISCOUNT_MESSAGE: Record<Exclude<DecimalInputError, 'required'>, string> = {
+  invalid: ORDER_DRAFT_TEXT.validation.discountInvalid,
+  'ambiguous-separator': ORDER_DRAFT_TEXT.validation.discountAmbiguous,
+}
+
+/** An optional decimal field: '' is null (unknown), else the canonical text or the shape's error. */
+function optionalDecimal(raw: string): { readonly ok: true; readonly value: string | null } | { readonly ok: false; readonly error: Exclude<DecimalInputError, 'required'> } {
+  if (raw.trim() === '') return { ok: true, value: null }
+  const parsed = parseDecimalInput(raw)
+  if (parsed.ok) return parsed
+  return { ok: false, error: parsed.error === 'required' ? 'invalid' : parsed.error }
+}
+
+interface LinePrice {
+  readonly unitPrice: string | null
+  readonly priceUnitId: string | null
+  readonly discountPercent: string | null
+}
+
+const NO_PRICE: LinePrice = { unitPrice: null, priceUnitId: null, discountPercent: null }
+
+/**
+ * UI-14: a line's price fields as the wire takes them, or the field errors. Shape and pairing only; the server decides
+ * the scale, the unit's binding and the discount's range, and refuses with a field code (mapped back to the field).
+ */
+function linePrice(
+  line: LineValues,
+  product: OrderDraftOptions['products'][number] | undefined,
+  errors: Record<string, string>,
+): LinePrice {
+  const text = ORDER_DRAFT_TEXT.validation
+  const price = optionalDecimal(line.unitPriceText)
+  const discount = optionalDecimal(line.discountPercentText)
+  const before = Object.keys(errors).length
+  if (!price.ok) errors[lineFieldId(line.lineId, 'unitPrice')] = PRICE_MESSAGE[price.error]
+  const priced = !price.ok || price.value !== null
+  if (line.priceUnitId === '') {
+    if (priced) errors[lineFieldId(line.lineId, 'priceUnitId')] = text.priceUnitRequired
+  } else if (!priced) {
+    errors[lineFieldId(line.lineId, 'priceUnitId')] = text.priceUnitWithoutPrice
+  } else if (product !== undefined && !product.orderUnits.some((unit) => unit.unitId === line.priceUnitId)) {
+    errors[lineFieldId(line.lineId, 'priceUnitId')] = text.priceUnitNotOffered
+  }
+  if (!discount.ok) errors[lineFieldId(line.lineId, 'discountPercent')] = DISCOUNT_MESSAGE[discount.error]
+  else if (discount.value !== null && !priced) errors[lineFieldId(line.lineId, 'discountPercent')] = text.discountWithoutPrice
+  if (!price.ok || !discount.ok || Object.keys(errors).length !== before) return NO_PRICE
+  return {
+    unitPrice: price.value,
+    priceUnitId: price.value === null ? null : line.priceUnitId,
+    discountPercent: discount.value,
+  }
+}
+
 /** A line's plan as the person can currently read it, for the "still unplanned" hint. */
 export function linePlanHint(line: LineValues): { readonly unplanned: string } | { readonly exceeds: true } | null {
   const quantity = parseQuantityInput(line.quantityText)
@@ -294,6 +381,8 @@ export function validateOrderDraft(
   values: OrderDraftFormValues,
   options: OrderDraftOptions,
   delivery: DeliveryReferenceOptions | null = null,
+  /** UI-14: the shell published the price-write control; without it no price member is read or sent. */
+  priceWrite = false,
 ): OrderDraftValidation {
   const text = ORDER_DRAFT_TEXT.validation
   const errors: Record<string, string> = {}
@@ -349,6 +438,9 @@ export function validateOrderDraft(
       errors[lineFieldId(line.lineId, 'orderUnitId')] = text.orderUnitNotOffered
     }
 
+    // DOM order: the price group follows the line's main fields and precedes the optional details.
+    const price = priceWrite ? linePrice(line, product, errors) : NO_PRICE
+
     if (line.requestedDeliveryDate !== '' && !isDateOnly(line.requestedDeliveryDate)) {
       errors[lineFieldId(line.lineId, 'requestedDeliveryDate')] = text.dateInvalid
     }
@@ -393,12 +485,12 @@ export function validateOrderDraft(
         expectedProductVersion: product.productVersion,
         orderUnitId: line.orderUnitId,
         quantity: quantity.value,
-        unitPrice: null,
-        priceUnitId: null,
+        unitPrice: price.unitPrice,
+        priceUnitId: price.priceUnitId,
         requestedDeliveryDate: line.requestedDeliveryDate === '' ? null : line.requestedDeliveryDate,
         note: noteOrNull(line.note),
         requestedDeliverySlices: slices,
-        discountPercent: null,
+        discountPercent: price.discountPercent,
       })
     }
   }
@@ -443,7 +535,10 @@ export function formFieldForServerPath(path: string, sentLines: readonly { reado
   if (path === 'lines') return ORDER_FIELD.lines
   if (path === 'deliveryAddress') return ORDER_FIELD.deliveryAddress
   if (path === 'contact') return ORDER_FIELD.contact
-  const match = /^lines\[(\d+)\]\.(productId|expectedProductVersion|orderUnitId|quantity|requestedDeliveryDate|note|requestedDeliverySlices)/.exec(path)
+  const match =
+    /^lines\[(\d+)\]\.(productId|expectedProductVersion|orderUnitId|quantity|requestedDeliveryDate|note|requestedDeliverySlices|unitPrice|priceUnitId|discountPercent)/.exec(
+      path,
+    )
   if (match === null) return null
   const line = sentLines[Number(match[1])]
   if (line === undefined) return null

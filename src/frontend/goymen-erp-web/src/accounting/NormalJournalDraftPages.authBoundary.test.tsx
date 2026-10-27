@@ -204,10 +204,20 @@ describe('normal journal command security and company fences', () => {
     expect(await screen.findByRole('button', { name: 'Aynı isteği yeniden gönder' })).toBeTruthy()
   })
 
+  const OPEN_PERIOD = {
+    periodId: '99999999-9999-4999-8999-999999999999', companyId: COMPANY_A, startsOn: '2026-09-01', endsOn: '2026-09-30',
+    status: 'Open', version: 2, preparedByUserId: 'a0000000-0000-4000-8000-000000000021', preparedAtUtc: '2026-09-01T08:00:00Z',
+    approvedByUserId: 'a0000000-0000-4000-8000-000000000022', approvedAtUtc: '2026-09-01T09:00:00Z',
+    closedByUserId: null, closedAtUtc: null, isOwnProposal: false,
+  }
+
   it('reports an approval 403 and suppresses the approval capability', async () => {
     installFetch({
-      capabilities: [ACCOUNTING_CAPABILITY.normalDraftDetail, ACCOUNTING_CAPABILITY.normalDraftApprove],
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftDetail, ACCOUNTING_CAPABILITY.normalDraftApprove,
+        ACCOUNTING_CAPABILITY.periodsList],
       respond: (url, init) => {
+        // BLG-05: the approval period is picked from the open periods, not typed.
+        if (url.includes('/accounting/periods')) return json({ items: [OPEN_PERIOD], nextCursor: null })
         if (url.endsWith(`/accounting/normal-journal-drafts/${DRAFT}`) && (!init?.method || init.method === 'GET')) return json(draft())
         if (url.endsWith(`/accounting/normal-journal-drafts/${DRAFT}/approval`) && init?.method === 'POST') return json({ status: 403 }, 403)
         return undefined
@@ -215,7 +225,7 @@ describe('normal journal command security and company fences', () => {
     })
     renderAt(normalDraftApprovalPath(DRAFT))
     const approve = await screen.findByRole('button', { name: /onayla/i })
-    fireEvent.change(screen.getByLabelText(/Dönem kimliği/i), { target: { value: '99999999-9999-4999-8999-999999999999' } })
+    await waitFor(() => expect((screen.getByLabelText('Onay dönemi') as HTMLSelectElement).value).toBe(OPEN_PERIOD.periodId))
     fireEvent.click(approve)
     await waitFor(() => expect(screen.queryByRole('button', { name: /onayla/i })).toBeNull())
   })

@@ -32,6 +32,7 @@ describe('attemptNotice', () => {
     const texts = [
       ...ALL_STATES.map((state) => attemptNotice(state)?.message ?? ''),
       ...ALL_STATES.map((state) => attemptNotice(state, true)?.message ?? ''),
+      ...ALL_STATES.map((state) => attemptNotice(state, false, true)?.message ?? ''),
     ]
     for (const message of texts) {
       expect(message).not.toMatch(/yenile|yeniden yükle|sayfayı|F5/i)
@@ -62,5 +63,16 @@ describe('attemptNotice', () => {
     expect(attemptNotice({ phase: 'unknown', snapshot, reason: 'offline' }, true)?.message).toBe(
       ORDER_DRAFT_TEXT.attempt.unknownChangedBlocked,
     )
+  })
+
+  it('UI-14: a definite 403 to a priced send names the create AND the price-write fence (the wire 403 carries no code)', () => {
+    const forbidden = ALL_STATES[4]
+    expect(forbidden).toMatchObject({ phase: 'failed', failure: 'forbidden' })
+    expect(attemptNotice(forbidden, false, true)).toMatchObject({ tone: 'error', message: ORDER_DRAFT_TEXT.attempt.forbiddenPriced, actions: [] })
+    expect(attemptNotice(forbidden)?.message).toBe(ORDER_DRAFT_TEXT.attempt.forbidden)
+    // Only the forbidden class changes; a priced validation refusal keeps its own verdict.
+    expect(attemptNotice(ALL_STATES[5], false, true)?.message).toBe(ORDER_DRAFT_TEXT.attempt.validation)
+    // An unknown outcome is never turned into a refusal by the priced flag.
+    expect(attemptNotice({ phase: 'unknown', snapshot, reason: 'offline' }, false, true)?.message).toBe(ORDER_DRAFT_TEXT.attempt.unknown)
   })
 })

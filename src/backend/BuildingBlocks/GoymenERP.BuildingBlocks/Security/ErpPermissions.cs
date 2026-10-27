@@ -431,6 +431,15 @@ public static class ErpPermissions
     public const string SalesOrdersCancel = "sales.orders.cancel";
 
     /// <summary>
+    /// SINAN_KARARLARI_2026-10-21 No 30 / SAT-D12: force-close an approved order after its impact preview (Sales owner name
+    /// SalesPermissionManifestV1.OrdersForceClose; the decision's own literal, separate from <see cref="SalesOrdersCancel"/>).
+    /// Its own name: create, approve, price, delivery-schedule, quantity and cancel names do not confer it, and it confers none
+    /// of them. Registration grants nothing: no seeded role and no real user receives it; the real-user mapping stays a human
+    /// gate. Company-wide only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesOrdersForceClose = "sales.orders.force-close";
+
+    /// <summary>
     /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
     /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
     /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
@@ -673,6 +682,7 @@ public static class ErpPermissions
             SalesOrdersPriceFloorExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
+            SalesOrdersForceClose,
             SalesOrdersQuantityWrite,
             SalesOrdersCustomerAcceptanceRecord,
             SalesRequestsWrite,
@@ -799,6 +809,7 @@ public static class ErpPermissions
             SalesOrdersPriceFloorExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
+            SalesOrdersForceClose,
             SalesOrdersQuantityWrite,
             SalesOrdersCustomerAcceptanceRecord,
             SalesRequestsWrite,

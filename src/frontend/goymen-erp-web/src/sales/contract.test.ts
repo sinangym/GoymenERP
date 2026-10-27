@@ -566,9 +566,11 @@ describe('the record-bound Cari display (opt-in list/detail only)', () => {
     expect(decodedPage?.items.map(({ partyDisplay: _display, ...rest }) => rest)).toEqual(legacyPage?.items)
     expect(decodedPage?.items.every((item) => item.partyDisplay.partyId === item.partyId)).toBe(true)
     const decodedDetail = decodeDraftDetailWithParty(detail(), null)
-    const { partyDisplay, ...rest } = decodedDetail!
+    const { partyDisplay, userDisplays, ...rest } = decodedDetail!
     expect(rest).toEqual(decodeDraftDetail(JSON.parse(detailResponse), null))
     expect(partyDisplay).toEqual(display(rest.draft.partyId))
+    // MOD-08: a detail read without the additive member names nobody.
+    expect(userDisplays).toEqual([])
   })
 
   it('keeps the legacy and mutation decoders exactly as they were: no display required, none accepted', () => {
@@ -616,6 +618,52 @@ describe('the record-bound Cari display (opt-in list/detail only)', () => {
 
   it('still applies the detail\'s own record binding', () => {
     expect(decodeDraftDetailWithParty(detail(), 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab')).toBeNull()
+  })
+})
+
+/* MOD-08: the Identity directory's names of the people the enriched detail already identifies by id. */
+import { userDisplayFor } from './contract'
+
+describe('the record-bound user displays (MOD-08, additive on the enriched detail)', () => {
+  const SUBMITTER = 'c8000000-0000-4000-8000-000000000001'
+  const DECIDER = 'c8000000-0000-4000-8000-000000000002'
+  const enriched = (userDisplays?: unknown) => {
+    const body = JSON.parse(detailResponse)
+    body.partyDisplay = { partyId: body.draft.partyId, code: 'CARI-000123', legalName: 'ABC Demir Sanayi ve Ticaret A.Ş.', tradeName: null }
+    body.draft.approvalState = 'Approved'
+    body.approval = { submittedBy: SUBMITTER, submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: DECIDER, decidedAtUtc: '2026-09-19T09:05:00Z', rejectionReason: null }
+    if (userDisplays !== undefined) body.userDisplays = userDisplays
+    return body
+  }
+  const person = (userId: string, displayName = 'Ayşe Satış', isActiveInCompany = true) => ({ userId, displayName, isActiveInCompany })
+
+  it('reads the names of the detail\'s own actors, and an absent or empty member as nobody named', () => {
+    const decoded = decodeDraftDetailWithParty(enriched([person(SUBMITTER), person(DECIDER.toUpperCase(), 'Mehmet Onay', false)]), null)
+    expect(decoded?.userDisplays).toEqual([person(SUBMITTER), person(DECIDER.toUpperCase(), 'Mehmet Onay', false)])
+    expect(userDisplayFor(decoded!.userDisplays, DECIDER)?.displayName).toBe('Mehmet Onay')
+    expect(userDisplayFor(decoded!.userDisplays, null)).toBeNull()
+    expect(decodeDraftDetailWithParty(enriched(), null)?.userDisplays).toEqual([])
+    expect(decodeDraftDetailWithParty(enriched([]), null)?.userDisplays).toEqual([])
+    // A person the directory did not answer has no entry: the screen keeps the raw id.
+    expect(userDisplayFor(decodeDraftDetailWithParty(enriched([person(SUBMITTER)]), null)!.userDisplays, DECIDER)).toBeNull()
+  })
+
+  it.each([
+    ['not an array', null],
+    ['a person the detail does not name', [person('11111111-1111-4111-8111-111111111111')]],
+    ['the same person twice', [person(SUBMITTER), person(SUBMITTER.toUpperCase())]],
+    ['a blank name', [person(SUBMITTER, '  ')]],
+    ['a name that is not text', [{ ...person(SUBMITTER), displayName: 7 }]],
+    ['an id that is not a reference', [person('someone')]],
+    ['an activity flag that is not boolean', [{ ...person(SUBMITTER), isActiveInCompany: 'yes' }]],
+    ['an unknown member', [{ ...person(SUBMITTER), email: 'ayse@example.invalid' }]],
+    ['a missing member', [{ userId: SUBMITTER, displayName: 'Ayşe Satış' }]],
+  ])('refuses the whole detail for %s', (_, userDisplays) => {
+    expect(decodeDraftDetailWithParty(enriched(userDisplays), null)).toBeNull()
+  })
+
+  it('stays out of the legacy contract', () => {
+    expect(decodeDraftDetail({ ...JSON.parse(detailResponse), userDisplays: [] }, null)).toBeNull()
   })
 })
 

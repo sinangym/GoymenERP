@@ -377,9 +377,14 @@ public static partial class SalesEndpoints
         MapDeliverySchedules(drafts);
         MapDeliveryProgress(drafts);
         MapLoadingProgress(drafts);
+        MapCustomerReturns(drafts);
+        MapStatus(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
+        MapForceCloseImpact(drafts);
+        MapForceCloseCommand(drafts);
+        MapForceClosure(drafts);
         MapRemainderChanges(drafts);
         MapRemainderChangeCommand(drafts);
         MapRemainderDecisionCommand(drafts, "approval", "ApproveSalesOrderDraftRemainderChangeV1", allowReason: false,
@@ -388,12 +393,14 @@ public static partial class SalesEndpoints
         MapRemainderDecisionCommand(drafts, "rejection", "RejectSalesOrderDraftRemainderChangeV1", allowReason: true,
             (service, id, changeNo, body, metadata, cancellationToken) =>
                 service.RejectRemainderChangeAsync(id, changeNo, body, metadata, cancellationToken));
+        // No 160 (belt and braces): an order converted from a quote is not submitted or approved while a request that quote
+        // covers is no longer approved (409 sales_quote_request_not_approved, not recorded).
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: ["validation_failed"]);
+            unprocessableCodes: ["validation_failed"], extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved]);
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: []);
+            unprocessableCodes: [], extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved]);
         MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: []);
@@ -872,6 +879,69 @@ public static partial class SalesEndpoints
     }
 
     /// <summary>
+    /// SAT-D8 / API-10: per line the approved customer-return total from Logistics, read through the Sales-declared owner
+    /// port under <c>sales.drafts.read</c> (returns live on the order; no separate menu). Another company's draft is 404;
+    /// the read writes nothing in either module.
+    /// </summary>
+    private static void MapCustomerReturns(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/customer-returns", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftCustomerReturnsAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftCustomerReturnsV1")
+            .Produces<SalesOrderDraftCustomerReturnsResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// DEC-SAL-001 / API-08: the order's seven status axes under <c>sales.drafts.read</c> — lifecycle, internal approval and
+    /// customer acceptance from the Sales aggregate; realization from the Logistics shipped totals (AT-024 port) judged with the
+    /// Settings SAT-D5 tolerance (fail-closed "PolicyUnavailable" / "Unreadable"); source, invoicing and financial closure
+    /// "NoSource". Another company's draft is 404; the read writes nothing in any module.
+    /// </summary>
+    private static void MapStatus(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/status", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftStatusAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftStatusV1")
+            .Produces<SalesOrderDraftStatusResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
     /// DEC-SAL-005: the impact preview of cancelling an approved order, under <c>sales.orders.cancel</c> (the service measures
     /// it): every DEC-SAL-005 category read afresh from its owner's port, a category without an owner on main as "no source".
     /// Read-only; another company's draft is 404.
@@ -1000,6 +1070,140 @@ public static partial class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftCancellationV1")
             .Produces<SalesOrderDraftCancellationResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// No 30 / SAT-D12: the impact preview of force-closing an approved order, under <c>sales.orders.force-close</c> (the
+    /// service measures it): every category read afresh from its owner's port, each with its status and whether it blocks the
+    /// closure, and per line the closed remainder a closure would record. Read-only; another company's draft is 404.
+    /// </summary>
+    private static void MapForceCloseImpact(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/force-close-impact", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetForceCloseImpactAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftForceCloseImpactV1")
+            .Produces<SalesOrderDraftForceCloseImpactResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// No 30 / SAT-D12: force-close an approved order. The source-owned service enforces <c>sales.orders.force-close</c>, the
+    /// version, the state, the required reason, the preview token and the blocking rules (an active allocation, open loading or
+    /// an unreadable owner refuses; an uninvoiced dispatch note is a warning; nothing of another module is released). The route
+    /// owns only the strict HTTP envelope (the cancellation's) and never derives an impact, a remainder, a role or an approval.
+    /// </summary>
+    private static void MapForceCloseCommand(RouteGroupBuilder drafts)
+    {
+        drafts.MapPost("/{id:guid}/force-close", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftForceCloseRequest body;
+            try
+            {
+                using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
+                body = SalesDraftJson.ReadForceClose(await reader.ReadToEndAsync(cancellationToken));
+            }
+            catch (JsonException)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.ForceCloseDraftAsync(id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("ForceCloseSalesOrderDraftV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftForceCloseRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.ForceCloseBlocked, SalesDraftProblemCodesV1.ForceCloseImpactChanged,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>No 30: the recorded force-closure with every line's closed remainder (or null) under the draft read; another company's draft is 404.</summary>
+    private static void MapForceClosure(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/force-close", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftForceClosureAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftForceClosureV1")
+            .Produces<SalesOrderDraftForceClosureResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
@@ -1170,7 +1374,7 @@ public static partial class SalesEndpoints
 
     private static void MapStateCommand(RouteGroupBuilder drafts, string pattern, string name, bool allowReason,
         Func<ISalesDraftService, Guid, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken, Task<SalesOrderDraftResponse>> command,
-        string[] unprocessableCodes)
+        string[] unprocessableCodes, string[]? extraConflictCodes = null)
     {
         var route = drafts.MapPost(pattern, async (
             Guid id,
@@ -1233,8 +1437,8 @@ public static partial class SalesEndpoints
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
-                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpConflict([SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange, .. extraConflictCodes ?? []])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
         if (unprocessableCodes.Length > 0)
@@ -1411,6 +1615,15 @@ public static partial class SalesEndpoints
             enrichedDetailSchema.Properties["customerAcceptance"] = new OpenApiSchemaReference(
                 nameof(SalesDraftCustomerAcceptanceV1), document, externalResource: null);
             enrichedDetailSchema.Properties!["partyDisplay"] = display;
+            // MOD-08: the Identity owner's display names of the people the detail already identifies by id.
+            var userDisplaySchema = await context.GetOrCreateSchemaAsync(
+                typeof(SalesUserDisplayV1), cancellationToken: cancellationToken);
+            components.Schemas[nameof(SalesUserDisplayV1)] = userDisplaySchema;
+            enrichedDetailSchema.Properties["userDisplays"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = new OpenApiSchemaReference(nameof(SalesUserDisplayV1), document, externalResource: null),
+            };
         }
         var response = (OpenApiResponse)operation.Responses!["200"];
         var content = (OpenApiMediaType)response.Content!["application/json"];
