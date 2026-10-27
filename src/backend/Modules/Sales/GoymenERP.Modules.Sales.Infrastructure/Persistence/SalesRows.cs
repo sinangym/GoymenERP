@@ -176,12 +176,6 @@ internal sealed class DraftAttemptRow : ISalesTenantRow
     /// <summary>1 = a stored draft (<see cref="DraftId"/> set); 2 = a recorded terminal refusal (<see cref="RefusalJson"/> set) — ADR-011 §7.</summary>
     public int Outcome { get; set; }
     public Guid? DraftId { get; set; }
-
-    /// <summary>API-20 / API-21: the sales request a request command's attempt answers (exactly one target per stored outcome).</summary>
-    public Guid? RequestId { get; set; }
-
-    /// <summary>API-22 / API-24: the sales quote a quote command's attempt answers.</summary>
-    public Guid? QuoteId { get; set; }
     public string? RefusalJson { get; set; }
     public string? ResultJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
