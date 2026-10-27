@@ -25,7 +25,7 @@ internal sealed class PriceListProductReference
     public string ReferencesJson { get; set; } = string.Empty;
 }
 
-/// <summary>The list header; only Name, Version and UpdatedAtUtc move after the first commit.</summary>
+/// <summary>The list header; only Name, Version and UpdatedAtUtc move after the first commit (the scope never does).</summary>
 internal sealed class PriceListRow : IProductPriceListTenantRow
 {
     public Guid Id { get; set; }
@@ -34,6 +34,10 @@ internal sealed class PriceListRow : IProductPriceListTenantRow
     public string CurrencyCode { get; set; } = string.Empty;
     public int Channel { get; set; }
     public int VatBasis { get; set; }
+    /// <summary>MOD-02 (SAT-D9): 1 = Company (no target), 3 = Customer (party + company account). Other kinds are refused.</summary>
+    public int ScopeKind { get; set; }
+    public Guid? ScopePartyId { get; set; }
+    public Guid? ScopeCompanyAccountId { get; set; }
     public long Version { get; set; }
     public byte[] RowVersion { get; set; } = [];
     public DateTimeOffset CreatedAtUtc { get; set; }

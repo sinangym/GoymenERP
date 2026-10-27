@@ -11,8 +11,10 @@ namespace GoymenERP.Modules.Sales.Application;
 /// its default until the person changes it; the person may overwrite the price, give a discount (percent or amount) and a
 /// maturity surcharge (vade farkı, percent or amount); the reference and the adjustments stay visible and the net is the
 /// one calculator's (<see cref="SalesLinePriceCalculator"/>). Sales asks the Product owner through
-/// <see cref="IProductQuantityPriceReferenceReaderV1"/> (the port carries no authority: Sales measures its own price names, fenced
+/// <see cref="IProductQuantityPriceReferenceReaderV2"/> (the port carries no authority: Sales measures its own price names, fenced
 /// after every awaited owner read) in the draft's currency (Settings money profile's code) on the draft's business date.
+/// MOD-02 (SAT-D9 / SAT-D10): the owner finds the list price along agreement &gt; customer-specific &gt; customer group &gt;
+/// company for the draft's customer, on the Europe/Istanbul business day; the line records the tier it came from.
 /// </summary>
 public sealed partial class SalesDraftService
 {
@@ -57,20 +59,60 @@ public sealed partial class SalesDraftService
         // The Product owner does not convert quantities. The current accepted Sales path prices in the exact order unit;
         // future cross-unit pricing needs an owner-approved conversion contract rather than reusing this quantity.
         var priceUnitId = line.OrderUnit.UnitId;
-        var answers = await GuardedAsync(scope, permission,
-            () => reader.SearchAsync(line.Product.ProductId, priceUnitId, line.Quantity.Value, currencyCode,
-                draft.Money.EffectiveOn, cancellationToken), cancellationToken);
+        var resolution = await ResolveLineAsync(scope, permission, reader, draft, line, priceUnitId, currencyCode, strict: true,
+            cancellationToken);
         return new SalesOrderDraftPriceReferencesResponse(line.Id, currencyCode, draft.Money.EffectiveOn,
-            [.. answers.Where(answer => answer.ProductId == line.Product.ProductId && answer.PriceUnitId == priceUnitId
-                    && string.Equals(answer.VatBasis, "ExcludingVat", StringComparison.Ordinal))
-                .Select(answer => Wire(Snapshot(answer)))]);
+            [.. resolution.Candidates.Select(answer => Wire(Snapshot(answer)))],
+            new SalesDraftPriceResolutionV1(resolution.Outcome.ToString(), resolution.EffectiveOn, resolution.BusinessTimeZone,
+                resolution.MatchedTier?.ToString(), resolution.Reference?.PriceListId, resolution.Reference?.VersionNo,
+                [.. resolution.Tiers.Select(tier => new SalesDraftPriceTierEvaluationV1(tier.Tier.ToString(), tier.Status.ToString(), tier.Reason))],
+                new SalesDraftPackageStandardV1(resolution.PackageStandard.Status.ToString(), resolution.PackageStandard.Reason)));
+    }
+
+    /// <summary>
+    /// MOD-02: the owner's tier chain for one draft line (the draft's customer, currency, business date, the line's product,
+    /// order unit and quantity), checked against the contract: an answer for another date, a candidate of another tier than
+    /// the one matched, or an outcome that does not fit its candidates is the owner's fault — 503, never shown as a price.
+    /// <paramref name="strict"/> (the read offered to the person) also refuses a candidate for another product, unit,
+    /// currency, channel, VAT basis, date or quantity; the commercial revision checks those per line as field refusals.
+    /// </summary>
+    private async Task<ProductPriceResolutionV2> ResolveLineAsync(Scope scope, string? permission, IProductQuantityPriceReferenceReaderV2 reader,
+        SalesOrderDraft draft, SalesOrderDraftLine line, Guid priceUnitId, string currencyCode, bool strict, CancellationToken cancellationToken)
+    {
+        var on = draft.Money.EffectiveOn;
+        var quantity = line.Quantity.Value;
+        var resolution = await GuardedAsync(scope, permission,
+            () => reader.ResolveAsync(new ProductPriceResolutionRequestV2(line.Product.ProductId, priceUnitId, quantity, currencyCode, on,
+                new ProductPriceCustomerV2(draft.Header.PartyId, draft.Header.CompanyAccountId)), cancellationToken), cancellationToken);
+        var consistent = resolution is not null
+            && resolution.EffectiveOn == on
+            && resolution.Candidates is not null && resolution.Tiers is not null && resolution.PackageStandard is not null
+            && resolution.Outcome switch
+            {
+                ProductPriceResolutionOutcomeV2.Resolved => resolution.Candidates.Count == 1 && resolution.MatchedTier is not null
+                    && resolution.Reference is not null && resolution.Reference == resolution.Candidates[0],
+                ProductPriceResolutionOutcomeV2.Ambiguous => resolution.Candidates.Count > 1 && resolution.MatchedTier is not null
+                    && resolution.Reference is null,
+                ProductPriceResolutionOutcomeV2.NoPrice => resolution.Candidates.Count == 0 && resolution.MatchedTier is null
+                    && resolution.Reference is null,
+                _ => false,
+            }
+            && resolution.Candidates.All(answer => answer is not null && answer.Tier == resolution.MatchedTier)
+            && (!strict || resolution.Candidates.All(answer => answer.ProductId == line.Product.ProductId && answer.PriceUnitId == priceUnitId
+                && string.Equals(answer.CurrencyCode, currencyCode, StringComparison.Ordinal)
+                && string.Equals(answer.Channel, "Sales", StringComparison.Ordinal)
+                && string.Equals(answer.VatBasis, "ExcludingVat", StringComparison.Ordinal)
+                && answer.ValidFrom <= on && (answer.ValidThrough is not { } through || through >= on)
+                && answer.LowerQuantity <= quantity && (answer.UpperQuantity is not { } upper || quantity < upper)));
+        return consistent ? resolution! : throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
     }
 
     /// <summary>
     /// The commercial revision's references: for every request line that names a list version, the owner's price copied as
-    /// the line's reference — the draft read, the currency code and each owner answer under the price-write fence. A version
-    /// that no longer prices the line (or another currency) is a 422 on <c>lines[i].priceReference</c>, not recorded. Nothing
-    /// is read when no line names one.
+    /// the line's reference — the draft read, the currency code and each owner answer under the price-write fence. MOD-02: the
+    /// named list version must be the tier chain's answer for the line (the resolved list, or one of an ambiguous tier's); a
+    /// version that no longer prices the line, or a list a higher tier supersedes, is a 422 on <c>lines[i].priceReference</c>,
+    /// not recorded. Nothing is read when no line names one.
     /// </summary>
     private async Task<(IReadOnlyDictionary<Guid, PriceReferenceSnapshot> References, Scope Scope)> ResolvePriceReferencesAsync(Scope scope,
         string permission, Guid draftId, SalesDraftCommercialRevisionRequest request, CancellationToken cancellationToken)
@@ -103,9 +145,10 @@ public sealed partial class SalesDraftService
                 continue;
             }
 
-            var answer = await GuardedAsync(scope, permission,
-                () => reader.GetAsync(reference.PriceListId, reference.VersionNo, draftLine.Product.ProductId, priceUnit,
-                    draftLine.Quantity.Value, draft.Money.EffectiveOn, cancellationToken), cancellationToken);
+            var resolution = await ResolveLineAsync(scope, permission, reader, draft, draftLine, priceUnit, currencyCode, strict: false,
+                cancellationToken);
+            var answer = resolution.Candidates.SingleOrDefault(candidate => candidate.PriceListId == reference.PriceListId
+                && candidate.VersionNo == reference.VersionNo);
             if (answer is null
                 || answer.PriceListId != reference.PriceListId
                 || answer.VersionNo != reference.VersionNo
@@ -176,17 +219,17 @@ public sealed partial class SalesDraftService
         return profile.CurrencyCode;
     }
 
-    private static PriceReferenceSnapshot Snapshot(ProductPriceReferenceV1 answer) =>
+    private static PriceReferenceSnapshot Snapshot(ProductPriceReferenceV2 answer) =>
         new(answer.PriceListId, answer.PriceListName, answer.VersionNo, answer.ValidFrom, answer.ValidThrough, answer.CurrencyCode,
             answer.PriceUnitId, SalesLinePriceCalculator.Format(answer.UnitPrice),
             answer.FloorUnitPrice is { } floor ? SalesLinePriceCalculator.Format(floor) : null, answer.VatBasis,
             SalesLinePriceCalculator.Format(answer.LowerQuantity),
-            answer.UpperQuantity is { } upper ? SalesLinePriceCalculator.Format(upper) : null);
+            answer.UpperQuantity is { } upper ? SalesLinePriceCalculator.Format(upper) : null, answer.Tier.ToString());
 
     private static SalesDraftPriceReferenceV1 Wire(PriceReferenceSnapshot reference) =>
         new(reference.PriceListId, reference.PriceListName, reference.VersionNo, reference.ValidFrom, reference.ValidThrough,
             reference.CurrencyCode, reference.PriceUnitId, reference.UnitPrice, reference.FloorUnitPrice, reference.VatBasis,
-            reference.LowerQuantity, reference.UpperQuantity);
+            reference.LowerQuantity, reference.UpperQuantity, reference.Tier);
 
     private static SalesDraftLinePricingV1 Pricing(Guid lineId, int lineNo, CommercialDraftFields commercial) =>
         new(lineId, lineNo, commercial.UnitPrice, commercial.PriceUnitId, commercial.PriceSource,

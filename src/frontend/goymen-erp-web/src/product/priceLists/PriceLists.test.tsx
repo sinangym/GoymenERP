@@ -45,13 +45,13 @@ function version(overrides: Record<string, unknown> = {}) {
 function view(overrides: Record<string, unknown> = {}) {
   return { id: LIST, name: 'Yurt içi satış', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat', version: '1',
     createdAtUtc: '2026-09-30T09:00:00Z', updatedAtUtc: '2026-09-30T09:00:00Z', activeVersionNo: null, draftVersionNo: 1,
-    versions: [version()], ...overrides }
+    versions: [version()], scope: { kind: 'Company', partyId: null, companyAccountId: null }, ...overrides }
 }
 
 function summary(overrides: Record<string, unknown> = {}) {
   return { id: LIST, name: 'Yurt içi satış', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat',
     version: '3', activeVersionNo: 1, activeValidFrom: '2026-10-01', draftVersionNo: 2, versionCount: 2,
-    updatedAtUtc: '2026-09-30T09:00:00Z', ...overrides }
+    updatedAtUtc: '2026-09-30T09:00:00Z', scope: { kind: 'Company', partyId: null, companyAccountId: null }, ...overrides }
 }
 
 function install(handlers: {

@@ -31,15 +31,17 @@ public sealed partial class SalesDraftServiceTests
             new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, "10", new SalesDraftPriceReferenceRequestV1(PriceList, 1),
                 SurchargePercent: "2")), Metadata("k-r1"));
         Assert.Equal("12.50", revised.Detail.Lines[0].UnitPrice);
-        // The owner was asked for exactly this list version, the line's product and price unit, on the draft's business date.
-        Assert.Equal((PriceList, 1, Product, KgUnit, 5m, Day), references.LastGet);
+        // MOD-02: the owner's tier chain was asked for the line's product, price unit and quantity, in the draft's currency, on
+        // the draft's business date, for the draft's customer (party AND company account).
+        Assert.Equal(new ProductPriceResolutionRequestV2(Product, KgUnit, 5m, "TRY", Day, new ProductPriceCustomerV2(Party, Account)),
+            references.LastRequest);
 
         var pricing = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines);
         Assert.Equal(("Reference", "12.5", "10", "2", "11.475"), (pricing.PriceSource, pricing.PriceReference!.UnitPrice, pricing.DiscountPercent,
             pricing.SurchargePercent, pricing.NetUnitPrice));
-        Assert.Equal(("SENTETIK liste", "10", "ExcludingVat", "0", "10"), (pricing.PriceReference.PriceListName,
+        Assert.Equal(("SENTETIK liste", "10", "ExcludingVat", "0", "10", "Company"), (pricing.PriceReference.PriceListName,
             pricing.PriceReference.FloorUnitPrice, pricing.PriceReference.VatBasis, pricing.PriceReference.LowerQuantity,
-            pricing.PriceReference.UpperQuantity));
+            pricing.PriceReference.UpperQuantity, pricing.PriceReference.Tier));
     }
 
     [Fact]
@@ -333,7 +335,10 @@ public sealed partial class SalesDraftServiceTests
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-vat"))).Detail;
         var lineId = created.Lines[0].LineId;
 
-        Assert.Empty((await world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId)).Items);
+        // MOD-02: a VAT-inclusive candidate is off the owner's contract; the read offered to the person refuses it whole (503)
+        // rather than showing a resolved tier without its price.
+        var offered = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId));
+        Assert.Equal((503, SalesDraftProblemCodesV1.ReferenceProviderInvalid), (offered.Status, offered.Code));
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
             Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, null,
                 new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata("k-vat-revision")));
@@ -399,7 +404,106 @@ public sealed partial class SalesDraftServiceTests
         Assert.DoesNotContain(referencedWorld.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
     }
 
-    private sealed class FakePriceReferences : IProductQuantityPriceReferenceReaderV1
+    [Fact]
+    public async Task The_customer_tier_answer_is_offered_with_its_resolution_and_the_line_records_the_tier()
+    {
+        var references = new FakePriceReferences { Price = 12.50m, Tier = ProductPriceTierV2.Customer };
+        var world = new World { PriceReferences = references };
+        var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("5", null), Metadata("k-tier-customer"))).Detail;
+        var lineId = created.Lines[0].LineId;
+
+        var offered = await world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId);
+        var item = Assert.Single(offered.Items);
+        Assert.Equal(("Customer", PriceList, 1), (item.Tier, item.PriceListId, item.VersionNo));
+        var resolution = offered.Resolution;
+        Assert.Equal(("Resolved", "Customer", (Guid?)PriceList, (int?)1, Day, "Europe/Istanbul"), (resolution.Outcome, resolution.MatchedTier,
+            resolution.PriceListId, resolution.VersionNo, resolution.EffectiveOn, resolution.BusinessTimeZone));
+        Assert.Equal(["Agreement:Unavailable:agreement_owner_missing", "Customer:Matched:", "CustomerGroup:NotReached:", "Company:NotReached:"],
+            resolution.Tiers.Select(tier => $"{tier.Tier}:{tier.Status}:{tier.Reason}"));
+        Assert.Equal(("Unavailable", "package_standard_owner_missing"), (resolution.PackageStandard.Status, resolution.PackageStandard.Reason));
+
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, null, new SalesDraftPriceReferenceRequestV1(PriceList, 1))),
+            Metadata("k-tier-customer-revise"));
+        var saved = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).PriceReference!;
+        Assert.Equal(("Customer", "12.5"), (saved.Tier, saved.UnitPrice));
+    }
+
+    [Fact]
+    public async Task No_tier_pricing_the_line_is_said_explicitly_with_no_item_and_no_price()
+    {
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, Missing = true } };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-no-price"))).Detail;
+
+        var offered = await world.Service().GetLinePriceReferencesAsync(created.Draft.Id, created.Lines[0].LineId);
+        Assert.Empty(offered.Items);
+        Assert.Equal(("NoPrice", (string?)null, (Guid?)null, (int?)null), (offered.Resolution.Outcome, offered.Resolution.MatchedTier,
+            offered.Resolution.PriceListId, offered.Resolution.VersionNo));
+        Assert.Equal(["Agreement", "Customer", "CustomerGroup", "Company"], offered.Resolution.Tiers.Select(tier => tier.Tier));
+        Assert.DoesNotContain(offered.Resolution.Tiers, tier => tier.Status is "Matched" or "Ambiguous");
+        // Nothing was priced: the line keeps no price at all (never a zero).
+        var pricing = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines);
+        Assert.Equal(((string?)null, (string?)null, (SalesDraftPriceReferenceV1?)null), (pricing.UnitPrice, pricing.NetUnitPrice, pricing.PriceReference));
+    }
+
+    [Fact]
+    public async Task An_ambiguous_tier_offers_every_candidate_and_accepts_only_one_of_them()
+    {
+        var second = Guid.Parse("cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd");
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, ExtraCandidate = second } };
+        var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("5", null), Metadata("k-ambiguous"))).Detail;
+        var lineId = created.Lines[0].LineId;
+
+        var offered = await world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId);
+        Assert.Equal([PriceList, second], offered.Items.Select(item => item.PriceListId));
+        Assert.Equal(("Ambiguous", "Company", (Guid?)null), (offered.Resolution.Outcome, offered.Resolution.MatchedTier, offered.Resolution.PriceListId));
+
+        var outside = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, null,
+                new SalesDraftPriceReferenceRequestV1(Guid.NewGuid(), 1))), Metadata("k-ambiguous-outside")));
+        Assert.Equal((422, "lines[0].priceReference", SalesDraftProblemCodesV1.PriceReferenceUnavailable),
+            (outside.Status, Assert.Single(outside.Errors).Field, Assert.Single(outside.Errors).Code));
+
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, null, new SalesDraftPriceReferenceRequestV1(second, 1))),
+            Metadata("k-ambiguous-chosen"));
+        Assert.Equal(second, Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).PriceReference!.PriceListId);
+    }
+
+    [Theory]
+    [InlineData("date")]
+    [InlineData("tier")]
+    public async Task An_owner_answer_for_another_date_or_tier_is_never_shown_or_recorded(string fault)
+    {
+        var references = new FakePriceReferences { Price = 12.50m };
+        if (fault == "date")
+        {
+            references.ReturnedEffectiveOn = Day.AddDays(1);
+        }
+        else
+        {
+            references.ReturnedCandidateTier = ProductPriceTierV2.Customer;
+        }
+
+        var world = new World { PriceReferences = references };
+        var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("5", null), Metadata($"k-{fault}-owner"))).Detail;
+        var lineId = created.Lines[0].LineId;
+
+        var offered = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetLinePriceReferencesAsync(created.Draft.Id, lineId));
+        Assert.Equal((503, SalesDraftProblemCodesV1.ReferenceProviderInvalid), (offered.Status, offered.Code));
+        var revised = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, null,
+                new SalesDraftPriceReferenceRequestV1(PriceList, 1))), Metadata($"k-{fault}-owner-revise")));
+        Assert.Equal((503, SalesDraftProblemCodesV1.ReferenceProviderInvalid), (revised.Status, revised.Code));
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+    }
+
+    /// <summary>
+    /// MOD-02: the owner's tier chain as a synthetic port. It answers the configured list at <see cref="Tier"/> (Resolved),
+    /// adds <see cref="ExtraCandidate"/> as a second list of the same tier (Ambiguous), or nothing (NoPrice). Like a faulty owner
+    /// it answers in its own <see cref="Currency"/> whatever the request asked.
+    /// </summary>
+    private sealed class FakePriceReferences : IProductQuantityPriceReferenceReaderV2
     {
         public decimal Price { get; set; }
         public decimal? Floor { get; set; }
@@ -418,41 +522,73 @@ public sealed partial class SalesDraftServiceTests
         public DateOnly? ReturnedValidThrough { get; set; }
         public decimal? ReturnedLowerQuantity { get; set; }
         public decimal? ReturnedUpperQuantity { get; set; }
-        public (Guid List, int Version, Guid Product, Guid Unit, decimal Quantity, DateOnly On)? LastGet { get; private set; }
+        public ProductPriceTierV2 Tier { get; set; } = ProductPriceTierV2.Company;
+        public Guid? ExtraCandidate { get; set; }
+        public DateOnly? ReturnedEffectiveOn { get; set; }
+        public ProductPriceTierV2? ReturnedCandidateTier { get; set; }
+        public ProductPriceResolutionRequestV2? LastRequest { get; private set; }
 
-        public Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, Guid priceUnitId, decimal quantity,
-            string currencyCode, DateOnly on, CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<ProductPriceReferenceV1>>(Select(productId, priceUnitId, quantity, currencyCode) is { } selected
-                ? [selected]
-                : []);
-
-        public Task<ProductPriceReferenceV1?> GetAsync(Guid priceListId, int versionNo, Guid productId, Guid priceUnitId,
-            decimal quantity, DateOnly on, CancellationToken cancellationToken = default)
+        public Task<ProductPriceResolutionV2> ResolveAsync(ProductPriceResolutionRequestV2 request, CancellationToken cancellationToken = default)
         {
-            LastGet = (priceListId, versionNo, productId, priceUnitId, quantity, on);
-            return Task.FromResult(priceListId != PriceList ? null : Select(productId, priceUnitId, quantity, Currency));
+            LastRequest = request;
+            List<ProductPriceReferenceV2> candidates = [];
+            if (Select(request.ProductId, request.PriceUnitId, request.Quantity, ReturnedPriceListId, "SENTETIK liste") is { } selected)
+            {
+                candidates.Add(selected);
+                if (ExtraCandidate is { } extra
+                    && Select(request.ProductId, request.PriceUnitId, request.Quantity, extra, "SENTETIK ikinci liste") is { } second)
+                {
+                    candidates.Add(second);
+                }
+            }
+
+            var outcome = candidates.Count switch
+            {
+                0 => ProductPriceResolutionOutcomeV2.NoPrice,
+                1 => ProductPriceResolutionOutcomeV2.Resolved,
+                _ => ProductPriceResolutionOutcomeV2.Ambiguous,
+            };
+            ProductPriceTierEvaluationV2[] tiers =
+            [
+                new(ProductPriceTierV2.Agreement, ProductPriceTierStatusV2.Unavailable, ProductPriceResolutionReasonsV2.AgreementOwnerMissing),
+                new(ProductPriceTierV2.Customer, Tier == ProductPriceTierV2.Customer && candidates.Count > 0
+                    ? (candidates.Count == 1 ? ProductPriceTierStatusV2.Matched : ProductPriceTierStatusV2.Ambiguous)
+                    : ProductPriceTierStatusV2.NoMatch, null),
+                new(ProductPriceTierV2.CustomerGroup, Tier == ProductPriceTierV2.Customer && candidates.Count > 0
+                    ? ProductPriceTierStatusV2.NotReached : ProductPriceTierStatusV2.Unavailable,
+                    Tier == ProductPriceTierV2.Customer && candidates.Count > 0 ? null : ProductPriceResolutionReasonsV2.CustomerGroupOwnerMissing),
+                new(ProductPriceTierV2.Company, Tier == ProductPriceTierV2.Company && candidates.Count > 0
+                    ? (candidates.Count == 1 ? ProductPriceTierStatusV2.Matched : ProductPriceTierStatusV2.Ambiguous)
+                    : Tier == ProductPriceTierV2.Customer && candidates.Count > 0 ? ProductPriceTierStatusV2.NotReached : ProductPriceTierStatusV2.NoMatch,
+                    null),
+            ];
+            return Task.FromResult(new ProductPriceResolutionV2(outcome, ReturnedEffectiveOn ?? request.On, ProductPriceBusinessDayV2.TimeZoneId,
+                candidates.Count > 0 ? Tier : null, outcome == ProductPriceResolutionOutcomeV2.Resolved ? candidates[0] : null, candidates, tiers,
+                new ProductPackageStandardSnapshotV2(ProductPackageStandardStatusV2.Unavailable,
+                    ProductPriceResolutionReasonsV2.PackageStandardOwnerMissing)));
         }
 
-        private ProductPriceReferenceV1? Select(Guid productId, Guid unitId, decimal quantity, string currencyCode)
+        private ProductPriceReferenceV2? Select(Guid productId, Guid unitId, decimal quantity, Guid listId, string name)
         {
-            if (Missing || currencyCode != Currency || unitId != KgUnit)
+            if (Missing || unitId != KgUnit)
             {
                 return null;
             }
 
             if (quantity >= LowerQuantity && (UpperQuantity is null || quantity < UpperQuantity))
             {
-                return Reference(productId, unitId, Price, LowerQuantity, UpperQuantity);
+                return Reference(listId, name, productId, unitId, Price, LowerQuantity, UpperQuantity);
             }
 
             return SecondPrice is { } second && quantity >= SecondLowerQuantity
                 && (SecondUpperQuantity is null || quantity < SecondUpperQuantity)
-                ? Reference(productId, unitId, second, SecondLowerQuantity, SecondUpperQuantity)
+                ? Reference(listId, name, productId, unitId, second, SecondLowerQuantity, SecondUpperQuantity)
                 : null;
         }
 
-        private ProductPriceReferenceV1 Reference(Guid productId, Guid unitId, decimal price, decimal lower, decimal? upper) =>
-            new(ReturnedPriceListId, "SENTETIK liste", Guid.NewGuid(), ReturnedVersionNo, ReturnedValidFrom, ReturnedValidThrough,
+        private ProductPriceReferenceV2 Reference(Guid listId, string name, Guid productId, Guid unitId, decimal price, decimal lower,
+            decimal? upper) =>
+            new(ReturnedCandidateTier ?? Tier, listId, name, Guid.NewGuid(), ReturnedVersionNo, ReturnedValidFrom, ReturnedValidThrough,
                 productId, unitId, Currency, ReturnedChannel, VatBasis, price, Floor,
                 ReturnedLowerQuantity ?? lower, ReturnedUpperQuantity ?? upper);
     }

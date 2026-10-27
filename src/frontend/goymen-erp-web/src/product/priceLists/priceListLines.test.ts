@@ -29,6 +29,7 @@ describe('price-list quantity tier transport', () => {
     const body = {
       id: 'list', name: 'Liste', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat', version: '1',
       createdAtUtc: '2026-10-01T00:00:00Z', updatedAtUtc: '2026-10-01T00:00:00Z', activeVersionNo: null, draftVersionNo: 1,
+      scope: { kind: 'Company', partyId: null, companyAccountId: null },
       versions: [{ versionId: 'v1', versionNo: 1, state: 'Draft', status: 'Draft', validFrom: '2026-10-01', validThrough: null,
         createdAtUtc: '2026-10-01T00:00:00Z', createdBy: 'actor', publishedAtUtc: null, publishedBy: null,
         lines: [line('l1', '10.125', '20.5')] }],

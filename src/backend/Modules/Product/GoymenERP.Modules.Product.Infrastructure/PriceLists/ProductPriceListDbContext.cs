@@ -83,6 +83,12 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
             // Fail-closed context (AT-018): the Sales channel and prices excluding VAT only, until decided otherwise.
             table.HasCheckConstraint("CK_PriceLists_Channel", "[Channel] = 1");
             table.HasCheckConstraint("CK_PriceLists_VatBasis", "[VatBasis] = 1");
+            // MOD-02 (SAT-D9): a company-wide list names nobody; a customer-specific list names the party AND its company
+            // account. The customer-group and agreement kinds have no owner master yet and are refused here as well.
+            table.HasCheckConstraint("CK_PriceLists_Scope",
+                "([ScopeKind] = 1 AND [ScopePartyId] IS NULL AND [ScopeCompanyAccountId] IS NULL) "
+                + $"OR ([ScopeKind] = 3 AND [ScopePartyId] IS NOT NULL AND [ScopePartyId] <> {EmptyGuid} "
+                + $"AND [ScopeCompanyAccountId] IS NOT NULL AND [ScopeCompanyAccountId] <> {EmptyGuid})");
             table.HasCheckConstraint("CK_PriceLists_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_PriceLists_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
         });
@@ -91,6 +97,8 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         entity.Property(x => x.Id).ValueGeneratedNever();
         entity.Property(x => x.Name).HasMaxLength(200).UseCollation(NameCollation).IsRequired();
         entity.Property(x => x.CurrencyCode).HasMaxLength(3).IsUnicode(false).IsFixedLength().IsRequired();
+        // Every list stored before MOD-02 is company-wide: the column arrives with that value and is always written explicitly.
+        entity.Property(x => x.ScopeKind).HasDefaultValue(1).ValueGeneratedNever();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.RowVersion).IsRowVersion();
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
@@ -99,6 +107,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         // NOT NULL, so the filter is stated explicitly as none rather than left to the provider.
         entity.HasIndex(x => new { x.CompanyId, x.Name }).IsUnique().HasFilter(null).HasDatabaseName("UX_PriceLists_CompanyId_Name");
         entity.HasIndex(x => new { x.CompanyId, x.UpdatedAtUtc, x.Id }).HasDatabaseName("IX_PriceLists_CompanyId_UpdatedAtUtc_Id");
+        entity.HasIndex(x => new { x.CompanyId, x.ScopeKind, x.ScopeCompanyAccountId }).HasDatabaseName("IX_PriceLists_CompanyId_Scope");
         entity.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }

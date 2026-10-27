@@ -66,6 +66,23 @@ public sealed class SalesLinePricingTests
     }
 
     [Fact]
+    public void MOD_02_the_source_tier_round_trips_and_a_line_priced_before_the_chain_restores_without_one()
+    {
+        var tiered = new CommercialDraftFields("100", Unit, null, Reference("100") with { Tier = "Customer" });
+        var json = SalesLinePricingJson.Serialize(tiered)!;
+        Assert.Contains("\"tier\":\"Customer\"", json, StringComparison.Ordinal);
+        Assert.Equal("Customer", SalesLinePricingJson.Restore("100", Unit, null, json).Reference!.Tier);
+
+        // A row stored before MOD-02 carries no tier member: it is read as "no recorded tier", never guessed.
+        var legacy = "{\"reference\":{\"priceListId\":\"abababab-abab-4bab-8bab-abababababab\",\"priceListName\":\"SENTETIK\",\"versionNo\":2,"
+            + "\"validFrom\":\"2026-10-01\",\"validThrough\":null,\"currencyCode\":\"TRY\",\"priceUnitId\":\"66666666-6666-4666-8666-666666666666\","
+            + "\"unitPrice\":\"100\",\"floorUnitPrice\":null,\"vatBasis\":\"ExcludingVat\",\"lowerQuantity\":\"10\",\"upperQuantity\":\"20\"},"
+            + "\"discountAmount\":null,\"surchargePercent\":null,\"surchargeAmount\":null,\"floorException\":null}";
+        var restored = SalesLinePricingJson.Restore("100", Unit, null, legacy).Reference!;
+        Assert.Equal((Reference("100"), (string?)null), (restored, restored.Tier));
+    }
+
+    [Fact]
     public void The_floor_exception_round_trips_with_the_exact_price_snapshot_and_actor_facts()
     {
         var requestedAt = new DateTimeOffset(2026, 10, 1, 8, 0, 0, TimeSpan.Zero);

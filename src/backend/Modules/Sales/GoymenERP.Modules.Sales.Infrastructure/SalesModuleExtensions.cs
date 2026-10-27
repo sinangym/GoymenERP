@@ -95,9 +95,9 @@ public static class SalesModuleExtensions
         // cancellation is refused, never decided on an assumed zero.
         serviceProvider.GetService<ISalesOrderAllocationReadPortV1>(),
         serviceProvider.GetService<ISalesOrderLoadingReadPortV1>(),
-        // AT-018 / AT-021: the Product price-list reference read, registered by the Product owner's AddProductPriceLists;
-        // until it is, a list-price reference is 503, never an assumed "no price".
-        serviceProvider.GetService<IProductQuantityPriceReferenceReaderV1>(),
+        // AT-018 / AT-021 / MOD-02: the Product price tier chain (SAT-D9), registered by the Product owner's
+        // AddProductPriceLists; until it is, a list-price reference is 503, never an assumed "no price".
+        serviceProvider.GetService<IProductQuantityPriceReferenceReaderV2>(),
         // SAT-D8 / API-10: the customer-return owner's read port, registered by that owner's module (Logistics); until it
         // is, the order's approved-returns read is 503, never an assumed "nothing returned".
         serviceProvider.GetService<ISalesOrderCustomerReturnReadPortV1>(),

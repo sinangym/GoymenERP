@@ -293,7 +293,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             // PRODUCT-TECH-FAMILY-02: replace one renamed runtime fact and add two cut-sheet/plate facts.
             ["tools/relational_inventory/product.txt"] =
-                "f99d1623cf8e8a302690007a3eeb5629193b9ebb243b966bf18fa9ad1caef4f1",
+                "4ee929b04b956241e5a7ccc567cfdb71c9fad842d431a86670fb9fd5e1ca7bb3",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
@@ -466,7 +466,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // existing Product card context; every durable row and audit event carries CompanyId.
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "PriceLists/ProductPriceListDbContext.cs"] =
-                "322378acff34afd47965275efc1cc677bee0859af1b63fcd048e46dbacf03662",
+                "4f02a907444f0b4175b96c4c814ddc3c13d0d24a6fe075bddb31d624c842af50",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
             [ReviewedWorkDbContextPath] =
@@ -629,7 +629,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "PriceLists/ProductPriceListRegistration.cs"] =
                     new(
-                        "5c87fcd71936f158613be04b0ba6b86f09ecc3d454045435376a6f338b2d1105",
+                        "4db2e396c81bcfce6f4c504ed84cdcab0375d91d48b9f0323ab8ed43107e0b59",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -639,7 +639,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "PriceLists/ProductPriceListStore.cs"] =
                     new(
-                        "ea3481d674648b893796c93b15dab32e0a7a49b7c9ba0a1ef686f2d8a6afac2d",
+                        "248270c7dc6205a87261db5bad77fe0a7b9c0dfc61c4f1e5269f87efa995966a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1282,7 +1282,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for DEC-SAL-001 / API-08: the draft service also receives the optional Settings
                     // Sales policy port (DI-only, SAT-D5 tolerance); the provider branch and its token counts are unchanged.
                     new(
-                        "f5b4f1b7b01f7aa29ab402b11cb534c014ed03f3bdb8095d02e168583e8d63ec",
+                        "fc3f2b043f13a7337d28204e708bc14d6a3521d6deead9c78d3361df305b2002",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1489,6 +1489,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Migrations/20260930113416_AddProductPriceLists.cs"] =
                     new(
                         "f4223440444ebc7327b176f085ae98ed6f67d126e830fbe2d9887bd573cb7dba",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // MOD-02 (SAT-D9): the list scope; Down refuses (51072) while any customer-specific list remains, so dropping
+                // the scope columns never turns a customer's price into a company-wide one.
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
+                 + "Migrations/20261027123034_AddPriceListScope.cs"] =
+                    new(
+                        "e744d35a662fdd14664736f55d213050c7810468602adefc0ad9bb33b4010414",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

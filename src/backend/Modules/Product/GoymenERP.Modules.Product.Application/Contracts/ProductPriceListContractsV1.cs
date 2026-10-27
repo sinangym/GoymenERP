@@ -64,6 +64,8 @@ public static class ProductPriceListCodesV1
     public const string ConcurrentChange = "concurrent_change";
     public const string InvalidCursor = "invalid_cursor";
     public const string Unavailable = "product_price_list_unavailable";
+    /// <summary>MOD-02: a customer-specific list needs the Cari owner's answer; no registered port is a setup gap (503), never a pass.</summary>
+    public const string CustomerProviderUnavailable = "product_price_list_customer_provider_unavailable";
 
     // field codes
     public const string ProductInvalid = "product_invalid";
@@ -73,6 +75,8 @@ public static class ProductPriceListCodesV1
     public const string InvalidDecimal = "invalid_decimal";
     public const string InvalidDate = "invalid_date";
     public const string Required = "required";
+    public const string CustomerInvalid = "customer_invalid";
+    public const string CustomerNotActive = "customer_not_active";
 }
 
 public static class ProductPriceListHttpCodesV1
@@ -101,6 +105,7 @@ public static class ProductPriceListHttpCodesV1
     public static IReadOnlySet<string> Status503Codes { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         ProductPriceListCodesV1.PermissionUnregistered, ProductPriceListCodesV1.Unavailable,
+        ProductPriceListCodesV1.CustomerProviderUnavailable,
     };
 }
 
@@ -129,6 +134,17 @@ public sealed record PriceListLineRequestV1(
     string LowerQuantity = "0",
     string? UpperQuantity = null);
 
+/// <summary>
+/// MOD-02 (SAT-D9): whose price a new list is. <c>kind</c> is <c>Company</c> (no party/account) or <c>Customer</c> (the Cari
+/// party and its company account in this company, checked with the Cari owner). <c>CustomerGroup</c> and
+/// <c>Agreement</c> have no owner master yet and are refused. Omitted → <c>Company</c>.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record PriceListScopeRequestV1(
+    [property: JsonRequired] string Kind,
+    Guid? PartyId = null,
+    Guid? CompanyAccountId = null);
+
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record CreatePriceListRequestV1(
     [property: JsonRequired] Guid PriceListId,
@@ -139,7 +155,9 @@ public sealed record CreatePriceListRequestV1(
     [property: JsonRequired] string VatBasis,
     [property: JsonRequired] string ValidFrom,
     string? ValidThrough,
-    [property: JsonRequired] IReadOnlyList<PriceListLineRequestV1> Lines);
+    [property: JsonRequired] IReadOnlyList<PriceListLineRequestV1> Lines,
+    // Omitted when null, so a company-wide request keeps the idempotency hash it had before MOD-02.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PriceListScopeRequestV1? Scope = null);
 
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RevisePriceListDraftRequestV1(
@@ -171,12 +189,20 @@ public sealed record PriceListVersionViewV1(Guid VersionId, int VersionNo, strin
     string? ValidThrough, DateTimeOffset CreatedAtUtc, string CreatedBy, DateTimeOffset? PublishedAtUtc, string? PublishedBy,
     IReadOnlyList<PriceListLineViewV1> Lines);
 
+/// <summary>MOD-02: the list's scope — <c>Company</c> (party/account null) or <c>Customer</c> (both set).</summary>
+public sealed record PriceListScopeViewV1(string Kind, Guid? PartyId, Guid? CompanyAccountId)
+{
+    /// <summary>The scope of every list stored before MOD-02 (a stored answer without a scope member is one of them).</summary>
+    public static PriceListScopeViewV1 Company { get; } = new("Company", null, null);
+}
+
 public sealed record PriceListViewV1(Guid Id, string Name, string CurrencyCode, string Channel, string VatBasis, string Version,
     DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc, int? ActiveVersionNo, int? DraftVersionNo,
-    IReadOnlyList<PriceListVersionViewV1> Versions);
+    IReadOnlyList<PriceListVersionViewV1> Versions, PriceListScopeViewV1 Scope);
 
 public sealed record PriceListSummaryV1(Guid Id, string Name, string CurrencyCode, string Channel, string VatBasis, string Version,
-    int? ActiveVersionNo, string? ActiveValidFrom, int? DraftVersionNo, int VersionCount, DateTimeOffset UpdatedAtUtc);
+    int? ActiveVersionNo, string? ActiveValidFrom, int? DraftVersionNo, int VersionCount, DateTimeOffset UpdatedAtUtc,
+    PriceListScopeViewV1 Scope);
 
 public sealed record PriceListPageV1(IReadOnlyList<PriceListSummaryV1> Items, string? NextCursor);
 
@@ -220,6 +246,39 @@ public interface IProductPriceListServiceV1
         CancellationToken cancellationToken = default);
 
     Task<PriceListResultV1> PublishAsync(Guid priceListId, PublishPriceListVersionRequestV1 request, ProductPriceListCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+}
+
+// ---- MOD-02: the Cari owner's answer for a customer-specific list (consumer-owned port; the central host implements it) --
+
+public enum ProductPriceListCustomerOutcomeV1
+{
+    /// <summary>The owner cannot answer (its own failure): fail-closed, never a pass.</summary>
+    Unavailable = 0,
+
+    /// <summary>The server context is not the request's, or the owner refuses the read.</summary>
+    Denied = 1,
+
+    /// <summary>No such party, or no such account of that party in this company.</summary>
+    NotFound = 2,
+
+    Found = 3,
+}
+
+/// <summary>The owner's identities and state for the customer.</summary>
+public sealed record ProductPriceListCustomerV1(Guid PartyId, Guid CompanyAccountId, Guid CompanyId, bool PartyIsActive,
+    bool AccountIsActive);
+
+public sealed record ProductPriceListCustomerAnswerV1(ProductPriceListCustomerOutcomeV1 Outcome, ProductPriceListCustomerV1? Customer);
+
+/// <summary>
+/// MOD-02: does this company account belong to this party in the server-resolved company, and are both active? Asked when
+/// a list is created for one customer (SAT-D9 customer-specific tier). The central host implements it over the authorized
+/// Counterparty read; Product stores the two identities only, never a copy of the master.
+/// </summary>
+public interface IProductPriceListCustomerPortV1
+{
+    Task<ProductPriceListCustomerAnswerV1> GetAuthorizedAsync(Guid partyId, Guid companyAccountId,
         CancellationToken cancellationToken = default);
 }
 
@@ -296,7 +355,8 @@ public sealed record ProductPriceReferenceV1(
     decimal? UpperQuantity = null);
 
 /// <summary>
-/// Product's answer to "which list prices apply to this product on this date?" for the Sales order line. Only Sales
+/// Product's answer to "which list prices apply to this product on this date?" for the Sales order line. Only
+/// company-wide (MOD-02: never a customer-specific list — that is <see cref="IProductQuantityPriceReferenceReaderV2"/>'s) Sales
 /// channel lists of the context company, only the version that prices the date (<c>PriceList.ResolveOn</c>), only the
 /// currency asked for; several lists may answer (no scope priority is decided — the user chooses). The port carries no
 /// authority: the consumer measures its own permission before asking. No company context → refused before any read.
@@ -314,7 +374,8 @@ public interface IProductPriceReferenceReaderV1
 /// <summary>
 /// Product's quantity-aware Sales reference. The quantity is expressed in the exact price unit identity; this contract
 /// never converts units. The matching interval is lower-inclusive and
-/// upper-exclusive. A gap returns no answer, and no default or adjacent tier is inferred.
+/// upper-exclusive. A gap returns no answer, and no default or adjacent tier is inferred. Company-wide lists only (MOD-02:
+/// the SAT-D9 tier chain, customer-specific lists included, is <see cref="IProductQuantityPriceReferenceReaderV2"/>).
 /// </summary>
 public interface IProductQuantityPriceReferenceReaderV1
 {

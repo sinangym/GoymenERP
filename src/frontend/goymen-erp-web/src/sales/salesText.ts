@@ -747,7 +747,17 @@ export const LINE_PRICING_TEXT = {
   amount: (value: string) => `${value} tutar`,
   fetchReferences: 'Liste fiyatını getir',
   fetchingReferences: 'Liste fiyatları okunuyor…',
-  noReferences: 'Bu ürün için siparişin tarihinde ve para biriminde geçerli liste fiyatı yok.',
+  noReferences: 'Hiçbir fiyat kademesinde (anlaşma, cari özel, cari grubu, şirket) bu ürün için siparişin tarihinde ve para biriminde geçerli liste fiyatı yok.',
+  /** MOD-02 (SAT-D9): the tier a list price answered at. */
+  priceTier: {
+    Agreement: 'Anlaşma fiyatı',
+    Customer: 'Cari özel fiyat',
+    CustomerGroup: 'Cari grubu fiyatı',
+    Company: 'Şirket fiyatı',
+  } as Record<string, string>,
+  tierSuffix: (label: string) => ` · ${label}`,
+  resolvedTier: (label: string) => `Fiyat kademesi: ${label}.`,
+  ambiguousTier: (label: string) => `${label} kademesinde birden fazla liste bu ürünü fiyatlıyor; hangisinin kullanılacağını seçin.`,
   referencesUnavailable: 'Liste fiyatları okunamadı.',
   useReference: 'Bu fiyatı kullan',
   removeReference: 'Referansı kaldır',

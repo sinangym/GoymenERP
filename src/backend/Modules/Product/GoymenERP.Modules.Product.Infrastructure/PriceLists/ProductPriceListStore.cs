@@ -88,7 +88,9 @@ internal sealed class ProductPriceListStore(
                 throw new InvalidOperationException("Kayıtlı denemenin özgün fiyat listesi cevabı okunamadı.");
             }
 
-            return new PriceListReplay(result, null, attempt.CorrelationId);
+            // An answer recorded before MOD-02 carries no scope member: every list of that time was company-wide.
+            return new PriceListReplay(result.Scope is null ? result with { Scope = PriceListScopeViewV1.Company } : result, null,
+                attempt.CorrelationId);
         }
 
         var refusal = attempt.RefusalJson is null ? null : JsonSerializer.Deserialize<PriceListTerminalRefusal>(attempt.RefusalJson, Json);
@@ -144,6 +146,9 @@ internal sealed class ProductPriceListStore(
             CurrencyCode = priceList.CurrencyCode,
             Channel = (int)priceList.Channel,
             VatBasis = (int)priceList.VatBasis,
+            ScopeKind = (int)priceList.Scope.Kind,
+            ScopePartyId = priceList.Scope.PartyId,
+            ScopeCompanyAccountId = priceList.Scope.CompanyAccountId,
             Version = priceList.Version,
             CreatedAtUtc = priceList.CreatedAtUtc,
             UpdatedAtUtc = priceList.UpdatedAtUtc,
@@ -284,13 +289,22 @@ internal sealed class ProductPriceListStore(
     }
 
     /// <summary>The published lines of this company's Sales-channel lists that price the product in one of the units.</summary>
-    public async Task<IReadOnlyList<PriceList>> FindListsPricingAsync(Guid productId, string currencyCode, CancellationToken cancellationToken)
+    /// <summary>
+    /// The company's Sales lists in the currency that carry the product on some version: the company-wide ones, and — only
+    /// when <paramref name="customerAccountId"/> is given — that one customer account's own lists (MOD-02). Another
+    /// customer's list is never loaded.
+    /// </summary>
+    public async Task<IReadOnlyList<PriceList>> FindListsPricingAsync(Guid productId, string currencyCode, CancellationToken cancellationToken,
+        Guid? customerAccountId = null)
     {
         RequireResolvedCompany();
         var listIds = await dbContext.Lines.AsNoTracking().Where(line => line.ProductId == productId).Select(line => line.PriceListId)
             .Distinct().ToListAsync(cancellationToken);
         var rows = await dbContext.PriceLists.AsNoTracking()
-            .Where(row => listIds.Contains(row.Id) && row.CurrencyCode == currencyCode && row.Channel == (int)PriceListChannel.Sales)
+            .Where(row => listIds.Contains(row.Id) && row.CurrencyCode == currencyCode && row.Channel == (int)PriceListChannel.Sales
+                && (row.ScopeKind == (int)PriceListScopeKind.Company
+                    || (customerAccountId != null && row.ScopeKind == (int)PriceListScopeKind.Customer
+                        && row.ScopeCompanyAccountId == customerAccountId)))
             .ToListAsync(cancellationToken);
         var ids = rows.Select(row => row.Id).ToList();
         var versionRows = await dbContext.Versions.AsNoTracking().Where(version => ids.Contains(version.PriceListId)).ToListAsync(cancellationToken);
@@ -424,7 +438,8 @@ internal sealed class ProductPriceListStore(
             version.CreatedBy, version.CreatedAtUtc, version.PublishedBy, version.PublishedAtUtc,
             PreparerActorIds(version.PreparerActorIdsJson))).ToList();
         return PriceList.Restore(row.Id, row.CompanyId, row.Name, row.CurrencyCode, (PriceListChannel)row.Channel,
-            (PriceListVatBasis)row.VatBasis, row.Version, row.CreatedBy, row.CreatedAtUtc, row.UpdatedAtUtc, versions);
+            (PriceListVatBasis)row.VatBasis, row.Version, row.CreatedBy, row.CreatedAtUtc, row.UpdatedAtUtc, versions,
+            PriceListScope.From((PriceListScopeKind)row.ScopeKind, row.ScopePartyId, row.ScopeCompanyAccountId));
     }
 
     private static IReadOnlyCollection<string> PreparerActorIds(string json)
@@ -483,6 +498,12 @@ internal sealed class ProductPriceListStore(
         currencyCode = priceList.CurrencyCode,
         channel = priceList.Channel.ToString(),
         vatBasis = priceList.VatBasis.ToString(),
+        scope = new
+        {
+            kind = priceList.Scope.Kind.ToString(),
+            partyId = priceList.Scope.PartyId,
+            companyAccountId = priceList.Scope.CompanyAccountId,
+        },
         version = priceList.Version,
         versions = priceList.Versions.Select(version => new
         {

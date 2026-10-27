@@ -28,7 +28,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// authority is a granted test double: the three names are registered by the central step, not by this slice.
 /// SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
+public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid ProductId = ProductSalesCandidateFixture.ProductId;
     private static readonly Guid Kg = ApprovedUnitProfileCatalog.GdcKilogramV1.UnitId;
@@ -37,7 +37,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
     public async Task A_list_is_created_reopened_revised_published_and_answers_the_order_line_reference()
     {
         await using var run = await Run.StartAsync();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ProductPriceBusinessDayV2.DateOf(DateTimeOffset.UtcNow);
         var listId = Guid.NewGuid();
         var keptLine = Guid.NewGuid();
         var editorActor = Guid.NewGuid();
@@ -159,7 +159,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
     public async Task The_last_authority_fence_and_same_key_race_leave_one_exact_effect()
     {
         await using var run = await Run.StartAsync();
-        var today = ProductPriceListWire.FormatDate(DateOnly.FromDateTime(DateTime.UtcNow));
+        var today = ProductPriceListWire.FormatDate(ProductPriceBusinessDayV2.DateOf(DateTimeOffset.UtcNow));
 
         var revokedId = Guid.NewGuid();
         var revoked = new CreatePriceListRequestV1(revokedId, Guid.NewGuid(), "SENTETIK revoked", "TRY", "Sales", "ExcludingVat", today,
@@ -461,7 +461,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
     public async Task Versions_supersede_by_date_and_the_database_holds_one_draft_and_increasing_published_starts()
     {
         await using var run = await Run.StartAsync();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ProductPriceBusinessDayV2.DateOf(DateTimeOffset.UtcNow);
         var listId = Guid.NewGuid();
         var firstPublisher = Guid.NewGuid();
         var secondPublisher = Guid.NewGuid();
@@ -527,7 +527,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
     public async Task An_inactive_card_is_refused_and_the_rollback_refuses_while_price_lists_exist()
     {
         await using var run = await Run.StartAsync();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = ProductPriceBusinessDayV2.DateOf(DateTimeOffset.UtcNow);
         await using (var scope = run.Request())
         {
             await run.ExecuteAsync("UPDATE product.Products SET Lifecycle = 2 WHERE Id = @id", ProductId);
@@ -661,8 +661,12 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
     }
 
     private sealed class RequestScope(AsyncServiceScope scope, ProductPriceListService service, IProductPriceReferenceReaderV1 reader,
-        IProductQuantityPriceReferenceReaderV1 quantityReader, ProductPriceListDbContext context, ICompanyContext companyContext) : IAsyncDisposable
+        IProductQuantityPriceReferenceReaderV1 quantityReader, ProductPriceListDbContext context, ICompanyContext companyContext,
+        IProductQuantityPriceReferenceReaderV2 chainReader) : IAsyncDisposable
     {
+        /// <summary>MOD-02: the SAT-D9 tier chain over the same store.</summary>
+        public IProductQuantityPriceReferenceReaderV2 ChainReader => chainReader;
+
         public ProductPriceListService Service => service;
 
         public IProductPriceReferenceReaderV1 Reader => reader;
@@ -740,7 +744,7 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
         }
 
         public RequestScope Request(Guid? company = null, Guid? actor = null, IErpAuthorityRevalidationService? authority = null,
-            bool driftableCompanyContext = false)
+            bool driftableCompanyContext = false, IProductPriceListCustomerPortV1? customers = null)
         {
             var scope = factory.Services.CreateAsyncScope();
             var provider = scope.ServiceProvider;
@@ -754,9 +758,9 @@ public sealed class ProductPriceListSqlServerRelationalAcceptanceTests
                 ? new DriftableCompanyContext(companyContext.CompanyId)
                 : companyContext;
             var service = new ProductPriceListService(serviceCompanyContext, requestUser, authority ?? new Granted(), store,
-                TimeProvider.System, null, _ => true);
+                TimeProvider.System, null, _ => true, customers);
             var reader = new ProductPriceReferenceReader(store, provider.GetRequiredService<ICompanyContext>());
-            return new RequestScope(scope, service, reader, reader, context, serviceCompanyContext);
+            return new RequestScope(scope, service, reader, reader, context, serviceCompanyContext, reader);
         }
 
         public async Task<T> ScalarAsync<T>(string sql, object? id = null)

@@ -93,10 +93,29 @@ public sealed record SalesDraftLineCommercialV1(Guid LineId, string? UnitPrice =
 /// <summary>AT-018: the Product price list version a line is priced from (list id + version number); the price is the owner's.</summary>
 public sealed record SalesDraftPriceReferenceRequestV1(Guid PriceListId, int VersionNo);
 
-/// <summary>AT-018: a list price as the Product owner answers it, copied onto the line at the revision (exact text).</summary>
+/// <summary>
+/// AT-018: a list price as the Product owner answers it, copied onto the line at the revision (exact text). MOD-02:
+/// <c>tier</c> is the SAT-D9 tier it answered at (<c>Agreement</c> / <c>Customer</c> / <c>CustomerGroup</c> / <c>Company</c>);
+/// null on a line priced before the tier chain.
+/// </summary>
 public sealed record SalesDraftPriceReferenceV1(Guid PriceListId, string PriceListName, int VersionNo, DateOnly ValidFrom,
     DateOnly? ValidThrough, string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis,
-    string LowerQuantity, string? UpperQuantity);
+    string LowerQuantity, string? UpperQuantity, string? Tier = null);
+
+/// <summary>MOD-02: one SAT-D9 tier as the chain met it — <c>status</c> Matched / Ambiguous / NoMatch / NotRequested / Unavailable / NotReached; <c>reason</c> a closed code or null.</summary>
+public sealed record SalesDraftPriceTierEvaluationV1(string Tier, string Status, string? Reason);
+
+/// <summary>MOD-02: the Product owner's package standard snapshot for the line; <c>Unavailable</c> while no package-standard master exists.</summary>
+public sealed record SalesDraftPackageStandardV1(string Status, string Reason);
+
+/// <summary>
+/// MOD-02 (SAT-D9 / SAT-D10): the tier chain's answer for the line. <c>outcome</c>: <c>Resolved</c> (one list of the highest
+/// answering tier: <c>matchedTier</c>, <c>priceListId</c>, <c>versionNo</c>), <c>Ambiguous</c> (several lists of that tier —
+/// the items; none is picked) or <c>NoPrice</c> (no tier prices the line: no reference and no price — never zero).
+/// <c>effectiveOn</c> is the business date the validity was evaluated on, in <c>businessTimeZone</c> (Europe/Istanbul).
+/// </summary>
+public sealed record SalesDraftPriceResolutionV1(string Outcome, DateOnly EffectiveOn, string BusinessTimeZone, string? MatchedTier,
+    Guid? PriceListId, int? VersionNo, IReadOnlyList<SalesDraftPriceTierEvaluationV1> Tiers, SalesDraftPackageStandardV1 PackageStandard);
 
 /// <summary>
 /// AT-018 / AT-021 / master §10.2: one line's price as the line carries it — the reference list price, the line's own unit
@@ -120,12 +139,13 @@ public sealed record SalesDraftPriceFloorExceptionApprovalRequest(string Expecte
 public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnlyList<SalesDraftLinePricingV1> Lines);
 
 /// <summary>
-/// GET …/{id}/lines/{lineId}/price-references (price write): the Product owner's list prices for the line's product in its
-/// stock / sales / order unit, in the draft's currency, on the draft's business date. Several lists may answer (no scope
-/// priority is decided): the person chooses one.
+/// GET …/{id}/lines/{lineId}/price-references (price write): the Product owner's list price for the line's product in its
+/// order unit, in the draft's currency, on the draft's business date, found along the SAT-D9 tier chain for the draft's
+/// customer (MOD-02). <c>items</c> are the answering tier's lists — one when resolved, several when that tier is ambiguous
+/// (the person chooses), none when no tier prices the line; <c>resolution</c> says which.
 /// </summary>
 public sealed record SalesOrderDraftPriceReferencesResponse(Guid LineId, string CurrencyCode, DateOnly On,
-    IReadOnlyList<SalesDraftPriceReferenceV1> Items);
+    IReadOnlyList<SalesDraftPriceReferenceV1> Items, SalesDraftPriceResolutionV1 Resolution);
 
 /// <summary>
 /// K3 Head B (Sinan 5748258299): POST …/{id}/commercial-revision — the expected concurrency version and
