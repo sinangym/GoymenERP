@@ -422,7 +422,7 @@ describe('normal journal approval period (BLG-05)', () => {
     renderAt(normalDraftApprovalPath(DRAFT))
     const more = await screen.findByRole('button', { name: 'Daha eski dönemleri yükle' })
     fireEvent.click(more)
-    expect((await screen.findByRole('alert')).textContent).toBe('Daha eski dönemler yüklenemedi. Aynı düğmeyle yeniden deneyin.')
+    expect((await screen.findByText('Daha eski dönemler yüklenemedi. Aynı düğmeyle yeniden deneyin.')).getAttribute('role')).toBe('alert')
     // The first page and its choice survive the failure.
     expect((screen.getByLabelText('Onay dönemi') as HTMLSelectElement).value).toBe(PERIOD)
 
@@ -542,7 +542,7 @@ describe('normal journal draft accounts (BLG-05b)', () => {
     }
   }
 
-  function install(answer: () => Response) {
+  function install(answer: () => Response | Promise<Response>) {
     return installFetch({
       capabilities: APPROVER_WITH_PERIODS,
       respond: (url, init) => {
@@ -575,11 +575,27 @@ describe('normal journal draft accounts (BLG-05b)', () => {
     expect(document.body.textContent).not.toContain(ACCOUNT_2)
   })
 
-  it('refuses an answer for another version or another account and shows no name from it', async () => {
-    install(() => json(accounts({ version: 2 })))
+  it.each([
+    ['another draft', accounts({ draftId: 'a0000000-0000-4000-8000-0000000000ff' })],
+    ['another version', accounts({ version: 2 })],
+    ['another plan version', accounts({ accountPlanSourceVersion: 'mikro-v2' })],
+    ['another plan hash', accounts({ accountPlanSourceSha256: 'b'.repeat(64) })],
+    ['another account on a line', accounts({}, [
+      { lineNumber: 1, accountId: ACCOUNT_2, accountCode: '100', accountName: 'Kasa' },
+      { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
+    ])],
+    ['another line number', accounts({}, [
+      { lineNumber: 2, accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' },
+      { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
+    ])],
+    ['a missing line', accounts({}, [{ lineNumber: 1, accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' }])],
+  ])('refuses an answer for %s and shows no name from it', async (_case, answer) => {
+    install(() => json(answer))
     renderAt(normalDraftApprovalPath(DRAFT))
-    await waitFor(() => expect(screen.getAllByText('Hesap adı bulunamadı')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText('Hesap adı okunamadı')).toHaveLength(2))
     expect(screen.queryByText('100 — Kasa')).toBeNull()
+    expect(screen.queryByText('120 — Alıcılar')).toBeNull()
+    expect(screen.getByRole('alert').getAttribute('data-state')).toBe('malformed-response')
   })
 
   it('refuses a half-named account (code without name)', async () => {
@@ -588,8 +604,58 @@ describe('normal journal draft accounts (BLG-05b)', () => {
       { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
     ])))
     renderAt(normalDraftApprovalPath(DRAFT))
-    await waitFor(() => expect(screen.getAllByText('Hesap adı bulunamadı')).toHaveLength(2))
+    await waitFor(() => expect(screen.getAllByText('Hesap adı okunamadı')).toHaveLength(2))
     expect(screen.queryByText('120 — Alıcılar')).toBeNull()
+  })
+
+  it('says a failed read as such, not as a missing name, and reads again with the retry', async () => {
+    let reads = 0
+    const recorded = install(() => (reads += 1) === 1 ? json({ status: 503 }, 503) : json(accounts()))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await waitFor(() => expect(screen.getAllByText('Hesap adı okunamadı')).toHaveLength(2))
+    expect(screen.queryByText('Hesap adı bulunamadı')).toBeNull()
+    const alert = screen.getByRole('alert')
+    expect(alert.getAttribute('data-state')).toBe('service-unavailable')
+    expect(alert.textContent).toContain('taslak satırlarının hesap adları')
+    fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(requestsFor(recorded, `/normal-journal-drafts/${DRAFT}/accounts`, 'GET')).toHaveLength(2)
+  })
+
+  it('marks the lines busy while the names load', async () => {
+    let release: (response: Response) => void = () => {}
+    install(() => new Promise<Response>((resolve) => { release = resolve }))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    expect(await screen.findAllByText('Hesap adı yükleniyor…')).toHaveLength(2)
+    expect(screen.getByRole('table').getAttribute('aria-busy')).toBe('true')
+    await act(async () => release(json(accounts())))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(screen.getByRole('table').getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('offers to read the draft again when the draft changed under the names read (409)', async () => {
+    let draftReads = 0
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}/accounts`)) {
+          return draftReads === 1 ? json({ code: 'accounting_version_conflict' }, 409) : json(accounts({ version: 2 }))
+        }
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER]))
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') {
+          draftReads += 1
+          return json(draft({ version: draftReads }))
+        }
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    expect((await screen.findByRole('alert')).getAttribute('data-state')).toBe('conflict')
+    fireEvent.click(screen.getByRole('button', { name: 'Taslağı yeniden oku' }))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(draftReads).toBe(2)
+    expect(requestsFor(recorded, `/normal-journal-drafts/${DRAFT}/accounts`, 'GET')).toHaveLength(2)
   })
 
   it('reports a 403 on the accounts read to the shell boundary, which closes the screen', async () => {

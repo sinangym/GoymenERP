@@ -264,6 +264,9 @@ export const NORMAL_JOURNAL_TEXT = {
   // BLG-05b: accounts are named by the draft's own frozen account plan.
   accountLoading: 'Hesap adı yükleniyor…',
   accountUnavailable: 'Hesap adı bulunamadı',
+  accountReadFailed: 'Hesap adı okunamadı',
+  accountsSubject: 'taslak satırlarının hesap adları',
+  rereadDraft: 'Taslağı yeniden oku',
   lineSide: 'Taraf',
   approve: 'Normal taslağı onayla',
   openPostedJournal: 'Oluşturulan fişi aç',

@@ -292,7 +292,7 @@ function NormalJournalDraftDetail({ namespace, draftId, mode }: { readonly names
   }
   return <Frame title={T.draftTitle}>
     <dl className={styles.form}><div className={styles.control}><dt>{T.status}</dt><dd>{draft.status}</dd></div><div className={styles.control}><dt>{T.version}</dt><dd>{draft.version}</dd></div><div className={styles.control}><dt>{T.sourceRef}</dt><dd>{normalSourceRefText(draft.sourceId)}</dd></div><div className={styles.control}><dt>{T.postingRule}</dt><dd>{draft.postingRuleVersion}</dd></div></dl>
-    <NormalJournalDraftLines namespace={namespace ?? 'no-context'} companyId={companyId ?? ''} draft={draft} />
+    <NormalJournalDraftLines namespace={namespace ?? 'no-context'} companyId={companyId ?? ''} draft={draft} onDraftChanged={() => void query.refetch()} />
     {outcome?.type === 'unknown' ? <div role="alert" className={styles.noticeWarn}>{T.approvalUnknown}<button type="button" onClick={() => snapshot && void send(snapshot, true)}>{T.resend}</button></div> : null}
     {outcome?.type === 'failed' ? <p role="alert" className={styles.error}>{normalJournalApprovalFailureText(outcome.failure)}</p> : null}
     {mode === 'approve' && draft.status === 'Draft' ? <div className={styles.actions}><NormalJournalApprovalPeriod key={periodReload} reloadToken={periodReload} namespace={namespace ?? 'no-context'} companyId={companyId ?? ''} accountingDate={draft.accountingDate} value={periodId} onChange={setPeriodId} disabled={sending || unresolved} /><button type="button" disabled={sending || unresolved || periodId === ''} onClick={approve}>{T.approve}</button></div> : null}
@@ -306,13 +306,16 @@ function Frame({ title, children }: { readonly title: string; readonly children:
 
 /**
  * BLG-05b: the draft lines with each account named by the draft's own frozen account plan (code + name), never
- * as a technical id. While the names load the cell says so; when the plan does not hold an account, or the read
- * fails, the cell says the name is unavailable. A 401/403 goes to the shell boundary like every read.
+ * as a technical id. While the names load the table is busy and each cell says so. When the plan does not hold an
+ * account the cell says the name is unavailable. A failed read is said as such, never as a missing name: the cells
+ * say the names could not be read, the read's state is shown with a retry, and a 409 (the draft changed meanwhile)
+ * offers to read the draft again. A 401/403 goes to the shell boundary like every read.
  */
-function NormalJournalDraftLines({ namespace, companyId, draft }: {
+function NormalJournalDraftLines({ namespace, companyId, draft, onDraftChanged }: {
   readonly namespace: string
   readonly companyId: string
   readonly draft: NormalJournalDraft
+  readonly onDraftChanged: () => void
 }) {
   const shell = useShellState()
   const boundary = useAuthBoundary()
@@ -327,12 +330,19 @@ function NormalJournalDraftLines({ namespace, companyId, draft }: {
     },
   })
   const named = query.data?.type === 'ok-single' ? query.data.data.accounts : null
+  const failure = query.isPending || named !== null ? null : classifyOutcome(query.data ?? { type: 'malformed' })
   const accountText = (lineNumber: number) => {
     if (query.isPending) return T.accountLoading
+    if (failure !== null) return T.accountReadFailed
     const account = named?.find(candidate => candidate.lineNumber === lineNumber)
     return account?.accountCode != null && account.accountName != null
       ? accountLabel(account.accountCode, account.accountName)
       : T.accountUnavailable
   }
-  return <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>{T.lineNumber}</th><th>{T.lineAccount}</th><th>{T.lineSide}</th><th className={styles.amount}>{T.amount}</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td>{accountText(line.lineNumber)}</td><td>{line.side === 'Debit' ? T.debit : T.credit}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
+  // 401/403 already went to the shell boundary; every other failure is said here.
+  const said = failure !== null && failure.kind !== 'unauthenticated' && failure.kind !== 'forbidden' ? failure : null
+  return <><div className={styles.tableWrap}><table className={styles.table} aria-busy={query.isPending}><thead><tr><th>{T.lineNumber}</th><th>{T.lineAccount}</th><th>{T.lineSide}</th><th className={styles.amount}>{T.amount}</th></tr></thead><tbody>{draft.lines.map(line => <tr key={line.lineNumber}><td>{line.lineNumber}</td><td>{accountText(line.lineNumber)}</td><td>{line.side === 'Debit' ? T.debit : T.credit}</td><td className={styles.amount}>{line.amount}</td></tr>)}</tbody></table></div>
+    {said !== null ? <StateBlock state={said} subject={T.accountsSubject} onRetry={() => void query.refetch()} /> : null}
+    {said?.kind === 'conflict' ? <button type="button" onClick={onDraftChanged}>{T.rereadDraft}</button> : null}
+  </>
 }
