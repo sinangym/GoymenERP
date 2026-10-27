@@ -1,12 +1,14 @@
 /**
  * S-01 Talep/Teklif Havuzu screens (UI-20) in the real shell, against wire bodies shaped like #824/#828's schemas.
- * Component evidence, NOT_ENV: the capability ids are TEST ids (the backend publishes none yet — NEEDS-CAPABILITY).
+ * Component evidence, NOT_ENV: the screen tests use TEST capability ids; the production map (the ids Sales shell 1.8
+ * publishes) is pinned in the first block.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SALES_POOL_CAPABILITY } from './poolCapabilities'
+import { SALES_POOL_CAPABILITY_ID } from './capabilities'
 import { POOL_TEXT } from './poolText'
 import { resetPendingPoolAttempts } from './pendingPoolAttempts'
 import {
@@ -45,8 +47,22 @@ const notFound = (call: PoolCall) => {
   throw new Error(`unexpected ${call.method} ${call.url}`)
 }
 
-describe('NEEDS-CAPABILITY: the production map publishes nothing', () => {
-  it('closes every pool route onto the neutral block and calls no Sales read', async () => {
+describe('the production map: the ids the backend publishes (Sales shell 1.8)', () => {
+  it('maps every pool key onto exactly its published id', () => {
+    expect(SALES_POOL_CAPABILITY).toEqual({
+      requestsList: ['sales.requests.list'],
+      requestsDetail: ['sales.requests.detail'],
+      requestsCreate: ['sales.requests.create'],
+      requestsDecide: ['sales.requests.approve'],
+      quotesList: ['sales.quotes.list'],
+      quotesDetail: ['sales.quotes.detail'],
+      quotesCreate: ['sales.quotes.create'],
+      quotesWrite: ['sales.quotes.write'],
+      quotesConvert: ['sales.quotes.convert'],
+    })
+  })
+
+  it('closes every pool route onto the neutral block and calls no Sales read when the shell grants none of them', async () => {
     const fetch = installPoolFetch(notFound, ALL_POOL)
     for (const path of ['/satis/talepler', '/satis/talepler/yeni', `/satis/teklifler/${QUOTE_ID}`]) {
       renderPool(path, SALES_POOL_CAPABILITY)
@@ -54,6 +70,20 @@ describe('NEEDS-CAPABILITY: the production map publishes nothing', () => {
       cleanup()
     }
     expect(fetch.calls).toHaveLength(0)
+  })
+
+  it('opens the request list for the published list id and nothing it does not grant', async () => {
+    installPoolFetch((call) => {
+      if (call.method === 'GET' && call.url.includes('/sales/requests?')) return json({ items: [requestSummary()], nextCursor: null })
+      return notFound(call)
+    }, [SALES_POOL_CAPABILITY_ID.requestsList])
+    renderPool('/satis/talepler', SALES_POOL_CAPABILITY)
+    expect(await screen.findByRole('table', { name: POOL_TEXT.requestList.caption })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: POOL_TEXT.requestList.create })).toBeNull()
+    cleanup()
+
+    renderPool('/satis/teklifler', SALES_POOL_CAPABILITY)
+    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
   })
 
   it('an ungranted test id closes the route as well', async () => {

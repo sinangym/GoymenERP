@@ -104,7 +104,7 @@ internal sealed class UserDirectoryReadPortV1(
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!TryReadSearch(request, out var query, out var limit)
+        if (!TryReadSearch(request, out var query, out var limit, out var holdingPermission)
             || !TryFence(request?.CompanyId, request?.ActorId, out var fence))
         {
             return new UserDirectorySearchAnswerV1(UserDirectoryOutcomeV1.Denied, [], false);
@@ -119,6 +119,11 @@ internal sealed class UserDirectoryReadPortV1(
             }
 
             var users = ActiveMembers(fence.CompanyId, now);
+            if (holdingPermission is not null)
+            {
+                users = HoldersOf(users, holdingPermission, fence.CompanyId, now);
+            }
+
             if (query is not null)
             {
                 users = users.Where(user => user.DisplayName.Contains(query));
@@ -176,6 +181,29 @@ internal sealed class UserDirectoryReadPortV1(
                     && dbContext.Roles.Any(role => role.Id == assignment.RoleId && role.IsActive)
                     && assignment.Scopes.Any()));
 
+    /// <summary>
+    /// SAT-D27: narrows the members to those who hold <paramref name="permission"/> in the company now — the authorization
+    /// service's measurement (<c>ErpAuthorizationService</c>) as one SQL predicate: an active assignment inside its validity in
+    /// the company, of an active role carrying the permission, with a scope in the company; a company-wide-only permission
+    /// needs the assignment's company scope.
+    /// </summary>
+    private IQueryable<UserAccount> HoldersOf(IQueryable<UserAccount> users, string permission, Guid companyId, DateTimeOffset now)
+    {
+        var companyWideOnly = ErpPermissions.RequiresCompanyWideScope(permission);
+        return users.Where(user => dbContext.RoleAssignments.Any(assignment =>
+            assignment.UserId == user.Id
+            && assignment.CompanyId == companyId
+            && assignment.Status == RoleAssignmentStatus.Active
+            && assignment.ValidFromUtc <= now
+            && (!assignment.ValidUntilUtc.HasValue || assignment.ValidUntilUtc > now)
+            && dbContext.Roles.Any(role => role.Id == assignment.RoleId && role.IsActive)
+            && dbContext.RolePermissions.Any(rolePermission =>
+                rolePermission.RoleId == assignment.RoleId && rolePermission.PermissionCode == permission)
+            && (companyWideOnly
+                ? assignment.Scopes.Any(scope => scope.ScopeType == AccessScopeType.Company && scope.ScopeId == companyId)
+                : assignment.Scopes.Any())));
+    }
+
     private Task<bool> IsActiveMemberAsync(
         Guid userId,
         Guid companyId,
@@ -229,11 +257,22 @@ internal sealed class UserDirectoryReadPortV1(
         return true;
     }
 
-    private static bool TryReadSearch(UserDirectorySearchRequestV1? request, out string? query, out int limit)
+    private static bool TryReadSearch(UserDirectorySearchRequestV1? request, out string? query, out int limit,
+        out string? holdingPermission)
     {
         query = null;
         limit = 0;
+        holdingPermission = null;
         if (request is null || request.Limit is < 1 or > UserDirectoryLimitsV1.MaximumSearchLimit)
+        {
+            return false;
+        }
+
+        // SAT-D27: a named permission must be a registered one, spelled exactly; anything else refuses, never widens.
+        if (request.HoldingPermission is { } permission
+            && (string.IsNullOrWhiteSpace(permission)
+                || !string.Equals(permission, permission.Trim(), StringComparison.Ordinal)
+                || !ErpPermissions.IsKnown(permission)))
         {
             return false;
         }
@@ -246,6 +285,7 @@ internal sealed class UserDirectoryReadPortV1(
 
         query = string.IsNullOrEmpty(trimmed) ? null : trimmed;
         limit = request.Limit;
+        holdingPermission = request.HoldingPermission;
         return true;
     }
 

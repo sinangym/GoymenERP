@@ -62,7 +62,7 @@ public sealed class FinanceShellRegistrationTests
         // each route or control service measures its own Finance permission afresh.
         Assert.Equal(21, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
-        // Sales 1.5: three routes plus seven detail controls. Pin identities, parents and authorities here instead of
+        // Sales 1.8: nine routes (three draft, three request, three quote) plus eleven detail controls. Pin identities, parents and authorities here instead of
         // accepting a blind declaration count: another control, parent or permission must receive its own review.
         var sales = registry.Registrations
             .Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId)
@@ -95,6 +95,19 @@ public sealed class FinanceShellRegistrationTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceWrite}"),
                 (SalesShellCapabilityProvider.QuantityWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}"),
+                // Sales 1.8 (UI-20): the S-01 quote and request screens with their controls.
+                (SalesShellCapabilityProvider.QuoteConvertCapabilityId, SalesShellCapabilityProvider.QuoteDetailCapabilityId,
+                    $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesWrite}+{SalesPermissionManifestV1.DraftsCreate}"),
+                (SalesShellCapabilityProvider.QuoteCreateCapabilityId, null, SalesPermissionManifestV1.QuotesWrite),
+                (SalesShellCapabilityProvider.QuoteDetailCapabilityId, null, SalesPermissionManifestV1.QuotesRead),
+                (SalesShellCapabilityProvider.QuoteListCapabilityId, null, SalesPermissionManifestV1.QuotesRead),
+                (SalesShellCapabilityProvider.QuoteWriteCapabilityId, SalesShellCapabilityProvider.QuoteDetailCapabilityId,
+                    $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesWrite}"),
+                (SalesShellCapabilityProvider.RequestApproveCapabilityId, SalesShellCapabilityProvider.RequestDetailCapabilityId,
+                    $"{SalesPermissionManifestV1.RequestsRead}+{SalesPermissionManifestV1.RequestsApprove}"),
+                (SalesShellCapabilityProvider.RequestCreateCapabilityId, null, SalesPermissionManifestV1.RequestsWrite),
+                (SalesShellCapabilityProvider.RequestDetailCapabilityId, null, SalesPermissionManifestV1.RequestsRead),
+                (SalesShellCapabilityProvider.RequestListCapabilityId, null, SalesPermissionManifestV1.RequestsRead),
             ],
             sales);
     }

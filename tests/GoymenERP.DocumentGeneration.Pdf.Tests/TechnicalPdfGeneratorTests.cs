@@ -558,7 +558,7 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.Contains("raw input limit", exception.Message, StringComparison.Ordinal);
     }
 
-    private static void AssertNoHostIdentifiers(PdfDocument pdf, byte[] content, params string[] identifiers)
+    internal static void AssertNoHostIdentifiers(PdfDocument pdf, byte[] content, params string[] identifiers)
     {
         using var input = new MemoryStream(content, writable: false);
         using var structure = PdfSharp.Pdf.IO.PdfReader.Open(input, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import);

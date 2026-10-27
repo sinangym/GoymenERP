@@ -119,8 +119,17 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
         // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, AT-021 floor-exception approval,
         // DEC-SAL-003 delivery-schedule, DEC-SAL-005 cancel, DEC-SAL-002 quantity-revision, Q9 customer-acceptance and
-        // No 30 force-close controls.
-        Assert.Equal(11, sales.Length);
+        // No 30 force-close controls; Sales 1.8 (UI-20) adds the six S-01 request/quote screens and their three controls.
+        Assert.Equal(20, sales.Length);
+        Assert.Equal(SalesShellCapabilityProvider.RequestDetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.RequestApproveCapabilityId)
+                .Declaration.ParentCapabilityId);
+        Assert.Equal(SalesShellCapabilityProvider.QuoteDetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.QuoteWriteCapabilityId)
+                .Declaration.ParentCapabilityId);
+        Assert.Equal(SalesShellCapabilityProvider.QuoteDetailCapabilityId,
+            Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.QuoteConvertCapabilityId)
+                .Declaration.ParentCapabilityId);
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.ForceCloseCapabilityId)
                 .Declaration.ParentCapabilityId);

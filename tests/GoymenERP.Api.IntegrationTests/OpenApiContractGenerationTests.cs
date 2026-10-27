@@ -705,6 +705,11 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/sales/drafts/{id}/risk-check", "GetSalesOrderDraftRiskCheckV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
+        // MOD-07: the order's current revision as a PDF attachment (prices only under the price read).
+        new("get", "/api/v1/sales/drafts/{id}/pdf", "GetSalesOrderDraftPdfV1",
+            AuthenticatedResponses("200:application/pdf", "404:application/problem+json", "409:application/problem+json",
+                "422:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/sales/drafts/{id}/remainder-changes", "GetSalesOrderDraftRemainderChangesV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
@@ -971,6 +976,14 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/sales/references/currencies", "GetSalesCurrencyReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:effectiveOn:true:type:string;format:date"]),
+        // SAT-D27 (1): the sales-owner picker.
+        new("get", "/api/v1/sales/references/sales-owners", "GetSalesOwnerReferencesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string;canonicalization:trim;canonical-max-length:100",
+                "query:limit:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$;normalized-minimum:1;normalized-maximum:50",
+            ]),
         new("get", "/api/v1/sales/references/products", "GetSalesProductCandidatesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues:
@@ -1139,6 +1152,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetSalesOrderDraftCustomerReturnsV1"] = "ref:SalesOrderDraftCustomerReturnsResponse",
             ["GetSalesOrderDraftStatusV1"] = "ref:SalesOrderDraftStatusResponse",
             ["GetSalesOrderDraftRiskCheckV1"] = "ref:SalesOrderDraftRiskCheckResponse",
+            ["GetSalesOrderDraftPdfV1"] = "ref:Stream",
             ["GetSalesOrderDraftRemainderChangesV1"] = "ref:SalesOrderDraftRemainderChangesResponse",
             ["RequestSalesOrderDraftRemainderChangeV1"] = "ref:SalesOrderDraftResponse",
             ["ApproveSalesOrderDraftRemainderChangeV1"] = "ref:SalesOrderDraftResponse",
@@ -1233,6 +1247,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetDocumentVersionContentV1"] = "ref:Stream",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
             ["GetSalesCurrencyReferencesV1"] = "ref:SalesCurrencyOptionsV1",
+            ["GetSalesOwnerReferencesV1"] = "ref:SalesOwnerOptionsV1",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -1378,6 +1393,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftCustomerReturnsV1",
         "GetSalesOrderDraftStatusV1",
         "GetSalesOrderDraftRiskCheckV1",
+        "GetSalesOrderDraftPdfV1",
         "GetSalesOrderDraftRemainderChangesV1",
         "RequestSalesOrderDraftRemainderChangeV1",
         "ApproveSalesOrderDraftRemainderChangeV1",
@@ -1472,6 +1488,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetDocumentVersionContentV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
+        "GetSalesOwnerReferencesV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -1899,6 +1916,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftCustomerReturnsV1",
         "GetSalesOrderDraftStatusV1",
         "GetSalesOrderDraftRiskCheckV1",
+        "GetSalesOrderDraftPdfV1",
         "GetSalesOrderDraftCancellationImpactV1",
         "CancelSalesOrderDraftV1",
         "GetSalesOrderDraftCancellationV1",
@@ -1959,6 +1977,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLogisticsPurchaseWorkV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
+        "GetSalesOwnerReferencesV1",
         "UploadDocumentV1",
         "GetDocumentsV1",
         "GetDocumentContentV1",
@@ -2049,6 +2068,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetSalesOrderDraftCustomerReturnsV1:404",
         "GetSalesOrderDraftStatusV1:404",
         "GetSalesOrderDraftRiskCheckV1:404",
+        "GetSalesOrderDraftPdfV1:404",
         "GetSalesOrderDraftCancellationImpactV1:404",
         "CancelSalesOrderDraftV1:404",
         "GetSalesOrderDraftCancellationV1:404",
@@ -2488,6 +2508,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["RescheduleSalesOrderDraftDeliveryV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["RescheduleSalesOrderDraftDeliveryV1:422"] = ["validation_failed"],
             ["CancelSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["GetSalesOrderDraftPdfV1:409"] = ["concurrent_change"],
+            ["GetSalesOrderDraftPdfV1:422"] = ["sales_order_pdf_too_large"],
             ["CancelSalesOrderDraftV1:409"] = ["concurrent_change", "sales_cancellation_blocked", "sales_cancellation_impact_changed", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["CancelSalesOrderDraftV1:422"] = ["validation_failed"],
             ["ForceCloseSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
@@ -2698,6 +2720,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetDocumentVersionContentV1:409"] = ["concurrent_change", "document_not_scanned"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
+            ["GetSalesOwnerReferencesV1:400"] = ["validation_failed"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -2844,6 +2867,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("companyId", "type:string;format:uuid"),
                     ("effectiveOn", "type:string;format:date"),
                     ("currencies", "type:array;items:ref:SalesCurrencyReferenceV1")),
+                // SAT-D27 (1): the sales-owner picker answers id + display name only.
+                ["SalesOwnerOptionsV1"] = ObjectSchema(
+                    ["companyId", "owners", "hasMore"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("owners", "type:array;items:ref:SalesOwnerOptionV1"),
+                    ("hasMore", "type:boolean")),
+                ["SalesOwnerOptionV1"] = ObjectSchema(
+                    ["userId", "displayName"],
+                    ("userId", "type:string;format:uuid"),
+                    ("displayName", "type:string")),
                 ["OrderListViewV1"] = ObjectSchema(
                     ["orders", "nextCursor"],
                     ("orders", "type:array;items:ref:OrderSummaryViewV1"),

@@ -117,8 +117,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // passes it to the Sales reference read; no OpenAPI-generation, network or hosted-service surface changes.
     // MOD-08 adds one scoped in-process Sales-to-Identity user display adapter beside the Sales-Cari display host,
     // with its comment (4cf4cba9… -> cae283bd…); it adds no OpenAPI-generation, network or hosted-service surface.
+    // SAT-D27 adds the reference reads' alternative request/quote write names and the sales-owner eligibility name to the
+    // existing SalesReferenceReadBindings singleton, passes the optional ISalesOwnerCandidateSourceV1 to the Sales reference
+    // read factory, and registers one scoped in-process SalesOwnerCandidateHost, with comments (cae283bd… -> 2eae99cc…), then
+    // a COMMENT-ONLY edit saying the sales-owner picker opens on the order create name alone (2eae99cc… -> 13f02f10…); no
+    // OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "cae283bdee5fc266d1d45a773f9be8028088868523d30ac848e8cd071715c307";
+        "13f02f10dd4cdd0a1a245c41326bfddfbc2f3454265be791f9d4c0d621ef08fb";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -158,8 +163,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for #391: two linked Compile items (the browser-suite runner's BrowserSuiteHost.cs
     // and its closed seed-output validator, both for BrowserSuiteHostEnvelopeTests), after the module SQL
     // acceptance ProjectReferences. Publish target and discovery contract unchanged.
+    // Re-fingerprinted for MOD-07: the PdfPig test package (the sales order PDF's text is read back from its bytes, as
+    // the PDF component's own tests do). Publish target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "042bd595603757b528ba7dca7bf77ecf6b2ec7ce75cb5d219c038504878fe7c3";
+        "82a6bb89fa2bacd24c30c92fd71f3927fbfff42c2d640630d3b76d1b7babbd05";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
@@ -231,8 +238,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
             // BLG-03: +1 IdentityAuditReadFreshAuthoritySqlServerRelationalAcceptanceTests fact (a521143a… -> 9a5ea313…).
             // MOD-08: +1 IdentityUserDirectorySqlServerRelationalAcceptanceTests fact (9a5ea313… -> b2ba31aa…).
+            // SAT-D27 (1): +1 sales-owner picker holder-filter SQL fact, ordinal-sorted (b2ba31aa… -> 12e280b9…).
             ["tools/relational_inventory/identity.txt"] =
-                "b2ba31aa0066ac18800af3ec6333efcaaa8f49d68e897bee9bed0c063714d92b",
+                "12e280b982af6d86c6eabf1db09d4d636029bc5c1c4046e386ec13ebe4999815",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -319,10 +327,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // API-22…24: +5 sales quote SQL facts; merged over DEC-SAL-001 / API-08's +2 SalesOrderStatusSqlServerRelationalAcceptanceTests
             // facts, kept ordinal-sorted (a9873855… -> 06afeb99…).
             // SAT-D2 / API-12: +2 SalesDiscountExceptionSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (06afeb99… -> b1a5335a…).
-            // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over API-12, kept ordinal-sorted
-            // (b1a5335a… -> 34c72424…).
+            // UI-20 shell 1.8: +1 S-01 pool capability SQL fact, ordinal-sorted (b1a5335a… -> efdb5edd…).
+            // MOD-07: +1 SalesOrderPdfSqlServerRelationalAcceptanceTests fact, kept ordinal-sorted (merged over UI-20 shell 1.8:
+            // efdb5edd… -> 87dc8166…).
+            // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over MOD-07, kept ordinal-sorted
+            // (87dc8166… -> d74f7c2d…).
             ["tools/relational_inventory/sales.txt"] =
-                "34c724242b090191c00b65f495a27ae603775ae9b65dc53cdd55e3a0024ba7fd",
+                "d74f7c2d9ab604c9c30dfd9b489aa4cfae8a9d4ec78acd84df99ed95a22106f4",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1296,10 +1307,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // policy port are DI-only seams; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for SAT-D2 / API-12: the draft service also receives the optional limit-group source
                     // (DI-only); the provider branch and its token counts are unchanged.
-                    // Re-fingerprinted for MOD-01 / API-06 (merged over API-12): the draft service also receives the optional
+                    // Re-fingerprinted for MOD-07 (merged over SAT-D2 / API-12): the sales order PDF's print read is a DI-only
+                    // seam over the same SalesDraftService; the provider branch and its database token counts are unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06 (merged over MOD-07): the draft service also receives the optional
                     // customer-finance risk-input port (DI-only, owner-registered); the provider branch and its token counts are unchanged.
                     new(
-                        "2b5bec3391ea0bc82dc04e7fa47108771c50a416b5840882ef3ccd60ea8e123f",
+                        "9720ee36186551f79e120b614555f8c284233246d790b6204e8db492a036229f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
