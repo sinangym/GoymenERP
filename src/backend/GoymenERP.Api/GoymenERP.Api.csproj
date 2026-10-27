@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BuildingBlocks\GoymenERP.BuildingBlocks\GoymenERP.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\DocumentGeneration\GoymenERP.DocumentGeneration.Pdf\GoymenERP.DocumentGeneration.Pdf.csproj" />
     <ProjectReference Include="..\Modules\Audit\GoymenERP.Modules.Audit.Application\GoymenERP.Modules.Audit.Application.csproj" />
     <ProjectReference Include="..\Modules\Accounting\GoymenERP.Modules.Accounting.Infrastructure\GoymenERP.Modules.Accounting.Infrastructure.csproj" />
     <ProjectReference Include="..\Modules\Audit\GoymenERP.Modules.Audit.Infrastructure\GoymenERP.Modules.Audit.Infrastructure.csproj" />
