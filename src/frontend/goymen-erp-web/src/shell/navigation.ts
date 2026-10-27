@@ -160,7 +160,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'organization.work-centers.list': 'İş Merkezleri',
   // ORG-04: reached from a work-centre row, never from the sidebar; Organization keeps two entries.
   'organization.work-centers.detail': '',
-  'sales.drafts.list': 'Sipariş Taslakları',
+  'sales.drafts.list': 'Satış Siparişleri',
   // K5: creation is reached through the list's authorised action, never a parallel sidebar entry.
   'sales.drafts.create': '',
   // Nor this one: the 360 is reached from a list row, never from the sidebar.

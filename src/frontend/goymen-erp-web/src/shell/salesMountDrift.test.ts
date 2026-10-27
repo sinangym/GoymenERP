@@ -50,7 +50,7 @@ describe('shell ↔ Sales lane capability ids', () => {
   })
 
   it('keeps one Sales work-list nav entry while create stays mounted behind the list action', () => {
-    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList]).toBe('Sipariş Taslakları')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsList]).toBe('Satış Siparişleri')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsCreate]).toBe('')
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsDetail]).toBe('')
     expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesDraftsList)

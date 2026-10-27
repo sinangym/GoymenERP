@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ACCOUNTING_CAPABILITY, ACCOUNTING_ROUTE, normalDraftApprovalPath } from './capabilities'
 import { COMPANY_A, installFetch, json, renderAt, requestsFor } from './testHarness'
@@ -223,28 +223,57 @@ describe('normal journal source-bound creation', () => {
   })
 })
 
+const PREPARER = 'a0000000-0000-4000-8000-000000000012'
+const APPROVER = 'a0000000-0000-4000-8000-000000000013'
+const OTHER_PERIOD = 'a0000000-0000-4000-8000-000000000014'
+const PROPOSED_PERIOD = 'a0000000-0000-4000-8000-000000000015'
+const CLOSED_PERIOD = 'a0000000-0000-4000-8000-000000000016'
+
+/** A period row exactly as the server's M-07 read returns it; the facts follow the status. */
+function period(periodId: string, startsOn: string, endsOn: string, status: 'Proposed' | 'Open' | 'Closed') {
+  return {
+    periodId, companyId: COMPANY, startsOn, endsOn, status, version: 2,
+    preparedByUserId: PREPARER, preparedAtUtc: '2026-09-01T08:00:00Z',
+    approvedByUserId: status === 'Proposed' ? null : APPROVER,
+    approvedAtUtc: status === 'Proposed' ? null : '2026-09-01T09:00:00Z',
+    closedByUserId: status === 'Closed' ? APPROVER : null,
+    closedAtUtc: status === 'Closed' ? '2026-09-02T09:00:00Z' : null,
+    isOwnProposal: false,
+  }
+}
+
+const SEPTEMBER = period(PERIOD, '2026-09-01', '2026-09-30', 'Open')
+const AUGUST = period(OTHER_PERIOD, '2026-08-01', '2026-08-31', 'Open')
+
+function periodPage(items: readonly unknown[], nextCursor: string | null = null) {
+  return { items, nextCursor }
+}
+
+const APPROVER_WITH_PERIODS = [ACCOUNTING_CAPABILITY.normalDraftApprove, ACCOUNTING_CAPABILITY.periodsList]
+
 describe('normal journal approval interaction', () => {
   it('freezes the period and primary action so rapid clicks produce one command', async () => {
     let release: ((response: Response) => void) | undefined
     const pending = new Promise<Response>(resolve => { release = resolve })
     const recorded = installFetch({
-      capabilities: [ACCOUNTING_CAPABILITY.normalDraftApprove],
+      capabilities: APPROVER_WITH_PERIODS,
       respond: (url, init) => {
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER]))
         if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
         if (url.endsWith(`/normal-journal-drafts/${DRAFT}/approval`) && init?.method === 'POST') return pending
         return undefined
       },
     })
     renderAt(normalDraftApprovalPath(DRAFT))
-    const period = await screen.findByLabelText('Açık dönem kimliği')
-    fireEvent.change(period, { target: { value: PERIOD } })
+    const choice = await screen.findByLabelText('Onay dönemi')
+    await waitFor(() => expect((choice as HTMLSelectElement).value).toBe(PERIOD))
     const approve = screen.getByRole('button', { name: 'Normal taslağı onayla' })
 
     fireEvent.click(approve)
     fireEvent.click(approve)
 
     await waitFor(() => expect(requestsFor(recorded, '/approval', 'POST')).toHaveLength(1))
-    expect((period as HTMLInputElement).disabled).toBe(true)
+    expect((choice as HTMLSelectElement).disabled).toBe(true)
     expect((approve as HTMLButtonElement).disabled).toBe(true)
     release?.(json(draft({ status: 'Approved', version: 2, approvedByUserId: ACTOR,
       approvedAtUtc: '2026-09-24T14:00:00Z', periodId: PERIOD, postedJournalId: DRAFT })))
@@ -254,8 +283,9 @@ describe('normal journal approval interaction', () => {
   it('retries an unknown result with the exact frozen key and body', async () => {
     let approvals = 0
     const recorded = installFetch({
-      capabilities: [ACCOUNTING_CAPABILITY.normalDraftApprove],
+      capabilities: APPROVER_WITH_PERIODS,
       respond: (url, init) => {
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER]))
         if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
         if (url.endsWith(`/normal-journal-drafts/${DRAFT}/approval`) && init?.method === 'POST') {
           approvals += 1
@@ -267,7 +297,8 @@ describe('normal journal approval interaction', () => {
       },
     })
     renderAt(normalDraftApprovalPath(DRAFT))
-    fireEvent.change(await screen.findByLabelText('Açık dönem kimliği'), { target: { value: PERIOD } })
+    const choice = await screen.findByLabelText('Onay dönemi')
+    await waitFor(() => expect((choice as HTMLSelectElement).value).toBe(PERIOD))
     fireEvent.click(screen.getByRole('button', { name: 'Normal taslağı onayla' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Aynı isteği yeniden gönder' }))
     await screen.findByText('Approved')
@@ -276,5 +307,194 @@ describe('normal journal approval interaction', () => {
     expect(commands).toHaveLength(2)
     expect(commands[1].headers['Idempotency-Key']).toBe(commands[0].headers['Idempotency-Key'])
     expect(commands[1].body).toEqual(commands[0].body)
+  })
+})
+
+describe('normal journal approval period (BLG-05)', () => {
+  it('names open periods by their date range and preselects the one holding the accounting date', async () => {
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER, AUGUST]))
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}/approval`) && init?.method === 'POST') {
+          return json(draft({ status: 'Approved', version: 2, approvedByUserId: ACTOR,
+            approvedAtUtc: '2026-09-24T14:00:00Z', periodId: PERIOD, postedJournalId: DRAFT }))
+        }
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    const choice = await screen.findByLabelText('Onay dönemi') as HTMLSelectElement
+    await waitFor(() => expect(choice.value).toBe(PERIOD))
+    expect(screen.getByRole('option', { name: '2026-09-01 – 2026-09-30 (taslağın muhasebe tarihi bu dönemde)' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: '2026-08-01 – 2026-08-31' })).toBeTruthy()
+    // No technical id is asked for or shown.
+    expect(screen.queryByLabelText('Açık dönem kimliği')).toBeNull()
+    expect(document.body.textContent).not.toContain(PERIOD)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Normal taslağı onayla' }))
+    await screen.findByText('Approved')
+    const [command] = requestsFor(recorded, '/approval', 'POST')
+    expect(command.body).toMatchObject({ periodId: PERIOD, expectedVersion: 1 })
+  })
+
+  it('offers only open periods, and waits for a choice when none holds the accounting date', async () => {
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods')) {
+          return json(periodPage([AUGUST, period(PROPOSED_PERIOD, '2026-09-01', '2026-09-30', 'Proposed'),
+            period(CLOSED_PERIOD, '2026-07-01', '2026-07-31', 'Closed')]))
+        }
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    const choice = await screen.findByLabelText('Onay dönemi') as HTMLSelectElement
+    await screen.findByRole('option', { name: '2026-08-01 – 2026-08-31' })
+    expect([...choice.options].map((option) => option.value)).toEqual(['', OTHER_PERIOD])
+    expect(choice.value).toBe('')
+    expect((screen.getByRole('button', { name: 'Normal taslağı onayla' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(requestsFor(recorded, '/approval', 'POST')).toHaveLength(0)
+  })
+
+  it('says so and offers no approval without the period list, never a typed id', async () => {
+    const recorded = installFetch({
+      capabilities: [ACCOUNTING_CAPABILITY.normalDraftApprove],
+      respond: (url, init) => {
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await screen.findByText(/muhasebe dönemlerini görme yetkisi gerekir/)
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect((screen.getByRole('button', { name: 'Normal taslağı onayla' }) as HTMLButtonElement).disabled).toBe(true)
+    expect(requestsFor(recorded, '/accounting/periods', 'GET')).toHaveLength(0)
+  })
+
+  it('re-reads the open periods and clears the choice when the chosen period closed meanwhile', async () => {
+    let periodReads = 0
+    installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods')) {
+          periodReads += 1
+          // The second read shows September closed by someone else; only August is still open.
+          return json(periodPage(periodReads === 1 ? [SEPTEMBER, AUGUST]
+            : [period(PERIOD, '2026-09-01', '2026-09-30', 'Closed'), AUGUST]))
+        }
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}/approval`) && init?.method === 'POST') {
+          return json({ code: 'accounting_period_closed' }, 422)
+        }
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    const choice = await screen.findByLabelText('Onay dönemi') as HTMLSelectElement
+    await waitFor(() => expect(choice.value).toBe(PERIOD))
+    fireEvent.click(screen.getByRole('button', { name: 'Normal taslağı onayla' }))
+
+    await screen.findByText(/Seçilen dönem bu sırada kapandı/)
+    await waitFor(() => expect(periodReads).toBe(2))
+    const fresh = await screen.findByLabelText('Onay dönemi') as HTMLSelectElement
+    await waitFor(() => expect([...fresh.options].map((option) => option.value)).toEqual(['', OTHER_PERIOD]))
+    expect(fresh.value).toBe('')
+  })
+
+  it('says a failed later page and loads it with the same button on retry', async () => {
+    let laterReads = 0
+    installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods') && url.includes('cursor=')) {
+          laterReads += 1
+          return laterReads === 1 ? json({ status: 503 }, 503) : json(periodPage([AUGUST]))
+        }
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER], 'page-2'))
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    const more = await screen.findByRole('button', { name: 'Daha eski dönemleri yükle' })
+    fireEvent.click(more)
+    expect((await screen.findByRole('alert')).textContent).toBe('Daha eski dönemler yüklenemedi. Aynı düğmeyle yeniden deneyin.')
+    // The first page and its choice survive the failure.
+    expect((screen.getByLabelText('Onay dönemi') as HTMLSelectElement).value).toBe(PERIOD)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Daha eski dönemleri yükle' }))
+    await screen.findByRole('option', { name: '2026-08-01 – 2026-08-31' })
+    expect(screen.queryByText(/Daha eski dönemler yüklenemedi/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Daha eski dönemleri yükle' })).toBeNull()
+    expect(laterReads).toBe(2)
+  })
+
+  it('starts again from the first page when the server no longer accepts the cursor', async () => {
+    let firstReads = 0
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods') && url.includes('cursor=')) return json({ code: 'invalid_cursor' }, 409)
+        if (url.includes('/accounting/periods')) {
+          firstReads += 1
+          return json(firstReads === 1 ? periodPage([SEPTEMBER], 'stale') : periodPage([SEPTEMBER, AUGUST]))
+        }
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    fireEvent.click(await screen.findByRole('button', { name: 'Daha eski dönemleri yükle' }))
+    expect((await screen.findByRole('status')).textContent).toBe('Dönem listesi bu arada değişti; liste baştan yüklendi.')
+    const choice = screen.getByLabelText('Onay dönemi') as HTMLSelectElement
+    await waitFor(() => expect([...choice.options].map((option) => option.value)).toEqual(['', PERIOD, OTHER_PERIOD]))
+    expect(firstReads).toBe(2)
+    // Restarted from the first page: no further cursor is offered, and the stale one was sent once only.
+    expect(screen.queryByRole('button', { name: 'Daha eski dönemleri yükle' })).toBeNull()
+    expect(requestsFor(recorded, 'cursor=stale', 'GET')).toHaveLength(1)
+  })
+
+  it('keys the period and draft reads by the shell namespace, so a fenced 403 read is never served again', async () => {
+    let capabilityReads = 0
+    let periodReads = 0
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      capabilityGeneration: () => (capabilityReads += 1) === 1 ? 'acc-cap-gen-1' : 'acc-cap-gen-2',
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods')) {
+          periodReads += 1
+          return periodReads === 1 ? json({ status: 403 }, 403) : json(periodPage([SEPTEMBER]))
+        }
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    const { queryClient, router } = renderAt(normalDraftApprovalPath(DRAFT))
+    // The 403 is reported: the shell strips the snapshot and the gated page closes.
+    await screen.findByText(/Bulunamadı/)
+    expect(screen.queryByLabelText('Onay dönemi')).toBeNull()
+    // The next entry verifies a FRESH snapshot (a new generation, the same grant).
+    await act(async () => { await router.navigate(ACCOUNTING_ROUTE.journalsList) })
+    await act(async () => { await router.navigate(normalDraftApprovalPath(DRAFT)) })
+    const choice = await screen.findByLabelText('Onay dönemi') as HTMLSelectElement
+    await waitFor(() => expect(choice.value).toBe(PERIOD))
+    expect(periodReads).toBe(2)
+    expect(capabilityReads).toBeGreaterThanOrEqual(2)
+    expect(requestsFor(recorded, '/accounting/periods', 'GET').length).toBe(periodReads)
+
+    // Every accounting read of this page is namespace-first, under the current generation only.
+    const keys = queryClient.getQueryCache().getAll().map((query) => query.queryKey)
+    const pageKeys = keys.filter((key) => key.includes('normal-journal-approval-periods') || key.includes('normal-journal-draft'))
+    expect(pageKeys.length).toBeGreaterThanOrEqual(2)
+    for (const key of pageKeys) {
+      expect(typeof key[0]).toBe('string')
+      const fields = JSON.parse(key[0] as string) as unknown[]
+      expect(fields).toContain('acc-cap-gen-2')
+      expect(fields).not.toContain('acc-cap-gen-1')
+    }
   })
 })

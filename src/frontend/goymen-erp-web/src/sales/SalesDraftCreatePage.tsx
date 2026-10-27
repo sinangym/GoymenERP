@@ -119,7 +119,7 @@ export function SalesDraftCreatePage() {
     return (
       <section className={styles.page}>
         <h1 className={styles.title}>{T.heading}</h1>
-        <p role="status">Taslak yalnız tek bir şirket seçiliyken oluşturulabilir.</p>
+        <p role="status">{T.singleCompanyOnly}</p>
       </section>
     )
   }

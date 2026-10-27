@@ -1,5 +1,5 @@
 /**
- * Sales draft transport, pinned to #257 @ 2c1239e. NOT live: no route is mapped.
+ * Sales draft transport over the live `/api/v1/sales` routes (first contract: #257 @ 2c1239e).
  *
  *   POST /api/v1/sales/drafts          → 201 SalesOrderDraftResponse (isReplay=false)
  *                                       → 200 same body, isReplay=true (same accepted attempt)

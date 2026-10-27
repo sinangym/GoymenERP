@@ -27,6 +27,7 @@ import {
 } from './allocationAttempt'
 import { ALLOCATION_TEXT as T } from './allocationText'
 import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
 
 export interface SalesDraftAllocationPanelProps {
   readonly enabled: boolean
@@ -199,7 +200,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
       {state.kind !== 'initial-loading' && state.kind !== 'ready' ? (
         <div className={styles.notice} data-tone="error">
           {state.kind === 'malformed-response' ? T.malformed : T.unavailable}{' '}
-          <button type="button" className={styles.linkButton} onClick={() => void refresh()}>{T.retry}</button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={() => void refresh()}>{T.retry}</Button>
         </div>
       ) : null}
       {state.kind === 'ready' && page !== null ? (
@@ -208,7 +209,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
           {allocations.length === 0 ? <p data-testid="sales-allocation-empty">{T.empty}</p> : (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
-                <thead><tr><th>Etiket</th><th>Durum</th><th>Tahsis kg</th><th>Kalan kg</th><th>Sürüm</th><th>İşlem</th></tr></thead>
+                <thead><tr><th>{T.column.label}</th><th>{T.column.state}</th><th>{T.column.allocatedKg}</th><th>{T.column.remainingKg}</th><th>{T.column.version}</th><th>{T.column.action}</th></tr></thead>
                 <tbody>{allocations.map((allocation) => {
                   const releaseScope: AllocationAttemptScope = { companyId, salesOrderId, salesOrderLineId: line.lineId,
                     kind: 'release', allocationId: allocation.allocationId }
@@ -219,11 +220,11 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
                       <td>{allocation.status === 'Active' ? T.active : allocation.status === 'Consumed' ? T.consumed : T.released}</td>
                       <td>{allocation.allocatedKg}</td><td>{allocation.remainingKg}</td><td>{allocation.version}</td>
                       <td>{allocation.status !== 'Active' ? null : pendingRelease !== null ? (
-                        <button type="button" className={styles.secondaryButton} disabled={busy}
-                          onClick={() => void sendRelease(allocation, pendingRelease.body)}>{T.retryRelease}</button>
+                        <Button type="button" variant="secondary" disabled={busy}
+                          onClick={() => void sendRelease(allocation, pendingRelease.body)}>{T.retryRelease}</Button>
                       ) : (
-                        <button type="button" className={styles.secondaryButton} disabled={busy}
-                          onClick={() => void sendRelease(allocation)}>{T.release}</button>
+                        <Button type="button" variant="secondary" disabled={busy}
+                          onClick={() => void sendRelease(allocation)}>{T.release}</Button>
                       )}</td>
                     </tr>
                   )
@@ -245,11 +246,11 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
           </div>
           <div className={styles.actions}>
             {pendingCreate === null ? (
-              <button type="button" className={styles.primaryButton} disabled={busy || page.searchWindowFull}
-                onClick={() => void sendCreate()}>{T.create}</button>
+              <Button type="button" variant="primary" disabled={busy || page.searchWindowFull}
+                onClick={() => void sendCreate()}>{T.create}</Button>
             ) : (
-              <button type="button" className={styles.primaryButton} disabled={busy}
-                onClick={() => void sendCreate(pendingCreate.body)}>{T.retryCreate}</button>
+              <Button type="button" variant="primary" disabled={busy}
+                onClick={() => void sendCreate(pendingCreate.body)}>{T.retryCreate}</Button>
             )}
           </div>
         </>
