@@ -14,8 +14,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <list type="bullet">
 /// <item><b>Names:</b> <c>sales.requests.write</c> records, <c>sales.requests.read</c> lists and reads,
 /// <c>sales.requests.approve</c> decides; none confers another, and no draft name confers them.</item>
-/// <item><b>Decisions:</b> one approver; a rejection needs its reason and is allowed from Submitted or Approved. A stale
-/// version or a wrong state is the key's terminal 409, recorded and replayed (ADR-011 §7).</item>
+/// <item><b>Decisions:</b> one approver; a rejection needs its reason and is allowed from Submitted or Approved, and not while
+/// the request's quote is an approved order (No 161: 409 <c>sales_request_has_approved_order</c>). A stale version, a wrong
+/// state or that order is the key's terminal 409, recorded and replayed (ADR-011 §7).</item>
 /// <item><b>Missing store:</b> a host that composes no request store answers 503 (setup), never a silent empty list.</item>
 /// </list>
 /// </summary>
@@ -227,6 +228,13 @@ public sealed partial class SalesDraftService
             // §7: the decision is not allowed from the request's state — terminal for this key too.
             throw await RequestTerminalAsync(scope, permission, envelope, requestHash, commandName, requestId,
                 new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict, [new("state", exception.Code)]),
+                cancellationToken);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.RequestHasApprovedOrder)
+        {
+            // No 161: the request's quote became an approved order; the order is cancelled first. Terminal for this key.
+            throw await RequestTerminalAsync(scope, permission, envelope, requestHash, commandName, requestId,
+                new SalesDraftTerminalRefusal(409, SalesRuleCodes.RequestHasApprovedOrder, [new("state", exception.Code)]),
                 cancellationToken);
         }
         catch (SalesRuleException exception) when (exception.Code is SalesRuleCodes.RequestRejectionReasonRequired

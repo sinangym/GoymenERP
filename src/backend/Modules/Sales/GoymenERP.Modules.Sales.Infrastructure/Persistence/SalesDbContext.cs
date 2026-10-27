@@ -3,6 +3,7 @@ using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Sales.Domain.Quotes;
 using GoymenERP.Modules.Sales.Domain.Requests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -73,11 +74,42 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// target — a draft or a request, never both — and a refusal names at most one.
     /// </para>
     internal const string AttemptOutcomeConstraint =
-        "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] IS NULL) "
-        + "OR ([RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL))) "
+        "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] IS NULL AND [QuoteId] IS NULL) "
+        + "OR ([RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [QuoteId] IS NULL) "
+        + "OR ([QuoteId] IS NOT NULL AND [QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [RequestId] IS NULL))) "
         + "OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') "
         + "AND ([RequestId] IS NULL OR ([RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)) "
+        + "AND ([QuoteId] IS NULL OR ([QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [RequestId] IS NULL)) "
         + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
+
+    /// <summary>
+    /// API-22 / API-24 (CK_DraftAttempts_QuoteTarget): only a quote command (create / revise / lose) names a quote; the
+    /// conversion (No 162) answers the ORDER it created, so its attempt names a draft, never a quote.
+    /// </summary>
+    internal const string AttemptQuoteTargetConstraint =
+        "([QuoteId] IS NULL OR [CommandName] IN (N'" + SalesQuoteCommands.CreateV1 + "', N'" + SalesQuoteCommands.ReviseV1 + "', N'"
+        + SalesQuoteCommands.LoseV1 + "')) AND ([CommandName] NOT IN (N'" + SalesQuoteCommands.CreateV1 + "', N'" + SalesQuoteCommands.ReviseV1
+        + "', N'" + SalesQuoteCommands.LoseV1 + "') OR ([DraftId] IS NULL AND [RequestId] IS NULL))";
+
+    /// <summary>UX_DraftAttempts_QuoteId: a stored quote is born from exactly one create attempt.</summary>
+    internal const string QuoteCreateAttemptFilter = "[QuoteId] IS NOT NULL AND [CommandName] = N'" + SalesQuoteCommands.CreateV1 + "'";
+
+    /// <summary>UX_Drafts_SourceQuoteId (No 162): one order per quote — the database itself refuses a second.</summary>
+    internal const string SourceQuoteFilter = "[SourceQuoteId] IS NOT NULL";
+
+    /// <summary>UX_QuoteRequests_ActiveRequest (No 163, talep → teklif N:1): a request is covered by at most one open or converted quote.</summary>
+    internal const string ActiveQuoteRequestFilter = "[IsActive] = 1";
+
+    /// <summary>
+    /// CK_Quotes_Lifecycle: Open (1) carries neither a loss nor a conversion; Lost (3) the loss only (non-blank reason);
+    /// Converted (2) the conversion only. The rule the domain restores by.
+    /// </summary>
+    internal const string QuoteLifecycleConstraint =
+        "([State] = 1 AND [LossReason] IS NULL AND [LostBy] IS NULL AND [LostAtUtc] IS NULL AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) "
+        + "OR ([State] = 3 AND [LossReason] IS NOT NULL AND LEN([LossReason]) > 0 AND [LostBy] IS NOT NULL AND LEN([LostBy]) > 0 AND [LostAtUtc] IS NOT NULL "
+        + "AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) "
+        + "OR ([State] = 2 AND [ConvertedDraftId] IS NOT NULL AND [ConvertedDraftId] <> '00000000-0000-0000-0000-000000000000' AND [ConvertedBy] IS NOT NULL "
+        + "AND LEN([ConvertedBy]) > 0 AND [ConvertedAtUtc] IS NOT NULL AND [LossReason] IS NULL AND [LostBy] IS NULL AND [LostAtUtc] IS NULL)";
 
     /// <summary>
     /// API-20 / API-21 (CK_DraftAttempts_RequestTarget): only a sales request command names a request, and a sales request
@@ -142,6 +174,18 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>API-20: the requests' lines with the owners' snapshots (append-only).</summary>
     internal DbSet<RequestLineRow> RequestLines => Set<RequestLineRow>();
 
+    /// <summary>API-22…24: the sales quotes (header; the lifecycle is the only change).</summary>
+    internal DbSet<QuoteRow> Quotes => Set<QuoteRow>();
+
+    /// <summary>API-22: every recorded quote revision's terms (append-only).</summary>
+    internal DbSet<QuoteRevisionRow> QuoteRevisions => Set<QuoteRevisionRow>();
+
+    /// <summary>API-22: every quote revision's lines (append-only).</summary>
+    internal DbSet<QuoteLineRow> QuoteLines => Set<QuoteLineRow>();
+
+    /// <summary>No 163: the requests a quote covers (active while the quote is open or converted).</summary>
+    internal DbSet<QuoteRequestRow> QuoteRequests => Set<QuoteRequestRow>();
+
     /// <summary>CK_DraftRemainderChanges_Kind: a cancel carries no quantity; a revise carries a positive quantity and its text.</summary>
     internal const string RemainderKindConstraint =
         "([Kind] = 1 AND [RequestedQuantity] IS NULL AND [RequestedQuantityText] IS NULL) "
@@ -186,6 +230,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftCancellations(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
+        ConfigureQuotes(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -237,6 +282,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             // SALES-A1: the approval facts follow the approval state exactly (a row cannot say "approved" without a decision).
             table.HasCheckConstraint("CK_Drafts_Approval", ApprovalConstraint);
             table.HasCheckConstraint("CK_Drafts_CustomerAcceptance", CustomerAcceptanceConstraint);
+            // No 162: a source quote always names the revision whose snapshot the order carries.
+            table.HasCheckConstraint("CK_Drafts_SourceQuote",
+                "([SourceQuoteId] IS NULL AND [SourceQuoteRevision] IS NULL) OR ([SourceQuoteId] IS NOT NULL AND [SourceQuoteId] <> '00000000-0000-0000-0000-000000000000' AND [SourceQuoteRevision] IS NOT NULL AND [SourceQuoteRevision] >= 0)");
             table.HasCheckConstraint("CK_Drafts_Version", "[Version] >= 1");
             table.HasCheckConstraint("CK_Drafts_Text",
                 "LEN([DocumentNo]) > 0 AND LEN([MoneyOperation]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
@@ -277,6 +325,14 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.RejectionReason).HasMaxLength(SalesOrderDraft.MaximumRejectionReasonLength);
         entity.HasIndex(x => new { x.CompanyId, x.ApprovalState, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Drafts_CompanyId_ApprovalState_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Drafts_DocumentNo");
+        // No 162: one order per quote, and the source quote is this company's quote.
+        entity.HasIndex(x => new { x.CompanyId, x.SourceQuoteId }).IsUnique().HasDatabaseName("UX_Drafts_SourceQuoteId")
+            .HasFilter(SourceQuoteFilter);
+        entity.HasOne<QuoteRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.SourceQuoteId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Drafts_CompanyId_CreatedAtUtc_Id");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
@@ -363,6 +419,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_DraftAttempts_Outcome", AttemptOutcomeConstraint);
             table.HasCheckConstraint("CK_DraftAttempts_Result", AttemptResultConstraint);
             table.HasCheckConstraint("CK_DraftAttempts_RequestTarget", AttemptRequestTargetConstraint);
+            table.HasCheckConstraint("CK_DraftAttempts_QuoteTarget", AttemptQuoteTargetConstraint);
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         entity.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
@@ -389,7 +446,133 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
+        // API-22 / API-24: a quote command's attempt names its quote (same company, by foreign key).
+        entity.HasIndex(x => new { x.CompanyId, x.QuoteId }).IsUnique().HasDatabaseName("UX_DraftAttempts_QuoteId")
+            .HasFilter(QuoteCreateAttemptFilter);
+        entity.HasOne<QuoteRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.QuoteId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
+    // API-22…24 (No 162, 163): the quote, its append-only revisions and lines, and the requests it covers.
+    private void ConfigureQuotes(ModelBuilder modelBuilder)
+    {
+        var quote = modelBuilder.Entity<QuoteRow>();
+        quote.ToTable("Quotes", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_Quotes_Identity",
+                "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_Quotes_State", "[State] IN (1, 2, 3) AND [Revision] >= 0");
+            table.HasCheckConstraint("CK_Quotes_Lifecycle", QuoteLifecycleConstraint);
+            table.HasCheckConstraint("CK_Quotes_Version", "[Version] >= [Revision] + 1");
+            table.HasCheckConstraint("CK_Quotes_Text",
+                "LEN([DocumentNo]) > 0 AND LEN([MoneyOperation]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_Quotes_Money", "[MoneyScale] >= 0 AND ([MoneyEffectiveThrough] IS NULL OR [MoneyEffectiveThrough] >= [MoneyEffectiveFrom])");
+        });
+        quote.HasKey(x => x.Id);
+        quote.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        quote.Property(x => x.Id).ValueGeneratedNever();
+        quote.Property(x => x.DocumentNo).HasMaxLength(SalesQuote.MaximumDocumentNoLength).IsRequired();
+        quote.Property(x => x.Version).IsConcurrencyToken();
+        quote.Property(x => x.RowVersion).IsRowVersion();
+        quote.Property(x => x.BusinessDate).HasColumnType("date");
+        quote.Property(x => x.MoneyOperation).HasMaxLength(128).IsRequired();
+        quote.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
+        quote.Property(x => x.MoneyEffectiveOn).HasColumnType("date");
+        quote.Property(x => x.MoneyEffectiveFrom).HasColumnType("date");
+        quote.Property(x => x.MoneyEffectiveThrough).HasColumnType("date");
+        quote.Property(x => x.LossReason).HasMaxLength(SalesQuote.MaximumReasonLength);
+        quote.Property(x => x.LostBy).HasMaxLength(SalesQuote.MaximumActorLength);
+        quote.Property(x => x.ConvertedBy).HasMaxLength(SalesQuote.MaximumActorLength);
+        quote.Property(x => x.CreatedBy).HasMaxLength(SalesQuote.MaximumActorLength).IsRequired();
+        quote.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        quote.HasIndex(x => new { x.CompanyId, x.DocumentNo }).IsUnique().HasDatabaseName("UX_Quotes_DocumentNo");
+        quote.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Quotes_CompanyId_CreatedAtUtc_Id");
+        quote.HasIndex(x => new { x.CompanyId, x.State, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_Quotes_CompanyId_State_CreatedAtUtc_Id");
+        quote.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        quote.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var revision = modelBuilder.Entity<QuoteRevisionRow>();
+        revision.ToTable("QuoteRevisions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_QuoteRevisions_Identity",
+                "[QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([RevisedBy]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        revision.HasKey(x => new { x.CompanyId, x.QuoteId, x.Revision });
+        revision.Property(x => x.ValidUntil).HasColumnType("date");
+        revision.Property(x => x.RequestedDeliveryDate).HasColumnType("date");
+        revision.Property(x => x.Note).HasMaxLength(SalesQuote.MaximumNoteLength);
+        revision.Property(x => x.RevisedBy).HasMaxLength(SalesQuote.MaximumActorLength).IsRequired();
+        revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        revision.HasOne<QuoteRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.QuoteId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        revision.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var line = modelBuilder.Entity<QuoteLineRow>();
+        line.ToTable("QuoteLines", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_QuoteLines_LineNo", "[LineNo] >= 1");
+            table.HasCheckConstraint("CK_QuoteLines_Identity",
+                "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [OrderUnitId] <> '00000000-0000-0000-0000-000000000000' AND [OrderUnitProfileId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_QuoteLines_Quantity", "[Quantity] > 0 AND LEN([QuantityText]) > 0");
+            table.HasCheckConstraint("CK_QuoteLines_Scale",
+                "[OrderUnitProfileScale] >= 0 AND [OrderUnitScale] >= 0 AND [OrderUnitScale] <= [OrderUnitProfileScale] AND [OrderUnitScale] <= 3");
+            table.HasCheckConstraint("CK_QuoteLines_Price",
+                "(([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)) AND ([DiscountPercent] IS NULL OR [UnitPrice] IS NOT NULL)");
+            table.HasCheckConstraint("CK_QuoteLines_Window",
+                "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
+        });
+        line.HasKey(x => new { x.CompanyId, x.QuoteId, x.Revision, x.LineNo });
+        line.HasIndex(x => new { x.CompanyId, x.QuoteId, x.Revision, x.LineId }).IsUnique().HasDatabaseName("UX_QuoteLines_LineId");
+        line.Property(x => x.ProductVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.ProductCode).HasMaxLength(128).IsRequired();
+        line.Property(x => x.ProductName).HasMaxLength(256).IsRequired();
+        line.Property(x => x.ProductEffectiveOn).HasColumnType("date");
+        line.Property(x => x.StockUnitProfileVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.SalesUnitProfileVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.OrderUnitBindingProfileVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.OrderUnitCode).HasMaxLength(64).IsRequired();
+        line.Property(x => x.OrderUnitDimensionCode).HasMaxLength(64).IsRequired();
+        line.Property(x => x.OrderUnitProfileVersion).HasMaxLength(128).IsRequired();
+        line.Property(x => x.OrderUnitEffectiveFrom).HasColumnType("date");
+        line.Property(x => x.OrderUnitEffectiveThrough).HasColumnType("date");
+        line.Property(x => x.Quantity).HasPrecision(18, 3);
+        line.Property(x => x.QuantityText).HasMaxLength(128).IsRequired();
+        line.Property(x => x.UnitPrice).HasMaxLength(128);
+        line.Property(x => x.DiscountPercent).HasMaxLength(128);
+        line.Property(x => x.RequestedDeliveryDate).HasColumnType("date");
+        line.Property(x => x.Note).HasMaxLength(SalesQuote.MaximumNoteLength);
+        line.HasOne<QuoteRevisionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.QuoteId, x.Revision })
+            .OnDelete(DeleteBehavior.Restrict);
+        line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var link = modelBuilder.Entity<QuoteRequestRow>();
+        link.ToTable("QuoteRequests", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_QuoteRequests_Identity",
+                "[QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] <> '00000000-0000-0000-0000-000000000000'");
+        });
+        link.HasKey(x => new { x.CompanyId, x.QuoteId, x.RequestId });
+        link.HasIndex(x => new { x.CompanyId, x.RequestId }).IsUnique().HasDatabaseName("UX_QuoteRequests_ActiveRequest")
+            .HasFilter(ActiveQuoteRequestFilter);
+        link.HasOne<QuoteRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.QuoteId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        link.HasOne<RequestRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RequestId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        link.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     // API-20 / API-21: the sales request, its lines and the display-number counter of the non-draft records.
@@ -730,6 +913,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(RequestRow.RejectionReason), nameof(RequestRow.UpdatedAtUtc),
                     ],
                     RequestLineRow => [],
+                    // API-22…24: a quote moves only along its lifecycle (state, current revision, loss, conversion); its
+                    // revisions and lines are append-only; a covered request's link only deactivates (the quote was lost).
+                    QuoteRow =>
+                    [
+                        nameof(QuoteRow.State), nameof(QuoteRow.Revision), nameof(QuoteRow.LossReason), nameof(QuoteRow.LostBy),
+                        nameof(QuoteRow.LostAtUtc), nameof(QuoteRow.ConvertedDraftId), nameof(QuoteRow.ConvertedBy),
+                        nameof(QuoteRow.ConvertedAtUtc), nameof(QuoteRow.UpdatedAtUtc),
+                    ],
+                    QuoteRevisionRow => [],
+                    QuoteLineRow => [],
+                    QuoteRequestRow => [nameof(QuoteRequestRow.IsActive)],
                     _ => [],
                 };
                 if (entry.Entity is RequestRow)
@@ -742,6 +936,32 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                             && (int)requestState.CurrentValue! == (int)SalesRequestState.Rejected))
                     {
                         throw new InvalidOperationException("Satış talebinin durumu yalnız Onay bekliyor → Onaylı/Reddedildi ya da Onaylı → Reddedildi yönünde değişir.");
+                    }
+                }
+
+                if (entry.Entity is QuoteRow)
+                {
+                    // API-22…24: Open → Converted | Lost only; a revision moves the revision counter forward on an open quote.
+                    var quoteState = entry.Property(nameof(QuoteRow.State));
+                    if (quoteState.IsModified && !((int)quoteState.OriginalValue! == (int)SalesQuoteState.Open
+                            && (int)quoteState.CurrentValue! is (int)SalesQuoteState.Converted or (int)SalesQuoteState.Lost))
+                    {
+                        throw new InvalidOperationException("Teklifin durumu yalnız Açık → Dönüştürüldü/Kaybedildi yönünde değişir.");
+                    }
+
+                    var revision = entry.Property(nameof(QuoteRow.Revision));
+                    if (revision.IsModified && (int)revision.CurrentValue! <= (int)revision.OriginalValue!)
+                    {
+                        throw new InvalidOperationException("Teklif revizyonu yalnız ileri gider.");
+                    }
+                }
+
+                if (entry.Entity is QuoteRequestRow)
+                {
+                    var active = entry.Property(nameof(QuoteRequestRow.IsActive));
+                    if (active.IsModified && !((bool)active.OriginalValue! && !(bool)active.CurrentValue!))
+                    {
+                        throw new InvalidOperationException("Teklifin talep bağı yalnız etkinden pasife döner.");
                     }
                 }
 

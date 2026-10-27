@@ -85,6 +85,13 @@ internal sealed class DraftRow : ISalesTenantRow
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// No 162: the quote this order was converted from and the quote revision whose price/quantity snapshot it carries; null
+    /// for an order created directly. Written once with the order (UX_Drafts_SourceQuoteId: one order per quote), never changed.
+    /// </summary>
+    public Guid? SourceQuoteId { get; set; }
+    public int? SourceQuoteRevision { get; set; }
 }
 
 /// <summary>One stored line with the Product and Settings owners' snapshots as answered. Append-only.</summary>
@@ -172,6 +179,9 @@ internal sealed class DraftAttemptRow : ISalesTenantRow
 
     /// <summary>API-20 / API-21: the sales request a request command's attempt answers (exactly one target per stored outcome).</summary>
     public Guid? RequestId { get; set; }
+
+    /// <summary>API-22 / API-24: the sales quote a quote command's attempt answers.</summary>
+    public Guid? QuoteId { get; set; }
     public string? RefusalJson { get; set; }
     public string? ResultJson { get; set; }
     public string CorrelationId { get; set; } = string.Empty;

@@ -446,6 +446,17 @@ public static class ErpPermissions
     public const string SalesRequestsApprove = "sales.requests.approve";
 
     /// <summary>
+    /// API-22 / API-23 / API-24 (plan §3.2, S-01; delegation No 162, 163): the sales quote names — record/revise/lose (and, with
+    /// SalesDraftsCreate, convert) a quote, and read quotes (Sales owner names SalesPermissionManifestV1.QuotesWrite / QuotesRead,
+    /// same strings). Neither confers another Sales name. Registered, not granted: no seeded role and no real user receives
+    /// them. Company-wide only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesQuotesWrite = "sales.quotes.write";
+
+    /// <inheritdoc cref="SalesQuotesWrite"/>
+    public const string SalesQuotesRead = "sales.quotes.read";
+
+    /// <summary>
     /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
     /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
     /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
@@ -667,6 +678,8 @@ public static class ErpPermissions
             SalesRequestsWrite,
             SalesRequestsRead,
             SalesRequestsApprove,
+            SalesQuotesWrite,
+            SalesQuotesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -791,6 +804,8 @@ public static class ErpPermissions
             SalesRequestsWrite,
             SalesRequestsRead,
             SalesRequestsApprove,
+            SalesQuotesWrite,
+            SalesQuotesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

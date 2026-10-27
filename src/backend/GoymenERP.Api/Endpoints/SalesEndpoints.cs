@@ -212,6 +212,8 @@ public static partial class SalesEndpoints
         MapDraftEndpoints(endpoints);
         // API-20 / API-21 (plan §3.2, S-01): the sales request routes.
         MapRequestEndpoints(endpoints);
+        // API-22…24 (plan §3.2, S-01): the sales quote routes.
+        MapQuoteEndpoints(endpoints);
         return endpoints;
     }
 

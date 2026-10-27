@@ -44,7 +44,7 @@ public sealed partial class SalesStore(
     SalesDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : ISalesOrderDraftStore, ISalesRequestStore
+    TimeProvider timeProvider) : ISalesOrderDraftStore, ISalesRequestStore, ISalesQuoteStore
 {
     private const string DraftEntityType = "Sales.OrderDraft";
     private const int ActorMaximumLength = 128;
@@ -1551,7 +1551,7 @@ public sealed partial class SalesStore(
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ReviseQuantityV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
             or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1
-            or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
+            or SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesQuoteCommands.ConvertV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }
@@ -1615,6 +1615,9 @@ public sealed partial class SalesStore(
 
         /// <summary>API-20: the sales request list's ordering label, so a draft cursor never pages the requests (and back).</summary>
         public const string RequestOrdering = "requests: createdAtUtc desc, id desc";
+
+        /// <summary>API-22: the sales quote list's ordering label (a draft or request cursor never pages the quotes).</summary>
+        public const string QuoteOrdering = "quotes: createdAtUtc desc, id desc";
 
         public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id, string ordering = Ordering) =>
             Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
