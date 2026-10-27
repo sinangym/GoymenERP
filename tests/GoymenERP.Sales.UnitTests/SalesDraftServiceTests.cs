@@ -1632,6 +1632,8 @@ public sealed partial class SalesDraftServiceTests
         public ISalesOrderCustomerReturnReadPortV1? CustomerReturns { get; set; }
         /// <summary>DEC-SAL-001 / API-08 (SAT-D5): the Settings Sales policy port; null = not composed.</summary>
         public ISettingsSalesPolicyProviderV1? SalesPolicies { get; set; }
+        /// <summary>MOD-01 / API-06: the customer-finance owner's risk-input port; null = not composed.</summary>
+        public ISalesPartyRiskReadPortV1? PartyRisk { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
@@ -1642,7 +1644,7 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, SalesPolicies);
+                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, SalesPolicies, PartyRisk);
         }
 
         public SalesDraftReadServiceV1 ReadService()
@@ -2169,6 +2171,22 @@ public sealed partial class SalesDraftServiceTests
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
             var drafts = _drafts.Where(draft => approvalState is null || draft.ApprovalState == approvalState);
             return Task.FromResult(new SalesDraftPage([.. drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
+        }
+
+        /// <summary>MOD-01 / API-06: every call's (party, account, take).</summary>
+        public List<(Guid PartyId, Guid CompanyAccountId, int Take)> OpenApprovedOrderReads { get; } = [];
+
+        public Task<IReadOnlyList<SalesOrderDraft>> ListOpenApprovedOrdersAsync(Guid partyId, Guid companyAccountId, int take,
+            CancellationToken cancellationToken = default)
+        {
+            if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            OpenApprovedOrderReads.Add((partyId, companyAccountId, take));
+            return Task.FromResult<IReadOnlyList<SalesOrderDraft>>([.. _drafts
+                .Where(draft => draft.Header.PartyId == partyId && draft.Header.CompanyAccountId == companyAccountId
+                    && draft.State == SalesDraftState.Draft
+                    && (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count > 0))
+                .OrderBy(draft => draft.CreatedAtUtc).ThenBy(draft => draft.Id)
+                .Take(take)]);
         }
     }
 }

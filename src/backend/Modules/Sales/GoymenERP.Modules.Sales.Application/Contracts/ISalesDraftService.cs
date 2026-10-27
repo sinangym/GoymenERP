@@ -80,6 +80,11 @@ public interface ISalesDraftService
     // (fail-closed "PolicyUnavailable" / "Unreadable"); source, invoicing and financial closure "NoSource". Read-only.
     Task<SalesOrderDraftStatusResponse> GetDraftStatusAsync(Guid draftId, CancellationToken cancellationToken = default);
 
+    // MOD-01 / API-06 — the read-only customer risk check under the draft read: DEC-FIN-007 gross risk (open receivables from the
+    // customer-finance owner + shipped-not-invoiced "NoSource" until S5 + the approved-unshipped remainder of the customer's open
+    // orders) against the credit limit; any part whose owner cannot answer makes the result "Unavailable" (fail-closed).
+    Task<SalesOrderDraftRiskCheckResponse> GetDraftRiskCheckAsync(Guid draftId, CancellationToken cancellationToken = default);
+
     // DEC-SAL-005 / AT-007 — the impact preview and the cancellation of an approved order under `sales.orders.cancel`
     // (owners read through their ports; fail-closed: any recorded effect or an unreadable owner refuses), and the read of the
     // recorded cancellation (`sales.drafts.read`).

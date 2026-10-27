@@ -105,7 +105,10 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<ISalesRequestStore>(),
         // DEC-SAL-001 / API-08 (SAT-D5): the Settings Sales policy port, registered by the host from the Settings owner;
         // until it is, the realization axis is "PolicyUnavailable", never a default tolerance.
-        serviceProvider.GetService<ISettingsSalesPolicyProviderV1>());
+        serviceProvider.GetService<ISettingsSalesPolicyProviderV1>(),
+        // MOD-01 / API-06: the customer-finance owner's risk-input port, registered by that owner's module (Finance); until it
+        // is, open receivables, the credit limit and collateral are "Unavailable" and the risk check is never "Within".
+        serviceProvider.GetService<ISalesPartyRiskReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

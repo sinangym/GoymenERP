@@ -316,8 +316,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (merged over main's: aabdd034… -> 19d5e743…).
             // DEC-SAL-001 / API-08: +2 SalesOrderStatusSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (merged over
             // API-20/21: 19d5e743… -> a9873855…).
+            // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (a9873855… -> a75b029d…).
             ["tools/relational_inventory/sales.txt"] =
-                "a98738558f96ae42862721baad557516dd80f0b30a1dc58015db10aa33a0a68b",
+                "a75b029d25c2cff72b385cf6fb07579413f2f923e308e002dbc75da24518e478",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -900,12 +901,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
                 // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
                 // branch and its token counts are unchanged. Re-fingerprinted for the party ledger: one read-service
-                // registration (no writer); the provider branch and its token counts are unchanged.
+                // registration (no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for
+                // MOD-01: one read-port registration (the Sales-declared ISalesPartyRiskReadPortV1 over Finance's own open
+                // items, no writer); the provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "4bf369041ce89baefb00c125957b02b3fd7bf811b77dbadf03f32f91ce7e671c",
+                        "5a5f1c4239042ad6e4ad501ccda884f63f5ffb7bee6a9ba366ab96b9d71b7135",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1281,8 +1284,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for DEC-SAL-001 / API-08: the draft service also receives the optional Settings
                     // Sales policy port (DI-only, SAT-D5 tolerance); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06: the draft service also receives the optional customer-finance
+                    // risk-input port (DI-only, owner-registered); the provider branch and its token counts are unchanged.
                     new(
-                        "f5b4f1b7b01f7aa29ab402b11cb534c014ed03f3bdb8095d02e168583e8d63ec",
+                        "e6c27d5c3e7ce02e2387c41d8e491306ae7c655b7699bb5c086c15f741e3bc86",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1308,8 +1313,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
                     // Re-fingerprinted for API-20 / API-21: the class became partial (the request half lives in SalesStore.Requests.cs,
                     // same filtered context, one save) and the list cursor takes an ordering label; SqlClient count unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06: one untracked read of a customer's open approved orders through the
+                    // same filtered context (explicit company predicate too, rebuilt through the domain); no write, connection,
+                    // command, raw SQL or filter-bypass API; SqlClient count unchanged.
                     new(
-                        "f942408eaa2ba3e75c0acb66dc5e71492582c39582ed7415914b21f6477e9048",
+                        "5b97d70366827343e8a48478275dc6d47a486e3ea69e3e6e95fecef8ef0f761d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1

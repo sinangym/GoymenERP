@@ -533,6 +533,18 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Status(draftId);
         }
 
+        /// <summary>MOD-01 / API-06: what the stub answers the risk-check read with.</summary>
+        public Func<Guid, Task<SalesOrderDraftRiskCheckResponse>> RiskCheck { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> RiskCheckReads { get; } = [];
+
+        public Task<SalesOrderDraftRiskCheckResponse> GetDraftRiskCheckAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            RiskCheckReads.Add(draftId);
+            return RiskCheck(draftId);
+        }
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 
@@ -1248,6 +1260,92 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         }
 
         service.Status = _ => throw new SalesDraftServiceException(403, "forbidden");
+        using (var forbidden = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+            Assert.True(forbidden.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+    }
+
+    [Fact]
+    public async Task Risk_check_is_a_private_read_of_the_service_answer_with_every_member_and_its_404_stays_code_less()
+    {
+        var draftId = Guid.NewGuid();
+        var party = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        var currency = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            RiskCheck = id => Task.FromResult(new SalesOrderDraftRiskCheckResponse("4", party, account, currency, "Unavailable",
+                [new SalesDraftRiskReasonV1("ShippedNotInvoiced", SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing)],
+                SalesPriceDisclosure.Visible, null,
+                [
+                    new SalesDraftRiskFigureV1("OpenReceivables", "finance.open-items", "Available", "IncludingTax",
+                        [new SalesDraftRiskAmountV1(currency, "100.00")], null),
+                    new SalesDraftRiskFigureV1("ShippedNotInvoiced", SalesDraftRiskSourcesV1.Invoicing, "NoSource", null, null,
+                        SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing),
+                    new SalesDraftRiskFigureV1("ApprovedUnshippedRemainder", SalesDraftRiskSourcesV1.ApprovedOrderRemainders, "Available",
+                        "ExcludingTax", [], null),
+                ],
+                new SalesDraftRiskFigureV1("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_owner_missing"),
+                new SalesDraftRiskFigureV1("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"))),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/risk-check";
+        Assert.Equal(SalesDraftApiV1.RiskCheckPath.Replace("{id}", draftId.ToString("D"), StringComparison.Ordinal), path);
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "partyId", "companyAccountId", "currencyId", "result", "reasons", "amountDisclosure", "grossRisk",
+                "components", "creditLimit", "collateral"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(("4", party.ToString("D"), account.ToString("D"), currency.ToString("D"), "Unavailable", "Visible"),
+                (body.GetProperty("draftVersion").GetString(), body.GetProperty("partyId").GetString(),
+                    body.GetProperty("companyAccountId").GetString(), body.GetProperty("currencyId").GetString(),
+                    body.GetProperty("result").GetString(), body.GetProperty("amountDisclosure").GetString()));
+            Assert.Equal(JsonValueKind.Null, body.GetProperty("grossRisk").ValueKind);
+            var reason = Assert.Single(body.GetProperty("reasons").EnumerateArray());
+            Assert.Equal(["component", "code"], reason.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(("ShippedNotInvoiced", "invoicing_owner_missing"),
+                (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString()));
+            var components = body.GetProperty("components").EnumerateArray().ToArray();
+            Assert.Equal(["OpenReceivables", "ShippedNotInvoiced", "ApprovedUnshippedRemainder"],
+                components.Select(component => component.GetProperty("kind").GetString()));
+            Assert.All(components.Append(body.GetProperty("creditLimit")).Append(body.GetProperty("collateral")), figure =>
+                Assert.Equal(["kind", "source", "state", "taxBasis", "amounts", "reasonCode"], figure.EnumerateObject().Select(member => member.Name)));
+            var amount = Assert.Single(components[0].GetProperty("amounts").EnumerateArray());
+            Assert.Equal((currency.ToString("D"), "100.00"), (amount.GetProperty("currencyId").GetString(), amount.GetProperty("amount").GetString()));
+            Assert.Equal((JsonValueKind.Null, "invoicing_owner_missing"), (components[1].GetProperty("amounts").ValueKind,
+                components[1].GetProperty("reasonCode").GetString()));
+            Assert.Equal((JsonValueKind.Array, 0), (components[2].GetProperty("amounts").ValueKind, components[2].GetProperty("amounts").GetArrayLength()));
+            Assert.Equal(("NoSource", "finance_credit_limit_owner_missing"), (body.GetProperty("creditLimit").GetProperty("state").GetString(),
+                body.GetProperty("creditLimit").GetProperty("reasonCode").GetString()));
+        }
+
+        Assert.Equal([draftId], service.RiskCheckReads);
+
+        service.RiskCheck = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        // A 503 of this read is the service's own (the Sales store, an unregistered permission name); an owner failure is a
+        // figure state, never a 503.
+        service.RiskCheck = _ => throw new SalesDraftServiceException(503, "service_unavailable");
+        using (var unavailable = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.True(unavailable.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+
+        service.RiskCheck = _ => throw new SalesDraftServiceException(403, "forbidden");
         using (var forbidden = await client.GetAsync(path))
         {
             Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);

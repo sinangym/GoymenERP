@@ -1407,6 +1407,33 @@ public sealed partial class SalesStore(
         return new SalesDraftPage(drafts, hasMore && last is not null ? ListCursor.Encode(companyId, last.CreatedAtUtc, last.Id) : null);
     }
 
+    /// <summary>
+    /// MOD-01 / API-06: the open approved orders of one customer account, under the tenant filter (and the company again,
+    /// explicitly), oldest first, rebuilt through the domain like every read. Untracked; writes nothing.
+    /// </summary>
+    public async Task<IReadOnlyList<SalesOrderDraft>> ListOpenApprovedOrdersAsync(Guid partyId, Guid companyAccountId, int take,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireResolvedCompany();
+        ArgumentOutOfRangeException.ThrowIfLessThan(take, 1);
+        if (partyId == Guid.Empty || companyAccountId == Guid.Empty)
+        {
+            return [];
+        }
+
+        var open = (int)SalesDraftState.Draft;
+        var approved = (int)InternalApprovalState.Approved;
+        var rows = await dbContext.Drafts.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+                && row.State == open
+                && (row.ApprovalState == approved
+                    || dbContext.DraftRevisions.Any(revision => revision.CompanyId == companyId && revision.DraftId == row.Id)))
+            .OrderBy(row => row.CreatedAtUtc).ThenBy(row => row.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+        return await RestoreAsync(rows, cancellationToken);
+    }
+
     private void AddDraft(SalesOrderDraft draft, SalesDraftWriteEnvelope envelope, DateTimeOffset now)
     {
         // The row mapping lives in SalesDraftRows (one mapping for the store and the gated fixture store).

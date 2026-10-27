@@ -376,3 +376,19 @@ A READ of one party account's recorded Finance facts (`IPartyLedgerService`, `Pa
   risk view) and
   HTTP on SQL: `FinanceCustomerInstrumentApiSqlServerRelationalAcceptanceTests`; browser: fin01 `FIN01-06`.
 - None of this is browser evidence (except fin01).
+
+## MOD-01: the Sales customer risk-input port
+
+`FinanceSalesPartyRiskReadPortV1` answers the Sales-declared `ISalesPartyRiskReadPortV1` (registered in
+`AddFinanceServices`; Finance.Infrastructure references Sales.Application for the port contract only, the Logistics AT-024
+shape). It reads Finance's own company-filtered `OpenItems`, untracked, and writes nothing; it carries no authority (the
+Sales risk read measures `sales.drafts.read` and discloses amounts only with `sales.orders.price.read`).
+
+- **Open receivables:** the outstanding amount of every OPEN open item of the party's company account, summed per currency as
+  exact decimal text and handed over as `decimal` only when it round-trips exactly. The admitted items are approved official
+  invoice installments, so the figure includes taxes. A row that does not parse, or another source kind, makes the figure
+  `Unavailable` — never a partial sum. Customer instruments are not added (DEC-FIN-016: the debt closes at collection, so the
+  open item still carries it).
+- **Credit limit / collateral:** no master exists on main (W4-RISK); both are `NoSource`. The collateral haircut is `OPEN-010`
+  (open; initial rate 0 per the 2026-08-31 decision) and is not applied here: collateral is a net-risk input and never enters
+  the gross risk.
