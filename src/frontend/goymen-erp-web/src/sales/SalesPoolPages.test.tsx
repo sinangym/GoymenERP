@@ -369,6 +369,23 @@ describe('Teklif detayı', () => {
     await waitFor(() => expect(reads).toBe(2))
   })
 
+  it('SAT-D24 interim: an expired quote is refused in its own words and the quote is re-read', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    installPoolFetch((call) => {
+      if (call.method === 'POST') return json({ status: 409, title: 'x', code: 'sales_quote_expired', errors: [{ field: 'validUntil', code: 'sales_quote_expired' }] }, 409)
+      reads += 1
+      return json(quoteDetail())
+    })
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    await user.click(await screen.findByRole('button', { name: POOL_TEXT.quoteDetail.convert, expanded: false }))
+    fireEvent.change(screen.getByLabelText(POOL_TEXT.quoteDetail.convertDate), { target: { value: '2026-10-27' } })
+    const form = screen.getByRole('form', { name: POOL_TEXT.quoteDetail.convertHeading })
+    await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.convert }))
+    expect((await screen.findByTestId('pool-quote-convert-notice')).textContent).toContain('geçerlilik süresi dolmuş')
+    await waitFor(() => expect(reads).toBe(2))
+  })
+
   it('a loss needs its free-text reason and sends it with the version', async () => {
     const user = userEvent.setup()
     let lost = false

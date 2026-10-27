@@ -263,6 +263,8 @@ const POOL_PROBLEM_TEXT: Record<PoolProblemCode, string> = {
   [POOL_PROBLEM_CODE.quoteLossReasonTooLong]: 'Kayıp nedeni en fazla 4000 karakter olabilir.',
   [POOL_PROBLEM_CODE.quoteValidUntilBeforeDate]: 'Geçerlilik tarihi teklif tarihinden önce olamaz.',
   [POOL_PROBLEM_CODE.quoteWithoutLines]: 'Teklif en az bir satır ister.',
+  [POOL_PROBLEM_CODE.quoteExpired]:
+    'Teklifin geçerlilik süresi dolmuş; süresi geçmiş teklif yönetici onayı olmadan siparişe dönüştürülemez.',
 }
 
 /**

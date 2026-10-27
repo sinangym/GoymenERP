@@ -274,6 +274,8 @@ export const POOL_PROBLEM_CODE = {
   quoteLossReasonTooLong: 'sales_quote_loss_reason_too_long',
   quoteValidUntilBeforeDate: 'sales_quote_valid_until_before_date',
   quoteWithoutLines: 'sales_quote_without_lines',
+  // SAT-D24 interim (#828): a quote past its validity date is not converted until the manager-approval step exists.
+  quoteExpired: 'sales_quote_expired',
 } as const
 export type PoolProblemCode = (typeof POOL_PROBLEM_CODE)[keyof typeof POOL_PROBLEM_CODE]
 
