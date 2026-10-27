@@ -314,8 +314,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
             // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted
             // (merged over main's: aabdd034… -> 19d5e743…).
+            // DEC-SAL-001 / API-08: +2 SalesOrderStatusSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (merged over
+            // API-20/21: 19d5e743… -> a9873855…).
             ["tools/relational_inventory/sales.txt"] =
-                "19d5e7431e7a906567fdd15d654962a1ca7a315a42b92689ff273c6605e0bd8e",
+                "a98738558f96ae42862721baad557516dd80f0b30a1dc58015db10aa33a0a68b",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1277,8 +1279,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
                     // Re-fingerprinted for API-20 / API-21: the request store and service are DI-only seams over the same
                     // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
+                    // Re-fingerprinted for DEC-SAL-001 / API-08: the draft service also receives the optional Settings
+                    // Sales policy port (DI-only, SAT-D5 tolerance); the provider branch and its token counts are unchanged.
                     new(
-                        "15bf931d87681dc487e06a766097f089d94b4148cac914329b049afcf7a7c773",
+                        "f5b4f1b7b01f7aa29ab402b11cb534c014ed03f3bdb8095d02e168583e8d63ec",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

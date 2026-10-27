@@ -75,6 +75,11 @@ public interface ISalesDraftService
     Task<SalesOrderDraftCustomerReturnsResponse> GetDraftCustomerReturnsAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
+    // DEC-SAL-001 / API-08 — the order's seven status axes under the draft read: lifecycle, internal approval and customer
+    // acceptance from the aggregate; realization from the Logistics shipped totals judged with the Settings SAT-D5 tolerance
+    // (fail-closed "PolicyUnavailable" / "Unreadable"); source, invoicing and financial closure "NoSource". Read-only.
+    Task<SalesOrderDraftStatusResponse> GetDraftStatusAsync(Guid draftId, CancellationToken cancellationToken = default);
+
     // DEC-SAL-005 / AT-007 — the impact preview and the cancellation of an approved order under `sales.orders.cancel`
     // (owners read through their ports; fail-closed: any recorded effect or an unreadable owner refuses), and the read of the
     // recorded cancellation (`sales.drafts.read`).

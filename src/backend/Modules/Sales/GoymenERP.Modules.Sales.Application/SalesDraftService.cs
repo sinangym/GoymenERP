@@ -56,7 +56,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderLoadingReadPortV1? loadings = null,
     IProductQuantityPriceReferenceReaderV1? priceReferences = null,
     ISalesOrderCustomerReturnReadPortV1? customerReturns = null,
-    ISalesRequestStore? requests = null) : ISalesDraftService, ISalesRequestService
+    ISalesRequestStore? requests = null,
+    ISettingsSalesPolicyProviderV1? salesPolicies = null) : ISalesDraftService, ISalesRequestService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;

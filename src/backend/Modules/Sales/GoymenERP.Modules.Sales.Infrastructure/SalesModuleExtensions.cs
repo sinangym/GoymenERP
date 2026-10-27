@@ -102,7 +102,10 @@ public static class SalesModuleExtensions
         // is, the order's approved-returns read is 503, never an assumed "nothing returned".
         serviceProvider.GetService<ISalesOrderCustomerReturnReadPortV1>(),
         // API-20 / API-21: the sales request store (this module's own).
-        serviceProvider.GetRequiredService<ISalesRequestStore>());
+        serviceProvider.GetRequiredService<ISalesRequestStore>(),
+        // DEC-SAL-001 / API-08 (SAT-D5): the Settings Sales policy port, registered by the host from the Settings owner;
+        // until it is, the realization axis is "PolicyUnavailable", never a default tolerance.
+        serviceProvider.GetService<ISettingsSalesPolicyProviderV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
