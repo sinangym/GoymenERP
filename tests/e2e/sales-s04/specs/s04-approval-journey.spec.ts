@@ -282,8 +282,21 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     }
     const line = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
     await expect(line).toBeVisible()
-    await line.getByLabel('Etiket kimliği').fill(allocationLabelId)
-    await line.getByLabel('Etiket sürümü').fill(allocationLabelVersion)
+    // UI-13: the label is picked through Inventory's company-scoped search of this line's product, never typed.
+    const seededLabel = await pool.request()
+      .input('companyId', sql.UniqueIdentifier, companyId)
+      .input('labelId', sql.UniqueIdentifier, allocationLabelId)
+      .query<{ code: string }>('SELECT Code AS code FROM inventory.Labels WHERE CompanyId=@companyId AND Id=@labelId')
+    expect(seededLabel.recordset).toHaveLength(1)
+    const labelCode = seededLabel.recordset[0].code
+    const labelSearch = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === '/api/v1/inventory/positions')
+    await line.getByLabel('Etiket kodu ara').fill(labelCode)
+    await line.getByRole('button', { name: 'Etiketleri getir' }).click()
+    expect((await labelSearch).status()).toBe(200)
+    await line.getByTestId(`sales-allocation-label-option-${allocationLabelId.toLowerCase()}`).click()
+    await expect(line.getByTestId(`sales-allocation-label-selected-${allocationLineId}`))
+      .toContainText(`${labelCode} · sürüm ${allocationLabelVersion}`)
     await line.getByLabel('Tahsis kg').fill('5')
     await line.getByLabel('Tahsis nedeni').fill('SENTETIK s04 sipariş tahsisi')
 
