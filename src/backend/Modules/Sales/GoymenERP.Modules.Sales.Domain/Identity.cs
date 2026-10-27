@@ -182,6 +182,17 @@ public static class SalesRuleCodes
     /// <summary>The command names a line the order does not have.</summary>
     public const string RemainderLineUnknown = "sales_remainder_line_unknown";
 
+    // API-20 / API-21 (plan §3.2, S-01): the sales request and its approval (delegation No 160, 161).
+    /// <summary>A sales request is stored only with at least one line (1–500, the draft's bound).</summary>
+    public const string RequestWithoutLines = "sales_request_without_lines";
+    /// <summary>
+    /// No 161 (SINAN_KARARLARI_2026-10-27 §1 for the same transition): a rejection carries its reason; a blank reason is
+    /// refused, never defaulted.
+    /// </summary>
+    public const string RequestRejectionReasonRequired = "sales_request_rejection_reason_required";
+    /// <summary>A rejection reason over the technical bound (the note's) is refused, never cut.</summary>
+    public const string RequestRejectionReasonTooLong = "sales_request_rejection_reason_too_long";
+
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";
     public const string SliceUnitMismatch = "sales_slice_unit_mismatch";

@@ -1550,7 +1550,16 @@ public sealed partial class SalesOrderDraft
     private SalesRuleException StateConflict(string message) =>
         new(SalesRuleCodes.StateConflict, $"{message} (durum: {ApprovalState}).");
 
-    private void RequireSnapshots(ProductSnapshot product, UnitProfileSnapshot orderUnit)
+    private void RequireSnapshots(ProductSnapshot product, UnitProfileSnapshot orderUnit) =>
+        RequireLineSnapshots(CompanyId, Header.BusinessDate, product, orderUnit);
+
+    /// <summary>
+    /// The owner-snapshot rules of one line, shared by every Sales record that carries a product line (the order draft, and
+    /// since API-20 the sales request): the Product and Settings snapshots are complete, of this company, taken for this
+    /// business date, the order unit is the product's order-unit binding, its profile is in effect, and the applied scale is
+    /// min(profile, Ö2). The rules are the draft's own, unchanged; only their receiver moved.
+    /// </summary>
+    internal static void RequireLineSnapshots(Guid companyId, DateOnly businessDate, ProductSnapshot product, UnitProfileSnapshot orderUnit)
     {
         if (product.ProductId == Guid.Empty || string.IsNullOrWhiteSpace(product.ProductVersion)
             || string.IsNullOrWhiteSpace(product.Code) || string.IsNullOrWhiteSpace(product.Name)
@@ -1581,8 +1590,8 @@ public sealed partial class SalesOrderDraft
         }
 
         // The Settings port's validity obligation, enforced where the snapshot is consumed (PUR-3's verifier rule).
-        if (!orderUnit.IsActive || Header.BusinessDate < orderUnit.EffectiveFrom
-            || (orderUnit.EffectiveThrough is { } until && Header.BusinessDate > until))
+        if (!orderUnit.IsActive || businessDate < orderUnit.EffectiveFrom
+            || (orderUnit.EffectiveThrough is { } until && businessDate > until))
         {
             throw new SalesRuleException(SalesRuleCodes.UnitProfileNotInEffect,
                 "Sipariş birimi profili iş tarihinde etkin değil.");
@@ -1597,18 +1606,18 @@ public sealed partial class SalesOrderDraft
 
         foreach (var binding in new[] { product.StockUnit, product.SalesUnit, product.OrderUnit })
         {
-            if (binding.CompanyId != CompanyId)
+            if (binding.CompanyId != companyId)
             {
                 throw new SalesRuleException(SalesRuleCodes.SnapshotCompanyMismatch, "Ürün birim bağı başka şirketin.");
             }
         }
 
-        if (orderUnit.CompanyId != CompanyId)
+        if (orderUnit.CompanyId != companyId)
         {
             throw new SalesRuleException(SalesRuleCodes.SnapshotCompanyMismatch, "Birim profili başka şirketin.");
         }
 
-        if (product.EffectiveOn != Header.BusinessDate)
+        if (product.EffectiveOn != businessDate)
         {
             throw new SalesRuleException(SalesRuleCodes.SnapshotDateMismatch, "Ürün snapshot'ı taslağın iş tarihi için alınmamış.");
         }
@@ -1629,7 +1638,7 @@ public sealed partial class SalesOrderDraft
         return Math.Min(orderUnit.ProfileScale, Quantity.AllowedScale(unit));
     }
 
-    private static Quantity RequireQuantity(decimal value, UnitProfileSnapshot orderUnit)
+    internal static Quantity RequireQuantity(decimal value, UnitProfileSnapshot orderUnit)
     {
         var unit = orderUnit.IsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
         if (value <= 0m)
@@ -1696,7 +1705,7 @@ public sealed partial class SalesOrderDraft
     /// value in plain invariant notation (#257's wire shape; ÜRÜN #306 P3-3). "12.500" and 12.5m
     /// agree; "12.5" and 12.51m, or "1,2", do not.
     /// </summary>
-    private static void RequireQuantityText(string? text, decimal value)
+    internal static void RequireQuantityText(string? text, decimal value)
     {
         if (string.IsNullOrWhiteSpace(text)
             || !decimal.TryParse(text, System.Globalization.NumberStyles.AllowDecimalPoint,

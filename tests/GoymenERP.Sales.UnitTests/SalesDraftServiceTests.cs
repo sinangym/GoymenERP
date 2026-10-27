@@ -1616,6 +1616,8 @@ public sealed partial class SalesDraftServiceTests
         public FakeSettings Settings { get; init; } = new();
         public FakeProducts Products { get; init; } = new();
         public FakeStore Store { get; init; } = new();
+        /// <summary>API-20 / API-21: the in-memory request store; null = not composed (503).</summary>
+        public FakeRequestStore? Requests { get; set; } = new();
         public bool NoProducts { get; set; }
         public bool NoContactInformation { get; set; }
         /// <summary>AT-024: the delivery owner's read port; null = not composed.</summary>
@@ -1638,7 +1640,7 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences, CustomerReturns);
+                Allocations, Loadings, PriceReferences, CustomerReturns, Requests);
         }
 
         public SalesDraftReadServiceV1 ReadService()
