@@ -55,6 +55,25 @@ export type QuantityInput =
  * unambiguously (`1000`, or `1,5`).
  */
 export function parseQuantityInput(raw: string): QuantityInput {
+  const decimal = parseDecimalInput(raw)
+  if (!decimal.ok) return decimal
+  if (!/[1-9]/.test(decimal.value)) return { ok: false, error: 'not-positive' }
+  return decimal
+}
+
+export type DecimalInputError = 'required' | 'invalid' | 'ambiguous-separator'
+
+export type DecimalInput =
+  | { readonly ok: true; readonly value: string }
+  | { readonly ok: false; readonly error: DecimalInputError }
+
+/**
+ * A non-negative decimal as a person typed it, canonicalized AS TEXT (never through a JS `number`), with the same
+ * separator rule as a quantity: `,` or `.` is the one decimal separator and `1.000` is refused as ambiguous. Zero is a
+ * value here (UI-14: a zero unit price is an explicit price, not "no price"). Only the shape is judged: the scale, the
+ * range and every amount are the server's (money profile, SAT-D11), so no digit limit is invented here.
+ */
+export function parseDecimalInput(raw: string): DecimalInput {
   const text = raw.trim()
   if (text.length === 0) return { ok: false, error: 'required' }
   const match = /^([0-9]+)(?:([.,])([0-9]+))?$/.exec(text)
@@ -67,9 +86,7 @@ export function parseQuantityInput(raw: string): QuantityInput {
   }
   const integer = integerDigits.replace(/^0+(?=\d)/, '')
   const fraction = fractionDigits.replace(/0+$/, '')
-  const value = fraction.length > 0 ? `${integer}.${fraction}` : integer
-  if (!/[1-9]/.test(value)) return { ok: false, error: 'not-positive' }
-  return { ok: true, value }
+  return { ok: true, value: fraction.length > 0 ? `${integer}.${fraction}` : integer }
 }
 
 /**

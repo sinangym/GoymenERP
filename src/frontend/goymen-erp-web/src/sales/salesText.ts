@@ -25,6 +25,17 @@ export const ORDER_DRAFT_TEXT = {
     /** SALES-A2a: chosen from the Cari owner's contact information of the chosen account; optional. */
     deliveryAddress: 'Teslimat adresi',
     deliveryContact: 'Teslimat kişisi',
+    /** UI-14: the line's own price fields, shown only with the shell's price-write control (`sales.orders.price.write`). */
+    unitPrice: 'Birim fiyat',
+    priceUnit: 'Fiyat birimi',
+    discountPercent: 'İskonto %',
+  },
+  /** UI-14: the price group of a line. Texts only — every amount, the scale and the ranges are the server's (SAT-D11). */
+  pricing: {
+    legend: 'Fiyat',
+    help: 'Siparişin para biriminde, isteğe bağlı. Ondalık basamak sınırını ve iskonto aralığını sunucu denetler; satır tutarını ve toplamı yalnız sunucu hesaplar.',
+    /** Shown beside a line's price fields: a list-price reference is chosen on the saved order, not here. */
+    referenceLater: 'Liste fiyatı referansı ve taban fiyat kontrolü kaydedilen siparişin fiyat revizyonunda seçilir.',
   },
   choose: 'Seçin',
   /** SALES-A2a: the empty choice of an optional reference — nothing is sent, never a default. */
@@ -114,6 +125,14 @@ export const ORDER_DRAFT_TEXT = {
     sliceDateRequired: 'Dilimin terminini girin.',
     tooManySlices: 'Bir satırda en fazla 500 termin dilimi olabilir.',
     slicesExceedOrder: 'Termin dilimlerinin toplamı satır miktarını aşıyor.',
+    priceInvalid: 'Birim fiyat yalnız rakam ve tek ondalık ayırıcı içerebilir.',
+    priceAmbiguous: 'Nokta binlik ayırıcı mı ondalık mı anlaşılmıyor. 1250 ya da 1,25 biçiminde yazın.',
+    priceUnitRequired: 'Birim fiyatın hangi birim için olduğunu seçin.',
+    priceUnitWithoutPrice: 'Fiyat birimi seçildi ama birim fiyat boş. Fiyatı girin ya da fiyat birimini boşaltın.',
+    priceUnitNotOffered: 'Seçilen fiyat birimi bu ürün için sunulmuyor.',
+    discountInvalid: 'İskonto yüzdesi yalnız rakam ve tek ondalık ayırıcı içerebilir.',
+    discountAmbiguous: 'Nokta binlik ayırıcı mı ondalık mı anlaşılmıyor. 12,5 biçiminde yazın.',
+    discountWithoutPrice: 'İskonto için önce birim fiyatı girin.',
   },
   attempt: {
     submitting: 'Sipariş taslağı kaydediliyor…',
@@ -128,6 +147,12 @@ export const ORDER_DRAFT_TEXT = {
     validation: 'Taslak kaydedilmedi. İşaretli alanları düzeltin.',
     unauthenticated: 'Oturumunuz sona erdi; taslak kaydedilmedi.',
     forbidden: 'Bu şirkette sipariş taslağı oluşturma yetkiniz yok; taslak kaydedilmedi.',
+    /**
+     * UI-14: a 403 answering a send that carried a price. The wire's 403 is a bare problem (no code), so the screen cannot
+     * tell the create permission from the separate price-write permission — it names both, never only one.
+     */
+    forbiddenPriced:
+      'Taslak kaydedilmedi: bu şirkette sipariş taslağı oluşturma ya da sipariş satırına fiyat yazma yetkiniz yok. Fiyat yazma yetkiniz yoksa fiyat alanlarını boşaltıp yeniden kaydedebilirsiniz.',
     notFound: 'Seçilen kayıtlardan biri bulunamadı; taslak kaydedilmedi.',
     conflict: 'İşlem mevcut kayıtla çakıştı; taslak kaydedilmedi.',
     unexpected: 'Taslak kaydedilmedi. Beklenmeyen bir yanıt alındı.',
@@ -140,6 +165,11 @@ export const ORDER_DRAFT_TEXT = {
     heading: 'Kaydetmeden önce',
     company: 'Kaydedilecek şirket',
     notPriced: 'Henüz fiyatlandırılmadı',
+    /** UI-14: every line carries a typed price; the amounts are the server's. */
+    pricesEntered: 'Birim fiyatlar girildi; tutarları sunucu hesaplar',
+    partlyPriced: 'Bazı satırlar fiyatsız',
+    priceFact: (price: string, unit: string) => `birim fiyat ${price} / ${unit}`,
+    discountFact: (percent: string) => `iskonto %${percent}`,
     notApproved: 'Onaysız taslak',
     noEffects: 'Taslak kaydı onay, tahsis, stok, irsaliye, fatura veya tahsilat oluşturmaz.',
   },
@@ -186,6 +216,26 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
 export function problemCodeText(code: string | null): string | null {
   if (code === null) return null
   return Object.hasOwn(PROBLEM_CODE_TEXT, code) ? PROBLEM_CODE_TEXT[code as SalesProblemCode] : null
+}
+
+/**
+ * UI-14: the line-price rule codes the create answers on `lines[i].unitPrice` / `priceUnitId` / `discountPercent` (or on
+ * `draft` when the domain refuses). The same codes as the commercial revision; the texts describe the server's rule.
+ */
+const CREATE_PRICE_FIELD_TEXT: Readonly<Record<string, string>> = {
+  sales_price_scale_exceeded: 'Birim fiyat para biriminin onaylı ondalık basamak sayısını aşıyor; fiyat yuvarlanmaz.',
+  sales_price_unit_unsupported: 'Fiyat birimi ürünün stok, satış ya da sipariş birimi olmalı.',
+  sales_price_unit_pairing: 'Birim fiyat ve fiyat birimi birlikte verilir.',
+  sales_discount_out_of_range: 'İskonto yüzdesi 0 ile 100 arasında olmalıdır.',
+  sales_discount_without_price: 'İskonto için birim fiyat gerekir.',
+}
+
+/** A server field error's text on the create form: the stable problem codes first, then the line-price rule codes. */
+export function createFieldErrorText(code: string | null): string | null {
+  const known = problemCodeText(code)
+  if (known !== null || code === null) return known
+  if (Object.hasOwn(CREATE_PRICE_FIELD_TEXT, code)) return CREATE_PRICE_FIELD_TEXT[code]
+  return Object.hasOwn(LINE_PRICING_TEXT.fieldError, code) ? LINE_PRICING_TEXT.fieldError[code] : null
 }
 
 /** SALES-A1: the internal approval axis, one label per `InternalApprovalState`. */
