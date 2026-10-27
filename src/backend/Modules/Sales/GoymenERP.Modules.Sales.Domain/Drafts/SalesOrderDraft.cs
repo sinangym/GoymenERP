@@ -429,7 +429,7 @@ public sealed partial class SalesOrderDraft
             return;
         }
 
-        if (commercial.UnitPrice is not { } price)
+        if (commercial.UnitPrice is null)
         {
             throw new SalesRuleException(SalesRuleCodes.AdjustmentWithoutPrice,
                 "Referans fiyat, iskonto tutarı ve vade farkı bir birim fiyat olmadan verilemez.");
@@ -456,8 +456,10 @@ public sealed partial class SalesOrderDraft
             throw new SalesRuleException(SalesRuleCodes.SurchargeOutOfRange, "Vade farkı yüzdesi 0 ile 100 arasında olmalıdır.");
         }
 
-        if (commercial.DiscountAmount is { } discountAmount
-            && SalesLinePriceCalculator.Parse(discountAmount) > SalesLinePriceCalculator.Parse(price))
+        // TEK-03: the amounts are compared as money in the draft's currency at the profile's scale (the texts were
+        // checked above, so this never refuses on its own).
+        var amounts = SalesLineMoney.From(commercial, Header.CurrencyId, Money.Scale);
+        if (amounts.DiscountAmount is { } discountAmount && discountAmount.IsGreaterThan(amounts.UnitPrice!.Value))
         {
             throw new SalesRuleException(SalesRuleCodes.DiscountExceedsPrice, "İskonto tutarı birim fiyatı aşamaz.");
         }
