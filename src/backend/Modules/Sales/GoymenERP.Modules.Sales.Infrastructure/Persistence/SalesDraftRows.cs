@@ -9,8 +9,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// </summary>
 internal static class SalesDraftRows
 {
-    /// <summary>Adds the draft's rows to the context; the caller saves. <paramref name="createdBy"/> and <paramref name="correlationId"/> are stored trimmed.</summary>
-    internal static void Add(SalesDbContext dbContext, SalesOrderDraft draft, string createdBy, string correlationId)
+    /// <summary>
+    /// Adds the draft's rows to the context; the caller saves. <paramref name="createdBy"/> and <paramref name="correlationId"/> are
+    /// stored trimmed. API-23 (No 162): an order converted from a quote carries its source quote and revision, written once here.
+    /// </summary>
+    internal static void Add(SalesDbContext dbContext, SalesOrderDraft draft, string createdBy, string correlationId,
+        Guid? sourceQuoteId = null, int? sourceQuoteRevision = null)
     {
         ArgumentNullException.ThrowIfNull(dbContext);
         ArgumentNullException.ThrowIfNull(draft);
@@ -53,6 +57,8 @@ internal static class SalesDraftRows
             SourceStrategyVersion = header.SourceStrategy?.ExpectedVersion,
             PackageId = header.Package?.Id,
             PackageVersion = header.Package?.ExpectedVersion,
+            SourceQuoteId = sourceQuoteId,
+            SourceQuoteRevision = sourceQuoteRevision,
             MoneyOperation = money.Operation,
             MoneyProfileId = money.ProfileId,
             MoneyProfileVersion = money.ProfileVersion,

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Requests;
 using Microsoft.EntityFrameworkCore;
 
@@ -179,6 +180,16 @@ public sealed partial class SalesStore
 
         var lines = await dbContext.RequestLines.AsNoTracking().Where(line => line.RequestId == requestId).ToListAsync(cancellationToken);
         var request = SalesRequestRows.Restore(row, lines);
+        // No 161 (fail-closed): a request with any order that is not cancelled — converted from a quote covering it — is not
+        // rejected; the order is cancelled first. Asked here, inside the rejection's own read, before the domain decides;
+        // nothing is written when it holds. A conversion racing this rejection touches this request's row in its own save, so
+        // the row version tracked here makes one of the two the loser (409 concurrent_change, nothing stored).
+        if (commandName == SalesRequestCommands.RejectV1 && await HasLiveOrderAsync(request.Id, cancellationToken))
+        {
+            throw new SalesRuleException(SalesRuleCodes.RequestHasApprovedOrder,
+                "Onaylı siparişi olan satış talebi reddedilmez; önce sipariş iptal edilir.");
+        }
+
         var before = RequestAuditState(request, withLines: false);
         var versionBefore = request.Version;
         var now = timeProvider.GetUtcNow();

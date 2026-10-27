@@ -291,6 +291,8 @@ public sealed partial class SalesDraftServiceTests
         public int Attempts => attempts.Count;
         public int Count => requests.Count;
         public int Reads { get; private set; }
+        /// <summary>No 161: whether the request's live quote became an approved order (the real store's own query).</summary>
+        public Func<Guid, bool>? HasApprovedOrder { get; set; }
 
         public Task<SalesRequestStoreResult> StoreRequestAsync(SalesDraftWriteEnvelope envelope, string requestHash,
             Func<string, SalesRequest> build, CancellationToken cancellationToken = default)
@@ -346,6 +348,12 @@ public sealed partial class SalesDraftServiceTests
             if (request is null)
             {
                 return Task.FromResult<SalesRequestStoreResult?>(null);
+            }
+
+            // No 161: the real store asks the drafts; the fake asks the test's answer.
+            if (commandName == SalesRequestCommands.RejectV1 && HasApprovedOrder?.Invoke(requestId) == true)
+            {
+                throw new SalesRuleException(SalesRuleCodes.RequestHasApprovedOrder, "synthetic approved order");
             }
 
             mutate(request, DateTimeOffset.UtcNow);
