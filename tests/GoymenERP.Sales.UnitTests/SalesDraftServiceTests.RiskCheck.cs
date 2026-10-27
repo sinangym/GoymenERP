@@ -254,6 +254,45 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_cancelled_order_adds_nothing_as_this_order_and_leaves_the_approved_remainder()
+    {
+        // Review A P3-3 (SAT-D48): a cancelled order's commitment is gone — it is neither this order's part nor in the remainder.
+        var world = new World();
+        world.PartyRisk = new FakePartyRisk(FinanceLike([]));
+        var approved = await PricedApprovedAsync(world, "a");
+        Owners(world);
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        Assert.Equal(("Unavailable", SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
+            await RemainderStateAsync(world, approved.Draft.Id));
+
+        var preview = await world.Service().GetCancellationImpactAsync(approved.Draft.Id);
+        await world.Service().CancelDraftAsync(approved.Draft.Id,
+            new SalesDraftCancelRequest("4", "SENTETIK müşteri vazgeçti", preview.ImpactToken), Metadata("k-cancel"));
+        var check = await world.Service().GetDraftRiskCheckAsync(approved.Draft.Id);
+
+        Assert.Equal(("ThisOrder", SalesDraftRiskSourcesV1.ThisOrder, "Available", "IncludingTax", "", null), Flat(check.ThisOrder));
+        Assert.Equal(("Available", "IncludingTax"), (check.Components[2].State, check.Components[2].TaxBasis));
+        Assert.Empty(check.Components[2].Amounts!);
+        Assert.DoesNotContain(check.Reasons, reason => reason.Component is "ThisOrder" or "ApprovedUnshippedRemainder");
+        // Still never "Within": invoices (S5) and the limit have no source.
+        Assert.Equal(SalesDraftRiskResultsV1.Unavailable, check.Result);
+    }
+
+    [Fact]
+    public void The_risk_check_result_values_are_pinned_v1_wire_constants()
+    {
+        // Review B P3: the wire values never follow an enum's spelling.
+        Assert.Equal(("Within", "Over", "Unavailable"),
+            (SalesDraftRiskResultsV1.Within, SalesDraftRiskResultsV1.Over, SalesDraftRiskResultsV1.Unavailable));
+    }
+
+    private static async Task<(string State, string? Reason)> RemainderStateAsync(World world, Guid draftId)
+    {
+        var check = await world.Service().GetDraftRiskCheckAsync(draftId);
+        return (check.Components[2].State, check.Components[2].ReasonCode);
+    }
+
+    [Fact]
     public async Task More_open_approved_orders_than_one_read_takes_is_unavailable_never_a_truncated_sum()
     {
         var world = new World();

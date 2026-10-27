@@ -11,6 +11,19 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 // this order (D48), equal to the limit is within (D49), customer acceptance not awaited (D50), limit and collateral owned by
 // Finance (D51), unallocated customer payments deducted from open receivables (D52).
 
+/// <summary>The stable wire names of the check's <c>result</c> (pinned V1 values, never an enum's spelling).</summary>
+public static class SalesDraftRiskResultsV1
+{
+    /// <summary>Every part answered and the total with this order does not exceed the limit (equal is within, SAT-D49).</summary>
+    public const string Within = "Within";
+
+    /// <summary>Every part answered and the total with this order exceeds the limit.</summary>
+    public const string Over = "Over";
+
+    /// <summary>Fail-closed: at least one part, currency, rate or the limit could not be answered; see <c>reasons</c>.</summary>
+    public const string Unavailable = "Unavailable";
+}
+
 /// <summary>The stable wire names of a figure's <c>state</c>.</summary>
 public static class SalesDraftRiskFigureStatesV1
 {

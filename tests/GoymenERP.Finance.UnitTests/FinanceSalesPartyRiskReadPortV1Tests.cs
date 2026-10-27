@@ -91,6 +91,51 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
     }
 
     [Fact]
+    public async Task An_approved_reversal_alone_excludes_the_payment_even_without_a_zeroed_allocation_state()
+    {
+        // Review A P3-2: the reversal barrier also zeroes the state, but the exclusion must hold on its own.
+        var reversed = Guid.NewGuid();
+        await using var run = await Run.CreateAsync([Row("125.50", "75.25")], payments: [Payment(reversed, "50.00")],
+            states: [], reversals: [Reversal(reversed, approved: true)]);
+
+        var answer = await run.Port(Company).ReadPartyRiskAsync(Party, Account);
+
+        Assert.Equal([new SalesPartyRiskAmountV1(Try, 75.25m)], answer.OpenReceivables.Amounts);
+    }
+
+    [Fact]
+    public async Task A_refund_to_the_customer_is_netted_off_its_unallocated_payments_per_currency_down_to_zero()
+    {
+        // Review A P2-1: an advance of 100.00, not yet allocated, then refunded in full — nothing is deducted any more.
+        await using (var refunded = await Run.CreateAsync([Row("125.50", "75.25")], payments: [Payment(Guid.NewGuid(), "100.00")],
+            outgoing: [Outgoing("100.00")]))
+        {
+            Assert.Equal([new SalesPartyRiskAmountV1(Try, 75.25m)],
+                (await refunded.Port(Company).ReadPartyRiskAsync(Party, Account)).OpenReceivables.Amounts);
+        }
+
+        // A partial refund of 30.00 leaves 20.00 of a 50.00 advance to deduct; a refund larger than the credit stops at zero
+        // (never adds to the receivable); a refund in another currency, to another customer or in another company changes nothing.
+        await using (var partial = await Run.CreateAsync([Row("125.50", "75.25"), Row("40.00", "40.00", currency: Usd)],
+            payments: [Payment(Guid.NewGuid(), "50.00"), Payment(Guid.NewGuid(), "10.00", currency: Usd)],
+            outgoing:
+            [
+                Outgoing("30.00"), Outgoing("25.00", currency: Usd), Outgoing("500.00", currency: Eur),
+                Outgoing("500.00", party: Guid.NewGuid()), Outgoing("500.00", company: OtherCompany),
+            ]))
+        {
+            Assert.Equal([new SalesPartyRiskAmountV1(Try, 55.25m), new SalesPartyRiskAmountV1(Usd, 40m)],
+                (await partial.Port(Company).ReadPartyRiskAsync(Party, Account)).OpenReceivables.Amounts);
+        }
+
+        // An outgoing row Finance cannot read: unavailable, never a partial netting.
+        await using var broken = await Run.CreateAsync([Row("125.50", "75.25")], payments: [Payment(Guid.NewGuid(), "10.00")],
+            outgoing: [Outgoing("-1")]);
+        Assert.Equal(SalesPartyRiskFigureStateV1.Unavailable,
+            (await broken.Port(Company).ReadPartyRiskAsync(Party, Account)).OpenReceivables.State);
+    }
+
+    [Fact]
     public async Task An_unreadable_payment_or_allocation_state_makes_the_receivables_unavailable_never_a_wrong_deduction()
     {
         var source = Guid.NewGuid();
@@ -125,9 +170,14 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
 
         var unknown = await run.Port(Company).ReadPartyRiskAsync(Guid.NewGuid(), Account);
         Assert.Empty(unknown.OpenReceivables.Amounts);
-        var empty = await run.Port(Company).ReadPartyRiskAsync(Guid.Empty, Guid.Empty);
-        Assert.Equal(SalesPartyRiskFigureStateV1.Available, empty.OpenReceivables.State);
-        Assert.Empty(empty.OpenReceivables.Amounts);
+        // Review B P3: no customer named is not a recorded zero — nothing can be read for it.
+        foreach (var (party, account) in new[] { (Guid.Empty, Guid.Empty), (Party, Guid.Empty), (Guid.Empty, Account) })
+        {
+            var empty = await run.Port(Company).ReadPartyRiskAsync(party, account);
+            Assert.Equal((SalesPartyRiskFigureStateV1.Unavailable, FinanceSalesPartyRiskReadPortV1.CustomerUnidentified),
+                (empty.OpenReceivables.State, empty.OpenReceivables.ReasonCode));
+            Assert.Empty(empty.OpenReceivables.Amounts);
+        }
     }
 
     [Theory]
@@ -221,6 +271,24 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         CorrelationId = "SENTETIK-correlation",
     };
 
+    private static OutgoingMoneyEventRow Outgoing(string amount, Guid? currency = null, Guid? party = null, Guid? company = null) => new()
+    {
+        Id = Guid.NewGuid(),
+        CompanyId = company ?? Company,
+        PaymentId = Guid.NewGuid(),
+        PartyId = party ?? Party,
+        CompanyAccountId = Account,
+        TreasuryAccountId = Guid.NewGuid(),
+        CurrencyId = currency ?? Try,
+        AmountText = amount,
+        ProfileId = "SENTETIK-profile",
+        ProfileVersion = "1",
+        OccurredOn = new DateOnly(2026, 10, 27),
+        RecordedAtUtc = new DateTimeOffset(2026, 10, 27, 11, 0, 0, TimeSpan.Zero),
+        RecordedBy = "SENTETIK-seed",
+        CorrelationId = "SENTETIK-correlation",
+    };
+
     private static FinanceSourceAllocationStateRow State(Guid sourceId, string original, string unallocated, Guid? currency = null) => new()
     {
         CompanyId = Company,
@@ -257,10 +325,12 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
         public static Task<Run> CreateAsync(params FinanceOpenItemRow[] rows) => CreateAsync(rows, [], [], []);
 
         public static async Task<Run> CreateAsync(FinanceOpenItemRow[] rows, MoneyEventRow[] payments,
-            FinanceSourceAllocationStateRow[]? states = null, ReversalProposalRow[]? reversals = null)
+            FinanceSourceAllocationStateRow[]? states = null, ReversalProposalRow[]? reversals = null,
+            OutgoingMoneyEventRow[]? outgoing = null)
         {
             var run = new Run();
-            var companies = rows.Select(row => row.CompanyId).Concat(payments.Select(row => row.CompanyId)).Append(Company).Distinct();
+            var companies = rows.Select(row => row.CompanyId).Concat(payments.Select(row => row.CompanyId))
+                .Concat((outgoing ?? []).Select(row => row.CompanyId)).Append(Company).Distinct();
             foreach (var company in companies)
             {
                 var seed = new CompanyContext();
@@ -270,6 +340,7 @@ public sealed class FinanceSalesPartyRiskReadPortV1Tests
                 db.MoneyEvents.AddRange(payments.Where(row => row.CompanyId == company));
                 db.SourceAllocationStates.AddRange((states ?? []).Where(row => row.CompanyId == company));
                 db.ReversalProposals.AddRange((reversals ?? []).Where(row => row.CompanyId == company));
+                db.OutgoingMoneyEvents.AddRange((outgoing ?? []).Where(row => row.CompanyId == company));
                 await db.SaveChangesAsync();
             }
 

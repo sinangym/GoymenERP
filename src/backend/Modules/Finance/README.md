@@ -393,8 +393,11 @@ read measures `sales.drafts.read` and discloses amounts only with `sales.orders.
   receipt (`MoneyEventKinds.ManualBankReceiptRecorded`) or a collected cheque/note (`CustomerInstrumentCollected`); its
   unallocated part is `FinanceSourceAllocationStateRow.UnallocatedAmountText`, or the whole amount without a state row. A payment
   with an APPROVED reversal is excluded (the reversal event itself is not a payment). An uncollected cheque or DBS has no money
-  event and never counts (DEC-FIN-008/016). Any payment or state Finance cannot read → the receivables are `Unavailable` (no
-  partial deduction). Allocation (matching) continues separately; this read touches nothing.
+  event and never counts (DEC-FIN-008/016). Recorded R47 outgoing payments to the same account (`OutgoingMoneyEventRow`,
+  e.g. a refunded advance) are netted off that unallocated credit per currency, down to zero (review A P2-1; a supplier payment
+  to a party that is both can only make the deduction smaller). Any payment, state or outgoing row Finance cannot read → the
+  receivables are `Unavailable` (no partial deduction). No customer named (empty party or account) → `Unavailable`
+  (`finance_customer_unidentified`), never a recorded zero. Allocation (matching) continues separately; this read touches nothing.
 - **Credit limit / collateral:** Finance owns them (SAT-D51; the Cari card only shows them), but no master exists on main
   (W4-RISK); both are `NoSource`. The collateral haircut is `OPEN-010` (open) and is not applied here: collateral is a net-risk
   input and never enters the gross risk.

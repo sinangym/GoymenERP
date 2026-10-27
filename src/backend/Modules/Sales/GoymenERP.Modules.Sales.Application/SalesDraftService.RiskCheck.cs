@@ -107,7 +107,12 @@ public sealed partial class SalesDraftService
             draft.Version.ToString(CultureInfo.InvariantCulture),
             draft.Header.PartyId,
             draft.Header.CompanyAccountId,
-            evaluation.Outcome.ToString(),
+            evaluation.Outcome switch
+            {
+                SalesRiskOutcome.Within => SalesDraftRiskResultsV1.Within,
+                SalesRiskOutcome.Over => SalesDraftRiskResultsV1.Over,
+                _ => SalesDraftRiskResultsV1.Unavailable,
+            },
             [.. evaluation.Reasons.Select(reason => new SalesDraftRiskReasonV1(reason.Component, reason.Code))],
             disclosure,
             Totals(evaluation.InLocalCurrency),
