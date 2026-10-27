@@ -340,6 +340,17 @@ export const MASTER_TEXT = {
   locationsUnavailable: 'Lokasyon listesi okunamadı; iş merkezi için lokasyon seçilemiyor.',
   locationsTooMany: 'Lokasyon listesi bu formun sınırını aşıyor; seçim listesi eksik olacağı için sunulmuyor.',
   sitesUnavailable: 'Tesis listesi okunamadı; lokasyon için tesis seçilemiyor.',
+  conflictReloadedTitle: 'Güncel kayıt yüklendi',
+  conflictReloadedDetail:
+    'Girdiğiniz değerler korundu. Güncel kayıttan farklı olan alanlar aşağıda; kaydederseniz değişikliğiniz ' +
+    'güncel sürüm üzerinden yeni bir işlem olarak gönderilir.',
+  conflictReloadedSame:
+    'Girdiğiniz kod ve ad güncel kayıtla aynı. Gerekçeyi kontrol edip yeniden kaydedebilirsiniz.',
+  conflictDiffLabel: 'Girdiğiniz değerler ile güncel kayıt',
+  conflictDiffField: 'Alan',
+  conflictDiffMine: 'Sizin girdiniz',
+  conflictDiffCurrent: 'Güncel kayıt',
+  conflictEmpty: '(boş)',
 } as const
 
 /** The notice after an accepted edit (204): accepted, or an earlier identical command replayed — never a state. */
@@ -354,6 +365,14 @@ export function createdNotice(replayed: boolean): { title: string; detail: strin
   return replayed
     ? { title: MASTER_TEXT.replayedTitle, detail: MASTER_TEXT.replayedDetail, outcome: 'replayed' }
     : { title: MASTER_TEXT.createdTitle, detail: MASTER_TEXT.createdDetail, outcome: 'created' }
+}
+
+/**
+ * A later retry of a master-data command was refused while the first one is still unresolved (BLG-11).
+ * Like `retryRefusedText`, it never says the first request was not applied.
+ */
+export function masterRetryRefusedText(failure: CommandFailure | { readonly kind: 'code-in-use' }): string {
+  return `Son deneme sunucu tarafından reddedildi (${masterFailureText(failure).title}). Bu, ilk isteğin uygulanmadığı anlamına gelmez.`
 }
 
 /** A definite refusal of a master-data command. Each kind has its own text; none says the record is changed. */
