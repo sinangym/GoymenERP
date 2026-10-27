@@ -304,9 +304,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
             // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted
             // (merged over No 30's four: 5932b012… -> b15969f6…).
-            // API-22…24: +3 sales quote SQL facts (create/revise/convert exactly once + No 160/161, loss + two-key race, isolation + routes + rollback).
+            // API-22…24: +5 sales quote SQL facts (create/revise/convert exactly once + No 160/161, loss + two-key race, No 161 fail-closed +
+            // order submit/approve guard, in-save No 160 re-check + conversion/rejection race, isolation + routes + rollback) (b15969f6… -> 2fcb5fe9…).
             ["tools/relational_inventory/sales.txt"] =
-                "b15969f6db51542bdf3b877223084b611aaffd4e55d4a7f3d992c96d2314ff2e",
+                "2fcb5fe91eb72aa9f0c7a6a6934ceb416314983fb0fbb06c3936a0587aee7a1a",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -377,11 +378,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // request commands' own RequestAttempts, ADR-SAL-001 §2), each with the same CompanyId query filter and a
             // company-leading key, the attempt table's declared immutability trigger, and the request's decision-only write guard.
             // Re-fingerprinted for API-22…24: the quote tables (Quotes, QuoteRevisions, QuoteLines, QuoteRequests), each with the
-            // same CompanyId query filter and a company-leading key; the attempt row's nullable QuoteId and the order's nullable
-            // SourceQuoteId (company-leading foreign keys, filtered unique UX_Drafts_SourceQuoteId); the quote's lifecycle-only guard.
+            // same CompanyId query filter and a company-leading key; the quote commands' own QuoteAttempts (ADR-SAL-001 §2, declared
+            // immutability trigger) and the order's nullable SourceQuoteId (company-leading foreign keys, filtered unique
+            // UX_Drafts_SourceQuoteId); the quote's lifecycle-only guard. DraftAttempts is unchanged.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "0eeccdcd64c41ada685525680cfdd9121ab7148c14f1638bc81f4bdf85ae0eac",
+                "c0a9a381642ebfd89f46d3086ae21d8112ace0d867df08594560f1d5b391e676",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1295,9 +1297,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // same filtered context, one save) and the list cursor takes an ordering label; SqlClient count unchanged.
                     // Re-fingerprinted for API-22…24: the quote half lives in SalesStore.Quotes.cs (same filtered context, one save
                     // per command), the cursor gains the quote ordering label and the draft command check admits the conversion;
+                    // the order's submit/approve reads its source quote's requests through the same filtered context (No 160);
                     // SqlClient count unchanged.
                     new(
-                        "f942408eaa2ba3e75c0acb66dc5e71492582c39582ed7415914b21f6477e9048",
+                        "bb7e78351c6634783aefc3c25e8c763777623ecb9b9651fa8117543727dbe2e9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1714,12 +1717,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("3acdd5d39c1a8f740211ed8c35395978b02d0e4c3441c559e2ecae34e2656927",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
-                // API-22…24: the Down's only raw SQL refuses rollback (51066, used by no other migration) while any quote, any order
-                // converted from a quote or any quote/conversion attempt is stored; the THROW precedes every drop. Forward fix.
-                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027035517_AddSalesQuotes.cs"] =
-                    new("b411e22e42f2264e60fa4670511c806168d20154067c75c2f1331ea2f051fa93",
+                // API-22…24: two raw SQL statements. Up creates the quote attempt table's immutability trigger (ADR-SAL-001 §6:
+                // TR_QuoteAttempts_RejectMutation, THROW 51068 on any UPDATE/DELETE); the Down's refuses rollback (51066) while any
+                // quote, quote attempt, converted order or conversion attempt is stored, before every drop. Forward fix. Both codes
+                // are used by no other migration.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027071300_AddSalesQuotes.cs"] =
+                    new("372aa029a3b74e41404828d8a83cccc0abb3723ec5912df75a1773fa89396b7d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
-                        { ["Sql"] = 1 }),
+                        { ["Sql"] = 2 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =
