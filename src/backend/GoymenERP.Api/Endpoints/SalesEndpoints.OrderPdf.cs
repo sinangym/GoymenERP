@@ -17,7 +17,10 @@ public static partial class SalesEndpoints
     /// <c>sales.orders.price.read</c> decision, asked last; without it the price-less variant is answered (no price column,
     /// no currency), never an empty or zero price. The two reads must describe the same version of the order, otherwise
     /// the order changed in between and the answer is 409 <c>concurrent_change</c> (try again). No total, tax or exchange is
-    /// printed: they do not exist yet (API-03, T28).
+    /// printed: they do not exist yet (API-03, T28). Every order the domain accepts lays out (rows and fields taller than a page
+    /// continue on the next pages); an order longer than the PDF component's page bound is 422 <c>sales_order_pdf_too_large</c>
+    /// (stable: a retry gives the same answer), never a cut document. A missing or malformed text and missing time-zone rules
+    /// are a code-less 503.
     /// </summary>
     private static void MapOrderPdf(RouteGroupBuilder drafts)
     {
@@ -29,6 +32,7 @@ public static partial class SalesEndpoints
             [FromServices] IStringLocalizer<SalesOrderPdfComposer> texts,
             [FromServices] ILogger<SalesOrderPdfComposer> logger,
             ICorrelationContext correlation,
+            [FromServices] ISalesOrderPdfBusinessTimeZoneSource? timeZoneSource,
             CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(httpContext.Response);
@@ -67,16 +71,25 @@ public static partial class SalesEndpoints
             GeneratedPdf pdf;
             try
             {
-                var (request, _) = new SalesOrderPdfComposer(texts).Compose(Guid.NewGuid(), detail, pricing);
+                var zone = timeZoneSource is null ? SalesOrderPdfComposer.SystemBusinessTimeZone : timeZoneSource.BusinessTimeZone;
+                var (request, _) = new SalesOrderPdfComposer(texts, zone).Compose(Guid.NewGuid(), detail, pricing);
                 pdf = new DocumentPdfGenerator().Generate(request);
             }
-            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+            catch (DocumentPdfPageLimitException exception)
+            {
+                // A valid order too long for one synchronous PDF: said to the person (422, stable code), never retried as a 503.
+                logger.LogWarning(
+                    "Sales order PDF exceeds the page bound. DraftId={DraftId} PageLimit={PageLimit} CorrelationId={CorrelationId}",
+                    id, exception.PageLimit, correlation.IsResolved ? correlation.CorrelationId : null);
+                return DraftProblem(StatusCodes.Status422UnprocessableEntity, SalesDraftProblemCodesV1.OrderPdfTooLarge, correlation);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or FormatException)
             {
                 // An answer the composer cannot print faithfully (or that cannot be laid out uncut) is not printed. The log
                 // carries the reason's type and message (no order content: the messages name rules, never values).
                 logger.LogWarning(
                     "Sales order PDF was not rendered. DraftId={DraftId} Reason={Reason}: {Message} CorrelationId={CorrelationId}",
-                    id, exception is ArgumentException ? "layout" : "composition", exception.Message, correlation.IsResolved ? correlation.CorrelationId : null);
+                    id, exception is ArgumentException ? "layout" : exception is FormatException ? "text-format" : "composition", exception.Message, correlation.IsResolved ? correlation.CorrelationId : null);
                 return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
@@ -90,6 +103,7 @@ public static partial class SalesEndpoints
             .Produces<Stream>(StatusCodes.Status200OK, TechnicalPdfGenerator.PdfMediaType)
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity(SalesDraftProblemCodesV1.OrderPdfTooLarge)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }

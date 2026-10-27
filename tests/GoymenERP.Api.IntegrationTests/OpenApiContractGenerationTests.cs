@@ -704,7 +704,7 @@ public sealed partial class OpenApiContractGenerationTests
         // MOD-07: the order's current revision as a PDF attachment (prices only under the price read).
         new("get", "/api/v1/sales/drafts/{id}/pdf", "GetSalesOrderDraftPdfV1",
             AuthenticatedResponses("200:application/pdf", "404:application/problem+json", "409:application/problem+json",
-                "503:application/problem+json"),
+                "422:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:id:true:type:string;format:uuid"]),
         new("get", "/api/v1/sales/drafts/{id}/remainder-changes", "GetSalesOrderDraftRemainderChangesV1",
             AuthenticatedResponses("200:application/json", "404:application/problem+json", "503:application/problem+json"),
@@ -2490,6 +2490,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["RescheduleSalesOrderDraftDeliveryV1:422"] = ["validation_failed"],
             ["CancelSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["GetSalesOrderDraftPdfV1:409"] = ["concurrent_change"],
+            ["GetSalesOrderDraftPdfV1:422"] = ["sales_order_pdf_too_large"],
             ["CancelSalesOrderDraftV1:409"] = ["concurrent_change", "sales_cancellation_blocked", "sales_cancellation_impact_changed", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["CancelSalesOrderDraftV1:422"] = ["validation_failed"],
             ["ForceCloseSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],

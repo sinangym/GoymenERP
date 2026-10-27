@@ -2,8 +2,9 @@
  * MOD-07 — "PDF indir" on the sales order detail. One read of `GET …/drafts/{id}/pdf`, saved under the server's
  * DEC-DOC-004 file name. The screen chooses nothing about the content: the server prints the current revision and decides
  * by the caller's price read whether prices appear. States: idle, loading (the button is busy and says so), saved (a polite
- * status line), and a problem — forbidden (403), not found in this company (404), changed meanwhile (409, try again) or
- * failed (any other answer, offline or a body that is not a PDF; try again).
+ * status line), and a problem — forbidden (403), not found in this company (404), changed meanwhile (409, try again), too
+ * long for one PDF (422 `sales_order_pdf_too_large`, no retry) or failed (any other answer, offline or a body that is not a
+ * PDF; try again).
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
@@ -12,7 +13,7 @@ import { downloadOrderPdf, saveOrderPdf } from './orderPdf'
 import { SALES_ORDER_PDF_TEXT as T } from './salesText'
 import styles from './SalesOrderPdfAction.module.css'
 
-type Problem = 'forbidden' | 'notFound' | 'changed' | 'failed'
+type Problem = 'forbidden' | 'notFound' | 'changed' | 'tooLarge' | 'failed'
 
 type State =
   | { readonly kind: 'idle' }
@@ -24,13 +25,18 @@ const PROBLEM_TEXT: Record<Problem, string> = {
   forbidden: T.forbidden,
   notFound: T.notFound,
   changed: T.changed,
+  tooLarge: T.tooLarge,
   failed: T.failed,
 }
 
-function problemOf(status: number): Problem {
+/** The server's stable code of an order too long for one PDF (422): a retry gives the same answer. */
+const ORDER_PDF_TOO_LARGE = 'sales_order_pdf_too_large'
+
+function problemOf(status: number, code: string | null): Problem {
   if (status === 403) return 'forbidden'
   if (status === 404) return 'notFound'
   if (status === 409) return 'changed'
+  if (status === 422 && code === ORDER_PDF_TOO_LARGE) return 'tooLarge'
   return 'failed'
 }
 
@@ -68,7 +74,7 @@ export function SalesOrderPdfAction({
       setState({ kind: 'saved', fileName })
       return
     }
-    setState({ kind: 'problem', problem: outcome.type === 'refused' ? problemOf(outcome.status) : 'failed' })
+    setState({ kind: 'problem', problem: outcome.type === 'refused' ? problemOf(outcome.status, outcome.code) : 'failed' })
   }
 
   const retryable = state.kind === 'problem' && (state.problem === 'changed' || state.problem === 'failed')

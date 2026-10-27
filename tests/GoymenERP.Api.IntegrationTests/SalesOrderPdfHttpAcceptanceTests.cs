@@ -1,11 +1,15 @@
 using System.Net;
 using System.Text.Json;
+using System.Globalization;
 using GoymenERP.Api.Endpoints;
+using GoymenERP.Api.SalesRuntime;
+using GoymenERP.DocumentGeneration.Pdf;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Localization;
 using UglyToad.PdfPig;
 
 namespace GoymenERP.Api.IntegrationTests;
@@ -276,6 +280,140 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         Assert.Equal((0, 0), (detailService.Calls, pricing.Calls));
     }
 
+    /// <summary>
+    /// Domain maximums on ONE line (SalesOrderDraft: note ≤ 4000 characters, ≤ 500 delivery slices per line) and a header
+    /// note of 4000 characters made of 800 short lines: the rows and fields taller than a page continue on the next pages;
+    /// every word, slice and note line reads back from the PDF, in order — nothing is cut.
+    /// </summary>
+    [Fact]
+    public async Task An_order_at_the_domain_maximums_of_a_line_prints_completely_across_pages()
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Visible);
+        var lineNote = string.Join(' ', Enumerable.Range(0, 666).Select(index => $"n{index:D4}"));
+        Assert.Equal(3995, lineNote.Length);
+        var headerNote = string.Join('\n', Enumerable.Range(0, 800).Select(index => $"L{index:D3}"));
+        Assert.Equal(3999, headerNote.Length);
+        var day = new DateOnly(2026, 11, 3);
+        var slices = Enumerable.Range(1, 500)
+            .Select(index => new SalesDraftDeliverySliceV1(Guid.NewGuid(), Kg, index.ToString(CultureInfo.InvariantCulture), day.AddDays(index)))
+            .ToArray();
+        var line = Assert.Single(detail.Lines) with { Note = lineNote, RequestedDeliverySlices = slices };
+        var maximal = detail with { Note = headerNote, Lines = [line] };
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(maximal)), new StubPricing(_ => Task.FromResult(pricing)));
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var pdf = PdfDocument.Open(await response.Content.ReadAsByteArrayAsync());
+        Assert.InRange(pdf.NumberOfPages, 2, DocumentPdfGenerator.PageLimit);
+        var text = string.Concat(pdf.GetPages().Select(page => page.Text));
+        AssertInOrder(text, Enumerable.Range(0, 800).Select(index => $"L{index:D3}"));
+        AssertInOrder(text, Enumerable.Range(0, 666).Select(index => $"n{index:D4}"));
+        AssertInOrder(text, slices.Select(slice => $"{slice.RequestedDeliveryDate:dd.MM.yyyy}: {slice.Quantity}"));
+        Assert.Contains("12.125 TRY / kg", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A valid order longer than one synchronous PDF may be (the component's page bound) is said as such — 422 with its stable
+    /// code — never a 503 a retry cannot fix and never a cut document.
+    /// </summary>
+    [Fact]
+    public async Task An_order_beyond_the_page_bound_is_a_stable_422_not_a_retryable_503()
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Withheld);
+        var template = Assert.Single(detail.Lines);
+        var day = new DateOnly(2026, 11, 3);
+        var lines = Enumerable.Range(1, 30)
+            .Select(lineNo => template with
+            {
+                LineId = Guid.NewGuid(),
+                LineNo = lineNo,
+                RequestedDeliverySlices = [.. Enumerable.Range(1, 500)
+                    .Select(index => new SalesDraftDeliverySliceV1(Guid.NewGuid(), Kg, "1", day.AddDays(index)))],
+            })
+            .ToArray();
+        var large = detail with { Draft = detail.Draft with { LineCount = lines.Length }, Lines = lines };
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(large)), new StubPricing(_ => Task.FromResult(pricing)));
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(SalesDraftProblemCodesV1.OrderPdfTooLarge, problem.RootElement.GetProperty("code").GetString());
+    }
+
+    /// <summary>SAT-D56: what was approved stays approved — a cancelled or force-closed approved order prints without the watermark.</summary>
+    [Theory]
+    [InlineData("Cancelled")]
+    [InlineData("Closed")]
+    public async Task An_approved_order_later_cancelled_or_force_closed_prints_without_the_draft_watermark(string lifecycle)
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Withheld);
+        var ended = detail with { Draft = detail.Draft with { State = lifecycle } };
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(ended)), new StubPricing(_ => Task.FromResult(pricing)));
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var pdf = PdfDocument.Open(await response.Content.ReadAsByteArrayAsync());
+        Assert.All(pdf.GetPages(), page =>
+        {
+            Assert.DoesNotContain("TASLAK", page.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(page.Letters, letter => letter.PointSize > 100);
+        });
+        var text = string.Concat(pdf.GetPages().Select(page => page.Text));
+        Assert.Contains(lifecycle == "Cancelled" ? "İptal edildi · Onaylı" : "Kapalı · Onaylı", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>A missing text, a text whose composite format is broken, or no rules for the business time zone: 503, no PDF.</summary>
+    [Theory]
+    [InlineData("missing-text")]
+    [InlineData("broken-format")]
+    [InlineData("missing-zone")]
+    public async Task A_missing_text_a_broken_format_or_a_missing_time_zone_is_503_and_never_a_pdf(string fault)
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Visible);
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(detail)), new StubPricing(_ => Task.FromResult(pricing)),
+            services =>
+            {
+                if (fault == "missing-zone")
+                {
+                    services.AddSingleton<ISalesOrderPdfBusinessTimeZoneSource, NoBusinessTimeZone>();
+                    return;
+                }
+
+                services.RemoveAll<IStringLocalizer<SalesOrderPdfComposer>>();
+                services.AddSingleton<IStringLocalizer<SalesOrderPdfComposer>>(provider => new BrokenText(
+                    new StringLocalizer<SalesOrderPdfComposer>(provider.GetRequiredService<IStringLocalizerFactory>()),
+                    "Footer", missing: fault == "missing-text"));
+            });
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.NotEqual("application/pdf", response.Content.Headers.ContentType?.MediaType);
+        Assert.DoesNotContain("Footer", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    private static void AssertInOrder(string text, IEnumerable<string> parts)
+    {
+        var position = 0;
+        foreach (var part in parts)
+        {
+            var next = text.IndexOf(part, position, StringComparison.Ordinal);
+            Assert.True(next >= 0, $"'{part}' is missing or out of order.");
+            position = next + part.Length;
+        }
+    }
+
     private static string PdfPath(Guid draftId) => SalesDraftApiV1.OrderPdfPath.Replace("{id}", draftId.ToString("D"), StringComparison.Ordinal);
 
     private static async Task<string> TextAsync(HttpResponseMessage response)
@@ -315,14 +453,34 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         return (detail, pricing);
     }
 
-    private WebApplicationFactory<Program> CreateHost(ISalesDraftReadServiceV1 detail, ISalesOrderPrintReadServiceV1 pricing) =>
+    private WebApplicationFactory<Program> CreateHost(ISalesDraftReadServiceV1 detail, ISalesOrderPrintReadServiceV1 pricing,
+        Action<IServiceCollection>? configure = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<ISalesDraftReadServiceV1>();
             services.AddSingleton(detail);
             services.RemoveAll<ISalesOrderPrintReadServiceV1>();
             services.AddSingleton(pricing);
+            configure?.Invoke(services);
         }));
+
+    /// <summary>The real texts, except one key answered as missing or with a broken composite format.</summary>
+    private sealed class BrokenText(IStringLocalizer<SalesOrderPdfComposer> real, string key, bool missing)
+        : IStringLocalizer<SalesOrderPdfComposer>
+    {
+        public LocalizedString this[string name] => name == key
+            ? new LocalizedString(name, missing ? name : "{0} {7}", resourceNotFound: missing)
+            : real[name];
+
+        public LocalizedString this[string name, params object[] arguments] => this[name];
+
+        public IEnumerable<LocalizedString> GetAllStrings(bool includeParentCultures) => real.GetAllStrings(includeParentCultures);
+    }
+
+    private sealed class NoBusinessTimeZone : ISalesOrderPdfBusinessTimeZoneSource
+    {
+        public TimeZoneInfo? BusinessTimeZone => null;
+    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> host)
     {

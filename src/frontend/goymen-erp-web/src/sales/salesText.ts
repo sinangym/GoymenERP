@@ -940,6 +940,7 @@ export const SALES_ORDER_PDF_TEXT = {
   forbidden: "Bu siparişin PDF'ini indirme yetkiniz yok.",
   notFound: 'Sipariş bu şirkette bulunamadı; PDF indirilemedi.',
   changed: "Sipariş bu sırada değişti. PDF'i yeniden indirin.",
+  tooLarge: "Sipariş tek bir PDF'e sığmayacak kadar uzun (sayfa sınırı aşılıyor). Yeniden denemek sonucu değiştirmez; destek ekibine bildirin.",
   failed: 'PDF oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.',
   retry: 'Yeniden dene',
 } as const

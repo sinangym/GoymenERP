@@ -138,14 +138,46 @@ public sealed class DocumentPdfGeneratorTests
     }
 
     [Fact]
-    public void Generation_refuses_a_row_taller_than_a_page_instead_of_cutting_it()
+    public void A_row_taller_than_a_page_continues_on_the_next_pages_under_the_repeated_header_and_nothing_is_cut()
     {
-        var tall = string.Join('\n', Enumerable.Repeat("satır", 80));
-        var request = Request([new DocumentPdfTable([new DocumentPdfColumn("Not", 1)], [[tall]])]);
+        // 120 numbered lines in one cell: far taller than a landscape page.
+        var tall = string.Join('\n', Enumerable.Range(1, 120).Select(index => $"satır-{index:D3}"));
+        var request = Request([new DocumentPdfTable(
+            [new DocumentPdfColumn("Sıra", 1), new DocumentPdfColumn("Not", 4)],
+            [["001", tall], ["002", "kısa"]])]);
 
-        var exception = Assert.Throws<ArgumentException>(() => new DocumentPdfGenerator().Generate(request));
+        var artifact = new DocumentPdfGenerator().Generate(request);
 
-        Assert.Contains("taller than one page", exception.Message, StringComparison.Ordinal);
+        using var pdf = PdfDocument.Open(artifact.Content);
+        var pages = pdf.GetPages().ToArray();
+        Assert.True(pages.Length > 2, "120 lines need more than two pages.");
+        Assert.All(pages, page => Assert.Contains("SıraNot", page.Text, StringComparison.Ordinal));
+        var text = string.Concat(pages.Select(page => page.Text));
+        var position = 0;
+        foreach (var index in Enumerable.Range(1, 120))
+        {
+            // Every line, once and in order.
+            var next = text.IndexOf($"satır-{index:D3}", position, StringComparison.Ordinal);
+            Assert.True(next >= position, $"satır-{index:D3} is missing or out of order.");
+            position = next;
+        }
+
+        Assert.Contains("002kısa", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_field_taller_than_a_page_continues_on_the_next_pages()
+    {
+        var tall = string.Join('\n', Enumerable.Range(1, 90).Select(index => $"not-{index:D3}"));
+        var request = Request([new DocumentPdfFields([new DocumentPdfField("Not", tall), new DocumentPdfField("Sonraki", "alan")])]);
+
+        var artifact = new DocumentPdfGenerator().Generate(request);
+
+        using var pdf = PdfDocument.Open(artifact.Content);
+        var text = string.Concat(pdf.GetPages().Select(page => page.Text));
+        Assert.True(pdf.NumberOfPages > 1);
+        Assert.All(Enumerable.Range(1, 90), index => Assert.Contains($"not-{index:D3}", text, StringComparison.Ordinal));
+        Assert.Contains("Sonrakialan", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -154,8 +186,9 @@ public sealed class DocumentPdfGeneratorTests
         var rows = Enumerable.Range(0, 5_000).Select(_ => (IReadOnlyList<string>)["a\nb\nc"]).ToArray();
         var request = Request([new DocumentPdfTable([new DocumentPdfColumn("Not", 1)], rows)]);
 
-        var exception = Assert.Throws<ArgumentException>(() => new DocumentPdfGenerator().Generate(request));
+        var exception = Assert.Throws<DocumentPdfPageLimitException>(() => new DocumentPdfGenerator().Generate(request));
 
+        Assert.Equal(DocumentPdfGenerator.PageLimit, exception.PageLimit);
         Assert.Contains("page limit", exception.Message, StringComparison.Ordinal);
     }
 
@@ -179,7 +212,7 @@ public sealed class DocumentPdfGeneratorTests
             Enumerable.Repeat(column, 17).ToArray(), [])])));
         Assert.Throws<ArgumentException>(() => generator.Generate(Request([new DocumentPdfTable(
             [column], Enumerable.Repeat((IReadOnlyList<string>)["a"], 5_001).ToArray())])));
-        var raw = Assert.Throws<ArgumentException>(() => generator.Generate(Request([new DocumentPdfParagraph(new string('A', 4_097))])));
+        var raw = Assert.Throws<ArgumentException>(() => generator.Generate(Request([new DocumentPdfParagraph(new string('A', 32_769))])));
         Assert.Contains("raw input limit", raw.Message, StringComparison.Ordinal);
         var footer = Assert.Throws<ArgumentException>(() => generator.Generate(Request([]) with { FooterText = new string('İ', 400) }));
         Assert.Contains("footer", footer.Message, StringComparison.Ordinal);

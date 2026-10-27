@@ -81,11 +81,12 @@ describe('MOD-07 sales order PDF action', () => {
     [403, T.forbidden, false],
     [404, T.notFound, false],
     [409, T.changed, true],
+    [422, T.tooLarge, false],
     [503, T.failed, true],
     [500, T.failed, true],
   ])('a %i is told as its own problem, nothing is saved, and only a passing one offers a retry', async (status, message, retryable) => {
     const saves = captureSaves()
-    vi.stubGlobal('fetch', vi.fn(async () => json(status === 409 ? { status, code: 'concurrent_change' } : { status }, status)))
+    vi.stubGlobal('fetch', vi.fn(async () => json(status === 409 ? { status, code: 'concurrent_change' } : status === 422 ? { status, code: 'sales_order_pdf_too_large' } : { status }, status)))
     renderAction()
 
     await userEvent.click(screen.getByRole('button', { name: T.download }))
@@ -95,6 +96,18 @@ describe('MOD-07 sales order PDF action', () => {
     expect(within(alert).queryByRole('button', { name: T.retry }) !== null).toBe(retryable)
     expect(saves.createObjectURL).not.toHaveBeenCalled()
     expect(saves.downloads).toEqual([])
+  })
+
+  it('a 422 without the too-large code is a plain failure (retry offered), never the too-large text', async () => {
+    captureSaves()
+    vi.stubGlobal('fetch', vi.fn(async () => json({ status: 422, code: 'something_else' }, 422)))
+    renderAction()
+
+    await userEvent.click(screen.getByRole('button', { name: T.download }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain(T.failed)
+    expect(within(alert).getByRole('button', { name: T.retry })).toBeTruthy()
   })
 
   it('a changed order is fetched again on retry and then saved', async () => {

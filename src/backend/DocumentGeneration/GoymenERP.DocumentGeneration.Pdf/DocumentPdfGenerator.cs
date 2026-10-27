@@ -35,12 +35,16 @@ public sealed class DocumentPdfGenerator
     private const int HeadingKeepWithLines = 3;
 
     // Technical bounds on the work one request may cause; none is a business limit.
-    private const int MaximumRawTextUnits = 4_096;
+    // One text may be long (e.g. a line's 500 delivery slices); the work it causes is bounded by the page bound.
+    private const int MaximumRawTextUnits = 32_768;
     private const int MaximumBlockCount = 1_000;
     private const int MaximumFieldCount = 200;
     private const int MaximumColumnCount = 16;
     private const int MaximumRowCount = 5_000;
     private const int MaximumPageCount = 250;
+
+    /// <summary>The technical page bound of one document (see <see cref="DocumentPdfPageLimitException"/>).</summary>
+    public const int PageLimit = MaximumPageCount;
 
     public GeneratedPdf Generate(DocumentPdfRequest request)
     {
@@ -365,20 +369,33 @@ public sealed class DocumentPdfGenerator
             {
                 var labels = Wrap(field.Label, fonts.Body, labelWidth - ColumnGapPoints);
                 var values = Wrap(field.Value, fonts.Body, valueWidth);
-                var height = Math.Max(labels.Count, values.Count) * lineHeight;
-                Ensure(height, height);
-                for (var index = 0; index < labels.Count; index++)
+                var count = Math.Max(labels.Count, values.Count);
+                // A field that fits on a page is kept together; a longer one continues line by line, never cut.
+                if (y + (count * lineHeight) > bottom && pageHasContent && count * lineHeight <= PageCapacity)
                 {
-                    DrawLineAt(labels[index], fonts.Body, left, labelWidth - ColumnGapPoints, DocumentPdfAlignment.Start, y + (index * lineHeight));
+                    NewPage();
                 }
 
-                for (var index = 0; index < values.Count; index++)
+                for (var index = 0; index < count; index++)
                 {
-                    DrawLineAt(values[index], fonts.Body, valueLeft, valueWidth, DocumentPdfAlignment.Start, y + (index * lineHeight));
-                }
+                    if (y + lineHeight > bottom)
+                    {
+                        NewPage();
+                    }
 
-                y += height;
-                pageHasContent = true;
+                    if (index < labels.Count)
+                    {
+                        DrawLineAt(labels[index], fonts.Body, left, labelWidth - ColumnGapPoints, DocumentPdfAlignment.Start, y);
+                    }
+
+                    if (index < values.Count)
+                    {
+                        DrawLineAt(values[index], fonts.Body, valueLeft, valueWidth, DocumentPdfAlignment.Start, y);
+                    }
+
+                    y += lineHeight;
+                    pageHasContent = true;
+                }
             }
         }
 
@@ -388,21 +405,55 @@ public sealed class DocumentPdfGenerator
             var totalWeight = table.Columns.Sum(column => column.Weight);
             var widths = table.Columns.Select(column => Width * column.Weight / totalWeight).ToArray();
             var header = WrapRow(table.Columns.Select(column => column.Header).ToArray(), widths);
+            var headerHeight = RowHeight(header);
+            var oneLineRow = LineHeight(fonts.Body) + (CellPaddingPoints * 2);
+            if (headerHeight + oneLineRow > PageCapacity)
+            {
+                throw new ArgumentException("A table header leaves no room for a row on a page.");
+            }
+
             var rows = table.Rows.Select(row => WrapRow(row, widths)).ToArray();
-            var firstRowHeight = rows.Length == 0 ? 0 : RowHeight(rows[0]);
-            Ensure(RowHeight(header) + firstRowHeight, RowHeight(header) + firstRowHeight);
-            DrawRow(table.Columns, widths, header, ruleWidth: RuleWidthPoints * 2);
+            // The header never stands alone: it starts where at least the first row's first line fits under it.
+            var first = rows.Length == 0 ? 0 : Math.Min(RowHeight(rows[0]), oneLineRow);
+            if (y + headerHeight + first > bottom && pageHasContent)
+            {
+                NewPage();
+            }
+
+            DrawHeader(table.Columns, widths, header);
             foreach (var row in rows)
             {
                 var height = RowHeight(row);
-                if (y + height > bottom)
+                // A row that fits on a page is kept together; a taller one continues on the next pages, never cut.
+                if (y + height > bottom && headerHeight + height <= PageCapacity)
                 {
                     NewPage();
-                    Require(RowHeight(header) + height);
-                    DrawRow(table.Columns, widths, header, ruleWidth: RuleWidthPoints * 2);
+                    DrawHeader(table.Columns, widths, header);
                 }
 
-                DrawRow(table.Columns, widths, row, ruleWidth: RuleWidthPoints);
+                var total = row.Max(lines => lines.Count);
+                var offset = 0;
+                while (true)
+                {
+                    var available = (int)Math.Floor((bottom - y - (CellPaddingPoints * 2)) / LineHeight(fonts.Body));
+                    if (available < 1)
+                    {
+                        NewPage();
+                        DrawHeader(table.Columns, widths, header);
+                        continue;
+                    }
+
+                    var take = Math.Min(available, total - offset);
+                    DrawRow(table.Columns, widths, row, offset, take, RuleWidthPoints);
+                    offset += take;
+                    if (offset >= total)
+                    {
+                        break;
+                    }
+
+                    NewPage();
+                    DrawHeader(table.Columns, widths, header);
+                }
             }
 
             pageHasContent = true;
@@ -410,29 +461,37 @@ public sealed class DocumentPdfGenerator
 
         public void Dispose() => graphics?.Dispose();
 
+        /// <summary>The usable height of an empty page (between the top margin and the footer reserve).</summary>
+        private double PageCapacity => bottom - top;
+
         private List<string>[] WrapRow(IReadOnlyList<string> cells, double[] widths) =>
             [.. cells.Select((cell, index) => Wrap(cell, fonts.Body, widths[index] - (CellPaddingPoints * 2)))];
 
         private double RowHeight(List<string>[] cells) =>
             (cells.Max(lines => lines.Count) * LineHeight(fonts.Body)) + (CellPaddingPoints * 2);
 
-        private void DrawRow(IReadOnlyList<DocumentPdfColumn> columns, double[] widths, List<string>[] cells, double ruleWidth)
+        private void DrawHeader(IReadOnlyList<DocumentPdfColumn> columns, double[] widths, List<string>[] header) =>
+            DrawRow(columns, widths, header, 0, header.Max(lines => lines.Count), RuleWidthPoints * 2);
+
+        /// <summary>Lines <paramref name="offset"/> to <paramref name="offset"/> + <paramref name="count"/> of every cell of a row.</summary>
+        private void DrawRow(IReadOnlyList<DocumentPdfColumn> columns, double[] widths, List<string>[] cells, int offset, int count,
+            double ruleWidth)
         {
             var lineHeight = LineHeight(fonts.Body);
             var x = left;
             for (var column = 0; column < cells.Length; column++)
             {
                 var lines = cells[column];
-                for (var index = 0; index < lines.Count; index++)
+                for (var index = offset; index < Math.Min(lines.Count, offset + count); index++)
                 {
                     DrawLineAt(lines[index], fonts.Body, x + CellPaddingPoints, widths[column] - (CellPaddingPoints * 2),
-                        columns[column].Alignment, y + CellPaddingPoints + (index * lineHeight));
+                        columns[column].Alignment, y + CellPaddingPoints + ((index - offset) * lineHeight));
                 }
 
                 x += widths[column];
             }
 
-            y += RowHeight(cells);
+            y += (count * lineHeight) + (CellPaddingPoints * 2);
             Graphics.DrawLine(new XPen(XColors.Gray, ruleWidth), left, y, right, y);
             pageHasContent = true;
         }
@@ -468,7 +527,7 @@ public sealed class DocumentPdfGenerator
         {
             if (pages.Count >= MaximumPageCount)
             {
-                throw new ArgumentException($"The document exceeds the {MaximumPageCount}-page limit.");
+                throw new DocumentPdfPageLimitException(MaximumPageCount);
             }
 
             graphics?.Dispose();
@@ -556,4 +615,14 @@ public sealed class DocumentPdfGenerator
 
         private static double LineHeight(XFont font) => font.Size * LineHeightFactor;
     }
+}
+
+/// <summary>
+/// The document needs more pages than <see cref="DocumentPdfGenerator.PageLimit"/>: a technical bound on the work and size of
+/// one synchronous rendering, not a layout fault. Nothing was cut; the caller says so to the person instead of retrying.
+/// </summary>
+public sealed class DocumentPdfPageLimitException(int pageLimit)
+    : ArgumentException($"The document exceeds the {pageLimit}-page limit.")
+{
+    public int PageLimit { get; } = pageLimit;
 }

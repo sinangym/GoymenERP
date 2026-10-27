@@ -128,6 +128,15 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
 
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
+    /// <summary>SAT-D43: a line without a list price always goes to approval; this one is priced from a SENTETIK list at its own price.</summary>
+    private static PriceReferenceSnapshot ListedAt(string listPrice) =>
+        new(Guid.Parse("7c2e0d11-0000-4000-8000-0000000000b1"), "SENTETIK liste", 1, Day, null, "TRY", KgUnit, listPrice, null,
+            "ExcludingVat", "0", null);
+
+    /// <summary>SAT-D2 / SAT-D35: a SENTETIK 10 % limit keeps the 5 % discount within it (no exception approval needed).</summary>
+    private static readonly SalesDiscountLimit WithinTenPercent =
+        SalesDiscountLimit.Defined(10m, Guid.Parse("7c2e0d11-0000-4000-8000-0000000000a1"), 1);
+
     private sealed record Customer(Guid PartyId, Guid AccountId, string Code);
 
     /// <summary>(sales attempts, audit events, vault documents, draft version) as SQL Server holds them.</summary>
@@ -176,7 +185,7 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
             return new Customer(root.GetProperty("id").GetGuid(), account.GetProperty("id").GetGuid(), root.GetProperty("code").GetString()!);
         }
 
-        /// <summary>One priced line (6 kg at 12.50 TRY, 5 % discount), stored, submitted and approved through the real Sales store.</summary>
+        /// <summary>One priced line (6 kg at 12.50 TRY from a SENTETIK list at that price, 5 % discount checked within a SENTETIK 10 % limit — SAT-D2 / API-12), stored, submitted and approved through the real Sales store.</summary>
         public async Task<SalesOrderDraft> ApprovedPricedDraftAsync(Customer customer)
         {
             await using var scope = SalesStore(CompanyA);
@@ -255,7 +264,8 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
             var binding = new UnitBindingSnapshot(CompanyA, KgUnit, KgProfile, "1");
             var product = new ProductSnapshot(Product, "1", "SENTETIK-PDF-001", "Sentetik PDF bandı", Day, binding, binding, binding);
             draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "6", 6m, Day.AddDays(3),
-                Commercial: new CommercialDraftFields("12.50", KgUnit, "5")), T0);
+                Commercial: SalesOrderDraft.WithDiscountLimitCheck(new CommercialDraftFields("12.50", KgUnit, "5", ListedAt("12.50")),
+                    WithinTenPercent, Actor, T0)), T0);
             return draft;
         }
 

@@ -14,7 +14,7 @@ namespace GoymenERP.Api.SalesRuntime;
 /// comes from <c>Resources/SalesRuntime.SalesOrderPdfComposer.resx</c>; a missing text is a server fault, never a key
 /// printed in its place. Not a corporate template (DEC-DOC-010): no logo, letterhead or company name.
 /// </summary>
-public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer> texts)
+public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer> texts, TimeZoneInfo? businessTimeZone)
 {
     private const string RevisionPrefix = "Rev.";
     // DEC-DOC-004 file-name component; the PDF itself prints the full legal name.
@@ -23,7 +23,10 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
     private const string InstantFormat = "dd.MM.yyyy HH:mm";
     // SAT-D10: the business time zone. Instants are stored in UTC and printed in Turkish local time, labelled as such.
     private const string BusinessTimeZoneId = "Europe/Istanbul";
-    private static readonly Lazy<TimeZoneInfo?> BusinessTimeZone = new(FindBusinessTimeZone);
+    private static readonly Lazy<TimeZoneInfo?> SystemZone = new(FindBusinessTimeZone);
+
+    /// <summary>The host's rules for the SAT-D10 zone, or null when the host has none (then nothing with a time is printed).</summary>
+    public static TimeZoneInfo? SystemBusinessTimeZone => SystemZone.Value;
 
     // Column weights of the line table: layout proportions only.
     private const double NarrowColumn = 0.7;
@@ -325,7 +328,7 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
     /// </summary>
     private string Instant(DateTimeOffset value)
     {
-        var zone = BusinessTimeZone.Value
+        var zone = businessTimeZone
             ?? throw new InvalidOperationException("The business time zone is not available on this host.");
         return Format("InstantIstanbul",
             TimeZoneInfo.ConvertTime(value, zone).ToString(InstantFormat, CultureInfo.InvariantCulture));
