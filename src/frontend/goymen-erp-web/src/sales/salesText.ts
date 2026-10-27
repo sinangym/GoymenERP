@@ -733,3 +733,20 @@ export const REMAINDER_CHANGE_TEXT = {
     `Yüklenen: ${line.loaded ?? 'okunamadı'} · Sevk: ${line.shipped ?? 'okunamadı'} · Teslim: ${line.delivered ?? 'okunamadı'} · Alt sınır: ${line.minimumQuantity ?? 'okunamadı'}`,
   stateUnavailable: 'Yalnız onaylı ve iptal edilmemiş siparişin kısmi teslimat kalanı değiştirilebilir.',
 } as const
+
+/** S-04 Sipariş 360: the six locked order-detail tabs (Master §7.2) and their empty states. */
+export const ORDER_TABS_TEXT = {
+  label: 'Sipariş bölümleri',
+  tab: {
+    satirlar: 'Satırlar',
+    tahsis: 'Tahsis / Kaynak',
+    gerceklesme: 'Gerçekleşme / İrsaliye',
+    faturalar: 'Faturalar',
+    belgeler: 'Sözleşme / Belgeler',
+    gecmis: 'Revizyon / Geçmiş',
+  },
+  allocationNote: 'Kaynak stratejisi (stok, satın alma, üretim) henüz bu ekrandan seçilmiyor; tahsisler Stok sahibinden okunur.',
+  realizationNotApproved: 'Teslimat ve irsaliye bilgisi sipariş onaylandıktan sonra gösterilir.',
+  invoicesEmpty: 'Satış faturası ekranı henüz hazır değil. Bu sipariş için fatura bilgisi burada gösterilecek.',
+  documentsUnavailable: 'Belgeler yalnız tek bir şirket seçiliyken gösterilir.',
+} as const
