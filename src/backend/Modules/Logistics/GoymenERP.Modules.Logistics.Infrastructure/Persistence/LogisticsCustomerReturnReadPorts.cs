@@ -85,14 +85,18 @@ internal sealed class LogisticsSalesOrderCustomerReturnReadPort(LogisticsDbConte
             return new(companyId, salesOrderId, []);
         }
 
-        var lines = await dbContext.CustomerReturns.AsNoTracking()
+        // Aggregated and ordered in SQL over translatable members; the contract record is built after the read (SQL Server
+        // cannot translate an ORDER BY over a constructor projection of a grouping).
+        var totals = await dbContext.CustomerReturns.AsNoTracking()
             .Where(row => row.SourceOrderId == salesOrderId && row.Status == (int)CustomerReturnStatus.Approved)
             .GroupBy(row => new { row.SourceOrderLineId, row.UnitId })
-            .Select(group => new SalesOrderLineCustomerReturnV1(
-                group.Key.SourceOrderLineId, group.Key.UnitId, group.Sum(row => row.Quantity)))
-            .OrderBy(row => row.SalesOrderLineId)
+            .Select(group => new { group.Key.SourceOrderLineId, group.Key.UnitId, Quantity = group.Sum(row => row.Quantity) })
+            .OrderBy(row => row.SourceOrderLineId)
             .ThenBy(row => row.UnitId)
             .ToArrayAsync(cancellationToken);
+        var lines = totals
+            .Select(row => new SalesOrderLineCustomerReturnV1(row.SourceOrderLineId, row.UnitId, row.Quantity))
+            .ToArray();
         return new(companyId, salesOrderId, lines);
     }
 }

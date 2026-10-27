@@ -1626,6 +1626,8 @@ public sealed partial class SalesDraftServiceTests
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
         /// <summary>AT-018: the Product price-list reference read; null = not composed.</summary>
         public IProductQuantityPriceReferenceReaderV1? PriceReferences { get; set; }
+        /// <summary>SAT-D8 / API-10: the customer-return owner's read port (Logistics); null = not composed.</summary>
+        public ISalesOrderCustomerReturnReadPortV1? CustomerReturns { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
@@ -1636,7 +1638,7 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences);
+                Allocations, Loadings, PriceReferences, CustomerReturns);
         }
 
         public SalesDraftReadServiceV1 ReadService()
@@ -2043,6 +2045,23 @@ public sealed partial class SalesDraftServiceTests
                 (target, now) => recorded = mutate(target, impact!, now), audit,
                 async token => impact = await beforeWrite(draft!, token), cancellationToken);
             if (recorded is not null) Cancellations.Add(recorded);
+            return result;
+        }
+
+        public List<ForceClosureFacts> ForceClosures { get; } = [];
+
+        public async Task<SalesDraftStateResult?> ForceCloseDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, SalesForceClosurePlan, DateTimeOffset, ForceClosureFacts> mutate, SalesDraftStateAudit audit,
+            Func<SalesOrderDraft, CancellationToken, Task<SalesForceClosurePlan>> beforeWrite, CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.ForceCloseV1) throw new ArgumentException("wrong command", nameof(commandName));
+            SalesForceClosurePlan? plan = null;
+            ForceClosureFacts? recorded = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => recorded = mutate(target, plan!, now), audit,
+                async token => plan = await beforeWrite(draft!, token), cancellationToken);
+            if (recorded is not null) ForceClosures.Add(recorded);
             return result;
         }
 

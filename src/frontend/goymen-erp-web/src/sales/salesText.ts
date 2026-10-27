@@ -2,7 +2,7 @@
  * User-facing Sales texts. Turkish, in one place, so they stay localizable.
  */
 
-import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CommercialStage, type SalesProblemCode } from './contract'
+import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CancellationStatus, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
   heading: 'Yeni satış siparişi taslağı',
@@ -177,6 +177,10 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'İptal etkisi siz gördükten sonra değişti; iptal yapılmadı. Güncel etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.revisionBlocked]:
     'Siparişe bağlı kayıtlar var (tahsis ya da yükleme); miktar değiştirilmedi. Kayıtlar kendi ekranlarında kapatıldıktan sonra yeniden deneyin.',
+  [SALES_PROBLEM_CODE.forceCloseBlocked]:
+    'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
+  [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
+    'Kapatma etkisi siz gördükten sonra değişti; sipariş kapatılmadı. Güncel etkiyi yeniden okuyun.',
 }
 
 export function problemCodeText(code: string | null): string | null {
@@ -229,6 +233,7 @@ export const ORDER_DETAIL_TEXT = {
   stateDraft: 'Taslak',
   /** DEC-SAL-005: the lifecycle of an approved order cancelled after its impact preview. */
   stateCancelled: 'İptal edildi',
+  stateClosed: 'Kapalı',
   /** SALES-A1: the approval facts and the commands on the detail. */
   approval: {
     heading: 'İç onay',
@@ -540,6 +545,8 @@ export const ORDER_DETAIL_TEXT = {
   createdAt: 'Oluşturulma',
   /** The record-bound Cari code and name (no longer the bare id). */
   party: 'Cari',
+  /** TEK-11: the stored ids stay reachable for support, folded away below the names the user reads. */
+  technicalIds: 'Teknik kimlikler',
   account: 'Şirket hesabı kimliği',
   currency: 'Para birimi kimliği',
   requestedDeliveryDate: 'Üst termin',
@@ -550,7 +557,7 @@ export const ORDER_DETAIL_TEXT = {
   product: 'Ürün',
   productVersion: 'Ürün sürümü',
   quantity: 'Miktar',
-  orderUnit: 'Sipariş birimi kimliği',
+  orderUnit: 'Sipariş birimi',
   lineDeliveryDate: 'Satır termini',
   price: 'Birim fiyat',
   discount: 'İskonto %',
@@ -710,6 +717,62 @@ export function partyDisplayText(party: { readonly code: string; readonly legalN
   return party.tradeName === null ? `${party.code} — ${party.legalName}` : `${party.code} — ${party.legalName} (${party.tradeName})`
 }
 
+/** No 30 / SAT-D12: force-close of an approved order ("Siparişi zorla kapat") and its recorded closure. */
+export const FORCE_CLOSE_TEXT = {
+  heading: 'Siparişi kapat',
+  description:
+    'Teslim edilmeyen kalan "iptal edilen kalan" olarak kapatılır; teslim edilen bölüm, satırlar ve geçmiş değişmez. ' +
+    'Açık tahsis, sevk edilmemiş yükleme ya da okunamayan bir kaynak varken kapatma yapılmaz. Faturalanmamış irsaliye ' +
+    'kapatmayı engellemez, fatura işi açık kalır (SAT-D12). Stok ve para hareketi oluşmaz.',
+  showImpact: 'Kapatma etkisini göster',
+  refresh: 'Etkiyi yeniden oku',
+  subject: 'kapatma etkisi',
+  sourcesCaption: 'Kapatma etkisi kategorileri',
+  category: 'Kategori',
+  status: 'Durum',
+  effect: 'Etkisi',
+  blocks: 'Kapatmayı engeller',
+  warns: 'Uyarı; engellemez',
+  noEffect: '—',
+  linesCaption: 'Satır bazında kapatılacak kalan',
+  closedRemainder: 'Kapatılacak kalan',
+  blocked: 'Bu sipariş şu anda kapatılamaz. Engelleyen kayıtları kendi ekranlarında kapatın, sonra etkiyi yeniden okuyun.',
+  warning: 'Faturalanmamış irsaliye var. Kapatma bunu engellemez; fatura işi açık kalır.',
+  reasonLabel: 'Kapatma nedeni (zorunlu)',
+  reasonRequired: 'Kapatma nedeni zorunludur.',
+  submit: 'Siparişi kapat',
+  submitting: 'Kapatma gönderiliyor…',
+  unknown: 'Kapatmanın sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi tekrar göndermek ikinci bir kapatma oluşturmaz.',
+  completed: 'Sipariş kapatıldı; kalan iptal edilen kalan olarak kaydedildi.',
+  replayed: 'Bu kapatma daha önce kaydedilmişti; güncel durum gösteriliyor.',
+  retry: 'Aynı kapatmayı tekrar dene',
+  abandon: 'Bu işlemi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; kapatma uygulanmadı.',
+  forbidden: 'Bu şirkette sipariş kapatma yetkiniz yok; kapatma uygulanmadı.',
+  notFound: 'Sipariş bulunamadı; kapatma uygulanmadı.',
+  conflict: 'Kapatma uygulanmadı; sipariş ve etki yeniden okundu.',
+  versionConflict: 'Sipariş siz okuduktan sonra değişti; güncel durum gösteriliyor.',
+  validation: 'Kapatma uygulanmadı; gönderilen bilgi geçerli değil.',
+  unexpected: 'Kapatma uygulanmadı. Beklenmeyen bir yanıt alındı.',
+  recordHeading: 'Kapatma kaydı',
+  recordSubject: 'kapatma kaydı',
+  closedBy: 'Kapatan',
+  closedAt: 'Kapatma zamanı',
+  reason: 'Kapatma nedeni',
+  revision: 'Kapatılan revizyon',
+  recordNote: 'Kapatılan siparişin onay bilgileri, satırları ve geçmişi silinmez; sipariş başka işlem kabul etmez.',
+  recordSources: 'Kapatma anındaki etki',
+  recordLines: 'Kapatılan kalan',
+  recordMissing: 'Kapatma kaydı okunamadı.',
+  /** The status in neutral words: whether it blocks is the third column's (it differs from the cancellation's). */
+  sourceStatus: {
+    None: 'Kayıt yok (sahibi okundu)',
+    Present: 'Kayıt var',
+    Unreadable: 'Okunamadı; sıfır varsayılmaz',
+    NoSource: 'Kaynak yok; bu bağı tutan modül henüz yok',
+  } satisfies Record<CancellationStatus, string>,
+} as const
+
 /** AT-024: the partly delivered remainder panel (`SalesDraftRemainderChangePanel`). */
 export const REMAINDER_CHANGE_TEXT = {
   heading: 'Kısmi teslimat kalanı',
@@ -749,4 +812,41 @@ export const ORDER_TABS_TEXT = {
   realizationNotApproved: 'Teslimat ve irsaliye bilgisi sipariş onaylandıktan sonra gösterilir.',
   invoicesEmpty: 'Satış faturası ekranı henüz hazır değil. Bu sipariş için fatura bilgisi burada gösterilecek.',
   documentsUnavailable: 'Belgeler yalnız tek bir şirket seçiliyken gösterilir.',
+} as const
+
+/**
+ * UI-71 — S-11 Satış İletişimi ve Sözleşmeler, drawn in the S-04 "Sözleşme / Belgeler" tab (the S-11 visual is that tab).
+ * The order's own documents and the customer's Cari-card documents (where contracts valid across orders are kept), with
+ * one timeline over both. Document categories, a contract record and a communication log have no backend source yet;
+ * nothing here pretends they exist.
+ */
+export const SALES_DOCUMENTS_TEXT = {
+  note:
+    'Siparişe özel belgeler siparişe, siparişler arasında geçerli sözleşme gibi müşteri belgeleri müşterinin cari kartına eklenir. Zaman çizgisi ikisini birlikte gösterir.',
+  timelineHeading: 'Belge zaman çizgisi',
+  timelineCaption: 'Sipariş ve müşteri kartı belgeleri, en yeni üstte',
+  filterLabel: 'Bağlı kayda göre göster',
+  filter: {
+    all: (count: number) => `Tümü (${count})`,
+    order: (count: number) => `Sipariş (${count})`,
+    customer: (count: number) => `Müşteri kartı (${count})`,
+  },
+  columnDate: 'Tarih',
+  columnFile: 'Belge',
+  columnRelation: 'Bağlı kayıt',
+  columnVersion: 'Sürüm',
+  columnType: 'Tür',
+  columnScan: 'Güvenlik taraması',
+  relationOrder: (documentNo: string) => `Sipariş ${documentNo}`,
+  relationCustomer: (party: string) => `Müşteri kartı ${party}`,
+  loading: 'Belgeler getiriliyor…',
+  readFailed: 'Belgelerin bir kısmı getirilemedi. Gösterilenler eksik olabilir.',
+  readAgain: 'Belgeleri yeniden getir',
+  forbidden: 'Bu siparişin belgelerini görüntüleme yetkiniz yok.',
+  empty: 'Bu siparişe ve müşterinin cari kartına henüz belge eklenmedi.',
+  filterEmpty: 'Bu seçimde gösterilecek belge yok.',
+  customerHidden: 'Müşterinin cari kartı belgeleri sizin için görüntülenemiyor; zaman çizgisi yalnız sipariş belgelerini gösteriyor.',
+  orderHidden: 'Siparişin kendi belgeleri sizin için görüntülenemiyor; zaman çizgisi yalnız müşteri kartı belgelerini gösteriyor.',
+  orderPanelHeading: 'Sipariş belgeleri',
+  customerPanelHeading: 'Müşteri kartı belgeleri (sözleşmeler)',
 } as const

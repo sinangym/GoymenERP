@@ -153,11 +153,20 @@ public sealed class SalesDocumentOwnerLinkPortTests
 
         public Task<SalesOrderDraftLoadingProgressResponse> GetDraftLoadingProgressAsync(Guid draftId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<SalesOrderDraftCustomerReturnsResponse> GetDraftCustomerReturnsAsync(Guid draftId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftCancellationImpactResponse> GetCancellationImpactAsync(Guid draftId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> CancelDraftAsync(Guid draftId, SalesDraftCancelRequest request,
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SalesOrderDraftForceCloseImpactResponse> GetForceCloseImpactAsync(Guid draftId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SalesOrderDraftResponse> ForceCloseDraftAsync(Guid draftId, SalesDraftForceCloseRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SalesOrderDraftForceClosureResponse> GetDraftForceClosureAsync(Guid draftId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> RequestRemainderChangeAsync(Guid draftId, SalesDraftRemainderChangeRequest request,
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();

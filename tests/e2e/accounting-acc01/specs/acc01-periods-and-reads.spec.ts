@@ -539,7 +539,22 @@ test.describe.serial('ACC-01 periods and reads (real API, real SQL)', () => {
     await expect(page.getByText('Draft', { exact: true })).toBeVisible()
     await expect(page.locator('body')).not.toContainText(created.sourceId)
 
+    const accountsRead = page.waitForResponse(response =>
+      new URL(response.url()).pathname === `/api/v1/accounting/normal-journal-drafts/${created.draftId}/accounts`
+        && response.request().method() === 'GET')
     await page.getByRole('link', { name: 'Onay ekranını aç', exact: true }).click()
+    // BLG-05b: each line's account is named by the draft's own frozen plan (code + name), never shown as an id.
+    const accountsResponse = await accountsRead
+    expect(accountsResponse.status()).toBe(200)
+    const named = await accountsResponse.json() as {
+      accounts: { accountId: string; accountCode: string | null; accountName: string | null }[]
+    }
+    expect(named.accounts.length).toBeGreaterThanOrEqual(2)
+    for (const account of named.accounts) {
+      expect(account.accountCode).not.toBeNull()
+      await expect(page.getByRole('cell', { name: `${account.accountCode} — ${account.accountName}`, exact: true })).toBeVisible()
+      await expect(page.locator('body')).not.toContainText(account.accountId)
+    }
     // BLG-05: no period id is typed. The open period holding the draft's accounting date is preselected by its date
     // range; the seed id is only the expectation, and it is never shown as text.
     const periodPicker = page.getByLabel('Onay dönemi', { exact: true })

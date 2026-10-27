@@ -111,10 +111,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // it adds no OpenAPI-generation, network or hosted-service surface.
     // I01.2 adds two scoped in-process transfer outgoing-document adapters; it adds no OpenAPI-generation,
     // network or hosted-service surface.
+    // MOD-03 slice 1 adds one scoped in-process Settings Sales policy port registration (the approved
+    // provider); it adds no OpenAPI-generation, network, hosted-service or production-activation surface.
+    // SAT-D18 follow-up adds one scoped in-process operation-aware Settings candidate reader registration and
+    // passes it to the Sales reference read; no OpenAPI-generation, network or hosted-service surface changes.
     // MOD-08 adds one scoped in-process Sales-to-Identity user display adapter beside the Sales-Cari display host,
-    // with its comment (961ef453… -> f88670a8…); it adds no OpenAPI-generation, network or hosted-service surface.
+    // with its comment (4cf4cba9… -> cae283bd…); it adds no OpenAPI-generation, network or hosted-service surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "f88670a8cede022df562aed506fa2c4cc5727fa1d160821e2eb6a7eee10fcd80";
+        "cae283bdee5fc266d1d45a773f9be8028088868523d30ac848e8cd071715c307";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -217,8 +221,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
             // D-05 approval inbox: the existing pending-approval fact is renamed and strengthened to public HTTP/DI.
             // FI04: +2 approved-source open-item read facts (real HTTP authority/redaction and SQL keyset/no-write).
+            // SAT-D18: +1 Sales-only GSP/GIN TRY profile keeps the bank-account path closed, kept ordinal-sorted.
             ["tools/relational_inventory/finance.txt"] =
-                "a56ebd84fde486ccab64354108945a6c1bd65cbc71dd9da33cfcd8afb690e1e1",
+                "cb46a8362f31ddcb5e5c04be5369ac91527135dae1d0da2af66904a0302b95e6",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -241,8 +246,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ST-01 owner/custodian read: +1 exact-party, read-without-side-effect SQL fact.
             // D05 Inventory approvals: +3 pending stock-count/scrap read and fail-closed SQL facts.
             // GOY-UX-TEXT-FILTER-01: +1 typed-filter pre-pagination and cursor-resume SQL fact.
+            // SAT-D12 force-close: +1 active-allocation-blocks SQL fact, kept ordinal-sorted.
             ["tools/relational_inventory/inventory.txt"] =
-                "146364d46fe02cb22f8e1b0d55d8041f962fd4460b94200382c5cbd8de1f4766",
+                "835c86ada56cbaf35a637948f92ea80324fddd7b3f9f4d92c3779da288128de8",
 
             // logistics
             // AT-053: +4 weighbridge SQL facts (81c1ff0b… -> 264898d7…).
@@ -303,8 +309,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // PL04: +1 exact price-floor approval replay/down-refusal fact.
             // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
             // D-05: +1 pending-approval owner-read SQL fact, kept ordinal-sorted.
+            // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
+            // TEK-13: +5 SalesRemainderChangeSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (5932b012… -> f2c6c3ac…).
+            // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
             ["tools/relational_inventory/sales.txt"] =
-                "38262b4bd86d5c719afb4be6dbf774db037a27569b028ff2750d0b19f63ccde0",
+                "aabdd034baeb20fe87c7d584eddfdb3a882aa81738667d8e6f79e907343b5ec5",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -369,9 +378,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // same company-filtered Draft row; no query-filter bypass, direct database surface or tenant key changed.
             // Re-fingerprinted for PL04: the immutable price-floor replay-result constraint stays on the same
             // company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
+            // Re-fingerprinted for No 30 / SAT-D12: the force-closure table (DraftForceClosures), with the same CompanyId
+            // query filter and a company-leading key, the widened lifecycle CK (Closed = 3) and the Draft -> Closed guard.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "f5b5fd5efec336d1614374b95864460310829e06499f090340dde77d19e879df",
+                "524d03508fd0890a2809baec2471fed66e7abe76e057eb65057e1a42c3cafc03",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -846,11 +857,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for ACC reversal: its lifecycle and proposal store are registered;
                 // Ensure/Migrate counts remain unchanged. Re-fingerprinted for the approved Finance receipt
                 // source binding provider registration; the database initialization surface is unchanged.
+                // BLG-05b: re-fingerprinted for two read-only registrations (IAccountPlanMirrorReaderV1 ->
+                // ApprovedAccountPlanMirrorReaderV1, NormalJournalDraftAccountReadServiceV1); no bypass,
+                // Ensure/Migrate or initialization change (a09a1e08… -> 3783d2ed…).
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "a09a1e081b572c23527ec66de4700040b040129b849f1314b25003e970dec097",
+                        "3783d2ed9dcc22d182072dcb4e9b809b4dc5e5774f947075a77aab9a863febe5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1091,9 +1105,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["DbConnection"] = 1
                         }),
                 // The module source and Sales read ports use only tenant-filtered Logistics contexts.
+                // Re-fingerprinted for SAT-D8 / API-10: the Sales approved-returns aggregate is projected to an anonymous
+                // row in SQL and mapped to the contract after the read (the record projection was not translatable on
+                // SQL Server); same tenant-filtered context, filter, grouping and order; no capability token added.
                 [ReviewedLogisticsCustomerReturnReadPortsPath] =
                     new(
-                        "9971b43185b0797b097b1895b45d2c3d1cefbda4a5c23b2c75a5594cf57c667c",
+                        "a885ae19839f97d1de8ee6be5e12c7307c2d189e7c5d5e8dad9cb81abc8bbb6e",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // The customer-return store recognises SQL uniqueness and its tracked aggregate; both
                 // capabilities remain exact-source and exact-count reviewed.
@@ -1251,8 +1268,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "SalesModuleExtensions.cs"] =
                     // Re-fingerprinted for #641: the scoped pending-approval read seam is DI-only; the provider
                     // branch and its database capability token counts are unchanged.
+                    // Re-fingerprinted for SAT-D8 / API-10: the draft service also receives the optional Logistics
+                    // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
                     new(
-                        "318a1490df72db9671b335ca4dbcbc42d4e69dfcbe875d2fcff5b03c026e80a9",
+                        "d39bf8917ddd4503c57d6f76a2e03e62e7d30d9dfe6a187d70c76cdeefcac324",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1274,8 +1293,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // replayed from the existing company-filtered attempt; SqlClient count remains unchanged.
                     // Re-fingerprinted for the stored product-snapshot replay check: structural summary equality
                     // replaces record equality; no database, connection, command, raw SQL or filter-bypass API was added.
+                    // Re-fingerprinted for No 30 / SAT-D12: the force-close write and its restore, company-resolved and saved
+                    // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
                     new(
-                        "dcd91635cea0a3eaf85e19590b5168e6b0da20a647576ba3ce98b130803a9d69",
+                        "52a9cb9c3f6b709bc89a5ef0a1286f1b902cb36f5f4099123027d2a3f1036a49",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1676,6 +1697,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // replay result exists; the refusal precedes removal of the constraint and result column.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261004160000_AddSalesPriceFloorApprovalReplayResults.cs"] =
                     new("b1f3e21b2f6b13a6340edac1b29b5d5d25d5599212ab4d0596d905ed54679d3e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // No 30 / SAT-D12: the Down's only raw SQL refuses rollback (51061, used by no other migration) while any
+                // order force-closure is stored; the THROW precedes the DropTable and the CK restore. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261025120000_AddDraftForceClosures.cs"] =
+                    new("adaea424b2a2238dbd0a962f96c660c9855756b67148f774aa4463118a3fe8a6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

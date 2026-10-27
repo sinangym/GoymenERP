@@ -5,7 +5,7 @@ Source of truth: #275 v2 plan §7.2, §13, R3 and Ö2 (`SINAN_KARARLARI_2026-09-
 ## What is here
 
 ### Domain (`GoymenERP.Modules.Purchasing.Domain`)
-- `Quantity` — exact, non-negative, one unit; kilograms carry at most three decimals, pieces are whole (Ö2). Extra digits are refused, never rounded or cut; trailing zeros are dropped so equal quantities print equally.
+- `Quantity` — exact, non-negative, one unit; kilograms carry at most three decimals, pieces are whole (Ö2). Extra digits are refused, never rounded or cut; trailing zeros are dropped so equal quantities print equally. Since TEK-02 the rule lives once in `GoymenERP.BuildingBlocks.Quantities.Quantity<TRefusals>`; Purchasing spells it `Quantity` through a project `global using` alias over `PurchasingQuantityRefusals`, which keeps the Purchasing codes.
 - `PurchaseRequest` (+ lines) — the demand: Draft → Submitted. Not a commitment.
 - `PurchaseOrder` (+ lines) — the commitment towards one supplier Party of one company: Draft → Approved.
   - **General/technical breakdown:** a general line can be carved into technical lines while Draft and after approval (§7.2: the technical breakdown becomes known later); general remainder + technical slices never exceed the first commitment, an accepted general share cannot be sliced again, a technical line cannot be broken down, and a technical line keeps the general line's unit — only its product may differ (§13: 1.000 → 925 general + 75 technical). Whether a post-approval breakdown needs re-approval is §8 policy and is not chosen here.
