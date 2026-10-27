@@ -72,6 +72,8 @@ public static class IdentityModuleExtensions
         services.AddScoped<IIdentityAccessReadService, IdentityAccessReadService>();
         // MOD-08 user directory: a company-fenced, read-only display-name port for another module's central adapter.
         services.AddScoped<IUserDirectoryReadPortV1, UserDirectoryReadPortV1>();
+        // SAT-D66: the same directory answers in which companies a person is an active member (multi-company binding).
+        services.AddScoped<IUserCompanyMembershipReadPortV1, UserDirectoryReadPortV1>();
         services.AddScoped<ISystemRolePermissionReconciler, SystemRolePermissionReconciler>();
         services.AddScoped<IdentityDataSeeder>();
         services.AddSingleton(rcsiBinding);

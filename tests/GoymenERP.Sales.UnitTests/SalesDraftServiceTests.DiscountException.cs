@@ -247,6 +247,29 @@ public sealed partial class SalesDraftServiceTests
         Assert.NotNull(manual);
     }
 
+    [Theory]
+    [InlineData(true, 403, "settings_access_denied")]
+    [InlineData(false, 503, SalesDraftProblemCodesV1.DiscountLimitUnavailable)]
+    public async Task A_binding_owner_that_cannot_answer_is_never_read_as_no_group(bool denied, int status, string code)
+    {
+        // SAT-D63/D66: the host's adapter over the Settings person → group bindings fails as the port's own exception.
+        var policies = new FakeDiscountLimitPolicies { Limits = { [DiscountGroupA] = 50m } };
+        var world = new World
+        {
+            PriceReferences = new FakePriceReferences { Price = 12.50m },
+            SalesPolicies = policies,
+            DiscountLimitGroups = new FailingDiscountLimitGroups(denied),
+        };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, FromList(created.Lines[0].LineId, "12.50", "5")), Metadata("k-revise")));
+
+        Assert.Equal((status, code), (refused.Status, refused.Code));
+        Assert.Empty(policies.Asked);
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+    }
+
     [Fact]
     public async Task Limit_groups_without_a_Settings_source_are_503_and_never_a_guessed_limit()
     {
@@ -501,7 +524,14 @@ public sealed partial class SalesDraftServiceTests
         Assert.Null(Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!.ApprovedBy);
     }
 
-    /// <summary>The Identity owner's role → limit group mapping, as a fixed answer.</summary>
+    /// <summary>A binding owner that cannot answer (denied or unavailable).</summary>
+    private sealed class FailingDiscountLimitGroups(bool denied) : ISalesDiscountLimitGroupSourceV1
+    {
+        public Task<IReadOnlyList<Guid>> GetCurrentActorLimitGroupsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromException<IReadOnlyList<Guid>>(new SalesDiscountLimitGroupSourceException(denied));
+    }
+
+    /// <summary>The person → limit group bindings (SAT-D63, the Settings owner's record), as a fixed answer.</summary>
     private sealed class FakeDiscountLimitGroups(IReadOnlyList<Guid> groups) : ISalesDiscountLimitGroupSourceV1
     {
         public int Calls { get; private set; }

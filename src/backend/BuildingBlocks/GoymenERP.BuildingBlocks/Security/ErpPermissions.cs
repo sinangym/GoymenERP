@@ -640,6 +640,15 @@ public static class ErpPermissions
     public const string AccountingApprovedSourceCatalogActivate = "accounting.approved-source-catalog.activate";
 
     /// <summary>
+    /// SAT-D65/D68/D69/D70 (Sinan, 2026-10-27, <c>SINAN_KARARLARI_2026-10-27_SATIS_EK11.md</c>): ONE separate name for editing
+    /// the Sales discount limit groups, their limits (fixed, or linked group + extra points) and the person → limit group
+    /// bindings, and for reading them — the Settings owner's name (<c>SettingsPermissionManifestV1.SalesDiscountLimitsManage</c>).
+    /// Registered, not granted: no role, seed or user receives it here; giving it to the board members and the Admin persona
+    /// is a human grant gate (SAT-D65, SAT-D69). Company-wide only. NOT Critical (SAT-D69).
+    /// </summary>
+    public const string SettingsSalesDiscountLimitsManage = "settings.sales-discount-limits.manage";
+
+    /// <summary>
     /// ERP-000G / AT-065 (document vault core): the vault owner's names (DocumentsPermissionManifestV1). Read lists an
     /// owner record's documents and downloads a clean version; upload stores a new document on an owner record. Both
     /// are measured ON TOP of the owner record's own read (the Cari party: counterparty.parties.read), so a document is
@@ -776,6 +785,7 @@ public static class ErpPermissions
         FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
+            SettingsSalesDiscountLimitsManage,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -904,6 +914,7 @@ public static class ErpPermissions
         FinanceAllocationRead,
             DocumentsFilesRead,
             DocumentsFilesUpload,
+            SettingsSalesDiscountLimitsManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
         ],

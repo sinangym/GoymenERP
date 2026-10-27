@@ -102,3 +102,36 @@ public sealed record UserDirectoryEntryV1(
     Guid UserId,
     string DisplayName,
     bool IsActiveInCompany);
+
+/// <summary>
+/// SAT-D66 (<c>docs/decisions/SINAN_KARARLARI_2026-10-27_SATIS_EK11.md</c>): in which of the given companies a person is an
+/// active member NOW — the same membership predicate as <see cref="IUserDirectoryReadPortV1"/> (an active user with an
+/// effective assignment of an active role, inside its validity, with a scope in the company). Used by the Settings owner's
+/// central adapter for a binding written to several companies at once; it is a module-to-module port, not an endpoint.
+/// <para>
+/// Fail-closed fence: the context company and the actor are copies of the server-resolved context; EVERY requested company
+/// must be one the authenticated caller may access and in which the caller is an active member now. Anything else is
+/// <see cref="UserDirectoryOutcomeV1.Denied"/> with no company; an owner failure is <see cref="UserDirectoryOutcomeV1.Unavailable"/>.
+/// Only company ids leave the module: no name, role, permission, scope or assignment.
+/// </para>
+/// </summary>
+public interface IUserCompanyMembershipReadPortV1
+{
+    Task<UserCompanyMembershipAnswerV1> GetActiveCompaniesAsync(
+        UserCompanyMembershipRequestV1 request,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// <c>CompanyIds</c>: 1..<see cref="UserDirectoryLimitsV1.MaximumResolveCount"/> distinct, non-empty ids; <c>UserId</c> non-empty.
+/// </summary>
+public sealed record UserCompanyMembershipRequestV1(
+    Guid ContextCompanyId,
+    string ActorId,
+    Guid UserId,
+    IReadOnlyList<Guid> CompanyIds);
+
+/// <summary><c>ActiveCompanyIds</c>: the requested companies where the person is an active member now, ascending.</summary>
+public sealed record UserCompanyMembershipAnswerV1(
+    UserDirectoryOutcomeV1 Outcome,
+    IReadOnlyList<Guid> ActiveCompanyIds);

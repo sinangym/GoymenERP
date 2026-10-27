@@ -43,6 +43,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string WorkDbContextAuditEventPath =
         "src/backend/Modules/Work/"
         + "GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDbContext.cs";
+    // SAT-D61…D70: Settings writes its discount limit audit events in the same save (one context per company of a
+    // multi-company binding write, each with its own company context), under the same safe company filter.
+    private const string SettingsDbContextAuditEventPath =
+        "src/backend/Modules/Settings/"
+        + "GoymenERP.Modules.Settings.Infrastructure/Persistence/SettingsDbContext.cs";
     private const string WorkMigrationDesignerAuditModelPath =
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/"
         + "Migrations/20261005190000_InitialWorkDesiredStateStorage.Designer.cs";
@@ -84,6 +89,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             [PurchasingDbContextAuditEventPath] = "PurchasingDbContext",
             [DocumentsDbContextAuditEventPath] = "DocumentsDbContext",
             [WorkDbContextAuditEventPath] = "WorkDbContext",
+            [SettingsDbContextAuditEventPath] = "SettingsDbContext",
         };
 
     [Fact]

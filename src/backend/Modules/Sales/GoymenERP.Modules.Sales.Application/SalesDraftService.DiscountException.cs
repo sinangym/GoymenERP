@@ -13,7 +13,8 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <list type="bullet">
 /// <item><b>The limit</b> of the actor who discounts a line against its list price is read only from the Settings owner
 /// (<see cref="ISettingsSalesPolicyProviderV1"/>) for each of the actor's limit groups
-/// (<see cref="ISalesDiscountLimitGroupSourceV1"/>, the Identity owner's mapping) on the draft's business date. SAT-D34: the
+/// (<see cref="ISalesDiscountLimitGroupSourceV1"/>: the person → group bindings, SAT-D63/D66, the Settings owner's record)
+/// on the draft's business date. SAT-D34: the
 /// HIGHEST limit among the groups that have one applies; a group without an approved limit ("not found"), an inactive policy
 /// or one outside its window contributes nothing; no group with a limit (or no group, or no group source) means no limit
 /// defined — every discount goes to approval (SAT-D36). A Settings source that cannot answer (not composed, not served,
@@ -163,13 +164,24 @@ public sealed partial class SalesDraftService
     {
         if (discountLimitGroups is null)
         {
-            // No owner maps roles to limit groups yet: no limit is defined for anyone (SAT-D2, fail-closed).
+            // No host composes the person → group bindings: no limit is defined for anyone (SAT-D2, fail-closed).
             return (SalesDiscountLimit.Undefined, scope);
         }
 
         IReadOnlyList<Guid>? groups;
-        (groups, scope) = await GuardedWithScopeAsync(scope, permission,
-            () => discountLimitGroups.GetCurrentActorLimitGroupsAsync(cancellationToken), cancellationToken);
+        try
+        {
+            (groups, scope) = await GuardedWithScopeAsync(scope, permission,
+                () => discountLimitGroups.GetCurrentActorLimitGroupsAsync(cancellationToken), cancellationToken);
+        }
+        catch (SalesDiscountLimitGroupSourceException exception)
+        {
+            // The binding owner could not answer: never read as "no group" (that would only look fail-closed by accident).
+            throw exception.IsDenied
+                ? new SalesDraftServiceException(403, "settings_access_denied")
+                : new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DiscountLimitUnavailable);
+        }
+
         if (groups is null || groups.Count == 0)
         {
             return (SalesDiscountLimit.Undefined, scope);

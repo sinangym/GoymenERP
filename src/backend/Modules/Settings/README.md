@@ -372,8 +372,10 @@ against the currency's money profile.
   fail-closed).
 - What the discount percent is relative to (its price base) is defined by the consuming
   contract (API-12), not by this port.
-- `limitGroupId` is an opaque id. Settings never receives a role name; mapping a user's role
-  to a limit group is the Identity owner's work and a human grant gate.
+- `limitGroupId` is an opaque id. Settings never receives a role name. SAT-D63 (2026-10-27): limit
+  groups are separate from roles and persons are bound to them; both the groups and the bindings are
+  Settings records (see "Sales discount limit groups" below), entered by an authorized person, never
+  seeded.
 - Approval threshold: `IsEnabled = false` means no amount-based routing; SAT-D6's single
   approver (Müdür) applies. An enabled threshold is a later approved version, not a runtime
   switch. `settings_sales_policy_not_found` on this read (a currency with no threshold profile,
@@ -411,18 +413,44 @@ against the currency's money profile.
   checks its own permission and persists the applied profile id/version with its decision.
 
 **Host wiring.** The API host registers `ISettingsSalesPolicyProviderV1` as
-`ApprovedSettingsPrerequisiteProvider` (scoped, next to the other Settings ports).
+`ApprovedSettingsPrerequisiteProvider`, and `AddSettingsModule` replaces it (`services.Replace`, the Manufacturing
+tolerance precedent) with `SettingsSalesPolicyProviderV1`: the delivery tolerance and the threshold are the
+catalog's, unchanged; the discount limit adds the limit-group store (SAT-D61…D64, below).
 `SettingsHostWiringTests` proves the registration and the GDC/GSP/GIN, unserved-company and
-denied answers through the host. Reachable effect today: none — no module consumes the port yet. This registration is
-not final: when the policies become user-maintained, a persistent provider replaces it through
-`services.Replace` in `SettingsModuleExtensions.AddSettingsModule`, as the Manufacturing
-tolerance provider does.
+denied answers through the host.
 
-Not in this slice: any consumer (API-12 discount check, the delivery realization axis /
-API-08, the approval routing), per-product or per-operation tolerance overrides (SAT-D5), any
-discount limit value, the role → limit-group mapping (a human grant gate), an enabled
-threshold amount, an HTTP route, OpenAPI, persistence, migration, seed or grant.
+Not in this slice (MOD-03 slice 1): per-product or per-operation tolerance overrides (SAT-D5), an enabled
+threshold amount. The discount limit values and the person → limit group bindings are the next section's.
 
 Validation: Settings unit tests (synthetic catalogs for invariants and windows; the approved
 values asserted against their SAT sources) and the host wiring tests. No persistence changed;
 rollback is removing the registration and the files, with no data rollback.
+
+## Sales discount limit groups (SAT-D61…SAT-D70)
+
+Sources: `docs/decisions/SINAN_KARARLARI_2026-10-27_SATIS_EK10.md` (SAT-D61…D64) and `…_EK11.md` (SAT-D65…D70), applying
+SAT-D2, SAT-D34, SAT-D36 and SAT-D37 (`…_EK4.md`). Consumer: API-12 (Sales README, "Discount limit and its exception
+approval"). **No value is seeded and no role or grant is opened**: groups, limits and bindings are data an authorized
+person enters (EK10 implementation notes); until they are entered, today's fail-closed behaviour stays (every positive
+discount goes to approval).
+
+| Concern | Rule |
+|---|---|
+| Groups (SAT-D63) | Company-scoped `settings.SalesDiscountLimitGroups`, separate from roles: a stable `Code` (`A-Z 0-9 _ -`, ≤ 32, unique per company — the key the multi-company binding matches), a `Name` (≤ 100, unique per company), `IsActive`. Create, rename, deactivate; **never deleted**, a passive group contributes no limit and cannot be changed or bound. |
+| Limits (SAT-D36, SAT-D61, SAT-D62) | Immutable records in `settings.SalesDiscountLimitVersions`: `Fixed` (percent 0…100) or `Linked` (another ACTIVE group of the same company + extra points 0…100). A change is a new version, never an update; the same values again are a no-op. CHECK constraints hold the kind, the shape, the ranges and no self-link; composite foreign keys keep both groups in the record's company. |
+| Calculation | ONE calculator, `SalesDiscountLimitCalculatorV1` (Application), used by the policy read and the screen's read. Linked = linked group's limit on the same date + points, **capped at 100**; chains are followed. **None** (fail-closed → approval, EK10/EK11 open item "0 + points or approval": approval is chosen) when the group is passive, has no record in force, or the linked group is passive, unknown or has no limit itself. A cycle or a malformed record is `settings_profile_invalid` (Sales 503) — never a guess. A link that would close a cycle over the current records (A→B→A, self-link) is refused at write (422 `settings_discount_limit_link_cycle`), and the save fences every group of the new link's chain by its version, so two concurrent links cannot close one together. |
+| Effective dating (reversible technical rule) | The existing Settings rule — one key, ascending versions, non-overlapping windows. A record takes effect from **today's Europe/Istanbul business date** (SAT-D10) and never before the previous record's date; on a date the highest version whose `EffectiveFrom` is on or before it applies (a same-day correction supersedes the earlier one). The Sales check snapshots the limit, profile id and version at create/revision, so later changes never rewrite a recorded check. Before the first record nothing is in force ("not found"). The returned window of a linked limit is the intersection of both records' windows. |
+| Source precedence (`SettingsSalesPolicyProviderV1`) | Access → `settings_access_denied`; empty id → `settings_sales_policy_request_invalid`. A group the store does not define → the approved catalog answers exactly as before (today: "not found" for every group of GDC/GSP/GIN, `settings_provider_unavailable` elsewhere). A store group that the catalog ALSO defines → `settings_profile_invalid` (contradiction, fail-closed; group ids are server-minted). Otherwise the calculator: in force → the record's profile id + version; none → `settings_sales_policy_not_found`. A store that cannot be read → `settings_provider_unavailable`. |
+| Bindings (SAT-D63, SAT-D66) | Per company: `settings.SalesDiscountLimitMemberships` (person, version) + immutable `…MembershipGroups` rows of each version (history kept, nothing deleted). **Owner: Settings** (EK11 proposed Identity; chosen here by module boundaries): the binding refers to Settings' own company-scoped groups, so group existence/activity, the version fence and the all-or-nothing multi-company write stay inside one store and one transaction, and Identity's write surface stays closed (OPEN-013) — the binding grants no permission. Identity is asked only "is this person an active member of these companies" through its port (`IUserCompanyMembershipReadPortV1`, host adapter `SettingsPersonDirectoryHost`), never through its tables. |
+| Multi-company write (SAT-D66 default) | `PUT …/bindings/{userId}` writes the same group CODES to EVERY company the actor can act in, in ONE SQL transaction (one Settings context per company over the same connection, each with that company's company context, write fence and audit interceptor). The request names exactly those companies with the version seen in each (`"0"` = none): another set is 422 `…_binding_companies_mismatch`; a stale one is 409 naming the company (so a later company-specific binding is never overwritten unseen). The actor must hold the name in every company (403, nothing written). A company where the person is not an active member: 422 `…_binding_person_not_member` for the whole request (fail-closed). A code missing or passive in a company: 422 `…_binding_group_not_found` / `…_inactive` naming company and code. All or nothing. |
+| Sales port (API-12) | `ISettingsSalesDiscountLimitGroupMembershipReaderV1` → the ACTIVE groups of the current actor's binding in the server company; the host's `SalesDiscountLimitGroupHost` registers it as Sales' `ISalesDiscountLimitGroupSourceV1`. An actor id that is not an ERP user id has no binding (empty); a refusal is passed on (denied → 403, unavailable → 503), never an empty answer. |
+| Authority (SAT-D65, D68, D69, D70) | ONE name, `settings.sales-discount-limits.manage` (`SettingsPermissionManifestV1.SalesDiscountLimitsManage` = `ErpPermissions.SettingsSalesDiscountLimitsManage`): company-wide only, **not Critical** (SAT-D69: the Admin persona's general rule covers it), assigned to **no role** and seeded to nobody — granting it to the board members and Admin is a human gate. Reads and commands measure it first and re-measure it fresh before every save. One person decides (no second approval, SAT-D68); the editor may change the limit of a group they belong to and their own binding (SAT-D70, no self-block). |
+| Commands | Idempotency-Key (stored terminal answers replay; another body under the key is 409 `…_idempotency_conflict`), the version as decimal text (409 `…_version_conflict`), a mandatory reason ≤ 4000 (400 `…_reason_required` / `…_too_long`, not stored), correlation/causation, and ONE audit event per real change in the company it changes (`settings.sales-discount-limit-group.created/renamed/deactivated.v1`, `settings.sales-discount-limit.recorded.v1`, `settings.sales-discount-limit-binding.changed.v1`): actor, permission, roles, before/after and the person's whole reason in the after-image (`reason`); the audit row's own reason column carries the fixed description (≤ 1000, the Sales precedent). No-ops write no event. Another company's group is the same code-less 404 as an unknown one; as a link target it is 422 `…_linked_group_not_found`. |
+| Routes | `GET/POST /api/v1/settings/sales-discount-limits/groups`, `PUT …/groups/{groupId}/name`, `POST …/groups/{groupId}/deactivation`, `PUT …/groups/{groupId}/limit`, `GET …/people?q=&limit=` (≤ 50, the Identity directory's active members, id + name), `GET/PUT …/bindings/{userId}`. Private, no-store. A store that is not relational (the broad in-memory host) answers the binding routes 503. |
+| Persistence and rollback | Migration `20261027221309_AddSalesDiscountLimitGroups` (generated with `dotnet ef`): four tables, keys, indexes, CHECKs and composite foreign keys. `Down` refuses (THROW **51095**) while any group or binding exists, before any drop (forward fix); on an empty store it drops the tables. The platform `audit.AuditEvents` and `idempotency.CommandExecutions` are mapped excluded from Settings' migrations, under the CompanyId filter. Manufacturing tolerance policies stay read-only in this context. |
+| Evidence | Unit: `SalesDiscountLimitCalculatorV1Tests` (Settings). Host/port: `SettingsSalesDiscountLimitPortTests`, `SettingsSalesDiscountLimitPermissionRegistrationTests`, `SettingsHostWiringTests`. Real SQL: `SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests` (real routes, Identity directory, audit, migration rollback refusal). Sales: `SalesDraftServiceTests.DiscountException`. |
+
+Open (not chosen here): from which screen bindings are managed long-term (a Settings screen is provided); the first
+value of the Müdür's extra points; "0 + points" instead of approval when the linked group has no limit (approval is
+implemented); a future-dated effective date for a limit change (today's business date is implemented); company-specific
+bindings (the schema allows them; only the all-companies write is exposed).

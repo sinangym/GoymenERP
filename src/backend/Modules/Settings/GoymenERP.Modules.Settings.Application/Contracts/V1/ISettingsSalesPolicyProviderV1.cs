@@ -25,7 +25,8 @@ public interface ISettingsSalesPolicyProviderV1
 
     /// <summary>
     /// The maximum discount percent of one limit group (SAT-D2). <paramref name="limitGroupId"/> is an
-    /// opaque identity the Identity owner's role mapping supplies; it is never a role name.
+    /// opaque identity: SAT-D63 binds PERSONS to limit groups separate from roles (person → group, the Settings
+    /// owner's record); it is never a role name. A limit is fixed or a linked group's limit + extra points (SAT-D62).
     /// <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/> means the group has no approved
     /// limit, which SAT-D2 defines as "every discount goes to approval" — never "no limit".
     /// </summary>

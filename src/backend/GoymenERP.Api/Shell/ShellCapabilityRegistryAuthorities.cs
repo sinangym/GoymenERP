@@ -333,6 +333,12 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string FullNormalHostWithProductPriceListsAndSalesPool =
         "sha256:XHaEBdDtqTscK_cY9_67ok-KgR2eGs_ukDxm3GTnb20";
 
+    // SAT-D61…D70: the full normal host with the Settings 1.0 provider (the discount limit screen) as its last module,
+    // derived by ShellCapabilityRegistry.ComputeCandidateRevision over the real providers. Every earlier row keeps its name
+    // and value: no host composes those sets any more once Settings joins.
+    internal const string FullNormalHostWithProductPriceListsSalesPoolAndSettingsV10 =
+        "sha256:PtFDKzSqynoqg-upOv2_AhmodYf4zucHYNmgu2oUUd4";
+
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";
 

@@ -27,6 +27,7 @@ import { logisticsRoutes } from '../logistics/logisticsRoutes'
 import { purchasingRoutes } from '../purchasing/purchasingRoutes'
 import { inventoryRoutes } from '../inventory/inventoryRoutes'
 import { identityRoutes } from '../identity/identityRoutes'
+import { settingsRoutes } from '../settings/settingsRoutes'
 import { searchRoutes } from '../search/searchRoutes'
 import { workRoutes } from '../work/workRoutes'
 import { StateBlock } from './StateBlock'
@@ -187,6 +188,7 @@ export const shellRoutes: RouteObject[] = [
       ...purchasingRoutes,
       ...inventoryRoutes,
       ...identityRoutes,
+      ...settingsRoutes,
       /**
        * AT-002: the global search results (`/arama`), declared in `src/search/searchRoutes.tsx` behind the shared entry
        * gate on the first searchable owner list the actor holds; it has no capability of its own.

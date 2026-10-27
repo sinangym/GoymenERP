@@ -29,6 +29,16 @@ public static class SettingsModuleExtensions
         });
         services.Replace(ServiceDescriptor.Scoped<ISettingsManufacturingToleranceProviderV1,
             SettingsManufacturingToleranceProviderV1>());
+        services.TryAddSingleton(TimeProvider.System);
+        // SAT-D61…D64: the Sales policy port keeps the approved catalog for every read and adds the company's limit-group
+        // store for the discount limit (SettingsSalesPolicyProviderV1 states the precedence; a contradiction fails closed).
+        services.Replace(ServiceDescriptor.Scoped<ISettingsSalesPolicyProviderV1, SettingsSalesPolicyProviderV1>());
+        // SAT-D63/D66: the actor's limit groups in the server company, read by the host's Sales adapter.
+        services.AddScoped<ISettingsSalesDiscountLimitGroupMembershipReaderV1,
+            SettingsSalesDiscountLimitGroupMembershipReaderV1>();
+        // SAT-D65…D70: the limit administration. The person directory is the host's Identity adapter; until it is
+        // composed the people search and the binding write answer 503.
+        services.AddScoped<ISettingsSalesDiscountLimitAdministrationV1, SettingsSalesDiscountLimitAdministration>();
         return services;
     }
 
