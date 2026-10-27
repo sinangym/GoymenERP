@@ -58,9 +58,9 @@ EXPECTED_DURABLE_STORE_COUNT = 23
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
 # lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1113
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1117
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "c1ac3037173fcd5e7d80b601bc980d31fef659cc8c8b56f1a41226bffe7eed69"
+    "bc599d5c7522bb3666bb22ab3261894cde62bed90e871d669a0f60861c324439"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -774,7 +774,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "bb7e78351c6634783aefc3c25e8c763777623ecb9b9651fa8117543727dbe2e9",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "7840430fe7de99ee075e428e60d6df2a1aa2e7b077cea882a15ce3f599dae346",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "cc39d528488c304edeac363b68886a579939f6123f84a883fc20c65705727780",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
 }
