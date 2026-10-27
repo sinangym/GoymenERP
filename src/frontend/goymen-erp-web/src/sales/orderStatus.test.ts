@@ -199,6 +199,19 @@ describe('decodeOrderStatus', () => {
       Object.assign(b.realization.lines[0], { warning: false, approvedOverDelivery: true, direction: 'Under', band: 'Approval' })
       b.realization.warning = false
     }],
+    ['a Completed warn-band line without the warning (SAT-D29)', (b) => {
+      b.realization.lines[0].warning = false
+      b.realization.warning = false
+    }],
+    ['an approved over-delivery on a line within the tolerance (SAT-D30)', (b) => {
+      Object.assign(b.realization.lines[0], { band: 'Within', warning: false, approvedOverDelivery: true })
+      b.realization.warning = false
+    }],
+    ['a Completed approval-band over-delivery not marked approved (SAT-D30: it awaits approval)', (b) => {
+      Object.assign(b.realization.lines[0], { shipped: '1025', deviation: '25', band: 'Approval', warning: false, approvedOverDelivery: false })
+      b.realization.warning = false
+    }],
+    ['lifecycle Draft beside an approved order (SAT-D32: it is Active)', (b) => { b.lifecycle.state = 'Draft' }],
     ['a NotStarted line with a band', (b) => { b.realization.lines[1].band = 'Within' }],
     ['a NotStarted line deviating by less than ordered', (b) => { b.realization.lines[1].deviation = '20' }],
     ['a NotStarted line without the delivery facts', (b) => { b.realization.lines[1].shipped = null }],

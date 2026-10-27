@@ -195,7 +195,8 @@ function decodeTolerance(value: unknown, businessDate: string): DeliveryToleranc
     !isPercent(o.warnPercent) || !isPercent(o.approvalPercent) || !isPercent(o.blockPercent) ||
     !isDateOnly(o.effectiveFrom) || !(o.effectiveThrough === null || isDateOnly(o.effectiveThrough)) ||
     !isDateOnly(o.evaluatedOn) ||
-    // SAT-D29: the policy in force on the ORDER's business date, inside its own window (ISO dates compare as text).
+    // SAT-D29 / SAT-D41: the policy in force on the ORDER's business date (its first business date — a commercial revision does
+    // not move it), inside its own window (ISO dates compare as text).
     o.evaluatedOn !== businessDate || o.effectiveFrom > o.evaluatedOn ||
     (o.effectiveThrough !== null && o.effectiveThrough < o.evaluatedOn)
   ) return undefined
@@ -244,10 +245,13 @@ function decodeLine(value: unknown): LineRealization | null {
         line.deviation !== null && sameDecimal(line.deviation, line.ordered) && line.band === null && unmarked ? line : null
     default:
       if (line.shipped === null || line.delivered === null || line.direction === null || line.deviation === null) return null
-      // SAT-D29 / SAT-D31: the warning marks a line counted Completed in spite of a warn-band deviation.
-      if (line.warning && (line.state !== STATUS_AXIS_STATE.completed || line.band !== 'Warn')) return null
-      // SAT-D30: an approved approval-band over-delivery is Completed.
-      if (line.approvedOverDelivery && (line.state !== STATUS_AXIS_STATE.completed || line.direction !== 'Over' || line.warning)) return null
+      // Both marks are equivalences (`SalesRealizationCalculator`), checked in both directions:
+      // SAT-D29 / SAT-D31: `warning` exactly when the line counts Completed with a warn-band deviation (IsCompletedWithWarning).
+      if (line.warning !== (line.state === STATUS_AXIS_STATE.completed && line.band === 'Warn')) return null
+      // SAT-D30: `approvedOverDelivery` exactly when the line is Completed in the approval band — only an approved
+      // over-delivery is (an unapproved one is AwaitingApproval, a closed shortfall there is ClosedWithRemainder).
+      if (line.approvedOverDelivery !== (line.state === STATUS_AXIS_STATE.completed && line.band === 'Approval')) return null
+      if (line.approvedOverDelivery && line.direction !== 'Over') return null
       return line
   }
 }
@@ -324,6 +328,9 @@ export function decodeOrderStatus(value: unknown, detail: DraftDetail): OrderSta
   // The stored lifecycle is the detail's; `Active` is derived from a stored `Draft` only.
   const stored = lifecycle === STATUS_AXIS_STATE.active ? DRAFT_STATE : lifecycle
   if (stored !== detail.draft.state) return null
+  // SAT-D32: a stored Draft whose current revision is approved is always answered `Active` (the backend's `Lifecycle()`).
+  // The other direction (Active from an archived approved revision) is not visible on the detail, so it is not checked.
+  if (lifecycle === STATUS_AXIS_STATE.draft && detail.draft.approvalState === APPROVAL_STATE.approved) return null
 
   const approvalAxis = exact(o.internalApproval, ['state'])
   if (approvalAxis === null || approvalAxis.state !== detail.draft.approvalState || !oneOf(Object.values(APPROVAL_STATE), approvalAxis.state)) return null

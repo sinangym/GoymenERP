@@ -206,7 +206,8 @@ function StatusBody({ detail, status }: { readonly detail: DraftDetail; readonly
   const acceptedRevision = status.customerAcceptance.acceptedRevision
   return (
     <>
-      <ul className={styles.axes} aria-label={T.axesLabel} data-testid="sales-status-axes-list">
+      {/* role="list": `list-style: none` drops the list role in Safari/VoiceOver. */}
+      <ul className={styles.axes} role="list" aria-label={T.axesLabel} data-testid="sales-status-axes-list">
         <Axis axisKey="lifecycle" label={T.axis.lifecycle} state={status.lifecycle}>
           <StatusIndicator tone={LIFECYCLE_TONE[status.lifecycle]}>{T.lifecycle[status.lifecycle]}</StatusIndicator>
         </Axis>
