@@ -116,6 +116,7 @@ import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
 import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
+import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftForceClose } from './SalesDraftForceClose'
@@ -229,6 +230,14 @@ export function SalesDraftDetailPage() {
             companyId={companyId}
             namespace={namespace}
             entryGeneration={shell.routeEntryGeneration}
+          />
+        ) : null
+      }
+      statusAxes={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesOrderStatusAxes
+            key={`status:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            detail={outcome.data}
           />
         ) : null
       }
@@ -401,6 +410,7 @@ export function DraftView({
   canOpenParty,
   backLink,
   commands = null,
+  statusAxes = null,
   delivery = null,
   commercialActions = null,
   revisionHistory = null,
@@ -423,6 +433,12 @@ export function DraftView({
   readonly canOpenParty: boolean
   readonly backLink: React.ReactNode
   readonly commands?: React.ReactNode
+  /**
+   * DEC-SAL-001 / API-08 / UI-15: the seven status axes card (null: not mounted — no single company bound). The UI-15 totals
+   * (API-03) and risk (API-06) cards are further members of this summary row; they are mounted here, beside this one, by
+   * their own slices when those routes exist, and nothing stands in for them until then.
+   */
+  readonly statusAxes?: React.ReactNode
   /** SALES-A2a: the "Teslimat" block (the owner's texts for the stored references); null when no company is bound. */
   readonly delivery?: React.ReactNode
   readonly commercialActions?: React.ReactNode
@@ -544,6 +560,8 @@ export function DraftView({
           </div>
         </dl>
       </details>
+
+      {statusAxes}
 
       {delivery}
 
