@@ -85810,6 +85810,7 @@
         "required": [
           "state",
           "warning",
+          "basisRevision",
           "tolerance",
           "lines"
         ],
@@ -85820,6 +85821,12 @@
           },
           "warning": {
             "type": "boolean"
+          },
+          "basisRevision": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "tolerance": {
             "oneOf": [
