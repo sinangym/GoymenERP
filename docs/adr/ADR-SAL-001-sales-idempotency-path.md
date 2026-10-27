@@ -1,6 +1,6 @@
 # ADR-SAL-001 — Satış idempotency yolu: modül sahipli deneme kaydı ve platform Idempotency ile ilişkisi
 
-- Durum: **Önerilen** (Proposed). Karar teknik ve production öncesinde geri alınabilir; işletme politikası
+- Durum: **Öneri** (Proposed). Karar teknik ve production öncesinde geri alınabilir; işletme politikası
   (saklama, fiyat, yetki, eşik) seçmez. Bu yüzden Sinan kararı gerektirmez; kabule geçiş backend sahibi
   (Codex şeridi) onayı ve bağımsız review ile olur. Saklama/imha `OPEN-021` olarak açık kalır.
 - Tarih: 2026-10-27
@@ -34,7 +34,7 @@ eşleştirme, kesinleştirme). Bu komutlar yazılmadan önce hangi yolu kullanac
   `(CompanyId, CommandName, IdempotencyKeyHash)`, `ISJSON(ResponseJson)`, durum kodu ve şema sürümü
   kısıtları; migration sahibi `CommandExecutionDbContext` (`InitialIdempotency`).
 - Değişmezlik: EF write guard + SQL trigger `TR_CommandExecutions_RejectMutation` (`THROW 51010`,
-  `.../Migrations/20260827175405_InitialIdempotency.cs`).
+  `.../Infrastructure/Persistence/Migrations/20260827175405_InitialIdempotency.cs`).
 - Replay: kalıcı `ResponseJson` + `HttpStatusCode` **anlık görüntüsü** aynen döner (ADR-011 §4).
 - Kullananlar: yalnız **Organization** ve **Counterparty**. İkisi de tabloyu kendi DbContext'ine
   `ConfigureCommandExecution(excludeFromMigrations: true)` ile "sidecar" olarak eşler
@@ -48,7 +48,8 @@ eşleştirme, kesinleştirme). Bu komutlar yazılmadan önce hangi yolu kullanac
   `.../Infrastructure/Executions/SqlGroupSharedCommandTerminalStore.cs`,
   `.../Infrastructure/Persistence/GroupSharedCommandDbContext.cs`.
 - Şirket kapsamlı **değildir**: anahtar `(Subject='Product', CommandName, IdempotencyKeyHash)`; köken şirket
-  ve aktör yalnız kanıttır. CHECK kısıtı komut adlarını beş Product komutuyla sınırlar.
+  ve aktör anahtarın parçası değildir ama replay eşleşmesinde karşılaştırılır
+  (`GroupSharedCommandBinding.cs:101-107`). CHECK kısıtı komut adlarını beş Product komutuyla sınırlar.
 - Satış için uygulanamaz (Satış kayıtları şirket kapsamlıdır, ADR-002); bu ADR'de yalnız tam resim için anılır.
 
 ### Yol 3 — Modül sahipli deneme (attempt) kaydı (Satış'ın bugünkü yolu)
@@ -59,7 +60,7 @@ Satış:
   `DraftAttemptRow` (`CompanyId`, `CommandName`, `IdempotencyKeyHash`, `RequestHash`, `ActorId`,
   `Outcome` 1/2, `DraftId`, `RefusalJson`, `ResultJson`, `CorrelationId`, `RecordedAtUtc`).
 - Eşleme: `.../Persistence/SalesDbContext.cs:315` `ConfigureDraftAttempts` — **birincil anahtar**
-  `(CompanyId, CommandName, IdempotencyKeyHash)`, `Latin1_General_100_BIN2`; `CompanyId` ve
+  `(CompanyId, CommandName, IdempotencyKeyHash)`, `Latin1_General_100_BIN2`; `CompanyId → organization.Companies` ve
   `(CompanyId, DraftId) → sales.Drafts` FK'leri; yalnız create komutuna filtreli
   `UX_DraftAttempts_DraftId` (`CreateAttemptFilter`, satır 63); `CK_DraftAttempts_Outcome` ve
   `CK_DraftAttempts_Result` (`ResultJson` yalnız `sales.order-draft.approve-price-floor-exceptions.v1`
@@ -69,8 +70,9 @@ Satış:
 - Anahtar hash'i: `SalesStore.IdempotencyKeyHash` (`.../Persistence/SalesStore.cs:1570`) — platformla
   **aynı algoritma** (trim + UTF-8 + büyük harf SHA-256).
 - İstek hash'i: `SalesDraftRequestHash`
-  (`.../Sales.Application/Contracts/ISalesOrderDraftStore.cs:305`, `Hash` satır 391) — komut adı ve hedef
-  kimliği içeren kanonik JSON'un **küçük harf** SHA-256'sı (platform büyük harf kullanır; iki değer hiçbir
+  (`.../Sales.Application/Contracts/ISalesOrderDraftStore.cs:305`, `Hash` satır 391) — kanonik JSON'un
+  **küçük harf** SHA-256'sı; değişiklik komutlarında komut adı ve hedef kimliği içeriktedir, oluşturma
+  hash'inde (satır 307-311) yoktur (platform büyük harf kullanır; iki değer hiçbir
   yerde karşılaştırılmaz).
 - Akış: `StoreDraftAsync` (59), `FindReplayAsync` (139), `RecordRefusalAsync` (179),
   `UpdateDraftStateAsync` ve diğer komut metotları; yarış `SaveAsync` (1451) içinde 2601/2627 →
@@ -84,7 +86,9 @@ Satış:
 
 Aynı modül sahipli desen depoda baskındır: `purchasing.PurchaseAttempts`, `logistics.LoadingAttempts` /
 `CustomerReturnAttempts` / `TransferOutgoingDocumentAttempts`, `documents.DocumentAttempts`,
-`product.PriceListAttempts` (Outcome + referans biçimi) ve `inventory.Commands`, `accounting.Commands`,
+`product.PriceListAttempts` (çoğunlukla Outcome + referans biçimi; istisnalar: `DocumentAttempts`'te
+`Outcome` yok, `TransferOutgoingDocumentAttempts` `Outcome` taşımaz ve zorunlu `ResultJson` saklar,
+`CustomerReturnAttempts` başarıda `ResultJson` ister) ve `inventory.Commands`, `accounting.Commands`,
 `finance.Commands`, `manufacturing.Commands` (`ResultJson` anlık görüntü biçimi). Hepsi ADR-011'in
 anahtar, hash, aktör ve çakışma kurallarını kendi şemalarında uygular; platform tablosunu kullanan yalnız
 Organization ve Counterparty'dir.
@@ -179,7 +183,7 @@ modüller kendi tablolarında kullanır.
    - aktörü saklar ve karşılaştırır; farklı içerik veya aktör tek `409 same_key_payload_mismatch` olur ve eski
      sonucu, sahibini ya da korelasyonu açıklamaz;
    - yetki ve şirket bağlamını replay okunmadan **önce**, her sahip okumasından sonra ve tek kayıttan hemen
-     önce ölçer (ADR-011 §5; commit sonrası çit yok);
+     önce ölçer (ADR-011 §5); commit sonrası çit yoktur (S03 / #321 P3-1 kararı);
    - başarıyı iş kaydına referans olarak saklar; replay kaydın **bugünkü** hâlini güncel yetki ve görünürlükle
      döner, `Idempotency-Replayed: true` ve `Idempotency-Original-Correlation-Id` ekler;
    - yetkili terminal retleri (`version_conflict`, durum çakışması, iş kuralı blokajı) `RefusalJson` olarak
@@ -193,7 +197,11 @@ modüller kendi tablolarında kullanır.
    Gerekçe: Satış yanıtı fiyat görünürlüğüne bağlıdır (`DiscloseAsync`); yetkisi daralan aktöre eski fiyatın
    anlık görüntüden yeniden gösterilmesi önlenir. Sonuç: replay gövdesi ilk yanıtla bayt bayt aynı olmayabilir
    (sipariş o arada ilerlediyse güncel hâl gelir); istemci gövdeyi "kaydın güncel hâli" olarak ele alır
-   (`isReplay` bilgisi gövdede). Bu, Satış README'sinde #257/#321 ile zaten belgelenmiş davranışın kaydıdır.
+   (`isReplay` bilgisi gövdede). Replay'de değişmeyenler: sonuç (başarı/ret), HTTP durum kodu, `Location`
+   ve sipariş kimliği. Güncel hâl replay'i Satış README'sinde SALES-A1 notunda (satır 159) geçer; ancak
+   README satır 98 Satış'ı §4'e uyan "Counterparty / Manufacturing deseni" olarak anar (Counterparty anlık
+   görüntü replay eder). §4'ten ayrılık ilk kez bu ADR'de adlandırılır; README düzeltmesi takip işidir.
+   (#257/#321 bu konuyla değil, replay durum kodunun 200→201 değişimiyle ilgilidir.)
 6. **Değişmezlik.** Yeni deneme tabloları, oluşturuldukları migration'da UPDATE/DELETE'i reddeden bir SQL
    trigger'ı da taşır (platformdaki `51010` emsali; hata numarası o PR'da seçilir). Mevcut
    `sales.DraftAttempts`'e trigger eklenmesi bu ADR'nin işi değildir; ayrı planlanan K3 migration'ıdır
@@ -201,7 +209,8 @@ modüller kendi tablolarında kullanır.
 7. **Saklama/imha seçilmez.** Deneme satırları silinmez; Satış write guard'ı silmeyi reddeder. Saklama süresi,
    partition/arşiv ve ayrıcalıklı purge `OPEN-021` kapanana kadar uygulanmaz. `OPEN-021` çözüldüğünde
    kapsamı platform tablosuyla birlikte modül sahipli deneme tablolarını (`sales.*Attempts` ve diğer
-   modüllerin karşılıkları) içermelidir; bu ADR yöntem önermez.
+   modüllerin karşılıkları) içermelidir; bu ADR yöntem önermez. DELETE'i reddeden trigger'lar için
+   ayrıcalıklı purge yolu da `OPEN-021` ADR'sinde tasarlanır (bkz. `docs/decisions/ACIK_KARARLAR.md`).
 8. **Mevcut kayıtlar.** `sales.DraftAttempts` ne taşınır ne yeniden biçimlenir; mevcut replay'ler aynen sürer.
 
 ## Sonuçlar ve riskler
@@ -220,6 +229,10 @@ modüller kendi tablolarında kullanır.
 ## Takip işleri (ayrı planlanır, bu ADR ile yapılmaz)
 
 - `sales.DraftAttempts` için SQL değişmezlik trigger'ı (K3 migration, geri alma: trigger drop; veri değişmez).
+- `src/backend/Modules/Sales/README.md` satır 98'in düzeltilmesi: başarı replay'i §4'e uyan anlık görüntü
+  değil, bu ADR'deki referans replay'idir (§4'ten bilinçli ayrılık).
+- İsteğe bağlı kabul testi: replay'de sonuç, durum kodu, `Location` ve sipariş kimliğinin ilk yanıtla aynı
+  kaldığını kanıtlayan test.
 - Satış içi ortak deneme yardımcısının çıkarılması (davranış değişikliği yok; mevcut testlerle kanıt).
 - İsteğe bağlı kanıt testi: `SalesStore.IdempotencyKeyHash(k) == IdempotencyHash.ComputeKey(k)` (yalnız test
   projesi iki modüle referans verir; üretim kodunda yeni kenar yok).
