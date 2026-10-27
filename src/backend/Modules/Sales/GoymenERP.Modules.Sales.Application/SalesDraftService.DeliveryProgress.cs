@@ -69,6 +69,19 @@ public sealed partial class SalesDraftService
     private static SalesOrderDraftDeliveryProgressResponse DeliveryProgress(Scope scope, SalesOrderDraft draft,
         SalesOrderDeliveryReadAnswerV1? answer)
     {
+        var recorded = RecordedDeliveries(scope, draft, answer);
+        return new SalesOrderDraftDeliveryProgressResponse(draft.Version.ToString(CultureInfo.InvariantCulture),
+            [.. draft.Lines.OrderBy(line => line.LineNo).Select(line => LineProgress(line, recorded.GetValueOrDefault(line.Id)))]);
+    }
+
+    /// <summary>
+    /// The owner's answer validated and summed per Sales line in the line's order unit (shared by AT-024 and the API-08
+    /// realization axis): an answer of another company or order, an unknown line, a negative total, delivered above shipped,
+    /// a definite total in another unit or a sum that overflows is a malformed owner answer (503 reference_provider_invalid).
+    /// </summary>
+    private static Dictionary<Guid, (decimal Shipped, decimal Delivered)> RecordedDeliveries(Scope scope, SalesOrderDraft draft,
+        SalesOrderDeliveryReadAnswerV1? answer)
+    {
         if (answer is null || answer.Lines is null || answer.CompanyId != scope.CompanyId || answer.OrderId != draft.Id)
         {
             throw DeliveryAnswerInvalid();
@@ -96,13 +109,20 @@ public sealed partial class SalesDraftService
                 throw DeliveryAnswerInvalid();
             }
 
-            recorded[line.Id] = recorded.TryGetValue(line.Id, out var sum)
-                ? (sum.Shipped + entry.ShippedQuantity, sum.Delivered + entry.DeliveredQuantity)
-                : (entry.ShippedQuantity, entry.DeliveredQuantity);
+            try
+            {
+                recorded[line.Id] = recorded.TryGetValue(line.Id, out var sum)
+                    ? (sum.Shipped + entry.ShippedQuantity, sum.Delivered + entry.DeliveredQuantity)
+                    : (entry.ShippedQuantity, entry.DeliveredQuantity);
+            }
+            catch (OverflowException)
+            {
+                // A malformed owner answer must not escape as a server error or be shown as a plausible quantity.
+                throw DeliveryAnswerInvalid();
+            }
         }
 
-        return new SalesOrderDraftDeliveryProgressResponse(draft.Version.ToString(CultureInfo.InvariantCulture),
-            [.. draft.Lines.OrderBy(line => line.LineNo).Select(line => LineProgress(line, recorded.GetValueOrDefault(line.Id)))]);
+        return recorded;
     }
 
     private static SalesDraftLineDeliveryProgressV1 LineProgress(SalesOrderDraftLine line, (decimal Shipped, decimal Delivered) recorded)

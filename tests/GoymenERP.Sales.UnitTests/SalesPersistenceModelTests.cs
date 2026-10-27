@@ -117,7 +117,9 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddLinePricing", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesPriceFloorApprovalReplayResults", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftForceClosures", StringComparison.Ordinal));
-        Assert.Equal("20261027093529_AddSalesDiscountExceptionApprovalReplayResults", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesRequests", StringComparison.Ordinal));
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesQuotes", StringComparison.Ordinal));
+        Assert.Equal("20261027134109_AddSalesDiscountExceptionApprovalReplayResults", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -140,10 +142,10 @@ public sealed class SalesPersistenceModelTests
 
     /// <summary>
     /// SAT-D2 / API-12: the discount-exception replay migration only widens CK_DraftAttempts_Result to the new command; its
-    /// rollback refuses with Sales' own 51065 BEFORE the constraint is narrowed while such a replay result exists (forward fix).
+    /// rollback refuses with Sales' own 51069 BEFORE the constraint is narrowed while such a replay result exists (forward fix).
     /// </summary>
     [Fact]
-    public void The_discount_exception_replay_migration_widens_the_result_constraint_and_its_down_refuses_with_51065_first()
+    public void The_discount_exception_replay_migration_widens_the_result_constraint_and_its_down_refuses_with_51069_first()
     {
         var migration = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddSalesDiscountExceptionApprovalReplayResults();
         var up = migration.UpOperations;
@@ -157,7 +159,7 @@ public sealed class SalesPersistenceModelTests
         Assert.Equal(3, down.Count);
         var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
         Assert.Contains("[CommandName] = N'sales.order-draft.approve-discount-exceptions.v1' AND [ResultJson] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
-        Assert.Contains("THROW 51065,", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51069,", guard.Sql, StringComparison.Ordinal);
         Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropCheckConstraintOperation>(down[1]);
         var narrowed = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(down[2]);
         Assert.Equal(SalesDbContext.AttemptResultConstraintBeforeDiscountExceptions, narrowed.Sql);

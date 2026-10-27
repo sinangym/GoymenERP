@@ -40,11 +40,11 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// rebuilt through the same domain rules, so a corrupt row is refused, not repaired.</item>
 /// </list>
 /// </summary>
-public sealed class SalesStore(
+public sealed partial class SalesStore(
     SalesDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : ISalesOrderDraftStore
+    TimeProvider timeProvider) : ISalesOrderDraftStore, ISalesRequestStore, ISalesQuoteStore
 {
     private const string DraftEntityType = "Sales.OrderDraft";
     private const int ActorMaximumLength = 128;
@@ -275,6 +275,13 @@ public sealed class SalesStore(
         // The domain decides: the expected version, the allowed transition and the reason bound. A
         // refusal leaves the tracked row untouched (nothing below has run) and is the caller's to answer.
         mutate(draft, now);
+        if (commandName is SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1)
+        {
+            // No 160 (belt and braces): an order converted from a quote moves towards approval only while the quote's requests
+            // are all still approved.
+            await RequireSourceRequestsApprovedAsync(row.SourceQuoteId, cancellationToken);
+        }
+
         if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
         {
             throw new InvalidOperationException("Onay geçişi tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");
@@ -1750,7 +1757,8 @@ public sealed class SalesStore(
             or SalesDraftCommands.ReviseQuantityV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
             or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1
-            or SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesDraftCommands.ApproveDiscountExceptionsV1))
+            or SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesDraftCommands.ApproveDiscountExceptionsV1
+            or SalesQuoteCommands.ConvertV1))
         {
             throw new ArgumentException("Bilinmeyen Sales komut adı.", nameof(commandName));
         }
@@ -1812,12 +1820,18 @@ public sealed class SalesStore(
     {
         private const string Ordering = "createdAtUtc desc, id desc";
 
-        public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id) =>
+        /// <summary>API-20: the sales request list's ordering label, so a draft cursor never pages the requests (and back).</summary>
+        public const string RequestOrdering = "requests: createdAtUtc desc, id desc";
+
+        /// <summary>API-22: the sales quote list's ordering label (a draft or request cursor never pages the quotes).</summary>
+        public const string QuoteOrdering = "quotes: createdAtUtc desc, id desc";
+
+        public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id, string ordering = Ordering) =>
             Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-                new Payload(companyId, Ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
+                new Payload(companyId, ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
                 .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId)
+        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId, string ordering = Ordering)
         {
             Payload? payload;
             try
@@ -1831,7 +1845,7 @@ public sealed class SalesStore(
                 throw Refused(SalesDraftStoreCodes.InvalidCursor, "Liste imleci çözülemedi.", exception);
             }
 
-            if (payload is null || payload.Company != companyId || !string.Equals(payload.Ordering, Ordering, StringComparison.Ordinal)
+            if (payload is null || payload.Company != companyId || !string.Equals(payload.Ordering, ordering, StringComparison.Ordinal)
                 || payload.Id == Guid.Empty
                 || !DateTimeOffset.TryParseExact(payload.CreatedAtUtc, "O", CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var createdAtUtc))

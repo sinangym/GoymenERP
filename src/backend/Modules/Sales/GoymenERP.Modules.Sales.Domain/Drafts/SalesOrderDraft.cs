@@ -363,25 +363,41 @@ public sealed partial class SalesOrderDraft
     /// </summary>
     private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product, Guid lineId)
     {
+        RequireLineCommercialFields(commercial, product, Money.Scale);
+        RequirePricingDetail(commercial, lineId);
+        ValidateDiscountCheck(commercial, lineId);
+    }
+
+    /// <summary>
+    /// The K3 line commercial rule in ONE place, shared by the order line and (API-22) the quote line whose prices become the
+    /// order's (No 162): the price/price-unit pairing, the price's decimals within the money profile's scale (never rounded),
+    /// the price unit as one of the product owner's three bindings, and a discount that needs a price and is 0..100. A quote
+    /// passes its client line id so the refusal names the line; the order keeps its draft-level refusal (null).
+    /// </summary>
+    public static void RequireLineCommercialFields(CommercialDraftFields commercial, ProductSnapshot product, int moneyScale,
+        Guid? lineId = null)
+    {
+        ArgumentNullException.ThrowIfNull(commercial);
+        ArgumentNullException.ThrowIfNull(product);
         if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
         {
             throw new SalesRuleException(SalesRuleCodes.PriceUnitPairing,
-                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.");
+                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.", lineId);
         }
 
         if (commercial.UnitPrice is { } price)
         {
-            if (DecimalPlaces(price) > Money.Scale)
+            if (DecimalPlaces(price) > moneyScale)
             {
                 throw new SalesRuleException(SalesRuleCodes.PriceScaleExceeded,
-                    $"Birim fiyat en fazla {Money.Scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.");
+                    $"Birim fiyat en fazla {moneyScale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.", lineId);
             }
 
             var priceUnit = commercial.PriceUnitId!.Value;
             if (priceUnit != product.StockUnit.UnitId && priceUnit != product.SalesUnit.UnitId && priceUnit != product.OrderUnit.UnitId)
             {
                 throw new SalesRuleException(SalesRuleCodes.PriceUnitUnsupported,
-                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır; Sales birim uydurmaz.");
+                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır; Sales birim uydurmaz.", lineId);
             }
         }
 
@@ -390,18 +406,15 @@ public sealed partial class SalesOrderDraft
             if (commercial.UnitPrice is null)
             {
                 throw new SalesRuleException(SalesRuleCodes.DiscountWithoutPrice,
-                    "İskonto uygulanacak bir birim fiyat olmadan verilemez.");
+                    "İskonto uygulanacak bir birim fiyat olmadan verilemez.", lineId);
             }
 
             if (!IsPercent(discount))
             {
                 throw new SalesRuleException(SalesRuleCodes.DiscountOutOfRange,
-                    "İskonto yüzdesi 0 ile 100 arasında olmalıdır.");
+                    "İskonto yüzdesi 0 ile 100 arasında olmalıdır.", lineId);
             }
         }
-
-        RequirePricingDetail(commercial, lineId);
-        ValidateDiscountCheck(commercial, lineId);
     }
 
     /// <summary>
@@ -1556,7 +1569,16 @@ public sealed partial class SalesOrderDraft
     private SalesRuleException StateConflict(string message) =>
         new(SalesRuleCodes.StateConflict, $"{message} (durum: {ApprovalState}).");
 
-    private void RequireSnapshots(ProductSnapshot product, UnitProfileSnapshot orderUnit)
+    private void RequireSnapshots(ProductSnapshot product, UnitProfileSnapshot orderUnit) =>
+        RequireLineSnapshots(CompanyId, Header.BusinessDate, product, orderUnit);
+
+    /// <summary>
+    /// The owner-snapshot rules of one line, shared by every Sales record that carries a product line (the order draft, and
+    /// since API-20 the sales request): the Product and Settings snapshots are complete, of this company, taken for this
+    /// business date, the order unit is the product's order-unit binding, its profile is in effect, and the applied scale is
+    /// min(profile, Ö2). The rules are the draft's own, unchanged; only their receiver moved.
+    /// </summary>
+    internal static void RequireLineSnapshots(Guid companyId, DateOnly businessDate, ProductSnapshot product, UnitProfileSnapshot orderUnit)
     {
         if (product.ProductId == Guid.Empty || string.IsNullOrWhiteSpace(product.ProductVersion)
             || string.IsNullOrWhiteSpace(product.Code) || string.IsNullOrWhiteSpace(product.Name)
@@ -1587,8 +1609,8 @@ public sealed partial class SalesOrderDraft
         }
 
         // The Settings port's validity obligation, enforced where the snapshot is consumed (PUR-3's verifier rule).
-        if (!orderUnit.IsActive || Header.BusinessDate < orderUnit.EffectiveFrom
-            || (orderUnit.EffectiveThrough is { } until && Header.BusinessDate > until))
+        if (!orderUnit.IsActive || businessDate < orderUnit.EffectiveFrom
+            || (orderUnit.EffectiveThrough is { } until && businessDate > until))
         {
             throw new SalesRuleException(SalesRuleCodes.UnitProfileNotInEffect,
                 "Sipariş birimi profili iş tarihinde etkin değil.");
@@ -1603,18 +1625,18 @@ public sealed partial class SalesOrderDraft
 
         foreach (var binding in new[] { product.StockUnit, product.SalesUnit, product.OrderUnit })
         {
-            if (binding.CompanyId != CompanyId)
+            if (binding.CompanyId != companyId)
             {
                 throw new SalesRuleException(SalesRuleCodes.SnapshotCompanyMismatch, "Ürün birim bağı başka şirketin.");
             }
         }
 
-        if (orderUnit.CompanyId != CompanyId)
+        if (orderUnit.CompanyId != companyId)
         {
             throw new SalesRuleException(SalesRuleCodes.SnapshotCompanyMismatch, "Birim profili başka şirketin.");
         }
 
-        if (product.EffectiveOn != Header.BusinessDate)
+        if (product.EffectiveOn != businessDate)
         {
             throw new SalesRuleException(SalesRuleCodes.SnapshotDateMismatch, "Ürün snapshot'ı taslağın iş tarihi için alınmamış.");
         }
@@ -1635,7 +1657,7 @@ public sealed partial class SalesOrderDraft
         return Math.Min(orderUnit.ProfileScale, Quantity.AllowedScale(unit));
     }
 
-    private static Quantity RequireQuantity(decimal value, UnitProfileSnapshot orderUnit)
+    internal static Quantity RequireQuantity(decimal value, UnitProfileSnapshot orderUnit)
     {
         var unit = orderUnit.IsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
         if (value <= 0m)
@@ -1702,7 +1724,7 @@ public sealed partial class SalesOrderDraft
     /// value in plain invariant notation (#257's wire shape; ÜRÜN #306 P3-3). "12.500" and 12.5m
     /// agree; "12.5" and 12.51m, or "1,2", do not.
     /// </summary>
-    private static void RequireQuantityText(string? text, decimal value)
+    internal static void RequireQuantityText(string? text, decimal value)
     {
         if (string.IsNullOrWhiteSpace(text)
             || !decimal.TryParse(text, System.Globalization.NumberStyles.AllowDecimalPoint,

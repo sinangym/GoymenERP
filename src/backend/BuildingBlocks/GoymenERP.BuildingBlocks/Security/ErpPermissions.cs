@@ -408,11 +408,11 @@ public static class ErpPermissions
     public const string SalesOrdersPriceFloorExceptionApprove = "sales.orders.price-floor-exception.approve";
 
     /// <summary>
-    /// SAT-D2 / API-12: a separate maker-checker permission for the reasoned approval of the current lines whose discount
-    /// exceeds the limit of the actor who set it (Sales owner name SalesPermissionManifestV1.OrdersDiscountExceptionApprove).
-    /// It grants neither price write, order approval nor the price-floor exception approval. Registration grants nothing: no
-    /// seeded role and no real user receives it; which persona (Müdür) holds it is a human gate. Company-wide only, like the
-    /// other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// SAT-D2 / API-12: a separate permission for the reasoned approval of the current lines below their list price beyond the
+    /// limit of the actor who set it, or priced without a list price (SAT-D34…D37, SAT-D42/D43; Sales owner name
+    /// SalesPermissionManifestV1.OrdersDiscountExceptionApprove). It grants neither price write, order approval nor the
+    /// price-floor exception approval. Registration grants nothing: no seeded role and no real user receives it; SAT-D37 names
+    /// the Müdür persona, and the grant stays a human gate. Company-wide only, like the other Sales names. Not Critical.
     /// </summary>
     public const string SalesOrdersDiscountExceptionApprove = "sales.orders.discount-exception.approve";
 
@@ -447,6 +447,32 @@ public static class ErpPermissions
     /// gate. Company-wide only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
     /// </summary>
     public const string SalesOrdersForceClose = "sales.orders.force-close";
+
+    /// <summary>
+    /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
+    /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
+    /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
+    /// grants nothing: no seeded role and no real user receives them; the real-user mapping stays a human gate. Company-wide
+    /// only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesRequestsWrite = "sales.requests.write";
+
+    /// <inheritdoc cref="SalesRequestsWrite"/>
+    public const string SalesRequestsRead = "sales.requests.read";
+
+    /// <inheritdoc cref="SalesRequestsWrite"/>
+    public const string SalesRequestsApprove = "sales.requests.approve";
+
+    /// <summary>
+    /// API-22 / API-23 / API-24 (plan §3.2, S-01; delegation No 162, 163): the sales quote names — record/revise/lose (and, with
+    /// SalesDraftsCreate, convert) a quote, and read quotes (Sales owner names SalesPermissionManifestV1.QuotesWrite / QuotesRead,
+    /// same strings). Neither confers another Sales name. Registered, not granted: no seeded role and no real user receives
+    /// them. Company-wide only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesQuotesWrite = "sales.quotes.write";
+
+    /// <inheritdoc cref="SalesQuotesWrite"/>
+    public const string SalesQuotesRead = "sales.quotes.read";
 
     /// <summary>
     /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
@@ -669,6 +695,11 @@ public static class ErpPermissions
             SalesOrdersForceClose,
             SalesOrdersQuantityWrite,
             SalesOrdersCustomerAcceptanceRecord,
+            SalesRequestsWrite,
+            SalesRequestsRead,
+            SalesRequestsApprove,
+            SalesQuotesWrite,
+            SalesQuotesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -792,6 +823,11 @@ public static class ErpPermissions
             SalesOrdersForceClose,
             SalesOrdersQuantityWrite,
             SalesOrdersCustomerAcceptanceRecord,
+            SalesRequestsWrite,
+            SalesRequestsRead,
+            SalesRequestsApprove,
+            SalesQuotesWrite,
+            SalesQuotesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

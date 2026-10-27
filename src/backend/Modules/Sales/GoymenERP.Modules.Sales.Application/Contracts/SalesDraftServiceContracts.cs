@@ -215,4 +215,12 @@ public sealed record SalesDraftServiceBindings(
     string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
     string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
     string? ForceClosePermission = SalesPermissionManifestV1.OrdersForceClose,
+    // API-20 / API-21: the sales request names (record, read, decide).
+    string? RequestWritePermission = SalesPermissionManifestV1.RequestsWrite,
+    string? RequestReadPermission = SalesPermissionManifestV1.RequestsRead,
+    string? RequestApprovePermission = SalesPermissionManifestV1.RequestsApprove,
+    // API-22 / API-23 / API-24: the sales quote names (record/revise/lose/convert, read).
+    string? QuoteWritePermission = SalesPermissionManifestV1.QuotesWrite,
+    string? QuoteReadPermission = SalesPermissionManifestV1.QuotesRead,
+    // SAT-D2 / API-12: the over-limit discount approval name (Müdür's persona, SAT-D37; a grant, never implied here).
     string? DiscountExceptionApprovePermission = SalesPermissionManifestV1.OrdersDiscountExceptionApprove);

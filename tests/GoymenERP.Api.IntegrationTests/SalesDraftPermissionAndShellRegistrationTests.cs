@@ -55,6 +55,15 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.OrdersDiscountExceptionApprove, ErpPermissions.SalesOrdersDiscountExceptionApprove)]
     // Q9 customer acceptance: registered company-wide, not Critical and not granted by this catalogue.
     [InlineData(SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, ErpPermissions.SalesOrdersCustomerAcceptanceRecord)]
+    // API-20 / API-21 (plan §3.2, S-01): the sales request's record, read and decide names. Each its own name, company-wide and
+    // not Critical, registered without any grant (the reason is on ErpPermissions.SalesRequestsWrite).
+    [InlineData(SalesPermissionManifestV1.RequestsWrite, ErpPermissions.SalesRequestsWrite)]
+    [InlineData(SalesPermissionManifestV1.RequestsRead, ErpPermissions.SalesRequestsRead)]
+    [InlineData(SalesPermissionManifestV1.RequestsApprove, ErpPermissions.SalesRequestsApprove)]
+    // API-22…24: the sales quote's record (create / revise / loss / conversion with the order create name) and read names.
+    // Each its own name, company-wide and not Critical, registered without any grant (the reason is on ErpPermissions.SalesQuotesWrite).
+    [InlineData(SalesPermissionManifestV1.QuotesWrite, ErpPermissions.SalesQuotesWrite)]
+    [InlineData(SalesPermissionManifestV1.QuotesRead, ErpPermissions.SalesQuotesRead)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);

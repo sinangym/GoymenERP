@@ -49,7 +49,7 @@ public sealed partial class SalesDraftServiceTests
     public async Task Without_a_limit_owner_every_positive_discount_waits_for_a_different_approvers_reasoned_approval()
     {
         // No limit-group source is composed: no limit is defined for anyone (SAT-D2, fail-closed) and Settings is never asked.
-        var policies = new FakeSalesPolicies();
+        var policies = new FakeDiscountLimitPolicies();
         var world = new World { SalesPolicies = policies };
         var created = (await world.Service().CreateDraftAsync(Priced(discount: "5"), Metadata("k-create"))).Detail;
         var lineId = created.Lines[0].LineId;
@@ -123,7 +123,7 @@ public sealed partial class SalesDraftServiceTests
         string price, string? percent, string? amount, string? surcharge, bool requiresApproval)
     {
         var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m } }.AllowDiscountsUpTo(10m);
-        var policies = (FakeSalesPolicies)world.SalesPolicies!;
+        var policies = (FakeDiscountLimitPolicies)world.SalesPolicies!;
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         var lineId = created.Lines[0].LineId;
         Assert.Empty(policies.Asked);
@@ -156,7 +156,7 @@ public sealed partial class SalesDraftServiceTests
     public async Task A_price_at_the_list_price_needs_no_check_and_reads_no_limit()
     {
         var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m } }.AllowDiscountsUpTo(10m);
-        var policies = (FakeSalesPolicies)world.SalesPolicies!;
+        var policies = (FakeDiscountLimitPolicies)world.SalesPolicies!;
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
 
         var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
@@ -170,7 +170,7 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task Several_limit_groups_apply_the_highest_defined_limit_and_a_group_without_one_contributes_nothing()
     {
-        var policies = new FakeSalesPolicies { Limits = { [DiscountGroupA] = 5m, [DiscountGroupB] = 15m } };
+        var policies = new FakeDiscountLimitPolicies { Limits = { [DiscountGroupA] = 5m, [DiscountGroupB] = 15m } };
         var world = new World
         {
             PriceReferences = new FakePriceReferences { Price = 12.50m },
@@ -218,7 +218,7 @@ public sealed partial class SalesDraftServiceTests
     public async Task A_limit_the_Settings_owner_cannot_answer_refuses_a_measured_discount_and_records_nothing(
         string settingsCode, int status, string code)
     {
-        var policies = new FakeSalesPolicies { Faults = { [DiscountGroupA] = settingsCode } };
+        var policies = new FakeDiscountLimitPolicies { Faults = { [DiscountGroupA] = settingsCode } };
         var world = new World
         {
             PriceReferences = new FakePriceReferences { Price = 12.50m },
@@ -311,6 +311,32 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_priced_line_converted_from_a_quote_has_no_list_price_and_goes_to_approval()
+    {
+        // SAT-D43: a quote conversion creates the order's lines through the draft's create path, without a list-price reference:
+        // every priced line needs approval, whatever its discount; SAT-D45: its converter may approve it.
+        var world = new World().AllowDiscountsUpTo(100m);
+        var policies = (FakeDiscountLimitPolicies)world.SalesPolicies!;
+        var request = (await world.Service().CreateRequestAsync(RequestOf(), Metadata("r-1"))).Detail.Request.Id;
+        var quote = (await world.Service().CreateQuoteAsync(QuoteOf([request], discount: null), Metadata("q-1"))).Detail.Quote.Id;
+        await world.Service().ApproveRequestAsync(request, Decision("1"), Metadata("r-1-approve"));
+
+        var order = (await world.Service().ConvertQuoteAsync(quote, new SalesQuoteConversionRequest("1", Day.AddDays(1)),
+            Metadata("q-convert"))).Detail;
+
+        Assert.Empty(policies.Asked);
+        var check = Assert.Single((await world.Service().GetDraftLinePricingAsync(order.Draft.Id)).Lines).DiscountCheck!;
+        Assert.Equal((Actor, (string?)null, (string?)null, true), (check.CheckedBy, check.ListUnitPrice, check.LimitPercent, check.RequiresApproval));
+        var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(order.Draft.Id,
+            Command(order.Draft.Version), Metadata("k-submit-blocked")));
+        Assert.Equal(SalesRuleCodes.DiscountExceptionPending, Assert.Single(blocked.Errors).Code);
+
+        var approved = await world.Service().ApproveDiscountExceptionsAsync(order.Draft.Id,
+            DiscountApproval(order.Draft.Version, order.Lines[0].LineId), Metadata("k-self"));
+        await world.Service().SubmitDraftAsync(order.Draft.Id, Command(approved.Detail.Draft.Version), Metadata("k-submit"));
+    }
+
+    [Fact]
     public async Task A_commercial_revision_replaces_an_approved_discount_exception_and_blocks_the_submission_again()
     {
         var world = new World();
@@ -387,7 +413,7 @@ public sealed partial class SalesDraftServiceTests
     }
 
     /// <summary>The Settings owner's Sales policy port: a limit per group, a fault per group, or "not found".</summary>
-    private sealed class FakeSalesPolicies : ISettingsSalesPolicyProviderV1
+    private sealed class FakeDiscountLimitPolicies : ISettingsSalesPolicyProviderV1
     {
         public Dictionary<Guid, decimal> Limits { get; } = [];
         public Dictionary<Guid, string> Faults { get; } = [];

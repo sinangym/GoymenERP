@@ -30,7 +30,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// asked); the submission is refused while the exception waits; a holder of the draft read alone is 403; another person with <c>sales.orders.discount-exception.approve</c> approves it in ONE save (line pricing,
 /// header version, attempt with both price-visibility replay variants, audit event); the same key replays with no second effect,
 /// another body under it is 409, a stale version is the key's recorded 409; another company sees nothing; the replay-result
-/// constraint holds and the migration refuses to roll back over a recorded result (51065). Orders are stored through the real
+/// constraint holds and the migration refuses to roll back over a recorded result (51069). Orders are stored through the real
 /// Sales store from SYNTHETIC owner snapshots (the AT-024 precedent); every grant is a fresh synthetic role. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
@@ -180,7 +180,7 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
-    public async Task The_replay_result_constraint_admits_only_a_recorded_approval_and_Down_refuses_51065_over_one()
+    public async Task The_replay_result_constraint_admits_only_a_recorded_approval_and_Down_refuses_51069_over_one()
     {
         await using var run = await Run.StartAsync();
         var draft = await run.StoredDraftAsync(CompanyA, "c", discountPercent: "15");
@@ -217,7 +217,7 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
         var migration = Array.IndexOf(applied, "20261027093529_AddSalesDiscountExceptionApprovalReplayResults");
         Assert.True(migration > 0);
         var refusal = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
-        Assert.Equal(51065, refusal.Number);
+        Assert.Equal(51069, refusal.Number);
         Assert.Equal(applied[..(migration + 1)], await context.Database.GetAppliedMigrationsAsync());
         await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());

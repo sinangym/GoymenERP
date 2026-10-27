@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 12;
+    public const int Version = 14;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -56,11 +56,12 @@ public static class SalesPermissionManifestV1
     public const string OrdersPriceFloorExceptionApprove = "sales.orders.price-floor-exception.approve";
 
     /// <summary>
-    /// SAT-D2 / API-12 ("limiti aşan iskonto Müdür onayına gider"): approves, with a reason, every current line whose discount
-    /// exceeds the limit of the actor who set it (or for whom no limit is defined) — POST …/{id}/discount-exception-approval.
-    /// A SEPARATE name: price write, order approval and the price-floor exception approval do NOT confer it, and it confers
-    /// none of them. The approver is never the actor who set the discount (checked by the domain). Company-wide; registered,
-    /// not granted: which persona (Müdür) holds it is a human gate.
+    /// SAT-D2 / API-12 ("limiti aşan iskonto Müdür onayına gider"): approves, with a reason, every current line below its list
+    /// price beyond the limit of the actor who set it (or with no limit defined), and every priced line without a list price
+    /// (SAT-D43) — POST …/{id}/discount-exception-approval. A SEPARATE name: price write, order approval and the price-floor
+    /// exception approval do NOT confer it, and it confers none of them. On a listed line the approver is never the actor who
+    /// set the discount (SAT-D37); a line without a list price may be approved by its writer (SAT-D45). Company-wide;
+    /// registered, not granted: SAT-D37 names the Müdür persona; the grant is a human gate.
     /// </summary>
     public const string OrdersDiscountExceptionApprove = "sales.orders.discount-exception.approve";
 
@@ -103,9 +104,37 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string OrdersForceClose = "sales.orders.force-close";
 
+    /// <summary>
+    /// API-20 (plan §3.2, S-01): recording a sales request — POST /api/v1/sales/requests. Its own name: the draft names do NOT
+    /// confer it and it confers none of them (no order, no price, no approval). Company-wide; registration is the central
+    /// writer's step (not Critical); which persona holds it is a human gate — no role receives it here.
+    /// </summary>
+    public const string RequestsWrite = "sales.requests.write";
+
+    /// <summary>API-20: GET /api/v1/sales/requests and GET /api/v1/sales/requests/{id} (list and detail share one read).</summary>
+    public const string RequestsRead = "sales.requests.read";
+
+    /// <summary>
+    /// API-21 (delegation No 160, 161): POST …/requests/{id}/approval and …/rejection — the decision on a sales request. Its own
+    /// name, separate from the order approval (<see cref="OrdersApprove"/>): neither confers the other. No maker≠checker,
+    /// threshold or second approver is implied by the name. Company-wide; not Critical; no role receives it here.
+    /// </summary>
+    public const string RequestsApprove = "sales.requests.approve";
+
+    /// <summary>
+    /// API-22 / API-23 / API-24 (plan §3.2, S-01): recording, revising and losing a sales quote, and — together with
+    /// <see cref="DraftsCreate"/> — converting it into its order (No 162). Its own name: the draft and request names do NOT
+    /// confer it, and it confers none of them (a conversion still needs the draft create name, and a priced line the order's
+    /// own price write). Company-wide; not Critical; no role receives it here.
+    /// </summary>
+    public const string QuotesWrite = "sales.quotes.write";
+
+    /// <summary>API-22: GET /api/v1/sales/quotes and GET …/{id}. The quoted prices additionally need <see cref="OrdersPriceRead"/>.</summary>
+    public const string QuotesRead = "sales.quotes.read";
+
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
-            OrdersQuantityWrite, OrdersForceClose }
+            OrdersQuantityWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

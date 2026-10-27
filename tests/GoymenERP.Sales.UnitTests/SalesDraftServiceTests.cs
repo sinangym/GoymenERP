@@ -1627,6 +1627,10 @@ public sealed partial class SalesDraftServiceTests
         public FakeSettings Settings { get; init; } = new();
         public FakeProducts Products { get; init; } = new();
         public FakeStore Store { get; init; } = new();
+        /// <summary>API-20 / API-21: the in-memory request store; null = not composed (503).</summary>
+        public FakeRequestStore? Requests { get; set; } = new();
+        /// <summary>API-22…24: the in-memory quote store over the same draft and request fakes; null = not composed (503).</summary>
+        public FakeQuoteStore? Quotes { get; set; }
         public bool NoProducts { get; set; }
         public bool NoContactInformation { get; set; }
         /// <summary>AT-024: the delivery owner's read port; null = not composed.</summary>
@@ -1652,7 +1656,7 @@ public sealed partial class SalesDraftServiceTests
         public World AllowDiscountsUpTo(decimal percent)
         {
             DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA]);
-            SalesPolicies = new FakeSalesPolicies { Limits = { [DiscountGroupA] = percent } };
+            SalesPolicies = new FakeDiscountLimitPolicies { Limits = { [DiscountGroupA] = percent } };
             return this;
         }
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
@@ -1664,7 +1668,8 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences, CustomerReturns, SalesPolicies, DiscountLimitGroups);
+                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests), SalesPolicies,
+                DiscountLimitGroups);
         }
 
         public SalesDraftReadServiceV1 ReadService()
@@ -2106,6 +2111,26 @@ public sealed partial class SalesDraftServiceTests
                 token => beforeWrite(draft!, token), cancellationToken);
             if (recorded is not null) RemainderChanges.Add(recorded);
             return result;
+        }
+
+        /// <summary>API-23: the quote conversion's draft write in the same in-memory attempts, under the conversion's own command.</summary>
+        public SalesDraftStoreResult StoreUnder(string commandName, SalesDraftWriteEnvelope envelope, string requestHash, Func<string, SalesOrderDraft> build)
+        {
+            if (_attempts.TryGetValue((commandName, envelope.IdempotencyKey), out var attempt))
+            {
+                if (attempt.Actor != envelope.ActorId || attempt.Hash != requestHash)
+                    throw new SalesDraftStoreException(SalesDraftStoreCodes.SameKeyPayloadMismatch, "synthetic");
+                if (attempt.Draft is null) throw new SalesDraftStoreException(SalesDraftStoreCodes.ConcurrentChange, "synthetic refusal under the key");
+                return new SalesDraftStoreResult(attempt.Draft, SalesDraftWriteOutcome.Replayed, attempt.Correlation);
+            }
+
+            var draft = build($"SO-2026-{_drafts.Count + 1:D6}");
+            draft.RequireStorable();
+            draft.RestoreCreator(envelope.ActorId);
+            _drafts.Add(draft);
+            _attempts[(commandName, envelope.IdempotencyKey)] = (envelope.ActorId, requestHash, draft, null, envelope.CorrelationId, null);
+            Envelopes.Add(envelope);
+            return new SalesDraftStoreResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId);
         }
 
         public Task<SalesDraftStoreResult> StoreDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, Func<string, SalesOrderDraft> build,
