@@ -64,6 +64,8 @@ public static class SalesModuleExtensions
         // API-20 / API-21: the request use cases share the draft service's fence and owner reads (one scoped instance).
         services.AddScoped<ISalesRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesQuoteService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        // MOD-07: the sales order PDF's price facts share the draft service's fence and its price-read decision.
+        services.AddScoped<ISalesOrderPrintReadServiceV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesOrderDraftPendingApprovalReadServiceV1,
             SalesOrderDraftPendingApprovalReadServiceV1>();
         // SALES-A1: the Sales-owned line reference port (Business 5737989917 = B) for the allocation

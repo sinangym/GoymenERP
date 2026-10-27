@@ -25,6 +25,12 @@ public static class SalesDraftProblemCodesV1
     /// <summary>409: another write took the key, the draft id or the document number first; the same request may be retried.</summary>
     public const string ConcurrentChange = "concurrent_change";
 
+    /// <summary>
+    /// 422 (MOD-07): the order needs more pages than one synchronously rendered PDF may have (the PDF component's technical
+    /// page bound). Nothing is cut and a retry gives the same answer; the order itself is valid.
+    /// </summary>
+    public const string OrderPdfTooLarge = "sales_order_pdf_too_large";
+
     /// <summary>422: the currency has no approved money profile, or the profile is not in effect on the business date.</summary>
     public const string UnsupportedCurrency = "unsupported_currency";
 
