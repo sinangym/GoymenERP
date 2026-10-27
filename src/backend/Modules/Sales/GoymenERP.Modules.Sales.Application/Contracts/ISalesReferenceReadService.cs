@@ -18,6 +18,11 @@ public interface ISalesReferenceReadService
         SalesContactInformationQueryV1 query, CancellationToken cancellationToken = default);
     Task<SalesReferenceReadResult<SalesCurrencyOptionsV1>> GetCurrenciesAsync(
         SalesCurrencyListQueryV1 query, CancellationToken cancellationToken = default);
+
+    // SAT-D27 (1): the satış sorumlusu picker — the company's active people who hold the eligibility binding, as the
+    // Identity owner measures them. Read-only; the list is not a grant and selects no default.
+    Task<SalesReferenceReadResult<SalesOwnerOptionsV1>> GetSalesOwnersAsync(
+        SalesOwnerQueryV1 query, CancellationToken cancellationToken = default);
 }
 
 public sealed record SalesAccountQueryV1(string? Q = null, int PageSize = 50, string? Cursor = null);
@@ -50,6 +55,17 @@ public sealed record SalesProductReferenceV1(Guid CompanyId, DateOnly EffectiveO
 
 // Server composition only. These values are accepted Identity/Settings bindings,
 // not UI capability IDs or a new permission catalogue. Missing binding denies.
+// SAT-D27 (2): AlternativePermissions — each reference read (and the product candidate search) is ALSO answered for a holder
+// of any one of these names (the request / quote write names), beside the read's own binding; it never stands in for a
+// missing own binding. SAT-D27 (1): OwnerEligibilityPermission — the name a person must hold to be listed by the sales-owner
+// picker; missing, the picker answers 503 (a setup problem, never "everyone").
 public sealed record SalesReferenceReadBindings(
     string? AccountsPermission = null, string? CurrencyPermission = null,
-    string? ProductPermission = null, string? MoneyOperation = null);
+    string? ProductPermission = null, string? MoneyOperation = null,
+    IReadOnlyList<string>? AlternativePermissions = null, string? OwnerEligibilityPermission = null)
+{
+    /// <summary>The names that answer a read bound to <paramref name="own"/>: none when the own binding is missing.</summary>
+    public IReadOnlyList<string> AnswerableBy(string? own) => string.IsNullOrWhiteSpace(own)
+        ? []
+        : [own, .. (AlternativePermissions ?? []).Where(name => !string.IsNullOrWhiteSpace(name) && name != own).Distinct(StringComparer.Ordinal)];
+}

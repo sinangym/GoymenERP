@@ -199,11 +199,15 @@ builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUn
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
 // SALES-API (#321): the Sales reference reads are bound to the draft form's permission (the Sales
 // owner's decision), and the Cari account port serves the draft use case.
+// SAT-D27 (2): a holder of the request or quote write name reads the same selection lists; SAT-D27 (1): the sales-owner
+// picker lists the company's active people who hold the order create name.
 builder.Services.AddSingleton(new SalesReferenceReadBindings(
     AccountsPermission: SalesPermissionManifestV1.DraftsCreate,
     CurrencyPermission: SalesPermissionManifestV1.DraftsCreate,
     ProductPermission: SalesPermissionManifestV1.DraftsCreate,
-    MoneyOperation: SalesMoneyOperations.OrderDraftV1));
+    MoneyOperation: SalesMoneyOperations.OrderDraftV1,
+    AlternativePermissions: [SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.QuotesWrite],
+    OwnerEligibilityPermission: SalesPermissionManifestV1.DraftsCreate));
 builder.Services.AddScoped<ISalesPartyAccountPortV1, CounterpartySalesPartyAccountPortV1>();
 // SALES-A2a: the same Cari adapter answers the contact-information port — one authorized owner read,
 // not a second copy of the party's addresses and contacts in Sales.
@@ -228,7 +232,9 @@ static ISalesReferenceReadService CreateSalesReferenceReadService(IServiceProvid
     // approved candidates, the delivery address and contact the Cari owner's contact information.
     services.GetService<ISettingsMoneyCandidateReader>(),
     services.GetService<ISalesPartyContactInformationPortV1>(),
-    services.GetService<ISettingsMoneyCandidateReaderV2>());
+    services.GetService<ISettingsMoneyCandidateReaderV2>(),
+    // SAT-D27 (1): the sales-owner picker's Identity adapter.
+    services.GetService<ISalesOwnerCandidateSourceV1>());
 builder.Services.AddIdempotencyModule(builder.Configuration);
 builder.Services.AddOrganizationModule(
     builder.Configuration,
@@ -307,6 +313,8 @@ builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
 // MOD-08: the same read may name the people its approval and acceptance already identify by id, through Identity's
 // company-fenced user directory. The adapter has no route and passes only ids from the authorized record.
 builder.Services.AddScoped<ISalesUserDisplaySourceV1, SalesUserDisplayHost>();
+// SAT-D27 (1): the sales-owner picker's adapter to the same Identity directory (scoped, in-process).
+builder.Services.AddScoped<ISalesOwnerCandidateSourceV1, SalesOwnerCandidateHost>();
 builder.Services.AddScoped<ISalesDraftReadServiceV1, SalesDraftReadServiceV1>();
 // STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
 // hands the derived command to Inventory's writer after fresh company-wide authority fences.

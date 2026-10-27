@@ -12,6 +12,8 @@ namespace GoymenERP.Modules.Sales.Application;
 // SALES-A2a: the two list reads take the Settings candidate reader and the Cari contact-information
 // port as OPTIONAL trailing inputs, so the host's existing factory keeps compiling; while the central
 // composition does not pass them, each read answers 503 (a missing owner, never an empty list).
+// SAT-D27 (1): the sales-owner candidate source is optional in the same way. SAT-D27 (2): every read is answered for the
+// holder of its own binding OR of one of the bindings' alternative names (the request / quote write names).
 public sealed class SalesReferenceReadHandler(
     ICompanyContext companyContext, ICurrentUser currentUser,
     IErpAuthorizationService authorization, ISalesAccountSelectionSourceV1 counterparties,
@@ -19,7 +21,8 @@ public sealed class SalesReferenceReadHandler(
     SalesReferenceReadBindings bindings,
     ISettingsMoneyCandidateReader? currencyCandidates = null,
     ISalesPartyContactInformationPortV1? contactInformation = null,
-    ISettingsMoneyCandidateReaderV2? operationCurrencyCandidates = null) : ISalesReferenceReadService
+    ISettingsMoneyCandidateReaderV2? operationCurrencyCandidates = null,
+    ISalesOwnerCandidateSourceV1? salesOwners = null) : ISalesReferenceReadService
 {
     private const int SearchRuneLimit = 200;
 
@@ -302,6 +305,42 @@ public sealed class SalesReferenceReadHandler(
         }
     }
 
+    /// <summary>
+    /// SAT-D27 (1): the satış sorumlusu picker. Authorized like the account list (the reference read's own binding or an
+    /// alternative name); the people come from the Identity owner, which lists only those active in the company who hold
+    /// <see cref="SalesReferenceReadBindings.OwnerEligibilityPermission"/> there now. A missing eligibility binding or source
+    /// is 503 (never "everyone"); the owner's Denied is 403 and its Unavailable or a malformed item 503. The answer is
+    /// released only under a freshly re-measured authority.
+    /// </summary>
+    public async Task<SalesReferenceReadResult<SalesOwnerOptionsV1>> GetSalesOwnersAsync(
+        SalesOwnerQueryV1 query, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        var scope = await GetScopeAsync(bindings.AccountsPermission, cancellationToken);
+        if (scope.Status != 200) return Failure<SalesOwnerOptionsV1>(scope.Status);
+        if (query.Limit is < 1 or > SalesOwnerPickerLimitsV1.MaximumLimit
+            || query.Q is { Length: > SalesOwnerPickerLimitsV1.MaximumQueryLength })
+            return Failure<SalesOwnerOptionsV1>(400, "validation_failed");
+        if (string.IsNullOrWhiteSpace(bindings.OwnerEligibilityPermission) || salesOwners is null)
+            return Failure<SalesOwnerOptionsV1>(503);
+
+        var answer = await salesOwners.SearchAsync(new SalesOwnerCandidateRequestV1(scope.Company, scope.Actor!,
+            string.IsNullOrWhiteSpace(query.Q) ? null : query.Q.Trim(), query.Limit, bindings.OwnerEligibilityPermission),
+            cancellationToken);
+        if (!await StillAuthorizedAsync(scope, bindings.AccountsPermission, cancellationToken))
+            return Failure<SalesOwnerOptionsV1>(403);
+        if (answer is null || answer.Items is null) return Failure<SalesOwnerOptionsV1>(503);
+        return answer.Outcome switch
+        {
+            SalesOwnerCandidateOutcomeV1.Success when answer.Items.Count <= query.Limit
+                && answer.Items.All(item => item is not null && item.UserId != Guid.Empty && !string.IsNullOrWhiteSpace(item.DisplayName))
+                && answer.Items.Select(item => item.UserId).Distinct().Count() == answer.Items.Count
+                => Success(new SalesOwnerOptionsV1(scope.Company, [.. answer.Items], answer.HasMore)),
+            SalesOwnerCandidateOutcomeV1.Denied => Failure<SalesOwnerOptionsV1>(403),
+            _ => Failure<SalesOwnerOptionsV1>(503),
+        };
+    }
+
     /// <summary>The owner's address as one display text: "Line1, Line2, District City PostalCode, CountryCode", empty parts left out.</summary>
     public static string AddressText(SalesPartyAddressV1 address)
     {
@@ -332,11 +371,22 @@ public sealed class SalesReferenceReadHandler(
             ? scope : new(403, Guid.Empty, null);
     }
 
+    /// <summary>
+    /// The read's own binding, or (SAT-D27 (2)) one of the bindings' alternative names, held in the scope's company now. A
+    /// missing own binding answers no-one: the alternatives widen a bound read, they never stand in for an unbound one.
+    /// </summary>
     private async Task<bool> StillAuthorizedAsync(Scope scope, string? permission, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(permission) || !Matches(scope)) return false;
-        var allowed = await authorization.HasPermissionAsync(permission, scope.Company, cancellationToken);
-        return allowed && Matches(scope);
+        var names = bindings.AnswerableBy(permission);
+        if (names.Count == 0 || !Matches(scope)) return false;
+        foreach (var name in names)
+        {
+            if (await authorization.HasPermissionAsync(name, scope.Company, cancellationToken))
+                return Matches(scope);
+            if (!Matches(scope)) return false;
+        }
+
+        return false;
     }
     private bool Matches(Scope scope) => currentUser.IsAuthenticated && currentUser.UserId == scope.Actor
         && companyContext.IsResolved && companyContext.CompanyId == scope.Company

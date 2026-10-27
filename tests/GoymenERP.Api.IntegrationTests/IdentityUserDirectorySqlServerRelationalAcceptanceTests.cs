@@ -105,6 +105,123 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
         });
     }
 
+    /// <summary>
+    /// SAT-D27 (1): the sales-owner picker lists only the people active in the company who hold the order create name there
+    /// now. The holder predicate (active assignment inside its validity, active role carrying the name, company scope for a
+    /// company-wide-only name) is a SQL translation here; the Sales adapter and the Sales handler are resolved from the same
+    /// host, and the handler itself is authorized by a real grant of the caller (the request write name, SAT-D27 (2)).
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_sales_owner_picker_lists_only_the_order_create_holders_of_the_context_company_on_real_SQL()
+    {
+        await WithDatabaseAsync(async factory =>
+        {
+            var companyX = Guid.NewGuid();
+            var companyY = Guid.NewGuid();
+            var seeded = await SeedHoldersAsync(factory, companyX, companyY);
+            var baseline = await CountsAsync(factory);
+
+            await AsCallerAsync(factory, seeded.Caller, companyX, async services =>
+            {
+                var port = services.GetRequiredService<IUserDirectoryReadPortV1>();
+                var holders = await port.SearchActiveAsync(new UserDirectorySearchRequestV1(
+                    companyX, Actor(seeded.Caller), null, 10, SalesPermissionManifestV1.DraftsCreate));
+                Assert.Equal(UserDirectoryOutcomeV1.Found, holders.Outcome);
+                Assert.Equal([("SENTETIK Satisci", seeded.Holder), ("SENTETIK Satisci Iki", seeded.SecondHolder)],
+                    holders.Items.Select(item => (item.DisplayName, item.UserId)));
+
+                // The fragment narrows within the holders (the Y holder and the site holder also match "Satisci").
+                var narrowed = await port.SearchActiveAsync(new UserDirectorySearchRequestV1(
+                    companyX, Actor(seeded.Caller), "iki", 10, SalesPermissionManifestV1.DraftsCreate));
+                Assert.Equal([seeded.SecondHolder], narrowed.Items.Select(item => item.UserId));
+
+                // An unregistered name is refused, never "everyone".
+                var unknown = await port.SearchActiveAsync(new UserDirectorySearchRequestV1(
+                    companyX, Actor(seeded.Caller), null, 10, "sales.owners.everyone"));
+                Assert.Equal((UserDirectoryOutcomeV1.Denied, 0), (unknown.Outcome, unknown.Items.Count));
+
+                // The Sales adapter passes the eligibility name and maps id + name only.
+                var adapter = await services.GetRequiredService<ISalesOwnerCandidateSourceV1>().SearchAsync(
+                    new SalesOwnerCandidateRequestV1(companyX, Actor(seeded.Caller), null, 1, SalesPermissionManifestV1.DraftsCreate));
+                Assert.Equal(SalesOwnerCandidateOutcomeV1.Success, adapter.Outcome);
+                Assert.True(adapter.HasMore);
+                Assert.Equal([new SalesOwnerOptionV1(seeded.Holder, "SENTETIK Satisci")], adapter.Items);
+
+                // The Sales handler: the caller holds only the request write name (SAT-D27 (2)) and gets the same list.
+                var picker = await services.GetRequiredService<ISalesReferenceReadService>().GetSalesOwnersAsync(new SalesOwnerQueryV1(null, 10));
+                Assert.Equal(200, picker.StatusCode);
+                Assert.Equal(companyX, picker.Value!.CompanyId);
+                Assert.Equal([seeded.Holder, seeded.SecondHolder], picker.Value.Owners.Select(owner => owner.UserId));
+            });
+
+            // Company Y lists its own holder only.
+            await AsCallerAsync(factory, seeded.HolderInY, companyY, async services =>
+            {
+                var holders = await services.GetRequiredService<IUserDirectoryReadPortV1>().SearchActiveAsync(
+                    new UserDirectorySearchRequestV1(companyY, Actor(seeded.HolderInY), null, 10, SalesPermissionManifestV1.DraftsCreate));
+                Assert.Equal([seeded.HolderInY], holders.Items.Select(item => item.UserId));
+            });
+
+            // A member of X without any Sales name: the handler refuses before Identity lists anyone.
+            await AsCallerAsync(factory, seeded.PlainMember, companyX, async services =>
+            {
+                var picker = await services.GetRequiredService<ISalesReferenceReadService>().GetSalesOwnersAsync(new SalesOwnerQueryV1(null, 10));
+                Assert.Equal((403, null), (picker.StatusCode, picker.Value));
+            });
+
+            Assert.Equal(baseline, await CountsAsync(factory));
+        });
+    }
+
+    private static async Task<Holders> SeedHoldersAsync(SqlServerRelationalApiFactory factory, Guid companyX, Guid companyY)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<IdentityDbContext>();
+        var now = DateTimeOffset.UtcNow;
+        var caller = AddUser(db, "SENTETIK Arayan");
+        Grant(db, caller, companyX, SalesPermissionManifestV1.RequestsWrite, AccessScopeType.Company, companyX, now.AddDays(-1), null);
+        var holder = AddUser(db, "SENTETIK Satisci");
+        Grant(db, holder, companyX, SalesPermissionManifestV1.DraftsCreate, AccessScopeType.Company, companyX, now.AddDays(-1), null);
+        var secondHolder = AddUser(db, "SENTETIK Satisci Iki");
+        Grant(db, secondHolder, companyX, SalesPermissionManifestV1.DraftsCreate, AccessScopeType.Company, companyX, now.AddDays(-1), null);
+        // A member of X whose order create name is site-scoped only: not a holder of a company-wide-only name.
+        var siteHolder = AddUser(db, "SENTETIK Satisci Saha");
+        Assign(db, siteHolder, companyX, now.AddDays(-1), null);
+        Grant(db, siteHolder, companyX, SalesPermissionManifestV1.DraftsCreate, AccessScopeType.Site, Guid.NewGuid(), now.AddDays(-1), null);
+        // A member of X whose order create grant has expired.
+        var expired = AddUser(db, "SENTETIK Satisci Eski");
+        Assign(db, expired, companyX, now.AddDays(-1), null);
+        Grant(db, expired, companyX, SalesPermissionManifestV1.DraftsCreate, AccessScopeType.Company, companyX, now.AddDays(-30), now.AddDays(-1));
+        // A member of X who holds the name in Y only.
+        var holderInY = AddUser(db, "SENTETIK Satisci Y");
+        Assign(db, holderInY, companyX, now.AddDays(-1), null);
+        Grant(db, holderInY, companyY, SalesPermissionManifestV1.DraftsCreate, AccessScopeType.Company, companyY, now.AddDays(-1), null);
+        // A plain member of X and a passive holder.
+        var plain = AddUser(db, "SENTETIK Uye");
+        Assign(db, plain, companyX, now.AddDays(-1), null);
+        var passive = AddUser(db, "SENTETIK Satisci Pasif");
+        Grant(db, passive, companyX, SalesPermissionManifestV1.DraftsCreate, AccessScopeType.Company, companyX, now.AddDays(-1), null);
+        await db.SaveChangesAsync();
+        db.Entry(await db.Users.SingleAsync(user => user.Id == passive))
+            .Property(nameof(UserAccount.IsActive)).CurrentValue = false;
+        await db.SaveChangesAsync();
+        return new Holders(caller, holder, secondHolder, holderInY, plain);
+    }
+
+    private static void Grant(IdentityDbContext db, Guid user, Guid company, string permission, AccessScopeType scopeType, Guid scopeId,
+        DateTimeOffset from, DateTimeOffset? until)
+    {
+        var roleId = Guid.NewGuid();
+        var role = new RoleDefinition(roleId, $"OWNER-PICKER-{roleId:N}", "SENTETIK sorumlu secici rolu", isSystem: false);
+        role.AddPermission(permission);
+        var assignment = new RoleAssignment(Guid.NewGuid(), user, roleId, company, from, until, approvedByUserId: null);
+        assignment.AddScope(scopeType, scopeId);
+        db.Roles.Add(role);
+        db.RoleAssignments.Add(assignment);
+    }
+
+    private sealed record Holders(Guid Caller, Guid Holder, Guid SecondHolder, Guid HolderInY, Guid PlainMember);
+
     private static async Task<Seeded> SeedAsync(SqlServerRelationalApiFactory factory, Guid companyX, Guid companyY)
     {
         await using var scope = factory.Services.CreateAsyncScope();
