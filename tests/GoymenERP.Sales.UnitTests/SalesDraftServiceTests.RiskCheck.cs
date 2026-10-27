@@ -37,7 +37,7 @@ public sealed partial class SalesDraftServiceTests
 
         var check = await world.Service().GetDraftRiskCheckAsync(approved.Draft.Id);
 
-        Assert.Equal(("4", Party, Account), (check.DraftVersion, check.PartyId, check.CompanyAccountId));
+        Assert.Equal(("5", Party, Account), (check.DraftVersion, check.PartyId, check.CompanyAccountId));
         Assert.Equal(("Unavailable", SalesPriceDisclosure.Visible), (check.Result, check.AmountDisclosure));
         // SAT-D53: the local (TL) totals are made — not computable yet; no limit, so no limit-currency totals.
         Assert.Equal(new SalesDraftRiskTotalsV1(Lira, null, null), check.InLocalCurrency);
@@ -242,7 +242,7 @@ public sealed partial class SalesDraftServiceTests
         // 1.25 kg shipped leaves nothing of the approved commitment (a recorded zero), while 2 kg would leave 0.75 kg.
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(line, KgUnit, 1.25m, 1.25m)]));
         await world.Service().ReviseQuantityAsync(approved.Draft.Id,
-            new SalesDraftQuantityRevisionRequest("4", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity"));
+            new SalesDraftQuantityRevisionRequest("5", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity"));
         Assert.Equal("2", (await world.Service().GetDraftDetailAsync(approved.Draft.Id)).Lines[0].Quantity);
         var pending = await world.Service().GetDraftRiskCheckAsync(approved.Draft.Id);
         Assert.Equal("Available", pending.Components[2].State);
@@ -267,7 +267,7 @@ public sealed partial class SalesDraftServiceTests
 
         var preview = await world.Service().GetCancellationImpactAsync(approved.Draft.Id);
         await world.Service().CancelDraftAsync(approved.Draft.Id,
-            new SalesDraftCancelRequest("4", "SENTETIK müşteri vazgeçti", preview.ImpactToken), Metadata("k-cancel"));
+            new SalesDraftCancelRequest("5", "SENTETIK müşteri vazgeçti", preview.ImpactToken), Metadata("k-cancel"));
         var check = await world.Service().GetDraftRiskCheckAsync(approved.Draft.Id);
 
         Assert.Equal(("ThisOrder", SalesDraftRiskSourcesV1.ThisOrder, "Available", "IncludingTax", "", null), Flat(check.ThisOrder));
@@ -359,12 +359,16 @@ public sealed partial class SalesDraftServiceTests
         Assert.Contains(new SalesDraftRiskReasonV1("CreditLimit", reason), check.Reasons);
     }
 
-    /// <summary>A priced one-line order (1.25 kg at 12.50, 5 % discount), submitted and approved: version 4.</summary>
+    /// <summary>
+    /// A priced one-line order (1.25 kg at 12.50, no list reference), its price approved by another person first (SAT-D2 / SAT-D43,
+    /// API-12), then submitted and approved: version 5.
+    /// </summary>
     private static async Task<SalesOrderDraftDetailView> PricedApprovedAsync(World world, string key)
     {
-        var created = (await world.Service().CreateDraftAsync(Priced(), Metadata($"{key}-create"))).Detail.Draft;
-        await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata($"{key}-submit"));
-        return (await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata($"{key}-approve"))).Detail;
+        var created = (await world.Service().CreateDraftAsync(Priced(discount: null), Metadata($"{key}-create"))).Detail;
+        var version = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, created.Lines[0].LineId);
+        var submitted = await world.Service().SubmitDraftAsync(created.Draft.Id, Command(version), Metadata($"{key}-submit"));
+        return (await world.Service().ApproveDraftAsync(created.Draft.Id, Command(submitted.Detail.Draft.Version), Metadata($"{key}-approve"))).Detail;
     }
 
     /// <summary>The answer shape of the Finance owner on main: receivables as given (taxes included), limit and collateral without a master.</summary>

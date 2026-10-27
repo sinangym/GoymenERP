@@ -90,7 +90,7 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
 
         Assert.Equal(["draftVersion", "partyId", "companyAccountId", "result", "reasons", "amountDisclosure", "inLocalCurrency", "inLimitCurrency",
             "components", "thisOrder", "creditLimit", "collateral"], check.EnumerateObject().Select(member => member.Name));
-        Assert.Equal(("4", customer.PartyId.ToString("D"), customer.AccountId.ToString("D"), "Unavailable", "Visible"),
+        Assert.Equal(("5", customer.PartyId.ToString("D"), customer.AccountId.ToString("D"), "Unavailable", "Visible"),
             (check.GetProperty("draftVersion").GetString(), check.GetProperty("partyId").GetString(),
                 check.GetProperty("companyAccountId").GetString(), check.GetProperty("result").GetString(),
                 check.GetProperty("amountDisclosure").GetString()));
@@ -204,11 +204,38 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
                 })),
             figure.GetProperty("reasonCode").GetString());
 
+    /// <summary>The discount-exception approval's recorded replay result (the store requires one for that command).</summary>
+    private static SalesDraftReplayResult ReplayResult(SalesOrderDraft draft) =>
+        new(Detail(draft, SalesPriceDisclosure.Visible), Detail(draft, SalesPriceDisclosure.Withheld));
+
+    private static SalesOrderDraftDetailView Detail(SalesOrderDraft draft, SalesPriceDisclosure disclosure)
+    {
+        var snapshots = draft.Lines.Select(line => new SalesOrderDraftProductSnapshotViewV1(
+            line.Product.ProductId, line.Product.ProductVersion, line.Product.Code, line.Product.Name,
+            line.OrderUnit.UnitId, line.OrderUnit.UnitCode)).Distinct().ToArray();
+        var summary = new SalesOrderDraftSummaryView(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(),
+            draft.State.ToString(), draft.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            draft.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture), draft.Header.PartyId, draft.Header.CompanyAccountId,
+            draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count, draft.ApprovalState.ToString(),
+            SalesCommercialStageV1.Order, snapshots);
+        var lines = draft.Lines.Select(line => new SalesOrderDraftLineDetail(line.Id, line.LineNo, line.Product.ProductId,
+            line.Product.ProductVersion, line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.QuantityText,
+            disclosure == SalesPriceDisclosure.Visible ? line.Commercial.UnitPrice : null,
+            disclosure == SalesPriceDisclosure.Visible ? line.Commercial.PriceUnitId : null,
+            line.RequestedDeliveryDate, line.Note, null,
+            disclosure == SalesPriceDisclosure.Visible ? line.Commercial.DiscountPercent : null, disclosure)).ToArray();
+        return new SalesOrderDraftDetailView(summary, draft.Header.RequestedDeliveryDate, draft.Header.Note, lines,
+            null, null, null, null, null, null,
+            new SalesDraftApprovalV1(draft.Approval.SubmittedBy, draft.Approval.SubmittedAtUtc, draft.Approval.DecidedBy,
+                draft.Approval.DecidedAtUtc, draft.Approval.RejectionReason),
+            new SalesDraftCustomerAcceptanceV1(false, null, null, null, false), false, false);
+    }
+
     private static LogisticsQuantity Kg(decimal value) => LogisticsQuantity.Of(value, LogisticsQuantityUnit.Kilogram);
 
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
-    /// <summary>A one-line priced draft (kg, 12.50 per kg, 5 % discount) of the customer from SYNTHETIC owner snapshots: version 2.</summary>
+    /// <summary>A one-line priced draft (kg, 12.50 per kg, no list reference — SAT-D43) of the customer from SYNTHETIC owner snapshots: version 2.</summary>
     private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, string quantity)
     {
         var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, Day, Day.AddDays(10));
@@ -219,7 +246,9 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
         draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, quantity,
             decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture), Day.AddDays(3),
-            Commercial: new CommercialDraftFields("12.50", KgUnit, "5")), T0);
+            // SAT-D43: a price without a list reference carries its discount check and waits for its own approval first.
+            Commercial: SalesOrderDraft.WithDiscountLimitCheck(new CommercialDraftFields("12.50", KgUnit, null), SalesDiscountLimit.Undefined,
+                "SENTETIK-preparer", T0)), T0);
         return draft;
     }
 
@@ -301,17 +330,28 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
             Assert.Equal(rows.Length, result.OpenItemIds.Count);
         }
 
-        /// <summary>A stored priced draft of the customer, submitted and approved (version 4), through the real Sales store.</summary>
+        /// <summary>A stored priced draft of the customer, its discount check approved, submitted and approved (version 5), through the real Sales store.</summary>
         public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, Customer customer, string keyPrefix, string quantity)
         {
             await using var scope = SalesStore(company);
             var draft = (await scope.Store.StoreDraftAsync(SalesEnvelope($"{keyPrefix}-create"), Hash($"{Correlation}-{keyPrefix}-create"),
                 documentNo => Draft(company, customer, documentNo, quantity))).Draft;
+            // SAT-D2 / API-12: the list-less price is approved by another person first (version 3), through the real store.
+            var lineId = Assert.Single(draft.Lines).Id;
+            await scope.Store.ReviseDraftCommercialAsync(SalesEnvelope($"{keyPrefix}-discount", actor: "SENTETIK-manager"),
+                Hash($"{Correlation}-{keyPrefix}-discount"), SalesDraftCommands.ApproveDiscountExceptionsV1, draft.Id,
+                (target, now) =>
+                {
+                    target.ApproveDiscountExceptions(target.Version, [new LineDiscountExceptionApprovalInput(lineId, "SENTETIK liste dışı fiyat")],
+                        "SENTETIK-manager", now);
+                    return null;
+                }, new SalesDraftStateAudit("sales.order-draft.discount-exceptions-approved.v1", "ApproveDiscountExceptions", "SENTETIK"),
+                _ => Task.CompletedTask, default, ReplayResult);
             await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-submit"), Hash($"{Correlation}-{keyPrefix}-submit"),
-                SalesDraftCommands.SubmitV1, draft.Id, (d, now) => d.Submit(2, Actor, now), Submitted);
+                SalesDraftCommands.SubmitV1, draft.Id, (d, now) => d.Submit(3, Actor, now), Submitted);
             var approved = await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-approve", actor: "SENTETIK-approver"),
                 Hash($"{Correlation}-{keyPrefix}-approve"), SalesDraftCommands.ApproveV1, draft.Id,
-                (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
+                (d, now) => d.Approve(4, "SENTETIK-approver", now), Approved);
             return approved!.Draft;
         }
 
