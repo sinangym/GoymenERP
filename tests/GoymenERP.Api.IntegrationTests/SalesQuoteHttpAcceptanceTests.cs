@@ -183,6 +183,7 @@ public sealed class SalesQuoteHttpAcceptanceTests(GoymenErpApiFactory factory) :
     [InlineData(403, "forbidden")]
     [InlineData(403, "price_read_required")]
     [InlineData(409, "sales_quote_request_not_approved")]
+    [InlineData(409, SalesQuoteProblemCodesV1.Expired)]
     [InlineData(422, "sales_quote_request_customer_mismatch")]
     public async Task The_services_refusal_reaches_the_wire_with_its_code_and_every_403_or_503_code_less(int status, string code)
     {

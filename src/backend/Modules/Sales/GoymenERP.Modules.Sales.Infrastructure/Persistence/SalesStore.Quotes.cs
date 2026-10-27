@@ -330,7 +330,7 @@ public sealed partial class SalesStore
 
         var versionBefore = quote.Version;
         var before = QuoteAuditState(quote, withLines: false);
-        quote.Convert(expectedQuoteVersion, draft.Id, actorId, now);
+        quote.Convert(expectedQuoteVersion, draft.Id, actorId, draft.Header.BusinessDate, now);
         SalesDraftRows.Add(dbContext, draft, envelope.ActorId, envelope.CorrelationId, quote.Id, quote.Revision);
         draft.RestoreCreator(envelope.ActorId);
         row.State = (int)quote.State;
@@ -380,6 +380,9 @@ public sealed partial class SalesStore
         foreach (var row in rows)
         {
             row.UpdatedAtUtc = now;
+            // Forced: EF sends an UPDATE only for a changed value, and a clock that repeats the stored instant (a fixed test
+            // clock, a coarse host clock) would otherwise drop the row from the save and with it the serialization.
+            dbContext.Entry(row).Property(candidate => candidate.UpdatedAtUtc).IsModified = true;
         }
     }
 
@@ -407,8 +410,8 @@ public sealed partial class SalesStore
     /// <summary>
     /// No 161, fail-closed: whether ANY order converted from a quote that covers the request is not cancelled — Preparing
     /// (never approved), pending, revised back to Preparing, approved, rejected/withdrawn on its approval axis, or
-    /// force-closed (<see cref="SalesDraftState.Closed"/>). Only a cancelled order releases the request (NEEDS-SINAN #6:
-    /// whether a pending order should block is undecided, so the conservative reading is kept). Every link counts, active
+    /// force-closed (<see cref="SalesDraftState.Closed"/>). Only a cancelled order releases the request (SAT-D23:
+    /// every non-cancelled order blocks, the pending and force-closed ones included). Every link counts, active
     /// or not: a converted quote's order stays the request's order.
     /// </summary>
     private async Task<bool> HasLiveOrderAsync(Guid requestId, CancellationToken cancellationToken)

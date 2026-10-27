@@ -82,7 +82,7 @@ public sealed class SalesQuoteLine
     public string? Note { get; }
 }
 
-/// <summary>The recorded loss: the free-text reason (no reason list is decided), who recorded it and when.</summary>
+/// <summary>The recorded loss: the free-text reason (SAT-D25's closed Settings list is a follow-up), who recorded it and when.</summary>
 public sealed record SalesQuoteLoss(string Reason, string LostBy, DateTimeOffset LostAtUtc);
 
 /// <summary>The recorded conversion: the one order the quote became (No 162), who converted it and when.</summary>
@@ -237,13 +237,17 @@ public sealed class SalesQuote
         Touch(now);
     }
 
-    /// <summary>No 162: records the ONE order an OPEN quote became; a converted or lost quote is a state conflict.</summary>
-    public void Convert(long expectedVersion, Guid draftId, string actorId, DateTimeOffset now)
+    /// <summary>
+    /// No 162: records the ONE order an OPEN quote became on the order's <paramref name="businessDate"/>; a converted or lost
+    /// quote is a state conflict and an expired one is refused (<see cref="RequireValidOn"/>, SAT-D24 interim).
+    /// </summary>
+    public void Convert(long expectedVersion, Guid draftId, string actorId, DateOnly businessDate, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         Identity.Require(draftId, nameof(draftId));
         var actor = RequireText(actorId, MaximumActorLength, nameof(actorId));
         RequireOpen("Yalnız açık teklif siparişe dönüştürülür");
+        RequireValidOn(businessDate);
         State = SalesQuoteState.Converted;
         Conversion = new SalesQuoteConversion(draftId, actor, now.ToUniversalTime());
         Touch(now);
@@ -254,6 +258,21 @@ public sealed class SalesQuote
     {
         RequireVersion(expectedVersion);
         RequireOpen("Yalnız açık teklif siparişe dönüştürülür");
+    }
+
+    /// <summary>
+    /// SAT-D24 (interim, fail-closed): a quote whose validity date precedes the conversion's business date is expired and is
+    /// not converted. SAT-D24 lets a MANAGER APPROVAL convert it; that approval step does not exist yet (follow-up), so today
+    /// an expired quote is refused outright. A quote without a validity date never expires (no default validity is decided);
+    /// the validity date itself is the last valid day.
+    /// </summary>
+    public void RequireValidOn(DateOnly businessDate)
+    {
+        if (Terms.ValidUntil is { } validUntil && validUntil < businessDate)
+        {
+            throw new SalesRuleException(SalesRuleCodes.QuoteExpired,
+                "Teklifin geçerlilik süresi dolmuş; yönetici onayı adımı gelene kadar siparişe dönüştürülmez.");
+        }
     }
 
     /// <summary>

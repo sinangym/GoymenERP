@@ -123,8 +123,22 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
             ("@h", SalesStore.IdempotencyKeyHash("q-convert"))));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts"));
 
-        // No 162: with every request approved, the conversion stores ONE order with the quote's Rev.1 snapshot and its reference.
         await run.ApproveRequestAsync(second, "q-approve-second");
+
+        // SAT-D24 interim (fail-closed): Rev.1 is valid until Day + 20; a conversion on a later business date is refused before
+        // any owner is asked and NOT recorded (the No 160 pattern), so the same key converts once the date is within validity.
+        await using (var scope = run.Store(CompanyA))
+        {
+            var expired = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+                run.Service(scope, run.Actor).ConvertQuoteAsync(quoteId, new SalesQuoteConversionRequest("2", Day.AddDays(21)), run.Metadata("q-convert")));
+            Assert.Equal((409, SalesQuoteProblemCodesV1.Expired, "validUntil"), (expired.Status, expired.Code, Assert.Single(expired.Errors).Field));
+        }
+
+        Assert.Equal((0, 0, 1), (await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash = @h",
+                ("@h", SalesStore.IdempotencyKeyHash("q-convert"))), await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Quotes WHERE Id = @q AND State = 1 AND Version = 2", ("@q", quoteId))));
+
+        // No 162: with every request approved, the conversion stores ONE order with the quote's Rev.1 snapshot and its reference.
         SalesOrderDraftResponse converted;
         await using (var scope = run.Store(CompanyA))
         {
@@ -296,7 +310,7 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
     [SqlServerFact]
     public async Task A_request_with_any_order_that_is_not_cancelled_is_not_rejected_and_only_a_cancelled_order_releases_it_on_real_sql()
     {
-        // No 161, fail-closed (NEEDS-SINAN #6 open): only a CANCELLED order releases the request it came from.
+        // No 161, fail-closed (SAT-D23): only a CANCELLED order releases the request it came from.
         await using var run = await Run.StartAsync();
         var party = Guid.NewGuid();
         var account = Guid.NewGuid();

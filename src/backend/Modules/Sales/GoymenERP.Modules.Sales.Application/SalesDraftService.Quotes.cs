@@ -15,7 +15,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// profile of the currency for the ORDER operation (the prices become the order's), per line Product eligibility and the
 /// order-unit profile. No 163: the named requests must be this company's, of the SAME customer, not rejected and not
 /// covered by another live quote.</item>
-/// <item><b>Loss:</b> <c>sales.quotes.write</c>; a free-text reason (no reason list is decided).</item>
+/// <item><b>Loss:</b> <c>sales.quotes.write</c>; a free-text reason (SAT-D25's closed Settings list is a follow-up).</item>
 /// <item><b>Conversion (No 162):</b> <c>sales.quotes.write</c> AND <c>sales.drafts.create</c>; the quote's current revision
 /// becomes the order through the draft's OWN creation path (the same owners, rules, price fence and idempotency) with the
 /// quote's price/quantity snapshot; the one save records the source quote (one order per quote, enforced by the database)
@@ -183,7 +183,7 @@ public sealed partial class SalesDraftService
         var store = QuoteStore();
         // A revision REPLACES every line, prices included: an actor whose quote prices are withheld would send them back empty
         // and erase them. Such an actor does not revise (403), whatever the lines carry — fail-closed, before anything is read
-        // or recorded (who may WRITE a quote price stays NEEDS-SINAN #5).
+        // or recorded (SAT-D26: this refusal stays; writing a quote price needs no more than sales.quotes.write).
         await RequirePriceReadAsync(scope, [new("lines", SalesQuoteProblemCodesV1.PriceReadRequired)], cancellationToken);
         var expectedVersion = ExpectedVersion(request.ExpectedVersion);
         var requestHash = SalesQuoteHash.Compute(quoteId, request);
@@ -280,6 +280,19 @@ public sealed partial class SalesDraftService
                 cancellationToken, SalesQuoteCommands.ConvertV1);
         }
 
+        // SAT-D24 (interim, fail-closed): a quote whose validity date precedes the conversion's business date is refused (409
+        // sales_quote_expired) until the manager-approval step SAT-D24 names exists. Not recorded, like No 160 below: the
+        // refusal stands in for an approval that is meant to clear it for the SAME request, so the key must not be burned; nothing
+        // is written either way. The quote's version pins its validity date and the store checks it again inside the save.
+        try
+        {
+            quote.RequireValidOn(request.BusinessDate);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteExpired)
+        {
+            throw QuoteExpired();
+        }
+
         // No 160 (default-deny): every request the quote covers is approved. Not recorded: the request may still be approved
         // and the same key retried; the store asks again inside the one save.
         await RequireApprovedRequestsAsync(scope, quotePermission, quote, cancellationToken);
@@ -324,9 +337,17 @@ public sealed partial class SalesDraftService
                     throw new SalesDraftServiceException(409, SalesQuoteProblemCodesV1.RequestNotApproved,
                         [new("requestIds", SalesQuoteProblemCodesV1.RequestNotApproved)]);
                 }
+                catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteExpired)
+                {
+                    // SAT-D24 inside the save (the domain's Convert asks again on the order's business date). Not recorded.
+                    throw QuoteExpired();
+                }
             },
             cancellationToken);
     }
+
+    private static SalesDraftServiceException QuoteExpired() =>
+        new(409, SalesQuoteProblemCodesV1.Expired, [new("validUntil", SalesQuoteProblemCodesV1.Expired)]);
 
     private async Task<SalesQuoteResponse> UpdateQuoteAsync(Scope scope, string? permission, SalesDraftWriteEnvelope envelope, string requestHash,
         string commandName, Guid quoteId, Action<SalesQuote, DateTimeOffset> mutate, SalesDraftStateAudit audit,
@@ -468,8 +489,8 @@ public sealed partial class SalesDraftService
     /// <summary>
     /// Fail-closed price visibility for a quote write: the actor must SEE quote prices (the order's narrow price read, the same
     /// measurement as the disclosure) or the write is refused with 403 — a caller who cannot see the prices must not overwrite
-    /// or erase them. Never recorded (an authority answer, like the price-write fence). It does not decide who may WRITE a
-    /// quote price (NEEDS-SINAN #5).
+    /// or erase them. Never recorded (an authority answer, like the price-write fence). Writing a quote price needs no more than
+    /// <c>sales.quotes.write</c> (SAT-D26).
     /// </summary>
     private async Task RequirePriceReadAsync(Scope scope, IReadOnlyList<SalesDraftFieldError> fields, CancellationToken cancellationToken)
     {

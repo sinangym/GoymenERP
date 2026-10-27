@@ -2484,7 +2484,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordSalesQuoteLossV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["RecordSalesQuoteLossV1:422"] = ["sales_quote_loss_reason_required", "sales_quote_loss_reason_too_long"],
             ["ConvertSalesQuoteV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["ConvertSalesQuoteV1:409"] = ["account_state", "concurrent_change", "sales_quote_request_not_approved", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
+            ["ConvertSalesQuoteV1:409"] = ["account_state", "concurrent_change", "sales_quote_expired", "sales_quote_request_not_approved", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["ConvertSalesQuoteV1:422"] = ["unsupported_currency", "unsupported_product", "unsupported_unit", "validation_failed"],
             ["GetShellCapabilitiesV1:400"] = ["company_context_invalid"],
             ["GetLoadingInstructionsV1:400"] = ["invalid_cursor", "validation_failed"],

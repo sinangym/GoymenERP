@@ -203,6 +203,30 @@ public sealed partial class SalesDraftServiceTests
         Assert.Single(world.Store.Envelopes);
     }
 
+    [Fact]
+    public async Task Quotes_an_expired_quote_is_not_converted_its_409_is_not_recorded_and_the_validity_day_still_converts()
+    {
+        // SAT-D24 interim (fail-closed): QuoteOf's validity date is 2026-10-18; until the manager-approval step exists, a later
+        // business date is refused before any owner is asked and nothing is recorded, so the same key may convert later.
+        var world = new World();
+        var id = (await world.Service().CreateQuoteAsync(QuoteOf(), Metadata("q-1"))).Detail.Quote.Id;
+        world.ResetOwnerCalls();
+        var validUntil = new DateOnly(2026, 10, 18);
+
+        var expired = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("1", validUntil.AddDays(1)), Metadata("q-convert")));
+
+        Assert.Equal((409, SalesQuoteProblemCodesV1.Expired, "validUntil"), (expired.Status, expired.Code, Assert.Single(expired.Errors).Field));
+        Assert.Equal("sales_quote_expired", SalesQuoteProblemCodesV1.Expired);
+        Assert.Equal((0, 0), (world.Accounts.Calls, world.Products.Calls));
+        Assert.Empty(world.Store.Envelopes);
+        Assert.Equal("Open", (await world.Service().GetQuoteDetailAsync(id)).Quote.State);
+
+        var converted = await world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("1", validUntil), Metadata("q-convert"));
+        Assert.Equal((false, validUntil), (converted.IsReplay, converted.Detail.Draft.BusinessDate));
+        Assert.Equal("Converted", (await world.Service().GetQuoteDetailAsync(id)).Quote.State);
+    }
+
     [Theory]
     [InlineData("quote-write")]
     [InlineData("draft-create")]
@@ -315,7 +339,7 @@ public sealed partial class SalesDraftServiceTests
             }
 
             var stored = drafts.StoreUnder(SalesQuoteCommands.ConvertV1, envelope, requestHash, build);
-            quote.Convert(expectedQuoteVersion, stored.Draft.Id, envelope.ActorId, DateTimeOffset.UtcNow);
+            quote.Convert(expectedQuoteVersion, stored.Draft.Id, envelope.ActorId, stored.Draft.Header.BusinessDate, DateTimeOffset.UtcNow);
             return stored;
         }
 

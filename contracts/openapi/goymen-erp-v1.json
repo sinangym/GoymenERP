@@ -44238,6 +44238,7 @@
             "x-erp-problem-codes": [
               "account_state",
               "concurrent_change",
+              "sales_quote_expired",
               "sales_quote_request_not_approved",
               "sales_state_conflict",
               "same_key_payload_mismatch",
