@@ -206,6 +206,11 @@ export interface HarnessConfig {
    * this harness last served for that draft — the owner's real zeros (a 404 when it served none).
    */
   readonly onLoadingProgress?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * SAT-D8 / API-10: GET `/sales/drafts/{id}/customer-returns`; default: no approved return on any line of the detail this
+   * harness last served for that draft — the owner's real zeros (a 404 when it served none).
+   */
+  readonly onCustomerReturns?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
@@ -319,6 +324,9 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/loading-progress$/.test(url)) {
           return config.onLoadingProgress?.(url, call.companyId) ?? nothingLoaded(details.get(url.replace(/\/loading-progress$/, '')))
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/customer-returns$/.test(url)) {
+          return config.onCustomerReturns?.(url, call.companyId) ?? nothingReturned(details.get(url.replace(/\/customer-returns$/, '')))
+        }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
         }
@@ -382,6 +390,18 @@ function nothingLoaded(detail: unknown): Response {
     lines: body.lines.map((line) => ({
       lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity,
       loadingInstructionLines: 0, instructed: '0', loaded: '0', shipped: '0', delivered: '0',
+    })),
+  })
+}
+
+/** SAT-D8 / API-10: the default returns — every line of the served detail, nothing approved as returned. */
+function nothingReturned(detail: unknown): Response {
+  const body = detail as { draft?: { version?: unknown }; lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[] } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  return json({
+    draftVersion: body.draft.version,
+    lines: body.lines.map((line) => ({
+      lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity, approvedReturned: '0',
     })),
   })
 }

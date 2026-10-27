@@ -160,7 +160,7 @@ alınır.
 | MOD-05 | Satın Alma / Üretim | Kaynak stratejisi bağlantısı; iptal ve zorla kapatma önizlemesi için bağlı kayıt okuma (bugün "kaynak yok") | CX | `ISalesOrderLinkedSupplyReadPortV1` | K3 |
 | MOD-06 | Lojistik | Müşteri iadesi portu Satış'ta tüketilmiyor; faturaya hazır sevk payı okuma | CX | mevcut `ISalesOrderCustomerReturnReadPortV1`, yeni `ISalesInvoiceableShipmentReadPortV1` | K3 |
 | MOD-07 | Belgeler | Sipariş için Belgeler sekmesi; sipariş PDF'i ve fatura dışa aktarım dosyası | CL + CX | mevcut `SalesDocumentOwnerLinkPort` | K2 |
-| MOD-08 | Kimlik | Satış sorumlusu için kullanıcı okuma portu | CX | `IUserDirectoryReadPortV1` | K2 |
+| MOD-08 | Kimlik | Satış sorumlusu için kullanıcı okuma portu | CX | `IUserDirectoryReadPortV1` | K2 · **port hazır:** Kimlik'te şirket kapsamlı, salt okunur `IUserDirectoryReadPortV1` (kimlikten ad çözme + şirketin aktif kişilerini arama); Satış, zenginleştirilmiş sipariş detayında onaya gönderen / karar veren / müşteri kabulünü kaydeden kimliklerinin yanına `userDisplays` ekler. Satış sorumlusu alanı (API-04) ve seçici bu portu kullanacak; kimin sorumlu olabileceği filtresi NEEDS-SINAN |
 | MOD-09 | Platform | Outbox/inbox (TEK-04) | CX | ERP-000F | K3 |
 | MOD-10 | Work | Talep, teklif, fatura onayları ve risk istisnası için onay kutusu adaptörleri | CX | mevcut Work native approval sözleşmesi | K2 |
 | MOD-11 | Muhasebe | Fatura vergi kontrolü (dispatch spec: muhasebe kontrol eder) | CX | Faz 6 sonrası | K3 |

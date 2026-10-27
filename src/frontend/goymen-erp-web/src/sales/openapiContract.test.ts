@@ -41,6 +41,7 @@ import {
   SALES_REFERENCE_PRODUCTS_PATH,
 } from './api'
 import { salesDraftLinePriceReferencesPath, salesDraftLinePricingPath } from './linePricing'
+import { validateOrderDraft, type OrderDraftFormValues, type OrderDraftOptions } from './orderDraftForm'
 import {
   REMAINDER_KIND,
   remainderChangesPath,
@@ -177,6 +178,38 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     }
     expectFits({ expectedVersion: '4' }, 'SalesDraftStateCommandRequest')
     expectFits({ expectedVersion: '4', reason: 'r' }, 'SalesDraftStateCommandRequest')
+  })
+
+  it('UI-14: the create body the form builds WITH line prices fits the create and line schemas the backend reads', () => {
+    const example = createRequest.lines[0]
+    const options: OrderDraftOptions = {
+      accounts: [{ partyId: createRequest.partyId, companyAccountId: createRequest.companyAccountId, label: 'Cari' }],
+      currencies: [{ currencyId: createRequest.currencyId, label: 'TRY' }],
+      products: [{
+        productId: example.productId, productVersion: example.expectedProductVersion, code: 'P', name: 'P', label: 'P',
+        orderUnits: [{ unitId: example.orderUnitId, code: 'kg', label: 'kg', profileId: example.orderUnitId, profileVersion: '1' }],
+      }],
+    }
+    const values: OrderDraftFormValues = {
+      partyId: createRequest.partyId, companyAccountId: createRequest.companyAccountId, businessDate: createRequest.businessDate,
+      currencyId: createRequest.currencyId, requestedDeliveryDate: '', note: '', deliveryAddressId: '', contactId: '',
+      lines: [{
+        lineId: example.lineId, productId: example.productId, quantityText: example.quantity, orderUnitId: example.orderUnitId,
+        requestedDeliveryDate: '', note: '', slices: null,
+        unitPriceText: '1250,5', priceUnitId: example.orderUnitId, discountPercentText: '12,5',
+      }],
+    }
+    const built = validateOrderDraft(values, options, null, true)
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expectFits(built.payload, 'CreateSalesOrderDraftRequest')
+    for (const line of [...built.payload.lines, ...createRequest.lines]) expectFits(line, 'SalesOrderDraftLineRequest')
+    // The three price members are declared as nullable decimal TEXT and a uuid — never a JSON number.
+    const line = schema('SalesOrderDraftLineRequest').properties as Record<string, { readonly type?: readonly string[]; readonly format?: string }>
+    expect(line.unitPrice.type).toEqual(['null', 'string'])
+    expect(line.discountPercent.type).toEqual(['null', 'string'])
+    expect([line.priceUnitId.type, line.priceUnitId.format]).toEqual([['null', 'string'], 'uuid'])
+    expect(built.payload.lines[0]).toMatchObject({ unitPrice: '1250.5', priceUnitId: example.orderUnitId, discountPercent: '12.5' })
   })
 
   it('pins every example the component tests decode to the schema the server answers with', () => {

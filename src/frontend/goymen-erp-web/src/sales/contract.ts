@@ -34,6 +34,8 @@ export const salesDraftDeliverySchedulePath = (id: string) => `${salesDraftDetai
 export const salesDraftDeliverySchedulesPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedules`
 /** AT-024: per line the delivered and remaining quantity, read from the delivery owner's records (GET). */
 export const salesDraftDeliveryProgressPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-progress`
+/** SAT-D8 / API-10: per line the approved customer-return total, read from the return owner (Logistics) (GET). */
+export const salesDraftCustomerReturnsPath = (id: string) => `${salesDraftDetailPath(id)}/customer-returns`
 /** DEC-SAL-005: the impact preview of cancelling an approved order (GET, the cancel control's name). */
 export const salesDraftCancellationImpactPath = (id: string) => `${salesDraftDetailPath(id)}/cancellation-impact`
 /** DEC-SAL-005 / AT-007: the cancel command (POST) and the recorded cancellation (GET, the draft read). */
@@ -242,6 +244,25 @@ export interface LoadingProgressLine {
 export interface LoadingProgress {
   readonly draftVersion: string
   readonly lines: readonly LoadingProgressLine[]
+}
+
+/**
+ * SAT-D8 / API-10 (`SalesDraftLineCustomerReturnV1`): one line's APPROVED customer-return total as exact decimal text in
+ * the line's order unit, beside the line's `ordered` quantity. Logistics' port gives only this total per line — no return
+ * number, date or status. Facts only: no credit note, invoice, stock or remaining-quantity effect is derived.
+ */
+export interface CustomerReturnLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly orderUnitId: string
+  readonly ordered: string
+  readonly approvedReturned: string
+}
+
+/** SAT-D8 / API-10 (`SalesOrderDraftCustomerReturnsResponse`): every line of the order once, read against `draftVersion`. */
+export interface CustomerReturns {
+  readonly draftVersion: string
+  readonly lines: readonly CustomerReturnLine[]
 }
 
 /** The detail a loading-progress answer must describe: its version and each line's identity, unit and quantity text. */
@@ -952,8 +973,21 @@ export interface DraftPageWithParty {
   readonly nextCursor: string | null
 }
 
+/**
+ * MOD-08: one person the detail already identifies by id (its approval submitter / decider, its customer acceptance
+ * recorder), as the Identity user directory shows them in the record's company. `isActiveInCompany` is false for a
+ * former member, whose name still stands for the fact they recorded. An id without an entry keeps its raw text.
+ */
+export interface UserDisplay {
+  readonly userId: string
+  readonly displayName: string
+  readonly isActiveInCompany: boolean
+}
+
 export interface DraftDetailWithParty extends DraftDetail {
   readonly partyDisplay: PartyDisplay
+  /** MOD-08 (additive): empty when the server names nobody, or answers without the member. */
+  readonly userDisplays: readonly UserDisplay[]
 }
 
 const PARTY_DISPLAY_KEYS = ['partyId', 'code', 'legalName', 'tradeName'] as const
@@ -1008,17 +1042,62 @@ export function decodeDraftPageWithParty(value: unknown): DraftPageWithParty | n
   return { items, nextCursor: o.nextCursor }
 }
 
+const USER_DISPLAY_KEYS = ['userId', 'displayName', 'isActiveInCompany'] as const
+
+/** The actor ids the detail itself carries; a display may name only these. */
+function detailActorIds(detail: DraftDetail): Set<string> {
+  const ids = new Set<string>()
+  for (const id of [detail.approval.submittedBy, detail.approval.decidedBy, detail.customerAcceptance.acceptedBy]) {
+    if (id !== null) ids.add(id.toLowerCase())
+  }
+  return ids
+}
+
+/** Record-bound: each entry names one of the detail's own actor ids, once; a blank name is not a display. */
+function decodeUserDisplays(value: unknown, detail: DraftDetail): UserDisplay[] | null {
+  if (!Array.isArray(value)) return null
+  const allowed = detailActorIds(detail)
+  const seen = new Set<string>()
+  const items: UserDisplay[] = []
+  for (const entry of value) {
+    const o = exact(entry, USER_DISPLAY_KEYS)
+    if (
+      o === null ||
+      !isReferenceId(o.userId) ||
+      !allowed.has(o.userId.toLowerCase()) ||
+      seen.has(o.userId.toLowerCase()) ||
+      !isFilledText(o.displayName, 200) ||
+      typeof o.isActiveInCompany !== 'boolean'
+    ) {
+      return null
+    }
+    seen.add(o.userId.toLowerCase())
+    items.push({ userId: o.userId, displayName: o.displayName, isActiveInCompany: o.isActiveInCompany })
+  }
+  return items
+}
+
+/** The directory's entry for an actor id the detail carries, or null (the raw id is then shown as it is). */
+export function userDisplayFor(displays: readonly UserDisplay[], actorId: string | null): UserDisplay | null {
+  if (actorId === null) return null
+  const key = actorId.toLowerCase()
+  return displays.find((display) => display.userId.toLowerCase() === key) ?? null
+}
+
 /**
  * An enriched detail: the legacy detail rules unchanged (its `draft` is the legacy summary and must not carry a display
- * of its own), plus the top-level record-bound party display.
+ * of its own), plus the top-level record-bound party display and (MOD-08, additive) the record-bound user displays.
  */
 export function decodeDraftDetailWithParty(value: unknown, expectedId: string | null): DraftDetailWithParty | null {
   const split = withoutPartyDisplay(value)
   if (split === null) return null
-  const detail = decodeDraftDetail(split.rest, expectedId)
+  const { userDisplays: rawUserDisplays, ...rest } = split.rest
+  const detail = decodeDraftDetail(rest, expectedId)
   if (detail === null) return null
   const partyDisplay = decodePartyDisplay(split.partyDisplay, detail.draft.partyId)
-  return partyDisplay === null ? null : { ...detail, partyDisplay }
+  if (partyDisplay === null) return null
+  const userDisplays = Object.hasOwn(split.rest, 'userDisplays') ? decodeUserDisplays(rawUserDisplays, detail) : []
+  return userDisplays === null ? null : { ...detail, partyDisplay, userDisplays }
 }
 
 /* ── S-04 approved commercial revision history ───────────────────────────── */
@@ -1265,6 +1344,49 @@ export function decodeLoadingProgress(value: unknown, bound: LoadingProgressBind
   }
   return { draftVersion: response.draftVersion, lines }
 }
+
+/**
+ * SAT-D8 / API-10: `SalesOrderDraftCustomerReturnsResponse`, read exactly — the two members `draftVersion` and `lines`,
+ * and per line exactly `lineId`, `lineNo`, `orderUnitId`, `ordered`, `approvedReturned` (no member more or less) — and
+ * only as the returns OF `detail`: the same version, and every line of that detail exactly once with its own number,
+ * order unit and quantity text (a missing, extra, repeated or foreign line refuses the whole answer). `lineNo` is a JSON
+ * integer (the Sales serializer writes numbers strictly). Decimal text stays text, never parsed into a JS number;
+ * `ordered` is positive and `approvedReturned` may be zero (the owner answered: nothing approved). No relation between
+ * the two is assumed — whether more may be returned than ordered is not this screen's rule. A body that does not fit is
+ * not shown as quantities.
+ */
+export function decodeCustomerReturns(value: unknown, detail: DraftDetail): CustomerReturns | null {
+  const response = exact(value, ['draftVersion', 'lines'])
+  if (
+    response === null || typeof response.draftVersion !== 'string' || response.draftVersion !== detail.draft.version ||
+    !Array.isArray(response.lines) || response.lines.length !== detail.lines.length
+  ) return null
+  const answered = new Map<string, CustomerReturnLine>()
+  for (const entry of response.lines) {
+    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'approvedReturned'])
+    if (
+      o === null || !isRevisionId(o.lineId) || answered.has(o.lineId.toLowerCase()) ||
+      !isPositiveInt(o.lineNo, INT32_MAX) || !isRevisionId(o.orderUnitId) ||
+      !isRevisionDecimal(o.ordered, true) || !isRevisionDecimal(o.approvedReturned, false)
+    ) return null
+    answered.set(o.lineId.toLowerCase(), {
+      lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered, approvedReturned: o.approvedReturned,
+    })
+  }
+  const lines: CustomerReturnLine[] = []
+  for (const line of detail.lines) {
+    const match = answered.get(line.lineId.toLowerCase())
+    if (
+      match === undefined || match.lineNo !== line.lineNo ||
+      match.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || match.ordered !== line.quantity
+    ) return null
+    lines.push(match)
+  }
+  return { draftVersion: response.draftVersion, lines }
+}
+
+/** Whether a decoded decimal text is above zero — a text test, never a JS number (the text is already exact). */
+export const isNonZeroDecimalText = (text: string): boolean => /[1-9]/.test(text)
 
 /* ── DEC-SAL-005 / AT-007: the cancellation of an approved order ────────────── */
 

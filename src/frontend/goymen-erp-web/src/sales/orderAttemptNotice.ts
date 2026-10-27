@@ -36,9 +36,10 @@ const FAILURE_MESSAGE: Record<OrderAttemptFailure, string> = {
  * The class says that nothing was saved; the stable code, when this build knows it,
  * says why. Both are shown — a code never replaces the verdict.
  */
-function refusalNotice(failure: OrderAttemptFailure, code: string | null): AttemptNotice {
+function refusalNotice(failure: OrderAttemptFailure, code: string | null, priced: boolean): AttemptNotice {
   const reason = problemCodeText(code)
-  const message = FAILURE_MESSAGE[failure]
+  // UI-14: a send carrying a price is also fenced by the price-write permission, and the 403 does not say which one.
+  const message = failure === 'forbidden' && priced ? ORDER_DRAFT_TEXT.attempt.forbiddenPriced : FAILURE_MESSAGE[failure]
   return {
     tone: 'error',
     live: 'assertive',
@@ -54,6 +55,8 @@ function refusalNotice(failure: OrderAttemptFailure, code: string | null): Attem
 export function attemptNotice<P, R>(
   state: OrderAttemptState<P, R>,
   blockedChange = false,
+  /** UI-14: the refused send carried a line price (so the separate price-write fence applied too). */
+  priced = false,
 ): AttemptNotice | null {
   const text = ORDER_DRAFT_TEXT.attempt
   switch (state.phase) {
@@ -80,7 +83,7 @@ export function attemptNotice<P, R>(
           actions: ['retry', 'abandon'],
         }
       }
-      return refusalNotice(state.failure, state.problem?.code ?? null)
+      return refusalNotice(state.failure, state.problem?.code ?? null, priced)
     case 'completed':
       return { tone: 'success', live: 'polite', message: text.completed, actions: [] }
     default:

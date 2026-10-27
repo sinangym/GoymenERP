@@ -1578,6 +1578,15 @@ public static partial class SalesEndpoints
             enrichedDetailSchema.Properties["customerAcceptance"] = new OpenApiSchemaReference(
                 nameof(SalesDraftCustomerAcceptanceV1), document, externalResource: null);
             enrichedDetailSchema.Properties!["partyDisplay"] = display;
+            // MOD-08: the Identity owner's display names of the people the detail already identifies by id.
+            var userDisplaySchema = await context.GetOrCreateSchemaAsync(
+                typeof(SalesUserDisplayV1), cancellationToken: cancellationToken);
+            components.Schemas[nameof(SalesUserDisplayV1)] = userDisplaySchema;
+            enrichedDetailSchema.Properties["userDisplays"] = new OpenApiSchema
+            {
+                Type = JsonSchemaType.Array,
+                Items = new OpenApiSchemaReference(nameof(SalesUserDisplayV1), document, externalResource: null),
+            };
         }
         var response = (OpenApiResponse)operation.Responses!["200"];
         var content = (OpenApiMediaType)response.Content!["application/json"];

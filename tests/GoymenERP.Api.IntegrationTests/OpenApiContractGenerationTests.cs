@@ -3814,7 +3814,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("isOwnDraft", "type:boolean"),
                     ("isOwnDecisionRestricted", "type:boolean")),
                 ["SalesOrderDraftReadDetailViewV1"] = ObjectSchema(
-                    ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval", "customerAcceptance", "isOwnDraft", "isOwnDecisionRestricted", "partyDisplay"],
+                    ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval", "customerAcceptance", "isOwnDraft", "isOwnDecisionRestricted", "partyDisplay", "userDisplays"],
                     ("draft", "ref:SalesOrderDraftSummaryView"),
                     ("requestedDeliveryDate", "type:null|string;format:date"),
                     ("note", "type:null|string"),
@@ -3829,7 +3829,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("customerAcceptance", "ref:SalesDraftCustomerAcceptanceV1"),
                     ("isOwnDraft", "type:boolean"),
                     ("isOwnDecisionRestricted", "type:boolean"),
-                    ("partyDisplay", "ref:SalesPartyDisplayV1")),
+                    ("partyDisplay", "ref:SalesPartyDisplayV1"),
+                    ("userDisplays", "type:array;items:ref:SalesUserDisplayV1")),
                 ["SalesOrderDraftLineDetail"] = ObjectSchema(
                     ["lineId", "lineNo", "productId", "productVersion", "productCode", "productName", "orderUnitId", "quantity", "unitPrice", "priceUnitId", "requestedDeliveryDate", "note", "requestedDeliverySlices", "discountPercent", "priceDisclosure"],
                     ("lineId", "type:string;format:uuid"),
@@ -3955,6 +3956,12 @@ public sealed partial class OpenApiContractGenerationTests
                     ("code", "type:string"),
                     ("legalName", "type:string"),
                     ("tradeName", "type:null|string")),
+                // MOD-08: one person named by the enriched detail, as the Identity user directory shows them.
+                ["SalesUserDisplayV1"] = ObjectSchema(
+                    ["userId", "displayName", "isActiveInCompany"],
+                    ("userId", "type:string;format:uuid"),
+                    ("displayName", "type:string"),
+                    ("isActiveInCompany", "type:boolean")),
                 ["SalesOrderDraftProductSnapshotViewV1"] = ObjectSchema(
                     ["productId", "productVersion", "productCode", "productName", "orderUnitId", "orderUnitCode"],
                     ("productId", "type:string;format:uuid"),
