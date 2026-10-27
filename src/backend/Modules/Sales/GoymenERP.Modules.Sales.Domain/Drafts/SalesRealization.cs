@@ -66,14 +66,11 @@ public enum LineRealizationState
 
     /// <summary>
     /// The shipped total is within the tolerance of the ordered quantity, over or under (SAT-D5: "Tamamlandı"), or over it in
-    /// the WARN band (SAT-D24: "Tamamlandı" with the warning — the line's band stays <see cref="DeliveryToleranceBand.Warn"/>).
+    /// the WARN band (SAT-D29: "Tamamlandı" with the warning — the line's band stays <see cref="DeliveryToleranceBand.Warn"/>).
     /// </summary>
     Completed = 3,
 
-    /// <summary>
-    /// Shipped ABOVE the ordered quantity in the approval or block band (over-delivery is measured on every shipment). Whether an
-    /// approval-band over-delivery becomes "Tamamlandı" after its approval is not decided (no approval record exists).
-    /// </summary>
+    /// <summary>Shipped ABOVE the ordered quantity in the block band (over-delivery is measured on every shipment).</summary>
     OutsideTolerance = 4,
 
     /// <summary>
@@ -81,14 +78,24 @@ public enum LineRealizationState
     /// tolerance: the rest is the closed ("iptal edilen") remainder, not a completion.
     /// </summary>
     ClosedWithRemainder = 5,
+
+    /// <summary>
+    /// SAT-D30: shipped ABOVE the ordered quantity in the approval band and no over-delivery approval exists ("onay bekliyor").
+    /// Once approved the line is <see cref="Completed"/> with <see cref="LineRealization.ApprovedOverDelivery"/>.
+    /// </summary>
+    AwaitingApproval = 6,
 }
 
-/// <summary>One line's realization: its state, the direction and exact size of the deviation, and the band (null when not measured).</summary>
+/// <summary>
+/// One line's realization: its state, the direction and exact size of the deviation, the band (null when not measured) and
+/// whether an approval-band over-delivery was approved (SAT-D30: "Tamamlandı + onaylı fazla teslim").
+/// </summary>
 public sealed record LineRealization(
     LineRealizationState State,
     DeliveryDeviationDirection Direction,
     Quantity Deviation,
-    DeliveryToleranceBand? Band);
+    DeliveryToleranceBand? Band,
+    bool ApprovedOverDelivery = false);
 
 /// <summary>
 /// The deterministic backend calculator of the realization axis (SAT-D5, SAT-D15, SAT-D16, SAT-D17; DEC-SAL-001). UI and
@@ -99,15 +106,20 @@ public sealed record LineRealization(
 /// <item><b>Exact</b>: the band is decided by comparing deviation × 100 with percent × ordered in <see cref="decimal"/> — no
 /// division, no rounding, no floating point. A zero deviation is no deviation and always <see cref="DeliveryToleranceBand.Within"/>.</item>
 /// <item><b>Over-delivery</b> is measured on every shipment: within → Completed; WARN band → Completed with the Warn band as its
-/// warning (SAT-D24, Sinan 2026-10-27); approval or block band → OutsideTolerance.</item>
+/// warning (SAT-D29, Sinan 2026-10-27); APPROVAL band → AwaitingApproval until an over-delivery approval exists, then Completed
+/// with <see cref="LineRealization.ApprovedOverDelivery"/> (SAT-D30); block band → OutsideTolerance.</item>
 /// <item><b>Under-delivery</b> on an open line: within → Completed (SAT-D5); otherwise Partial and NOT banded — the open
 /// remainder is not a shortfall (SAT-D16). On a force-closed order the line is closed, so the shortfall is measured: within →
-/// Completed (SAT-D17), otherwise ClosedWithRemainder with its band.</item>
+/// Completed (SAT-D17); WARN band → Completed with the warning (SAT-D31, as SAT-D17's normal closing); beyond →
+/// ClosedWithRemainder with its band.</item>
 /// </list>
 /// </summary>
 public static class SalesRealizationCalculator
 {
-    /// <summary>SAT-D24: a line counted "Tamamlandı" in spite of a warn-band deviation — the warning the axis shows.</summary>
+    /// <summary>
+    /// SAT-D29 / SAT-D31: a line counted "Tamamlandı" in spite of a warn-band deviation (over-delivery, or a force-closed
+    /// shortfall) — the warning the axis shows.
+    /// </summary>
     public static bool IsCompletedWithWarning(LineRealization line)
     {
         ArgumentNullException.ThrowIfNull(line);
@@ -121,8 +133,11 @@ public static class SalesRealizationCalculator
     /// The line's realization. <paramref name="ordered"/> must be positive and in the same unit as <paramref name="shipped"/>;
     /// <paramref name="tolerance"/> is required whenever <see cref="NeedsTolerance"/> is true. An arithmetic overflow of a
     /// malformed input escapes as <see cref="OverflowException"/>; the caller shows no state rather than a wrong one.
+    /// <paramref name="overDeliveryApproved"/> is whether an over-delivery approval is recorded for the line (SAT-D30); no such
+    /// record exists yet, so callers pass false and an approval-band over-delivery stays AwaitingApproval (fail-closed).
     /// </summary>
-    public static LineRealization Line(Quantity ordered, Quantity shipped, bool lineClosed, SalesDeliveryTolerance? tolerance)
+    public static LineRealization Line(Quantity ordered, Quantity shipped, bool lineClosed, SalesDeliveryTolerance? tolerance,
+        bool overDeliveryApproved = false)
     {
         ordered.RequireSameUnit(shipped);
         if (ordered.IsZero)
@@ -151,10 +166,17 @@ public static class SalesRealizationCalculator
 
         return direction switch
         {
-            // SAT-D24: an over-delivery in the warn band is "Tamamlandı" with the warning; the band carries the warning.
+            // SAT-D29: an over-delivery in the warn band is "Tamamlandı" with the warning; the band carries the warning.
             DeliveryDeviationDirection.Over when band == DeliveryToleranceBand.Warn =>
                 new LineRealization(LineRealizationState.Completed, direction, deviation, band),
+            // SAT-D30: an approval-band over-delivery awaits its approval; approved, it is "Tamamlandı + onaylı fazla teslim".
+            DeliveryDeviationDirection.Over when band == DeliveryToleranceBand.Approval => overDeliveryApproved
+                ? new LineRealization(LineRealizationState.Completed, direction, deviation, band, ApprovedOverDelivery: true)
+                : new LineRealization(LineRealizationState.AwaitingApproval, direction, deviation, band),
             DeliveryDeviationDirection.Over => new LineRealization(LineRealizationState.OutsideTolerance, direction, deviation, band),
+            // SAT-D31: a force-closed shortfall in the warn band closes as SAT-D17's normal closing does — "Tamamlandı" + warning.
+            _ when lineClosed && band == DeliveryToleranceBand.Warn =>
+                new LineRealization(LineRealizationState.Completed, direction, deviation, band),
             _ when lineClosed => new LineRealization(LineRealizationState.ClosedWithRemainder, direction, deviation, band),
             // SAT-D16: the open remainder is not a shortfall, so an open under-delivered line is not banded.
             _ => new LineRealization(LineRealizationState.Partial, direction, deviation, null),
@@ -189,7 +211,8 @@ public static class SalesRealizationCalculator
     }
 
     /// <summary>
-    /// The axis over every line of the order: any OutsideTolerance → OutsideTolerance; all Completed → Completed; all
+    /// The axis over every line of the order: any OutsideTolerance → OutsideTolerance; else any AwaitingApproval →
+    /// AwaitingApproval (SAT-D30); all Completed → Completed; all
     /// NotStarted → NotStarted; all Completed or ClosedWithRemainder → ClosedWithRemainder; otherwise Partial. An order
     /// without lines (never stored) is NotStarted.
     /// </summary>
@@ -199,6 +222,11 @@ public static class SalesRealizationCalculator
         if (lines.Contains(LineRealizationState.OutsideTolerance))
         {
             return LineRealizationState.OutsideTolerance;
+        }
+
+        if (lines.Contains(LineRealizationState.AwaitingApproval))
+        {
+            return LineRealizationState.AwaitingApproval;
         }
 
         if (lines.Count == 0 || lines.All(state => state == LineRealizationState.NotStarted))

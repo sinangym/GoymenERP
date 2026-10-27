@@ -84025,7 +84025,9 @@
           "deviation",
           "band",
           "warning",
-          "closedRemainder"
+          "approvedOverDelivery",
+          "closedRemainder",
+          "approvedReturned"
         ],
         "type": "object",
         "properties": {
@@ -84084,7 +84086,16 @@
           "warning": {
             "type": "boolean"
           },
+          "approvedOverDelivery": {
+            "type": "boolean"
+          },
           "closedRemainder": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "approvedReturned": {
             "type": [
               "null",
               "string"
@@ -85821,7 +85832,8 @@
           "source",
           "realization",
           "invoicing",
-          "financialClosure"
+          "financialClosure",
+          "readyToClose"
         ],
         "type": "object",
         "properties": {
@@ -85851,6 +85863,9 @@
           },
           "financialClosure": {
             "$ref": "#/components/schemas/SalesDraftStatusAxisV1"
+          },
+          "readyToClose": {
+            "type": "boolean"
           }
         }
       },

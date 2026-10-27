@@ -26,6 +26,9 @@ public sealed partial class SalesDraftServiceTests
         world.Deliveries = deliveries;
         var policies = new FakeSalesPolicies(Ladder123());
         world.SalesPolicies = policies;
+        // SAT-D33: an approved return of 0.5 kg on line 1 is shown beside the shipped total and never netted against it.
+        var returns = new FakeCustomerReturns(order => new(Company, order, [new(first, KgUnit, 0.5m)]));
+        world.CustomerReturns = returns;
         var attempts = world.Store.Attempts;
         var envelopes = world.Store.Envelopes.Count;
         var transitions = world.Store.Transitions.Count;
@@ -34,7 +37,8 @@ public sealed partial class SalesDraftServiceTests
         var status = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
 
         Assert.Equal(("5", SalesDraftApiV1.Rev0), (status.DraftVersion, status.Revision));
-        Assert.Equal(("Draft", "Approved"), (status.Lifecycle.State, status.InternalApproval.State));
+        // SAT-D32: an approved order is "Aktif"; not ready to close while the realization and the acceptance are open.
+        Assert.Equal(("Active", "Approved", false), (status.Lifecycle.State, status.InternalApproval.State, status.ReadyToClose));
         // A new order requires the customer acceptance (Q9) and none is recorded yet.
         Assert.Equal(new SalesDraftCustomerAcceptanceAxisV1("Pending", null), status.CustomerAcceptance);
         // Owner modules that do not exist on main: "no source", never complete or zero.
@@ -45,15 +49,16 @@ public sealed partial class SalesDraftServiceTests
             status.Realization.Tolerance);
         Assert.Equal(
             [
-                new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1", "Completed", "None", "0", "Within", false, null),
-                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "1", "0.5", "Partial", "Under", "1.25", null, false, null),
+                new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1", "Completed", "None", "0", "Within", false, false, null, "0.5"),
+                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "1", "0.5", "Partial", "Under", "1.25", null, false, false, null, "0"),
             ],
             status.Realization.Lines);
         // The tolerance is asked once, for the order's business date; each owner once, for this draft only.
         Assert.Equal([Day], policies.Asked);
         Assert.Equal([approved.Draft.Id], deliveries.Asked);
-        // The draft read before, after the draft, after the delivery owner and after Settings.
-        Assert.Equal([ReadPermission, ReadPermission, ReadPermission, ReadPermission], world.Authority.Measured);
+        Assert.Equal([approved.Draft.Id], returns.Asked);
+        // The draft read before, after the draft, after the delivery owner, after the return owner and after Settings.
+        Assert.Equal([ReadPermission, ReadPermission, ReadPermission, ReadPermission, ReadPermission], world.Authority.Measured);
         // Read-only: no attempt, envelope, transition or refusal anywhere in Sales.
         Assert.Equal((attempts, envelopes, transitions), (world.Store.Attempts, world.Store.Envelopes.Count, world.Store.Transitions.Count));
         Assert.Empty(world.Store.Refusals);
@@ -61,7 +66,7 @@ public sealed partial class SalesDraftServiceTests
         // The rest of line 2 shipped within the 1 % of SAT-D5 (2.24 of 2.25 is 0.44 % short): the whole order is complete.
         deliveries.Answer = order => new(Company, order, [new(first, KgUnit, 1.25m, 1.25m), new(second, KgUnit, 2.24m, 2.24m)]);
         var reopened = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
-        Assert.Equal("Completed", reopened.Realization.State);
+        Assert.Equal(("Completed", false), (reopened.Realization.State, reopened.ReadyToClose));
         Assert.Equal(("Completed", "Under", "0.01", "Within"), (reopened.Realization.Lines[1].State, reopened.Realization.Lines[1].Direction,
             reopened.Realization.Lines[1].Deviation, reopened.Realization.Lines[1].Band));
 
@@ -69,12 +74,21 @@ public sealed partial class SalesDraftServiceTests
         await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("5"), Metadata("k-accept"));
         var accepted = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
         Assert.Equal(new SalesDraftCustomerAcceptanceAxisV1("Accepted", SalesDraftApiV1.Rev0), accepted.CustomerAcceptance);
-        Assert.Equal(("6", "Draft", "Approved", "Completed"), (accepted.DraftVersion, accepted.Lifecycle.State,
+        Assert.Equal(("6", "Active", "Approved", "Completed"), (accepted.DraftVersion, accepted.Lifecycle.State,
             accepted.InternalApproval.State, accepted.Realization.State));
+        // SAT-D32: every axis that has a source is complete — "kapanmaya hazır"; the order is NOT closed (no command, no write).
+        Assert.True(accepted.ReadyToClose);
+        Assert.Equal("Draft", (await world.Service().GetDraftDetailAsync(approved.Draft.Id)).Draft.State);
+
+        // An unreadable return owner shows no returned number and does not take the realization down.
+        returns.Answer = _ => throw new InvalidOperationException("SENTETIK return owner outage");
+        var withoutReturns = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
+        Assert.Equal(("Completed", (string?)null, (string?)null), (withoutReturns.Realization.State,
+            withoutReturns.Realization.Lines[0].ApprovedReturned, withoutReturns.Realization.Lines[1].ApprovedReturned));
     }
 
     [Fact]
-    public async Task Over_delivery_in_the_warn_band_is_completed_with_the_sat_d24_warning_on_the_line_and_the_axis()
+    public async Task Over_delivery_in_the_warn_band_is_completed_with_the_sat_d29_warning_on_the_line_and_the_axis()
     {
         var world = new World();
         var approved = await ApprovedTwoLineAsync(world);
@@ -93,7 +107,7 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task Over_delivery_in_the_approval_band_is_outside_tolerance_and_never_folded_into_completed()
+    public async Task Over_delivery_in_the_approval_band_awaits_approval_and_is_never_folded_into_completed()
     {
         var world = new World();
         var approved = await ApprovedTwoLineAsync(world);
@@ -105,10 +119,11 @@ public sealed partial class SalesDraftServiceTests
 
         var status = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
 
-        Assert.Equal(("OutsideTolerance", false), (status.Realization.State, status.Realization.Warning));
+        // SAT-D30: no over-delivery approval record exists yet, so the line stays "onay bekliyor" (fail-closed).
+        Assert.Equal(("AwaitingApproval", false, false), (status.Realization.State, status.Realization.Warning, status.ReadyToClose));
         Assert.Equal(
-            [("Completed", "Over", "0.012", "Within"), ("OutsideTolerance", "Over", "0.045", "Approval")],
-            status.Realization.Lines.Select(line => (line.State, line.Direction!, line.Deviation!, line.Band!)));
+            [("Completed", "Over", "0.012", "Within", false), ("AwaitingApproval", "Over", "0.045", "Approval", false)],
+            status.Realization.Lines.Select(line => (line.State, line.Direction!, line.Deviation!, line.Band!, line.ApprovedOverDelivery)));
     }
 
     [Fact]
@@ -123,7 +138,8 @@ public sealed partial class SalesDraftServiceTests
 
         var status = await world.Service().GetDraftStatusAsync(created.Draft.Id);
 
-        Assert.Equal(("Draft", "Preparing", "NotStarted"), (status.Lifecycle.State, status.InternalApproval.State, status.Realization.State));
+        Assert.Equal(("Draft", "Preparing", "NotStarted", false), (status.Lifecycle.State, status.InternalApproval.State,
+            status.Realization.State, status.ReadyToClose));
         Assert.Null(status.Realization.Tolerance);
         Assert.All(status.Realization.Lines, line => Assert.Equal(("NotStarted", "0", "0", "Under", (string?)null),
             (line.State, line.Shipped, line.Delivered, line.Direction!, line.Band)));
@@ -170,12 +186,13 @@ public sealed partial class SalesDraftServiceTests
         // The facts stay visible; a line that needs the tolerance carries no judged state, one with nothing shipped is not started.
         Assert.Equal(
             [
-                new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1.25", "PolicyUnavailable", null, null, null, false, null),
-                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "0", "0", "NotStarted", null, null, null, false, null),
+                new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1.25", "PolicyUnavailable", null, null, null, false, false, null, null),
+                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "0", "0", "NotStarted", null, null, null, false, false, null, null),
             ],
             status.Realization.Lines);
         // The other axes are still answered (the realization's policy does not take them down).
-        Assert.Equal(("Draft", "Approved", "NoSource"), (status.Lifecycle.State, status.InternalApproval.State, status.Invoicing.State));
+        Assert.Equal(("Active", "Approved", "NoSource", false), (status.Lifecycle.State, status.InternalApproval.State,
+            status.Invoicing.State, status.ReadyToClose));
     }
 
     public static TheoryData<string> UnreadableDeliveries => new()
@@ -213,7 +230,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.All(status.Realization.Lines, item => Assert.Equal(("Unreadable", (string?)null, (string?)null, (string?)null),
             (item.State, item.Shipped, item.Delivered, item.Band)));
         Assert.Empty(policies.Asked);
-        Assert.Equal(("Draft", "Approved"), (status.Lifecycle.State, status.InternalApproval.State));
+        Assert.Equal(("Active", "Approved", false), (status.Lifecycle.State, status.InternalApproval.State, status.ReadyToClose));
     }
 
     [Fact]
@@ -247,7 +264,7 @@ public sealed partial class SalesDraftServiceTests
         var approved = await ApprovedTwoLineAsync(world);
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(approved.Lines[0].LineId, KgUnit, 1m, 1m)]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
-        // Granted before and after the draft read; lost after the delivery owner (2) or after Settings (3).
+        // Granted before and after the draft read; lost after the delivery owner (2) or after Settings (3) (no return owner).
         world.Authority.LostLater = (ReadPermission, world.Authority.Calls + lostAt);
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftStatusAsync(approved.Draft.Id));
@@ -274,8 +291,56 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("Closed", "Approved", "ClosedWithRemainder"), (status.Lifecycle.State, status.InternalApproval.State,
             status.Realization.State));
         // 1 of 1.25 kg is 20 % short: measured because the line is closed (SAT-D16), block band, the rest is the closed remainder.
-        Assert.Equal(new SalesDraftLineRealizationV1(line, 1, KgUnit, "1.25", "1", "1", "ClosedWithRemainder", "Under", "0.25", "Block", false, "0.25"),
-            Assert.Single(status.Realization.Lines));
+        Assert.Equal(new SalesDraftLineRealizationV1(line, 1, KgUnit, "1.25", "1", "1", "ClosedWithRemainder", "Under", "0.25", "Block", false, false,
+            "0.25", null), Assert.Single(status.Realization.Lines));
+        // SAT-D32: a closed order is never "ready to close" again.
+        Assert.False(status.ReadyToClose);
+    }
+
+    [Fact]
+    public async Task A_force_closed_shortfall_in_the_warn_band_is_completed_with_the_warning_like_a_normal_closing()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var line = approved.Lines[0].LineId;
+        var (_, loadings) = Owners(world);
+        loadings.Answer = order => new(Company, order, [new SalesOrderLineLoadingV1(line, KgUnit, 1, 1.235m, 1.235m, 1.235m, 1.235m)]);
+        var preview = await world.Service().GetForceCloseImpactAsync(approved.Draft.Id);
+        await world.Service().ForceCloseDraftAsync(approved.Draft.Id,
+            new SalesDraftForceCloseRequest("4", "SENTETIK kalan istenmiyor", preview.ImpactToken), Metadata("k-close"));
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(line, KgUnit, 1.235m, 1.235m)]));
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+
+        var status = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
+
+        // 1.235 of 1.25 kg is 1.2 % short: SAT-D31 — "Tamamlandı" with the warning, the 0.015 kg rest is the closed remainder.
+        Assert.Equal(("Closed", "Completed", true), (status.Lifecycle.State, status.Realization.State, status.Realization.Warning));
+        Assert.Equal(new SalesDraftLineRealizationV1(line, 1, KgUnit, "1.25", "1.235", "1.235", "Completed", "Under", "0.015", "Warn", true, false,
+            "0.015", null), Assert.Single(status.Realization.Lines));
+        Assert.False(status.ReadyToClose);
+    }
+
+    [Fact]
+    public async Task Lifecycle_is_active_once_approved_and_stays_active_while_a_revision_awaits_re_approval()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail.Draft;
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        Assert.Equal("Draft", (await world.Service().GetDraftStatusAsync(created.Id)).Lifecycle.State);
+        await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-submit"));
+        Assert.Equal("Draft", (await world.Service().GetDraftStatusAsync(created.Id)).Lifecycle.State);
+        await world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-approve"));
+        Assert.Equal("Active", (await world.Service().GetDraftStatusAsync(created.Id)).Lifecycle.State);
+
+        // SAT-D32: a quantity revision archives the approved Rev.0; Rev.1 awaits re-approval, the order stays "Aktif" — but it is
+        // not ready to close while the internal approval is open.
+        Owners(world);
+        var line = (await world.Service().GetDraftDetailAsync(created.Id)).Lines[0].LineId;
+        await world.Service().ReviseQuantityAsync(created.Id,
+            new SalesDraftQuantityRevisionRequest("4", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity"));
+        var revised = await world.Service().GetDraftStatusAsync(created.Id);
+        Assert.Equal(("Active", "Preparing", "Rev.1", false), (revised.Lifecycle.State, revised.InternalApproval.State, revised.Revision,
+            revised.ReadyToClose));
     }
 
     /// <summary>A two-line order (1.25 and 2.25 kg), submitted and approved: version 5.</summary>

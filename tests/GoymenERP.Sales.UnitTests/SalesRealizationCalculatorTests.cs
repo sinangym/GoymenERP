@@ -21,13 +21,14 @@ public sealed class SalesRealizationCalculatorTests
     {
         // ordered, shipped, closed → state, direction, deviation, band
         { "1000", "1000", false, "Completed", "None", "0", "Within" },
-        // Over-delivery is measured on every shipment; the warn band is "Tamamlandı" with its warning (SAT-D24).
+        // Over-delivery is measured on every shipment; the warn band is "Tamamlandı" with its warning (SAT-D29).
         { "1000", "1009.999", false, "Completed", "Over", "9.999", "Within" },
         { "1000", "1010", false, "Completed", "Over", "10", "Warn" },
         { "1000", "1019.999", false, "Completed", "Over", "19.999", "Warn" },
         { "1000", "1010", true, "Completed", "Over", "10", "Warn" },
-        { "1000", "1020", false, "OutsideTolerance", "Over", "20", "Approval" },
-        { "1000", "1029.999", false, "OutsideTolerance", "Over", "29.999", "Approval" },
+        // SAT-D30: the approval band awaits an over-delivery approval (none recorded); the block band is outside the tolerance.
+        { "1000", "1020", false, "AwaitingApproval", "Over", "20", "Approval" },
+        { "1000", "1029.999", false, "AwaitingApproval", "Over", "29.999", "Approval" },
         { "1000", "1030", false, "OutsideTolerance", "Over", "30", "Block" },
         { "1000", "1030", true, "OutsideTolerance", "Over", "30", "Block" },
         // Under-delivery within the tolerance is "Tamamlandı" (SAT-D5), open or closed (SAT-D17).
@@ -37,7 +38,9 @@ public sealed class SalesRealizationCalculatorTests
         { "1000", "990", false, "Partial", "Under", "10", null },
         { "1000", "500", false, "Partial", "Under", "500", null },
         // Force-closed: the shortfall is measured and the rest is the closed remainder, never "Completed".
-        { "1000", "990", true, "ClosedWithRemainder", "Under", "10", "Warn" },
+        // SAT-D31: a closed shortfall in the warn band is "Tamamlandı" with the warning (as SAT-D17's normal closing).
+        { "1000", "990", true, "Completed", "Under", "10", "Warn" },
+        { "1000", "980.001", true, "Completed", "Under", "19.999", "Warn" },
         { "1000", "980", true, "ClosedWithRemainder", "Under", "20", "Approval" },
         { "1000", "970.001", true, "ClosedWithRemainder", "Under", "29.999", "Approval" },
         { "1000", "970", true, "ClosedWithRemainder", "Under", "30", "Block" },
@@ -66,12 +69,13 @@ public sealed class SalesRealizationCalculatorTests
     [InlineData(100, 101, false, "Completed", "Warn")]
     [InlineData(100, 100, false, "Completed", "Within")]
     [InlineData(100, 99, false, "Partial", null)]
-    [InlineData(100, 99, true, "ClosedWithRemainder", "Warn")]
-    [InlineData(50, 51, false, "OutsideTolerance", "Approval")]
+    [InlineData(100, 99, true, "Completed", "Warn")]
+    [InlineData(100, 98, true, "ClosedWithRemainder", "Approval")]
+    [InlineData(50, 51, false, "AwaitingApproval", "Approval")]
     [InlineData(101, 100, false, "Completed", "Within")]
     [InlineData(101, 102, false, "Completed", "Within")]
     [InlineData(33, 34, false, "OutsideTolerance", "Block")]
-    [InlineData(34, 35, false, "OutsideTolerance", "Approval")]
+    [InlineData(34, 35, false, "AwaitingApproval", "Approval")]
     public void Piece_lines_are_whole_and_judged_with_the_same_ladder(int ordered, int shipped, bool closed, string state, string? band)
     {
         var line = SalesRealizationCalculator.Line(Pieces(ordered), Pieces(shipped), closed, Ladder);
@@ -81,15 +85,30 @@ public sealed class SalesRealizationCalculatorTests
     }
 
     [Fact]
-    public void Only_a_completed_line_in_the_warn_band_carries_the_sat_d24_warning()
+    public void Only_a_completed_line_in_the_warn_band_carries_the_sat_d29_warning()
     {
         // Over in the warn band: completed WITH the warning.
         Assert.True(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(1015m), false, Ladder)));
-        // Within, approval band over, open or closed under in the warn band: no SAT-D24 warning.
+        // Within, approval band over, open under in the warn band: no warning.
         Assert.False(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(1005m), false, Ladder)));
         Assert.False(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(1020m), false, Ladder)));
         Assert.False(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(985m), false, Ladder)));
-        Assert.False(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(985m), true, Ladder)));
+        // SAT-D31: a closed shortfall in the warn band carries the same warning.
+        Assert.True(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(985m), true, Ladder)));
+    }
+
+    [Fact]
+    public void An_approved_approval_band_over_delivery_is_completed_as_approved_and_an_approval_does_not_lift_the_block_band()
+    {
+        // SAT-D30: the approved variant the contract leaves room for ("Tamamlandı + onaylı fazla teslim").
+        var approved = SalesRealizationCalculator.Line(Kg(1000m), Kg(1025m), false, Ladder, overDeliveryApproved: true);
+        Assert.Equal((LineRealizationState.Completed, DeliveryToleranceBand.Approval, true, false),
+            (approved.State, approved.Band, approved.ApprovedOverDelivery, SalesRealizationCalculator.IsCompletedWithWarning(approved)));
+        // Not approved: awaiting; an approval never applies to the block band or to a line within the tolerance.
+        Assert.Equal(LineRealizationState.AwaitingApproval, SalesRealizationCalculator.Line(Kg(1000m), Kg(1025m), false, Ladder).State);
+        var blocked = SalesRealizationCalculator.Line(Kg(1000m), Kg(1030m), false, Ladder, overDeliveryApproved: true);
+        Assert.Equal((LineRealizationState.OutsideTolerance, false), (blocked.State, blocked.ApprovedOverDelivery));
+        Assert.False(SalesRealizationCalculator.Line(Kg(1000m), Kg(1005m), false, Ladder, overDeliveryApproved: true).ApprovedOverDelivery);
     }
 
     [Fact]
@@ -145,6 +164,9 @@ public sealed class SalesRealizationCalculatorTests
     [InlineData("ClosedWithRemainder", "ClosedWithRemainder")]
     [InlineData("Completed,OutsideTolerance", "OutsideTolerance")]
     [InlineData("ClosedWithRemainder,OutsideTolerance,NotStarted", "OutsideTolerance")]
+    [InlineData("Completed,AwaitingApproval", "AwaitingApproval")]
+    [InlineData("AwaitingApproval,Partial", "AwaitingApproval")]
+    [InlineData("AwaitingApproval,OutsideTolerance", "OutsideTolerance")]
     [InlineData("", "NotStarted")]
     public void The_axis_is_derived_from_every_line(string lines, string axis)
     {

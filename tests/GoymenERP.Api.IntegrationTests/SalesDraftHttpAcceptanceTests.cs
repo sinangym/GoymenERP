@@ -1180,8 +1180,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 new SalesDraftCustomerAcceptanceAxisV1("Accepted", "Rev.0"), new SalesDraftStatusAxisV1("NoSource"),
                 new SalesDraftRealizationAxisV1("ClosedWithRemainder", false,
                     new SalesDraftDeliveryToleranceV1(profileId, 1, "1", "2", "3", new DateOnly(2026, 10, 25), null, new DateOnly(2026, 10, 26)),
-                    [new SalesDraftLineRealizationV1(lineId, 1, unitId, "100", "97", "90", "ClosedWithRemainder", "Under", "3", "Block", false, "3")]),
-                new SalesDraftStatusAxisV1("NoSource"), new SalesDraftStatusAxisV1("NoSource"))),
+                    [new SalesDraftLineRealizationV1(lineId, 1, unitId, "100", "97", "90", "ClosedWithRemainder", "Under", "3", "Block", false, false, "3", "1.5")]),
+                new SalesDraftStatusAxisV1("NoSource"), new SalesDraftStatusAxisV1("NoSource"), false)),
         };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
@@ -1194,7 +1194,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
             var body = await response.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(["draftVersion", "revision", "lifecycle", "internalApproval", "customerAcceptance", "source", "realization",
-                "invoicing", "financialClosure"], body.EnumerateObject().Select(member => member.Name));
+                "invoicing", "financialClosure", "readyToClose"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(JsonValueKind.False, body.GetProperty("readyToClose").ValueKind);
             Assert.Equal(("7", "Rev.0", "Closed", "Approved"), (body.GetProperty("draftVersion").GetString(),
                 body.GetProperty("revision").GetString(), body.GetProperty("lifecycle").GetProperty("state").GetString(),
                 body.GetProperty("internalApproval").GetProperty("state").GetString()));
@@ -1217,8 +1218,9 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                     tolerance.GetProperty("evaluatedOn").GetString()));
             var line = Assert.Single(realization.GetProperty("lines").EnumerateArray());
             Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "state", "direction", "deviation", "band",
-                "warning", "closedRemainder"], line.EnumerateObject().Select(member => member.Name));
-            Assert.Equal(JsonValueKind.False, line.GetProperty("warning").ValueKind);
+                "warning", "approvedOverDelivery", "closedRemainder", "approvedReturned"], line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal((JsonValueKind.False, JsonValueKind.False, "1.5"), (line.GetProperty("warning").ValueKind,
+                line.GetProperty("approvedOverDelivery").ValueKind, line.GetProperty("approvedReturned").GetString()));
             Assert.Equal((lineId.ToString("D"), "97", "ClosedWithRemainder", "Under", "3", "Block", "3"),
                 (line.GetProperty("lineId").GetString(), line.GetProperty("shipped").GetString(), line.GetProperty("state").GetString(),
                     line.GetProperty("direction").GetString(), line.GetProperty("deviation").GetString(), line.GetProperty("band").GetString(),

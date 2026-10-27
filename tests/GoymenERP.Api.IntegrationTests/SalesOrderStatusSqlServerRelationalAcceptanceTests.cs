@@ -81,8 +81,10 @@ public sealed class SalesOrderStatusSqlServerRelationalAcceptanceTests
         // Half shipped: partial, and the open remainder is not a shortfall (SAT-D16) — not banded.
         var status = await run.StatusAsync(client, path);
         Assert.Equal(["draftVersion", "revision", "lifecycle", "internalApproval", "customerAcceptance", "source", "realization",
-            "invoicing", "financialClosure"], status.EnumerateObject().Select(member => member.Name));
-        Assert.Equal(("4", "Rev.0", "Draft", "Approved", "NotRequired"), (status.GetProperty("draftVersion").GetString(),
+            "invoicing", "financialClosure", "readyToClose"], status.EnumerateObject().Select(member => member.Name));
+        // SAT-D32: approved → "Aktif"; not ready to close while the realization is partial.
+        Assert.Equal(JsonValueKind.False, status.GetProperty("readyToClose").ValueKind);
+        Assert.Equal(("4", "Rev.0", "Active", "Approved", "NotRequired"), (status.GetProperty("draftVersion").GetString(),
             status.GetProperty("revision").GetString(), State(status, "lifecycle"), State(status, "internalApproval"),
             State(status, "customerAcceptance")));
         Assert.Equal(("NoSource", "NoSource", "NoSource"), (State(status, "source"), State(status, "invoicing"), State(status, "financialClosure")));
@@ -108,6 +110,10 @@ public sealed class SalesOrderStatusSqlServerRelationalAcceptanceTests
         var completed = await run.StatusAsync(client, path);
         Assert.Equal("Completed", State(completed, "realization"));
         Assert.Equal((orderLine.Id.ToString("D"), "100", "99.5", "0", "Completed", "Under", "0.5", "Within", null), Line(completed));
+        // SAT-D32: every axis with a source is complete (approved, acceptance not required, realization complete) — ready to
+        // close; nothing closes it: the stored lifecycle stays Draft (1) and no attempt is written.
+        Assert.Equal(JsonValueKind.True, completed.GetProperty("readyToClose").ValueKind);
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT [State] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)));
         // Sales holds no copy of any of it: the approved draft is untouched (version 4, Approved, Rev.0).
         Assert.Equal((4L, 3, 0), (await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
             await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
@@ -121,7 +127,8 @@ public sealed class SalesOrderStatusSqlServerRelationalAcceptanceTests
         Assert.Equal(JsonValueKind.Null, unavailable.GetProperty("realization").GetProperty("tolerance").ValueKind);
         Assert.Equal((Assert.Single(early.Lines).Id.ToString("D"), "10", "4", "0", "PolicyUnavailable", null, null, null, null), Line(unavailable));
         // The other axes are still answered.
-        Assert.Equal(("Draft", "Approved"), (State(unavailable, "lifecycle"), State(unavailable, "internalApproval")));
+        Assert.Equal(("Active", "Approved"), (State(unavailable, "lifecycle"), State(unavailable, "internalApproval")));
+        Assert.Equal(JsonValueKind.False, unavailable.GetProperty("readyToClose").ValueKind);
     }
 
     [SqlServerFact]
@@ -177,8 +184,11 @@ public sealed class SalesOrderStatusSqlServerRelationalAcceptanceTests
         string? Band, string? ClosedRemainder) Line(JsonElement status)
     {
         var line = Assert.Single(status.GetProperty("realization").GetProperty("lines").EnumerateArray());
-        // SAT-D24's warning marks only a completed warn-band over-delivery; Logistics ships no more than ordered, so never here.
-        Assert.Equal(JsonValueKind.False, line.GetProperty("warning").ValueKind);
+        // SAT-D29's warning marks only a completed warn-band over-delivery; Logistics ships no more than ordered, so never here.
+        Assert.Equal((JsonValueKind.False, JsonValueKind.False), (line.GetProperty("warning").ValueKind,
+            line.GetProperty("approvedOverDelivery").ValueKind));
+        // SAT-D33: the real Logistics return owner answered — nothing approved is returned; shown apart, never netted.
+        Assert.Equal("0", line.GetProperty("approvedReturned").GetString());
         return (line.GetProperty("lineId").GetString(), line.GetProperty("ordered").GetString(), line.GetProperty("shipped").GetString(),
             line.GetProperty("delivered").GetString(), line.GetProperty("state").GetString(), line.GetProperty("direction").GetString(),
             line.GetProperty("deviation").GetString(), line.GetProperty("band").GetString(), line.GetProperty("closedRemainder").GetString());

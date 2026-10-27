@@ -3563,7 +3563,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("lines", "type:array;items:ref:SalesDraftLineCustomerReturnV1")),
                 ["SalesOrderDraftStatusResponse"] = ObjectSchema(
                     ["draftVersion", "revision", "lifecycle", "internalApproval", "customerAcceptance", "source", "realization",
-                        "invoicing", "financialClosure"],
+                        "invoicing", "financialClosure", "readyToClose"],
                     ("draftVersion", "type:string"),
                     ("revision", "type:string"),
                     ("lifecycle", "ref:SalesDraftStatusAxisV1"),
@@ -3572,7 +3572,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("source", "ref:SalesDraftStatusAxisV1"),
                     ("realization", "ref:SalesDraftRealizationAxisV1"),
                     ("invoicing", "ref:SalesDraftStatusAxisV1"),
-                    ("financialClosure", "ref:SalesDraftStatusAxisV1")),
+                    ("financialClosure", "ref:SalesDraftStatusAxisV1"),
+                    ("readyToClose", "type:boolean")),
                 ["SalesDraftStatusAxisV1"] = ObjectSchema(
                     ["state"],
                     ("state", "type:string")),
@@ -3599,7 +3600,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("evaluatedOn", "type:string;format:date")),
                 ["SalesDraftLineRealizationV1"] = ObjectSchema(
                     ["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "state", "direction", "deviation", "band",
-                        "warning", "closedRemainder"],
+                        "warning", "approvedOverDelivery", "closedRemainder", "approvedReturned"],
                     ("lineId", "type:string;format:uuid"),
                     ("lineNo", "type:integer|string;format:int32"),
                     ("orderUnitId", "type:string;format:uuid"),
@@ -3611,7 +3612,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("deviation", "type:null|string"),
                     ("band", "type:null|string"),
                     ("warning", "type:boolean"),
-                    ("closedRemainder", "type:null|string")),
+                    ("approvedOverDelivery", "type:boolean"),
+                    ("closedRemainder", "type:null|string"),
+                    ("approvedReturned", "type:null|string")),
                 ["SalesDraftLineCustomerReturnV1"] = ObjectSchema(
                     ["lineId", "lineNo", "orderUnitId", "ordered", "approvedReturned"],
                     ("lineId", "type:string;format:uuid"),

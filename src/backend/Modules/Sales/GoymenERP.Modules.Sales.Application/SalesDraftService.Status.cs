@@ -13,10 +13,10 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <item><b>From the Sales aggregate</b>: lifecycle (<c>Draft</c> / <c>Cancelled</c> / <c>Closed</c>, as stored — "Aktif" is not
 /// derived), internal approval (the stored state) and customer acceptance (<c>NotRequired</c> / <c>Pending</c> /
 /// <c>Accepted</c> of the current revision).</item>
-/// <item><b>Realization</b> (SAT-D5, SAT-D15–D17, SAT-D24): the Logistics shipped totals through the AT-024
+/// <item><b>Realization</b> (SAT-D5, SAT-D15–D17, SAT-D29): the Logistics shipped totals through the AT-024
 /// <see cref="ISalesOrderDeliveryReadPortV1"/> (never Logistics tables), judged by <see cref="SalesRealizationCalculator"/> with the
 /// company's delivery tolerance read ONLY through <see cref="ISettingsSalesPolicyProviderV1"/> for the order's business date
-/// (SAT-D24 b; the date Sales reads its other Settings profiles on). The tolerance is asked only when a line needs it. A missing,
+/// (SAT-D29 b; the date Sales reads its other Settings profiles on). The tolerance is asked only when a line needs it. A missing,
 /// refused, inactive, out-of-window, other-company or malformed policy is <c>PolicyUnavailable</c> — never a default; an
 /// owner that is not composed, fails or answers a malformed value is <c>Unreadable</c> — never zero.</item>
 /// <item><b>No source yet</b>: source/allocation strategy (MOD-05, API-11), invoicing (S5) and financial closure (MOD-04)
@@ -55,17 +55,38 @@ public sealed partial class SalesDraftService
 
         var realization = await RealizationAsync(scope, draft, cancellationToken);
         var noSource = new SalesDraftStatusAxisV1(SalesDraftStatusAxisStatesV1.NoSource);
+        var lifecycle = Lifecycle(draft);
+        var acceptance = CustomerAcceptanceAxis(draft);
+        // SAT-D32 "kapanmaya hazır": every axis that has a source is complete; the NoSource axes are not counted. A flag only —
+        // closing stays the user's action and nothing is closed here.
+        var readyToClose = lifecycle == SalesDraftStatusAxisStatesV1.Active
+            && draft.ApprovalState == InternalApprovalState.Approved
+            && acceptance.State is SalesDraftStatusAxisStatesV1.Accepted or SalesDraftStatusAxisStatesV1.NotRequired
+            && realization.State == SalesDraftStatusAxisStatesV1.Completed;
         return new SalesOrderDraftStatusResponse(
             draft.Version.ToString(CultureInfo.InvariantCulture),
             SalesDraftApiV1.RevisionText(draft.Revision),
-            new SalesDraftStatusAxisV1(draft.State.ToString()),
+            new SalesDraftStatusAxisV1(lifecycle),
             new SalesDraftStatusAxisV1(draft.ApprovalState.ToString()),
-            CustomerAcceptanceAxis(draft),
+            acceptance,
             noSource,
             realization,
             noSource,
-            noSource);
+            noSource,
+            readyToClose);
     }
+
+    /// <summary>
+    /// SAT-D32: the stored terminal states (<c>Cancelled</c>, <c>Closed</c>) as they are; otherwise <c>Active</c> once the order
+    /// was approved — its current revision approved, or an earlier approved revision archived by a revision now awaiting
+    /// re-approval — else <c>Draft</c>. Never closed automatically.
+    /// </summary>
+    private static string Lifecycle(SalesOrderDraft draft) => draft.State switch
+    {
+        SalesDraftState.Draft when draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count > 0 =>
+            SalesDraftStatusAxisStatesV1.Active,
+        _ => draft.State.ToString(),
+    };
 
     private static SalesDraftCustomerAcceptanceAxisV1 CustomerAcceptanceAxis(SalesOrderDraft draft) => new(
         !draft.CustomerAcceptanceRequired
@@ -85,6 +106,9 @@ public sealed partial class SalesDraftService
             return Unreadable(ordered);
         }
 
+        // SAT-D33: approved customer returns are shown per line beside the shipped total, never netted against it; an
+        // unreadable return owner shows no number there and does not take the realization down.
+        var returned = await ApprovedReturnsAsync(scope, draft, cancellationToken);
         var closed = draft.State == SalesDraftState.Closed;
         var needsTolerance = ordered.Any(line => SalesRealizationCalculator.NeedsTolerance(recorded[line.Id].Shipped, closed));
         var policy = needsTolerance ? await ToleranceAsync(scope, draft, cancellationToken) : null;
@@ -98,7 +122,8 @@ public sealed partial class SalesDraftService
                         ? SalesDraftStatusAxisStatesV1.PolicyUnavailable
                         : SalesDraftStatusAxisStatesV1.NotStarted;
                     return new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-                        QuantityText(shipped), QuantityText(delivered), state, null, null, null, false, ClosedRemainder(draft, line.Id));
+                        QuantityText(shipped), QuantityText(delivered), state, null, null, null, false, false, ClosedRemainder(draft, line.Id),
+                        returned?.GetValueOrDefault(line.Id));
                 })]);
         }
 
@@ -109,7 +134,8 @@ public sealed partial class SalesDraftService
             LineRealization realization;
             try
             {
-                realization = SalesRealizationCalculator.Line(line.Quantity, shipped, closed, policy?.Tolerance);
+                // SAT-D30: no over-delivery approval record exists yet, so an approval-band over-delivery awaits approval.
+                realization = SalesRealizationCalculator.Line(line.Quantity, shipped, closed, policy?.Tolerance, overDeliveryApproved: false);
             }
             catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
             {
@@ -120,8 +146,8 @@ public sealed partial class SalesDraftService
             var warning = SalesRealizationCalculator.IsCompletedWithWarning(realization);
             lines.Add((new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
                 QuantityText(shipped), QuantityText(delivered), realization.State.ToString(), realization.Direction.ToString(),
-                QuantityText(realization.Deviation), realization.Band?.ToString(), warning, ClosedRemainder(draft, line.Id)),
-                realization.State, warning));
+                QuantityText(realization.Deviation), realization.Band?.ToString(), warning, realization.ApprovedOverDelivery,
+                ClosedRemainder(draft, line.Id), returned?.GetValueOrDefault(line.Id)), realization.State, warning));
         }
 
         return new SalesDraftRealizationAxisV1(SalesRealizationCalculator.Axis([.. lines.Select(line => line.State)]).ToString(),
@@ -166,6 +192,39 @@ public sealed partial class SalesDraftService
         }
         catch (Exception exception) when (exception is ArgumentException
             || exception is SalesDraftServiceException { Status: 503 })
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// SAT-D33: the API-10 Logistics port's approved returned total per line (the customer-returns read's own validation), or
+    /// null when that owner is not composed, fails or answers a malformed value. A fence loss is 403.
+    /// </summary>
+    private async Task<Dictionary<Guid, string>?> ApprovedReturnsAsync(Scope scope, SalesOrderDraft draft,
+        CancellationToken cancellationToken)
+    {
+        if (customerReturns is not { } owner)
+        {
+            return null;
+        }
+
+        SalesOrderCustomerReturnReadAnswerV1? answer;
+        try
+        {
+            answer = await GuardedAsync(scope, bindings.ReadPermission,
+                () => owner.ReadApprovedReturnsAsync(draft.Id, cancellationToken), cancellationToken);
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            return null;
+        }
+
+        try
+        {
+            return CustomerReturns(scope, draft, answer).Lines.ToDictionary(line => line.LineId, line => line.ApprovedReturned);
+        }
+        catch (SalesDraftServiceException exception) when (exception.Status == 503)
         {
             return null;
         }
@@ -220,7 +279,7 @@ public sealed partial class SalesDraftService
     private static SalesDraftRealizationAxisV1 Unreadable(IReadOnlyList<SalesOrderDraftLine> ordered) =>
         new(SalesDraftStatusAxisStatesV1.Unreadable, false, null,
             [.. ordered.Select(line => new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-                null, null, SalesDraftStatusAxisStatesV1.Unreadable, null, null, null, false, null))]);
+                null, null, SalesDraftStatusAxisStatesV1.Unreadable, null, null, null, false, false, null, null))]);
 
     /// <summary>The recorded force-closure remainder of the line (No 30 / SAT-D12), verbatim; null when the order was not force-closed.</summary>
     private static string? ClosedRemainder(SalesOrderDraft draft, Guid lineId) =>

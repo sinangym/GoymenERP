@@ -26,12 +26,20 @@ public static class SalesDraftStatusAxisStatesV1
     public const string Pending = "Pending";
     public const string Accepted = "Accepted";
 
+    // Lifecycle (SAT-D32): the stored "Draft" / "Cancelled" / "Closed", and "Active" derived once the order was approved
+    // (DURUM_MAKINELERI "Taslak / Aktif / Kapalı / İptal"). The order is never closed automatically.
+    public const string Draft = "Draft";
+    public const string Active = "Active";
+
     // Realization (DURUM_MAKINELERI "Gerçekleşme: Başlamadı / Kısmi / Tamamlandı" + the two cases it does not name).
     public const string NotStarted = "NotStarted";
     public const string Partial = "Partial";
     public const string Completed = "Completed";
     public const string OutsideTolerance = "OutsideTolerance";
     public const string ClosedWithRemainder = "ClosedWithRemainder";
+
+    /// <summary>SAT-D30: an approval-band over-delivery without a recorded over-delivery approval ("onay bekliyor").</summary>
+    public const string AwaitingApproval = "AwaitingApproval";
 }
 
 /// <summary>An axis that carries only its state (lifecycle, internal approval, and the three "NoSource" axes).</summary>
@@ -66,7 +74,12 @@ public sealed record SalesDraftDeliveryToleranceV1(
 /// (<c>Within</c>/<c>Warn</c>/<c>Approval</c>/<c>Block</c>) is null when not measured (nothing shipped on an open line, an open
 /// under-delivered line outside the tolerance — SAT-D16 — or no tolerance). <c>closedRemainder</c> is the recorded force-closure
 /// remainder (No 30), null otherwise. <c>warning</c> is true exactly when the line counts <c>Completed</c> in spite of a deviation
-/// in the warn band (SAT-D24: an over-delivery between the warn and the approval percent is "Tamamlandı" with a warning).
+/// in the warn band (SAT-D29: an over-delivery between the warn and the approval percent; SAT-D31: a force-closed shortfall in
+/// the warn band). <c>approvedOverDelivery</c> is true when an approval-band over-delivery was approved (SAT-D30: "Tamamlandı +
+/// onaylı fazla teslim"); no over-delivery approval record exists yet, so it is false and such a line is
+/// <c>AwaitingApproval</c>. <c>approvedReturned</c> is the line's APPROVED customer-return total from the API-10 Logistics
+/// port, shown separately and never netted against the shipped total (SAT-D33); null when that owner is not composed or
+/// unreadable, "0" only after it answered.
 /// </summary>
 public sealed record SalesDraftLineRealizationV1(
     Guid LineId,
@@ -80,10 +93,12 @@ public sealed record SalesDraftLineRealizationV1(
     string? Deviation,
     string? Band,
     bool Warning,
-    string? ClosedRemainder);
+    bool ApprovedOverDelivery,
+    string? ClosedRemainder,
+    string? ApprovedReturned);
 
 /// <summary>
-/// The realization axis: its state, whether any line carries the SAT-D24 warning (a <c>Completed</c> line in the warn band —
+/// The realization axis: its state, whether any line carries the SAT-D29 warning (a <c>Completed</c> line in the warn band —
 /// the axis may then read <c>Completed</c> with <c>warning</c> true), the tolerance it was judged with (null when none was needed
 /// or none is available) and every order line once, in line order.
 /// </summary>
@@ -96,7 +111,10 @@ public sealed record SalesDraftRealizationAxisV1(
 /// <summary>
 /// DEC-SAL-001 / API-08: GET …/{id}/status — the seven axes, read afresh on every request under the draft read; nothing is
 /// written or cached. <c>draftVersion</c> is the concurrency version the axes were read against; <c>revision</c> is the
-/// commercial revision ("Rev.N").
+/// commercial revision ("Rev.N"). <c>readyToClose</c> (SAT-D32, "kapanmaya hazır") is true when every axis that has a source
+/// is complete: lifecycle <c>Active</c>, internal approval <c>Approved</c>, customer acceptance <c>Accepted</c> or
+/// <c>NotRequired</c>, realization <c>Completed</c>; the <c>NoSource</c> axes are not counted. It is a flag only: closing stays
+/// a user action and nothing closes automatically.
 /// </summary>
 public sealed record SalesOrderDraftStatusResponse(
     string DraftVersion,
@@ -107,4 +125,5 @@ public sealed record SalesOrderDraftStatusResponse(
     SalesDraftStatusAxisV1 Source,
     SalesDraftRealizationAxisV1 Realization,
     SalesDraftStatusAxisV1 Invoicing,
-    SalesDraftStatusAxisV1 FinancialClosure);
+    SalesDraftStatusAxisV1 FinancialClosure,
+    bool ReadyToClose);
