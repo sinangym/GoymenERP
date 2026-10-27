@@ -5,7 +5,7 @@ Source of truth: #275 v2 plan §5, §7.4, §13 (production example), R3 and Ö2 
 ## What is here
 
 ### Domain (`GoymenERP.Modules.Logistics.Domain`)
-- `Quantity` — the Ö2 rule (kg ≤ 3 decimals, pieces whole, exact, no silent cut; trailing zeros dropped so equal quantities print equally). Repeated from Purchasing on purpose: a Domain project must not reference another module's Domain.
+- `Quantity` — the Ö2 rule (kg ≤ 3 decimals, pieces whole, exact, no silent cut; trailing zeros dropped so equal quantities print equally). Since TEK-02 the rule lives once in `GoymenERP.BuildingBlocks.Quantities.Quantity<TRefusals>`; Logistics spells it `Quantity` through a project `global using` alias over `LogisticsQuantityRefusals`, which keeps the Logistics codes.
 - `LoadingInstruction` (+ lines) — one company, one customer: Draft → Issued. **An instruction is not a definite shipment.**
   - **Customer = Party + CompanyPartyAccount (LOG-2, CARİ #282 P3-2):** the instruction carries both identities and both are required (§5: a Party alone is not a customer of a company; the account holds the commercial relationship and its active state). Each line carries the **sales order line** it serves (`SourceOrderLineId`, required) and its **Settings unit** (`UnitId`). All are identities only; that the account belongs to the Party and is active in this company, and that the order line exists, are Cari's and Sales' checks at integration (dependency_wait).
   - **Four separate shares per line** (§7.4): instructed → loaded → shipped → delivered. Each transition is capped by the share before it, so a loaded sub-share is never subtracted twice (§13: 6.000 allocated, 4.000 loaded, 3.800 shipped → 200 loaded-not-shipped stays visible).

@@ -26,7 +26,7 @@ public sealed class SalesRequestPersistenceModelTests
     public void The_request_tables_are_in_the_sales_schema_filtered_by_the_company_and_keyed_by_their_identities()
     {
         using var context = Context();
-        foreach (var type in new[] { typeof(RequestRow), typeof(RequestLineRow), typeof(DocumentCounterRow) })
+        foreach (var type in new[] { typeof(RequestRow), typeof(RequestLineRow), typeof(DocumentCounterRow), typeof(RequestAttemptRow) })
         {
             var entity = context.Model.FindEntityType(type)!;
             Assert.Equal(SalesDbContext.Schema, entity.GetSchema());
@@ -46,16 +46,31 @@ public sealed class SalesRequestPersistenceModelTests
         Assert.Equal(["CompanyId", "Series"], counters.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.True(counters.FindProperty(nameof(DocumentCounterRow.Version))!.IsConcurrencyToken);
 
-        // The request commands share the draft's attempt table: a request target by foreign key, born from one create attempt.
-        var attempts = context.Model.FindEntityType(typeof(DraftAttemptRow))!;
-        Assert.Contains(attempts.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(RequestRow));
-        var createIndex = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DraftAttempts_RequestId");
+        // ADR-SAL-001 §2: the request commands have their OWN attempt table in the draft attempt's shape — the same identity
+        // (company, command, key hash) under the binary collation, a request target by foreign key, one create attempt per
+        // request — and the draft's attempt table knows nothing of requests.
+        var attempts = context.Model.FindEntityType(typeof(RequestAttemptRow))!;
+        Assert.Equal("RequestAttempts", attempts.GetTableName());
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(attempts.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(RequestRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "RequestId"]));
+        var createIndex = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_RequestAttempts_RequestId");
         Assert.True(createIndex.IsUnique);
         Assert.Equal("[RequestId] IS NOT NULL AND [CommandName] = N'sales.request.create.v1'", createIndex.GetFilter());
+        Assert.Null(attempts.FindProperty("IdempotencyKey"));
         var design = context.GetService<IDesignTimeModel>().Model;
-        var checks = design.FindEntityType(typeof(DraftAttemptRow))!.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
-        Assert.Equal(SalesDbContext.AttemptOutcomeConstraint, checks["CK_DraftAttempts_Outcome"]);
-        Assert.Equal(SalesDbContext.AttemptRequestTargetConstraint, checks["CK_DraftAttempts_RequestTarget"]);
+        var designAttempts = design.FindEntityType(typeof(RequestAttemptRow))!;
+        Assert.Equal(SalesDbContext.IdentityCollation, designAttempts.FindProperty(nameof(RequestAttemptRow.CommandName))!.GetCollation());
+        Assert.Equal(SalesDbContext.IdentityCollation, designAttempts.FindProperty(nameof(RequestAttemptRow.IdempotencyKeyHash))!.GetCollation());
+        var checks = designAttempts.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(SalesDbContext.RequestAttemptOutcomeConstraint, checks["CK_RequestAttempts_Outcome"]);
+        Assert.Equal(SalesDbContext.RequestAttemptCommandConstraint, checks["CK_RequestAttempts_Command"]);
+        Assert.Equal("[ResultJson] IS NULL", checks["CK_RequestAttempts_Result"]);
+        Assert.Equal([SalesDbContext.RequestAttemptImmutabilityTrigger],
+            design.FindEntityType(typeof(RequestAttemptRow))!.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+        var draftAttempts = context.Model.FindEntityType(typeof(DraftAttemptRow))!;
+        Assert.Null(draftAttempts.FindProperty("RequestId"));
+        Assert.DoesNotContain(draftAttempts.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(RequestRow));
         Assert.Equal(SalesDbContext.RequestDecisionConstraint,
             design.FindEntityType(typeof(RequestRow))!.GetCheckConstraints().Single(check => check.Name == "CK_Requests_Decision").Sql);
     }
@@ -88,6 +103,8 @@ public sealed class SalesRequestPersistenceModelTests
     [InlineData("counter-series")]
     [InlineData("delete-request")]
     [InlineData("other-company")]
+    [InlineData("attempt-update")]
+    [InlineData("attempt-delete")]
     public void Anything_else_on_a_request_its_lines_or_its_counter_is_refused_before_the_database(string fault)
     {
         using var context = Context();
@@ -123,6 +140,12 @@ public sealed class SalesRequestPersistenceModelTests
             case "other-company":
                 context.Requests.Add(Request(1, CompanyB));
                 break;
+            case "attempt-update":
+                Attach(context, Attempt()).ActorId = "SENTETIK-other";
+                break;
+            case "attempt-delete":
+                context.Remove(Attach(context, Attempt()));
+                break;
         }
 
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
@@ -145,15 +168,22 @@ public sealed class SalesRequestPersistenceModelTests
     {
         var down = new AddSalesRequests().DownOperations;
         var guard = Assert.IsType<SqlOperation>(down[0]);
-        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[Requests])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[Requests]) OR EXISTS (SELECT 1 FROM [sales].[RequestAttempts])", guard.Sql,
+            StringComparison.Ordinal);
         Assert.Contains("THROW 51065,", guard.Sql, StringComparison.Ordinal);
         Assert.All(down.Skip(1), operation => Assert.IsNotType<SqlOperation>(operation));
         var up = new AddSalesRequests().UpOperations;
         Assert.Contains(up, operation => operation is CreateTableOperation { Name: "Requests", Schema: "sales" });
         Assert.Contains(up, operation => operation is CreateTableOperation { Name: "RequestLines", Schema: "sales" });
-        Assert.Contains(up, operation => operation is AddColumnOperation { Table: "DraftAttempts", Name: "RequestId", IsNullable: true });
-        // No existing row is rewritten: the Up path carries no data operation.
-        Assert.DoesNotContain(up, operation => operation is SqlOperation or UpdateDataOperation or DeleteDataOperation);
+        Assert.Contains(up, operation => operation is CreateTableOperation { Name: "RequestAttempts", Schema: "sales" });
+        // ADR-SAL-001: no existing table is touched (the draft's attempt table stays as it is).
+        Assert.DoesNotContain(up, operation => operation is ITableMigrationOperation { Table: not ("Requests" or "RequestLines" or "RequestAttempts" or "DocumentCounters") });
+        // No existing row is rewritten: the Up path's only raw SQL is the attempt table's immutability trigger (ADR-SAL-001 §6).
+        Assert.DoesNotContain(up, operation => operation is UpdateDataOperation or DeleteDataOperation);
+        var trigger = Assert.Single(up.OfType<SqlOperation>());
+        Assert.Contains("CREATE TRIGGER [sales].[TR_RequestAttempts_RejectMutation]", trigger.Sql, StringComparison.Ordinal);
+        Assert.Contains("AFTER UPDATE, DELETE", trigger.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51067,", trigger.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -187,6 +217,13 @@ public sealed class SalesRequestPersistenceModelTests
         RejectionReason = state == 3 ? "neden" : null,
         PartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(), BusinessDate = new DateOnly(2026, 10, 26),
         CreatedAtUtc = At, UpdatedAtUtc = At, CreatedBy = "SENTETIK-preparer", CorrelationId = "SENTETIK-correlation",
+    };
+
+    private static RequestAttemptRow Attempt() => new()
+    {
+        CompanyId = CompanyA, CommandName = SalesRequestCommands.CreateV1, IdempotencyKeyHash = new string('A', 64),
+        RequestHash = new string('0', 64), ActorId = "SENTETIK-preparer", Outcome = 1, RequestId = Guid.NewGuid(),
+        CorrelationId = "SENTETIK-correlation", RecordedAtUtc = At,
     };
 
     private static RequestLineRow Line() => new()

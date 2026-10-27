@@ -14,7 +14,7 @@ import {
   deliveryScheduleRowsFromDetail,
   type DeliveryScheduleRows,
 } from './deliverySchedule'
-import { APPROVAL_STATE, CANCELLED_STATE, SALES_PROBLEM_CODE, type DraftDeliveryScheduleRequest, type DraftDetail, type DraftMutation } from './contract'
+import { APPROVAL_STATE, isTerminalState, SALES_PROBLEM_CODE, type DraftDeliveryScheduleRequest, type DraftDetail, type DraftMutation } from './contract'
 import {
   abandon,
   applyOutcome,
@@ -32,6 +32,7 @@ import { ORDER_DETAIL_TEXT, problemCodeText } from './salesText'
 import { recallDeliveryScheduleAttempt, rememberDeliveryScheduleAttempt } from './pendingDeliverySchedules'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
 
 type ScheduleAttempt = OrderAttemptState<DraftDeliveryScheduleRequest, DraftMutation>
 
@@ -68,7 +69,7 @@ export function SalesDraftDeliveryScheduleForm({
   if (!hasCapability(shell, SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY)) return null
 
   // Withdrawn (D2) and Cancelled (DEC-SAL-005) are terminal: the dates of a closed order do not move.
-  const withdrawn = detail.draft.approvalState === APPROVAL_STATE.withdrawn || detail.draft.state === CANCELLED_STATE
+  const withdrawn = detail.draft.approvalState === APPROVAL_STATE.withdrawn || isTerminalState(detail.draft.state)
 
   async function send(snapshot: OrderAttemptSnapshot<DraftDeliveryScheduleRequest>, submittedRows: DeliveryScheduleRows) {
     const previous = attemptRef.current
@@ -186,13 +187,13 @@ export function SalesDraftDeliveryScheduleForm({
       ))}
       {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
         <>
-          <button type="button" className={styles.secondaryButton} onClick={retry}>{T.retry}</button>
-          <button type="button" className={styles.linkButton} onClick={leave}>{T.abandon}</button>
+          <Button type="button" variant="secondary" onClick={retry}>{T.retry}</Button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={leave}>{T.abandon}</Button>
         </>
       ) : null}
-      <button type="button" className={styles.primaryButton} disabled={disabled} onClick={start}>
+      <Button type="button" variant="primary" disabled={disabled} onClick={start}>
         {T.submit}
-      </button>
+      </Button>
     </div>
   )
 }

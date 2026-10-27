@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(SalesDbContext))]
-    [Migration("20261026221938_AddSalesRequests")]
+    [Migration("20261027063346_AddSalesRequests")]
     partial class AddSalesRequests
     {
         /// <inheritdoc />
@@ -262,9 +262,6 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(64)");
 
-                    b.Property<Guid?>("RequestId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<string>("ResultJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -275,20 +272,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("UX_DraftAttempts_DraftId")
                         .HasFilter("[DraftId] IS NOT NULL AND [CommandName] = N'sales.order-draft.create.v1'");
 
-                    b.HasIndex("CompanyId", "RequestId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_DraftAttempts_RequestId")
-                        .HasFilter("[RequestId] IS NOT NULL AND [CommandName] = N'sales.request.create.v1'");
-
                     b.ToTable("DraftAttempts", "sales", t =>
                         {
                             t.HasCheckConstraint("CK_DraftAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
 
                             t.HasCheckConstraint("CK_DraftAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
 
-                            t.HasCheckConstraint("CK_DraftAttempts_Outcome", "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] IS NULL) OR ([RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL))) OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') AND ([RequestId] IS NULL OR ([RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)) AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
-
-                            t.HasCheckConstraint("CK_DraftAttempts_RequestTarget", "([RequestId] IS NULL OR [CommandName] IN (N'sales.request.create.v1', N'sales.request.approve.v1', N'sales.request.reject.v1')) AND ([DraftId] IS NULL OR [CommandName] NOT IN (N'sales.request.create.v1', N'sales.request.approve.v1', N'sales.request.reject.v1'))");
+                            t.HasCheckConstraint("CK_DraftAttempts_Outcome", "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
 
                             t.HasCheckConstraint("CK_DraftAttempts_Result", "([CommandName] = N'sales.order-draft.approve-price-floor-exceptions.v1' AND [Outcome] = 1 AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR (([CommandName] <> N'sales.order-draft.approve-price-floor-exceptions.v1' OR [Outcome] <> 1) AND [ResultJson] IS NULL)");
                         });
@@ -463,6 +453,63 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_DraftDeliverySlices_Quantity", "[Quantity] > 0 AND LEN([QuantityText]) > 0");
 
                             t.HasCheckConstraint("CK_DraftDeliverySlices_SliceNo", "[SliceNo] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftForceClosureRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("DraftId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ClosedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ClosedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("DraftVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ImpactJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ImpactToken")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("LinesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.HasKey("CompanyId", "DraftId");
+
+                    b.ToTable("DraftForceClosures", "sales", t =>
+                        {
+                            t.HasCheckConstraint("CK_DraftForceClosures_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([ClosedBy]) > 0 AND LEN([Reason]) > 0 AND LEN([ImpactToken]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_DraftForceClosures_Impact", "ISJSON([ImpactJson]) = 1");
+
+                            t.HasCheckConstraint("CK_DraftForceClosures_Lines", "ISJSON([LinesJson]) = 1");
                         });
                 });
 
@@ -1146,7 +1193,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_Drafts_References", "(([DeliveryAddressId] IS NULL AND [DeliveryAddressVersion] IS NULL) OR ([DeliveryAddressId] IS NOT NULL AND [DeliveryAddressVersion] IS NOT NULL)) AND (([ContactId] IS NULL AND [ContactVersion] IS NULL) OR ([ContactId] IS NOT NULL AND [ContactVersion] IS NOT NULL)) AND (([ResponsibleId] IS NULL AND [ResponsibleVersion] IS NULL) OR ([ResponsibleId] IS NOT NULL AND [ResponsibleVersion] IS NOT NULL)) AND (([PaymentTermsId] IS NULL AND [PaymentTermsVersion] IS NULL) OR ([PaymentTermsId] IS NOT NULL AND [PaymentTermsVersion] IS NOT NULL)) AND (([SourceStrategyId] IS NULL AND [SourceStrategyVersion] IS NULL) OR ([SourceStrategyId] IS NOT NULL AND [SourceStrategyVersion] IS NOT NULL)) AND (([PackageId] IS NULL AND [PackageVersion] IS NULL) OR ([PackageId] IS NOT NULL AND [PackageVersion] IS NOT NULL))");
 
-                            t.HasCheckConstraint("CK_Drafts_State", "[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)");
+                            t.HasCheckConstraint("CK_Drafts_State", "[Kind] = 1 AND [State] IN (1, 2, 3) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)");
 
                             t.HasCheckConstraint("CK_Drafts_Text", "LEN([DocumentNo]) > 0 AND LEN([MoneyOperation]) > 0 AND LEN([MoneyProfileVersion]) > 0 AND LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
 
@@ -1166,6 +1213,78 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         {
                             t.ExcludeFromMigrations();
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.RequestAttemptRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CommandName")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("IdempotencyKeyHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RefusalJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
+                    b.Property<Guid?>("RequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
+
+                    b.HasIndex("CompanyId", "RequestId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_RequestAttempts_RequestId")
+                        .HasFilter("[RequestId] IS NOT NULL AND [CommandName] = N'sales.request.create.v1'");
+
+                    b.ToTable("RequestAttempts", "sales", t =>
+                        {
+                            t.HasTrigger("TR_RequestAttempts_RejectMutation");
+
+                            t.HasCheckConstraint("CK_RequestAttempts_Command", "[CommandName] IN (N'sales.request.create.v1', N'sales.request.approve.v1', N'sales.request.reject.v1')");
+
+                            t.HasCheckConstraint("CK_RequestAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+
+                            t.HasCheckConstraint("CK_RequestAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+
+                            t.HasCheckConstraint("CK_RequestAttempts_Outcome", "([Outcome] = 1 AND [RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND ([RequestId] IS NULL OR [RequestId] <> '00000000-0000-0000-0000-000000000000') AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+
+                            t.HasCheckConstraint("CK_RequestAttempts_Result", "[ResultJson] IS NULL");
+                        });
+
+                    b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.RequestLineRow", b =>
@@ -1440,12 +1559,6 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "DraftId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.RequestRow", null)
-                        .WithMany()
-                        .HasForeignKey("CompanyId", "RequestId")
-                        .HasPrincipalKey("CompanyId", "Id")
-                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftCancellationRow", b =>
@@ -1488,6 +1601,16 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "DraftId", "LineNo")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftForceClosureRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "DraftId")
+                        .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
@@ -1562,6 +1685,21 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.RequestAttemptRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.RequestRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "RequestId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.RequestLineRow", b =>

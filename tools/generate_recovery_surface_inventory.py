@@ -51,16 +51,16 @@ EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
 )
 EXPECTED_MIGRATION_COUNT = 98
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
-    "26b4187f043a267656efd8e0b6732970cebbec4b0dc47880e81788e40d26cbc6"
+    "304055fa30dfd2ed16e2d15be8e334972c7b5972e1ab84931d2922840c13a1e9"
 )
-EXPECTED_DURABLE_STORE_COUNT = 21
+EXPECTED_DURABLE_STORE_COUNT = 22
 # The source-only inventory is reviewed for one frozen backend compilation surface.  A
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
 # lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1090
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1101
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "bfeff9ba336feb5d56e76015120820a5cfc373b860ca7209d66bbfb6e796eb0c"
+    "b9e16db472dfac1548031a2c464584b9be0ea0a95922c330ccd0221940441754"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -149,13 +149,14 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("purchasing", "PurchaseAcceptanceShares"),
     ("purchasing", "PurchaseAttempts"),
     ("sales", "DraftAttempts"),
+    ("sales", "RequestAttempts"),
 )
 METADATA_ONLY_IDEMPOTENCY_KEY_TABLES = (("audit", "AuditEvents"),)
 AUDIT_SOURCE_ROOT = "src/backend/Modules/Audit/"
 AUDIT_LIVE_SOURCE_EXCLUDED_SUFFIXES = (".designer.cs", ".g.cs", ".generated.cs")
 EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT = 21
 EXPECTED_AUDIT_LIVE_SOURCE_FINGERPRINT = (
-    "9e9c9d3a1380426e69aa0f883b0b0292fb84ac23c6a27af6a929cb6e3b56fc6d"
+    "26233e5d20ebb93d8cf67ef77ebe6745155833a1f7aeebfb648b5e4847d5dbc6"
 )
 EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),
@@ -492,6 +493,14 @@ DURABLE_STORE_SPECS = (
         ("dbContext.DraftAttempts.Add(new DraftAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "sales.request-attempts", "Sales", "idempotency", "SalesDbContext", "RequestAttemptRow",
+        "sales", "RequestAttempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesDbContext.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027063346_AddSalesRequests.cs",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs",
+        ("dbContext.RequestAttempts.Add(new RequestAttemptRow",), mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "work.observation-inbox", "Work", "inbox", "WorkDbContext", "WorkObservationInboxRow",
         "work", "ObservationInbox", WORK_CONTEXT,
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/Migrations/20261005190000_InitialWorkDesiredStateStorage.cs",
@@ -583,6 +592,10 @@ WRITER_METHOD_SCOPES = {
         "sales.draft-attempts",
         "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs",
     ): "StoreDraftAsync",
+    (
+        "sales.request-attempts",
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs",
+    ): "RecordRequestRefusalAsync",
     (
         "work.observation-inbox",
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
@@ -709,6 +722,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "StoreDraftAsync",
     ): "6706dc3ddcb2dd03fbfd7ac47fa64b3a8db2964451e7741bf8ef722a4c769a68",
     (
+        "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs",
+        "RecordRequestRefusalAsync",
+    ): "81c17b68bf692f4cbecb7bf7220776ff1f623add0d868829cca4484fbc0a0bb0",
+    (
         "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs",
         "ReconcileAsync",
     ): "0c760ebfe36fce642faa069b72637e699f16e1d14a04f0d154f43357be542657",
@@ -739,7 +756,8 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "ea3481d674648b893796c93b15dab32e0a7a49b7c9ba0a1ef686f2d8a6afac2d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "9807401ce50391e74d9dbcda4d5e148bc2944a3cf6c23b646918a97f0ffb2d7d",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "f942408eaa2ba3e75c0acb66dc5e71492582c39582ed7415914b21f6477e9048",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "91a822475812e62fe1c7cbb12ffbdcb99ab11cc3b6f04bc31e3e133100764bc9",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",
 }
 
