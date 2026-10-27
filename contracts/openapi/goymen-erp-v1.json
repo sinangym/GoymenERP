@@ -88328,6 +88328,32 @@
           }
         }
       },
+      "SalesDraftRiskTotalsV1": {
+        "required": [
+          "currencyId",
+          "grossRisk",
+          "grossRiskWithThisOrder"
+        ],
+        "type": "object",
+        "properties": {
+          "currencyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "grossRisk": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "grossRiskWithThisOrder": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SalesDraftSliceScheduleV1": {
         "required": [
           "sliceId",
@@ -89381,12 +89407,13 @@
           "draftVersion",
           "partyId",
           "companyAccountId",
-          "currencyId",
           "result",
           "reasons",
           "amountDisclosure",
-          "grossRisk",
+          "inLocalCurrency",
+          "inLimitCurrency",
           "components",
+          "thisOrder",
           "creditLimit",
           "collateral"
         ],
@@ -89403,10 +89430,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "currencyId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "result": {
             "type": "string"
           },
@@ -89419,10 +89442,24 @@
           "amountDisclosure": {
             "$ref": "#/components/schemas/SalesPriceDisclosure"
           },
-          "grossRisk": {
-            "type": [
-              "null",
-              "string"
+          "inLocalCurrency": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftRiskTotalsV1"
+              }
+            ]
+          },
+          "inLimitCurrency": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftRiskTotalsV1"
+              }
             ]
           },
           "components": {
@@ -89430,6 +89467,9 @@
             "items": {
               "$ref": "#/components/schemas/SalesDraftRiskFigureV1"
             }
+          },
+          "thisOrder": {
+            "$ref": "#/components/schemas/SalesDraftRiskFigureV1"
           },
           "creditLimit": {
             "$ref": "#/components/schemas/SalesDraftRiskFigureV1"

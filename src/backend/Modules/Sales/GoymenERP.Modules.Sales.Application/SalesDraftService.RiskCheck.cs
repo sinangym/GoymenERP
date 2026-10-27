@@ -2,6 +2,7 @@ using System.Globalization;
 using GoymenERP.BuildingBlocks.Monetary;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Sales.Application;
 
@@ -10,15 +11,21 @@ namespace GoymenERP.Modules.Sales.Application;
 /// Read-only in every module: no attempt, audit or version effect, nothing cached or copied into Sales.
 /// <list type="bullet">
 /// <item><b>Open receivables, credit limit, collateral</b>: the customer-finance owner's answer through
-/// <see cref="ISalesPartyRiskReadPortV1"/> (never its tables). Not composed, failing or malformed → each is "Unavailable".</item>
+/// <see cref="ISalesPartyRiskReadPortV1"/> (never its tables; SAT-D51: Finance owns the limit and collateral, Cari only shows
+/// them). Open receivables are net of the customer's unallocated payments (SAT-D52). Not composed, failing or malformed → each
+/// is "Unavailable".</item>
 /// <item><b>Shipped, not invoiced</b>: invoices are S5 — "NoSource" (never zero), so the result cannot be "Within" yet.</item>
-/// <item><b>Approved, not shipped</b>: for every open approved order of the same customer account (the store's
-/// <see cref="ISalesOrderDraftStore.ListOpenApprovedOrdersAsync"/>), per line (approved quantity − the delivery owner's shipped
-/// total, not below zero) × the net unit price (<see cref="SalesLinePriceCalculator"/>), each line amount rounded per SAT-D11 at
-/// the order's money scale. The approved basis is the current lines while the current revision is approved, else the last
-/// approved revision's (never unapproved quantities or prices). An unpriced line, a price in another unit, an unreadable delivery
-/// owner or more orders than one read takes make it "Unavailable" — never a smaller sum. The amounts are net of taxes (no totals
-/// calculator yet, API-03), so they are marked <c>ExcludingTax</c>.</item>
+/// <item><b>Approved, not shipped</b> (SAT-D50: every internally approved order, customer acceptance or not): for every open
+/// approved order of the same customer account (the store's <see cref="ISalesOrderDraftStore.ListOpenApprovedOrdersAsync"/>), per
+/// line the approved quantity − the delivery owner's shipped total, not below zero. The approved basis is the current lines while
+/// the current revision is approved, else the last approved revision's (never unapproved quantities). SAT-D46: the amount of what
+/// remains enters VAT-INCLUDED; the VAT-included order totals are API-03's, which does not exist yet, so a remainder above zero
+/// is "Unavailable" (<c>vat_inclusive_amount_unavailable</c>) — the VAT-excluded net is never substituted. Nothing left (or no
+/// open approved order) is a recorded zero. An unpriced line, a price in another unit, an unreadable delivery owner or more
+/// orders than one read takes are "Unavailable" first, with their own reasons.</item>
+/// <item><b>This order</b> (SAT-D48): the order-time check is gross risk + this order. An order whose current revision is
+/// approved is already in the remainder (adds nothing); a cancelled or closed order adds nothing; any other order adds its
+/// VAT-included total, which is API-03's — "Unavailable" until it exists.</item>
 /// <item><b>The decision</b> is <see cref="SalesCustomerRiskCalculator"/>'s alone, in the order's currency at its money scale.</item>
 /// <item><b>Amounts</b> are disclosed only with <c>sales.orders.price.read</c>; the states, sources, reasons and result always.</item>
 /// <item><b>Fences</b> (the draft read's): before anything is read, after the draft, after the order list, after each owner.</item>
@@ -61,37 +68,92 @@ public sealed partial class SalesDraftService
         var party = await PartyRiskAsync(scope, draft, cancellationToken);
         var remainder = await ApprovedRemainderAsync(scope, draft, cancellationToken);
         var shippedNotInvoiced = SalesRiskInput.NoSource(SalesDraftRiskReasonCodesV1.InvoicingOwnerMissing);
-        var currencyId = draft.Header.CurrencyId;
-        var scale = Math.Min(draft.Money.Scale, Money.MaximumScale);
-        var evaluation = SalesCustomerRiskCalculator.Evaluate(currencyId, scale, party.OpenReceivables, shippedNotInvoiced, remainder,
-            party.CreditLimit);
+        var thisOrder = ThisOrder(draft);
+
+        // SAT-D53: the totals in the company's local currency (TL) and in the credit limit's currency; never the order's.
+        var local = await RiskCurrencyAsync(scope, draft, SettingsCurrencyIdentitiesV1.TurkishLira, cancellationToken);
+        var limitCurrency = party.CreditLimit is { State: SalesRiskInputState.Available, Amounts: [{ } limitAmount] }
+            ? await RiskCurrencyAsync(scope, draft, limitAmount.CurrencyId, cancellationToken)
+            : null;
+        var evaluation = SalesCustomerRiskCalculator.Evaluate(local, limitCurrency, party.OpenReceivables, shippedNotInvoiced,
+            remainder, thisOrder, party.CreditLimit);
 
         // The price read is asked last, after every other fence: the freshest word on whether amounts cross.
         var disclosure = await DiscloseAsync(scope, cancellationToken);
         var visible = disclosure == SalesPriceDisclosure.Visible;
+        var scales = new Dictionary<Guid, int> { [draft.Header.CurrencyId] = Math.Min(draft.Money.Scale, Money.MaximumScale) };
+        foreach (var known in new[] { local, limitCurrency })
+        {
+            if (known is not null)
+            {
+                scales[known.CurrencyId] = known.Scale;
+            }
+        }
+
+        string Text(decimal amount, Guid currencyId) => AmountText(amount, scales.TryGetValue(currencyId, out var scale) ? scale : null);
         SalesDraftRiskFigureV1 Figure(string kind, string source, SalesRiskInput input) =>
             new(kind, source, FigureState(input.State), input.State == SalesRiskInputState.Available ? input.TaxBasis?.ToString() : null,
                 visible && input.State == SalesRiskInputState.Available
-                    ? [.. input.Amounts.Select(amount => new SalesDraftRiskAmountV1(amount.CurrencyId, AmountText(amount.Amount, amount.CurrencyId, currencyId, scale)))]
+                    ? [.. input.Amounts.Select(amount => new SalesDraftRiskAmountV1(amount.CurrencyId, Text(amount.Amount, amount.CurrencyId)))]
                     : null,
                 input.State == SalesRiskInputState.Available ? null : input.ReasonCode);
+        SalesDraftRiskTotalsV1? Totals(SalesRiskTotals? totals) => totals is null
+            ? null
+            : new SalesDraftRiskTotalsV1(totals.Currency.CurrencyId,
+                visible && totals.GrossRisk is { } gross ? Text(gross.Amount, gross.CurrencyId) : null,
+                visible && totals.GrossRiskWithThisOrder is { } total ? Text(total.Amount, total.CurrencyId) : null);
 
         return new SalesOrderDraftRiskCheckResponse(
             draft.Version.ToString(CultureInfo.InvariantCulture),
             draft.Header.PartyId,
             draft.Header.CompanyAccountId,
-            currencyId,
             evaluation.Outcome.ToString(),
             [.. evaluation.Reasons.Select(reason => new SalesDraftRiskReasonV1(reason.Component, reason.Code))],
             disclosure,
-            visible && evaluation.GrossRisk is { } gross ? AmountText(gross.Amount, gross.CurrencyId, currencyId, scale) : null,
+            Totals(evaluation.InLocalCurrency),
+            Totals(evaluation.InLimitCurrency),
             [
                 Figure(SalesDraftRiskFigureKindsV1.OpenReceivables, party.OpenReceivablesSource, party.OpenReceivables),
                 Figure(SalesDraftRiskFigureKindsV1.ShippedNotInvoiced, SalesDraftRiskSourcesV1.Invoicing, shippedNotInvoiced),
                 Figure(SalesDraftRiskFigureKindsV1.ApprovedUnshippedRemainder, SalesDraftRiskSourcesV1.ApprovedOrderRemainders, remainder),
             ],
+            Figure(SalesDraftRiskFigureKindsV1.ThisOrder, SalesDraftRiskSourcesV1.ThisOrder, thisOrder),
             Figure(SalesDraftRiskFigureKindsV1.CreditLimit, party.CreditLimitSource, party.CreditLimit),
             Figure(SalesDraftRiskFigureKindsV1.Collateral, party.CollateralSource, party.Collateral));
+    }
+
+    /// <summary>
+    /// SAT-D53: a risk total's currency with its approved money scale — the order's own snapshot when it is the order's currency,
+    /// otherwise the Settings money profile of the Sales order operation for the order's business date (active and in effect).
+    /// An owner that cannot answer gives null (that total is then not made), never a default scale; a lost authority stays a 403.
+    /// </summary>
+    private async Task<SalesRiskCurrency?> RiskCurrencyAsync(Scope scope, SalesOrderDraft draft, Guid currencyId,
+        CancellationToken cancellationToken)
+    {
+        if (currencyId == draft.Header.CurrencyId)
+        {
+            return new SalesRiskCurrency(currencyId, Math.Min(draft.Money.Scale, Money.MaximumScale));
+        }
+
+        MoneyProfileSnapshot profile;
+        try
+        {
+            profile = await ReadMoneyProfileAsync(scope, bindings.ReadPermission, currencyId, draft.Header.BusinessDate,
+                cancellationToken);
+        }
+        catch (SalesDraftServiceException exception) when (exception.Status is not (401 or 403))
+        {
+            return null;
+        }
+        catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+        {
+            return null;
+        }
+
+        var day = draft.Header.BusinessDate;
+        return profile.IsActive && profile.EffectiveFrom <= day && (profile.EffectiveThrough is null || profile.EffectiveThrough >= day)
+            ? new SalesRiskCurrency(currencyId, Math.Min(profile.Scale, Money.MaximumScale))
+            : null;
     }
 
     // ---- the customer-finance owner ---------------------------------------------------------------------------------------
@@ -190,7 +252,7 @@ public sealed partial class SalesDraftService
             return SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.OrderReadBoundExceeded);
         }
 
-        var sums = new Dictionary<Guid, decimal>();
+        var anythingLeft = false;
         foreach (var order in orders)
         {
             if (order.CompanyId != scope.CompanyId || order.Header.PartyId != draft.Header.PartyId
@@ -232,31 +294,35 @@ public sealed partial class SalesDraftService
                 return SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.DeliveryAnswerInvalid);
             }
 
-            if (OrderRemainder(order, basis, recorded) is not { } amount)
+            if (OrderRemains(basis, recorded) is not { } remains)
             {
                 return SalesRiskInput.Unavailable(basis.Reason!);
             }
 
-            try
-            {
-                sums[order.Header.CurrencyId] = sums.TryGetValue(order.Header.CurrencyId, out var sum) ? sum + amount : amount;
-            }
-            catch (OverflowException)
-            {
-                return SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.OrderAmountInvalid);
-            }
+            anythingLeft |= remains;
         }
 
-        return SalesRiskInput.Available(
-            [.. sums.OrderBy(entry => entry.Key).Select(entry => new SalesRiskAmount(entry.Key, entry.Value))],
-            SalesRiskTaxBasis.ExcludingTax);
+        // SAT-D46: what remains enters VAT-included, from API-03's totals — which do not exist yet. Never the VAT-excluded net.
+        return anythingLeft
+            ? SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable)
+            : SalesRiskInput.Available([], SalesRiskTaxBasis.IncludingTax);
     }
 
-    /// <summary>The approved commitment's lines and money scale; <see cref="Reason"/> is set by <see cref="OrderRemainder"/> on refusal.</summary>
-    private sealed class RiskOrderBasis(IReadOnlyList<RiskBasisLine> lines, int scale)
+    /// <summary>
+    /// SAT-D48: this order as far as it is not already in the approved remainder. Cancelled or closed: nothing. Current revision
+    /// approved: already in the remainder. Never approved: its whole VAT-included total (SAT-D46). A revision of an approved order
+    /// awaiting re-approval: its new VAT-included remaining amount REPLACES the old approved remainder already counted, so only the
+    /// difference is added (DEC-FIN-007, no double count). Both need API-03's VAT-included totals — unavailable until then.
+    /// </summary>
+    private static SalesRiskInput ThisOrder(SalesOrderDraft draft) =>
+        draft.State != SalesDraftState.Draft || draft.ApprovalState == InternalApprovalState.Approved
+            ? SalesRiskInput.Available([], SalesRiskTaxBasis.IncludingTax)
+            : SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable);
+
+    /// <summary>The approved commitment's lines; <see cref="Reason"/> is set by <see cref="OrderRemains"/> on refusal.</summary>
+    private sealed class RiskOrderBasis(IReadOnlyList<RiskBasisLine> lines)
     {
         public IReadOnlyList<RiskBasisLine> Lines { get; } = lines;
-        public int Scale { get; } = scale;
         public string? Reason { get; set; }
     }
 
@@ -270,8 +336,7 @@ public sealed partial class SalesDraftService
         if (order.ApprovalState == InternalApprovalState.Approved)
         {
             return new RiskOrderBasis(
-                [.. order.Lines.Select(line => new RiskBasisLine(line.Id, line.OrderUnit.UnitId, line.Quantity.Value, line.Commercial))],
-                order.Money.Scale);
+                [.. order.Lines.Select(line => new RiskBasisLine(line.Id, line.OrderUnit.UnitId, line.Quantity.Value, line.Commercial))]);
         }
 
         if (order.ArchivedRevisions.Count == 0)
@@ -293,23 +358,20 @@ public sealed partial class SalesDraftService
             lines.Add(new RiskBasisLine(line.LineId, line.OrderUnitId, quantity, line.Commercial));
         }
 
-        return new RiskOrderBasis(lines, approved.MoneyScale);
+        return new RiskOrderBasis(lines);
     }
 
     /// <summary>
-    /// Σ round(max(0, approved − shipped) × net unit price) over the basis lines, each line rounded half away from zero at the
-    /// order's money scale (SAT-D11: the line amount is rounded, the net unit price is not). Null with the reason set on refusal.
+    /// Whether anything of the order's approved lines is left to ship (approved − shipped above zero); a line with something left
+    /// must be priced in its order unit, or the order's remainder cannot be valued at all. Null with the reason set on refusal.
     /// </summary>
-    private static decimal? OrderRemainder(SalesOrderDraft order, RiskOrderBasis basis,
-        IReadOnlyDictionary<Guid, (decimal Shipped, decimal Delivered)> recorded)
+    private static bool? OrderRemains(RiskOrderBasis basis, IReadOnlyDictionary<Guid, (decimal Shipped, decimal Delivered)> recorded)
     {
-        var scale = Math.Min(basis.Scale, Money.MaximumScale);
-        var total = 0m;
+        var remains = false;
         foreach (var line in basis.Lines)
         {
             var shipped = recorded.TryGetValue(line.LineId, out var entry) ? entry.Shipped : 0m;
-            var remaining = line.Quantity > shipped ? line.Quantity - shipped : 0m;
-            if (remaining == 0m)
+            if (line.Quantity <= shipped)
             {
                 // Nothing of this line is left to ship: it adds nothing, priced or not (its shipped part is the next stage's).
                 continue;
@@ -327,25 +389,10 @@ public sealed partial class SalesDraftService
                 return null;
             }
 
-            try
-            {
-                var net = SalesLinePriceCalculator.NetUnitPrice(line.Commercial)!.Value;
-                if (net < 0m)
-                {
-                    basis.Reason = SalesDraftRiskReasonCodesV1.OrderAmountInvalid;
-                    return null;
-                }
-
-                total += Money.Round(remaining * net, order.Header.CurrencyId, scale).Amount;
-            }
-            catch (Exception exception) when (exception is OverflowException or FormatException or ArgumentException)
-            {
-                basis.Reason = SalesDraftRiskReasonCodesV1.OrderAmountInvalid;
-                return null;
-            }
+            remains = true;
         }
 
-        return total;
+        return remains;
     }
 
     // ---- wire helpers -----------------------------------------------------------------------------------------------------
@@ -358,11 +405,11 @@ public sealed partial class SalesDraftService
     };
 
     /// <summary>
-    /// Exact invariant text: padded to the order's money scale ("1250.00") when the amount is in the order's currency and fits that
-    /// scale; otherwise the exact value with no trailing zeros (another currency's scale is not this order's to choose).
+    /// Exact invariant text: padded to the currency's approved money scale ("1250.00") when that scale is known here and the amount
+    /// fits it; otherwise the exact value with no trailing zeros (an unknown currency's scale is not this read's to choose).
     /// </summary>
-    private static string AmountText(decimal amount, Guid amountCurrencyId, Guid currencyId, int scale) =>
-        amountCurrencyId == currencyId && Money.FitsScale(amount, scale)
-            ? amount.ToString("F" + scale.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)
+    private static string AmountText(decimal amount, int? scale) =>
+        scale is { } known && Money.FitsScale(amount, known)
+            ? amount.ToString("F" + known.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)
             : SalesLinePriceCalculator.Format(amount);
 }

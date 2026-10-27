@@ -222,8 +222,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // D-05 approval inbox: the existing pending-approval fact is renamed and strengthened to public HTTP/DI.
             // FI04: +2 approved-source open-item read facts (real HTTP authority/redaction and SQL keyset/no-write).
             // SAT-D18: +1 Sales-only GSP/GIN TRY profile keeps the bank-account path closed, kept ordinal-sorted.
+            // MOD-01 / SAT-D52: +1 Sales risk-port fact (unallocated payments deducted, reversed ones never), ordinal-sorted
+            // (cb46a836… -> 1b47e1de…).
             ["tools/relational_inventory/finance.txt"] =
-                "cb46a8362f31ddcb5e5c04be5369ac91527135dae1d0da2af66904a0302b95e6",
+                "1b47e1dec5407dafa506fc130c09d0e8e926cdfd204bdbc79426aabf4a1ee069",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).

@@ -37,7 +37,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// (approved official invoice installments) and are read by Sales only through the Finance-owned
 /// <see cref="ISalesPartyRiskReadPortV1"/>; the approved-unshipped remainder from approved priced orders stored through the real
 /// Sales store and a shipment recorded through the real Logistics store (AT-024 port). "Shipped but not invoiced" (S5), the credit
-/// limit and collateral have no owner record on main: the result is "Unavailable" with every reason — never "Within". The read
+/// limit and collateral have no owner record on main, and an order amount enters VAT-included (SAT-D46), which is API-03's: the
+/// result is "Unavailable" with every reason — never "Within". The local (TL) totals are reported (SAT-D53). The read
 /// writes nothing in any module; another company's receivables never reach the check and another company cannot read it (404);
 /// without the draft read it is 403; without the price read every amount is withheld.
 /// <para>
@@ -53,7 +54,8 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
     private static readonly DateOnly From = new(2026, 9, 1);
     private static readonly DateTimeOffset T0 = new(2026, 10, 26, 9, 0, 0, TimeSpan.Zero);
     private static readonly Guid KgUnit = SettingsUnitIdentitiesV1.Kilogram;
-    private static readonly Guid Currency = Guid.Parse("6b7e0c11-5d2b-4c8e-9f10-2b3c4d5e6f01");
+    // SAT-D53: the company's local currency (TL) — the order, the receivables and the local totals are all in it here.
+    private static readonly Guid Currency = SettingsCurrencyIdentitiesV1.TurkishLira;
     private static readonly Guid MoneyProfile = Guid.Parse("6b7e0c11-5d2b-4c8e-9f10-2b3c4d5e6f02");
     private static readonly Guid KgProfile = Guid.Parse("6b7e0c11-5d2b-4c8e-9f10-2b3c4d5e6f03");
     private static readonly Guid Product = Guid.Parse("6b7e0c11-5d2b-4c8e-9f10-2b3c4d5e6f04");
@@ -71,10 +73,11 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
         var customer = new Customer(Guid.NewGuid(), Guid.NewGuid());
         // Two approved invoice installments of the customer in company A (1000.00 + 1001.00) through the real admission.
         await run.AdmitOpenItemsAsync(CompanyA, customer, "1000.00", "1001.00");
-        // Two approved priced orders of the customer: 10 kg and 4 kg at 12.50 − 5 % = 11.875 net per kg.
+        // Two approved priced orders of the customer: 10 kg and 4 kg.
         var first = await run.ApprovedDraftAsync(CompanyA, customer, "a", "10");
         var second = await run.ApprovedDraftAsync(CompanyA, customer, "b", "4");
-        // 6 of the first order's 10 kg shipped through the real Logistics store: 4 kg left → 47.50; the second untouched → 47.50.
+        // 6 of the first order's 10 kg shipped through the real Logistics store: 4 kg left; the second untouched. What is left enters
+        // VAT-included (SAT-D46) — API-03's, so the remainder is unavailable, never the VAT-excluded net.
         var instructionId = await run.ShippedInstructionAsync(CompanyA, first, "a", instructed: 10m, shipped: 6m);
 
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
@@ -85,24 +88,30 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
 
         var check = await run.RiskCheckAsync(client, path);
 
-        Assert.Equal(["draftVersion", "partyId", "companyAccountId", "currencyId", "result", "reasons", "amountDisclosure", "grossRisk",
-            "components", "creditLimit", "collateral"], check.EnumerateObject().Select(member => member.Name));
-        Assert.Equal(("4", customer.PartyId.ToString("D"), customer.AccountId.ToString("D"), Currency.ToString("D"), "Unavailable", "Visible"),
+        Assert.Equal(["draftVersion", "partyId", "companyAccountId", "result", "reasons", "amountDisclosure", "inLocalCurrency", "inLimitCurrency",
+            "components", "thisOrder", "creditLimit", "collateral"], check.EnumerateObject().Select(member => member.Name));
+        Assert.Equal(("4", customer.PartyId.ToString("D"), customer.AccountId.ToString("D"), "Unavailable", "Visible"),
             (check.GetProperty("draftVersion").GetString(), check.GetProperty("partyId").GetString(),
-                check.GetProperty("companyAccountId").GetString(), check.GetProperty("currencyId").GetString(),
-                check.GetProperty("result").GetString(), check.GetProperty("amountDisclosure").GetString()));
-        // Fail-closed: no gross risk while a stage has no source and the stages are on different tax bases.
-        Assert.Equal(JsonValueKind.Null, check.GetProperty("grossRisk").ValueKind);
+                check.GetProperty("companyAccountId").GetString(), check.GetProperty("result").GetString(),
+                check.GetProperty("amountDisclosure").GetString()));
+        // SAT-D53: the local (TL) totals, not computable while a stage is missing; no limit, so no limit-currency totals.
+        var local = check.GetProperty("inLocalCurrency");
+        Assert.Equal((Currency.ToString("D"), JsonValueKind.Null, JsonValueKind.Null), (local.GetProperty("currencyId").GetString(),
+            local.GetProperty("grossRisk").ValueKind, local.GetProperty("grossRiskWithThisOrder").ValueKind));
+        Assert.Equal(JsonValueKind.Null, check.GetProperty("inLimitCurrency").ValueKind);
         Assert.Equal(
-            [("ShippedNotInvoiced", "invoicing_owner_missing"), ("Check", "tax_basis_mismatch"), ("CreditLimit", "finance_credit_limit_owner_missing")],
+            [("ShippedNotInvoiced", "invoicing_owner_missing"), ("ApprovedUnshippedRemainder", "vat_inclusive_amount_unavailable"),
+                ("CreditLimit", "finance_credit_limit_owner_missing")],
             check.GetProperty("reasons").EnumerateArray().Select(reason => (reason.GetProperty("component").GetString(), reason.GetProperty("code").GetString())));
         Assert.Equal(
             [
                 ("OpenReceivables", "finance.open-items", "Available", "IncludingTax", "2001.00", null),
                 ("ShippedNotInvoiced", "sales.invoicing", "NoSource", null, null, "invoicing_owner_missing"),
-                ("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Available", "ExcludingTax", "95.00", null),
+                ("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
             ],
             check.GetProperty("components").EnumerateArray().Select(Figure));
+        // SAT-D48: the checked order is approved — already in the remainder, it adds nothing.
+        Assert.Equal(("ThisOrder", "sales.this-order", "Available", "IncludingTax", "", null), Figure(check.GetProperty("thisOrder")));
         Assert.Equal(("CreditLimit", "finance.party-credit-limit", "NoSource", null, null, "finance_credit_limit_owner_missing"),
             Figure(check.GetProperty("creditLimit")));
         Assert.Equal(("Collateral", "finance.party-collateral", "NoSource", null, null, "finance_collateral_owner_missing"),
@@ -117,11 +126,11 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
         var withoutPrice = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SalesPermissionManifestV1.DraftsRead);
         using var priceless = run.Client(withoutPrice, CompanyA);
         var withheld = await run.RiskCheckAsync(priceless, path);
-        Assert.Equal(("Withheld", "Unavailable", JsonValueKind.Null), (withheld.GetProperty("amountDisclosure").GetString(),
-            withheld.GetProperty("result").GetString(), withheld.GetProperty("grossRisk").ValueKind));
-        Assert.All(withheld.GetProperty("components").EnumerateArray(), figure =>
+        Assert.Equal(("Withheld", "Unavailable"), (withheld.GetProperty("amountDisclosure").GetString(),
+            withheld.GetProperty("result").GetString()));
+        Assert.All(withheld.GetProperty("components").EnumerateArray().Append(withheld.GetProperty("thisOrder")), figure =>
             Assert.Equal(JsonValueKind.Null, figure.GetProperty("amounts").ValueKind));
-        Assert.Equal(("Available", "Available"), (withheld.GetProperty("components")[0].GetProperty("state").GetString(),
+        Assert.Equal(("Available", "Unavailable"), (withheld.GetProperty("components")[0].GetProperty("state").GetString(),
             withheld.GetProperty("components")[2].GetProperty("state").GetString()));
     }
 
@@ -167,14 +176,15 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
             Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
         }
 
-        // Company A: B's 5000.00 is invisible — a recorded zero; the order's 2 kg is unshipped → 23.75.
+        // Company A: B's 5000.00 is invisible — a recorded zero; the order's 2 kg is unshipped (VAT-included amount: API-03's).
         var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
             SalesPermissionManifestV1.OrdersPriceRead);
         using var clientOfA = run.Client(readerOfA, CompanyA);
         var check = await run.RiskCheckAsync(clientOfA, path);
         var components = check.GetProperty("components").EnumerateArray().Select(Figure).ToArray();
         Assert.Equal(("OpenReceivables", "finance.open-items", "Available", "IncludingTax", "", null), components[0]);
-        Assert.Equal(("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Available", "ExcludingTax", "23.75", null), components[2]);
+        Assert.Equal(("ApprovedUnshippedRemainder", "sales.approved-order-remainders", "Unavailable", null, null, "vat_inclusive_amount_unavailable"),
+            components[2]);
         Assert.Equal("Unavailable", check.GetProperty("result").GetString());
     }
 

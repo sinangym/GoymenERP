@@ -6,7 +6,10 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 // aşamalar arasında çift sayım yapılmaz." DEC-FIN-009 (KILITLI, K1): "Risk kontrolü siparişte uyarı/onay, sevkiyatta yeniden
 // kesin kontrol yapar." This read only EXPOSES the check; the warning-or-approval at order time (API-07) and the hard check at
 // shipment belong to their callers. Every part says where it comes from and whether its owner answered: a part whose owner
-// cannot answer makes the result "Unavailable" (fail-closed), never "Within".
+// cannot answer makes the result "Unavailable" (fail-closed), never "Within". SAT-D46…D52 (SINAN_KARARLARI_2026-10-27_SATIS_EK7):
+// every amount VAT-included (D46), other currencies only at the check day's TCMB selling rate (D47), the decision on gross risk +
+// this order (D48), equal to the limit is within (D49), customer acceptance not awaited (D50), limit and collateral owned by
+// Finance (D51), unallocated customer payments deducted from open receivables (D52).
 
 /// <summary>The stable wire names of a figure's <c>state</c>.</summary>
 public static class SalesDraftRiskFigureStatesV1
@@ -28,6 +31,9 @@ public static class SalesDraftRiskFigureKindsV1
     public const string ApprovedUnshippedRemainder = "ApprovedUnshippedRemainder";
     public const string CreditLimit = "CreditLimit";
     public const string Collateral = "Collateral";
+
+    /// <summary>SAT-D48: this order as far as it is not already in the approved remainder.</summary>
+    public const string ThisOrder = "ThisOrder";
 }
 
 /// <summary>The stable source names of the parts Sales computes itself or cannot reach.</summary>
@@ -41,6 +47,9 @@ public static class SalesDraftRiskSourcesV1
 
     /// <summary>The customer-finance owner of <see cref="ISalesPartyRiskReadPortV1"/>, when it is not composed or did not answer.</summary>
     public const string PartyRiskOwner = "party-risk-owner";
+
+    /// <summary>SAT-D48: the order being checked (the Sales aggregate; its VAT-included total is API-03's).</summary>
+    public const string ThisOrder = "sales.this-order";
 }
 
 /// <summary>The stable reason codes the Sales risk read adds to the calculator's own (<c>SalesRiskReasonCodes</c>).</summary>
@@ -70,8 +79,11 @@ public static class SalesDraftRiskReasonCodesV1
     /// <summary>The approved quantities of an order awaiting re-approval cannot be taken exactly.</summary>
     public const string OrderBasisUnreadable = "order_basis_unreadable";
 
-    /// <summary>A line amount does not fit an exact decimal, or a net price is negative: a malformed order.</summary>
-    public const string OrderAmountInvalid = "order_amount_invalid";
+    /// <summary>
+    /// SAT-D46: an order amount enters the risk VAT-included, from Sales' totals calculator (API-03), which does not exist yet.
+    /// The VAT-excluded net is never put in its place.
+    /// </summary>
+    public const string VatInclusiveAmountUnavailable = "vat_inclusive_amount_unavailable";
 
     /// <summary>The customer has more open approved orders than one read takes: never a partial (smaller) sum.</summary>
     public const string OrderReadBoundExceeded = "order_read_bound_exceeded";
@@ -80,29 +92,36 @@ public static class SalesDraftRiskReasonCodesV1
 /// <summary>
 /// MOD-01 / API-06: <c>GET /api/v1/sales/drafts/{id}/risk-check</c> under <c>sales.drafts.read</c>.
 /// <list type="bullet">
-/// <item><c>result</c>: <c>Within</c>, <c>Over</c> (the gross risk EXCEEDS the limit) or <c>Unavailable</c>, with every
-/// <c>reasons</c> entry when it is not a plain answer.</item>
-/// <item><c>currencyId</c>: the currency the check is made in — the order's; amounts in another currency are not converted.</item>
-/// <item><c>grossRisk</c>: open receivables + shipped-not-invoiced + approved-unshipped remainder (DEC-FIN-007), present only when
-/// all three answered in that currency and on one tax basis and the caller holds <c>sales.orders.price.read</c>.</item>
-/// <item><c>components</c>: the three parts in that order; <c>creditLimit</c>; <c>collateral</c> — shown only, never part of the
-/// gross risk (net-risk policy, OPEN-010 open).</item>
+/// <item><c>result</c>: <c>Within</c>, <c>Over</c> (the total with this order EXCEEDS the limit; equal is within, SAT-D49) or
+/// <c>Unavailable</c>, with every <c>reasons</c> entry when it is not a plain answer. Decided in the credit limit's currency
+/// (SAT-D53).</item>
+/// <item><c>inLocalCurrency</c> and <c>inLimitCurrency</c> (SAT-D53): the totals in the company's local currency (TL) and in the limit's
+/// currency — each <c>{currencyId, grossRisk, grossRiskWithThisOrder}</c>; null when that currency (or its money scale) is not
+/// known. <c>grossRisk</c> = open receivables + shipped-not-invoiced + approved-unshipped remainder (DEC-FIN-007);
+/// <c>grossRiskWithThisOrder</c> adds <c>thisOrder</c> (SAT-D48). Amounts in another currency need the DEC-FIN-010 rate
+/// (SAT-D47); without a rate record the total is null.</item>
+/// <item><c>components</c>: the three stages in that order; <c>thisOrder</c>; <c>creditLimit</c>; <c>collateral</c> — shown
+/// only, never part of the gross risk (net-risk policy, OPEN-010 open).</item>
 /// <item><c>amountDisclosure</c>: <c>Withheld</c> without the price read — every amount is then null; the states, sources,
-/// reasons and the result stay.</item>
+/// reasons, currencies and the result stay.</item>
 /// </list>
 /// </summary>
 public sealed record SalesOrderDraftRiskCheckResponse(
     string DraftVersion,
     Guid PartyId,
     Guid CompanyAccountId,
-    Guid CurrencyId,
     string Result,
     IReadOnlyList<SalesDraftRiskReasonV1> Reasons,
     SalesPriceDisclosure AmountDisclosure,
-    string? GrossRisk,
+    SalesDraftRiskTotalsV1? InLocalCurrency,
+    SalesDraftRiskTotalsV1? InLimitCurrency,
     IReadOnlyList<SalesDraftRiskFigureV1> Components,
+    SalesDraftRiskFigureV1 ThisOrder,
     SalesDraftRiskFigureV1 CreditLimit,
     SalesDraftRiskFigureV1 Collateral);
+
+/// <summary>SAT-D53: the risk totals in one currency (amounts null when not computable or withheld).</summary>
+public sealed record SalesDraftRiskTotalsV1(Guid CurrencyId, string? GrossRisk, string? GrossRiskWithThisOrder);
 
 /// <summary>Why the result is not a plain "Within" / "Over": the part it is about (or <c>Check</c>) and a stable code.</summary>
 public sealed record SalesDraftRiskReasonV1(string Component, string Code);
@@ -120,5 +139,5 @@ public sealed record SalesDraftRiskFigureV1(
     IReadOnlyList<SalesDraftRiskAmountV1>? Amounts,
     string? ReasonCode);
 
-/// <summary>One amount in one currency as exact invariant text (padded to the order's money scale when it is in that currency).</summary>
+/// <summary>One amount in one currency as exact invariant text (padded to that currency's approved money scale when it is known).</summary>
 public sealed record SalesDraftRiskAmountV1(Guid CurrencyId, string Amount);

@@ -13,14 +13,16 @@ namespace GoymenERP.Modules.Finance.Infrastructure;
 /// nothing (no attempt, audit or version effect) and carries no authority: the Sales risk read measures its own name around it.
 /// <list type="bullet">
 /// <item><b>Open receivables</b> (DEC-FIN-005 / DEC-FIN-007 "açık alacak"): the OUTSTANDING amount of every OPEN Finance open
-/// item of the party's company account, summed per currency as exact decimal text (no conversion, no rounding). The admitted open
+/// item of the party's company account, summed per currency as exact decimal text (no conversion, no rounding), LESS the
+/// customer's unallocated payments in that currency (SAT-D52; down to zero, never below). The admitted open
 /// items are approved official invoice installments (<see cref="FinanceOpenItemSourceKinds"/>), so the amounts include taxes. A
 /// stored row that does not parse, or a per-currency sum that does not fit an exact <see cref="decimal"/>, makes the figure
 /// <see cref="SalesPartyRiskFigureStateV1.Unavailable"/> — never a partial sum. No open item is a recorded zero (an empty list).
 /// Customer instruments not yet collected are NOT added: the debt closes at collection (DEC-FIN-016), so the open item still
 /// carries it — adding the instrument too would count it twice.</item>
-/// <item><b>Credit limit</b> and <b>collateral</b>: no Finance or Cari master of either exists on main (W4-RISK; the collateral
-/// haircut is OPEN-010, still open). Both are <see cref="SalesPartyRiskFigureStateV1.NoSource"/> — never zero, never unlimited.</item>
+/// <item><b>Credit limit</b> and <b>collateral</b>: Finance owns them (SAT-D51; Cari only shows them), but no master exists on
+/// main yet (W4-RISK; the collateral haircut is OPEN-010, still open). Both are <see cref="SalesPartyRiskFigureStateV1.NoSource"/>
+/// — never zero, never unlimited.</item>
 /// </list>
 /// </summary>
 internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext, ICompanyContext companyContext)
@@ -79,6 +81,21 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
             sums[row.CurrencyId] = sums.TryGetValue(row.CurrencyId, out var sum) ? sum.Add(outstanding) : outstanding;
         }
 
+        // SAT-D52: the customer's payments not yet allocated to an invoice are deducted, per currency.
+        if (await UnallocatedPaymentsAsync(companyId, partyId, companyAccountId, cancellationToken) is not { } unallocated)
+        {
+            return Unavailable();
+        }
+
+        foreach (var (currencyId, paid) in unallocated)
+        {
+            if (sums.TryGetValue(currencyId, out var owed))
+            {
+                // Open receivables are deducted down to zero, never below: an advance beyond them is not a negative receivable.
+                sums[currencyId] = owed.CompareTo(paid) > 0 ? owed.Subtract(paid) : owed.Subtract(owed);
+            }
+        }
+
         var amounts = new List<SalesPartyRiskAmountV1>(sums.Count);
         foreach (var (currencyId, sum) in sums)
         {
@@ -94,6 +111,74 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         }
 
         return Available(amounts);
+    }
+
+    /// <summary>
+    /// SAT-D52: per currency, the UNALLOCATED amount of every customer payment Finance recorded for the account — a recorded
+    /// bank/POS receipt (<see cref="MoneyEventKinds.ManualBankReceiptRecorded"/>) or a COLLECTED cheque/note
+    /// (<see cref="MoneyEventKinds.CustomerInstrumentCollected"/>). A cheque or note not yet collected (and DBS) has no money
+    /// event, so it is never counted as paid before the bank pays (DEC-FIN-008, DEC-FIN-016). A source with no allocation state
+    /// is wholly unallocated; an allocated one counts its state's unallocated amount; a payment with an APPROVED reversal is
+    /// excluded (FIN-T06; its state is also zeroed by the barrier) and the reversal event itself is not a payment. Any row Finance cannot read → null (the caller answers
+    /// Unavailable rather than a receivable that is too small or too large). Allocation itself is not touched here.
+    /// </summary>
+    private async Task<SortedDictionary<Guid, FinanceExactDecimalText>?> UnallocatedPaymentsAsync(Guid companyId, Guid partyId,
+        Guid companyAccountId, CancellationToken cancellationToken)
+    {
+        var receipt = MoneyEventKinds.ManualBankReceiptRecorded;
+        var collected = MoneyEventKinds.CustomerInstrumentCollected;
+        var payments = await dbContext.MoneyEvents.AsNoTracking()
+            .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
+                && (row.Kind == receipt || row.Kind == collected))
+            .Select(row => new { row.SourceId, row.CurrencyId, row.AmountText })
+            .ToListAsync(cancellationToken);
+        var sourceIds = payments.Select(row => row.SourceId).ToList();
+        var approved = ReversalProposalStatuses.Approved;
+        var reversed = sourceIds.Count == 0
+            ? new HashSet<Guid>()
+            : (await dbContext.ReversalProposals.AsNoTracking()
+                .Where(row => row.CompanyId == companyId && row.Status == approved && sourceIds.Contains(row.OriginalSourceId))
+                .Select(row => row.OriginalSourceId)
+                .ToListAsync(cancellationToken)).ToHashSet();
+        var states = sourceIds.Count == 0
+            ? []
+            : await dbContext.SourceAllocationStates.AsNoTracking()
+                .Where(row => row.CompanyId == companyId && sourceIds.Contains(row.SourceId))
+                .Select(row => new { row.SourceId, row.CurrencyId, row.OriginalAmountText, row.UnallocatedAmountText })
+                .ToListAsync(cancellationToken);
+        var stateBySource = states.ToDictionary(row => row.SourceId);
+
+        var sums = new SortedDictionary<Guid, FinanceExactDecimalText>();
+        foreach (var payment in payments)
+        {
+            if (payment.SourceId == Guid.Empty || payment.CurrencyId == Guid.Empty
+                || !FinanceExactDecimalText.TryParsePositive(payment.AmountText, out var amount))
+            {
+                return null;
+            }
+
+            if (reversed.Contains(payment.SourceId))
+            {
+                // An approved reversal undid the payment (FIN-T06): it is not a payment any more, allocated or not.
+                continue;
+            }
+
+            var unallocated = amount;
+            if (stateBySource.TryGetValue(payment.SourceId, out var state))
+            {
+                if (state.CurrencyId != payment.CurrencyId
+                    || !FinanceExactDecimalText.Equal(state.OriginalAmountText, payment.AmountText)
+                    || !FinanceExactDecimalText.TryParseNonNegative(state.UnallocatedAmountText, out unallocated)
+                    || unallocated.CompareTo(amount) > 0)
+                {
+                    return null;
+                }
+            }
+
+            sums[payment.CurrencyId] = sums.TryGetValue(payment.CurrencyId, out var sum) ? sum.Add(unallocated) : unallocated;
+        }
+
+        return sums;
     }
 
     private static SalesPartyRiskFigureV1 Available(IReadOnlyList<SalesPartyRiskAmountV1> amounts) =>
