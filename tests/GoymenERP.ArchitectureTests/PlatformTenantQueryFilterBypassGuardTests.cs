@@ -308,8 +308,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // D-05: +1 pending-approval owner-read SQL fact, kept ordinal-sorted.
             // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
             // TEK-13: +5 SalesRemainderChangeSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (5932b012… -> f2c6c3ac…).
+            // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
             ["tools/relational_inventory/sales.txt"] =
-                "f2c6c3ac65068e966d4266b4bc153c379bbf017b84fd7db5e63ea6b998dec899",
+                "aabdd034baeb20fe87c7d584eddfdb3a882aa81738667d8e6f79e907343b5ec5",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1099,9 +1100,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["DbConnection"] = 1
                         }),
                 // The module source and Sales read ports use only tenant-filtered Logistics contexts.
+                // Re-fingerprinted for SAT-D8 / API-10: the Sales approved-returns aggregate is projected to an anonymous
+                // row in SQL and mapped to the contract after the read (the record projection was not translatable on
+                // SQL Server); same tenant-filtered context, filter, grouping and order; no capability token added.
                 [ReviewedLogisticsCustomerReturnReadPortsPath] =
                     new(
-                        "9971b43185b0797b097b1895b45d2c3d1cefbda4a5c23b2c75a5594cf57c667c",
+                        "a885ae19839f97d1de8ee6be5e12c7307c2d189e7c5d5e8dad9cb81abc8bbb6e",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // The customer-return store recognises SQL uniqueness and its tracked aggregate; both
                 // capabilities remain exact-source and exact-count reviewed.
@@ -1259,8 +1263,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "SalesModuleExtensions.cs"] =
                     // Re-fingerprinted for #641: the scoped pending-approval read seam is DI-only; the provider
                     // branch and its database capability token counts are unchanged.
+                    // Re-fingerprinted for SAT-D8 / API-10: the draft service also receives the optional Logistics
+                    // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
                     new(
-                        "318a1490df72db9671b335ca4dbcbc42d4e69dfcbe875d2fcff5b03c026e80a9",
+                        "d39bf8917ddd4503c57d6f76a2e03e62e7d30d9dfe6a187d70c76cdeefcac324",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

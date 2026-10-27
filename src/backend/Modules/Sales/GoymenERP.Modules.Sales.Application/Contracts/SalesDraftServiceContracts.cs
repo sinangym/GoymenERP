@@ -87,6 +87,12 @@ public static class SalesDraftProblemCodesV1
     public const string LoadingProviderUnavailable = "loading_provider_unavailable";
 
     /// <summary>
+    /// 503 (SAT-D8 / API-10): the Logistics customer-return owner is not composed or cannot answer the order's approved
+    /// returns; the Sales order then shows no returned quantity, never an assumed zero. Code-less on the wire.
+    /// </summary>
+    public const string CustomerReturnProviderUnavailable = "customer_return_provider_unavailable";
+
+    /// <summary>
     /// 503 (DEC-SAL-005): an impact owner that exists on main (Inventory allocations, Logistics loading) is not composed or
     /// cannot answer at the cancel command; the order is not cancelled on an unread impact. Code-less on the wire.
     /// </summary>

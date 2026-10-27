@@ -2256,7 +2256,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1095, len(source_paths))
+        self.assertEqual(1097, len(source_paths))
         for shared_value_object in (
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/Money.cs",
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/ExchangeRate.cs",
@@ -2268,6 +2268,16 @@ internal {{declaration}} : IDocumentObjectStoreV1
             self.assertIn(shared_value_object, source_paths)
         self.assertNotIn(
             "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/Quantities/Quantity.cs",
+            source_paths,
+        )
+        self.assertIn(
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/"
+            "Contracts/SalesDraftCustomerReturnsV1.cs",
+            source_paths,
+        )
+        self.assertIn(
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/"
+            "SalesDraftService.CustomerReturns.cs",
             source_paths,
         )
         self.assertIn(
