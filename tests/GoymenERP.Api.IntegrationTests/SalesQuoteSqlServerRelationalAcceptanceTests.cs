@@ -191,8 +191,13 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
         // (a Preparing, revised-back, force-closed or cancelled order) are the dedicated fact below.
         await using (var scope = run.Store(CompanyA))
         {
+            // SAT-D43: the converted line is priced without a list-price reference, so it goes to approval first.
+            var checkedOrder = await run.Service(scope, Approver).ApproveDiscountExceptionsAsync(draftId,
+                new SalesDraftDiscountExceptionApprovalRequest(converted.Detail.Draft.Version,
+                    [.. converted.Detail.Lines.Select(line => new SalesDraftDiscountExceptionApprovalLineV1(line.LineId, "SENTETIK liste dışı fiyat"))]),
+                run.Metadata("q-discount-check"));
             var submitted = await run.Service(scope, run.Actor).SubmitDraftAsync(draftId,
-                new SalesDraftStateCommandRequest(converted.Detail.Draft.Version), run.Metadata("q-submit"));
+                new SalesDraftStateCommandRequest(checkedOrder.Detail.Draft.Version), run.Metadata("q-submit"));
             var approved = await run.Service(scope, Approver).ApproveDraftAsync(draftId,
                 new SalesDraftStateCommandRequest(submitted.Detail.Draft.Version), run.Metadata("q-approve-order"));
             Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
@@ -326,10 +331,24 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
             return (request, order.Detail.Draft.Id, order.Detail);
         }
 
-        async Task<SalesOrderDraftDetailView> SubmitAndApproveAsync(Guid order, string version, string tag)
+        // SAT-D43: the converted priced line has no list price; it is approved before the order is submitted.
+        async Task<string> ApproveDiscountChecksAsync(Guid order, string version, string tag)
         {
             await using var scope = run.Store(CompanyA);
-            var submitted = await run.Service(scope, run.Actor).SubmitDraftAsync(order, new SalesDraftStateCommandRequest(version), run.Metadata(tag + "-submit"));
+            var detail = await run.Service(scope, Approver).GetDraftDetailAsync(order);
+            var checkedOrder = await run.Service(scope, Approver).ApproveDiscountExceptionsAsync(order,
+                new SalesDraftDiscountExceptionApprovalRequest(version,
+                    [.. detail.Lines.Select(line => new SalesDraftDiscountExceptionApprovalLineV1(line.LineId, "SENTETIK liste dışı fiyat"))]),
+                run.Metadata(tag + "-discount-check"));
+            return checkedOrder.Detail.Draft.Version;
+        }
+
+        async Task<SalesOrderDraftDetailView> SubmitAndApproveAsync(Guid order, string version, string tag)
+        {
+            var checkedVersion = await ApproveDiscountChecksAsync(order, version, tag);
+            await using var scope = run.Store(CompanyA);
+            var submitted = await run.Service(scope, run.Actor).SubmitDraftAsync(order,
+                new SalesDraftStateCommandRequest(checkedVersion), run.Metadata(tag + "-submit"));
             var approved = await run.Service(scope, Approver).ApproveDraftAsync(order,
                 new SalesDraftStateCommandRequest(submitted.Detail.Draft.Version), run.Metadata(tag + "-approve-order"));
             Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
@@ -397,11 +416,14 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
         // direct edit, since the rejection itself is refused above) neither submits nor approves — refused, not recorded.
         var stale = await OrderFromApprovedRequestAsync("n-stale");
         var pending = await OrderFromApprovedRequestAsync("n-pending");
+        // Both orders carry an approved discount check, so the only thing left to refuse them is the request's state.
+        var staleVersion = await ApproveDiscountChecksAsync(stale.Order, stale.Detail.Draft.Version, "n-stale");
+        var pendingCheckedVersion = await ApproveDiscountChecksAsync(pending.Order, pending.Detail.Draft.Version, "n-pending");
         string pendingVersion;
         await using (var scope = run.Store(CompanyA))
         {
             pendingVersion = (await run.Service(scope, run.Actor).SubmitDraftAsync(pending.Order,
-                new SalesDraftStateCommandRequest(pending.Detail.Draft.Version), run.Metadata("n-pending-submit"))).Detail.Draft.Version;
+                new SalesDraftStateCommandRequest(pendingCheckedVersion), run.Metadata("n-pending-submit"))).Detail.Draft.Version;
         }
 
         foreach (var request in new[] { stale.Request, pending.Request })
@@ -414,7 +436,7 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
         await using (var scope = run.Store(CompanyA))
         {
             var submit = await Assert.ThrowsAsync<SalesDraftServiceException>(() => run.Service(scope, run.Actor).SubmitDraftAsync(stale.Order,
-                new SalesDraftStateCommandRequest(stale.Detail.Draft.Version), run.Metadata("n-stale-submit")));
+                new SalesDraftStateCommandRequest(staleVersion), run.Metadata("n-stale-submit")));
             var approve = await Assert.ThrowsAsync<SalesDraftServiceException>(() => run.Service(scope, Approver).ApproveDraftAsync(pending.Order,
                 new SalesDraftStateCommandRequest(pendingVersion), run.Metadata("n-pending-approve")));
             foreach (var refused in new[] { submit, approve })

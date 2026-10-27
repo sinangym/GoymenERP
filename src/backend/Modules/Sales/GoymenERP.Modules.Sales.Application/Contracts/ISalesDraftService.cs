@@ -37,6 +37,10 @@ public interface ISalesDraftService
     Task<SalesOrderDraftResponse> ApprovePriceFloorExceptionsAsync(Guid draftId,
         SalesDraftPriceFloorExceptionApprovalRequest request, SalesCommandMetadata metadata,
         CancellationToken cancellationToken = default);
+    /// <summary>SAT-D2 / API-12: another person approves every current over-limit discount with a reason (`sales.orders.discount-exception.approve`).</summary>
+    Task<SalesOrderDraftResponse> ApproveDiscountExceptionsAsync(Guid draftId,
+        SalesDraftDiscountExceptionApprovalRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
     /// <summary>AT-018 / AT-021: every line's reference, adjustments and net (price read).</summary>
     Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId, CancellationToken cancellationToken = default);
 
