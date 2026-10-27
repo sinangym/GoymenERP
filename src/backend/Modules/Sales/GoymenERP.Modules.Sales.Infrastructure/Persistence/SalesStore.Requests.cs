@@ -117,8 +117,7 @@ public sealed partial class SalesStore
         }
 
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        if (await dbContext.RequestAttempts.AsNoTracking()
-                .AnyAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken))
+        if (await RequestAttemptExistsAsync(commandName, keyHash, cancellationToken))
         {
             throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
         }
@@ -256,6 +255,10 @@ public sealed partial class SalesStore
         return new SalesRequestPage(requests,
             hasMore && last is not null ? ListCursor.Encode(companyId, last.CreatedAtUtc, last.Id, ListCursor.RequestOrdering) : null);
     }
+
+    private Task<bool> RequestAttemptExistsAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
+        dbContext.RequestAttempts.AsNoTracking()
+            .AnyAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
 
     /// <summary>ADR-011 §3/§4: the same content of the same actor answers the stored record as it is now; anything else is one 409.</summary>
     private async Task<SalesRequestStoreResult> ReplayRequestAttemptAsync(RequestAttemptRow attempt, string actorId, string requestHash,
