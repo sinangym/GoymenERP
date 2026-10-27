@@ -21,6 +21,7 @@ import { recallCommercialRevisionAttempt, rememberCommercialRevisionAttempt } fr
 import { useDraftLinePricing } from './useDraftLinePricing'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
 
 type RevisionAttempt = OrderAttemptState<DraftCommercialRevisionRequest, DraftMutation>
 
@@ -187,12 +188,12 @@ export function SalesDraftCommercialRevisionForm({
                   + ` (${P.tierText(row.reference.lowerQuantity, row.reference.upperQuantity)})`}
             </p>
             <div className={styles.actions}>
-              <button type="button" className={styles.secondaryButton} onClick={() => void loadReferences(row.lineId)}
+              <Button type="button" variant="secondary" onClick={() => void loadReferences(row.lineId)}
                 data-testid={`sales-price-fetch-${row.lineNo}`}>
                 {choice?.phase === 'loading' ? P.fetchingReferences : P.fetchReferences}
-              </button>
+              </Button>
               {row.reference === null ? null : (
-                <button type="button" className={styles.linkButton} onClick={() => change(row.lineId, { reference: null })}>{P.removeReference}</button>
+                <Button type="button" variant="ghost" className={styles.linkButton} onClick={() => change(row.lineId, { reference: null })}>{P.removeReference}</Button>
               )}
             </div>
             {choice?.phase === 'failed' ? <p className={styles.notice}>{P.referencesUnavailable}</p> : null}
@@ -204,7 +205,7 @@ export function SalesDraftCommercialRevisionForm({
                     {P.referenceText(item.priceListName, item.versionNo, item.unitPrice, item.currencyCode)}
                     {item.floorUnitPrice === null ? '' : ` (${P.floorText(item.floorUnitPrice)})`}
                     {` (${P.tierText(item.lowerQuantity, item.upperQuantity)})`}{' '}
-                    <button type="button" className={styles.secondaryButton} onClick={() => chooseReference(row.lineId, item)}>{P.useReference}</button>
+                    <Button type="button" variant="secondary" onClick={() => chooseReference(row.lineId, item)}>{P.useReference}</Button>
                   </li>
                 ))}
               </ul>
@@ -257,13 +258,13 @@ export function SalesDraftCommercialRevisionForm({
       })}
       {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
         <>
-          <button type="button" className={styles.secondaryButton} onClick={retry}>{text.retry}</button>
-          <button type="button" className={styles.linkButton} onClick={leave}>{text.abandon}</button>
+          <Button type="button" variant="secondary" onClick={retry}>{text.retry}</Button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={leave}>{text.abandon}</Button>
         </>
       ) : null}
-      <button type="button" className={styles.primaryButton} disabled={frozen || !stateAllowsRevision || freshRows === null} onClick={start}>
+      <Button type="button" variant="primary" disabled={frozen || !stateAllowsRevision || freshRows === null} onClick={start}>
         {text.submit}
-      </button>
+      </Button>
     </div>
   )
 }

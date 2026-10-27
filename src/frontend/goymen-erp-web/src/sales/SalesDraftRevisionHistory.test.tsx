@@ -13,7 +13,8 @@ import {
 
 const DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 const OTHER_DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaab'
-const path = `/satis/siparisler/${DRAFT}`
+// The history lives in the S-04 "Revizyon / Geçmiş" tab, opened by its link.
+const path = `/satis/siparisler/${DRAFT}?sekme=gecmis`
 const history = () => JSON.parse(historyRaw)
 const historyRead = (url: string) => url.endsWith('/revisions')
 
@@ -153,7 +154,7 @@ describe('SalesDraftRevisionHistory in the detail', () => {
   it('does not read history when the detail is missing', async () => {
     const fetch = installFetch({ onDetail: () => json({ status: 404 }, 404) })
     renderSalesApp(path)
-    await screen.findByText('Bulunamadı — sipariş taslağı')
+    await screen.findByText('Bulunamadı — satış siparişi')
     expect(fetch.salesCalls().some((c) => historyRead(c.url))).toBe(false)
   })
 
