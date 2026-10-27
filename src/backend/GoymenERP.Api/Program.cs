@@ -194,6 +194,9 @@ builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrereq
 builder.Services.AddScoped<ISettingsMoneyCandidateReaderV2, ApprovedSettingsPrerequisiteProvider>();
 // MOD-03 slice 1: the Settings-owned Sales policy registry (SAT-D2/D5/D6); no consumer is composed yet.
 builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
+// SAT-D25 / SAT-D39: the Settings-owned Sales quote policies (loss reason list, default validity); the reviewed catalog is
+// empty, so a loss is refused and no validity is suggested until Sinan enters the records.
+builder.Services.AddScoped<ISettingsSalesQuotePolicyProviderV1, ApprovedSettingsSalesQuotePolicyProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();

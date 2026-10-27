@@ -10,13 +10,16 @@ namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
 /// API-22 / API-23 / API-24 (plan §3.2, S-01; delegation No 160, 162, 163; master §7.2): the sales quote routes over
-/// <see cref="ISalesQuoteService"/> — create (201), list, detail, revision (200), loss (200) and the conversion into its ONE
-/// order (201 + the order's <c>Location</c>, the order's detail as the body). The draft routes' wire rules apply unchanged.
+/// <see cref="ISalesQuoteService"/> — create (201), list, detail, revision (200), loss (200; v2, SAT-D25), the expired-quote
+/// approval (200; SAT-D24/D44) and the conversion into its ONE order (201 + the order's <c>Location</c>, the order's detail as
+/// the body), plus the two reads of the create / loss forms: the SAT-D25 loss reason list and the SAT-D39 validity suggestion.
+/// The draft routes' wire rules apply unchanged.
 /// </summary>
 public static partial class SalesEndpoints
 {
     public const string QuotesPath = SalesQuoteApiV1.QuotePath;
     private static readonly HashSet<string> QuoteListQueryNames = new(["pageSize", "cursor", "state"], StringComparer.Ordinal);
+    private static readonly HashSet<string> QuoteValiditySuggestionQueryNames = new(["businessDate"], StringComparer.Ordinal);
 
     private static void MapQuoteEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -80,6 +83,67 @@ public static partial class SalesEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // SAT-D25: the company's closed loss reason list in force on the server's business day (isDefined false = no list:
+        // a loss is refused). Under the quote write name, like the loss itself.
+        quotes.MapGet("/loss-reasons", async (
+            HttpContext httpContext,
+            [FromServices] ISalesQuoteService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (httpContext.Request.Query.Count > 0)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetQuoteLossReasonsAsync(cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesQuoteLossReasonsV1")
+            .Produces<SalesQuoteLossReasonsViewV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // SAT-D39: the default validity suggested for a new quote on its business date (nulls = no Settings value, no suggestion).
+        quotes.MapGet("/validity-suggestion", async (
+            [FromQuery] DateOnly businessDate,
+            HttpContext httpContext,
+            [FromServices] ISalesQuoteService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!HasOnlySingleQuery(httpContext.Request.Query, QuoteValiditySuggestionQueryNames, QuoteValiditySuggestionQueryNames)
+                || !HasExactDate(httpContext.Request.Query, "businessDate"))
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                return Results.Json(await service.GetQuoteValiditySuggestionAsync(businessDate, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesQuoteValiditySuggestionV1")
+            .Produces<SalesQuoteValiditySuggestionV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
         quotes.MapGet("/{id:guid}", async (
             Guid id,
             HttpContext httpContext,
@@ -123,15 +187,16 @@ public static partial class SalesEndpoints
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
+        // API-24 v2 (SAT-D25): the loss names an entry of the Settings list; it retires the free-text v1 on the same path.
         quotes.MapPost("/{id:guid}/loss", (Guid id, HttpContext httpContext, [FromServices] ISalesQuoteService service,
                 ICorrelationContext correlation, CancellationToken cancellationToken) =>
-            QuoteCommandAsync(httpContext, correlation, SalesQuoteJson.ReadLoss, SalesQuoteApiV1.CommandStatus,
-                (body, metadata) => service.RecordQuoteLossAsync(id, body, metadata, cancellationToken),
+            QuoteCommandAsync(httpContext, correlation, SalesQuoteJson.ReadLossV2, SalesQuoteApiV1.CommandStatus,
+                (body, metadata) => service.RecordQuoteLossV2Async(id, body, metadata, cancellationToken),
                 response => (response.IsReplay, response.OriginalCorrelationId, null),
                 cancellationToken))
-            .WithName("RecordSalesQuoteLossV1")
+            .WithName("RecordSalesQuoteLossV2")
             .WithIdempotencyContract(SalesQuoteApiV1.CommandStatus, StatusCodes.Status409Conflict)
-            .Accepts<SalesQuoteLossRequest>("application/json")
+            .Accepts<SalesQuoteLossRequestV2>("application/json")
             .Produces<SalesQuoteResponse>(SalesQuoteApiV1.CommandStatus)
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
             .AllowsEmptyErpBadRequestBody()
@@ -139,7 +204,30 @@ public static partial class SalesEndpoints
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
                 SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
-            .ProducesErpUnprocessableEntity("sales_quote_loss_reason_required", "sales_quote_loss_reason_too_long")
+            .ProducesErpUnprocessableEntity(SalesQuoteProblemCodesV1.LossReasonUnknown, SalesQuoteProblemCodesV1.LossExplanationRequired,
+                SalesQuoteProblemCodesV1.LossExplanationTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // SAT-D24 / SAT-D44: the manager approval that lets the current revision of an EXPIRED quote be converted.
+        quotes.MapPost("/{id:guid}/expiry-approval", (Guid id, HttpContext httpContext, [FromServices] ISalesQuoteService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            QuoteCommandAsync(httpContext, correlation, SalesQuoteJson.ReadExpiryApproval, SalesQuoteApiV1.CommandStatus,
+                (body, metadata) => service.ApproveExpiredQuoteConversionAsync(id, body, metadata, cancellationToken),
+                response => (response.IsReplay, response.OriginalCorrelationId, null),
+                cancellationToken))
+            .WithName("ApproveExpiredSalesQuoteConversionV1")
+            .WithIdempotencyContract(SalesQuoteApiV1.CommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesQuoteExpiryApprovalRequest>("application/json")
+            .Produces<SalesQuoteResponse>(SalesQuoteApiV1.CommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesQuoteProblemCodesV1.NotExpired, SalesQuoteProblemCodesV1.ExpiryAlreadyApproved,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 

@@ -115,7 +115,10 @@ public static class SalesModuleExtensions
         // SAT-D2 / SAT-D34: the actor's discount limit groups (the Identity owner's role mapping, not registered yet). Without
         // groups no limit is defined: every line below its list price goes to approval; with groups but no Settings source,
         // such a line is 503, never checked against a guessed limit.
-        serviceProvider.GetService<ISalesDiscountLimitGroupSourceV1>());
+        serviceProvider.GetService<ISalesDiscountLimitGroupSourceV1>(),
+        // SAT-D25 / SAT-D39: the Settings quote policy port (loss reason list, default validity), registered by the host from the
+        // Settings owner; until it is, a loss is 503 (never a guessed reason) and no validity is suggested (503 on the read).
+        serviceProvider.GetService<ISettingsSalesQuotePolicyProviderV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

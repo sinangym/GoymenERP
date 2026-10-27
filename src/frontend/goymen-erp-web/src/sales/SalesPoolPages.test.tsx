@@ -1,6 +1,6 @@
 /**
  * S-01 Talep/Teklif Havuzu screens (UI-20) in the real shell, against wire bodies shaped like #824/#828's schemas.
- * Component evidence, NOT_ENV: the screen tests use TEST capability ids; the production map (the ids Sales shell 1.8
+ * Component evidence, NOT_ENV: the screen tests use TEST capability ids; the production map (the ids Sales shell 1.9
  * publishes) is pinned in the first block.
  */
 
@@ -16,6 +16,8 @@ import {
   COMPANY_A,
   CURRENCY,
   KG,
+  LOSS_REASON_OTHER,
+  LOSS_REASON_PRICE,
   ORDER_ID,
   OTHER_PARTY,
   PRODUCT,
@@ -25,10 +27,12 @@ import {
   REQUEST_ID,
   installPoolFetch,
   json,
+  lossReasons,
   orderMutation,
   quoteDetail,
   quoteLine,
   quoteMutation,
+  quoteSummary,
   requestDetail,
   requestMutation,
   requestSummary,
@@ -47,7 +51,7 @@ const notFound = (call: PoolCall) => {
   throw new Error(`unexpected ${call.method} ${call.url}`)
 }
 
-describe('the production map: the ids the backend publishes (Sales shell 1.8)', () => {
+describe('the production map: the ids the backend publishes (Sales shell 1.9)', () => {
   it('maps every pool key onto exactly its published id', () => {
     expect(SALES_POOL_CAPABILITY).toEqual({
       requestsList: ['sales.requests.list'],
@@ -59,6 +63,7 @@ describe('the production map: the ids the backend publishes (Sales shell 1.8)', 
       quotesCreate: ['sales.quotes.create'],
       quotesWrite: ['sales.quotes.write'],
       quotesConvert: ['sales.quotes.convert'],
+      quotesApproveExpired: ['sales.quotes.expired-conversion.approve'],
     })
   })
 
@@ -352,6 +357,41 @@ describe('Yeni teklif', () => {
     renderPool(`/satis/teklifler/yeni?talep=${REQUEST_ID}&talep=${REQUEST_2}`)
     expect((await screen.findByTestId('pool-quote-requests-blocked')).textContent).toBe(POOL_TEXT.quoteCreate.requestsMixed)
   })
+
+  it('SAT-D39: suggests the Settings default validity for the business date; the person may change it', async () => {
+    const fetch = installPoolFetch((call) => {
+      if (call.method === 'GET' && call.url.includes(`/sales/requests/${REQUEST_ID}`)) return json(requestDetail({ state: 'Approved', version: '2' }))
+      if (call.url.includes('/sales/quotes/validity-suggestion')) {
+        const businessDate = new URL(call.url, 'http://x').searchParams.get('businessDate')
+        return json({ businessDate, validityDays: 30, suggestedValidUntil: '2026-11-21', profileId: 'f6f6f6f6-0000-4000-8000-0000000000aa', profileVersion: '1' })
+      }
+      return notFound(call)
+    })
+    renderPool(`/satis/teklifler/yeni?talep=${REQUEST_ID}`)
+    await screen.findByTestId('pool-quote-covered-requests')
+    fireEvent.change(screen.getByLabelText(POOL_TEXT.form.businessDate), { target: { value: '2026-10-22' } })
+    await waitFor(() => expect((screen.getByTestId('pool-quote-valid-until-input') as HTMLInputElement).value).toBe('2026-11-21'))
+    expect(screen.getByText(POOL_TEXT.form.validitySuggested(30, '21.11.2026'))).toBeTruthy()
+    expect(fetch.calls.some((call) => call.url.includes('validity-suggestion?businessDate=2026-10-22'))).toBe(true)
+    // An edit is the person's value, kept as typed; clearing it leaves it empty (the date is optional).
+    fireEvent.change(screen.getByTestId('pool-quote-valid-until-input'), { target: { value: '' } })
+    expect((screen.getByTestId('pool-quote-valid-until-input') as HTMLInputElement).value).toBe('')
+  })
+
+  it('SAT-D39: without a Settings value nothing is suggested and the field stays empty', async () => {
+    installPoolFetch((call) => {
+      if (call.method === 'GET' && call.url.includes(`/sales/requests/${REQUEST_ID}`)) return json(requestDetail({ state: 'Approved', version: '2' }))
+      if (call.url.includes('/sales/quotes/validity-suggestion')) {
+        return json({ businessDate: '2026-10-22', validityDays: null, suggestedValidUntil: null, profileId: null, profileVersion: null })
+      }
+      return notFound(call)
+    })
+    renderPool(`/satis/teklifler/yeni?talep=${REQUEST_ID}`)
+    await screen.findByTestId('pool-quote-covered-requests')
+    fireEvent.change(screen.getByLabelText(POOL_TEXT.form.businessDate), { target: { value: '2026-10-22' } })
+    expect(await screen.findByText(POOL_TEXT.form.validityNoDefault)).toBeTruthy()
+    expect((screen.getByTestId('pool-quote-valid-until-input') as HTMLInputElement).value).toBe('')
+  })
 })
 
 describe('Teklif detayı', () => {
@@ -419,27 +459,159 @@ describe('Teklif detayı', () => {
     await waitFor(() => expect(reads).toBe(2))
   })
 
-  it('a loss needs its free-text reason and sends it with the version', async () => {
+  it('a loss takes a reason from the Settings list, asks for the explanation the reason needs and sends both', async () => {
     const user = userEvent.setup()
     let lost = false
     const fetch = installPoolFetch((call) => {
+      if (call.url.includes('/sales/quotes/loss-reasons')) return json(lossReasons())
       if (call.method === 'POST') {
         lost = true
-        return json(quoteMutation(quoteDetail({ state: 'Lost', version: '2' })), 200)
+        return json(quoteMutation(quoteDetail({ state: 'Lost', version: '2' }, {
+          loss: { reason: 'Rakip fiyatı düşük', lostBy: 'satis', lostAtUtc: '2026-10-23T08:00:00Z', reasonId: LOSS_REASON_OTHER, reasonCode: 'DIGER', reasonLabel: 'Diğer' },
+        })), 200)
       }
-      return json(lost ? quoteDetail({ state: 'Lost', version: '2' }) : quoteDetail())
+      return json(lost
+        ? quoteDetail({ state: 'Lost', version: '2' }, {
+          loss: { reason: 'Rakip fiyatı düşük', lostBy: 'satis', lostAtUtc: '2026-10-23T08:00:00Z', reasonId: LOSS_REASON_OTHER, reasonCode: 'DIGER', reasonLabel: 'Diğer' },
+        })
+        : quoteDetail())
     })
     renderPool(`/satis/teklifler/${QUOTE_ID}`)
     await user.click(await screen.findByRole('button', { name: POOL_TEXT.quoteDetail.lose, expanded: false }))
-    const form = screen.getByRole('form', { name: POOL_TEXT.quoteDetail.loseHeading })
+    const form = await screen.findByRole('form', { name: POOL_TEXT.quoteDetail.loseHeading })
     await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.lose }))
     expect(within(form).getByText(POOL_TEXT.quoteDetail.lossReasonRequired)).toBeTruthy()
-    await user.type(within(form).getByLabelText(POOL_TEXT.quoteDetail.lossReasonLabel), 'Rakip fiyatı düşük')
+    // "Diğer" is flagged by the LIST as needing an explanation (the screen knows no reason by its name).
+    await user.selectOptions(within(form).getByLabelText(POOL_TEXT.quoteDetail.lossReasonLabel), LOSS_REASON_OTHER)
+    expect(within(form).getByLabelText(POOL_TEXT.quoteDetail.lossExplanationLabel(true)).getAttribute('aria-required')).toBe('true')
+    await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.lose }))
+    expect(within(form).getByText(POOL_TEXT.quoteDetail.lossExplanationRequired)).toBeTruthy()
+    expect(fetch.posts()).toHaveLength(0)
+    await user.type(within(form).getByLabelText(POOL_TEXT.quoteDetail.lossExplanationLabel(true)), 'Rakip fiyatı düşük')
     await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.lose }))
     await waitFor(() => expect(screen.getByTestId('pool-quote-state').textContent).toBe('Kaybedildi'))
-    expect(fetch.posts()[0].body).toEqual({ expectedVersion: '1', reason: 'Rakip fiyatı düşük' })
-    expect(screen.getByTestId('pool-quote-loss').textContent).toContain('Fiyat yüksek')
+    expect(fetch.posts()[0].body).toEqual({ expectedVersion: '1', reasonId: LOSS_REASON_OTHER, explanation: 'Rakip fiyatı düşük' })
+    expect(screen.getByTestId('pool-quote-loss-reason').textContent).toBe('Diğer')
+    expect(screen.getByTestId('pool-quote-loss').textContent).toContain('Rakip fiyatı düşük')
     expect(screen.queryByTestId('pool-quote-commands')).toBeNull()
+  })
+
+  it('a reason that needs no explanation is sent without one', async () => {
+    const user = userEvent.setup()
+    const fetch = installPoolFetch((call) => {
+      if (call.url.includes('/sales/quotes/loss-reasons')) return json(lossReasons())
+      if (call.method === 'POST') return json(quoteMutation(quoteDetail({ state: 'Lost', version: '2' })), 200)
+      return json(quoteDetail())
+    })
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    await user.click(await screen.findByRole('button', { name: POOL_TEXT.quoteDetail.lose, expanded: false }))
+    const form = await screen.findByRole('form', { name: POOL_TEXT.quoteDetail.loseHeading })
+    await user.selectOptions(within(form).getByLabelText(POOL_TEXT.quoteDetail.lossReasonLabel), LOSS_REASON_PRICE)
+    await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.lose }))
+    await waitFor(() => expect(fetch.posts()).toHaveLength(1))
+    expect(fetch.posts()[0].body).toEqual({ expectedVersion: '1', reasonId: LOSS_REASON_PRICE, explanation: null })
+  })
+
+  it('without a Settings list, or when the list cannot be read, no loss can be sent', async () => {
+    const user = userEvent.setup()
+    const fetch = installPoolFetch((call) => {
+      if (call.url.includes('/sales/quotes/loss-reasons')) {
+        return json(lossReasons({ isDefined: false, profileId: null, profileVersion: null, reasons: [] }))
+      }
+      return json(quoteDetail())
+    })
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    await user.click(await screen.findByRole('button', { name: POOL_TEXT.quoteDetail.lose, expanded: false }))
+    expect((await screen.findByTestId('pool-quote-loss-reasons-state')).textContent).toContain(POOL_TEXT.quoteDetail.lossReasonsNotDefined)
+    expect(fetch.posts()).toHaveLength(0)
+    cleanup()
+    installPoolFetch((call) => {
+      if (call.url.includes('/sales/quotes/loss-reasons')) return new Response(null, { status: 503 })
+      return json(quoteDetail())
+    })
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    await user.click(await screen.findByRole('button', { name: POOL_TEXT.quoteDetail.lose, expanded: false }))
+    expect((await screen.findByTestId('pool-quote-loss-reasons-state')).textContent).toContain(POOL_TEXT.quoteDetail.lossReasonsUnavailable)
+  })
+
+  it('an expired quote says so on the server’s day, offers the approval to its holder only and blocks the conversion until then', async () => {
+    const user = userEvent.setup()
+    const expiredSummary = { validUntil: '2026-10-20' }
+    const expired = quoteDetail(expiredSummary)
+    let approved = false
+    const approvedDetail = quoteDetail({ ...expiredSummary, version: '2' }, {
+      expiryApprovals: [{ revision: 'Rev.0', validUntil: '2026-10-20', businessDay: '2026-10-23', approvedBy: 'mudur', approvedAtUtc: '2026-10-23T09:00:00Z', note: 'Müşteri kabul etti' }],
+      expiry: { businessDay: '2026-10-23', isExpired: true, isApproved: true },
+    })
+    const fetch = installPoolFetch((call) => {
+      if (call.method === 'POST' && call.url.endsWith('/expiry-approval')) {
+        approved = true
+        return json(quoteMutation(approvedDetail), 200)
+      }
+      return json(approved ? approvedDetail : expired)
+    })
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    expect((await screen.findByTestId('pool-quote-expiry')).textContent).toBe(POOL_TEXT.quoteDetail.expiredPending('20.10.2026'))
+    await user.click(screen.getByRole('button', { name: POOL_TEXT.quoteDetail.convert, expanded: false }))
+    expect(screen.getByTestId('pool-quote-convert-needs-approval').textContent).toBe(POOL_TEXT.quoteDetail.convertNeedsApproval)
+    const convertForm = screen.getByRole('form', { name: POOL_TEXT.quoteDetail.convertHeading })
+    expect((within(convertForm).getByRole('button', { name: POOL_TEXT.quoteDetail.convert }) as HTMLButtonElement).disabled).toBe(true)
+
+    await user.click(screen.getByRole('button', { name: POOL_TEXT.quoteDetail.approve, expanded: false }))
+    const form = screen.getByRole('form', { name: POOL_TEXT.quoteDetail.approveHeading })
+    await user.type(within(form).getByLabelText(POOL_TEXT.quoteDetail.approveNoteLabel), 'Müşteri kabul etti')
+    await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.approve }))
+    await waitFor(() => expect(fetch.posts()).toHaveLength(1))
+    expect(fetch.posts()[0].url).toContain(`/sales/quotes/${QUOTE_ID}/expiry-approval`)
+    expect(fetch.posts()[0].body).toEqual({ expectedVersion: '1', note: 'Müşteri kabul etti' })
+    expect(fetch.posts()[0].idempotencyKey).not.toBeNull()
+    await waitFor(() => expect(screen.getByTestId('pool-quote-expiry').textContent).toBe(POOL_TEXT.quoteDetail.expiredApproved('mudur')))
+    // SAT-D44 (1): the approver is shown; the approval is no longer offered for this revision.
+    expect(screen.getByTestId('pool-quote-approvals').textContent).toContain('mudur')
+    expect(screen.queryByRole('button', { name: POOL_TEXT.quoteDetail.approve })).toBeNull()
+  })
+
+  it('the approval is not offered without its capability, nor for a quote that has not expired', async () => {
+    const { TEST_POOL } = await import('./poolFixtures')
+    installPoolFetch(() => json(quoteDetail({ validUntil: '2026-10-20' })))
+    renderPool(`/satis/teklifler/${QUOTE_ID}`, { ...TEST_POOL, quotesApproveExpired: [] })
+    expect(await screen.findByTestId('pool-quote-expiry')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: POOL_TEXT.quoteDetail.approve })).toBeNull()
+    cleanup()
+    installPoolFetch(() => json(quoteDetail()))
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    expect(await screen.findByTestId('pool-quote-state')).toBeTruthy()
+    expect(screen.queryByTestId('pool-quote-expiry')).toBeNull()
+    expect(screen.queryByRole('button', { name: POOL_TEXT.quoteDetail.approve })).toBeNull()
+  })
+
+  it('an approval that meets a moved quote re-reads it and shows the refusal', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    installPoolFetch((call) => {
+      if (call.method === 'POST') return json({ status: 409, title: 'x', code: 'version_conflict', errors: [] }, 409)
+      reads += 1
+      return json(quoteDetail({ validUntil: '2026-10-20' }))
+    })
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    await user.click(await screen.findByRole('button', { name: POOL_TEXT.quoteDetail.approve, expanded: false }))
+    const form = screen.getByRole('form', { name: POOL_TEXT.quoteDetail.approveHeading })
+    await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.approve }))
+    expect((await screen.findByTestId('pool-quote-approve-notice')).textContent).toBeTruthy()
+    await waitFor(() => expect(reads).toBeGreaterThan(1))
+  })
+
+  it('shows who created and who revised each revision (SAT-D44)', async () => {
+    installPoolFetch(() => json(quoteDetail({ version: '2', revision: 'Rev.1' })))
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    expect((await screen.findByTestId('pool-quote-created-by')).textContent).toBe('satis')
+    const rows = within(screen.getByTestId('pool-quote-revisions')).getAllByRole('row')
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining(POOL_TEXT.quoteDetail.revisionColumn),
+      expect.stringContaining('satis'),
+      expect.stringContaining('revize-eden'),
+    ])
+    expect(quoteSummary().revision).toBe('Rev.0')
   })
 
   it('a revision sends every line under its own id with the opened version', async () => {

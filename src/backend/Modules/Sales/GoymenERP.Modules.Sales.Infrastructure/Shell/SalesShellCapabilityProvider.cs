@@ -23,7 +23,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.8";
+    public const string OwnerContractVersion = "1.9";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -118,6 +118,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     public const string QuoteDetailScreenId = "S-01-QUOTE-DETAIL";
     public const string QuoteWriteCapabilityId = "sales.quotes.write";
     public const string QuoteConvertCapabilityId = "sales.quotes.convert";
+
+    /// <summary>
+    /// SAT-D24 / SAT-D44: the expired-quote conversion approval, a control of the quote detail — the read plus
+    /// <see cref="SalesPermissionManifestV1.QuotesExpiredConversionApprove"/>, exactly the name the command measures.
+    /// </summary>
+    public const string QuoteExpiredConversionApproveCapabilityId = "sales.quotes.expired-conversion.approve";
 
     public string Owner => OwnerId;
 
@@ -316,6 +322,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
                     SalesPermissionManifestV1.QuotesWrite,
                     SalesPermissionManifestV1.DraftsCreate,
                 ],
+            },
+            // SAT-D24 / SAT-D44: the expired-quote approval — the read plus its own approval name (granted to no role).
+            detail with
+            {
+                CapabilityId = QuoteExpiredConversionApproveCapabilityId,
+                ParentCapabilityId = QuoteDetailCapabilityId,
+                RequiredPermissions = [SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesExpiredConversionApprove],
             },
         ];
     }

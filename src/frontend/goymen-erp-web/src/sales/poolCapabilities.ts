@@ -1,7 +1,7 @@
 /**
  * S-01 "Satış Talebi / Teklif Havuzu" — the routes of the pool and the capabilities that open them.
  *
- * PUBLISHED. The backend shell provider (`SalesShellCapabilityProvider`, Sales shell contract 1.8) publishes one id per
+ * PUBLISHED. The backend shell provider (`SalesShellCapabilityProvider`, Sales shell contract 1.9) publishes one id per
  * pool screen and control; they are declared once, in `./capabilities.ts` (`SALES_POOL_CAPABILITY_ID`, pinned there by the
  * backend contract test), and mapped here onto the pool's keys. `CapabilityRoute` opens a route only when the shell grants
  * its id, so an actor without the request / quote names still meets the neutral not-found block, and the server
@@ -35,10 +35,12 @@ export type SalesPoolCapabilityKey =
   | 'quotesWrite'
   /** Control on the quote detail: "Siparişe dönüştür" (`sales.quotes.write` + `sales.drafts.create` on the server). */
   | 'quotesConvert'
+  /** Control on the quote detail: approve converting an EXPIRED quote (`sales.quotes.expired-conversion.approve`, SAT-D24/D44). */
+  | 'quotesApproveExpired'
 
 export type SalesPoolCapabilities = Readonly<Record<SalesPoolCapabilityKey, readonly string[]>>
 
-/** Production: each key opens on exactly the one id the backend publishes for it (Sales shell contract 1.8). */
+/** Production: each key opens on exactly the one id the backend publishes for it (Sales shell contract 1.9). */
 export const SALES_POOL_CAPABILITY: SalesPoolCapabilities = {
   requestsList: [SALES_POOL_CAPABILITY_ID.requestsList],
   requestsDetail: [SALES_POOL_CAPABILITY_ID.requestsDetail],
@@ -49,6 +51,7 @@ export const SALES_POOL_CAPABILITY: SalesPoolCapabilities = {
   quotesCreate: [SALES_POOL_CAPABILITY_ID.quotesCreate],
   quotesWrite: [SALES_POOL_CAPABILITY_ID.quotesWrite],
   quotesConvert: [SALES_POOL_CAPABILITY_ID.quotesConvert],
+  quotesApproveExpired: [SALES_POOL_CAPABILITY_ID.quotesApproveExpired],
 }
 
 export const SalesPoolCapabilityContext = createContext<SalesPoolCapabilities>(SALES_POOL_CAPABILITY)

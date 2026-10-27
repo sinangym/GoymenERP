@@ -1,27 +1,32 @@
 /**
  * S-01 — a sales quote as `GET /api/v1/sales/quotes/{id}` describes it (API-22), with its three commands on an OPEN quote:
  *  - "Revizyon oluştur" (API-22 revision): every line and the terms replaced; Rev.N+1 follows on the server;
- *  - "Kaybedildi olarak işaretle" (API-24): with its free-text reason (master §7.2; no closed reason list is decided);
+ *  - "Kaybedildi olarak işaretle" (API-24 v2, SAT-D25): an entry of the company's Settings loss reason list
+ *    (`GET …/quotes/loss-reasons`) and the explanation the entry asks for; no list → no loss (the server refuses it too);
+ *  - "Süresi geçmiş teklifi onayla" (SAT-D24 / SAT-D44): its own permission; the server's business day decides "expired"
+ *    and the approval binds the current revision — the quote's creator or reviser may give it;
  *  - "Siparişe dönüştür" (API-23, No 160/162): the current revision's lines become ONE order under the business date the
  *    person names; the answer is the ORDER, and the screen opens it when the shell publishes the order detail.
  *
  * Every command is one keyed attempt (./poolAttempt.ts). After a recorded command, or a 409 (the quote moved, is no
  * longer open, or a covered request is not approved — `sales_quote_request_not_approved`, not recorded, may be retried
  * after the approval), the quote is re-read; what the person typed is kept. A withheld price reads "Gizli", never zero.
- * The validity date is shown as stored. SAT-D24 interim (#828): the server refuses converting a quote whose validity
- * date is before the order date (409 `sales_quote_expired`) until the manager-approval step exists.
+ * The validity date is shown as stored; whether it has passed is the server's answer (`expiry`, on ITS business day) — the
+ * order date the person types never decides it. SAT-D44 (1): the creator, every reviser and every approver are shown.
  */
 
 import { useContext, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router'
-import { convertQuote, fetchQuoteDetail, recordQuoteLoss, reviseQuote } from './poolApi'
+import { approveExpiredQuote, convertQuote, fetchQuoteDetail, fetchQuoteLossReasons, recordQuoteLoss, reviseQuote } from './poolApi'
 import {
   QUOTE_STATE,
   salesQuoteCommandPath,
   type SalesQuoteConversionBody,
   type SalesQuoteDetail,
+  type SalesQuoteExpiryApprovalBody,
   type SalesQuoteLossBody,
+  type SalesQuoteLossReasonOption,
   type SalesQuoteMutation,
   type SalesQuoteRevisionBody,
 } from './poolContract'
@@ -162,6 +167,7 @@ function QuoteView({
         </div>
         <div><dt>{C.version}</dt><dd className={styles.identifier}>{quote.version}</dd></div>
         <div><dt>{C.createdAt}</dt><dd>{formatInstant(quote.createdAtUtc)}</dd></div>
+        <div><dt>{T.createdBy}</dt><dd data-testid="pool-quote-created-by">{detail.createdBy}</dd></div>
         <div className={styles.wide}><dt>{C.note}</dt><dd>{detail.note ?? C.unknown}</dd></div>
         <div className={styles.wide}>
           <dt>{T.coveredRequests}</dt>
@@ -184,13 +190,25 @@ function QuoteView({
           </dd>
         </div>
       </dl>
-      {quote.validUntil === null ? null : <p className={styles.muted}>{T.validUntilNote}</p>}
+      {quote.state === QUOTE_STATE.open && detail.expiry.isExpired && quote.validUntil !== null ? (
+        <p className={styles.notice} role="status" data-testid="pool-quote-expiry">
+          {detail.expiry.isApproved
+            ? T.expiredApproved(detail.expiryApprovals.find((approval) => approval.revision === quote.revision)?.approvedBy ?? '')
+            : T.expiredPending(formatBusinessDate(quote.validUntil))}
+        </p>
+      ) : null}
 
       {detail.loss === null ? null : (
         <section className={styles.section} aria-labelledby="pool-quote-loss-heading" data-testid="pool-quote-loss">
           <h2 id="pool-quote-loss-heading" className={styles.subtitle}>{T.loss}</h2>
           <dl className={styles.facts}>
-            <div className={styles.wide}><dt>{T.lossReason}</dt><dd>{detail.loss.reason}</dd></div>
+            <div className={styles.wide}>
+              <dt>{T.lossReason}</dt>
+              <dd data-testid="pool-quote-loss-reason">{detail.loss.reasonLabel ?? detail.loss.reason}</dd>
+            </div>
+            {detail.loss.reasonLabel !== null && detail.loss.reason !== null ? (
+              <div className={styles.wide}><dt>{T.lossExplanation}</dt><dd>{detail.loss.reason}</dd></div>
+            ) : null}
             <div><dt>{T.lostBy}</dt><dd>{detail.loss.lostBy}</dd></div>
             <div><dt>{T.lostAt}</dt><dd>{formatInstant(detail.loss.lostAtUtc)}</dd></div>
           </dl>
@@ -212,9 +230,74 @@ function QuoteView({
       )}
 
       <QuoteLines detail={detail} />
+      <QuoteHistory detail={detail} />
 
       {quote.state === QUOTE_STATE.open ? <QuoteCommands detail={detail} companyId={companyId} onReread={onReread} /> : null}
     </section>
+  )
+}
+
+/** SAT-D44 (1): who created and revised the quote, and who approved converting it after its validity date. */
+function QuoteHistory({ detail }: { readonly detail: SalesQuoteDetail }) {
+  return (
+    <>
+      <section className={styles.section} aria-labelledby="pool-quote-revisions-heading">
+        <h2 id="pool-quote-revisions-heading" className={styles.subtitle}>{T.revisions}</h2>
+        <div className={styles.scroll}>
+          <table aria-labelledby="pool-quote-revisions-heading" data-testid="pool-quote-revisions">
+            <thead>
+              <tr>
+                <th scope="col">{T.revisionColumn}</th>
+                <th scope="col">{T.revisedBy}</th>
+                <th scope="col">{T.revisedAt}</th>
+                <th scope="col">{T.validUntil}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.revisions.map((record) => (
+                <tr key={record.revision}>
+                  <th scope="row">{record.revision}</th>
+                  <td>{record.revisedBy}</td>
+                  <td>{formatInstant(record.revisedAtUtc)}</td>
+                  <td>{record.validUntil === null ? C.unknown : formatBusinessDate(record.validUntil)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      {detail.expiryApprovals.length === 0 ? null : (
+        <section className={styles.section} aria-labelledby="pool-quote-approvals-heading">
+          <h2 id="pool-quote-approvals-heading" className={styles.subtitle}>{T.approvals}</h2>
+          <div className={styles.scroll}>
+            <table aria-labelledby="pool-quote-approvals-heading" data-testid="pool-quote-approvals">
+              <thead>
+                <tr>
+                  <th scope="col">{T.revisionColumn}</th>
+                  <th scope="col">{T.approvedBy}</th>
+                  <th scope="col">{T.approvedAt}</th>
+                  <th scope="col">{T.validUntil}</th>
+                  <th scope="col">{T.approvedOn}</th>
+                  <th scope="col">{T.approvalNote}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.expiryApprovals.map((approval) => (
+                  <tr key={approval.revision}>
+                    <th scope="row">{approval.revision}</th>
+                    <td>{approval.approvedBy}</td>
+                    <td>{formatInstant(approval.approvedAtUtc)}</td>
+                    <td>{formatBusinessDate(approval.validUntil)}</td>
+                    <td>{formatBusinessDate(approval.businessDay)}</td>
+                    <td>{approval.note ?? C.unknown}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </>
   )
 }
 
@@ -264,7 +347,7 @@ function QuoteLines({ detail }: { readonly detail: SalesQuoteDetail }) {
   )
 }
 
-type OpenPanel = 'none' | 'revision' | 'loss' | 'conversion'
+type OpenPanel = 'none' | 'revision' | 'loss' | 'conversion' | 'approval'
 
 /** The quote's own order-unit codes, to label a stored price unit by its code rather than its id. */
 const unitCodesOf = (detail: SalesQuoteDetail): ReadonlyMap<string, string> =>
@@ -273,11 +356,13 @@ const unitCodesOf = (detail: SalesQuoteDetail): ReadonlyMap<string, string> =>
 function QuoteCommands({ detail, companyId, onReread }: { readonly detail: SalesQuoteDetail; readonly companyId: string; readonly onReread: () => void }) {
   const canWrite = useSalesPoolCapability('quotesWrite')
   const canConvert = useSalesPoolCapability('quotesConvert')
+  // SAT-D24 / SAT-D44: offered only while the server says the quote is expired and its current revision is not approved.
+  const canApprove = useSalesPoolCapability('quotesApproveExpired') && detail.expiry.isExpired && !detail.expiry.isApproved
   const [panel, setPanel] = useState<OpenPanel>('none')
   // Fail closed (P1): a revision replaces every line, and a price this viewer cannot see cannot be carried — it would be
   // written away. The revision is not offered then; the loss and the conversion do not touch prices and stay.
   const canRevise = canWrite && !hasWithheldPrice(detail)
-  if (!canWrite && !canConvert) return null
+  if (!canWrite && !canConvert && !canApprove) return null
   return (
     <section className={styles.section} aria-labelledby="pool-quote-commands-heading" data-testid="pool-quote-commands">
       <h2 id="pool-quote-commands-heading" className={styles.subtitle}>{T.commands}</h2>
@@ -294,6 +379,11 @@ function QuoteCommands({ detail, companyId, onReread }: { readonly detail: Sales
             </Button>
           </>
         ) : null}
+        {canApprove ? (
+          <Button type="button" variant="secondary" aria-expanded={panel === 'approval'} onClick={() => setPanel(panel === 'approval' ? 'none' : 'approval')}>
+            {T.approve}
+          </Button>
+        ) : null}
         {canConvert ? (
           <Button type="button" variant="primary" aria-expanded={panel === 'conversion'} onClick={() => setPanel(panel === 'conversion' ? 'none' : 'conversion')}>
             {T.convert}
@@ -306,7 +396,8 @@ function QuoteCommands({ detail, companyId, onReread }: { readonly detail: Sales
         </p>
       ) : null}
       {panel === 'revision' && canRevise ? <RevisionForm detail={detail} companyId={companyId} onReread={onReread} onClose={() => setPanel('none')} /> : null}
-      {panel === 'loss' && canWrite ? <LossForm detail={detail} onReread={onReread} /> : null}
+      {panel === 'loss' && canWrite ? <LossForm detail={detail} companyId={companyId} onReread={onReread} /> : null}
+      {panel === 'approval' && canApprove ? <ApprovalForm detail={detail} onReread={onReread} /> : null}
       {panel === 'conversion' && canConvert ? <ConversionForm detail={detail} onReread={onReread} /> : null}
     </section>
   )
@@ -429,30 +520,77 @@ function RevisionForm({
   )
 }
 
-function LossForm({ detail, onReread }: { readonly detail: SalesQuoteDetail; readonly onReread: () => void }) {
-  const [reason, setReason] = useState('')
-  const [error, setError] = useState<string | null>(null)
+function LossForm({ detail, companyId, onReread }: { readonly detail: SalesQuoteDetail; readonly companyId: string; readonly onReread: () => void }) {
+  const [reasonId, setReasonId] = useState('')
+  const [explanation, setExplanation] = useState('')
+  const [errors, setErrors] = useState<{ readonly reason?: string; readonly explanation?: string }>({})
+  const reasons = useQuery({
+    queryKey: ['sales-quote-loss-reasons', companyId],
+    queryFn: ({ signal }) => fetchQuoteLossReasons(companyId, signal),
+  })
   const attempt = usePoolAttempt<SalesQuoteLossBody, SalesQuoteMutation>(
     `sales.quote.loss:${detail.quote.id}`,
     (snapshot) => recordQuoteLoss(snapshot.payload, { idempotencyKey: snapshot.key, companyId: snapshot.companyId, quoteId: detail.quote.id }),
     (next) => {
       if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onReread()
+      // An entry that left the list meanwhile: the list is read again so the person chooses from the current one.
+      if (next.phase === 'failed' && next.failure === 'validation') void reasons.refetch()
     },
   )
   const notice = poolNotice(attempt.state, { noun: 'kayıp kaydı', onRecord: true, blockedChange: attempt.blockedChange, completed: () => T.lossCompleted })
+  const disabled = attempt.frozen || attempt.state.phase === 'completed'
+
+  const heading = <h3 id="pool-quote-loss-form-heading" className={styles.lineTitle}>{T.loseHeading}</h3>
+  const outcome = reasons.data
+  if (outcome === undefined || outcome.type !== 'ok-single') {
+    return (
+      <section className={styles.page} aria-labelledby="pool-quote-loss-form-heading" data-testid="pool-quote-loss-reasons-state">
+        {heading}
+        {outcome === undefined ? (
+          <p role="status" className={styles.muted}>{T.lossReasonsLoading}</p>
+        ) : (
+          <>
+            <p role="alert" className={styles.notice}>{T.lossReasonsUnavailable}</p>
+            <StateBlock state={classifyOutcome(outcome)} subject="kayıp nedenleri" onRetry={() => void reasons.refetch()} />
+          </>
+        )}
+      </section>
+    )
+  }
+  if (!outcome.data.isDefined || outcome.data.reasons.length === 0) {
+    return (
+      <section className={styles.page} aria-labelledby="pool-quote-loss-form-heading" data-testid="pool-quote-loss-reasons-state">
+        {heading}
+        <p role="status" className={styles.notice}>{T.lossReasonsNotDefined}</p>
+      </section>
+    )
+  }
+  const options: readonly SalesQuoteLossReasonOption[] = outcome.data.reasons
+  const chosen = options.find((option) => option.reasonId === reasonId) ?? null
+  const explanationRequired = chosen?.requiresExplanation ?? false
 
   function submit() {
-    if (reason.trim() === '') {
-      setError(T.lossReasonRequired)
+    if (chosen === null) {
+      setErrors({ reason: T.lossReasonRequired })
       document.getElementById('pool-quote-loss-reason')?.focus()
       return
     }
-    if (reason.length > LIMITS.note) {
-      setError(POOL_TEXT.validation.noteTooLong)
+    const text = explanation.trim()
+    if (explanationRequired && text === '') {
+      setErrors({ explanation: T.lossExplanationRequired })
+      document.getElementById('pool-quote-loss-explanation')?.focus()
       return
     }
-    setError(null)
-    attempt.submit(salesQuoteCommandPath(detail.quote.id, 'loss'), { expectedVersion: detail.quote.version, reason: reason.trim() })
+    if (explanation.length > LIMITS.note) {
+      setErrors({ explanation: POOL_TEXT.validation.noteTooLong })
+      return
+    }
+    setErrors({})
+    attempt.submit(salesQuoteCommandPath(detail.quote.id, 'loss'), {
+      expectedVersion: detail.quote.version,
+      reasonId: chosen.reasonId,
+      explanation: text === '' ? null : text,
+    })
   }
 
   return (
@@ -465,16 +603,80 @@ function LossForm({ detail, onReread }: { readonly detail: SalesQuoteDetail; rea
         submit()
       }}
     >
-      <h3 id="pool-quote-loss-form-heading" className={styles.lineTitle}>{T.loseHeading}</h3>
-      <Field id="pool-quote-loss-reason" label={T.lossReasonLabel} error={error ?? undefined}>
+      {heading}
+      <Field id="pool-quote-loss-reason" label={T.lossReasonLabel} error={errors.reason}>
         {(control) => (
-          <textarea {...control} className={styles.control} value={reason} disabled={attempt.frozen || attempt.state.phase === 'completed'}
-            onChange={(event) => setReason(event.target.value)} />
+          <select {...control} className={styles.control} value={reasonId} disabled={disabled}
+            onChange={(event) => setReasonId(event.target.value)}>
+            <option value="">{T.lossReasonPlaceholder}</option>
+            {options.map((option) => (
+              <option key={option.reasonId} value={option.reasonId}>{option.label}</option>
+            ))}
+          </select>
+        )}
+      </Field>
+      <Field id="pool-quote-loss-explanation" label={T.lossExplanationLabel(explanationRequired)} error={errors.explanation}>
+        {(control) => (
+          <textarea {...control} className={styles.control} value={explanation} disabled={disabled}
+            aria-required={explanationRequired}
+            onChange={(event) => setExplanation(event.target.value)} />
         )}
       </Field>
       <PoolAttemptNotice attempt={attempt} notice={notice} testId="pool-quote-loss-notice" />
       <div>
-        <Button type="submit" variant="danger" disabled={attempt.frozen || attempt.state.phase === 'completed'}>{T.lose}</Button>
+        <Button type="submit" variant="danger" disabled={disabled}>{T.lose}</Button>
+      </div>
+    </form>
+  )
+}
+
+/** SAT-D24 / SAT-D44: the manager approval of converting this expired quote's current revision, with an optional note. */
+function ApprovalForm({ detail, onReread }: { readonly detail: SalesQuoteDetail; readonly onReread: () => void }) {
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const attempt = usePoolAttempt<SalesQuoteExpiryApprovalBody, SalesQuoteMutation>(
+    `sales.quote.expiry-approval:${detail.quote.id}`,
+    (snapshot) => approveExpiredQuote(snapshot.payload, { idempotencyKey: snapshot.key, companyId: snapshot.companyId, quoteId: detail.quote.id }),
+    (next) => {
+      if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onReread()
+    },
+  )
+  const notice = poolNotice(attempt.state, { noun: 'süre onayı', onRecord: true, blockedChange: attempt.blockedChange, completed: () => T.approveCompleted })
+  const disabled = attempt.frozen || attempt.state.phase === 'completed'
+
+  function submit() {
+    if (note.length > LIMITS.note) {
+      setError(POOL_TEXT.validation.noteTooLong)
+      return
+    }
+    setError(null)
+    const text = note.trim()
+    attempt.submit(salesQuoteCommandPath(detail.quote.id, 'expiry-approval'), {
+      expectedVersion: detail.quote.version,
+      note: text === '' ? null : text,
+    })
+  }
+
+  return (
+    <form
+      noValidate
+      className={styles.page}
+      aria-labelledby="pool-quote-approve-heading"
+      onSubmit={(event) => {
+        event.preventDefault()
+        submit()
+      }}
+    >
+      <h3 id="pool-quote-approve-heading" className={styles.lineTitle}>{T.approveHeading}</h3>
+      <p className={styles.muted}>{T.approveIntro}</p>
+      <Field id="pool-quote-approve-note" label={T.approveNoteLabel} error={error ?? undefined}>
+        {(control) => (
+          <textarea {...control} className={styles.control} value={note} disabled={disabled} onChange={(event) => setNote(event.target.value)} />
+        )}
+      </Field>
+      <PoolAttemptNotice attempt={attempt} notice={notice} testId="pool-quote-approve-notice" />
+      <div>
+        <Button type="submit" variant="primary" disabled={disabled}>{T.approve}</Button>
       </div>
     </form>
   )
@@ -484,6 +686,8 @@ function ConversionForm({ detail, onReread }: { readonly detail: SalesQuoteDetai
   const shell = useShellState()
   const navigate = useNavigate()
   const canOpenOrder = hasCapability(shell, SALES_CAPABILITY.draftsDetail)
+  // SAT-D24: the server's own answer on its business day; the order date typed below never reopens an expired quote.
+  const needsApproval = detail.expiry.isExpired && !detail.expiry.isApproved
   const [businessDate, setBusinessDate] = useState('')
   const [error, setError] = useState<string | null>(null)
   const attempt = usePoolAttempt<SalesQuoteConversionBody, DraftMutation>(
@@ -531,6 +735,9 @@ function ConversionForm({ detail, onReread }: { readonly detail: SalesQuoteDetai
     >
       <h3 id="pool-quote-convert-heading" className={styles.lineTitle}>{T.convertHeading}</h3>
       <p className={styles.muted}>{T.convertIntro}</p>
+      {needsApproval ? (
+        <p role="status" className={styles.notice} data-testid="pool-quote-convert-needs-approval">{T.convertNeedsApproval}</p>
+      ) : null}
       <Field id="pool-quote-convert-date" label={T.convertDate} error={error ?? undefined}>
         {(control) => (
           <input {...control} className={styles.control} type="date" value={businessDate}
@@ -540,7 +747,7 @@ function ConversionForm({ detail, onReread }: { readonly detail: SalesQuoteDetai
       </Field>
       <PoolAttemptNotice attempt={attempt} notice={notice} testId="pool-quote-convert-notice" />
       <div>
-        <Button type="submit" variant="primary" disabled={attempt.frozen || attempt.state.phase === 'completed'}>{T.convert}</Button>
+        <Button type="submit" variant="primary" disabled={needsApproval || attempt.frozen || attempt.state.phase === 'completed'}>{T.convert}</Button>
       </div>
     </form>
   )

@@ -53,6 +53,9 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // not confer it), company-wide, not Critical and granted to no role (the reason is on
     // ErpPermissions.SalesOrdersDiscountExceptionApprove).
     [InlineData(SalesPermissionManifestV1.OrdersDiscountExceptionApprove, ErpPermissions.SalesOrdersDiscountExceptionApprove)]
+    // SAT-D24 / SAT-D44: approving an expired quote's conversion. Its own name (the quote write and order names do not confer
+    // it), company-wide, not Critical and granted to no role (the reason is on ErpPermissions.SalesQuotesExpiredConversionApprove).
+    [InlineData(SalesPermissionManifestV1.QuotesExpiredConversionApprove, ErpPermissions.SalesQuotesExpiredConversionApprove)]
     // Q9 customer acceptance: registered company-wide, not Critical and not granted by this catalogue.
     [InlineData(SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, ErpPermissions.SalesOrdersCustomerAcceptanceRecord)]
     // API-20 / API-21 (plan §3.2, S-01): the sales request's record, read and decide names. Each its own name, company-wide and

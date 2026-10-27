@@ -1648,6 +1648,10 @@ public sealed partial class SalesDraftServiceTests
         /// <summary>SAT-D2 / API-12: the actor's discount limit groups (Identity's mapping); null = not composed (no limit defined).</summary>
         public ISalesDiscountLimitGroupSourceV1? DiscountLimitGroups { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
+        /// <summary>SAT-D25 / SAT-D39: the Settings quote policy port; null = not composed.</summary>
+        public ISettingsSalesQuotePolicyProviderV1? QuotePolicies { get; set; }
+        /// <summary>The server clock of the service and of the in-memory quote store (SAT-D24: the business day comes from it).</summary>
+        public TimeProvider Clock { get; set; } = TimeProvider.System;
 
         /// <summary>
         /// SAT-D2: a SENTETIK approved limit of <paramref name="percent"/> for one limit group of every actor, for the tests
@@ -1667,9 +1671,9 @@ public sealed partial class SalesDraftServiceTests
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
-                NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests), SalesPolicies,
-                DiscountLimitGroups);
+                NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
+                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
+                SalesPolicies, DiscountLimitGroups, QuotePolicies);
         }
 
         public SalesDraftReadServiceV1 ReadService()

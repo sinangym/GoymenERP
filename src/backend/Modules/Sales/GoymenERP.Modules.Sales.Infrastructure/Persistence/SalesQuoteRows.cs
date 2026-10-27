@@ -33,7 +33,15 @@ internal sealed class QuoteRow : ISalesTenantRow
     public DateOnly? MoneyEffectiveThrough { get; set; }
     public int MoneyScale { get; set; }
 
+    /// <summary>The loss's free-text explanation (SAT-D25: optional unless the list entry asks for one; before SAT-D25 the reason itself).</summary>
     public string? LossReason { get; set; }
+
+    /// <summary>SAT-D25: the chosen Settings list entry as a snapshot (all set or all null; null on a loss recorded before SAT-D25).</summary>
+    public Guid? LossReasonId { get; set; }
+    public string? LossReasonCode { get; set; }
+    public string? LossReasonLabel { get; set; }
+    public Guid? LossReasonProfileId { get; set; }
+    public long? LossReasonProfileVersion { get; set; }
     public string? LostBy { get; set; }
     public DateTimeOffset? LostAtUtc { get; set; }
     public Guid? ConvertedDraftId { get; set; }
@@ -57,6 +65,24 @@ internal sealed class QuoteRevisionRow : ISalesTenantRow
     public string? Note { get; set; }
     public string RevisedBy { get; set; } = string.Empty;
     public DateTimeOffset RevisedAtUtc { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// SAT-D24 / SAT-D44: one recorded approval that lets an expired quote's revision be converted — the revision and validity
+/// date it approves, the server business day it was given on, who and when, an optional note. At most one per revision
+/// (primary key). Append-only, never rewritten (EF write guard).
+/// </summary>
+internal sealed class QuoteExpiryApprovalRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid QuoteId { get; set; }
+    public int Revision { get; set; }
+    public DateOnly ValidUntil { get; set; }
+    public DateOnly BusinessDay { get; set; }
+    public string ApprovedBy { get; set; } = string.Empty;
+    public DateTimeOffset ApprovedAtUtc { get; set; }
+    public string? Note { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
 }
 
@@ -185,6 +211,40 @@ internal static class SalesQuoteRows
         AddRevision(dbContext, quote, quote.CreatedBy, correlationId);
     }
 
+    /// <summary>Appends the quote's expired-quote approvals that are not stored yet (append-only; earlier ones never rewritten).</summary>
+    internal static void AddExpiryApprovals(SalesDbContext dbContext, SalesQuote quote, int storedCount, string correlationId)
+    {
+        foreach (var approval in quote.ExpiryApprovals.Skip(storedCount))
+        {
+            dbContext.QuoteExpiryApprovals.Add(new QuoteExpiryApprovalRow
+            {
+                CompanyId = quote.CompanyId,
+                QuoteId = quote.Id,
+                Revision = approval.Revision,
+                ValidUntil = approval.ValidUntil,
+                BusinessDay = approval.BusinessDay,
+                ApprovedBy = approval.ApprovedBy,
+                ApprovedAtUtc = approval.ApprovedAtUtc,
+                Note = approval.Note,
+                CorrelationId = correlationId.Trim(),
+            });
+        }
+    }
+
+    /// <summary>Copies the quote's loss (SAT-D25 entry snapshot + explanation) onto its row.</summary>
+    internal static void ApplyLoss(QuoteRow row, SalesQuote quote)
+    {
+        var loss = quote.Loss;
+        row.LossReason = loss?.Reason;
+        row.LossReasonId = loss?.ListReason?.ReasonId;
+        row.LossReasonCode = loss?.ListReason?.Code;
+        row.LossReasonLabel = loss?.ListReason?.Label;
+        row.LossReasonProfileId = loss?.ListReason?.ProfileId;
+        row.LossReasonProfileVersion = loss?.ListReason?.ProfileVersion;
+        row.LostBy = loss?.LostBy;
+        row.LostAtUtc = loss?.LostAtUtc;
+    }
+
     /// <summary>Appends the quote's CURRENT revision (its terms and lines); earlier revisions are never rewritten.</summary>
     internal static void AddRevision(SalesDbContext dbContext, SalesQuote quote, string revisedBy, string correlationId)
     {
@@ -251,10 +311,16 @@ internal static class SalesQuoteRows
         }
     }
 
-    /// <summary>Rebuilds a stored quote through the domain on its CURRENT revision; a corrupt row is refused, not repaired.</summary>
-    internal static SalesQuote Restore(QuoteRow row, QuoteRevisionRow revision, IEnumerable<QuoteLineRow> lineRows, IEnumerable<QuoteRequestRow> requests)
+    /// <summary>
+    /// Rebuilds a stored quote through the domain on its CURRENT revision, with every recorded revision (SAT-D44 (1): who
+    /// created and revised it) and its expired-quote approvals; a corrupt row is refused, not repaired.
+    /// </summary>
+    internal static SalesQuote Restore(QuoteRow row, IReadOnlyList<QuoteRevisionRow> revisionRows, IEnumerable<QuoteLineRow> lineRows,
+        IEnumerable<QuoteRequestRow> requests, IEnumerable<QuoteExpiryApprovalRow> approvalRows)
     {
-        if (revision.Revision != row.Revision || revision.QuoteId != row.Id)
+        var ordered = revisionRows.OrderBy(candidate => candidate.Revision).ToArray();
+        var revision = ordered.LastOrDefault();
+        if (revision is null || revision.Revision != row.Revision || ordered.Any(candidate => candidate.QuoteId != row.Id))
         {
             throw new InvalidOperationException("Kayıtlı teklif revizyonu başlıkla uyuşmuyor.");
         }
@@ -290,13 +356,21 @@ internal static class SalesQuoteRows
             throw new InvalidOperationException("Kayıtlı teklif durumu tanınmıyor.");
         }
 
-        var loss = row.LossReason is { } reason && row.LostBy is { } lostBy && row.LostAtUtc is { } lostAt
-            ? new SalesQuoteLoss(reason, lostBy, lostAt)
+        var listReason = row.LossReasonId is { } reasonId && row.LossReasonCode is { } code && row.LossReasonLabel is { } label
+            && row.LossReasonProfileId is { } profileId && row.LossReasonProfileVersion is { } profileVersion
+            ? new SalesQuoteLossReason(reasonId, code, label, profileId, profileVersion)
+            : null;
+        var loss = row.LostBy is { } lostBy && row.LostAtUtc is { } lostAt && (row.LossReason is not null || listReason is not null)
+            ? new SalesQuoteLoss(row.LossReason, lostBy, lostAt, listReason)
             : null;
         var conversion = row.ConvertedDraftId is { } draftId && row.ConvertedBy is { } convertedBy && row.ConvertedAtUtc is { } convertedAt
             ? new SalesQuoteConversion(draftId, convertedBy, convertedAt)
             : null;
-        quote.Restore((SalesQuoteState)row.State, row.Revision, loss, conversion, row.Version, row.UpdatedAtUtc);
+        quote.Restore((SalesQuoteState)row.State, row.Revision, loss, conversion, row.Version, row.UpdatedAtUtc,
+            [.. ordered.Select(candidate => new SalesQuoteRevisionRecord(candidate.Revision, candidate.ValidUntil, candidate.RevisedBy,
+                candidate.RevisedAtUtc))],
+            [.. approvalRows.OrderBy(candidate => candidate.Revision).Select(candidate => new SalesQuoteExpiryApproval(candidate.Revision,
+                candidate.ValidUntil, candidate.BusinessDay, candidate.ApprovedBy, candidate.ApprovedAtUtc, candidate.Note))]);
         return quote;
     }
 }

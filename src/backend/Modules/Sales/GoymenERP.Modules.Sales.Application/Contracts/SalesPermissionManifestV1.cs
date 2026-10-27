@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 14;
+    public const int Version = 15;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -132,9 +132,19 @@ public static class SalesPermissionManifestV1
     /// <summary>API-22: GET /api/v1/sales/quotes and GET …/{id}. The quoted prices additionally need <see cref="OrdersPriceRead"/>.</summary>
     public const string QuotesRead = "sales.quotes.read";
 
+    /// <summary>
+    /// SAT-D24 / SAT-D44: POST …/quotes/{id}/expiry-approval — the manager approval that lets the current revision of an
+    /// EXPIRED quote be converted. Its own name: the quote write, draft create and the order approval names do NOT confer it,
+    /// and it confers none of them (the conversion itself still needs <see cref="QuotesWrite"/> + <see cref="DraftsCreate"/>).
+    /// SAT-D44 (2): its holder may approve a quote they created or revised — an explicit P6 exception for this approval only.
+    /// Company-wide; not Critical; registered, granted to no role (who receives it is a grant decision and a human gate).
+    /// </summary>
+    public const string QuotesExpiredConversionApprove = "sales.quotes.expired-conversion.approve";
+
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
-            OrdersQuantityWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead }
+            OrdersQuantityWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
+            QuotesExpiredConversionApprove }
             .ToFrozenSet(StringComparer.Ordinal);
 }

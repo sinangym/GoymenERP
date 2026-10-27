@@ -22,6 +22,10 @@ public sealed class SalesQuoteTests
     private static readonly Guid KgProfile = Guid.Parse("77777777-7777-4777-8777-777777777777");
     private static readonly Guid Product = Guid.Parse("99999999-9999-4999-8999-999999999999");
     private const string Actor = "SENTETIK-seller";
+    private const string Reviser = "SENTETIK-reviser";
+    private const string Approver = "SENTETIK-manager";
+    private static readonly SalesQuoteLossReason ListReason = new(Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), "SENTETIK-RAKIP",
+        "Sentetik rakip", Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc"), 1);
 
     [Fact]
     public void A_quote_is_born_open_at_rev0_with_its_priced_lines_and_sorted_requests()
@@ -62,25 +66,36 @@ public sealed class SalesQuoteTests
     {
         var quote = Create([Line("12.50")]);
 
-        Assert.Equal(SalesRuleCodes.PriceScaleExceeded, CodeOf(() => quote.Revise(1, new SalesQuoteTerms(), [Line("1.001")], T0)));
+        Assert.Equal(SalesRuleCodes.PriceScaleExceeded, CodeOf(() => quote.Revise(1, Actor, new SalesQuoteTerms(), [Line("1.001")], T0)));
         Assert.Equal((0, 1L, "12.50"), (quote.Revision, quote.Version, quote.Lines[0].UnitPrice));
 
-        quote.Revise(1, new SalesQuoteTerms(Day.AddDays(3)), [Line("13.00"), Line("1")], T0.AddMinutes(1));
+        quote.Revise(1, Reviser, new SalesQuoteTerms(Day.AddDays(3)), [Line("13.00"), Line("1")], T0.AddMinutes(1));
         Assert.Equal((1, 2L, 2, "13.00", (DateOnly?)Day.AddDays(3)),
             (quote.Revision, quote.Version, quote.Lines.Count, quote.Lines[0].UnitPrice, quote.Terms.ValidUntil));
-        Assert.Throws<SalesVersionConflictException>(() => quote.Revise(1, new SalesQuoteTerms(), [Line("1")], T0));
+        // SAT-D44 (1): who created (Rev.0) and who revised each revision are kept on the quote.
+        Assert.Equal(
+            [new SalesQuoteRevisionRecord(0, null, Actor, T0), new SalesQuoteRevisionRecord(1, Day.AddDays(3), Reviser, T0.AddMinutes(1))],
+            quote.Revisions);
+        Assert.Throws<SalesVersionConflictException>(() => quote.Revise(1, Actor, new SalesQuoteTerms(), [Line("1")], T0));
     }
 
     [Fact]
     public void A_loss_needs_its_reason_and_closes_the_quote_and_a_conversion_is_recorded_once()
     {
         var lost = Create([Line("1")]);
-        Assert.Equal(SalesRuleCodes.QuoteLossReasonRequired, CodeOf(() => lost.RecordLoss(1, Actor, " ", T0)));
-        Assert.Equal(SalesRuleCodes.QuoteLossReasonTooLong, CodeOf(() => lost.RecordLoss(1, Actor, new string('x', 4001), T0)));
-        lost.RecordLoss(1, Actor, "Fiyat", T0);
-        Assert.Equal((SalesQuoteState.Lost, 2L, "Fiyat"), (lost.State, lost.Version, lost.Loss!.Reason));
+        // SAT-D25: the entry's own flag decides whether the explanation is required; a blank one is refused, never defaulted.
+        Assert.Equal(SalesRuleCodes.QuoteLossReasonRequired, CodeOf(() => lost.RecordLoss(1, Actor, ListReason, true, " ", T0)));
+        Assert.Equal(SalesRuleCodes.QuoteLossReasonTooLong, CodeOf(() => lost.RecordLoss(1, Actor, ListReason, false, new string('x', 4001), T0)));
+        Assert.Throws<ArgumentException>(() => lost.RecordLoss(1, Actor, ListReason with { Code = " " }, false, null, T0));
+        Assert.Throws<ArgumentException>(() => lost.RecordLoss(1, Actor, ListReason with { ProfileVersion = 0 }, false, null, T0));
+        Assert.Equal((SalesQuoteState.Open, 1L), (lost.State, lost.Version));
+        lost.RecordLoss(1, Actor, ListReason, true, "Rakip daha ucuz", T0);
+        Assert.Equal((SalesQuoteState.Lost, 2L, "Rakip daha ucuz", ListReason), (lost.State, lost.Version, lost.Loss!.Reason, lost.Loss.ListReason));
+        var withoutExplanation = Create([Line("1")]);
+        withoutExplanation.RecordLoss(1, Actor, ListReason, false, "  ", T0);
+        Assert.Null(withoutExplanation.Loss!.Reason);
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => lost.Convert(2, Guid.NewGuid(), Actor, Day, T0)));
-        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => lost.Revise(2, new SalesQuoteTerms(), [Line("1")], T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => lost.Revise(2, Actor, new SalesQuoteTerms(), [Line("1")], T0)));
 
         var converted = Create([Line("1")]);
         var draft = Guid.NewGuid();
@@ -88,15 +103,17 @@ public sealed class SalesQuoteTests
         converted.Convert(1, draft, Actor, Day, T0);
         Assert.Equal((SalesQuoteState.Converted, draft, 2L), (converted.State, converted.Conversion!.DraftId, converted.Version));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => converted.Convert(2, Guid.NewGuid(), Actor, Day, T0)));
-        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => converted.RecordLoss(2, Actor, "geç", T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => converted.RecordLoss(2, Actor, ListReason, false, "geç", T0)));
     }
 
     [Fact]
-    public void An_expired_quote_is_not_converted_until_the_manager_approval_exists_and_the_validity_day_itself_still_converts()
+    public void An_expired_quote_converts_only_with_an_approval_for_its_current_revision_and_the_validity_day_itself_still_converts()
     {
-        // SAT-D24 (interim, fail-closed): the validity date is the last valid day; a later business date refuses the conversion.
+        // SAT-D24: the validity date is the last valid day; on a later (server) business day the conversion is refused.
         var expired = Create([Line("1")], terms: new SalesQuoteTerms(Day.AddDays(3)));
         expired.RequireValidOn(Day.AddDays(3));
+        Assert.False(expired.IsExpiredOn(Day.AddDays(3)));
+        Assert.True(expired.IsExpiredOn(Day.AddDays(4)));
         Assert.Equal(SalesRuleCodes.QuoteExpired, CodeOf(() => expired.RequireValidOn(Day.AddDays(4))));
         Assert.Equal(SalesRuleCodes.QuoteExpired, CodeOf(() => expired.Convert(1, Guid.NewGuid(), Actor, Day.AddDays(4), T0)));
         Assert.Equal((SalesQuoteState.Open, 1L, (SalesQuoteConversion?)null), (expired.State, expired.Version, expired.Conversion));
@@ -106,11 +123,44 @@ public sealed class SalesQuoteTests
         expired.Convert(1, Guid.NewGuid(), Actor, Day.AddDays(3), T0);
         Assert.Equal(SalesQuoteState.Converted, expired.State);
 
-        // A quote without a validity date never expires (no default validity is decided).
+        // A quote without a validity date never expires (SAT-D39: the date is not mandatory).
         var open = Create([Line("1")]);
         open.RequireValidOn(Day.AddYears(5));
+        Assert.Equal(SalesRuleCodes.QuoteNotExpired, CodeOf(() => open.ApproveExpiredConversion(1, Approver, Day.AddYears(5), null, T0)));
         open.Convert(1, Guid.NewGuid(), Actor, Day.AddYears(5), T0);
         Assert.Equal(SalesQuoteState.Converted, open.State);
+    }
+
+    [Fact]
+    public void The_expired_quote_approval_binds_one_revision_any_holder_even_the_creator_may_give_it_and_a_revision_needs_a_new_one()
+    {
+        var quote = Create([Line("1")], terms: new SalesQuoteTerms(Day.AddDays(3)));
+        var today = Day.AddDays(10);
+
+        // Not expired on the business day: nothing to approve, nothing moves.
+        Assert.Equal(SalesRuleCodes.QuoteNotExpired, CodeOf(() => quote.ApproveExpiredConversion(1, Approver, Day.AddDays(3), null, T0)));
+        Assert.Throws<SalesVersionConflictException>(() => quote.ApproveExpiredConversion(2, Approver, today, null, T0));
+        Assert.Equal(SalesRuleCodes.NoteTooLong, CodeOf(() => quote.ApproveExpiredConversion(1, Approver, today, new string('n', 4001), T0)));
+        Assert.Equal((1L, 0), (quote.Version, quote.ExpiryApprovals.Count));
+
+        // SAT-D44 (2): the quote's own creator holds the approval permission and approves it (the P6 exception of this approval).
+        quote.ApproveExpiredConversion(1, Actor, today, "Müşteri fiyatı kabul etti", T0.AddMinutes(5));
+        Assert.Equal((2L, SalesQuoteState.Open), (quote.Version, quote.State));
+        Assert.Equal(new SalesQuoteExpiryApproval(0, Day.AddDays(3), today, Actor, T0.AddMinutes(5), "Müşteri fiyatı kabul etti"),
+            quote.CurrentExpiryApproval);
+        Assert.Equal(SalesRuleCodes.QuoteExpiryAlreadyApproved, CodeOf(() => quote.ApproveExpiredConversion(2, Approver, today, null, T0)));
+        quote.RequireValidOn(today);
+
+        // A revision is a new offer: the approval stays with Rev.0 and Rev.1 is expired again until approved.
+        quote.Revise(2, Reviser, new SalesQuoteTerms(Day.AddDays(4)), [Line("2")], T0.AddMinutes(6));
+        Assert.Null(quote.CurrentExpiryApproval);
+        Assert.Equal(SalesRuleCodes.QuoteExpired, CodeOf(() => quote.Convert(3, Guid.NewGuid(), Actor, today, T0)));
+        quote.ApproveExpiredConversion(3, Reviser, today, "  ", T0.AddMinutes(7));
+        Assert.Null(quote.CurrentExpiryApproval!.Note);
+        Assert.Equal([0, 1], quote.ExpiryApprovals.Select(approval => approval.Revision));
+        quote.Convert(4, Guid.NewGuid(), Actor, today, T0.AddMinutes(8));
+        Assert.Equal((SalesQuoteState.Converted, 5L), (quote.State, quote.Version));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => quote.ApproveExpiredConversion(5, Approver, today, null, T0)));
     }
 
     [Fact]
@@ -118,6 +168,7 @@ public sealed class SalesQuoteTests
     {
         var conversion = new SalesQuoteConversion(Guid.NewGuid(), Actor, T0);
         var loss = new SalesQuoteLoss("Fiyat", Actor, T0);
+        var listLoss = new SalesQuoteLoss(null, Actor, T0, ListReason);
         var revised = Create([Line("1")]);
         revised.Restore(SalesQuoteState.Converted, 2, null, conversion, 4, T0);
         Assert.Equal((2, 4L), (revised.Revision, revised.Version));
@@ -127,6 +178,28 @@ public sealed class SalesQuoteTests
         Assert.Throws<InvalidOperationException>(() => Create([Line("1")]).Restore(SalesQuoteState.Open, 0, loss, null, 1, T0));
         Assert.Throws<InvalidOperationException>(() => Create([Line("1")]).Restore(SalesQuoteState.Lost, 0, loss, conversion, 2, T0));
         Create([Line("1")]).Restore(SalesQuoteState.Lost, 1, loss, null, 3, T0);
+        // SAT-D25: a list entry needs its complete snapshot; the explanation may be absent but never blank.
+        Create([Line("1")]).Restore(SalesQuoteState.Lost, 0, listLoss, null, 2, T0);
+        Assert.Throws<InvalidOperationException>(() => Create([Line("1")]).Restore(SalesQuoteState.Lost, 0, listLoss with { Reason = "" }, null, 2, T0));
+        Assert.Throws<InvalidOperationException>(() => Create([Line("1")])
+            .Restore(SalesQuoteState.Lost, 0, listLoss with { ListReason = ListReason with { ProfileId = Guid.Empty } }, null, 2, T0));
+        Assert.Throws<InvalidOperationException>(() => Create([Line("1")]).Restore(SalesQuoteState.Lost, 0, loss with { Reason = null }, null, 2, T0));
+
+        // SAT-D24 / SAT-D44: approvals count as steps, bind one revision each and the current one's validity date.
+        var expiring = new SalesQuoteTerms(Day.AddDays(1));
+        var approval = new SalesQuoteExpiryApproval(0, Day.AddDays(1), Day.AddDays(5), Approver, T0, null);
+        var history = new[] { new SalesQuoteRevisionRecord(0, Day.AddDays(1), Actor, T0) };
+        var approved = Create([Line("1")], terms: expiring);
+        approved.Restore(SalesQuoteState.Open, 0, null, null, 2, T0, history, [approval]);
+        Assert.Equal(approval, approved.CurrentExpiryApproval);
+        approved.RequireValidOn(Day.AddDays(9));
+        Assert.Throws<InvalidOperationException>(() => Create([Line("1")], terms: expiring).Restore(SalesQuoteState.Open, 0, null, null, 1, T0, history, [approval]));
+        Assert.Throws<InvalidOperationException>(() => Create([Line("1")], terms: expiring)
+            .Restore(SalesQuoteState.Open, 0, null, null, 3, T0, history, [approval, approval]));
+        Assert.Throws<InvalidOperationException>(() => Create([Line("1")], terms: expiring)
+            .Restore(SalesQuoteState.Open, 0, null, null, 2, T0, history, [approval with { ValidUntil = Day.AddDays(2) }]));
+        Assert.Throws<InvalidOperationException>(() => Create([Line("1")], terms: expiring)
+            .Restore(SalesQuoteState.Open, 0, null, null, 2, T0, [], [approval]));
     }
 
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;

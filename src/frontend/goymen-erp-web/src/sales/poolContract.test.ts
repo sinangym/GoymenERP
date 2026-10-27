@@ -6,7 +6,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   decodeQuoteDetail,
+  decodeQuoteLossReasons,
   decodeQuoteMutation,
+  decodeQuoteValiditySuggestion,
   decodeQuotePage,
   decodeQuoteSummary,
   decodeRequestDetail,
@@ -15,7 +17,10 @@ import {
   decodeRequestSummary,
 } from './poolContract'
 import {
+  LOSS_REASON_PRICE,
   ORDER_ID,
+  expiryOf,
+  lossReasons,
   QUOTE_ID,
   REQUEST_ID,
   quoteDetail,
@@ -106,7 +111,7 @@ describe('sales quote decoders', () => {
 
   it('never shows a lifecycle without its facts', () => {
     // Open with a loss; Lost without one; Converted naming another order; Converted without convertedDraftId.
-    expect(decodeQuoteDetail(quoteDetail({}, { loss: { reason: 'x', lostBy: 'y', lostAtUtc: '2026-10-23T08:00:00Z' } }), QUOTE_ID)).toBeNull()
+    expect(decodeQuoteDetail(quoteDetail({}, { loss: { reason: 'x', lostBy: 'y', lostAtUtc: '2026-10-23T08:00:00Z', reasonId: null, reasonCode: null, reasonLabel: null } }), QUOTE_ID)).toBeNull()
     expect(decodeQuoteDetail(quoteDetail({ state: 'Lost' }, { loss: null }), QUOTE_ID)).toBeNull()
     expect(
       decodeQuoteDetail(
@@ -119,12 +124,56 @@ describe('sales quote decoders', () => {
     expect(decodeQuoteSummary(quoteSummary({ state: 'Converted' }))).toBeNull()
     expect(decodeQuoteSummary(quoteSummary({ convertedDraftId: ORDER_ID }))).toBeNull()
     expect(decodeQuoteDetail(quoteDetail({ state: 'Converted', convertedDraftId: ORDER_ID }), QUOTE_ID)?.conversion?.draftId).toBe(ORDER_ID)
-    expect(decodeQuoteDetail(quoteDetail({ state: 'Lost' }), QUOTE_ID)?.loss?.reason).toBe('Fiyat yüksek')
+    expect(decodeQuoteDetail(quoteDetail({ state: 'Lost' }), QUOTE_ID)?.loss?.reasonLabel).toBe('Fiyat')
   })
 
   it('refuses repeated or empty request ids and a blank loss reason', () => {
     expect(decodeQuoteDetail(quoteDetail({}, { requestIds: [REQUEST_ID, REQUEST_ID] }), QUOTE_ID)).toBeNull()
     expect(decodeQuoteDetail(quoteDetail({}, { requestIds: ['00000000-0000-0000-0000-000000000000'] }), QUOTE_ID)).toBeNull()
-    expect(decodeQuoteDetail(quoteDetail({ state: 'Lost' }, { loss: { reason: '  ', lostBy: 'y', lostAtUtc: '2026-10-23T08:00:00Z' } }), QUOTE_ID)).toBeNull()
+    expect(decodeQuoteDetail(quoteDetail({ state: 'Lost' }, { loss: { reason: '  ', lostBy: 'y', lostAtUtc: '2026-10-23T08:00:00Z', reasonId: null, reasonCode: null, reasonLabel: null } }), QUOTE_ID)).toBeNull()
+  })
+
+  it('SAT-D25: a loss is either a list entry with its code and label or a loss recorded before the list — never half', () => {
+    const lost = (loss: Record<string, unknown>) => decodeQuoteDetail(quoteDetail({ state: 'Lost' }, { loss }), QUOTE_ID)
+    const base = { lostBy: 'y', lostAtUtc: '2026-10-23T08:00:00Z' }
+    expect(lost({ ...base, reason: 'eski serbest metin', reasonId: null, reasonCode: null, reasonLabel: null })?.loss?.reason).toBe('eski serbest metin')
+    expect(lost({ ...base, reason: null, reasonId: LOSS_REASON_PRICE, reasonCode: 'FIYAT', reasonLabel: 'Fiyat' })?.loss?.reasonId).toBe(LOSS_REASON_PRICE)
+    expect(lost({ ...base, reason: null, reasonId: null, reasonCode: null, reasonLabel: null })).toBeNull()
+    expect(lost({ ...base, reason: null, reasonId: LOSS_REASON_PRICE, reasonCode: null, reasonLabel: 'Fiyat' })).toBeNull()
+    expect(lost({ ...base, reason: 'x', reasonId: LOSS_REASON_PRICE, reasonCode: 'FIYAT' })).toBeNull()
+  })
+
+  it('SAT-D44 / SAT-D24: the creator, revisions, approvals and expiry agree with the quote or nothing is shown', () => {
+    const decoded = decodeQuoteDetail(quoteDetail({ version: '2', revision: 'Rev.1' }), QUOTE_ID)
+    expect(decoded?.revisions.map((record) => [record.revision, record.revisedBy])).toEqual([['Rev.0', 'satis'], ['Rev.1', 'revize-eden']])
+    // A revision list that does not end at the current revision, or whose first entry is not the creator.
+    expect(decodeQuoteDetail(quoteDetail({ version: '2', revision: 'Rev.1' }, { revisions: [] }), QUOTE_ID)).toBeNull()
+    expect(decodeQuoteDetail(quoteDetail({}, { createdBy: 'baskasi' }), QUOTE_ID)).toBeNull()
+    // "Approved" without an approval of the current revision, or an approval of a quote that had not expired.
+    expect(decodeQuoteDetail(quoteDetail({ validUntil: '2026-10-20' }, { expiry: expiryOf(quoteSummary({ validUntil: '2026-10-20' }), '2026-10-23', true) }), QUOTE_ID)).toBeNull()
+    const approval = { revision: 'Rev.0', validUntil: '2026-10-20', businessDay: '2026-10-23', approvedBy: 'mudur', approvedAtUtc: '2026-10-23T09:00:00Z', note: null }
+    expect(decodeQuoteDetail(quoteDetail({ validUntil: '2026-10-20' }, {
+      expiryApprovals: [approval], expiry: expiryOf(quoteSummary({ validUntil: '2026-10-20' }), '2026-10-23', true),
+    }), QUOTE_ID)?.expiry.isApproved).toBe(true)
+    expect(decodeQuoteDetail(quoteDetail({ validUntil: '2026-10-20' }, {
+      expiryApprovals: [{ ...approval, businessDay: '2026-10-20' }], expiry: expiryOf(quoteSummary({ validUntil: '2026-10-20' }), '2026-10-23', true),
+    }), QUOTE_ID)).toBeNull()
+    // "Expired" is the server's word on its own day: a contradicting flag is not shown.
+    expect(decodeQuoteDetail(quoteDetail({}, { expiry: { businessDay: '2026-10-23', isExpired: true, isApproved: false } }), QUOTE_ID)).toBeNull()
+    expect(decodeQuoteDetail(quoteDetail({ validUntil: null }, { revisions: [{ revision: 'Rev.0', validUntil: null, revisedBy: 'satis', revisedAtUtc: '2026-10-22T08:00:00Z' }], expiry: { businessDay: '2099-01-01', isExpired: false, isApproved: false } }), QUOTE_ID)?.expiry.isExpired).toBe(false)
+  })
+
+  it('SAT-D25 / SAT-D39: the list and the suggestion reads are strict', () => {
+    expect(decodeQuoteLossReasons(lossReasons())?.reasons.map((reason) => reason.requiresExplanation)).toEqual([false, true])
+    expect(decodeQuoteLossReasons(lossReasons({ isDefined: false, profileId: null, profileVersion: null, reasons: [] }))?.isDefined).toBe(false)
+    expect(decodeQuoteLossReasons(lossReasons({ isDefined: false }))).toBeNull()
+    expect(decodeQuoteLossReasons(lossReasons({ reasons: [{ reasonId: LOSS_REASON_PRICE, code: 'A', label: 'A', requiresExplanation: false }, { reasonId: LOSS_REASON_PRICE, code: 'B', label: 'B', requiresExplanation: true }] }))).toBeNull()
+    expect(decodeQuoteLossReasons({ ...lossReasons(), extra: 1 })).toBeNull()
+    const suggestion = { businessDate: '2026-10-22', validityDays: 30, suggestedValidUntil: '2026-11-21', profileId: LOSS_REASON_PRICE, profileVersion: '1' }
+    expect(decodeQuoteValiditySuggestion(suggestion, '2026-10-22')?.suggestedValidUntil).toBe('2026-11-21')
+    expect(decodeQuoteValiditySuggestion(suggestion, '2026-10-23')).toBeNull()
+    expect(decodeQuoteValiditySuggestion({ ...suggestion, validityDays: null }, '2026-10-22')).toBeNull()
+    expect(decodeQuoteValiditySuggestion({ ...suggestion, validityDays: '30' }, '2026-10-22')).toBeNull()
+    expect(decodeQuoteValiditySuggestion({ businessDate: '2026-10-22', validityDays: null, suggestedValidUntil: null, profileId: null, profileVersion: null }, '2026-10-22')?.validityDays).toBeNull()
   })
 })
