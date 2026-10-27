@@ -55,6 +55,9 @@ public static class SalesDraftCommands
     /// <summary>Reasoned maker-checker approval of every current below-floor commercial snapshot.</summary>
     public const string ApprovePriceFloorExceptionsV1 = "sales.order-draft.approve-price-floor-exceptions.v1";
 
+    /// <summary>SAT-D2 / API-12: reasoned maker-checker approval of every current over-limit discount (POST …/{id}/discount-exception-approval).</summary>
+    public const string ApproveDiscountExceptionsV1 = "sales.order-draft.approve-discount-exceptions.v1";
+
     /// <summary>D2 (Sinan 5749046401): POST /api/v1/sales/drafts/{id}/withdrawal — Preparing/PendingApproval/Rejected → Withdrawn (terminal; nothing deleted).</summary>
     public const string WithdrawV1 = "sales.order-draft.withdraw.v1";
 
@@ -352,6 +355,15 @@ public static class SalesDraftRequestHash
 
     /// <summary>Price-floor approval replay identity: command, draft, expected version and every line/reason in request order.</summary>
     public static string Compute(string commandName, Guid draftId, SalesDraftPriceFloorExceptionApprovalRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new { command = commandName, draftId, request.ExpectedVersion, request.Lines }, SalesDraftJson.Options));
+    }
+
+    /// <summary>API-12 discount-exception approval replay identity: command, draft, expected version and every line/reason in request order.</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftDiscountExceptionApprovalRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);

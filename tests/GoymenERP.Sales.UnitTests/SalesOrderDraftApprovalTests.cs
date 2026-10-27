@@ -160,7 +160,8 @@ public sealed class SalesOrderDraftApprovalTests
         // DEC-SAL-005: the cancellation of an approved order is a mutation entry too (RequireCancellable only reads);
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads); No 30: so is the force-close
         // (RequireForceClosable only reads).
-        Assert.Equal(["AddLine", "Approve", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "ForceClose", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
+        // SAT-D2 / API-12: so is the discount exception approval.
+        Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "ForceClose", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
@@ -171,6 +172,8 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Approve(3, Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApprovePriceFloorExceptions(3,
             [new LinePriceFloorExceptionApprovalInput(draft.Lines[0].Id, "SENTETIK")], Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApproveDiscountExceptions(3,
+            [new LineDiscountExceptionApprovalInput(draft.Lines[0].Id, "SENTETIK")], Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Reject(3, Approver, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Withdraw(3, Preparer, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordCustomerAcceptance(3, Approver, T0)));

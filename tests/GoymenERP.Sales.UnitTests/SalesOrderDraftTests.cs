@@ -342,23 +342,36 @@ public sealed class SalesOrderDraftTests
 
     // ---- K3 Head B: the commercial revision ----------------------------------------------------------
 
+    /// <summary>
+    /// SAT-D2 / SAT-D35: a SENTETIK 10 % limit, and a discounted line priced from a SENTETIK list at its own unit price, so the
+    /// revision mechanics below run with discounts measured within the limit (the boundary included).
+    /// </summary>
+    private static readonly SalesDiscountLimit WithinTenPercent = SalesDiscountLimit.Defined(10m, Guid.Parse("0f0e0d0c-0b0a-4908-8706-050403020100"), 1);
+
     private static SalesOrderDraft PricedDraft(out SalesOrderDraftLine first, out SalesOrderDraftLine second)
     {
         var draft = Draft();
-        first = draft.AddLine(1, Line(1m, commercial: new CommercialDraftFields("12.50", KgUnit, "5")), T0);
+        first = draft.AddLine(1, Line(1m, commercial: SalesOrderDraft.WithDiscountLimitCheck(
+            new CommercialDraftFields("12.50", KgUnit, "5", ListedAt("12.50")), WithinTenPercent, "prep", T0)), T0);
         second = draft.AddLine(2, Line(2m), T0);
         return draft;
     }
 
     private static LineCommercialInput Input(SalesOrderDraftLine line, string? price, Guid? unit, string? discount) =>
-        new(line.Id, new CommercialDraftFields(price, unit, discount));
+        new(line.Id, new CommercialDraftFields(price, unit, discount,
+            price is not null && unit is not null ? ListedAt(price) : null));
+
+    private static PriceReferenceSnapshot ListedAt(string listPrice) =>
+        new(Guid.Parse("abababab-abab-4bab-8bab-abababababab"), "SENTETIK liste", 1, Day.AddDays(-10), null, "TRY", KgUnit, listPrice,
+            null, "ExcludingVat", "0", null);
 
     [Fact]
     public void A_revision_before_any_approval_replaces_the_fields_and_archives_nothing()
     {
         var draft = PricedDraft(out var first, out var second);
 
-        var archived = draft.ReviseCommercial(3, [Input(first, "13.00", KgUnit, null), Input(second, "1", KgUnit, "10")], "pricer", T0.AddMinutes(1));
+        var archived = draft.ReviseCommercial(3, [Input(first, "13.00", KgUnit, null), Input(second, "1", KgUnit, "10")], "pricer", T0.AddMinutes(1),
+            WithinTenPercent);
 
         Assert.Null(archived);
         Assert.Empty(draft.ArchivedRevisions);
@@ -380,7 +393,8 @@ public sealed class SalesOrderDraftTests
         draft.Approve(4, "mgr", T0.AddMinutes(1));
         var approvedFacts = draft.Approval;
 
-        var archived = draft.ReviseCommercial(5, [Input(first, "13.00", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0.AddMinutes(2));
+        var archived = draft.ReviseCommercial(5, [Input(first, "13.00", KgUnit, "5"), Input(second, null, null, null)], "pricer", T0.AddMinutes(2),
+            WithinTenPercent);
 
         // The snapshot is the approved revision AS IT WAS: Rev.0, its facts, its money profile, the OLD values.
         Assert.NotNull(archived);

@@ -47,11 +47,29 @@ export interface LinePricing {
   readonly surchargeAmount: string | null
   readonly netUnitPrice: string | null
   readonly floorException: PriceFloorException | null
+  /** SAT-D2 / API-12 (additive member): the discount-limit check of a positive discount; null when there is none. */
+  readonly discountCheck: DiscountLimitCheck | null
 }
 
 export interface PriceFloorException {
   readonly requestedBy: string
   readonly requestedAtUtc: string
+  readonly approvedBy: string | null
+  readonly approvedAtUtc: string | null
+  readonly reason: string | null
+}
+
+/**
+ * SAT-D2 / API-12: who gave the discount, the list price it was measured against (SAT-D35; null = no list reference, the
+ * discount cannot be measured and goes to approval), the limit that applied (null = none defined, so every discount goes to
+ * approval), whether approval is required and another person's reasoned approval (all three or none).
+ */
+export interface DiscountLimitCheck {
+  readonly checkedBy: string
+  readonly checkedAtUtc: string
+  readonly listUnitPrice: string | null
+  readonly limitPercent: string | null
+  readonly requiresApproval: boolean
   readonly approvedBy: string | null
   readonly approvedAtUtc: string | null
   readonly reason: string | null
@@ -130,13 +148,31 @@ function decodeFloorException(value: unknown): PriceFloorException | null {
   return pending || approved ? o as unknown as PriceFloorException : null
 }
 
+const DISCOUNT_CHECK_KEYS = ['checkedBy', 'checkedAtUtc', 'listUnitPrice', 'limitPercent', 'requiresApproval', 'approvedBy', 'approvedAtUtc', 'reason'] as const
+
+function decodeDiscountCheck(value: unknown): DiscountLimitCheck | null {
+  const o = exact(value, DISCOUNT_CHECK_KEYS)
+  if (o === null || !isText(o.checkedBy) || typeof o.checkedAtUtc !== 'string' || Number.isNaN(Date.parse(o.checkedAtUtc))
+    || !isNullableDecimal(o.listUnitPrice) || !isNullableDecimal(o.limitPercent) || typeof o.requiresApproval !== 'boolean') return null
+  // An unmeasured discount (no list price) always requires approval.
+  if (o.listUnitPrice === null && o.requiresApproval !== true) return null
+  // A measured line with no defined limit always requires approval (SAT-D2 fail-closed); the server never sends otherwise.
+  if (o.listUnitPrice !== null && o.limitPercent === null && o.requiresApproval !== true) return null
+  const pending = o.approvedBy === null && o.approvedAtUtc === null && o.reason === null
+  // Only an over-limit discount is ever approved.
+  const approved = o.requiresApproval && isText(o.approvedBy) && typeof o.approvedAtUtc === 'string'
+    && !Number.isNaN(Date.parse(o.approvedAtUtc)) && isApprovalReason(o.reason)
+  return pending || approved ? o as unknown as DiscountLimitCheck : null
+}
+
 export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null {
   const response = exact(value, ['version', 'lines'])
   if (response === null || typeof response.version !== 'string' || !/^[1-9][0-9]{0,18}$/.test(response.version)
     || !Array.isArray(response.lines)) return null
   const lines: LinePricing[] = []
   for (const raw of response.lines) {
-    const o = exact(raw, PRICING_KEYS)
+    // SAT-D2 / API-12: `discountCheck` is an additive member; any other unknown member still fails closed.
+    const o = exact(raw, PRICING_KEYS) ?? exact(raw, [...PRICING_KEYS, 'discountCheck'])
     if (o === null || !isText(o.lineId) || !isCount(o.lineNo) || !isNullableDecimal(o.unitPrice)
       || !(o.priceUnitId === null || isText(o.priceUnitId))
       || !(o.priceSource === null || o.priceSource === 'Reference' || o.priceSource === 'Manual')
@@ -146,12 +182,14 @@ export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null 
     if (o.priceReference !== null && reference === null) return null
     const floorException = o.floorException === null ? null : decodeFloorException(o.floorException)
     if (o.floorException !== null && floorException === null) return null
+    const discountCheck = o.discountCheck === undefined || o.discountCheck === null ? null : decodeDiscountCheck(o.discountCheck)
+    if (o.discountCheck !== undefined && o.discountCheck !== null && discountCheck === null) return null
     // A price and its net travel together; a source without a price is off-contract.
     if ((o.unitPrice === null) !== (o.netUnitPrice === null) || (o.unitPrice === null) !== (o.priceSource === null)) return null
     lines.push({
       lineId: o.lineId, lineNo: o.lineNo, unitPrice: o.unitPrice, priceUnitId: o.priceUnitId, priceSource: o.priceSource,
       priceReference: reference, discountPercent: o.discountPercent, discountAmount: o.discountAmount, surchargePercent: o.surchargePercent,
-      surchargeAmount: o.surchargeAmount, netUnitPrice: o.netUnitPrice, floorException,
+      surchargeAmount: o.surchargeAmount, netUnitPrice: o.netUnitPrice, floorException, discountCheck,
     })
   }
   return { version: response.version, lines }
