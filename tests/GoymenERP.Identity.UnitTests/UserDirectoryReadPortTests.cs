@@ -224,9 +224,15 @@ public sealed class UserDirectoryReadPortTests
     [Fact]
     public void No_directory_record_carries_contact_external_identity_role_or_grant_data()
     {
+        // SAT-D27: the search REQUEST may name one permission to filter by (input only); it is the single exception, pinned
+        // below, and no answer or entry carries any grant data back.
+        Assert.Equal(
+            ["ActorId", "CompanyId", "HoldingPermission", "Limit", "Query"],
+            typeof(UserDirectorySearchRequestV1).GetProperties().Select(property => property.Name).Order(StringComparer.Ordinal));
         var records = typeof(IUserDirectoryReadPortV1).Assembly.GetTypes()
             .Where(type => type.Namespace == typeof(IUserDirectoryReadPortV1).Namespace
                 && type.Name.StartsWith("UserDirectory", StringComparison.Ordinal)
+                && type != typeof(UserDirectorySearchRequestV1)
                 && type is { IsClass: true, IsAbstract: false });
         var properties = records
             .SelectMany(type => type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -239,6 +245,133 @@ public sealed class UserDirectoryReadPortTests
         Assert.Equal(
             ["DisplayName", "IsActiveInCompany", "UserId"],
             typeof(UserDirectoryEntryV1).GetProperties().Select(property => property.Name).Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_holding_permission_lists_only_the_active_members_who_hold_it_in_the_company_now()
+    {
+        await using var db = CreateDbContext();
+        var seeded = Seed(db);
+        var now = DateTimeOffset.UtcNow;
+        const string companyWideName = ErpPermissions.SalesDraftsCreate;
+        // Holds it company-wide in A: listed.
+        var holder = AddUser(db, "Satisci");
+        Grant(db, holder, CompanyA, companyWideName, AccessScopeType.Company, CompanyA);
+        // Holds it under a site scope only: a company-wide-only name is not held (the authorization service's rule).
+        var siteHolder = AddUser(db, "Saha");
+        Grant(db, siteHolder, CompanyA, companyWideName, AccessScopeType.Company, CompanyA, permissionOnSecondRole: true);
+        Grant(db, siteHolder, CompanyA, companyWideName, AccessScopeType.Site, Guid.NewGuid());
+        // Holds it in B only (and is a plain member of A): not listed in A.
+        var holderInB = AddUser(db, "Bdeki Satisci");
+        Assign(db, holderInB, CompanyA, scoped: true);
+        Grant(db, holderInB, CompanyB, companyWideName, AccessScopeType.Company, CompanyB);
+        // Held under an expired, a revoked and a passive-role assignment (each a plain member otherwise): not listed.
+        var expired = AddUser(db, "Suresi Gecmis");
+        Assign(db, expired, CompanyA, scoped: true);
+        Grant(db, expired, CompanyA, companyWideName, AccessScopeType.Company, CompanyA,
+            validFrom: now.AddDays(-30), validUntil: now.AddDays(-1));
+        var revoked = AddUser(db, "Geri Alinmis");
+        Assign(db, revoked, CompanyA, scoped: true);
+        var revokedGrant = Grant(db, revoked, CompanyA, companyWideName, AccessScopeType.Company, CompanyA);
+        var passiveRole = AddUser(db, "Pasif Rollu");
+        Assign(db, passiveRole, CompanyA, scoped: true);
+        var passiveRoleGrant = Grant(db, passiveRole, CompanyA, companyWideName, AccessScopeType.Company, CompanyA);
+        // A passive user holding it: not a member, not listed.
+        var passiveUser = AddUser(db, "Pasif Kisi");
+        Grant(db, passiveUser, CompanyA, companyWideName, AccessScopeType.Company, CompanyA);
+        await db.SaveChangesAsync();
+        db.Entry(revokedGrant).Property(nameof(RoleAssignment.Status)).CurrentValue = RoleAssignmentStatus.Revoked;
+        db.Entry(db.Roles.Single(role => role.Id == passiveRoleGrant.RoleId)).Property(nameof(RoleDefinition.IsActive)).CurrentValue = false;
+        db.Entry(db.Users.Single(user => user.Id == passiveUser)).Property(nameof(UserAccount.IsActive)).CurrentValue = false;
+        await db.SaveChangesAsync();
+
+        var port = Port(db, CompanyA, seeded.Caller);
+        var holders = await port.SearchActiveAsync(new UserDirectorySearchRequestV1(CompanyA, Actor(seeded.Caller), null, 50, companyWideName));
+        Assert.Equal(UserDirectoryOutcomeV1.Found, holders.Outcome);
+        Assert.Equal([new UserDirectoryEntryV1(holder, "Satisci", true)], holders.Items);
+        Assert.Contains((await port.SearchActiveAsync(new UserDirectorySearchRequestV1(CompanyA, Actor(seeded.Caller), "Saha", 50))).Items,
+            item => item.UserId == siteHolder);
+
+        // The fragment narrows the holders, it never widens them ("Bdeki Satisci" matches the fragment but holds the name in B).
+        var narrowed = await port.SearchActiveAsync(new UserDirectorySearchRequestV1(CompanyA, Actor(seeded.Caller), "Sat", 50, companyWideName));
+        Assert.Equal([holder], narrowed.Items.Select(item => item.UserId));
+
+        // Without the filter every active member is listed, holders or not (MOD-08 unchanged).
+        var everyone = await port.SearchActiveAsync(new UserDirectorySearchRequestV1(CompanyA, Actor(seeded.Caller), null, 50));
+        Assert.Contains(everyone.Items, item => item.UserId == holderInB);
+        Assert.Contains(everyone.Items, item => item.UserId == expired);
+
+        // Company B lists its own holder only.
+        var inB = await Port(db, CompanyB, seeded.CallerInB).SearchActiveAsync(
+            new UserDirectorySearchRequestV1(CompanyB, Actor(seeded.CallerInB), null, 50, companyWideName));
+        Assert.Equal([holderInB], inB.Items.Select(item => item.UserId));
+    }
+
+    [Fact]
+    public async Task A_name_that_is_not_company_wide_only_is_held_under_any_scope_in_the_company()
+    {
+        await using var db = CreateDbContext();
+        var seeded = Seed(db);
+        // Every Seed member holds organization.sites.read company-scoped; a site-scoped holder joins them.
+        var siteHolder = AddUser(db, "Saha");
+        Grant(db, siteHolder, CompanyA, ErpPermissions.OrganizationSitesRead, AccessScopeType.Site, Guid.NewGuid(),
+            alsoCompanyScoped: false);
+        await db.SaveChangesAsync();
+
+        var answer = await Port(db, CompanyA, seeded.Caller).SearchActiveAsync(
+            new UserDirectorySearchRequestV1(CompanyA, Actor(seeded.Caller), "Saha", 50, ErpPermissions.OrganizationSitesRead));
+        Assert.Equal([siteHolder], answer.Items.Select(item => item.UserId));
+        var nobody = await Port(db, CompanyA, seeded.Caller).SearchActiveAsync(
+            new UserDirectorySearchRequestV1(CompanyA, Actor(seeded.Caller), null, 50, ErpPermissions.SalesQuotesWrite));
+        Assert.Equal((UserDirectoryOutcomeV1.Found, 0), (nobody.Outcome, nobody.Items.Count));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData(" sales.drafts.create")]
+    [InlineData("sales.drafts.create ")]
+    [InlineData("SALES.DRAFTS.CREATE")]
+    [InlineData("not.a.registered.permission")]
+    public async Task An_unknown_or_misspelled_holding_permission_is_refused_never_everyone(string permission)
+    {
+        await using var db = CreateDbContext();
+        var seeded = Seed(db);
+        await db.SaveChangesAsync();
+
+        var answer = await Port(db, CompanyA, seeded.Caller).SearchActiveAsync(
+            new UserDirectorySearchRequestV1(CompanyA, Actor(seeded.Caller), null, 10, permission));
+
+        Assert.Equal((UserDirectoryOutcomeV1.Denied, 0, false), (answer.Outcome, answer.Items.Count, answer.HasMore));
+    }
+
+    /// <summary>A role carrying exactly <paramref name="permission"/>, assigned under one scope (plus the company scope when asked).</summary>
+    private static RoleAssignment Grant(
+        IdentityDbContext db,
+        Guid user,
+        Guid company,
+        string permission,
+        AccessScopeType scopeType,
+        Guid scopeId,
+        bool permissionOnSecondRole = false,
+        bool alsoCompanyScoped = false,
+        DateTimeOffset? validFrom = null,
+        DateTimeOffset? validUntil = null)
+    {
+        var role = new RoleDefinition(Guid.NewGuid(), $"ROLE_{Guid.NewGuid():N}", "Sentetik", isSystem: false);
+        // permissionOnSecondRole: the company-scoped assignment carries a DIFFERENT name, so membership alone is not a hold.
+        role.AddPermission(permissionOnSecondRole ? ErpPermissions.OrganizationSitesRead : permission);
+        db.Roles.Add(role);
+        var assignment = new RoleAssignment(Guid.NewGuid(), user, role.Id, company,
+            validFrom ?? DateTimeOffset.UtcNow.AddDays(-1), validUntil, null);
+        assignment.AddScope(scopeType, scopeId);
+        if (alsoCompanyScoped && scopeType != AccessScopeType.Company)
+        {
+            assignment.AddScope(AccessScopeType.Company, company);
+        }
+
+        db.RoleAssignments.Add(assignment);
+        return assignment;
     }
 
     private static Seeded Seed(IdentityDbContext db)

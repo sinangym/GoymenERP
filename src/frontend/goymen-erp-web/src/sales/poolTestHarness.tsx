@@ -1,6 +1,6 @@
 /**
  * TEST SUPPORT ONLY — the S-01 pool screens in the REAL shell (`AppShell`, `ShellProvider`, `CapabilityRoute`) around
- * `salesRoutes`, under a TEST capability map (./poolFixtures.ts; the backend publishes no id yet — NEEDS-CAPABILITY).
+ * `salesRoutes`, under a TEST capability map by default (./poolFixtures.ts) or the production one when a test passes it.
  */
 
 import { render } from '@testing-library/react'

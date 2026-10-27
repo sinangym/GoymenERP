@@ -40,3 +40,46 @@ public sealed class SalesUserDisplayHost(IUserDirectoryReadPortV1 directory) : I
     private static SalesUserDisplayBatchAnswerV1 Closed(SalesUserDisplayBatchOutcomeV1 outcome) =>
         new(outcome, []);
 }
+
+/// <summary>
+/// SAT-D27 (1): central adapter between the authorized Sales sales-owner picker and Identity's user directory. It passes the
+/// server-resolved company and caller, the trimmed fragment, the page size and the eligibility name of the server composition;
+/// Identity re-fences the company and the caller and measures who holds the name in its own store. Only the id and the display
+/// name come back.
+/// </summary>
+public sealed class SalesOwnerCandidateHost(IUserDirectoryReadPortV1 directory) : ISalesOwnerCandidateSourceV1
+{
+    public async Task<SalesOwnerCandidateAnswerV1> SearchAsync(
+        SalesOwnerCandidateRequestV1 request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.EligibilityPermission))
+        {
+            return Closed(SalesOwnerCandidateOutcomeV1.Unavailable);
+        }
+
+        var answer = await directory.SearchActiveAsync(
+            new UserDirectorySearchRequestV1(request.CompanyId, request.ActorId, request.Query, request.Limit,
+                request.EligibilityPermission),
+            cancellationToken);
+
+        if (answer is null || answer.Items is null)
+        {
+            return Closed(SalesOwnerCandidateOutcomeV1.Unavailable);
+        }
+
+        return answer.Outcome switch
+        {
+            UserDirectoryOutcomeV1.Found when answer.Items.All(item => item is { IsActiveInCompany: true }) =>
+                new SalesOwnerCandidateAnswerV1(
+                    SalesOwnerCandidateOutcomeV1.Success,
+                    [.. answer.Items.Select(item => new SalesOwnerOptionV1(item.UserId, item.DisplayName))],
+                    answer.HasMore),
+            UserDirectoryOutcomeV1.Denied => Closed(SalesOwnerCandidateOutcomeV1.Denied),
+            _ => Closed(SalesOwnerCandidateOutcomeV1.Unavailable),
+        };
+    }
+
+    private static SalesOwnerCandidateAnswerV1 Closed(SalesOwnerCandidateOutcomeV1 outcome) => new(outcome, [], false);
+}

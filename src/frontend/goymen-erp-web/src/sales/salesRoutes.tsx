@@ -36,8 +36,8 @@ export const salesRoutes: RouteObject[] = [
   // default source is the real one; a test or an isolated screen provides its own.
   { path: SALES_ROUTE.create.slice(1), element: gate(SALES_CAPABILITY.draftsCreate, <SalesDraftCreatePage />) },
   { path: SALES_ROUTE.detail.slice(1), element: gate(SALES_CAPABILITY.draftsDetail, <SalesDraftDetailPage />) },
-  // S-01 Talep/Teklif Havuzu (UI-20). NEEDS-CAPABILITY: the backend publishes no id for these screens yet, so each
-  // gate holds an EMPTY list (./poolCapabilities.ts) and closes onto the neutral not-found block — no id is invented.
+  // S-01 Talep/Teklif Havuzu (UI-20). Each gate holds the id the backend publishes for its screen (Sales shell 1.8,
+  // ./poolCapabilities.ts); an actor the shell does not grant it meets the neutral not-found block.
   // Static `yeni` before the parameter routes.
   { path: SALES_POOL_ROUTE.requests.slice(1), element: <SalesPoolRoute capability="requestsList"><SalesRequestListPage /></SalesPoolRoute> },
   { path: SALES_POOL_ROUTE.requestCreate.slice(1), element: <SalesPoolRoute capability="requestsCreate"><SalesRequestCreatePage /></SalesPoolRoute> },

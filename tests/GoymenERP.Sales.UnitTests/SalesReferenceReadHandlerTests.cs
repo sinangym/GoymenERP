@@ -8,7 +8,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Sales.UnitTests;
 
-public sealed class SalesReferenceReadHandlerTests
+public sealed partial class SalesReferenceReadHandlerTests
 {
     [Fact]
     public async Task Missing_policy_denies_without_touching_owner_reads()
@@ -854,8 +854,15 @@ public sealed class SalesReferenceReadHandlerTests
     {
         public bool Allowed { get; set; } = true;
         public int Calls { get; private set; }
+        /// <summary>SAT-D27: when set, only these (name, company) pairs are held; <see cref="Allowed"/> still revokes everything.</summary>
+        public HashSet<(string Permission, Guid Company)>? Granted { get; set; }
+        public List<string> Asked { get; } = [];
         public Task<bool> HasPermissionAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
-        { Calls++; return Task.FromResult(Allowed); }
+        {
+            Calls++;
+            Asked.Add(permission);
+            return Task.FromResult(Allowed && (Granted is null || Granted.Contains((permission, companyId))));
+        }
         public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId, IReadOnlyCollection<string> permissions,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PermissionScope> GetPermissionScopeAsync(string permission, Guid companyId,
