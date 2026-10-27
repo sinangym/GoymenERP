@@ -636,8 +636,13 @@ function sameSlices(answered: readonly DeliverySlice[] | null, sent: readonly De
  * Every request member the detail reflects is compared by value — ids alone prove
  * nothing. Decimal text is retained verbatim by the server, so it must come back as
  * sent. `productVersion` is the owner's snapshot of the version the line expected.
- * Price, discount and owner references are compared too: the client sends them null
- * today, and an answer that fills one in is not the draft this person saved.
+ * Price, discount and owner references are compared too: an answer that fills in or
+ * changes one is not the draft this person saved. UI-14: the one exception is the
+ * server's own `priceDisclosure: "Withheld"` marker — an actor may hold the price-write
+ * permission without the price-read one (K3 P2), and the create answer then carries the
+ * three price members as null BECAUSE of the marker (the decoder refuses a withheld line
+ * with a price). Such a line is compared on everything else; it never turns a recorded
+ * draft into an endless "unknown".
  */
 export function describesAttempt(mutation: DraftMutation, sent: DraftCreateRequest, companyId: string): boolean {
   const { detail } = mutation
@@ -665,11 +670,12 @@ export function describesAttempt(mutation: DraftMutation, sent: DraftCreateReque
       answered.productVersion === line.expectedProductVersion &&
       answered.orderUnitId === line.orderUnitId &&
       answered.quantity === line.quantity &&
-      answered.unitPrice === line.unitPrice &&
-      answered.priceUnitId === line.priceUnitId &&
+      (answered.priceDisclosure === 'Withheld' ||
+        (answered.unitPrice === line.unitPrice &&
+          answered.priceUnitId === line.priceUnitId &&
+          answered.discountPercent === line.discountPercent)) &&
       answered.requestedDeliveryDate === line.requestedDeliveryDate &&
       answered.note === line.note &&
-      answered.discountPercent === line.discountPercent &&
       sameSlices(answered.requestedDeliverySlices, line.requestedDeliverySlices)
     )
   })

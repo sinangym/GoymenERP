@@ -13,11 +13,12 @@ import errorProductRaw from './examples/error-product.json?raw'
 import errorReplayRaw from './examples/error-replay.json?raw'
 import { resetPendingDrafts } from './pendingDrafts'
 import { unavailableReferenceSource, type UseContactInformation, type UseCurrencyOptions, type UseReferenceOptions } from './referenceSource'
-import { SALES_CAPABILITY } from './capabilities'
+import { SALES_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { ORDER_FIELD } from './orderDraftForm'
 import { ORDER_DRAFT_TEXT as T } from './salesText'
 import {
   ACCOUNT,
+  ALL_SALES,
   ADDRESS,
   ADDRESS_TEXT,
   COMPANY_A,
@@ -83,6 +84,8 @@ function answerFor(raw: string, body: string | null): string {
   const answer = JSON.parse(raw)
   answer.detail.lines[0].lineId = sent.lines[0].lineId
   answer.detail.lines[0].requestedDeliverySlices = sent.lines[0].requestedDeliverySlices
+  // UI-14: the server keeps the price texts verbatim and discloses them to a price reader.
+  for (const member of ['unitPrice', 'priceUnitId', 'discountPercent']) answer.detail.lines[0][member] = sent.lines[0][member]
   return JSON.stringify(answer)
 }
 
@@ -779,5 +782,130 @@ ${selector} {`)
     expect(rule('.summaryFacts dd')).toContain('overflow-wrap: anywhere')
     expect(pageCss).not.toMatch(/text-overflow:\s*ellipsis|line-clamp/)
     expect(pageCss).toMatch(/@media \(max-width: 479px\)/)
+  })
+})
+
+describe('UI-14 — price entry on the new order', () => {
+  const PRICE_WRITE = [...ALL_SALES, SALES_PRICE_WRITE_CAPABILITY]
+  const unitPrice = () => screen.getByLabelText(T.field.unitPrice) as HTMLInputElement
+
+  async function fillPrice(price: string, discount = '') {
+    await userEvent.type(unitPrice(), price)
+    await userEvent.selectOptions(screen.getByLabelText(T.field.priceUnit), KG)
+    if (discount !== '') await userEvent.type(screen.getByLabelText(T.field.discountPercent), discount)
+  }
+
+  it('renders no price field without the shell’s price-write control, and sends no price', async () => {
+    const fetch = installFetch({ onCreate: () => json('{}', 503) })
+    renderSalesApp(PATH)
+    await fillExample()
+    expect(screen.queryByLabelText(T.field.unitPrice)).toBeNull()
+    expect(screen.queryByLabelText(T.field.priceUnit)).toBeNull()
+    expect(screen.queryByLabelText(T.field.discountPercent)).toBeNull()
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.unknown)
+    const body = JSON.parse(fetch.salesCalls()[0].body as string)
+    expect(body.lines[0]).toMatchObject({ unitPrice: null, priceUnitId: null, discountPercent: null })
+  })
+
+  it('with the control: sends the typed price, the chosen offered unit and the discount as decimal text; no total is shown', async () => {
+    const pending = deferred<Response>()
+    const fetch = installFetch({ capabilities: PRICE_WRITE, onCreate: () => pending.promise })
+    renderSalesApp(PATH)
+    await fillExample()
+    const group = screen.getByRole('group', { name: T.pricing.legend })
+    expect(group.getAttribute('aria-describedby')).toBeTruthy()
+    // The price unit is chosen from what the Product owner offers for the line's product — never pre-selected.
+    const unitSelect = within(group).getByLabelText(T.field.priceUnit) as HTMLSelectElement
+    expect(unitSelect.value).toBe('')
+    expect(Array.from(unitSelect.options).map((option) => option.value)).toEqual(['', KG])
+    await fillPrice('1250,50', '12,5')
+
+    const summary = screen.getByRole('region', { name: T.summary.heading })
+    expect(within(summary).getByText(T.summary.pricesEntered)).toBeTruthy()
+    expect(within(summary).getByTestId('sales-summary-lines').textContent).toContain(T.summary.priceFact('1250,50', 'kg'))
+    expect(within(summary).queryByText(T.summary.notPriced)).toBeNull()
+    // No amount, net or total is derived on the screen (SAT-D11; API-03 / UI-15 bring the server's totals).
+    // 1250,50 less 12,5 % is 1094,1875 a kg, 1 094 187,5 for the line: neither appears anywhere.
+    expect(document.body.textContent).not.toMatch(/1\.?094|1094/)
+
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(fetch.salesCalls()).toHaveLength(1))
+    const body = JSON.parse(fetch.salesCalls()[0].body as string)
+    expect(body.lines[0]).toMatchObject({ unitPrice: '1250.5', priceUnitId: KG, discountPercent: '12.5' })
+    await act(async () => pending.resolve(json(answerFor(createResponseRaw, fetch.salesCalls()[0].body), 201)))
+    await screen.findByRole('heading', { name: T.attempt.completed })
+  })
+
+  it('refuses a price without its unit before anything is sent, on the field, from the summary link', async () => {
+    const fetch = installFetch({ capabilities: PRICE_WRITE, onCreate: () => json('{}', 500) })
+    renderSalesApp(PATH)
+    await fillExample()
+    await userEvent.type(unitPrice(), '10')
+    await userEvent.click(saveButton())
+    const link = await screen.findByText(T.validation.priceUnitRequired, { selector: 'a' })
+    await userEvent.click(link)
+    expect(document.activeElement).toBe(screen.getByLabelText(T.field.priceUnit))
+    expect(screen.getByLabelText(T.field.priceUnit).getAttribute('aria-invalid')).toBe('true')
+    expect(fetch.salesCalls()).toHaveLength(0)
+  })
+
+  it('a 422 on lines[0].unitPrice (money-profile scale) is placed on the price field and keeps what was typed', async () => {
+    installFetch({
+      capabilities: PRICE_WRITE,
+      onCreate: () =>
+        json(
+          {
+            status: 422,
+            title: 'validation_failed',
+            code: 'validation_failed',
+            correlationId: 'ui14-scale',
+            errors: [{ field: 'lines[0].unitPrice', code: 'sales_price_scale_exceeded' }],
+          },
+          422,
+        ),
+    })
+    renderSalesApp(PATH)
+    await fillExample()
+    await fillPrice('1,1234567')
+    await userEvent.click(saveButton())
+    await waitFor(() => expect(unitPrice().getAttribute('aria-invalid')).toBe('true'))
+    const described = (unitPrice().getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent)
+    expect(described).toContain('Birim fiyat para biriminin onaylı ondalık basamak sayısını aşıyor; fiyat yuvarlanmaz.')
+    expect(unitPrice().value).toBe('1,1234567')
+  })
+
+  it('an unknown outcome retries the priced body under the SAME key', async () => {
+    const fetch = installFetch({
+      capabilities: PRICE_WRITE,
+      onCreate: (attempt, call) =>
+        attempt === 1 ? Promise.reject(new TypeError('Failed to fetch')) : json(answerFor(createResponseRaw, call.body), 201),
+    })
+    renderSalesApp(PATH)
+    await fillExample()
+    await fillPrice('99')
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.unknown)
+    await userEvent.click(screen.getByRole('button', { name: T.attempt.retry }))
+    await screen.findByRole('heading', { name: T.attempt.completed })
+    const [first, second] = fetch.salesCalls()
+    expect(second.idempotencyKey).toBe(first.idempotencyKey)
+    expect(second.body).toBe(first.body)
+    expect(JSON.parse(second.body as string).lines[0]).toMatchObject({ unitPrice: '99', priceUnitId: KG })
+  })
+
+  it('a writer without price READ: the withheld answer still completes the attempt (no endless unknown)', async () => {
+    const withheld = (body: string | null) => {
+      const answer = JSON.parse(answerFor(createResponseRaw, body))
+      Object.assign(answer.detail.lines[0], { unitPrice: null, priceUnitId: null, discountPercent: null, priceDisclosure: 'Withheld' })
+      return JSON.stringify(answer)
+    }
+    const fetch = installFetch({ capabilities: PRICE_WRITE, onCreate: (_attempt, call) => json(withheld(call.body), 201) })
+    renderSalesApp(PATH)
+    await fillExample()
+    await fillPrice('10')
+    await userEvent.click(saveButton())
+    await screen.findByRole('heading', { name: T.attempt.completed })
+    expect(fetch.salesCalls()).toHaveLength(1)
   })
 })
