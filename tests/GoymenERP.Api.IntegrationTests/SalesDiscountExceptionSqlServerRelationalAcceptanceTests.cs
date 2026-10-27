@@ -214,7 +214,7 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
 
         await using var context = run.SalesContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        var migration = Array.IndexOf(applied, "20261027093529_AddSalesDiscountExceptionApprovalReplayResults");
+        var migration = Array.IndexOf(applied, "20261027134109_AddSalesDiscountExceptionApprovalReplayResults");
         Assert.True(migration > 0);
         var refusal = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
         Assert.Equal(51069, refusal.Number);
