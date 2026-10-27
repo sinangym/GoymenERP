@@ -114,14 +114,14 @@ export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
 const DEV_IDENTITY_ENABLED = import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
 
-function headers(companyId: string): Record<string, string> {
+export function headers(companyId: string): Record<string, string> {
   return {
     ...(DEV_IDENTITY_ENABLED ? { 'X-Development-User': DEV_USER } : {}),
     'X-Company-Id': companyId,
   }
 }
 
-type Raw =
+export type Raw =
   | {
       readonly status: number
       readonly body: unknown
@@ -132,7 +132,7 @@ type Raw =
     }
   | { readonly failure: 'aborted' | 'offline' | 'unreachable' }
 
-async function request(path: string, init: RequestInit, signal: AbortSignal | undefined): Promise<Raw> {
+export async function request(path: string, init: RequestInit, signal: AbortSignal | undefined): Promise<Raw> {
   let response: Response
   try {
     response = await fetch(`${API_BASE}${path}`, { ...init, signal })
@@ -159,7 +159,7 @@ async function request(path: string, init: RequestInit, signal: AbortSignal | un
 
 /* ── Reads ────────────────────────────────────────────────────────────────── */
 
-function readFailure<T>(failure: 'aborted' | 'offline' | 'unreachable'): ViewOutcome<T> {
+export function readFailure<T>(failure: 'aborted' | 'offline' | 'unreachable'): ViewOutcome<T> {
   if (failure === 'aborted') return { type: 'fence-stale' }
   if (failure === 'offline') return { type: 'offline' }
   return { type: 'network-error' }
