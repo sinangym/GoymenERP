@@ -541,6 +541,18 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
         public List<Guid> StatusReads { get; } = [];
 
+        /// <summary>API-03: what the stub answers the totals read with.</summary>
+        public Func<Guid, Task<SalesOrderDraftTotalsResponse>> Totals { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> TotalsReads { get; } = [];
+
+        public Task<SalesOrderDraftTotalsResponse> GetDraftTotalsAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            TotalsReads.Add(draftId);
+            return Totals(draftId);
+        }
+
         public Task<SalesOrderDraftStatusResponse> GetDraftStatusAsync(Guid draftId, CancellationToken cancellationToken = default)
         {
             StatusReads.Add(draftId);
@@ -1266,6 +1278,81 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         {
             Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
             Assert.True(forbidden.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+    }
+
+    [Fact]
+    public async Task Totals_are_a_private_read_of_the_service_answer_with_every_member_and_its_refusals_carry_no_amount()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unpricedLineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var currencyId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            Totals = _ => Task.FromResult(new SalesOrderDraftTotalsResponse("4", "Rev.1", currencyId, 2, "NoSource",
+                new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, null, "NotComputed", null, null, null, null),
+                [
+                    new SalesDraftLineTotalV1(lineId, 1, unitId, "12.5", "Computed", "11.475", "143.44", "NoSource",
+                        null, null, null, null, null, null),
+                    new SalesDraftLineTotalV1(unpricedLineId, 2, unitId, "3", "Unpriced", null, null, "NotComputed",
+                        null, null, null, null, null, null),
+                ])),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/totals";
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "revision", "currencyId", "amountScale", "taxState", "totals", "lines"],
+                body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(("4", "Rev.1", currencyId.ToString("D"), 2, "NoSource"), (body.GetProperty("draftVersion").GetString(),
+                body.GetProperty("revision").GetString(), body.GetProperty("currencyId").GetString(),
+                body.GetProperty("amountScale").GetInt32(), body.GetProperty("taxState").GetString()));
+            var totals = body.GetProperty("totals");
+            Assert.Equal(["state", "unpricedLineCount", "priceUnitNotOrderUnitLineCount", "netAmount", "taxState", "vatAmount",
+                "withheldVatAmount", "grossAmount", "payableAmount"], totals.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(("Incomplete", 1, JsonValueKind.Null, "NotComputed"), (totals.GetProperty("state").GetString(),
+                totals.GetProperty("unpricedLineCount").GetInt32(), totals.GetProperty("netAmount").ValueKind,
+                totals.GetProperty("taxState").GetString()));
+            var lines = body.GetProperty("lines").EnumerateArray().ToList();
+            Assert.Equal(2, lines.Count);
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "quantity", "state", "netUnitPrice", "netAmount", "taxState", "vatPercent",
+                "vatAmount", "withholdingShare", "withheldVatAmount", "grossAmount", "payableAmount"],
+                lines[0].EnumerateObject().Select(member => member.Name));
+            Assert.Equal((lineId.ToString("D"), "12.5", "Computed", "11.475", "143.44", "NoSource", JsonValueKind.Null),
+                (lines[0].GetProperty("lineId").GetString(), lines[0].GetProperty("quantity").GetString(),
+                    lines[0].GetProperty("state").GetString(), lines[0].GetProperty("netUnitPrice").GetString(),
+                    lines[0].GetProperty("netAmount").GetString(), lines[0].GetProperty("taxState").GetString(),
+                    lines[0].GetProperty("vatAmount").ValueKind));
+            Assert.Equal(("Unpriced", JsonValueKind.Null), (lines[1].GetProperty("state").GetString(),
+                lines[1].GetProperty("netAmount").ValueKind));
+        }
+
+        Assert.Equal([draftId], service.TotalsReads);
+
+        // The price read is the service's decision: its 403 (no sales.orders.price.read) is the platform's forbidden problem;
+        // the 404 (another company's draft) and the 503 (an unregistered permission, the Sales store) reach the wire code-less.
+        // None of them carries an amount.
+        foreach (var (status, code) in new[] { (403, "forbidden"), (404, "not_found"), (503, "permission_unregistered") })
+        {
+            service.Totals = _ => throw new SalesDraftServiceException(status, code);
+            using var refused = await client.GetAsync(path);
+            Assert.Equal((HttpStatusCode)status, refused.StatusCode);
+            Assert.True(refused.Headers.CacheControl is { Private: true, NoStore: true });
+            var text = await refused.Content.ReadAsStringAsync();
+            if (status != 403)
+            {
+                Assert.DoesNotContain(code, text, StringComparison.Ordinal);
+            }
+
+            Assert.DoesNotContain("netAmount", text, StringComparison.Ordinal);
         }
     }
 

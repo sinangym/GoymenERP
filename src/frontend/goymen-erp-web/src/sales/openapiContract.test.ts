@@ -19,6 +19,7 @@ import detailResponse from './examples/detail-response.json'
 import listResponse from './examples/list-response.json'
 import revisionsResponse from './examples/revisions-response.json'
 import statusResponse from './examples/status-response.json'
+import totalsResponse from './examples/totals-response.json'
 import {
   SALES_DRAFT_PATH,
   salesDraftCancellationImpactPath,
@@ -43,6 +44,7 @@ import {
 } from './api'
 import { salesDraftLinePriceReferencesPath, salesDraftLinePricingPath } from './linePricing'
 import { salesDraftStatusPath } from './orderStatus'
+import { salesDraftTotalsPath } from './orderTotals'
 import { validateOrderDraft, type OrderDraftFormValues, type OrderDraftOptions } from './orderDraftForm'
 import {
   REMAINDER_KIND,
@@ -128,6 +130,7 @@ describe('Sales client ↔ canonical OpenAPI', () => {
       salesDraftDeliveryProgressPath('ID'),
       salesDraftLoadingProgressPath('ID'),
       salesDraftStatusPath('ID'),
+      salesDraftTotalsPath('ID'),
       salesDraftCancellationImpactPath('ID'),
       salesDraftCancellationPath('ID'),
       salesDraftLinePricingPath('ID'),
@@ -233,6 +236,9 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expectFits(statusResponse.realization, 'SalesDraftRealizationAxisV1')
     expectFits(statusResponse.realization.tolerance, 'SalesDraftDeliveryToleranceV1')
     for (const line of statusResponse.realization.lines) expectFits(line, 'SalesDraftLineRealizationV1')
+    expectFits(totalsResponse, 'SalesOrderDraftTotalsResponse')
+    expectFits(totalsResponse.totals, 'SalesDraftDocumentTotalsV1')
+    for (const line of totalsResponse.lines) expectFits(line, 'SalesDraftLineTotalV1')
   })
 
   it('answers the detail read as the plain view or the opted-in party-display view, and nothing else', () => {

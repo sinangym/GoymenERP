@@ -117,6 +117,7 @@ import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleH
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
 import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
 import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
+import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftForceClose } from './SalesDraftForceClose'
@@ -237,6 +238,14 @@ export function SalesDraftDetailPage() {
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
           <SalesOrderStatusAxes
             key={`status:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            detail={outcome.data}
+          />
+        ) : null
+      }
+      totals={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesOrderTotalsCard
+            key={`totals:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
             detail={outcome.data}
           />
         ) : null
@@ -411,6 +420,7 @@ export function DraftView({
   backLink,
   commands = null,
   statusAxes = null,
+  totals = null,
   delivery = null,
   commercialActions = null,
   revisionHistory = null,
@@ -435,10 +445,12 @@ export function DraftView({
   readonly commands?: React.ReactNode
   /**
    * DEC-SAL-001 / API-08 / UI-15: the seven status axes card (null: not mounted — no single company bound). The UI-15 totals
-   * (API-03) and risk (API-06) cards are further members of this summary row; they are mounted here, beside this one, by
-   * their own slices when those routes exist, and nothing stands in for them until then.
+   * card (API-03) is mounted beside it (`totals`); the risk card (API-06) is mounted here by its own slice when that route
+   * exists, and nothing stands in for it until then.
    */
   readonly statusAxes?: React.ReactNode
+  /** API-03 / UI-15: the order totals card (null: not mounted — no single company bound). Every amount is the server's. */
+  readonly totals?: React.ReactNode
   /** SALES-A2a: the "Teslimat" block (the owner's texts for the stored references); null when no company is bound. */
   readonly delivery?: React.ReactNode
   readonly commercialActions?: React.ReactNode
@@ -562,6 +574,8 @@ export function DraftView({
       </details>
 
       {statusAxes}
+
+      {totals}
 
       {delivery}
 

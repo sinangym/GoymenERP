@@ -327,6 +327,10 @@ public static class SalesDraftApiV1
     // the SAT-D5 tolerance, invoicing, financial closure), read under the draft-read authority. The detail wire is unchanged.
     public const string StatusPath = "/api/v1/sales/drafts/{id}/status";
 
+    // API-03 / SAT-D11: the order's line and document totals (net, VAT, withholding, gross, payable) from the one backend
+    // calculator, under the draft read AND the price read. The detail wire is unchanged.
+    public const string TotalsPath = "/api/v1/sales/drafts/{id}/totals";
+
     // DEC-SAL-005 / AT-007: the impact preview (GET, the cancel permission), the cancel command (POST, 200 with the detail
     // after the change; same-key replay 200 + `Idempotency-Replayed`) and the recorded cancellation (GET, the draft read).
     // The detail wire is unchanged apart from the lifecycle `state` ("Cancelled"): the facts live on their own route so the

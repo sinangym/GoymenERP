@@ -324,8 +324,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // facts, kept ordinal-sorted (a9873855… -> 06afeb99…).
             // SAT-D2 / API-12: +2 SalesDiscountExceptionSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (06afeb99… -> b1a5335a…).
             // UI-20 shell 1.8: +1 S-01 pool capability SQL fact, ordinal-sorted (b1a5335a… -> efdb5edd…).
+            // API-03 / SAT-D11: +2 SalesOrderTotalsSqlServerRelationalAcceptanceTests facts, ordinal-sorted (efdb5edd… -> 26164a0b…).
             ["tools/relational_inventory/sales.txt"] =
-                "efdb5edda6b888a7967ff38cd27a958942c39e66e679a1a953627d3441233e84",
+                "26164a0b3495d22991c44830b873f0384fa5ba2a4de1d24542769c1cad697a2c",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

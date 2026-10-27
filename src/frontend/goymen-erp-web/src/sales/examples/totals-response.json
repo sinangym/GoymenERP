@@ -1,0 +1,52 @@
+{
+  "draftVersion": "4",
+  "revision": "Rev.0",
+  "currencyId": "cccccccc-1111-4111-8111-000000000003",
+  "amountScale": 2,
+  "taxState": "NoSource",
+  "totals": {
+    "state": "Incomplete",
+    "unpricedLineCount": 1,
+    "priceUnitNotOrderUnitLineCount": 0,
+    "netAmount": null,
+    "taxState": "NotComputed",
+    "vatAmount": null,
+    "withheldVatAmount": null,
+    "grossAmount": null,
+    "payableAmount": null
+  },
+  "lines": [
+    {
+      "lineId": "aaaaaaaa-1111-4111-8111-000000000001",
+      "lineNo": 1,
+      "orderUnitId": "bbbbbbbb-1111-4111-8111-000000000002",
+      "quantity": "1.25",
+      "state": "Computed",
+      "netUnitPrice": "11.475",
+      "netAmount": "14.34",
+      "taxState": "NoSource",
+      "vatPercent": null,
+      "vatAmount": null,
+      "withholdingShare": null,
+      "withheldVatAmount": null,
+      "grossAmount": null,
+      "payableAmount": null
+    },
+    {
+      "lineId": "aaaaaaaa-1111-4111-8111-000000000002",
+      "lineNo": 2,
+      "orderUnitId": "bbbbbbbb-1111-4111-8111-000000000002",
+      "quantity": "2",
+      "state": "Unpriced",
+      "netUnitPrice": null,
+      "netAmount": null,
+      "taxState": "NotComputed",
+      "vatPercent": null,
+      "vatAmount": null,
+      "withholdingShare": null,
+      "withheldVatAmount": null,
+      "grossAmount": null,
+      "payableAmount": null
+    }
+  ]
+}
