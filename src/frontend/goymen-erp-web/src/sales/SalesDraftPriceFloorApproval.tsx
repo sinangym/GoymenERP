@@ -12,6 +12,7 @@ import { recallPriceFloorApproval, rememberPriceFloorApproval, type PriceFloorAp
 import { hasCapability, type ShellState } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
 
 const scopeOf = (draftId: string) => `sales.draft.price-floor-exception-approval:${draftId}`
 
@@ -123,20 +124,20 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
       ))}
       {notice === null ? null : <p role={attempt.phase === 'failed' ? 'alert' : 'status'}>{notice}</p>}
       {attempt.phase === 'idle' ? (
-        <button type="button" disabled={pending.some((line) => (reasons[line.lineId] ?? '').trim() === '')} onClick={start}>
+        <Button type="button" variant="primary" disabled={pending.some((line) => (reasons[line.lineId] ?? '').trim() === '')} onClick={start}>
           {T.floorApproval.approve}
-        </button>
+        </Button>
       ) : null}
       {isOutcomeStillUnknown(attempt) ? (
         <>
-          <button type="button" className={styles.secondaryButton} onClick={retry}>{T.floorApproval.retry}</button>
-          <button type="button" className={styles.secondaryButton} onClick={leave}>{T.floorApproval.abandon}</button>
+          <Button type="button" variant="secondary" onClick={retry}>{T.floorApproval.retry}</Button>
+          <Button type="button" variant="secondary" onClick={leave}>{T.floorApproval.abandon}</Button>
         </>
       ) : null}
       {attempt.phase === 'failed' && !isOutcomeStillUnknown(attempt) ? (
-        <button type="button" className={styles.secondaryButton} onClick={() => setAttemptState({ phase: 'idle' })}>
+        <Button type="button" variant="secondary" onClick={() => setAttemptState({ phase: 'idle' })}>
           {T.floorApproval.correct}
-        </button>
+        </Button>
       ) : null}
     </section>
   )

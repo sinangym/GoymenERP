@@ -20,6 +20,7 @@
 import { expect, test, type Page, type Response } from '@playwright/test'
 import sql from 'mssql'
 import { readEnvironment } from '../src/env.js'
+import { ORDER_TAB_NAME, openOrderTab } from '../src/orderTabs.js'
 
 const env = readEnvironment()
 const { preparerActor, approverActor, readerActor, companyId, draftId,
@@ -280,10 +281,24 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     for (const fact of ['instructed', 'loaded', 'shipped', 'delivered']) {
       await expect(loadingLine.locator(`[data-fact="${fact}"]`)).toHaveText('0')
     }
+    await openOrderTab(page, ORDER_TAB_NAME.allocation)
     const line = page.getByTestId(`sales-allocation-line-${allocationLineId}`)
     await expect(line).toBeVisible()
-    await line.getByLabel('Etiket kimliği').fill(allocationLabelId)
-    await line.getByLabel('Etiket sürümü').fill(allocationLabelVersion)
+    // UI-13: the label is picked through Inventory's company-scoped search of this line's product, never typed.
+    const seededLabel = await pool.request()
+      .input('companyId', sql.UniqueIdentifier, companyId)
+      .input('labelId', sql.UniqueIdentifier, allocationLabelId)
+      .query<{ code: string }>('SELECT Code AS code FROM inventory.Labels WHERE CompanyId=@companyId AND Id=@labelId')
+    expect(seededLabel.recordset).toHaveLength(1)
+    const labelCode = seededLabel.recordset[0].code
+    const labelSearch = page.waitForResponse((response) => response.request().method() === 'GET'
+      && new URL(response.url()).pathname === '/api/v1/inventory/positions')
+    await line.getByLabel('Etiket kodu ara').fill(labelCode)
+    await line.getByRole('button', { name: 'Etiketleri getir' }).click()
+    expect((await labelSearch).status()).toBe(200)
+    await line.getByTestId(`sales-allocation-label-option-${allocationLabelId.toLowerCase()}`).click()
+    await expect(line.getByTestId(`sales-allocation-label-selected-${allocationLineId}`))
+      .toContainText(`${labelCode} · sürüm ${allocationLabelVersion}`)
     await line.getByLabel('Tahsis kg').fill('5')
     await line.getByLabel('Tahsis nedeni').fill('SENTETIK s04 sipariş tahsisi')
 
@@ -301,6 +316,7 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
     await page.goto('/satis/siparisler')
     await expect(page.getByRole('heading', { level: 1, name: 'Satış siparişi taslakları' })).toBeVisible()
     await page.locator(`a[href="${DETAIL_ROUTE}"]`).click()
+    await openOrderTab(page, ORDER_TAB_NAME.allocation)
     const reopened = page.getByTestId(`sales-allocation-${created.allocationId}`)
     await expect(reopened.getByText('Aktif')).toBeVisible()
     await expectLinkedCount(1)
@@ -317,6 +333,7 @@ test('S04-06 authorized allocation saves, closes, reopens, releases and reopens 
 
     await page.goto('/satis/siparisler')
     await page.locator(`a[href="${DETAIL_ROUTE}"]`).click()
+    await openOrderTab(page, ORDER_TAB_NAME.allocation)
     const finalRow = page.getByTestId(`sales-allocation-${created.allocationId}`)
     await expect(finalRow.getByText('Serbest bırakıldı')).toBeVisible()
     await expect(finalRow.getByRole('button', { name: 'Tahsis serbest bırak' })).toHaveCount(0)
