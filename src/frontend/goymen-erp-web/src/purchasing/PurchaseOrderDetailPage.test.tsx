@@ -113,8 +113,8 @@ vi.mock('./approvalApi', () => ({
 }))
 
 vi.mock('./GoodsReceiptPanel', () => ({
-  GoodsReceiptPanel: ({ enabled }: { readonly enabled: boolean }) => enabled
-    ? <section aria-label="Mal kabul paneli">Mal kabul</section>
+  GoodsReceiptPanel: ({ enabled, attemptBinding }: { readonly enabled: boolean; readonly attemptBinding: string }) => enabled
+    ? <section aria-label="Mal kabul paneli" data-attempt-binding={attemptBinding}>Mal kabul</section>
     : null,
 }))
 
@@ -450,6 +450,17 @@ describe('PurchaseOrderDetailPage goods-receipt capability mount', () => {
     renderDetail()
 
     expect(screen.getByRole('region', { name: 'Mal kabul paneli' })).toBeTruthy()
+  })
+
+  it('binds a pending receipt to actor, session and company — never to the capability generation (BLG-01)', () => {
+    scenario.capabilities = ['purchasing.goods-receipts.record']
+    renderDetail()
+
+    const attempt = screen.getByRole('region', { name: 'Mal kabul paneli' }).getAttribute('data-attempt-binding') ?? ''
+    const fields = JSON.parse(attempt) as string[]
+    expect(fields[0]).toBe('goymen.purchasing.receipt.v1')
+    expect(fields.slice(1)).toEqual([ACTOR, '1', COMPANY])
+    expect(attempt).not.toContain('published-v1')
   })
 
   it.each([

@@ -24,9 +24,9 @@ public sealed class SalesShellCapabilityProviderContractTests
 
         // DEC-SAL-003 (1.2): the delivery-schedule control joins the approve and commercial-revision controls;
         // DEC-SAL-005 (1.3): cancel; DEC-SAL-002 (1.4): quantity revision; Q9 (1.5): customer acceptance;
-        // AT-021 (1.6): reasoned floor-exception approval remains a separate child control.
-        Assert.Equal(("SALES", "1.6"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(10, declarations.Count);
+        // AT-021 (1.6): reasoned floor-exception approval remains a separate child control; No 30 (1.7): force-close.
+        Assert.Equal(("SALES", "1.7"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(11, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -105,6 +105,15 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, quantity.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersQuantityWrite], quantity.RequiredPermissions);
 
+        // No 30 / SAT-D12: the force-close preview and command are a control of the detail — the read plus its own name, never
+        // the cancel name.
+        var forceClose = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.ForceCloseCapabilityId);
+        Assert.Equal("sales.orders.force-close", forceClose.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (forceClose.RouteId, forceClose.RoutePath, forceClose.ScreenId, forceClose.RoutePrecedence, forceClose.ContextRequirement, forceClose.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, forceClose.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersForceClose], forceClose.RequiredPermissions);
+
         var customerAcceptance = Assert.Single(declarations,
             item => item.CapabilityId == SalesShellCapabilityProvider.CustomerAcceptanceRecordCapabilityId);
         Assert.Equal("sales.orders.customer-acceptance.record", customerAcceptance.CapabilityId);
@@ -136,11 +145,14 @@ public sealed class SalesShellCapabilityProviderContractTests
         // DEC-SAL-002: the SEPARATE quantity-revision name; no other Sales name confers it and it confers no approval.
         Assert.Equal("sales.orders.quantity.write", SalesPermissionManifestV1.OrdersQuantityWrite);
         Assert.Equal("sales.orders.customer-acceptance.record", SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);
+        // No 30: the SEPARATE force-close name, the decision's own literal, distinct from the cancel name.
+        Assert.Equal("sales.orders.force-close", SalesPermissionManifestV1.OrdersForceClose);
+        Assert.NotEqual(SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersForceClose);
         // API-20 / API-21 (plan §3.2, S-01): the sales request's own three names; no draft or order name confers them.
         Assert.Equal("sales.requests.write", SalesPermissionManifestV1.RequestsWrite);
         Assert.Equal("sales.requests.read", SalesPermissionManifestV1.RequestsRead);
         Assert.Equal("sales.requests.approve", SalesPermissionManifestV1.RequestsApprove);
-        Assert.Equal((11, 13), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((12, 14), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -152,6 +164,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
                 SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel,
+                SalesPermissionManifestV1.OrdersForceClose,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
                 SalesPermissionManifestV1.RequestsWrite,
                 SalesPermissionManifestV1.RequestsRead,
@@ -164,6 +177,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersQuantityWrite,
                 SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+                SalesPermissionManifestV1.OrdersForceClose,
                 SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsApprove));
     }
 

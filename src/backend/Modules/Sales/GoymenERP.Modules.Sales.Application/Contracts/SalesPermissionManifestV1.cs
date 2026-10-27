@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 11;
+    public const int Version = 12;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -86,6 +86,15 @@ public static class SalesPermissionManifestV1
     public const string OrdersQuantityWrite = "sales.orders.quantity.write";
 
     /// <summary>
+    /// SINAN_KARARLARI_2026-10-21 No 30: force-closing an APPROVED order — GET …/{id}/force-close-impact (the impact preview) and
+    /// POST …/{id}/force-close. The decision's own literal, "<c>sales.orders.cancel</c>'dan ayrı ad": the create, approve, price,
+    /// schedule, quantity and cancel names do NOT confer it and it confers none of them. Holding it releases or reverses no other
+    /// module's record. Company-wide; registration is the central writer's step (not Critical: no approved source adds grant-time
+    /// dual control); which persona holds it is a human gate.
+    /// </summary>
+    public const string OrdersForceClose = "sales.orders.force-close";
+
+    /// <summary>
     /// API-20 (plan §3.2, S-01): recording a sales request — POST /api/v1/sales/requests. Its own name: the draft names do NOT
     /// confer it and it confers none of them (no order, no price, no approval). Company-wide; registration is the central
     /// writer's step (not Critical); which persona holds it is a human gate — no role receives it here.
@@ -104,7 +113,7 @@ public static class SalesPermissionManifestV1
 
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
-            OrdersPriceFloorExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite,
+            OrdersPriceFloorExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite, OrdersForceClose,
             RequestsWrite, RequestsRead, RequestsApprove }
             .ToFrozenSet(StringComparer.Ordinal);
 }

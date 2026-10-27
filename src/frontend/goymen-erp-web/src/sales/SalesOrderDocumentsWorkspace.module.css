@@ -1,0 +1,120 @@
+/* UI-71 — S-11 Sözleşme / Belgeler workspace. Narrow screens scroll the table, never the page (WCAG 1.4.10). */
+.workspace {
+  display: grid;
+  gap: var(--goy-ds-space-4);
+  min-width: 0;
+}
+
+.timeline {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-semibold);
+  color: var(--goy-ds-color-text);
+}
+
+.note {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-text-secondary);
+}
+
+.problem {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  justify-items: start;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-danger);
+}
+
+.problem p {
+  margin: 0;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--goy-ds-space-2);
+}
+
+.filter {
+  min-height: var(--goy-ds-control-height);
+  padding: 0 var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border-control);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface);
+  color: var(--goy-ds-color-text);
+  font: inherit;
+  font-size: var(--goy-ds-font-size-sm);
+  cursor: pointer;
+}
+
+.filter:hover {
+  border-color: var(--goy-ds-color-border-hover);
+}
+
+.filter[aria-pressed='true'] {
+  border-color: var(--goy-ds-color-accent);
+  background: var(--goy-ds-color-accent);
+  color: var(--goy-ds-color-on-accent);
+}
+
+.filter:focus-visible {
+  outline: 2px solid var(--goy-ds-color-accent);
+  outline-offset: 2px;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  min-width: 0;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--goy-ds-font-size-sm);
+  background: var(--goy-ds-color-surface);
+}
+
+.table th,
+.table td {
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.table thead th {
+  font-weight: var(--goy-ds-font-weight-semibold);
+  color: var(--goy-ds-color-text-secondary);
+  background: var(--goy-ds-color-surface-muted);
+}
+
+.table tbody th {
+  font-weight: var(--goy-ds-font-weight-medium);
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

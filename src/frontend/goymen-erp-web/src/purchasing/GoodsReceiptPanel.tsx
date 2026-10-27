@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchGoodsReceiptOptions, fetchGoodsReceiptQuantityComparison, fetchGoodsReceipts, recordGoodsReceipt } from './goodsReceiptApi'
 import { receiptQuantityInput, type GoodsReceipt, type GoodsReceiptRequest, type GoodsReceiptResponse } from './goodsReceiptContract'
-import { recallReceiptAttempt, receiptIdentity, reserveReceiptAttempt, settleReceiptAttempt, type ReceiptAttempt } from './goodsReceiptAttempt'
+import { recallReceiptAttempt, receiptAttemptScope, receiptIdentity, reserveReceiptAttempt, settleReceiptAttempt, type ReceiptAttempt } from './goodsReceiptAttempt'
 import { GoodsReceiptQuantityComparison } from './GoodsReceiptQuantityComparison'
 import { GOODS_RECEIPT_TEXT as T } from './goodsReceiptText'
 import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
@@ -11,7 +11,15 @@ import { classifyOutcome } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './purchasing.module.css'
 
-interface Props { readonly enabled: boolean; readonly binding: string; readonly detail: PurchaseOrderDetail; readonly onRecorded: () => void }
+interface Props {
+  readonly enabled: boolean
+  /** The query namespace (capability generation + context revision): fences DATA reads only. */
+  readonly binding: string
+  /** The durable attempt identity (`receiptAttemptBinding`): binds a pending receipt across a capability refresh. */
+  readonly attemptBinding: string
+  readonly detail: PurchaseOrderDetail
+  readonly onRecorded: () => void
+}
 
 export function GoodsReceiptPanel(props: Props) {
   if (!props.enabled || props.detail.lines.length === 0) return null
@@ -69,9 +77,9 @@ function ReceiptHistoryItem({ binding, detail, receipt }: {
   </li>
 }
 
-function ReceiptLine({ binding, detail, line, onRecorded }: Props & { readonly line: PurchaseOrderLine }) {
+function ReceiptLine({ binding, attemptBinding, detail, line, onRecorded }: Props & { readonly line: PurchaseOrderLine }) {
   const boundary = useAuthBoundary()
-  const scope = `${binding}:receipt:${detail.order.id}:${line.lineId}`
+  const scope = receiptAttemptScope(attemptBinding, detail.order.id, line.lineId)
   const [initial] = useState(() => recallReceiptAttempt(scope))
   const [pending, setPending] = useState<ReceiptAttempt | null>(initial)
   const [phase, setPhase] = useState<'idle' | 'sending' | 'unknown' | 'failed' | 'done'>(initial === null ? 'idle' : 'unknown')

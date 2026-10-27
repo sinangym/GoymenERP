@@ -1,14 +1,11 @@
 /**
  * Sales screen mount ids and routes.
  *
- * STATUS: PROPOSED — NOT PUBLISHED. These ids are the frontend's mount keys for the
- * three screens, split the way every other lane splits them (a list grant must not
- * imply a detail or a create grant). They are NOT permissions and grant nothing:
- * #257 states that no Sales permission name exists yet and that absent mappings
- * default deny, and no backend shell provider publishes a `sales.*` capability. So
- * `CapabilityRoute` closes every Sales route onto the neutral not-found block in the
- * running app. That is the intended state until the central owner publishes the real
- * ids — at which point THIS file is renamed to match, and the mount handoff is sent.
+ * STATUS: PUBLISHED. The backend shell provider (`SalesShellCapabilityProvider`) publishes
+ * these ids and the shell mounts the three screens. They are split the way every other
+ * lane splits them (a list grant does not imply a detail or a create grant). A capability
+ * is not a permission: the API measures the grant afresh on every call, and an actor
+ * without the capability gets the neutral not-found block.
  */
 
 export const SALES_CAPABILITY = {
@@ -46,6 +43,12 @@ export const SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY = 'sales.orders.delivery-s
 export const SALES_CANCEL_CAPABILITY = 'sales.orders.cancel' as const
 
 /**
+ * Delegation No 30 / SAT-D12: the force-close impact preview + command CONTROL on S-04 for an approved order. The shell
+ * publishes it only to an actor holding `sales.orders.force-close` beside the read; cancel never confers it.
+ */
+export const SALES_FORCE_CLOSE_CAPABILITY = 'sales.orders.force-close' as const
+
+/**
  * DEC-SAL-002: the quantity-revision CONTROL on S-04 ("Revizyon oluştur"). The shell publishes it only to an actor holding
  * `sales.orders.quantity.write` beside the read; create, approve, price, schedule and cancel never confer it.
  */
@@ -57,6 +60,7 @@ export type SalesCapabilityId =
   | typeof SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY
   | typeof SALES_DELIVERY_SCHEDULE_WRITE_CAPABILITY
   | typeof SALES_CANCEL_CAPABILITY
+  | typeof SALES_FORCE_CLOSE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY
 

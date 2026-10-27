@@ -614,6 +614,44 @@ public sealed class AccountingApprovedSourceCatalogSqlServerRelationalAcceptance
                     body.GetProperty("status").GetString(), body.GetProperty("version").GetInt64()));
         }
 
+        {
+            // BLG-05b: the draft's accounts are named by the draft's own frozen plan version, from the stored catalog.
+            var accountsClient = Track(run.Client(Preparer, CompanyA));
+            var accounts = Track(await accountsClient.GetAsync($"{NormalDraftsPath}/{draftId:D}/accounts"));
+            Assert.Equal(HttpStatusCode.OK, accounts.StatusCode);
+            var accountsBody = await Json(accounts);
+            Assert.Equal((draftId, 1L, package.AccountPlanSourceVersion, package.AccountsSha256),
+                (accountsBody.GetProperty("draftId").GetGuid(), accountsBody.GetProperty("version").GetInt64(),
+                    accountsBody.GetProperty("accountPlanSourceVersion").GetString(),
+                    accountsBody.GetProperty("accountPlanSourceSha256").GetString()));
+            Assert.Equal(
+                [(1, DebitAccountId, "100.01", "Synthetic debit"), (2, CreditAccountId, "320.01", "Synthetic credit")],
+                accountsBody.GetProperty("accounts").EnumerateArray().Select(account => (
+                    account.GetProperty("lineNumber").GetInt32(), account.GetProperty("accountId").GetGuid(),
+                    account.GetProperty("accountCode").GetString(), account.GetProperty("accountName").GetString()))
+                    .ToArray());
+        }
+        {
+            // BLG-05b negatives: the accounts read answers exactly as the draft read for a same-company actor
+            // without draft authority, refuses another company's actor, and knows no other draft.
+            var viewer = Track(run.Client(OtherActor, CompanyA));
+            var viewerDraft = Track(await viewer.GetAsync($"{NormalDraftsPath}/{draftId:D}"));
+            var viewerAccounts = Track(await viewer.GetAsync($"{NormalDraftsPath}/{draftId:D}/accounts"));
+            Assert.NotEqual(HttpStatusCode.OK, viewerAccounts.StatusCode);
+            Assert.Equal(viewerDraft.StatusCode, viewerAccounts.StatusCode);
+            Assert.DoesNotContain("Synthetic", await viewerAccounts.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            await run.GrantAsync(ForeignActor, CompanyB, DraftCreatePermission, DraftApprovePermission);
+            var foreign = Track(run.Client(ForeignActor, CompanyB));
+            var foreignAccounts = Track(await foreign.GetAsync($"{NormalDraftsPath}/{draftId:D}/accounts"));
+            Assert.Equal(HttpStatusCode.NotFound, foreignAccounts.StatusCode);
+            Assert.DoesNotContain("Synthetic", await foreignAccounts.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+            var owner = Track(run.Client(Preparer, CompanyA));
+            var unknown = Track(await owner.GetAsync($"{NormalDraftsPath}/{Guid.NewGuid():D}/accounts"));
+            Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        }
+
         var approveRequest = new ApproveNormalJournalDraftRequestV1(1, periodId);
         var approveKey = Key("draft-approve");
         JsonElement approvedBody;

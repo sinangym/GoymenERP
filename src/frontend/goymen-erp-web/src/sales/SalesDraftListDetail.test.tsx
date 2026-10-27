@@ -232,7 +232,7 @@ describe('S-04 detail', () => {
   it('a 404 is the neutral not-found block, and a detail of another company fails closed', async () => {
     installFetch({ onDetail: () => json({ status: 404, title: 'Not Found' }, 404) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
-    expect(await screen.findByText('Bulunamadı — sipariş taslağı')).toBeTruthy()
+    expect(await screen.findByText('Bulunamadı — satış siparişi')).toBeTruthy()
     cleanup()
     vi.unstubAllGlobals()
 
