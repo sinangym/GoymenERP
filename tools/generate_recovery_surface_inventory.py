@@ -155,7 +155,7 @@ AUDIT_SOURCE_ROOT = "src/backend/Modules/Audit/"
 AUDIT_LIVE_SOURCE_EXCLUDED_SUFFIXES = (".designer.cs", ".g.cs", ".generated.cs")
 EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT = 21
 EXPECTED_AUDIT_LIVE_SOURCE_FINGERPRINT = (
-    "9e9c9d3a1380426e69aa0f883b0b0292fb84ac23c6a27af6a929cb6e3b56fc6d"
+    "26233e5d20ebb93d8cf67ef77ebe6745155833a1f7aeebfb648b5e4847d5dbc6"
 )
 EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),

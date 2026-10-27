@@ -32,6 +32,7 @@ import { ORDER_DETAIL_TEXT, problemCodeText } from './salesText'
 import { recallDeliveryScheduleAttempt, rememberDeliveryScheduleAttempt } from './pendingDeliverySchedules'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
+import { Button } from '../ui/Button'
 
 type ScheduleAttempt = OrderAttemptState<DraftDeliveryScheduleRequest, DraftMutation>
 
@@ -186,13 +187,13 @@ export function SalesDraftDeliveryScheduleForm({
       ))}
       {isOutcomeStillUnknown(attempt) && attempt.phase !== 'submitting' ? (
         <>
-          <button type="button" className={styles.secondaryButton} onClick={retry}>{T.retry}</button>
-          <button type="button" className={styles.linkButton} onClick={leave}>{T.abandon}</button>
+          <Button type="button" variant="secondary" onClick={retry}>{T.retry}</Button>
+          <Button type="button" variant="ghost" className={styles.linkButton} onClick={leave}>{T.abandon}</Button>
         </>
       ) : null}
-      <button type="button" className={styles.primaryButton} disabled={disabled} onClick={start}>
+      <Button type="button" variant="primary" disabled={disabled} onClick={start}>
         {T.submit}
-      </button>
+      </Button>
     </div>
   )
 }
