@@ -47,6 +47,17 @@ function pricing(version: string, floorException: Record<string, unknown> | null
   }
 }
 
+/**
+ * The control and the visible pricing share one price read (same query key), so once the pricing section shows the
+ * server's answer, the control has seen it too: its absence is then a decision, not a read still in flight.
+ */
+async function priceReadCompleted(reads: () => number, floorException: Record<string, unknown> | null): Promise<void> {
+  await screen.findByTestId('sales-line-pricing')
+  expect(reads()).toBeGreaterThan(0)
+  if (floorException === null) expect(screen.queryByTestId('sales-line-1-floor-exception')).toBeNull()
+  else expect(screen.getByTestId('sales-line-1-floor-exception')).toBeTruthy()
+}
+
 afterEach(() => {
   resetPendingPriceFloorApprovals()
   cleanup()
@@ -88,28 +99,32 @@ describe('AT-021 below-floor exception approval control', () => {
   })
 
   it('is not shown without the approve control, even when an exception is pending', async () => {
+    let reads = 0
     installFetch({
       capabilities: [...ALL_SALES],
       onDetail: () => json(detail('3')),
-      onLinePricing: () => json(pricing('3', PENDING)),
+      onLinePricing: () => { reads += 1; return json(pricing('3', PENDING)) },
     })
     renderSalesApp(path)
     await screen.findByTestId('sales-order-summary')
-    await waitFor(() => expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull())
+    await priceReadCompleted(() => reads, PENDING)
+    expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull()
   })
 
   it.each([
     ['no floor exception', null],
     ['an already approved exception', APPROVED],
   ] as const)('is not shown when the server reports %s', async (_name, floorException) => {
+    let reads = 0
     installFetch({
       capabilities: WITH_FLOOR,
       onDetail: () => json(detail('3')),
-      onLinePricing: () => json(pricing('3', floorException)),
+      onLinePricing: () => { reads += 1; return json(pricing('3', floorException)) },
     })
     renderSalesApp(path)
     await screen.findByTestId('sales-order-summary')
-    await waitFor(() => expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull())
+    await priceReadCompleted(() => reads, floorException)
+    expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull()
   })
 
   it('shows a refusal and offers a correction without inventing an approval', async () => {
