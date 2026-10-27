@@ -111,8 +111,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // it adds no OpenAPI-generation, network or hosted-service surface.
     // I01.2 adds two scoped in-process transfer outgoing-document adapters; it adds no OpenAPI-generation,
     // network or hosted-service surface.
+    // MOD-03 slice 1 adds one scoped in-process Settings Sales policy port registration (the approved
+    // provider); it adds no OpenAPI-generation, network, hosted-service or production-activation surface.
+    // SAT-D18 follow-up adds one scoped in-process operation-aware Settings candidate reader registration and
+    // passes it to the Sales reference read; no OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "961ef4535001dc72d922b4eaed00132205f482645a43601c8ccb27f083e47b17";
+        "4cf4cba980d368cebfef59ee0abed68a8e513bbe9a83783459af5e2c944ca6a6";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -215,8 +219,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
             // D-05 approval inbox: the existing pending-approval fact is renamed and strengthened to public HTTP/DI.
             // FI04: +2 approved-source open-item read facts (real HTTP authority/redaction and SQL keyset/no-write).
+            // SAT-D18: +1 Sales-only GSP/GIN TRY profile keeps the bank-account path closed, kept ordinal-sorted.
             ["tools/relational_inventory/finance.txt"] =
-                "a56ebd84fde486ccab64354108945a6c1bd65cbc71dd9da33cfcd8afb690e1e1",
+                "cb46a8362f31ddcb5e5c04be5369ac91527135dae1d0da2af66904a0302b95e6",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -302,12 +307,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
             // D-05: +1 pending-approval owner-read SQL fact, kept ordinal-sorted.
             // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
+            // TEK-13: +5 SalesRemainderChangeSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (5932b012… -> f2c6c3ac…).
+            // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
             // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted
-            // (merged over No 30's four: 5932b012… -> b15969f6…).
+            // (merged over main's: aabdd034… -> 19d5e743…).
             // API-22…24: +5 sales quote SQL facts (create/revise/convert exactly once + No 160/161, loss + two-key race, No 161 fail-closed +
-            // order submit/approve guard, in-save No 160 re-check + conversion/rejection race, isolation + routes + rollback) (b15969f6… -> 2fcb5fe9…).
+            // order submit/approve guard, in-save No 160 re-check + conversion/rejection race, isolation + routes + rollback) (19d5e743… -> eb4f63c5…).
             ["tools/relational_inventory/sales.txt"] =
-                "2fcb5fe91eb72aa9f0c7a6a6934ceb416314983fb0fbb06c3936a0587aee7a1a",
+                "eb4f63c5542b11307fa57b9523456e03e23351087c6ddc15d8fb36340e4790df",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1104,9 +1111,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["DbConnection"] = 1
                         }),
                 // The module source and Sales read ports use only tenant-filtered Logistics contexts.
+                // Re-fingerprinted for SAT-D8 / API-10: the Sales approved-returns aggregate is projected to an anonymous
+                // row in SQL and mapped to the contract after the read (the record projection was not translatable on
+                // SQL Server); same tenant-filtered context, filter, grouping and order; no capability token added.
                 [ReviewedLogisticsCustomerReturnReadPortsPath] =
                     new(
-                        "9971b43185b0797b097b1895b45d2c3d1cefbda4a5c23b2c75a5594cf57c667c",
+                        "a885ae19839f97d1de8ee6be5e12c7307c2d189e7c5d5e8dad9cb81abc8bbb6e",
                         new Dictionary<string, int>(StringComparer.Ordinal)),
                 // The customer-return store recognises SQL uniqueness and its tracked aggregate; both
                 // capabilities remain exact-source and exact-count reviewed.
@@ -1264,12 +1274,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "SalesModuleExtensions.cs"] =
                     // Re-fingerprinted for #641: the scoped pending-approval read seam is DI-only; the provider
                     // branch and its database capability token counts are unchanged.
+                    // Re-fingerprinted for SAT-D8 / API-10: the draft service also receives the optional Logistics
+                    // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
                     // Re-fingerprinted for API-20 / API-21: the request store and service are DI-only seams over the same
                     // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for API-22…24: the quote store and service are DI-only seams over the same SalesStore and
                     // SalesDraftService; the provider branch and its database token counts are unchanged.
                     new(
-                        "fe7c1e12fbc78bff80664f7645c551548cb8e53f5909de7eb4f7818584e158e0",
+                        "PENDING",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

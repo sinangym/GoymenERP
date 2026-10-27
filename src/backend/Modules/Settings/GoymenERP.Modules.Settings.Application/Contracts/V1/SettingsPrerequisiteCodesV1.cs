@@ -29,4 +29,22 @@ public static class SettingsPrerequisiteCodesV1
     /// </summary>
     public const string ManufacturingToleranceProfileNotFound =
         "settings_manufacturing_tolerance_profile_not_found";
+
+    /// <summary>
+    /// The company's approved Sales policy source is reachable but holds no policy for the identity
+    /// asked about: no delivery tolerance, no discount limit for the limit group or no approval amount
+    /// threshold for the currency. An empty id is <see cref="SalesPolicyRequestInvalid"/>, never this
+    /// code. Kept apart from
+    /// <c>settings_provider_unavailable</c> (the company has no Sales policy source) and
+    /// <c>settings_profile_invalid</c> (malformed data). For a discount limit it is SAT-D2's
+    /// "no limit defined", which routes every discount to approval; it never means "unlimited".
+    /// </summary>
+    public const string SalesPolicyNotFound = "settings_sales_policy_not_found";
+
+    /// <summary>
+    /// A Sales policy read was asked with an invalid identity (an empty limit group or currency id).
+    /// Reported after the access check and before any lookup: it is the caller's error, never
+    /// <see cref="SalesPolicyNotFound"/>, so an empty id can never be read as "no limit defined".
+    /// </summary>
+    public const string SalesPolicyRequestInvalid = "settings_sales_policy_request_invalid";
 }

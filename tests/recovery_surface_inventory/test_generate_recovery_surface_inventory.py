@@ -499,14 +499,14 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
     def test_snapshot_discovery_is_exact_and_excludes_only_audit_metadata(self) -> None:
         discovered = generator._discover_idempotency_key_tables(self.snapshot)
         self.assertEqual(generator.EXPECTED_IDEMPOTENCY_KEY_TABLES, discovered)
-        self.assertEqual(17, len(discovered))
+        self.assertEqual(18, len(discovered))
         replay_tables = set(generator._discover_replay_enforcement_tables(self.snapshot))
         specified = {
             (spec.schema, spec.table)
             for spec in generator.DURABLE_STORE_SPECS
             if spec.kind == "idempotency"
         }
-        self.assertEqual(16, len(replay_tables))
+        self.assertEqual(17, len(replay_tables))
         self.assertEqual(specified, replay_tables)
         self.assertEqual((("audit", "AuditEvents"),), generator.METADATA_ONLY_IDEMPOTENCY_KEY_TABLES)
 
@@ -2258,7 +2258,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1109, len(source_paths))
+        self.assertEqual(1105, len(source_paths))
         for shared_value_object in (
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/Money.cs",
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/ExchangeRate.cs",
@@ -2270,6 +2270,16 @@ internal {{declaration}} : IDocumentObjectStoreV1
             self.assertIn(shared_value_object, source_paths)
         self.assertNotIn(
             "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/Quantities/Quantity.cs",
+            source_paths,
+        )
+        self.assertIn(
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/"
+            "Contracts/SalesDraftCustomerReturnsV1.cs",
+            source_paths,
+        )
+        self.assertIn(
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/"
+            "SalesDraftService.CustomerReturns.cs",
             source_paths,
         )
         self.assertIn(

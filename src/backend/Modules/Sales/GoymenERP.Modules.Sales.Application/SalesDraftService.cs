@@ -55,6 +55,7 @@ public sealed partial class SalesDraftService(
     ISalesOrderAllocationReadPortV1? allocations = null,
     ISalesOrderLoadingReadPortV1? loadings = null,
     IProductQuantityPriceReferenceReaderV1? priceReferences = null,
+    ISalesOrderCustomerReturnReadPortV1? customerReturns = null,
     ISalesRequestStore? requests = null,
     ISalesQuoteStore? quotes = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
 {
