@@ -47,7 +47,7 @@
 
 import { useContext, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router'
+import { Link, useParams, useSearchParams } from 'react-router'
 import { fetchDraftDetail, sendDraftCommand } from './api'
 import {
   APPROVAL_STATE,
@@ -88,7 +88,7 @@ import {
   SALES_QUANTITY_WRITE_CAPABILITY,
   SALES_ROUTE,
 } from './capabilities'
-import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, problemCodeText } from './salesText'
+import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, ORDER_TABS_TEXT, problemCodeText } from './salesText'
 import { SALES_PROBLEM_CODE } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -112,9 +112,16 @@ import { SalesPartyDisplay } from './SalesDraftListPage'
 import { CAPABILITY } from '../shell/capabilities'
 import { Button } from '../ui/Button'
 import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
+import { ORDER_TAB, parseOrderTab, type OrderTab } from './orderTabs'
+import { SalesOrderTabs } from './SalesOrderTabs'
+import { DocumentsPanel } from '../documents/DocumentsPanel'
+import { OWNER_KIND } from '../documents/contract'
 import styles from './SalesDraftDetailPage.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
+
+/** The search parameter that keeps the open S-04 tab (Master §7.2 locked tabs). */
+const TAB_PARAM = 'sekme'
 
 function approvalTone(state: DraftDetail['draft']['approvalState'], cancelled: boolean): StatusTone {
   if (cancelled) return 'neutral'
@@ -132,6 +139,18 @@ export function SalesDraftDetailPage() {
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const boundary = useAuthBoundary()
   const queryClient = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = parseOrderTab(searchParams.get(TAB_PARAM))
+  const changeTab = (tab: OrderTab) =>
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current)
+        if (tab === ORDER_TAB.lines) next.delete(TAB_PARAM)
+        else next.set(TAB_PARAM, tab)
+        return next
+      },
+      { replace: true },
+    )
 
   const queryKey = [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft', draftId ?? '']
   const query = useQuery({
@@ -169,6 +188,20 @@ export function SalesDraftDetailPage() {
       detail={outcome.data}
       canOpenParty={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
       backLink={backLink}
+      activeTab={activeTab}
+      onTabChange={changeTab}
+      documents={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <DocumentsPanel
+            key={`documents:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            ownerKind={OWNER_KIND.salesOrder}
+            ownerId={outcome.data.draft.id}
+            companyId={companyId}
+            namespace={namespace}
+            entryGeneration={shell.routeEntryGeneration}
+          />
+        ) : null
+      }
       delivery={companyId === null ? null : <DeliveryBlock shell={shell} detail={outcome.data} companyId={companyId} />}
       revisionHistory={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
@@ -328,6 +361,9 @@ export function DraftView({
   remainderChanges = null,
   linkedEffects = null,
   cancellation = null,
+  documents = null,
+  activeTab,
+  onTabChange,
 }: {
   readonly detail: DraftDetailWithParty
   /** The shell publishes the Cari card's own detail capability: only then is the party a link. */
@@ -352,8 +388,20 @@ export function DraftView({
   readonly linkedEffects?: React.ReactNode
   /** DEC-SAL-005 / AT-007: the impact preview and cancel control, or the recorded cancellation of a cancelled order. */
   readonly cancellation?: React.ReactNode
+  /** UI-11: the Document Vault panel of this order ("Sözleşme / Belgeler"); null when no single company is bound. */
+  readonly documents?: React.ReactNode
+  /** The open tab; when omitted the view keeps its own (an isolated render has no router). */
+  readonly activeTab?: OrderTab
+  readonly onTabChange?: (tab: OrderTab) => void
 }) {
   const { draft, approval, customerAcceptance } = detail
+  const [ownTab, setOwnTab] = useState<OrderTab>(ORDER_TAB.lines)
+  const tab = activeTab ?? ownTab
+  const setTab = onTabChange ?? setOwnTab
+  // The vault is asked only once its tab has been opened; afterwards the panel stays mounted like the others.
+  const [documentsOpened, setDocumentsOpened] = useState(tab === ORDER_TAB.documents)
+  if (tab === ORDER_TAB.documents && !documentsOpened) setDocumentsOpened(true)
+  const everApproved = draft.approvalState === APPROVAL_STATE.approved || draft.revision !== REV_0
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   const cancelled = draft.state === CANCELLED_STATE
   return (
@@ -485,37 +533,69 @@ export function DraftView({
 
       {cancellation}
 
-      <section className={styles.section} aria-labelledby="sales-commercial-heading">
-        <h2 id="sales-commercial-heading">{T.commercialHeading}</h2>
-        <dl className={styles.facts}>
-          {OWNER_REFERENCE_FIELDS.map((field) => {
-            const reference = detail[field]
-            return (
-              <div key={field}>
-                <dt>{T.ownerReference[field]}</dt>
-                <dd data-testid={`sales-draft-${field}`} className={reference === null ? undefined : styles.identifier}>
-                  {reference === null ? T.unknown : `${reference.id} (${reference.expectedVersion})`}
-                </dd>
-              </div>
-            )
-          })}
-        </dl>
-        {commercialActions}
-      </section>
+      <SalesOrderTabs
+        active={tab}
+        onChange={setTab}
+        panels={{
+          [ORDER_TAB.lines]: (
+            <>
+              <section className={styles.section} aria-labelledby="sales-commercial-heading">
+                <h2 id="sales-commercial-heading">{T.commercialHeading}</h2>
+                <dl className={styles.facts}>
+                  {OWNER_REFERENCE_FIELDS.map((field) => {
+                    const reference = detail[field]
+                    return (
+                      <div key={field}>
+                        <dt>{T.ownerReference[field]}</dt>
+                        <dd data-testid={`sales-draft-${field}`} className={reference === null ? undefined : styles.identifier}>
+                          {reference === null ? T.unknown : `${reference.id} (${reference.expectedVersion})`}
+                        </dd>
+                      </div>
+                    )
+                  })}
+                </dl>
+                {commercialActions}
+              </section>
 
-      <section className={styles.section} aria-labelledby="sales-lines-heading">
-        <h2 id="sales-lines-heading">{T.linesHeading}</h2>
-        {detail.lines.map((line) => (
-          <LineView key={line.lineId} line={line} />
-        ))}
-        {quantityRevision}
-        {deliverySchedule}
-      </section>
-      {deliveryScheduleHistory}
-      {deliveryProgress}
-      {remainderChanges}
-      {allocations}
-      {revisionHistory}
+              <section className={styles.section} aria-labelledby="sales-lines-heading">
+                <h2 id="sales-lines-heading">{T.linesHeading}</h2>
+                {detail.lines.map((line) => (
+                  <LineView key={line.lineId} line={line} />
+                ))}
+                {quantityRevision}
+                {deliverySchedule}
+              </section>
+            </>
+          ),
+          [ORDER_TAB.allocation]: (
+            <>
+              <p className={styles.muted}>{ORDER_TABS_TEXT.allocationNote}</p>
+              {allocations}
+            </>
+          ),
+          [ORDER_TAB.realization]: (
+            <>
+              {everApproved ? null : <p className={styles.muted} data-testid="sales-realization-not-approved">{ORDER_TABS_TEXT.realizationNotApproved}</p>}
+              {deliveryProgress}
+              {remainderChanges}
+            </>
+          ),
+          [ORDER_TAB.invoices]: (
+            <p className={styles.muted} data-testid="sales-invoices-empty">
+              {ORDER_TABS_TEXT.invoicesEmpty}
+            </p>
+          ),
+          [ORDER_TAB.documents]: documents === null
+            ? <p className={styles.muted}>{ORDER_TABS_TEXT.documentsUnavailable}</p>
+            : documentsOpened ? documents : null,
+          [ORDER_TAB.history]: (
+            <>
+              {revisionHistory}
+              {deliveryScheduleHistory}
+            </>
+          ),
+        }}
+      />
     </article>
   )
 }

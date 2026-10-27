@@ -30,6 +30,8 @@ export const OWNER_KIND = {
   counterpartyParty: 'counterparty.party',
   inventoryMaterialLabel: 'inventory.material-label',
   purchasingPurchaseOrder: 'purchasing.purchase-order',
+  /** The Sales order (S-04 "Sözleşme / Belgeler" tab); the vault asks Sales's own detail read (SalesDocumentOwnerLinkPort). */
+  salesOrder: 'sales.order',
 } as const
 export type OwnerKind = (typeof OWNER_KIND)[keyof typeof OWNER_KIND]
 
