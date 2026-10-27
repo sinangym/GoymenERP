@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.6";
+    public const string OwnerContractVersion = "1.7";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -68,6 +68,12 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 
     /// <summary>Q9: records customer acceptance of the current approved revision; a child control of S-04.</summary>
     public const string CustomerAcceptanceRecordCapabilityId = "sales.orders.customer-acceptance.record";
+
+    /// <summary>
+    /// No 30 / SAT-D12: the force-close CONTROL of the S-04 detail (read + the force-close name) — the impact preview and the
+    /// force-closure of an approved order. Create, approve, price, schedule, quantity and cancel never confer it (shell contract 1.7).
+    /// </summary>
+    public const string ForceCloseCapabilityId = "sales.orders.force-close";
 
     public string Owner => OwnerId;
 
@@ -155,6 +161,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = CustomerAcceptanceRecordCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord],
+        },
+        // No 30: the force-close preview and command are a control of the detail, exactly like the cancellation.
+        detail with
+        {
+            CapabilityId = ForceCloseCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersForceClose],
         },
         ];
     }

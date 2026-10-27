@@ -575,6 +575,63 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftForceClosureRow", b =>
+        {
+            b.Property<Guid>("CompanyId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<Guid>("DraftId")
+                .HasColumnType("uniqueidentifier");
+
+            b.Property<DateTimeOffset>("ClosedAtUtc")
+                .HasColumnType("datetimeoffset");
+
+            b.Property<string>("ClosedBy")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("CorrelationId")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<long>("DraftVersion")
+                .HasColumnType("bigint");
+
+            b.Property<string>("ImpactJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<string>("ImpactToken")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("nvarchar(128)");
+
+            b.Property<string>("LinesJson")
+                .IsRequired()
+                .HasColumnType("nvarchar(max)");
+
+            b.Property<string>("Reason")
+                .IsRequired()
+                .HasMaxLength(4000)
+                .HasColumnType("nvarchar(4000)");
+
+            b.Property<int>("Revision")
+                .HasColumnType("int");
+
+            b.HasKey("CompanyId", "DraftId");
+
+            b.ToTable("DraftForceClosures", "sales", t =>
+                {
+                    t.HasCheckConstraint("CK_DraftForceClosures_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([ClosedBy]) > 0 AND LEN([Reason]) > 0 AND LEN([ImpactToken]) > 0 AND LEN([CorrelationId]) > 0");
+
+                    t.HasCheckConstraint("CK_DraftForceClosures_Impact", "ISJSON([ImpactJson]) = 1");
+
+                    t.HasCheckConstraint("CK_DraftForceClosures_Lines", "ISJSON([LinesJson]) = 1");
+                });
+        });
+
         modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftCancellationRow", b =>
         {
             b.Property<Guid>("CompanyId")
@@ -1128,7 +1185,7 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
 
                 t.HasCheckConstraint(
                     "CK_Drafts_State",
-                    "[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)");
+                    "[Kind] = 1 AND [State] IN (1, 2, 3) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)");
 
                 t.HasCheckConstraint(
                     "CK_Drafts_Text",
@@ -1218,6 +1275,16 @@ partial class SalesDbContextModelSnapshot : ModelSnapshot
             b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftLineRow", null)
                 .WithMany()
                 .HasForeignKey("CompanyId", "DraftId", "LineNo")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftForceClosureRow", b =>
+        {
+            b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.DraftRow", null)
+                .WithMany()
+                .HasForeignKey("CompanyId", "DraftId")
+                .HasPrincipalKey("CompanyId", "Id")
                 .OnDelete(DeleteBehavior.Restrict)
                 .IsRequired();
         });

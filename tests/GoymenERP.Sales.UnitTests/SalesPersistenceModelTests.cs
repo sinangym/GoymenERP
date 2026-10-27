@@ -115,7 +115,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftCancellations", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddRevisionReasons", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddLinePricing", StringComparison.Ordinal));
-        Assert.Equal("20261004160000_AddSalesPriceFloorApprovalReplayResults", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesPriceFloorApprovalReplayResults", StringComparison.Ordinal));
+        Assert.Equal("20261025120000_AddDraftForceClosures", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -171,6 +172,11 @@ public sealed class SalesPersistenceModelTests
     [InlineData("delete-cancellation")]
     [InlineData("uncancel-draft")]
     [InlineData("draft-to-unknown-state")]
+    [InlineData("edit-force-closure")]
+    [InlineData("delete-force-closure")]
+    [InlineData("unclose-draft")]
+    [InlineData("closed-to-cancelled")]
+    [InlineData("cancelled-to-closed")]
     [InlineData("edit-customer-acceptance-required")]
     [InlineData("acceptance-nonapproved")]
     [InlineData("acceptance-wrong-revision")]
@@ -240,7 +246,34 @@ public sealed class SalesPersistenceModelTests
                 Attach(context, cancelled).State = 1;
                 break;
             case "draft-to-unknown-state":
-                Attach(context, Draft()).State = 3;
+                // No 30: Closed (3) is a lifecycle state now; the first value after it is not.
+                Attach(context, Draft()).State = 4;
+                break;
+            // No 30 / SAT-D12: a recorded force-closure is append-only, and the lifecycle moves only Draft → Closed (never back,
+            // never across to Cancelled, never from Cancelled).
+            case "edit-force-closure":
+                Attach(context, ForceClosure()).LinesJson = "[{}]";
+                break;
+            case "delete-force-closure":
+                context.DraftForceClosures.Remove(Attach(context, ForceClosure()));
+                break;
+            case "unclose-draft":
+                var closed = Draft();
+                closed.State = 3;
+                closed.ApprovalState = 3;
+                Attach(context, closed).State = 1;
+                break;
+            case "closed-to-cancelled":
+                var closedOrder = Draft();
+                closedOrder.State = 3;
+                closedOrder.ApprovalState = 3;
+                Attach(context, closedOrder).State = 2;
+                break;
+            case "cancelled-to-closed":
+                var cancelledOrder = Draft();
+                cancelledOrder.State = 2;
+                cancelledOrder.ApprovalState = 3;
+                Attach(context, cancelledOrder).State = 3;
                 break;
             case "edit-customer-acceptance-required":
                 Attach(context, Draft()).CustomerAcceptanceRequired = true;
@@ -506,9 +539,65 @@ public sealed class SalesPersistenceModelTests
         var design = context.GetService<IDesignTimeModel>().Model;
         Assert.Equal(["CK_DraftCancellations_Identity", "CK_DraftCancellations_Impact"],
             design.FindEntityType(typeof(DraftCancellationRow))!.GetCheckConstraints().Select(constraint => constraint.Name).Order(StringComparer.Ordinal));
-        Assert.Equal("[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)",
+        // No 30 widened the lifecycle by Closed (3); cancelled and closed alike stand only beside an approved order.
+        Assert.Equal("[Kind] = 1 AND [State] IN (1, 2, 3) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)",
             design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Single(constraint => constraint.Name == "CK_Drafts_State").Sql);
     }
+
+    /// <summary>
+    /// No 30 / SAT-D12: the force-closure table mirrors the cancellation's — keyed by (company, draft), bound to the draft, its
+    /// own reason bound, ISJSON on the impact AND on the closed remainders — and the header's state now admits Closed (3), still
+    /// only beside an approved order.
+    /// </summary>
+    [Fact]
+    public void The_force_closure_table_is_keyed_by_the_draft_bound_to_it_and_the_header_state_admits_closed_only_beside_approved()
+    {
+        using var context = Context();
+        var closures = context.Model.FindEntityType(typeof(DraftForceClosureRow))!;
+        Assert.Equal(["CompanyId", "DraftId"], closures.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Equal("DraftForceClosures", closures.GetTableName());
+        Assert.Equal("sales", closures.GetSchema());
+        var foreignKey = Assert.Single(closures.GetForeignKeys());
+        Assert.Equal(typeof(DraftRow), foreignKey.PrincipalEntityType.ClrType);
+        Assert.Equal(["CompanyId", "Id"], foreignKey.PrincipalKey.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
+        Assert.Equal((SalesOrderDraft.MaximumForceCloseReasonLength, 128),
+            (closures.FindProperty(nameof(DraftForceClosureRow.Reason))!.GetMaxLength(), closures.FindProperty(nameof(DraftForceClosureRow.ClosedBy))!.GetMaxLength()));
+        Assert.NotEmpty(closures.GetDeclaredQueryFilters());
+        var design = context.GetService<IDesignTimeModel>().Model;
+        var constraints = design.FindEntityType(typeof(DraftForceClosureRow))!.GetCheckConstraints().ToDictionary(constraint => constraint.Name!, constraint => constraint.Sql);
+        Assert.Equal(["CK_DraftForceClosures_Identity", "CK_DraftForceClosures_Impact", "CK_DraftForceClosures_Lines"],
+            constraints.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal("ISJSON([ImpactJson]) = 1", constraints["CK_DraftForceClosures_Impact"]);
+        Assert.Equal("ISJSON([LinesJson]) = 1", constraints["CK_DraftForceClosures_Lines"]);
+        Assert.Contains("[DraftVersion] >= 5", constraints["CK_DraftForceClosures_Identity"], StringComparison.Ordinal);
+        Assert.Equal("[Kind] = 1 AND [State] IN (1, 2, 3) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)",
+            design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Single(constraint => constraint.Name == "CK_Drafts_State").Sql);
+    }
+
+    /// <summary>No 30: the force-closure rollback refuses with Sales' own 51061 BEFORE anything is dropped, and restores the two-state CK.</summary>
+    [Fact]
+    public void The_force_closure_migration_down_refuses_with_51061_before_it_drops_anything()
+    {
+        var down = new GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations.AddDraftForceClosures().DownOperations;
+        Assert.Equal(4, down.Count);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(down[0]);
+        Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[DraftForceClosures]) OR EXISTS (SELECT 1 FROM [sales].[Drafts] WHERE [State] = 3)",
+            guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51061,", guard.Sql, StringComparison.Ordinal);
+        var drop = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>(down[1]);
+        Assert.Equal(("sales", "DraftForceClosures"), (drop.Schema, drop.Name));
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropCheckConstraintOperation>(down[2]);
+        var restored = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.AddCheckConstraintOperation>(down[3]);
+        Assert.Equal("[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)", restored.Sql);
+    }
+
+    private static DraftForceClosureRow ForceClosure() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, ClosedBy = "synthetic-closer", ClosedAtUtc = At,
+        Reason = "SENTETIK kalan kapatıldı", DraftVersion = 5, ImpactToken = new string('d', 64),
+        ImpactJson = "{\"token\":\"x\",\"sources\":[]}", LinesJson = "[]", CorrelationId = "synthetic-correlation",
+    };
 
     private static DraftCancellationRow Cancellation() => new()
     {
