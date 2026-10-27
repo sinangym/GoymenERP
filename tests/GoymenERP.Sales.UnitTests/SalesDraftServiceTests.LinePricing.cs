@@ -106,7 +106,7 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task A_net_below_the_list_floor_is_pending_until_a_different_actor_approves_every_line_with_a_reason()
     {
-        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, Floor = 12m } };
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, Floor = 12m } }.AllowDiscountsUpTo(10m);
         world.Bindings = world.Bindings with { PriceFloorExceptionApprovePermission = SchedulePermission };
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;

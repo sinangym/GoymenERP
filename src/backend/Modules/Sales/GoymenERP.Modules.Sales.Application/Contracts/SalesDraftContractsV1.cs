@@ -124,7 +124,8 @@ public sealed record SalesDraftPriceResolutionV1(string Outcome, DateOnly Effect
 /// </summary>
 public sealed record SalesDraftLinePricingV1(Guid LineId, int LineNo, string? UnitPrice, Guid? PriceUnitId, string? PriceSource,
     SalesDraftPriceReferenceV1? PriceReference, string? DiscountPercent, string? DiscountAmount, string? SurchargePercent,
-    string? SurchargeAmount, string? NetUnitPrice, SalesDraftPriceFloorExceptionV1? FloorException);
+    string? SurchargeAmount, string? NetUnitPrice, SalesDraftPriceFloorExceptionV1? FloorException,
+    SalesDraftDiscountLimitCheckV1? DiscountCheck = null);
 
 public sealed record SalesDraftPriceFloorExceptionV1(string RequestedBy, DateTimeOffset RequestedAtUtc,
     string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);
@@ -134,6 +135,21 @@ public sealed record SalesDraftPriceFloorExceptionApprovalLineV1(Guid LineId, st
 /// <summary>Every current below-floor line exactly once; each approval carries its stored reason.</summary>
 public sealed record SalesDraftPriceFloorExceptionApprovalRequest(string ExpectedVersion,
     IReadOnlyList<SalesDraftPriceFloorExceptionApprovalLineV1> Lines);
+
+/// <summary>
+/// SAT-D2 / API-12 (contract delta, additive): the discount-limit check of a discounted line — who set the price/discount
+/// and when, the list price it was measured against (SAT-D35; <c>null</c> = the line has no list-price reference, so the
+/// discount cannot be measured and needs approval), the limit that applied (<c>null</c> = none defined for that actor, so
+/// every discount needs approval), whether approval is required, and the reasoned approval of another person (all three or none).
+/// </summary>
+public sealed record SalesDraftDiscountLimitCheckV1(string CheckedBy, DateTimeOffset CheckedAtUtc, string? ListUnitPrice,
+    string? LimitPercent, bool RequiresApproval, string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);
+
+public sealed record SalesDraftDiscountExceptionApprovalLineV1(Guid LineId, string Reason);
+
+/// <summary>API-12: every current over-limit discount line exactly once; each approval carries its stored reason.</summary>
+public sealed record SalesDraftDiscountExceptionApprovalRequest(string ExpectedVersion,
+    IReadOnlyList<SalesDraftDiscountExceptionApprovalLineV1> Lines);
 
 /// <summary>GET …/{id}/line-pricing (price read): every line's pricing at the draft's current version.</summary>
 public sealed record SalesOrderDraftLinePricingResponse(string Version, IReadOnlyList<SalesDraftLinePricingV1> Lines);

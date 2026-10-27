@@ -58,7 +58,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderCustomerReturnReadPortV1? customerReturns = null,
     ISalesRequestStore? requests = null,
     ISalesQuoteStore? quotes = null,
-    ISettingsSalesPolicyProviderV1? salesPolicies = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
+    ISettingsSalesPolicyProviderV1? salesPolicies = null,
+    ISalesDiscountLimitGroupSourceV1? discountLimitGroups = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -133,6 +134,16 @@ public sealed partial class SalesDraftService(
             return won.Response;
         }
 
+        // SAT-D2 / SAT-D35: a create line carries no list-price reference, so a discount on it cannot be measured against the
+        // list price and its check always requires approval; the creator's limit decides nothing and is read only if a line is
+        // measurable (under the create fence, again after every read).
+        var discountLimit = SalesDiscountLimit.Undefined;
+        if (lineInputs.Any(input => input.Commercial is { } commercial && SalesOrderDraft.IsMeasurablyDiscounted(commercial)))
+        {
+            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, bindings.CreatePermission, request.BusinessDate,
+                cancellationToken);
+        }
+
         if (priced.Count > 0)
         {
             // The price fence again after every awaited read, right before the single save (the last fence).
@@ -153,7 +164,9 @@ public sealed partial class SalesDraftService(
                     customerAcceptanceRequired: true);
                 foreach (var input in lineInputs)
                 {
-                    draft.AddLine(draft.Version, input, now);
+                    draft.AddLine(draft.Version, input.Commercial is { } commercial
+                        ? input with { Commercial = SalesOrderDraft.WithDiscountLimitCheck(commercial, discountLimit, scope.ActorId, now) }
+                        : input, now);
                 }
 
                 return draft;
@@ -475,11 +488,21 @@ public sealed partial class SalesDraftService(
         // before the store's single save); a line without one keeps K3's three fields only.
         var resolved = await ResolvePriceReferencesAsync(scope, permission!, draftId, request, cancellationToken);
         scope = resolved.Scope;
+
         var inputs = request.Lines
             .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent,
                 resolved.References.TryGetValue(line.LineId, out var reference) ? reference : null, line.DiscountAmount, line.SurchargePercent,
                 line.SurchargeAmount)))
             .ToArray();
+
+        // SAT-D2 / SAT-D34 / SAT-D35: the reviser's discount limit on the draft's business date, read only when a line is
+        // discounted against its list-price reference (only then does a limit decide anything).
+        var discountLimit = SalesDiscountLimit.Undefined;
+        if (inputs.Any(input => SalesOrderDraft.IsMeasurablyDiscounted(input.Commercial)))
+        {
+            var current = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
+            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, permission, current.Money.EffectiveOn, cancellationToken);
+        }
         var audit = new SalesDraftStateAudit("sales.order-draft.commercial-revised.v1", "ReviseCommercial",
             "Satış sipariş taslağının fiyat ve iskontosu revize edildi");
 
@@ -487,7 +510,7 @@ public sealed partial class SalesDraftService(
         try
         {
             result = await store.ReviseDraftCommercialAsync(envelope, requestHash, commandName, draftId,
-                (draft, now) => draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now), audit,
+                (draft, now) => draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now, discountLimit), audit,
                 async writeCancellationToken =>
                 {
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
@@ -1536,7 +1559,8 @@ public sealed partial class SalesDraftService(
                         originalCorrelationId: won.OriginalCorrelationId);
                 }
 
-                if (commandName == SalesDraftCommands.ApprovePriceFloorExceptionsV1 && won.Result is { } result)
+                if (commandName is SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesDraftCommands.ApproveDiscountExceptionsV1
+                    && won.Result is { } result)
                 {
                     throw new RaceWon(await ReplayedResultAsync(scope, result, won.OriginalCorrelationId, cancellationToken));
                 }

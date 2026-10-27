@@ -371,6 +371,7 @@ public static partial class SalesEndpoints
         MapDraftRevisions(drafts);
         MapDraftLinePricing(drafts);
         MapPriceFloorExceptionApproval(drafts);
+        MapDiscountExceptionApproval(drafts);
         MapCommercialRevisionCommand(drafts);
         MapQuantityRevisionCommand(drafts);
         MapDeliveryScheduleCommand(drafts);
@@ -1360,6 +1361,86 @@ public static partial class SalesEndpoints
             .WithName("ApproveSalesOrderDraftPriceFloorExceptionsV1")
             .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
             .Accepts<SalesDraftPriceFloorExceptionApprovalRequest>("application/json")
+            .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// SAT-D2 / API-12: reasoned maker-checker approval of every current over-limit discount line, the below-floor approval's
+    /// shape under its own permission (`sales.orders.discount-exception.approve`). The owner service performs
+    /// company/authority fences, version/idempotency, actor separation and the atomic write; HTTP only binds the strict
+    /// request and preserves the existing unknown-result/replay contract.
+    /// </summary>
+    private static void MapDiscountExceptionApproval(RouteGroupBuilder drafts)
+    {
+        drafts.MapPost("/{id:guid}/discount-exception-approval", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            if (!TryReadIdempotencyKey(httpContext.Request.Headers, out var idempotencyKey) || !correlation.IsResolved)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, SalesDraftProblemCodesV1.CommandMetadataInvalid, correlation);
+            }
+
+            if (!httpContext.Request.HasJsonContentType())
+            {
+                return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
+            }
+
+            SalesDraftDiscountExceptionApprovalRequest? body;
+            try
+            {
+                body = await JsonSerializer.DeserializeAsync<SalesDraftDiscountExceptionApprovalRequest>(
+                    httpContext.Request.Body, SalesDraftJson.Options, cancellationToken);
+            }
+            catch (JsonException)
+            {
+                body = null;
+            }
+
+            if (body is null)
+            {
+                return DraftProblem(StatusCodes.Status400BadRequest, "validation_failed", correlation);
+            }
+
+            try
+            {
+                var response = await service.ApproveDiscountExceptionsAsync(id, body,
+                    new SalesCommandMetadata(idempotencyKey, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow),
+                    cancellationToken);
+                if (response.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, response.OriginalCorrelationId);
+                }
+
+                return Results.Json(response, SalesDraftJson.Options, statusCode: SalesDraftApiV1.StateCommandStatus);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                if (exception.IsReplay)
+                {
+                    ApplyReplayHeaders(httpContext, exception.OriginalCorrelationId
+                        ?? throw new InvalidOperationException("Replayed refusal without its original correlation."));
+                }
+
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("ApproveSalesOrderDraftDiscountExceptionsV1")
+            .WithIdempotencyContract(SalesDraftApiV1.StateCommandStatus, StatusCodes.Status409Conflict)
+            .Accepts<SalesDraftDiscountExceptionApprovalRequest>("application/json")
             .Produces<SalesOrderDraftResponse>(SalesDraftApiV1.StateCommandStatus)
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.CommandMetadataInvalid)
             .AllowsEmptyErpBadRequestBody()

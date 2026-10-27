@@ -385,36 +385,39 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task An_approved_price_change_archives_the_approved_revision_advances_the_draft_and_is_read_back_and_a_resent_key_replays()
     {
-        var world = new World();
+        var world = new World().AllowDiscountsUpTo(10m);
         var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;
-        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
+        // SAT-D43: a priced line without a list price goes to approval; another person approves it first.
+        var checkedVersion = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, lineId);
+        Assert.Equal("3", checkedVersion);
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
         Assert.Equal(("Approved", SalesDraftApiV1.Rev0), (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Revision));
 
-        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("4", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
 
         Assert.False(revised.IsReplay);
-        Assert.Equal(("Rev.1", "Preparing", "5", "13.00", KgUnit, "5"), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState,
+        Assert.Equal(("Rev.1", "Preparing", "6", "13.00", KgUnit, "5"), (revised.Detail.Draft.Revision, revised.Detail.Draft.ApprovalState,
             revised.Detail.Draft.Version, revised.Detail.Lines[0].UnitPrice, revised.Detail.Lines[0].PriceUnitId, revised.Detail.Lines[0].DiscountPercent));
         Assert.Equal(new SalesDraftApprovalV1(null, null, null, null, null), revised.Detail.Approval);
         var archived = Assert.Single(world.Store.Archived);
         Assert.Equal((0, "12.50", Actor, Actor), (archived.Revision, archived.Lines[0].Commercial.UnitPrice, archived.Approval.SubmittedBy, archived.Approval.DecidedBy));
         // The command ran under the price permission, as its own transition with its audit event.
         var transition = world.Store.Transitions.Single(item => item.Command == SalesDraftCommands.ReviseCommercialV1);
-        Assert.Equal((PricePermission, "sales.order-draft.commercial-revised.v1", 4L, 5L), (transition.Envelope.PermissionCode, transition.Audit.EventType, transition.VersionBefore, transition.VersionAfter));
+        Assert.Equal((PricePermission, "sales.order-draft.commercial-revised.v1", 5L, 6L), (transition.Envelope.PermissionCode, transition.Audit.EventType, transition.VersionBefore, transition.VersionAfter));
         // The history is read back under the draft read: Rev.0 with its facts and the OLD values.
         var history = await world.Service().GetDraftRevisionsAsync(created.Draft.Id);
         var item = Assert.Single(history.Items);
         Assert.Equal(("Rev.0", Actor, Actor, "12.50", "5", 1), (item.Revision, item.SubmittedBy, item.ApprovedBy, item.Lines[0].UnitPrice, item.Lines[0].DiscountPercent, item.Lines.Count));
         // The SAME key resent is the replay of the stored result — never the "no change" refusal (ADR-011 §4/§8).
-        var replay = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("4", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
+        var replay = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
         Assert.True(replay.IsReplay);
         Assert.Equal("Rev.1", replay.Detail.Draft.Revision);
         Assert.Single(world.Store.Archived);
         // A DIFFERENT key with the values the draft already has is the refusal, on `lines`, and archives nothing more.
         var same = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r2")));
+            Revision("6", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r2")));
         Assert.Equal((422, "validation_failed", "lines", SalesRuleCodes.RevisionNoChange), (same.Status, same.Code, Assert.Single(same.Errors).Field, Assert.Single(same.Errors).Code));
         Assert.Single(world.Store.Archived);
     }
@@ -562,20 +565,23 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task A_price_write_revoked_after_the_store_reads_is_refused_before_business_history_attempt_or_audit_changes()
     {
-        var world = new World();
+        var world = new World().AllowDiscountsUpTo(10m);
         var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;
-        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
-        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
+        // SAT-D43: a priced line without a list price goes to approval; another person approves it first.
+        var checkedVersion = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, lineId);
+        Assert.Equal("3", checkedVersion);
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
+        var approved = await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
         var attemptsBefore = world.Store.Attempts;
         var transitionsBefore = world.Store.Transitions.Count;
         world.Store.OnStore = () => world.Authority.Denied.Add(PricePermission);
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(
-            created.Draft.Id, Revision("4", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1")));
+            created.Draft.Id, Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1")));
 
         Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
-        Assert.Equal(("Approved", SalesDraftApiV1.Rev0, "4"),
+        Assert.Equal(("Approved", SalesDraftApiV1.Rev0, "5"),
             (approved.Detail.Draft.ApprovalState, approved.Detail.Draft.Revision, approved.Detail.Draft.Version));
         Assert.Equal((attemptsBefore, transitionsBefore, 0),
             (world.Store.Attempts, world.Store.Transitions.Count, world.Store.Archived.Count));
@@ -591,12 +597,15 @@ public sealed partial class SalesDraftServiceTests
     [Fact]
     public async Task A_reader_without_the_price_read_gets_the_withheld_marker_on_the_detail_and_the_history_and_with_it_the_texts()
     {
-        var world = new World();
+        var world = new World().AllowDiscountsUpTo(10m);
         var created = (await world.Service().CreateDraftAsync(Priced(), Metadata("k-1"))).Detail;
         var lineId = created.Lines[0].LineId;
-        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-submit"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-approve"));
-        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("4", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
+        // SAT-D43: a priced line without a list price goes to approval; another person approves it first.
+        var checkedVersion = await ApproveDiscountChecksAsync(world, created.Draft.Id, created.Draft.Version, lineId);
+        Assert.Equal("3", checkedVersion);
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("3"), Metadata("k-submit"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("4"), Metadata("k-approve"));
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision("5", new SalesDraftLineCommercialV1(lineId, "13.00", KgUnit, "5")), Metadata("k-r1"));
 
         world.Authority.Denied.Add(PriceReadPermission);
         world.Authority.Measured.Clear();
@@ -1224,7 +1233,7 @@ public sealed partial class SalesDraftServiceTests
             // new operation to an already-known test permission without creating a role, grant or admin exception.
             Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, ApprovePermission, PricePermission,
                 PriceReadPermission, SchedulePermission, CancelPermission, QuantityPermission, ApprovePermission),
-        };
+        }.AllowDiscountsUpTo(10m);
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         Assert.Equal((true, (string?)null, false), (created.CustomerAcceptance.Required,
             created.CustomerAcceptance.AcceptedRevision, created.CustomerAcceptance.IsCurrentRevisionAccepted));
@@ -1254,11 +1263,13 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("6", "Rev.1", SalesDraftApiV1.Rev0, false), (revised.Detail.Draft.Version, revised.Detail.Draft.Revision,
             revised.Detail.CustomerAcceptance.AcceptedRevision, revised.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
         Assert.Equal(SalesCommercialStageV1.Quote, revised.Detail.Draft.CommercialStage);
+        // SAT-D43: the revised price has no list price; another person approves it before the order is submitted.
+        Assert.Equal("7", await ApproveDiscountChecksAsync(world, created.Draft.Id, "6", created.Lines[0].LineId));
 
-        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("6"), Metadata("k-submit-r1"));
-        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("7"), Metadata("k-approve-r1"));
-        var acceptedRevision = await world.Service().RecordCustomerAcceptanceAsync(created.Draft.Id, Command("8"), Metadata("k-accept-r1"));
-        Assert.Equal(("9", "Rev.1", true), (acceptedRevision.Detail.Draft.Version,
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("7"), Metadata("k-submit-r1"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("8"), Metadata("k-approve-r1"));
+        var acceptedRevision = await world.Service().RecordCustomerAcceptanceAsync(created.Draft.Id, Command("9"), Metadata("k-accept-r1"));
+        Assert.Equal(("10", "Rev.1", true), (acceptedRevision.Detail.Draft.Version,
             acceptedRevision.Detail.CustomerAcceptance.AcceptedRevision,
             acceptedRevision.Detail.CustomerAcceptance.IsCurrentRevisionAccepted));
         Assert.Equal(SalesCommercialStageV1.Order, acceptedRevision.Detail.Draft.CommercialStage);
@@ -1632,9 +1643,22 @@ public sealed partial class SalesDraftServiceTests
         public IProductQuantityPriceReferenceReaderV2? PriceReferences { get; set; }
         /// <summary>SAT-D8 / API-10: the customer-return owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderCustomerReturnReadPortV1? CustomerReturns { get; set; }
-        /// <summary>DEC-SAL-001 / API-08 (SAT-D5): the Settings Sales policy port; null = not composed.</summary>
+        /// <summary>SAT-D2 / API-12: the Settings Sales policy port; null = not composed.</summary>
         public ISettingsSalesPolicyProviderV1? SalesPolicies { get; set; }
+        /// <summary>SAT-D2 / API-12: the actor's discount limit groups (Identity's mapping); null = not composed (no limit defined).</summary>
+        public ISalesDiscountLimitGroupSourceV1? DiscountLimitGroups { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
+
+        /// <summary>
+        /// SAT-D2: a SENTETIK approved limit of <paramref name="percent"/> for one limit group of every actor, for the tests
+        /// whose subject is not the discount limit (a discount within it needs no exception approval).
+        /// </summary>
+        public World AllowDiscountsUpTo(decimal percent)
+        {
+            DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA]);
+            SalesPolicies = new FakeDiscountLimitPolicies { Limits = { [DiscountGroupA] = percent } };
+            return this;
+        }
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
 
@@ -1644,7 +1668,8 @@ public sealed partial class SalesDraftServiceTests
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests), SalesPolicies);
+                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests), SalesPolicies,
+                DiscountLimitGroups);
         }
 
         public SalesDraftReadServiceV1 ReadService()
@@ -2000,7 +2025,8 @@ public sealed partial class SalesDraftServiceTests
             Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default,
             Func<SalesOrderDraft, SalesDraftReplayResult?>? replayResult = null)
         {
-            if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1))
+            if (commandName is not (SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.ApprovePriceFloorExceptionsV1
+                    or SalesDraftCommands.ApproveDiscountExceptionsV1))
                 throw new ArgumentException("wrong command", nameof(commandName));
             ApprovedRevisionSnapshot? archived = null;
             var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,

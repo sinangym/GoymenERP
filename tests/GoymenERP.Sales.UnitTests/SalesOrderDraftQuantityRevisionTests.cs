@@ -251,6 +251,9 @@ public sealed class SalesOrderDraftQuantityRevisionTests
                 new LineCommercialInput(second.Id, CommercialDraftFields.None)], Reviser, T0.AddHours(1));
         draft.ApprovePriceFloorExceptions(draft.Version,
             [new LinePriceFloorExceptionApprovalInput(line.Id, "SENTETIK gerekçe")], "synthetic-checker", T0.AddHours(2));
+        // SAT-D35: 90 against the list price 100 is a 10 % discount; with no limit defined it needs its own approval.
+        draft.ApproveDiscountExceptions(draft.Version,
+            [new LineDiscountExceptionApprovalInput(line.Id, "SENTETIK iskonto gerekçesi")], "synthetic-checker", T0.AddHours(2));
         draft.Submit(draft.Version, Reviser, T0.AddHours(2));
         draft.Approve(draft.Version, "synthetic-approver", T0.AddHours(3));
         return draft;

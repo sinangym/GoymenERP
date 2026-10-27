@@ -136,6 +136,9 @@ public sealed class SalesDocumentOwnerLinkPortTests
         public Task<SalesOrderDraftResponse> ApprovePriceFloorExceptionsAsync(Guid draftId,
             SalesDraftPriceFloorExceptionApprovalRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SalesOrderDraftResponse> ApproveDiscountExceptionsAsync(Guid draftId,
+            SalesDraftDiscountExceptionApprovalRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftLinePricingResponse> GetDraftLinePricingAsync(Guid draftId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftPriceReferencesResponse> GetLinePriceReferencesAsync(Guid draftId, Guid lineId,
