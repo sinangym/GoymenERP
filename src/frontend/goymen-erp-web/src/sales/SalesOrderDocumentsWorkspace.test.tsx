@@ -12,6 +12,7 @@ import { OWNER_KIND, type DocumentRow } from '../documents/contract'
 import { CAPABILITY } from '../shell/capabilities'
 import { mergeTimeline } from './documentTimeline'
 import { SALES_DOCUMENTS_TEXT as TEXT } from './salesText'
+import { DOCUMENTS_TEXT } from '../documents/documentsText'
 import { ALL_SALES, COMPANY_A, HARNESS_PARTY_DISPLAY, installFetch, json, renderSalesApp } from './testHarness'
 
 const RAW = JSON.parse(detailResponseRaw)
@@ -125,6 +126,25 @@ describe('S-11 in the "Sözleşme / Belgeler" tab', () => {
     const customerRead = reads.find((call) => ownerOf(call.url) === OWNER_KIND.counterpartyParty)!
     expect(new URLSearchParams(customerRead.url.slice(customerRead.url.indexOf('?') + 1)).get('ownerId')).toBe(PARTY)
     expect(customerRead).toMatchObject({ companyId: COMPANY_A })
+  })
+
+  it('marks a scanned file the vault still withholds the same way the panel does (downloadable decides, not the scan state)', async () => {
+    installFetch({
+      capabilities: WITH_CARI,
+      onDetail: () => json(RAW),
+      onDocuments: documentsBy({
+        [OWNER_KIND.salesOrder]: () =>
+          list([orderDoc({ id: 'd0000000-0000-4000-8000-0000000000a1', fileName: 'Bekleyen.pdf', scanState: 'Clean', downloadable: false })]),
+        [OWNER_KIND.counterpartyParty]: () => list([]),
+      }),
+    })
+    renderSalesApp(PATH)
+
+    const section = await timeline()
+    const table = await within(section).findByRole('table', { name: TEXT.timelineCaption })
+    const [timelineRow] = within(table).getAllByRole('row').slice(1)
+    expect(timelineRow.textContent).toContain(DOCUMENTS_TEXT.scanPending)
+    expect(timelineRow.textContent).not.toContain(DOCUMENTS_TEXT.scanClean)
   })
 
   it('filters the timeline by the bound record with pressed-state buttons', async () => {

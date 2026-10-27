@@ -226,7 +226,7 @@ function Timeline({
                         <td>{relationText(row.relation)}</td>
                         <td>{DOCUMENTS_TEXT.versionNo(row.document.versionNo)}</td>
                         <td>{typeLabel(row.document.contentType)}</td>
-                        <td>{row.document.scanState === 'Clean' ? DOCUMENTS_TEXT.scanClean : DOCUMENTS_TEXT.scanPending}</td>
+                        <td data-scan-state={row.document.scanState}>{row.document.downloadable ? DOCUMENTS_TEXT.scanClean : DOCUMENTS_TEXT.scanPending}</td>
                       </tr>
                     ))}
                   </tbody>
