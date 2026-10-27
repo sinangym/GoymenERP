@@ -510,6 +510,18 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return CustomerReturns(draftId);
         }
 
+        /// <summary>DEC-SAL-001 / API-08: what the stub answers the status-axes read with.</summary>
+        public Func<Guid, Task<SalesOrderDraftStatusResponse>> Status { get; set; } =
+            _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<Guid> StatusReads { get; } = [];
+
+        public Task<SalesOrderDraftStatusResponse> GetDraftStatusAsync(Guid draftId, CancellationToken cancellationToken = default)
+        {
+            StatusReads.Add(draftId);
+            return Status(draftId);
+        }
+
         public Task<SalesOrderDraftResponse> SubmitDraftAsync(Guid draftId, SalesDraftStateCommandRequest request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default) => StateAsync("submit", draftId, request, metadata);
 
@@ -1140,6 +1152,89 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
             Assert.True(unavailable.Headers.CacheControl is { Private: true, NoStore: true });
             Assert.DoesNotContain(code, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task Status_axes_are_a_private_read_of_the_service_answer_with_every_member_and_its_404_stays_code_less()
+    {
+        var draftId = Guid.NewGuid();
+        var lineId = Guid.NewGuid();
+        var unitId = Guid.NewGuid();
+        var profileId = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            Status = id => Task.FromResult(new SalesOrderDraftStatusResponse("7", "Rev.0",
+                new SalesDraftStatusAxisV1("Closed"), new SalesDraftStatusAxisV1("Approved"),
+                new SalesDraftCustomerAcceptanceAxisV1("Accepted", "Rev.0"), new SalesDraftStatusAxisV1("NoSource"),
+                new SalesDraftRealizationAxisV1("ClosedWithRemainder",
+                    new SalesDraftDeliveryToleranceV1(profileId, 1, "1", "2", "3", new DateOnly(2026, 10, 25), null, new DateOnly(2026, 10, 26)),
+                    [new SalesDraftLineRealizationV1(lineId, 1, unitId, "100", "97", "90", "ClosedWithRemainder", "Under", "3", "Block", "3")]),
+                new SalesDraftStatusAxisV1("NoSource"), new SalesDraftStatusAxisV1("NoSource"))),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/status";
+
+        using (var response = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["draftVersion", "revision", "lifecycle", "internalApproval", "customerAcceptance", "source", "realization",
+                "invoicing", "financialClosure"], body.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(("7", "Rev.0", "Closed", "Approved"), (body.GetProperty("draftVersion").GetString(),
+                body.GetProperty("revision").GetString(), body.GetProperty("lifecycle").GetProperty("state").GetString(),
+                body.GetProperty("internalApproval").GetProperty("state").GetString()));
+            Assert.Equal(["state", "acceptedRevision"], body.GetProperty("customerAcceptance").EnumerateObject().Select(member => member.Name));
+            foreach (var axis in new[] { "source", "invoicing", "financialClosure" })
+            {
+                Assert.Equal("NoSource", Assert.Single(body.GetProperty(axis).EnumerateObject()).Value.GetString());
+            }
+
+            var realization = body.GetProperty("realization");
+            Assert.Equal(["state", "tolerance", "lines"], realization.EnumerateObject().Select(member => member.Name));
+            var tolerance = realization.GetProperty("tolerance");
+            Assert.Equal(["profileId", "profileVersion", "warnPercent", "approvalPercent", "blockPercent", "effectiveFrom",
+                "effectiveThrough", "evaluatedOn"], tolerance.EnumerateObject().Select(member => member.Name));
+            Assert.Equal((profileId.ToString("D"), "1", "2", "3", "2026-10-25", JsonValueKind.Null, "2026-10-26"),
+                (tolerance.GetProperty("profileId").GetString(), tolerance.GetProperty("warnPercent").GetString(),
+                    tolerance.GetProperty("approvalPercent").GetString(), tolerance.GetProperty("blockPercent").GetString(),
+                    tolerance.GetProperty("effectiveFrom").GetString(), tolerance.GetProperty("effectiveThrough").ValueKind,
+                    tolerance.GetProperty("evaluatedOn").GetString()));
+            var line = Assert.Single(realization.GetProperty("lines").EnumerateArray());
+            Assert.Equal(["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "state", "direction", "deviation", "band",
+                "closedRemainder"], line.EnumerateObject().Select(member => member.Name));
+            Assert.Equal((lineId.ToString("D"), "97", "ClosedWithRemainder", "Under", "3", "Block", "3"),
+                (line.GetProperty("lineId").GetString(), line.GetProperty("shipped").GetString(), line.GetProperty("state").GetString(),
+                    line.GetProperty("direction").GetString(), line.GetProperty("deviation").GetString(), line.GetProperty("band").GetString(),
+                    line.GetProperty("closedRemainder").GetString()));
+        }
+
+        Assert.Equal([draftId], service.StatusReads);
+
+        service.Status = _ => throw new SalesDraftServiceException(404, "not_found");
+        using (var missing = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+            Assert.True(missing.Headers.CacheControl is { Private: true, NoStore: true });
+            Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        // The only 503 of this read is the Sales store's own (owner failures are axis states, never a 503).
+        service.Status = _ => throw new SalesDraftServiceException(503, "service_unavailable");
+        using (var unavailable = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.True(unavailable.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+
+        service.Status = _ => throw new SalesDraftServiceException(403, "forbidden");
+        using (var forbidden = await client.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+            Assert.True(forbidden.Headers.CacheControl is { Private: true, NoStore: true });
         }
     }
 

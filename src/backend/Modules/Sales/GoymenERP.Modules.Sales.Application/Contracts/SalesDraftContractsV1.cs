@@ -307,6 +307,10 @@ public static class SalesDraftApiV1
     // authority. Returns are shown on the order; there is no separate menu.
     public const string CustomerReturnsPath = "/api/v1/sales/drafts/{id}/customer-returns";
 
+    // DEC-SAL-001 / API-08: the seven status axes (lifecycle, internal approval, customer acceptance, source, realization with
+    // the SAT-D5 tolerance, invoicing, financial closure), read under the draft-read authority. The detail wire is unchanged.
+    public const string StatusPath = "/api/v1/sales/drafts/{id}/status";
+
     // DEC-SAL-005 / AT-007: the impact preview (GET, the cancel permission), the cancel command (POST, 200 with the detail
     // after the change; same-key replay 200 + `Idempotency-Replayed`) and the recorded cancellation (GET, the draft read).
     // The detail wire is unchanged apart from the lifecycle `state` ("Cancelled"): the facts live on their own route so the

@@ -222,6 +222,20 @@ the Logistics-owned approved returns; the return invoice (API-40) is a separate 
 | Port limit | The port publishes per-line approved totals only — no return number, date, status or dispatch link. A per-return list on the order needs a port extension by the Logistics owner (cross-module contract, K3), not a Sales read of Logistics tables. |
 | Evidence | Unit: `SalesDraftServiceTests.CustomerReturns`. HTTP: `SalesDraftHttpAcceptanceTests.Customer_returns_are_a_private_read_…`. Real SQL + real host: `SalesCustomerReturnsSqlServerRelationalAcceptanceTests` (two inventoried cases; they also prove the Logistics port's SQL translation). |
 
+## Order status axes (DEC-SAL-001, API-08)
+
+DEC-SAL-001: lifecycle, internal approval, source/allocation, realization, invoicing, financial closure and customer
+acceptance are separate axes; the UI may derive one summary state (UI-15), the API does not.
+
+| Concern | Rule |
+|---|---|
+| Route | `GET /api/v1/sales/drafts/{id}/status` (`GetSalesOrderDraftStatusV1`) under `sales.drafts.read`: `{draftVersion, revision, lifecycle, internalApproval, customerAcceptance, source, realization, invoicing, financialClosure}`, each axis `{state, …}`. Private/no-store, company-bound; 404 is code-less; the only 503 is the Sales store's own (an owner failure is an axis state, never a 503). Read-only in every module. |
+| Aggregate axes | Lifecycle is the stored `Draft` / `Cancelled` / `Closed` ("Aktif" is not derived); internal approval is the stored state; customer acceptance is `NotRequired` (pre-Q9) / `Pending` / `Accepted` of the current revision, with the revision of the latest recorded acceptance. |
+| Realization | Shipped totals from the AT-024 `ISalesOrderDeliveryReadPortV1` (Logistics; never its tables), judged by the domain `SalesRealizationCalculator` (SAT-D5, SAT-D15–D17): per line in the order unit, deviation = \|shipped − ordered\|, band decided exactly as deviation × 100 ≥ percent × ordered (bounds inclusive). Line states `NotStarted`, `Partial` (open and short outside the tolerance: not banded, SAT-D16), `Completed` (within the tolerance, over or under, SAT-D5), `OutsideTolerance` (over-delivered in the warn/approval/block band), `ClosedWithRemainder` (force-closed and short outside the tolerance; carries the recorded closed remainder). The axis: any `OutsideTolerance` → that; all `Completed` → `Completed`; all `NotStarted` → `NotStarted`; only `Completed`/`ClosedWithRemainder` → `ClosedWithRemainder`; else `Partial`. |
+| Tolerance | Read ONLY through `ISettingsSalesPolicyProviderV1.GetSalesDeliveryToleranceAsync` for the order's business date (the date Sales reads its other Settings profiles on), and only when a line needs it (something shipped, or the order force-closed). Not composed, refused, of another company, inactive, outside its own window or not a valid ladder → the axis is `PolicyUnavailable` (lines that need it carry no judged state) — never a default percent. The profile identity, version, percents and window used are on the wire. Per-product/operation overrides (also SAT-D5) do not exist in the Settings record yet. |
+| Fail-closed | Delivery owner not composed, failing or malformed (another company/order, unknown line, another unit, delivered above shipped, above the Ö2 scale, an overflowing sum) → `Unreadable` with no numbers. Source (MOD-05/API-11), invoicing (S5) and financial closure (MOD-04) have no owner module on main → `NoSource`, never complete or zero. |
+| Evidence | Unit: `SalesRealizationCalculatorTests`, `SalesDraftServiceTests.Status`. HTTP: `SalesDraftHttpAcceptanceTests.Status_axes_are_a_private_read_…`. Real SQL + real host: `SalesOrderStatusSqlServerRelationalAcceptanceTests` (two inventoried cases: real Logistics shipments with the real GDC tolerance, a business date before every approved tolerance, company isolation and authority). |
+
 ## Cancellation of an approved order (DEC-SAL-005, AT-007)
 
 DEC-SAL-005 (KILITLI, K1, verbatim): "Sipariş iptalinde aktif tahsis, bağlı satın alma/üretim, irsaliyesiz yükleme,

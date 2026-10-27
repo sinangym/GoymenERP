@@ -374,6 +374,7 @@ public static class SalesEndpoints
         MapDeliveryProgress(drafts);
         MapLoadingProgress(drafts);
         MapCustomerReturns(drafts);
+        MapStatus(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
@@ -897,6 +898,38 @@ public static class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftCustomerReturnsV1")
             .Produces<SalesOrderDraftCustomerReturnsResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// DEC-SAL-001 / API-08: the order's seven status axes under <c>sales.drafts.read</c> — lifecycle, internal approval and
+    /// customer acceptance from the Sales aggregate; realization from the Logistics shipped totals (AT-024 port) judged with the
+    /// Settings SAT-D5 tolerance (fail-closed "PolicyUnavailable" / "Unreadable"); source, invoicing and financial closure
+    /// "NoSource". Another company's draft is 404; the read writes nothing in any module.
+    /// </summary>
+    private static void MapStatus(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/status", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftStatusAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftStatusV1")
+            .Produces<SalesOrderDraftStatusResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

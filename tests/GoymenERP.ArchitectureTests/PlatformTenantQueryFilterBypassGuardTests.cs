@@ -309,8 +309,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
             // TEK-13: +5 SalesRemainderChangeSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (5932b012… -> f2c6c3ac…).
             // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
+            // DEC-SAL-001 / API-08: +2 SalesOrderStatusSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (aabdd034… -> db01097b…).
             ["tools/relational_inventory/sales.txt"] =
-                "aabdd034baeb20fe87c7d584eddfdb3a882aa81738667d8e6f79e907343b5ec5",
+                "db01097b794652ed88fff690dcf81534ce6a813ac787564d9a3f831298d37d9c",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1265,8 +1266,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // branch and its database capability token counts are unchanged.
                     // Re-fingerprinted for SAT-D8 / API-10: the draft service also receives the optional Logistics
                     // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for DEC-SAL-001 / API-08: the draft service also receives the optional Settings
+                    // Sales policy port (DI-only, SAT-D5 tolerance); the provider branch and its token counts are unchanged.
                     new(
-                        "d39bf8917ddd4503c57d6f76a2e03e62e7d30d9dfe6a187d70c76cdeefcac324",
+                        "94076d38483c5eea2b1fdae688674b9e0fd81a9241b319c5e40e3274c9ea553c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
