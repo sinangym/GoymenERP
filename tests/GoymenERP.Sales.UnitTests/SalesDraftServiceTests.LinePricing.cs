@@ -418,7 +418,7 @@ public sealed partial class SalesDraftServiceTests
         var resolution = offered.Resolution;
         Assert.Equal(("Resolved", "Customer", (Guid?)PriceList, (int?)1, Day, "Europe/Istanbul"), (resolution.Outcome, resolution.MatchedTier,
             resolution.PriceListId, resolution.VersionNo, resolution.EffectiveOn, resolution.BusinessTimeZone));
-        Assert.Equal(["Agreement:Unavailable:agreement_owner_missing", "Customer:Matched:", "CustomerGroup:NotReached:", "Company:NotReached:"],
+        Assert.Equal(["Agreement:Unavailable:agreement_sales_contract_missing", "Customer:Matched:", "CustomerGroup:NotReached:", "Company:NotReached:"],
             resolution.Tiers.Select(tier => $"{tier.Tier}:{tier.Status}:{tier.Reason}"));
         Assert.Equal(("Unavailable", "package_standard_owner_missing"), (resolution.PackageStandard.Status, resolution.PackageStandard.Reason));
 
@@ -550,13 +550,13 @@ public sealed partial class SalesDraftServiceTests
             };
             ProductPriceTierEvaluationV2[] tiers =
             [
-                new(ProductPriceTierV2.Agreement, ProductPriceTierStatusV2.Unavailable, ProductPriceResolutionReasonsV2.AgreementOwnerMissing),
+                new(ProductPriceTierV2.Agreement, ProductPriceTierStatusV2.Unavailable, ProductPriceResolutionReasonsV2.AgreementSalesContractMissing),
                 new(ProductPriceTierV2.Customer, Tier == ProductPriceTierV2.Customer && candidates.Count > 0
                     ? (candidates.Count == 1 ? ProductPriceTierStatusV2.Matched : ProductPriceTierStatusV2.Ambiguous)
                     : ProductPriceTierStatusV2.NoMatch, null),
                 new(ProductPriceTierV2.CustomerGroup, Tier == ProductPriceTierV2.Customer && candidates.Count > 0
                     ? ProductPriceTierStatusV2.NotReached : ProductPriceTierStatusV2.Unavailable,
-                    Tier == ProductPriceTierV2.Customer && candidates.Count > 0 ? null : ProductPriceResolutionReasonsV2.CustomerGroupOwnerMissing),
+                    Tier == ProductPriceTierV2.Customer && candidates.Count > 0 ? null : ProductPriceResolutionReasonsV2.CustomerGroupCariFieldMissing),
                 new(ProductPriceTierV2.Company, Tier == ProductPriceTierV2.Company && candidates.Count > 0
                     ? (candidates.Count == 1 ? ProductPriceTierStatusV2.Matched : ProductPriceTierStatusV2.Ambiguous)
                     : Tier == ProductPriceTierV2.Customer && candidates.Count > 0 ? ProductPriceTierStatusV2.NotReached : ProductPriceTierStatusV2.NoMatch,

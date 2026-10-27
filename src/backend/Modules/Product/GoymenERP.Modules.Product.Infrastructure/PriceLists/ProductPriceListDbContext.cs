@@ -84,7 +84,8 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
             table.HasCheckConstraint("CK_PriceLists_Channel", "[Channel] = 1");
             table.HasCheckConstraint("CK_PriceLists_VatBasis", "[VatBasis] = 1");
             // MOD-02 (SAT-D9): a company-wide list names nobody; a customer-specific list names the party AND its company
-            // account. The customer-group and agreement kinds have no owner master yet and are refused here as well.
+            // account. A customer-group list waits for the Cari card's group field (SAT-D57) and is refused here as well; agreement
+            // prices are the Sales contract's, never a Product list (SAT-D58).
             table.HasCheckConstraint("CK_PriceLists_Scope",
                 "([ScopeKind] = 1 AND [ScopePartyId] IS NULL AND [ScopeCompanyAccountId] IS NULL) "
                 + $"OR ([ScopeKind] = 3 AND [ScopePartyId] IS NOT NULL AND [ScopePartyId] <> {EmptyGuid} "

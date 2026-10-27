@@ -37,9 +37,9 @@ const reference = {
 const resolved = {
   outcome: 'Resolved', effectiveOn: '2026-09-13', businessTimeZone: 'Europe/Istanbul', matchedTier: 'Company', priceListId: LIST, versionNo: 2,
   tiers: [
-    { tier: 'Agreement', status: 'Unavailable', reason: 'agreement_owner_missing' },
+    { tier: 'Agreement', status: 'Unavailable', reason: 'agreement_sales_contract_missing' },
     { tier: 'Customer', status: 'NoMatch', reason: null },
-    { tier: 'CustomerGroup', status: 'Unavailable', reason: 'customer_group_owner_missing' },
+    { tier: 'CustomerGroup', status: 'Unavailable', reason: 'customer_group_cari_field_missing' },
     { tier: 'Company', status: 'Matched', reason: null },
   ],
   packageStandard: { status: 'Unavailable', reason: 'package_standard_owner_missing' },

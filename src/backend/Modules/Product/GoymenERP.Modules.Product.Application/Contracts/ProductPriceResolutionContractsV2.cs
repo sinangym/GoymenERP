@@ -93,8 +93,8 @@ public sealed record ProductPriceResolutionV2(
 
 public static class ProductPriceResolutionReasonsV2
 {
-    public const string AgreementOwnerMissing = PriceTierChain.AgreementOwnerMissing;
-    public const string CustomerGroupOwnerMissing = PriceTierChain.CustomerGroupOwnerMissing;
+    public const string AgreementSalesContractMissing = PriceTierChain.AgreementSalesContractMissing;
+    public const string CustomerGroupCariFieldMissing = PriceTierChain.CustomerGroupCariFieldMissing;
     public const string CustomerNotGiven = PriceTierChain.CustomerNotGiven;
     public const string PackageStandardOwnerMissing = "package_standard_owner_missing";
 }

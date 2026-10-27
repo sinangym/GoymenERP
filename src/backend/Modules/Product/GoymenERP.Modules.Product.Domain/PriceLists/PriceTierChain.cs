@@ -64,15 +64,20 @@ public sealed record PriceTierChainResult(PriceTierChainOutcome Outcome, DateOnl
 /// never answers, at any tier.</item>
 /// <item>The first tier with an answer stops the chain. Several lists in that tier are <see cref="PriceTierChainOutcome.Ambiguous"/>:
 /// which one wins is not decided, so the candidates are returned and none is picked (the person chooses, as before).</item>
-/// <item>The agreement and customer-group tiers have no owner master yet: they are reported
-/// <see cref="PriceTierStatus.Unavailable"/> and the chain goes on — no list can carry them, so nothing is skipped over.</item>
+/// <item>The agreement tier's price lives on the Sales contract record (SAT-D58), the customer group on the Cari card
+/// (SAT-D57); neither owner exists yet, so both tiers are reported <see cref="PriceTierStatus.Unavailable"/> and the chain
+/// goes on — nothing can answer at them, so nothing is skipped over.</item>
+/// <item>SAT-D59: several lists in one tier — the person chooses among the candidates.</item>
 /// <item>No answer is <see cref="PriceTierChainOutcome.NoPrice"/>: no zero, no adjacent tier, no older version.</item>
 /// </list>
 /// </summary>
 public static class PriceTierChain
 {
-    public const string AgreementOwnerMissing = "agreement_owner_missing";
-    public const string CustomerGroupOwnerMissing = "customer_group_owner_missing";
+    /// <summary>SAT-D58: the agreement price is the Sales contract record's (SAT-D28), which does not exist yet.</summary>
+    public const string AgreementSalesContractMissing = "agreement_sales_contract_missing";
+
+    /// <summary>SAT-D57: the customer group is a field of the Cari card (Counterparty), which does not exist yet.</summary>
+    public const string CustomerGroupCariFieldMissing = "customer_group_cari_field_missing";
     public const string CustomerNotGiven = "customer_not_given";
 
     public static PriceTierChainResult Resolve(IEnumerable<PriceList> lists, Guid companyId, Guid productId, Guid priceUnitId,
@@ -108,10 +113,10 @@ public static class PriceTierChain
             switch (tier)
             {
                 case PriceTier.Agreement:
-                    evaluations.Add(new(tier, PriceTierStatus.Unavailable, AgreementOwnerMissing));
+                    evaluations.Add(new(tier, PriceTierStatus.Unavailable, AgreementSalesContractMissing));
                     continue;
                 case PriceTier.CustomerGroup:
-                    evaluations.Add(new(tier, PriceTierStatus.Unavailable, CustomerGroupOwnerMissing));
+                    evaluations.Add(new(tier, PriceTierStatus.Unavailable, CustomerGroupCariFieldMissing));
                     continue;
                 case PriceTier.Customer when customer is null:
                     evaluations.Add(new(tier, PriceTierStatus.NotRequested, CustomerNotGiven));

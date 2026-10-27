@@ -136,8 +136,9 @@ public sealed record PriceListLineRequestV1(
 
 /// <summary>
 /// MOD-02 (SAT-D9): whose price a new list is. <c>kind</c> is <c>Company</c> (no party/account) or <c>Customer</c> (the Cari
-/// party and its company account in this company, checked with the Cari owner). <c>CustomerGroup</c> and
-/// <c>Agreement</c> have no owner master yet and are refused. Omitted → <c>Company</c>.
+/// party and its company account in this company, checked with the Cari owner). <c>CustomerGroup</c> waits for the Cari
+/// card's group field (SAT-D57) and is refused; agreement prices are not Product lists (SAT-D58, Sales contract), so there
+/// is no such kind. Omitted → <c>Company</c>.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record PriceListScopeRequestV1(

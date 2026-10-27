@@ -203,7 +203,8 @@ public sealed class ProductPriceListPersistenceTests
     [InlineData("company", null, null, 400, "scope.kind", ProductPriceListCodesV1.ValidationFailed)]
     [InlineData("Group", null, null, 400, "scope.kind", ProductPriceListCodesV1.ValidationFailed)]
     [InlineData("CustomerGroup", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", null, 422, "scope.kind", "price_list_scope_unavailable")]
-    [InlineData("Agreement", null, null, 422, "scope.kind", "price_list_scope_unavailable")]
+    // SAT-D58: an agreement price is the Sales contract's, never a Product list scope.
+    [InlineData("Agreement", null, null, 400, "scope.kind", ProductPriceListCodesV1.ValidationFailed)]
     [InlineData("Customer", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", null, 422, "scope", "price_list_invalid_scope")]
     [InlineData("Company", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", null, 422, "scope", "price_list_invalid_scope")]
     public async Task A_scope_without_an_owner_master_or_without_its_identities_is_refused_before_any_read(string kind, string? party,

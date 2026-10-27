@@ -33,7 +33,7 @@ public sealed class PriceTierChainTests
         Assert.Equal((own.Id, 1, 90m, PriceTier.Customer), (candidate.List.Id, candidate.Version.VersionNo, candidate.Line.UnitPrice, candidate.Tier));
         Assert.Equal(
             [
-                (PriceTier.Agreement, PriceTierStatus.Unavailable, (string?)PriceTierChain.AgreementOwnerMissing),
+                (PriceTier.Agreement, PriceTierStatus.Unavailable, (string?)PriceTierChain.AgreementSalesContractMissing),
                 (PriceTier.Customer, PriceTierStatus.Matched, (string?)null),
                 (PriceTier.CustomerGroup, PriceTierStatus.NotReached, (string?)null),
                 (PriceTier.Company, PriceTierStatus.NotReached, (string?)null),
@@ -56,7 +56,7 @@ public sealed class PriceTierChainTests
         Assert.Equal(
             [PriceTierStatus.Unavailable, PriceTierStatus.NoMatch, PriceTierStatus.Unavailable, PriceTierStatus.Matched],
             result.Tiers.Select(tier => tier.Status));
-        Assert.Equal(PriceTierChain.CustomerGroupOwnerMissing, result.Tiers[2].Reason);
+        Assert.Equal(PriceTierChain.CustomerGroupCariFieldMissing, result.Tiers[2].Reason);
     }
 
     [Fact]
@@ -204,8 +204,10 @@ public sealed class PriceTierChainTests
             Assert.Throws<PriceListRuleException>(() => PriceListScope.Customer(Guid.Empty, Account)).Code);
         Assert.Equal(PriceListRuleCodes.ScopeUnavailable,
             Assert.Throws<PriceListRuleException>(() => PriceListScope.From(PriceListScopeKind.CustomerGroup, Guid.NewGuid(), null)).Code);
-        Assert.Equal(PriceListRuleCodes.ScopeUnavailable,
-            Assert.Throws<PriceListRuleException>(() => PriceListScope.From(PriceListScopeKind.Agreement, null, null)).Code);
+        // SAT-D58: there is no Agreement list scope (value 4 is unused); an unknown kind is invalid.
+        Assert.False(Enum.IsDefined((PriceListScopeKind)4));
+        Assert.Equal(PriceListRuleCodes.InvalidScope,
+            Assert.Throws<PriceListRuleException>(() => PriceListScope.From((PriceListScopeKind)4, null, null)).Code);
         Assert.Equal(PriceListRuleCodes.InvalidScope,
             Assert.Throws<PriceListRuleException>(() => PriceListScope.From((PriceListScopeKind)9, null, null)).Code);
 

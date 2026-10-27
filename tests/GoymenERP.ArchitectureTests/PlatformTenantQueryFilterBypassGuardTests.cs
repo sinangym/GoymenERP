@@ -470,7 +470,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // existing Product card context; every durable row and audit event carries CompanyId.
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "PriceLists/ProductPriceListDbContext.cs"] =
-                "4f02a907444f0b4175b96c4c814ddc3c13d0d24a6fe075bddb31d624c842af50",
+                "13a34845ccd59e7dc23ba054c0349344e32e534b3a787124b792468d5f915489",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
             [ReviewedWorkDbContextPath] =
@@ -1285,8 +1285,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for API-22…24 over DEC-SAL-001 / API-08: the quote store and the optional Settings Sales
                     // policy port are DI-only seams; the provider branch and its database token counts are unchanged.
+                    // Re-fingerprinted for MOD-02 (SAT-D9): the draft service receives Product's V2 tier-chain reader instead
+                    // of the V1 reader (DI-only); the provider branch and its database token counts are unchanged.
                     new(
-                        "026fead741d82b5d030f07aec5c66a796ac67bafb75a1be7a0e633dd2d1ee267",
+                        "e81c540b8db6c775fcc4aa63eb257d1f8dc68bf5015536003972f2feeebee110",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
