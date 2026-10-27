@@ -291,6 +291,60 @@ const NORMAL_DRAFT_KEYS = [
   'lines',
 ] as const
 
+/** BLG-05b: one draft line's account as the draft's own frozen account plan names it (null = not found there). */
+export interface NormalJournalDraftAccount {
+  readonly lineNumber: number
+  readonly accountId: string
+  readonly accountCode: string | null
+  readonly accountName: string | null
+}
+
+export interface NormalJournalDraftAccounts {
+  readonly draftId: string
+  readonly version: number
+  readonly accountPlanSourceVersion: string
+  readonly accountPlanSourceSha256: string
+  readonly accounts: readonly NormalJournalDraftAccount[]
+}
+
+/**
+ * The accounts answer is accepted only for exactly the draft on screen: the same id, version and frozen plan,
+ * one entry per line in line order with the same account. A code and a name come together or not at all.
+ */
+export function decodeNormalJournalDraftAccounts(value: unknown, draft: NormalJournalDraft): NormalJournalDraftAccounts | null {
+  const v = record(value)
+  if (v === null || !hasExactKeys(v, ['draftId', 'version', 'accountPlanSourceVersion', 'accountPlanSourceSha256', 'accounts'])
+      || !Array.isArray(v.accounts)) return null
+  if (v.draftId !== draft.draftId || v.version !== draft.version
+      || v.accountPlanSourceVersion !== draft.accountPlanSourceVersion
+      || typeof v.accountPlanSourceSha256 !== 'string'
+      || v.accountPlanSourceSha256.toLowerCase() !== draft.accountPlanSourceSha256.toLowerCase()
+      || v.accounts.length !== draft.lines.length) return null
+  const accounts: NormalJournalDraftAccount[] = []
+  for (let index = 0; index < v.accounts.length; index += 1) {
+    const entry = record(v.accounts[index])
+    const line = draft.lines[index]
+    if (entry === null || !hasExactKeys(entry, ['lineNumber', 'accountId', 'accountCode', 'accountName'])) return null
+    if (entry.lineNumber !== line.lineNumber || entry.accountId !== line.accountId) return null
+    const named = isText(entry.accountCode) && isText(entry.accountName)
+    const unnamed = entry.accountCode === null && entry.accountName === null
+    if (!named && !unnamed) return null
+    accounts.push({
+      lineNumber: line.lineNumber,
+      accountId: line.accountId,
+      accountCode: named ? entry.accountCode as string : null,
+      accountName: named ? entry.accountName as string : null,
+    })
+  }
+  return {
+    draftId: draft.draftId,
+    version: draft.version,
+    accountPlanSourceVersion: draft.accountPlanSourceVersion,
+    accountPlanSourceSha256: draft.accountPlanSourceSha256,
+    accounts,
+  }
+}
+
 export function decodeNormalJournalDraft(value: unknown, companyId: string): NormalJournalDraft | null {
   const v = record(value)
   if (v === null || !hasExactKeys(v, NORMAL_DRAFT_KEYS) || !Array.isArray(v.lines)) return null

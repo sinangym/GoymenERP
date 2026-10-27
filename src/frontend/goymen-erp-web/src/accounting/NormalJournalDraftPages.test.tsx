@@ -422,7 +422,7 @@ describe('normal journal approval period (BLG-05)', () => {
     renderAt(normalDraftApprovalPath(DRAFT))
     const more = await screen.findByRole('button', { name: 'Daha eski dönemleri yükle' })
     fireEvent.click(more)
-    expect((await screen.findByRole('alert')).textContent).toBe('Daha eski dönemler yüklenemedi. Aynı düğmeyle yeniden deneyin.')
+    expect((await screen.findByText('Daha eski dönemler yüklenemedi. Aynı düğmeyle yeniden deneyin.')).getAttribute('role')).toBe('alert')
     // The first page and its choice survive the failure.
     expect((screen.getByLabelText('Onay dönemi') as HTMLSelectElement).value).toBe(PERIOD)
 
@@ -456,6 +456,37 @@ describe('normal journal approval period (BLG-05)', () => {
     // Restarted from the first page: no further cursor is offered, and the stale one was sent once only.
     expect(screen.queryByRole('button', { name: 'Daha eski dönemleri yükle' })).toBeNull()
     expect(requestsFor(recorded, 'cursor=stale', 'GET')).toHaveLength(1)
+  })
+
+  it('clears a choice the restarted list no longer shows, so the approval sends only a visible period', async () => {
+    let firstReads = 0
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.includes('/accounting/periods') && url.includes('cursor=page-2')) return json(periodPage([AUGUST], 'page-3'))
+        if (url.includes('/accounting/periods') && url.includes('cursor=')) return json({ code: 'invalid_cursor' }, 409)
+        if (url.includes('/accounting/periods')) {
+          firstReads += 1
+          return json(periodPage([SEPTEMBER], firstReads === 1 ? 'page-2' : null))
+        }
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    fireEvent.click(await screen.findByRole('button', { name: 'Daha eski dönemleri yükle' }))
+    await screen.findByRole('option', { name: '2026-08-01 – 2026-08-31' })
+    const choice = screen.getByLabelText('Onay dönemi') as HTMLSelectElement
+    fireEvent.change(choice, { target: { value: OTHER_PERIOD } })
+    expect(choice.value).toBe(OTHER_PERIOD)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Daha eski dönemleri yükle' }))
+    await screen.findByRole('status')
+    await waitFor(() => expect(firstReads).toBe(2))
+    // August's page is gone; the hidden choice is dropped and the one period holding the date is offered again.
+    await waitFor(() => expect([...choice.options].map((option) => option.value)).toEqual(['', PERIOD]))
+    await waitFor(() => expect(choice.value).toBe(PERIOD))
+    expect(requestsFor(recorded, '/approval', 'POST')).toHaveLength(0)
   })
 
   it('keys the period and draft reads by the shell namespace, so a fenced 403 read is never served again', async () => {
@@ -496,5 +527,141 @@ describe('normal journal approval period (BLG-05)', () => {
       expect(fields).toContain('acc-cap-gen-2')
       expect(fields).not.toContain('acc-cap-gen-1')
     }
+  })
+})
+
+describe('normal journal draft accounts (BLG-05b)', () => {
+  function accounts(overrides: Record<string, unknown> = {}, rows?: readonly unknown[]) {
+    return {
+      draftId: DRAFT, version: 1, accountPlanSourceVersion: 'mikro-v1', accountPlanSourceSha256: 'a'.repeat(64),
+      accounts: rows ?? [
+        { lineNumber: 1, accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' },
+        { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
+      ],
+      ...overrides,
+    }
+  }
+
+  function install(answer: () => Response | Promise<Response>) {
+    return installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}/accounts`)) return answer()
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER]))
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') return json(draft())
+        return undefined
+      },
+    })
+  }
+
+  it('names each line by the draft\'s frozen plan as code and name, never as an id', async () => {
+    const recorded = install(() => json(accounts()))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(screen.getByText('120 — Alıcılar')).toBeTruthy()
+    expect(document.body.textContent).not.toContain(ACCOUNT_1)
+    expect(document.body.textContent).not.toContain(ACCOUNT_2)
+    expect(requestsFor(recorded, `/normal-journal-drafts/${DRAFT}/accounts`, 'GET')).toHaveLength(1)
+  })
+
+  it('says the name is unavailable when the frozen plan does not hold the account', async () => {
+    install(() => json(accounts({}, [
+      { lineNumber: 1, accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' },
+      { lineNumber: 2, accountId: ACCOUNT_2, accountCode: null, accountName: null },
+    ])))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(screen.getByText('Hesap adı bulunamadı')).toBeTruthy()
+    expect(document.body.textContent).not.toContain(ACCOUNT_2)
+  })
+
+  it.each([
+    ['another draft', accounts({ draftId: 'a0000000-0000-4000-8000-0000000000ff' })],
+    ['another version', accounts({ version: 2 })],
+    ['another plan version', accounts({ accountPlanSourceVersion: 'mikro-v2' })],
+    ['another plan hash', accounts({ accountPlanSourceSha256: 'b'.repeat(64) })],
+    ['another account on a line', accounts({}, [
+      { lineNumber: 1, accountId: ACCOUNT_2, accountCode: '100', accountName: 'Kasa' },
+      { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
+    ])],
+    ['another line number', accounts({}, [
+      { lineNumber: 2, accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' },
+      { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
+    ])],
+    ['a missing line', accounts({}, [{ lineNumber: 1, accountId: ACCOUNT_1, accountCode: '100', accountName: 'Kasa' }])],
+  ])('refuses an answer for %s and shows no name from it', async (_case, answer) => {
+    install(() => json(answer))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await waitFor(() => expect(screen.getAllByText('Hesap adı okunamadı')).toHaveLength(2))
+    expect(screen.queryByText('100 — Kasa')).toBeNull()
+    expect(screen.queryByText('120 — Alıcılar')).toBeNull()
+    expect(screen.getByRole('alert').getAttribute('data-state')).toBe('malformed-response')
+  })
+
+  it('refuses a half-named account (code without name)', async () => {
+    install(() => json(accounts({}, [
+      { lineNumber: 1, accountId: ACCOUNT_1, accountCode: '100', accountName: null },
+      { lineNumber: 2, accountId: ACCOUNT_2, accountCode: '120', accountName: 'Alıcılar' },
+    ])))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await waitFor(() => expect(screen.getAllByText('Hesap adı okunamadı')).toHaveLength(2))
+    expect(screen.queryByText('120 — Alıcılar')).toBeNull()
+  })
+
+  it('says a failed read as such, not as a missing name, and reads again with the retry', async () => {
+    let reads = 0
+    const recorded = install(() => (reads += 1) === 1 ? json({ status: 503 }, 503) : json(accounts()))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await waitFor(() => expect(screen.getAllByText('Hesap adı okunamadı')).toHaveLength(2))
+    expect(screen.queryByText('Hesap adı bulunamadı')).toBeNull()
+    const alert = screen.getByRole('alert')
+    expect(alert.getAttribute('data-state')).toBe('service-unavailable')
+    expect(alert.textContent).toContain('taslak satırlarının hesap adları')
+    fireEvent.click(screen.getByRole('button', { name: 'Tekrar dene' }))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(requestsFor(recorded, `/normal-journal-drafts/${DRAFT}/accounts`, 'GET')).toHaveLength(2)
+  })
+
+  it('marks the lines busy while the names load', async () => {
+    let release: (response: Response) => void = () => {}
+    install(() => new Promise<Response>((resolve) => { release = resolve }))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    expect(await screen.findAllByText('Hesap adı yükleniyor…')).toHaveLength(2)
+    expect(screen.getByRole('table').getAttribute('aria-busy')).toBe('true')
+    await act(async () => release(json(accounts())))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(screen.getByRole('table').getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('offers to read the draft again when the draft changed under the names read (409)', async () => {
+    let draftReads = 0
+    const recorded = installFetch({
+      capabilities: APPROVER_WITH_PERIODS,
+      respond: (url, init) => {
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}/accounts`)) {
+          return draftReads === 1 ? json({ code: 'accounting_version_conflict' }, 409) : json(accounts({ version: 2 }))
+        }
+        if (url.includes('/accounting/periods')) return json(periodPage([SEPTEMBER]))
+        if (url.endsWith(`/normal-journal-drafts/${DRAFT}`) && (init?.method ?? 'GET') === 'GET') {
+          draftReads += 1
+          return json(draft({ version: draftReads }))
+        }
+        return undefined
+      },
+    })
+    renderAt(normalDraftApprovalPath(DRAFT))
+    expect((await screen.findByRole('alert')).getAttribute('data-state')).toBe('conflict')
+    fireEvent.click(screen.getByRole('button', { name: 'Taslağı yeniden oku' }))
+    expect(await screen.findByText('100 — Kasa')).toBeTruthy()
+    expect(draftReads).toBe(2)
+    expect(requestsFor(recorded, `/normal-journal-drafts/${DRAFT}/accounts`, 'GET')).toHaveLength(2)
+  })
+
+  it('reports a 403 on the accounts read to the shell boundary, which closes the screen', async () => {
+    install(() => json({ status: 403 }, 403))
+    renderAt(normalDraftApprovalPath(DRAFT))
+    await screen.findByText(/Bulunamadı/)
+    expect(screen.queryByText('Normal taslağı onayla')).toBeNull()
   })
 })
