@@ -537,6 +537,25 @@ export const ORDER_DETAIL_TEXT = {
     more: 'Daha fazla taslak var; tamamı yükleme talimatlarında görünür.',
     subject: 'irsaliye taslakları',
   },
+  /**
+   * SAT-D8 / UI-70a: per line the APPROVED customer-return total, read from Logistics through API-10. Returns have no menu
+   * of their own; they are shown on the order. The owner gives only the total per line (no return number, date or status).
+   */
+  customerReturns: {
+    heading: 'Müşteri iadeleri',
+    note:
+      'Lojistik modülünde onaylanan müşteri iadelerinin satır bazında toplamıdır; bekleyen ve reddedilen iade talepleri sayılmaz. ' +
+      'Sipariş her açıldığında yeniden okunur. Tek tek iade numarası, tarihi ve durumu bu görünümde henüz yer almaz.',
+    subject: 'müşteri iadeleri',
+    empty: 'Bu siparişte onaylı müşteri iadesi yok.',
+    unreadable: 'İade bilgisi okunamadığı için miktar gösterilmiyor.',
+    caption: 'Satır bazında sipariş miktarı ve onaylı iade miktarı',
+    lineNo: 'Satır',
+    product: 'Ürün',
+    ordered: 'Sipariş',
+    approvedReturned: 'Onaylı iade',
+    unit: 'Birim',
+  },
   revision: 'Ticari revizyon',
   version: 'Kayıt sürümü',
   businessDate: 'Sipariş tarihi',

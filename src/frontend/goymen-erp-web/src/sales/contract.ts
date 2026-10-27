@@ -34,6 +34,8 @@ export const salesDraftDeliverySchedulePath = (id: string) => `${salesDraftDetai
 export const salesDraftDeliverySchedulesPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-schedules`
 /** AT-024: per line the delivered and remaining quantity, read from the delivery owner's records (GET). */
 export const salesDraftDeliveryProgressPath = (id: string) => `${salesDraftDetailPath(id)}/delivery-progress`
+/** SAT-D8 / API-10: per line the approved customer-return total, read from the return owner (Logistics) (GET). */
+export const salesDraftCustomerReturnsPath = (id: string) => `${salesDraftDetailPath(id)}/customer-returns`
 /** DEC-SAL-005: the impact preview of cancelling an approved order (GET, the cancel control's name). */
 export const salesDraftCancellationImpactPath = (id: string) => `${salesDraftDetailPath(id)}/cancellation-impact`
 /** DEC-SAL-005 / AT-007: the cancel command (POST) and the recorded cancellation (GET, the draft read). */
@@ -242,6 +244,25 @@ export interface LoadingProgressLine {
 export interface LoadingProgress {
   readonly draftVersion: string
   readonly lines: readonly LoadingProgressLine[]
+}
+
+/**
+ * SAT-D8 / API-10 (`SalesDraftLineCustomerReturnV1`): one line's APPROVED customer-return total as exact decimal text in
+ * the line's order unit, beside the line's `ordered` quantity. Logistics' port gives only this total per line — no return
+ * number, date or status. Facts only: no credit note, invoice, stock or remaining-quantity effect is derived.
+ */
+export interface CustomerReturnLine {
+  readonly lineId: string
+  readonly lineNo: number
+  readonly orderUnitId: string
+  readonly ordered: string
+  readonly approvedReturned: string
+}
+
+/** SAT-D8 / API-10 (`SalesOrderDraftCustomerReturnsResponse`): every line of the order once, read against `draftVersion`. */
+export interface CustomerReturns {
+  readonly draftVersion: string
+  readonly lines: readonly CustomerReturnLine[]
 }
 
 /** The detail a loading-progress answer must describe: its version and each line's identity, unit and quantity text. */
@@ -1265,6 +1286,49 @@ export function decodeLoadingProgress(value: unknown, bound: LoadingProgressBind
   }
   return { draftVersion: response.draftVersion, lines }
 }
+
+/**
+ * SAT-D8 / API-10: `SalesOrderDraftCustomerReturnsResponse`, read exactly — the two members `draftVersion` and `lines`,
+ * and per line exactly `lineId`, `lineNo`, `orderUnitId`, `ordered`, `approvedReturned` (no member more or less) — and
+ * only as the returns OF `detail`: the same version, and every line of that detail exactly once with its own number,
+ * order unit and quantity text (a missing, extra, repeated or foreign line refuses the whole answer). `lineNo` is a JSON
+ * integer (the Sales serializer writes numbers strictly). Decimal text stays text, never parsed into a JS number;
+ * `ordered` is positive and `approvedReturned` may be zero (the owner answered: nothing approved). No relation between
+ * the two is assumed — whether more may be returned than ordered is not this screen's rule. A body that does not fit is
+ * not shown as quantities.
+ */
+export function decodeCustomerReturns(value: unknown, detail: DraftDetail): CustomerReturns | null {
+  const response = exact(value, ['draftVersion', 'lines'])
+  if (
+    response === null || typeof response.draftVersion !== 'string' || response.draftVersion !== detail.draft.version ||
+    !Array.isArray(response.lines) || response.lines.length !== detail.lines.length
+  ) return null
+  const answered = new Map<string, CustomerReturnLine>()
+  for (const entry of response.lines) {
+    const o = exact(entry, ['lineId', 'lineNo', 'orderUnitId', 'ordered', 'approvedReturned'])
+    if (
+      o === null || !isRevisionId(o.lineId) || answered.has(o.lineId.toLowerCase()) ||
+      !isPositiveInt(o.lineNo, INT32_MAX) || !isRevisionId(o.orderUnitId) ||
+      !isRevisionDecimal(o.ordered, true) || !isRevisionDecimal(o.approvedReturned, false)
+    ) return null
+    answered.set(o.lineId.toLowerCase(), {
+      lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, ordered: o.ordered, approvedReturned: o.approvedReturned,
+    })
+  }
+  const lines: CustomerReturnLine[] = []
+  for (const line of detail.lines) {
+    const match = answered.get(line.lineId.toLowerCase())
+    if (
+      match === undefined || match.lineNo !== line.lineNo ||
+      match.orderUnitId.toLowerCase() !== line.orderUnitId.toLowerCase() || match.ordered !== line.quantity
+    ) return null
+    lines.push(match)
+  }
+  return { draftVersion: response.draftVersion, lines }
+}
+
+/** Whether a decoded decimal text is above zero — a text test, never a JS number (the text is already exact). */
+export const isNonZeroDecimalText = (text: string): boolean => /[1-9]/.test(text)
 
 /* ── DEC-SAL-005 / AT-007: the cancellation of an approved order ────────────── */
 
