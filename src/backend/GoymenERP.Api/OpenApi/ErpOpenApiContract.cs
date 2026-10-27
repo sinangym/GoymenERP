@@ -737,6 +737,15 @@ public static partial class ErpOpenApiContract
             SetStringLengthParameter(operation, ParameterLocation.Query, "cursor", 1, 8192);
         }
 
+        // SAT-D27 (1): the sales-owner picker's page size and trimmed display-name fragment bounds.
+        if (string.Equals(operation.OperationId, "GetSalesOwnerReferencesV1", StringComparison.Ordinal))
+        {
+            SetNormalizedIntegerParameter(operation, ParameterLocation.Query, "limit", 1,
+                GoymenERP.Modules.Sales.Application.Contracts.SalesOwnerPickerLimitsV1.MaximumLimit);
+            SetCanonicalStringParameter(operation, ParameterLocation.Query, "q",
+                maximumLength: GoymenERP.Modules.Sales.Application.Contracts.SalesOwnerPickerLimitsV1.MaximumQueryLength);
+        }
+
         if (string.Equals(operation.OperationId, "GetSalesProductReferenceV1", StringComparison.Ordinal))
         {
             SetStringLengthParameter(

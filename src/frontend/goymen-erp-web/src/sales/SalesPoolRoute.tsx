@@ -1,7 +1,7 @@
 /**
  * The S-01 entry gate: the shared `CapabilityRoute` (fresh capability verification per route entry, the neutral
- * not-found block when ungranted) over the pool's capability list for the screen. The list is EMPTY until the backend
- * publishes the ids (./poolCapabilities.ts, NEEDS-CAPABILITY), and an empty list opens nothing.
+ * not-found block when ungranted) over the pool's capability list for the screen: the id the backend publishes for it
+ * (./poolCapabilities.ts, Sales shell 1.8). An empty list would open nothing.
  */
 
 import { useContext, type ReactNode } from 'react'
