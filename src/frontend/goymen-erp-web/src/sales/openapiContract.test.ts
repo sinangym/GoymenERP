@@ -41,7 +41,13 @@ import {
   SALES_REFERENCE_PRODUCTS_PATH,
 } from './api'
 import { salesDraftLinePriceReferencesPath, salesDraftLinePricingPath } from './linePricing'
-import { remainderChangesPath, remainderDecisionPath } from './remainderChange'
+import {
+  REMAINDER_KIND,
+  remainderChangesPath,
+  remainderDecisionPath,
+  type RemainderChangeRequest,
+  type RemainderDecisionRequest,
+} from './remainderChange'
 
 interface Schema {
   readonly properties?: Record<string, unknown>
@@ -156,6 +162,16 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expectFits({ expectedVersion: '3', lines: [] }, 'SalesDraftPriceFloorExceptionApprovalRequest')
     expect(requestSchema(remainderChangesPath('ID'))).toBe('SalesDraftRemainderChangeRequest')
     expect(requestSchema(remainderDecisionPath('ID', 7, 'approval'))).toBe('SalesDraftRemainderDecisionRequest')
+    expect(requestSchema(remainderDecisionPath('ID', 7, 'rejection'))).toBe('SalesDraftRemainderDecisionRequest')
+    // The remainder-change and decision bodies are typed as the client sends them, so a drift on either side fails here.
+    const revise: RemainderChangeRequest = { expectedVersion: '5', lineId: 'LINE', kind: REMAINDER_KIND.revise, quantity: '12.5', reason: 'r' }
+    const cancel: RemainderChangeRequest = { expectedVersion: '5', lineId: 'LINE', kind: REMAINDER_KIND.cancel, quantity: null, reason: 'r' }
+    expectFits(revise, 'SalesDraftRemainderChangeRequest')
+    expectFits(cancel, 'SalesDraftRemainderChangeRequest')
+    const approval: RemainderDecisionRequest = { expectedVersion: '6', reason: null }
+    const rejection: RemainderDecisionRequest = { expectedVersion: '6', reason: 'r' }
+    expectFits(approval, 'SalesDraftRemainderDecisionRequest')
+    expectFits(rejection, 'SalesDraftRemainderDecisionRequest')
     for (const command of COMMANDS) {
       expect(requestSchema(salesDraftCommandPath('ID', command)), command).toBe('SalesDraftStateCommandRequest')
     }
