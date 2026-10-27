@@ -194,7 +194,10 @@ public static class SalesRuleCodes
     public const string RequestRejectionReasonTooLong = "sales_request_rejection_reason_too_long";
 
     /// <summary>
-    /// No 161: a request whose quote became an APPROVED (not cancelled) order cannot be rejected; the order is cancelled first.
+    /// No 161 (fail-closed): a request with ANY order that is not cancelled — converted from a quote covering it, whatever its
+    /// approval state, force-closed included — cannot be rejected; the order is cancelled first. The wire value keeps its
+    /// first name (<c>…_has_approved_order</c>) so clients that decode it do not break; NEEDS-SINAN #6 decides whether a
+    /// never-approved order should block (until then it does).
     /// </summary>
     public const string RequestHasApprovedOrder = "sales_request_has_approved_order";
 

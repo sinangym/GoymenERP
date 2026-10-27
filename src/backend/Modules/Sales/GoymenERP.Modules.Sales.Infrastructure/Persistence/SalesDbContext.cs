@@ -70,23 +70,36 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// for legacy mutation refusals written before that identity was retained, so upgrades preserve replay.
     /// </summary>
     internal const string AttemptOutcomeConstraint =
-        "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [QuoteId] IS NULL) "
-        + "OR ([QuoteId] IS NOT NULL AND [QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL))) "
+        "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
         + "OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') "
-        + "AND ([QuoteId] IS NULL OR ([QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)) "
         + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
     /// <summary>
-    /// API-22 / API-24 (CK_DraftAttempts_QuoteTarget): only a quote command (create / revise / lose) names a quote; the
-    /// conversion (No 162) answers the ORDER it created, so its attempt names a draft, never a quote.
+    /// ADR-SAL-001 §2 (API-22 / API-24): the quote is its own aggregate, so its create / revise / lose commands record their
+    /// attempts in their OWN table, the draft attempt's shape (CK_QuoteAttempts_Outcome). The conversion (No 162, ADR-SAL-001
+    /// §3) is NOT a quote attempt: it creates the ORDER, so its one attempt is the order's, in <c>sales.DraftAttempts</c>.
     /// </summary>
-    internal const string AttemptQuoteTargetConstraint =
-        "([QuoteId] IS NULL OR [CommandName] IN (N'" + SalesQuoteCommands.CreateV1 + "', N'" + SalesQuoteCommands.ReviseV1 + "', N'"
-        + SalesQuoteCommands.LoseV1 + "')) AND ([CommandName] NOT IN (N'" + SalesQuoteCommands.CreateV1 + "', N'" + SalesQuoteCommands.ReviseV1
-        + "', N'" + SalesQuoteCommands.LoseV1 + "') OR [DraftId] IS NULL)";
+    internal const string QuoteAttemptOutcomeConstraint =
+        "([Outcome] = 1 AND [QuoteId] IS NOT NULL AND [QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND ([QuoteId] IS NULL OR [QuoteId] <> '00000000-0000-0000-0000-000000000000') "
+        + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
-    /// <summary>UX_DraftAttempts_QuoteId: a stored quote is born from exactly one create attempt.</summary>
+    /// <summary>CK_QuoteAttempts_Command: only the quote's own versioned commands record here (never the conversion).</summary>
+    internal const string QuoteAttemptCommandConstraint =
+        "[CommandName] IN (N'" + SalesQuoteCommands.CreateV1 + "', N'" + SalesQuoteCommands.ReviseV1 + "', N'"
+        + SalesQuoteCommands.LoseV1 + "')";
+
+    /// <summary>CK_QuoteAttempts_Result (ADR-SAL-001 §2/§4): no quote command stores a response snapshot.</summary>
+    internal const string QuoteAttemptResultConstraint = "[ResultJson] IS NULL";
+
+    /// <summary>UX_QuoteAttempts_QuoteId: a stored quote is born from exactly one create attempt.</summary>
     internal const string QuoteCreateAttemptFilter = "[QuoteId] IS NOT NULL AND [CommandName] = N'" + SalesQuoteCommands.CreateV1 + "'";
+
+    /// <summary>
+    /// ADR-SAL-001 §6: the SQL trigger that refuses any UPDATE or DELETE of a quote attempt (THROW 51068, used by no other
+    /// migration), beside the EF write guard.
+    /// </summary>
+    internal const string QuoteAttemptImmutabilityTrigger = "TR_QuoteAttempts_RejectMutation";
 
     /// <summary>UX_Drafts_SourceQuoteId (No 162): one order per quote — the database itself refuses a second.</summary>
     internal const string SourceQuoteFilter = "[SourceQuoteId] IS NOT NULL";
@@ -201,6 +214,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>No 163: the requests a quote covers (active while the quote is open or converted).</summary>
     internal DbSet<QuoteRequestRow> QuoteRequests => Set<QuoteRequestRow>();
+
+    /// <summary>API-22 / API-24 (ADR-SAL-001 §2): the quote commands' own attempt records (append-only).</summary>
+    internal DbSet<QuoteAttemptRow> QuoteAttempts => Set<QuoteAttemptRow>();
 
     /// <summary>API-20 / API-21 (ADR-SAL-001 §2): the request commands' own attempt records (append-only).</summary>
     internal DbSet<RequestAttemptRow> RequestAttempts => Set<RequestAttemptRow>();
@@ -451,7 +467,6 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             // ADR-011 §7: new mutation refusals bind to their draft; legacy null refusals remain replayable.
             table.HasCheckConstraint("CK_DraftAttempts_Outcome", AttemptOutcomeConstraint);
             table.HasCheckConstraint("CK_DraftAttempts_Result", AttemptResultConstraint);
-            table.HasCheckConstraint("CK_DraftAttempts_QuoteTarget", AttemptQuoteTargetConstraint);
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         entity.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
@@ -467,14 +482,6 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<DraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })
-            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
-            .IsRequired(false)
-            .OnDelete(DeleteBehavior.Restrict);
-        // API-22 / API-24: a quote command's attempt names its quote (same company, by foreign key).
-        entity.HasIndex(x => new { x.CompanyId, x.QuoteId }).IsUnique().HasDatabaseName("UX_DraftAttempts_QuoteId")
-            .HasFilter(QuoteCreateAttemptFilter);
-        entity.HasOne<QuoteRow>().WithMany()
-            .HasForeignKey(x => new { x.CompanyId, x.QuoteId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
@@ -597,6 +604,38 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         link.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // ADR-SAL-001 §2/§6: the quote commands' own attempt table, the draft attempt's shape, append-only in EF and in SQL.
+        var attempt = modelBuilder.Entity<QuoteAttemptRow>();
+        attempt.ToTable("QuoteAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_QuoteAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_QuoteAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_QuoteAttempts_Command", QuoteAttemptCommandConstraint);
+            table.HasCheckConstraint("CK_QuoteAttempts_Outcome", QuoteAttemptOutcomeConstraint);
+            table.HasCheckConstraint("CK_QuoteAttempts_Result", QuoteAttemptResultConstraint);
+            table.HasTrigger(QuoteAttemptImmutabilityTrigger);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.Property(x => x.ResultJson).HasColumnType("nvarchar(max)");
+        attempt.HasIndex(x => new { x.CompanyId, x.QuoteId }).IsUnique().HasDatabaseName("UX_QuoteAttempts_QuoteId")
+            .HasFilter(QuoteCreateAttemptFilter);
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<QuoteRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.QuoteId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     // API-20 / API-21: the sales request, its lines and the display-number counter of the non-draft records.
@@ -1008,6 +1047,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     QuoteRevisionRow => [],
                     QuoteLineRow => [],
                     QuoteRequestRow => [nameof(QuoteRequestRow.IsActive)],
+                    // ADR-SAL-001 §2: a quote attempt is APPEND-ONLY (the SQL trigger refuses the same).
+                    QuoteAttemptRow => [],
                     // ADR-SAL-001 §2: a request attempt is APPEND-ONLY (the SQL trigger refuses the same).
                     RequestAttemptRow => [],
                     _ => [],

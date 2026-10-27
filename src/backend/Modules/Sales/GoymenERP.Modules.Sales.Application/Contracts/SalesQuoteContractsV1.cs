@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Quotes;
 
@@ -74,6 +75,20 @@ public static class SalesQuoteProblemCodesV1
 
     /// <summary>422: a named request is rejected, or already covered by another open or converted quote (talep → teklif N:1).</summary>
     public const string RequestUnavailable = "sales_quote_request_unavailable";
+
+    /// <summary>
+    /// 409 (No 160, default-deny; field <c>requestIds</c>): a request the quote covers is not approved — at the conversion, and
+    /// at the converted order's submission or approval. Not recorded: the request may still be approved and the key retried.
+    /// </summary>
+    public const string RequestNotApproved = SalesRuleCodes.QuoteRequestNotApproved;
+
+    /// <summary>
+    /// 403 (service code; the wire's 403 stays code-less like every platform 403): a quote revision, or a quote create that
+    /// carries a price field, by an actor whose prices are WITHHELD (no <c>sales.orders.price.read</c>). A revision replaces
+    /// every line, so a caller who cannot see the prices would erase them; fail-closed. This does not decide who may WRITE a
+    /// quote price (NEEDS-SINAN #5).
+    /// </summary>
+    public const string PriceReadRequired = "price_read_required";
 }
 
 public static class SalesQuoteApiV1

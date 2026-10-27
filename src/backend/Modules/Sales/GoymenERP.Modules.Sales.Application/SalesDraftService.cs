@@ -904,6 +904,13 @@ public sealed partial class SalesDraftService(
         {
             throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, [new("reason", exception.Code)]);
         }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteRequestNotApproved)
+        {
+            // No 160 (belt and braces): the order's source quote covers a request that is no longer approved. Not recorded,
+            // like the conversion's own refusal: the condition can change and the same key be retried.
+            throw new SalesDraftServiceException(409, SalesQuoteProblemCodesV1.RequestNotApproved,
+                [new("requestIds", SalesQuoteProblemCodesV1.RequestNotApproved)]);
+        }
         catch (SalesRuleException exception)
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new("draft", exception.Code)]);

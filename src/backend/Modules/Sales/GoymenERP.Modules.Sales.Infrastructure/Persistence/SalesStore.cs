@@ -275,6 +275,13 @@ public sealed partial class SalesStore(
         // The domain decides: the expected version, the allowed transition and the reason bound. A
         // refusal leaves the tracked row untouched (nothing below has run) and is the caller's to answer.
         mutate(draft, now);
+        if (commandName is SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1)
+        {
+            // No 160 (belt and braces): an order converted from a quote moves towards approval only while the quote's requests
+            // are all still approved.
+            await RequireSourceRequestsApprovedAsync(row.SourceQuoteId, cancellationToken);
+        }
+
         if (draft.Version != versionBefore + 1 || draft.Id != row.Id || draft.CompanyId != companyId)
         {
             throw new InvalidOperationException("Onay geçişi tam olarak bir sürüm ilerletir ve taslağı değiştirmez.");

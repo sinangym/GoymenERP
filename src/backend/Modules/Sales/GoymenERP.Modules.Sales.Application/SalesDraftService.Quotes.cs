@@ -35,6 +35,13 @@ public sealed partial class SalesDraftService
         var permission = bindings.QuoteWritePermission;
         var scope = await RequireAsync(permission, cancellationToken);
         var store = QuoteStore();
+        // A quote price written by an actor who cannot see quote prices is refused before anything is read or recorded.
+        var priced = QuotePriceFields(request.Lines);
+        if (priced.Count > 0)
+        {
+            await RequirePriceReadAsync(scope, priced, cancellationToken);
+        }
+
         var requestHash = SalesQuoteHash.Compute(request);
         var envelope = Envelope(scope, metadata, permission!);
         var replay = await FindQuoteReplayAsync(scope, permission, envelope, requestHash, SalesQuoteCommands.CreateV1, cancellationToken);
@@ -61,6 +68,11 @@ public sealed partial class SalesDraftService
         }
 
         scope = await RequireStillAsync(scope, permission, cancellationToken);
+        if (priced.Count > 0)
+        {
+            await RequirePriceReadAsync(scope, priced, cancellationToken);
+        }
+
         var header = new SalesQuoteHeader(request.PartyId, request.CompanyAccountId, request.CurrencyId, request.BusinessDate);
         var terms = new SalesQuoteTerms(request.ValidUntil, request.RequestedDeliveryDate, request.Note);
         var now = timeProvider.GetUtcNow();
@@ -169,6 +181,10 @@ public sealed partial class SalesDraftService
         var permission = bindings.QuoteWritePermission;
         var scope = await RequireAsync(permission, cancellationToken);
         var store = QuoteStore();
+        // A revision REPLACES every line, prices included: an actor whose quote prices are withheld would send them back empty
+        // and erase them. Such an actor does not revise (403), whatever the lines carry — fail-closed, before anything is read
+        // or recorded (who may WRITE a quote price stays NEEDS-SINAN #5).
+        await RequirePriceReadAsync(scope, [new("lines", SalesQuoteProblemCodesV1.PriceReadRequired)], cancellationToken);
         var expectedVersion = ExpectedVersion(request.ExpectedVersion);
         var requestHash = SalesQuoteHash.Compute(quoteId, request);
         var envelope = Envelope(scope, metadata, permission!);
@@ -192,6 +208,8 @@ public sealed partial class SalesDraftService
             return won.Response;
         }
 
+        // The price visibility is measured again after the owner reads, right before the save.
+        await RequirePriceReadAsync(scope, [new("lines", SalesQuoteProblemCodesV1.PriceReadRequired)], cancellationToken);
         var terms = new SalesQuoteTerms(request.ValidUntil, request.RequestedDeliveryDate, request.Note);
         return await UpdateQuoteAsync(scope, permission, envelope, requestHash, SalesQuoteCommands.ReviseV1, quoteId,
             (quote, now) => quote.Revise(expectedVersion, terms, lines, now),
@@ -284,6 +302,9 @@ public sealed partial class SalesDraftService
         return await CreateDraftCoreAsync(scope, draftRequest, envelope, requestHash, SalesQuoteCommands.ConvertV1, priced,
             async build =>
             {
+                // ADR-011 §5: the quote's write name is measured again right before the one save, like the order's create name
+                // (CreateDraftCoreAsync measures that one just before calling here).
+                await RequireStillAsync(scope, quotePermission, cancellationToken);
                 try
                 {
                     return await store.StoreConvertedDraftAsync(envelope, requestHash, quoteId, expectedVersion, build, cancellationToken);
@@ -299,7 +320,9 @@ public sealed partial class SalesDraftService
                 }
                 catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteRequestNotApproved)
                 {
-                    throw new SalesDraftServiceException(409, SalesRuleCodes.QuoteRequestNotApproved, [new("requestIds", exception.Code)]);
+                    // No 160 inside the save: a covered request left Approved after the service's read. Not recorded (as below).
+                    throw new SalesDraftServiceException(409, SalesQuoteProblemCodesV1.RequestNotApproved,
+                        [new("requestIds", SalesQuoteProblemCodesV1.RequestNotApproved)]);
                 }
             },
             cancellationToken);
@@ -409,24 +432,50 @@ public sealed partial class SalesDraftService
         }
     }
 
-    /// <summary>No 160: every request the quote covers is approved now (409 otherwise, not recorded).</summary>
+    /// <summary>
+    /// No 160: every request the quote covers is approved now (409 otherwise, not recorded: the request may still be approved
+    /// and the same key retried; the store asks again inside the one save). One field, <c>requestIds</c>, on both paths.
+    /// </summary>
     private async Task RequireApprovedRequestsAsync(Scope scope, string? permission, SalesQuote quote, CancellationToken cancellationToken)
     {
         var requestStore = RequestStore();
-        var errors = new List<SalesDraftFieldError>();
-        for (var index = 0; index < quote.RequestIds.Count; index++)
+        foreach (var id in quote.RequestIds)
         {
-            var id = quote.RequestIds[index];
             var request = await GuardedAsync(scope, permission, () => requestStore.FindRequestAsync(id, cancellationToken), cancellationToken);
             if (request?.State != SalesRequestState.Approved)
             {
-                errors.Add(new($"requestIds[{index}]", SalesRuleCodes.QuoteRequestNotApproved));
+                throw new SalesDraftServiceException(409, SalesQuoteProblemCodesV1.RequestNotApproved,
+                    [new("requestIds", SalesQuoteProblemCodesV1.RequestNotApproved)]);
             }
         }
+    }
 
-        if (errors.Count > 0)
+    /// <summary>Every quote line price field the request carries, as the field errors a price-visibility refusal names.</summary>
+    private static List<SalesDraftFieldError> QuotePriceFields(IReadOnlyList<SalesQuoteLineRequest>? lines)
+    {
+        var fields = new List<SalesDraftFieldError>();
+        for (var index = 0; index < (lines?.Count ?? 0); index++)
         {
-            throw new SalesDraftServiceException(409, SalesRuleCodes.QuoteRequestNotApproved, errors);
+            var line = lines![index];
+            if (line.UnitPrice is not null) fields.Add(new($"lines[{index}].unitPrice", SalesQuoteProblemCodesV1.PriceReadRequired));
+            if (line.PriceUnitId is not null) fields.Add(new($"lines[{index}].priceUnitId", SalesQuoteProblemCodesV1.PriceReadRequired));
+            if (line.DiscountPercent is not null) fields.Add(new($"lines[{index}].discountPercent", SalesQuoteProblemCodesV1.PriceReadRequired));
+        }
+
+        return fields;
+    }
+
+    /// <summary>
+    /// Fail-closed price visibility for a quote write: the actor must SEE quote prices (the order's narrow price read, the same
+    /// measurement as the disclosure) or the write is refused with 403 — a caller who cannot see the prices must not overwrite
+    /// or erase them. Never recorded (an authority answer, like the price-write fence). It does not decide who may WRITE a
+    /// quote price (NEEDS-SINAN #5).
+    /// </summary>
+    private async Task RequirePriceReadAsync(Scope scope, IReadOnlyList<SalesDraftFieldError> fields, CancellationToken cancellationToken)
+    {
+        if (await DiscloseAsync(scope, cancellationToken) != SalesPriceDisclosure.Visible)
+        {
+            throw new SalesDraftServiceException(403, SalesQuoteProblemCodesV1.PriceReadRequired, fields);
         }
     }
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,25 +6,22 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 {
     /// <summary>
-    /// API-22 / API-23 / API-24 (plan §3.2, S-01; delegation No 160, 162, 163): the sales quote. Four NEW tables — the quote
-    /// header (its lifecycle is the only change; CK_Quotes_Lifecycle), its append-only revisions and their lines, and the
-    /// requests it covers (UX_QuoteRequests_ActiveRequest: a request is covered by at most one live quote) — two nullable
-    /// columns on the order (SourceQuoteId / SourceQuoteRevision, written once; UX_Drafts_SourceQuoteId: ONE order per quote,
-    /// company-leading FK to the quote) and one nullable column on the attempt table (QuoteId, the quote commands'
-    /// target; CK_DraftAttempts_Outcome widened to exactly one target, CK_DraftAttempts_QuoteTarget, UX_DraftAttempts_QuoteId).
-    /// No existing row is rewritten. Rollback: refused once any quote, quote attempt or converted order exists
-    /// (THROW 51066 — forward fix); an installation without one rolls back cleanly.
+    /// API-22 / API-23 / API-24 (plan §3.2, S-01; delegation No 160, 162, 163): the sales quote. Five NEW tables — the quote
+    /// header (its lifecycle is the only change; CK_Quotes_Lifecycle), its append-only revisions and their lines, the requests
+    /// it covers (UX_QuoteRequests_ActiveRequest: a request is covered by at most one live quote) and the quote commands' OWN
+    /// attempt table (ADR-SAL-001 §2: create / revise / lose, the draft attempt's shape, UX_QuoteAttempts_QuoteId, with the
+    /// SQL trigger TR_QuoteAttempts_RejectMutation refusing every UPDATE/DELETE — THROW 51068, ADR-SAL-001 §6) — and two
+    /// nullable columns on the order (SourceQuoteId / SourceQuoteRevision, written once; UX_Drafts_SourceQuoteId: ONE order
+    /// per quote, company-leading FK to the quote). The conversion's attempt is the ORDER's (ADR-SAL-001 §3) in the existing
+    /// sales.DraftAttempts under its own command name; that table's shape is not touched. No existing row is rewritten.
+    /// Rollback: refused once any quote, quote attempt, converted order or conversion attempt exists (THROW 51066 — forward
+    /// fix); an installation without one rolls back cleanly (dropping the attempt table drops its trigger).
     /// </summary>
     public partial class AddSalesQuotes : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropCheckConstraint(
-                name: "CK_DraftAttempts_Outcome",
-                schema: "sales",
-                table: "DraftAttempts");
-
             migrationBuilder.AddColumn<Guid>(
                 name: "SourceQuoteId",
                 schema: "sales",
@@ -37,13 +34,6 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 schema: "sales",
                 table: "Drafts",
                 type: "int",
-                nullable: true);
-
-            migrationBuilder.AddColumn<Guid>(
-                name: "QuoteId",
-                schema: "sales",
-                table: "DraftAttempts",
-                type: "uniqueidentifier",
                 nullable: true);
 
             migrationBuilder.CreateTable(
@@ -97,6 +87,47 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         principalSchema: "organization",
                         principalTable: "Companies",
                         principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "QuoteAttempts",
+                schema: "sales",
+                columns: table => new
+                {
+                    CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CommandName = table.Column<string>(type: "nvarchar(160)", maxLength: 160, nullable: false, collation: "Latin1_General_100_BIN2"),
+                    IdempotencyKeyHash = table.Column<string>(type: "varchar(64)", unicode: false, maxLength: 64, nullable: false, collation: "Latin1_General_100_BIN2"),
+                    RequestHash = table.Column<string>(type: "varchar(64)", unicode: false, maxLength: 64, nullable: false),
+                    ActorId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    Outcome = table.Column<int>(type: "int", nullable: false),
+                    QuoteId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    RefusalJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ResultJson = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CorrelationId = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    RecordedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_QuoteAttempts", x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+                    table.CheckConstraint("CK_QuoteAttempts_Command", "[CommandName] IN (N'sales.quote.create.v1', N'sales.quote.revise.v1', N'sales.quote.lose.v1')");
+                    table.CheckConstraint("CK_QuoteAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+                    table.CheckConstraint("CK_QuoteAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+                    table.CheckConstraint("CK_QuoteAttempts_Outcome", "([Outcome] = 1 AND [QuoteId] IS NOT NULL AND [QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) OR ([Outcome] = 2 AND ([QuoteId] IS NULL OR [QuoteId] <> '00000000-0000-0000-0000-000000000000') AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
+                    table.CheckConstraint("CK_QuoteAttempts_Result", "[ResultJson] IS NULL");
+                    table.ForeignKey(
+                        name: "FK_QuoteAttempts_Companies_CompanyId",
+                        column: x => x.CompanyId,
+                        principalSchema: "organization",
+                        principalTable: "Companies",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_QuoteAttempts_Quotes_CompanyId_QuoteId",
+                        columns: x => new { x.CompanyId, x.QuoteId },
+                        principalSchema: "sales",
+                        principalTable: "Quotes",
+                        principalColumns: new[] { "CompanyId", "Id" },
                         onDelete: ReferentialAction.Restrict);
                 });
 
@@ -238,24 +269,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 sql: "([SourceQuoteId] IS NULL AND [SourceQuoteRevision] IS NULL) OR ([SourceQuoteId] IS NOT NULL AND [SourceQuoteId] <> '00000000-0000-0000-0000-000000000000' AND [SourceQuoteRevision] IS NOT NULL AND [SourceQuoteRevision] >= 0)");
 
             migrationBuilder.CreateIndex(
-                name: "UX_DraftAttempts_QuoteId",
+                name: "UX_QuoteAttempts_QuoteId",
                 schema: "sales",
-                table: "DraftAttempts",
+                table: "QuoteAttempts",
                 columns: new[] { "CompanyId", "QuoteId" },
                 unique: true,
                 filter: "[QuoteId] IS NOT NULL AND [CommandName] = N'sales.quote.create.v1'");
-
-            migrationBuilder.AddCheckConstraint(
-                name: "CK_DraftAttempts_Outcome",
-                schema: "sales",
-                table: "DraftAttempts",
-                sql: "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] IS NULL AND [QuoteId] IS NULL) OR ([RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [QuoteId] IS NULL) OR ([QuoteId] IS NOT NULL AND [QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [RequestId] IS NULL))) OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') AND ([RequestId] IS NULL OR ([RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)) AND ([QuoteId] IS NULL OR ([QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL AND [RequestId] IS NULL)) AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
-
-            migrationBuilder.AddCheckConstraint(
-                name: "CK_DraftAttempts_QuoteTarget",
-                schema: "sales",
-                table: "DraftAttempts",
-                sql: "([QuoteId] IS NULL OR [CommandName] IN (N'sales.quote.create.v1', N'sales.quote.revise.v1', N'sales.quote.lose.v1')) AND ([CommandName] NOT IN (N'sales.quote.create.v1', N'sales.quote.revise.v1', N'sales.quote.lose.v1') OR ([DraftId] IS NULL AND [RequestId] IS NULL))");
 
             migrationBuilder.CreateIndex(
                 name: "UX_QuoteLines_LineId",
@@ -292,16 +311,6 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 unique: true);
 
             migrationBuilder.AddForeignKey(
-                name: "FK_DraftAttempts_Quotes_CompanyId_QuoteId",
-                schema: "sales",
-                table: "DraftAttempts",
-                columns: new[] { "CompanyId", "QuoteId" },
-                principalSchema: "sales",
-                principalTable: "Quotes",
-                principalColumns: new[] { "CompanyId", "Id" },
-                onDelete: ReferentialAction.Restrict);
-
-            migrationBuilder.AddForeignKey(
                 name: "FK_Drafts_Quotes_CompanyId_SourceQuoteId",
                 schema: "sales",
                 table: "Drafts",
@@ -310,30 +319,43 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 principalTable: "Quotes",
                 principalColumns: new[] { "CompanyId", "Id" },
                 onDelete: ReferentialAction.Restrict);
+
+            // ADR-SAL-001 §6: the quote attempt is append-only in SQL too, beside the EF write guard (after the platform's
+            // TR_CommandExecutions_RejectMutation / 51010; 51068 is the next unused code).
+            migrationBuilder.Sql("""
+                CREATE TRIGGER [sales].[TR_QuoteAttempts_RejectMutation]
+                ON [sales].[QuoteAttempts]
+                AFTER UPDATE, DELETE
+                AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    THROW 51068, 'Sales quote attempt records are immutable.', 1;
+                END;
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            // Quotes, their revisions and the orders converted from them are commercial history. The THROW precedes every
-            // destructive operation (forward fix). 51066 is the next unused Sales code.
+            // Quotes, their conversions and the orders converted from them are commercial history. The THROW precedes every
+            // destructive operation: once one exists the migration is not rolled back (forward fix). 51066 is this
+            // migration's own refusal code.
             migrationBuilder.Sql("""
                 IF EXISTS (SELECT 1 FROM [sales].[Quotes])
+                    OR EXISTS (SELECT 1 FROM [sales].[QuoteAttempts])
                     OR EXISTS (SELECT 1 FROM [sales].[Drafts] WHERE [SourceQuoteId] IS NOT NULL)
-                    OR EXISTS (SELECT 1 FROM [sales].[DraftAttempts] WHERE [QuoteId] IS NOT NULL
-                        OR [CommandName] IN (N'sales.quote.create.v1', N'sales.quote.revise.v1', N'sales.quote.lose.v1', N'sales.quote.convert.v1'))
+                    OR EXISTS (SELECT 1 FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.quote.convert.v1')
                     THROW 51066, 'Sales quotes exist; AddSalesQuotes is not rolled back (forward fix).', 1;
                 """);
-
-            migrationBuilder.DropForeignKey(
-                name: "FK_DraftAttempts_Quotes_CompanyId_QuoteId",
-                schema: "sales",
-                table: "DraftAttempts");
 
             migrationBuilder.DropForeignKey(
                 name: "FK_Drafts_Quotes_CompanyId_SourceQuoteId",
                 schema: "sales",
                 table: "Drafts");
+
+            migrationBuilder.DropTable(
+                name: "QuoteAttempts",
+                schema: "sales");
 
             migrationBuilder.DropTable(
                 name: "QuoteLines",
@@ -361,21 +383,6 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 schema: "sales",
                 table: "Drafts");
 
-            migrationBuilder.DropIndex(
-                name: "UX_DraftAttempts_QuoteId",
-                schema: "sales",
-                table: "DraftAttempts");
-
-            migrationBuilder.DropCheckConstraint(
-                name: "CK_DraftAttempts_Outcome",
-                schema: "sales",
-                table: "DraftAttempts");
-
-            migrationBuilder.DropCheckConstraint(
-                name: "CK_DraftAttempts_QuoteTarget",
-                schema: "sales",
-                table: "DraftAttempts");
-
             migrationBuilder.DropColumn(
                 name: "SourceQuoteId",
                 schema: "sales",
@@ -385,17 +392,6 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                 name: "SourceQuoteRevision",
                 schema: "sales",
                 table: "Drafts");
-
-            migrationBuilder.DropColumn(
-                name: "QuoteId",
-                schema: "sales",
-                table: "DraftAttempts");
-
-            migrationBuilder.AddCheckConstraint(
-                name: "CK_DraftAttempts_Outcome",
-                schema: "sales",
-                table: "DraftAttempts",
-                sql: "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] IS NULL) OR ([RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL))) OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') AND ([RequestId] IS NULL OR ([RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)) AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)");
         }
     }
 }

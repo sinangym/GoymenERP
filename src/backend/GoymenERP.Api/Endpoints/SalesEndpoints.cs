@@ -391,12 +391,14 @@ public static partial class SalesEndpoints
         MapRemainderDecisionCommand(drafts, "rejection", "RejectSalesOrderDraftRemainderChangeV1", allowReason: true,
             (service, id, changeNo, body, metadata, cancellationToken) =>
                 service.RejectRemainderChangeAsync(id, changeNo, body, metadata, cancellationToken));
+        // No 160 (belt and braces): an order converted from a quote is not submitted or approved while a request that quote
+        // covers is no longer approved (409 sales_quote_request_not_approved, not recorded).
         MapStateCommand(drafts, "/{id:guid}/submission", "SubmitSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.SubmitDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: ["validation_failed"]);
+            unprocessableCodes: ["validation_failed"], extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved]);
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: []);
+            unprocessableCodes: [], extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved]);
         MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: []);
@@ -1307,7 +1309,7 @@ public static partial class SalesEndpoints
 
     private static void MapStateCommand(RouteGroupBuilder drafts, string pattern, string name, bool allowReason,
         Func<ISalesDraftService, Guid, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken, Task<SalesOrderDraftResponse>> command,
-        string[] unprocessableCodes)
+        string[] unprocessableCodes, string[]? extraConflictCodes = null)
     {
         var route = drafts.MapPost(pattern, async (
             Guid id,
@@ -1370,8 +1372,8 @@ public static partial class SalesEndpoints
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
-                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpConflict([SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange, .. extraConflictCodes ?? []])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
         if (unprocessableCodes.Length > 0)

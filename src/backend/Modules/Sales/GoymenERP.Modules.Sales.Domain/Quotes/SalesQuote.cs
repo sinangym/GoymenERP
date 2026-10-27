@@ -105,6 +105,12 @@ public sealed record SalesQuoteConversion(Guid DraftId, string ConvertedBy, Date
 public sealed class SalesQuote
 {
     public const int MaximumLines = SalesOrderDraft.MaximumLines;
+    /// <summary>
+    /// A TECHNICAL bound, not a business policy: No 163 lets a quote cover N requests of one customer and names no limit. The
+    /// bound only keeps one command's payload, its per-request owner reads and the SQL <c>IN</c> list of the conversion's
+    /// in-save check finite; it is the same 100 as the Sales list page bound (the most requests a client can see on one page
+    /// of the request pool to pick from). Raising it is a technical change, not a decision.
+    /// </summary>
     public const int MaximumRequests = 100;
     public const int MaximumNoteLength = SalesOrderDraft.MaximumNoteLength;
     public const int MaximumReasonLength = SalesOrderDraft.MaximumNoteLength;
@@ -331,47 +337,28 @@ public sealed class SalesQuote
         Terms = terms;
     }
 
-    /// <summary>The order line's commercial shape (K3), mathematical validity only; no minimum, margin or discount limit is a rule here.</summary>
+    /// <summary>
+    /// The order line's commercial shape (K3), mathematical validity only; no minimum, margin or discount limit is a rule here.
+    /// The rule itself is the ORDER's (<see cref="SalesOrderDraft.RequireLineCommercialFields"/>, one place): the quote's prices
+    /// become the order's (No 162), so they are checked by the same code at the same money profile scale, and the price is
+    /// taken as the shared TEK-01 <see cref="GoymenERP.BuildingBlocks.Monetary.Money"/> through TEK-03's
+    /// <see cref="SalesLineMoney"/> (never rounded). Only the lossless-text check before it is the quote's own wire guard.
+    /// </summary>
     private void RequireCommercial(SalesQuoteLineInput input)
     {
-        if ((input.UnitPrice is null) != (input.PriceUnitId is null))
+        if (input.UnitPrice is { } price && !SalesLinePriceCalculator.TryParseExact(price, out _))
         {
-            throw new SalesRuleException(SalesRuleCodes.PriceUnitPairing, "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.", input.LineId);
+            throw new SalesRuleException(SalesRuleCodes.PriceValueUnrepresentable, "Birim fiyat kayıpsız temsil edilemiyor.", input.LineId);
         }
 
-        if (input.UnitPrice is { } price)
+        var commercial = new CommercialDraftFields(input.UnitPrice, input.PriceUnitId, input.DiscountPercent);
+        SalesOrderDraft.RequireLineCommercialFields(commercial, input.Product, Money.Scale, input.LineId);
+        if (input.DiscountPercent is { } discount && !SalesLinePriceCalculator.TryParseExact(discount, out _))
         {
-            if (!SalesLinePriceCalculator.TryParseExact(price, out _))
-            {
-                throw new SalesRuleException(SalesRuleCodes.PriceValueUnrepresentable, "Birim fiyat kayıpsız temsil edilemiyor.", input.LineId);
-            }
-
-            if (SalesOrderDraft.DecimalPlaces(price) > Money.Scale)
-            {
-                throw new SalesRuleException(SalesRuleCodes.PriceScaleExceeded,
-                    $"Birim fiyat en fazla {Money.Scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.", input.LineId);
-            }
-
-            var unit = input.PriceUnitId!.Value;
-            if (unit != input.Product.StockUnit.UnitId && unit != input.Product.SalesUnit.UnitId && unit != input.Product.OrderUnit.UnitId)
-            {
-                throw new SalesRuleException(SalesRuleCodes.PriceUnitUnsupported,
-                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır.", input.LineId);
-            }
+            throw new SalesRuleException(SalesRuleCodes.DiscountOutOfRange, "İskonto yüzdesi 0 ile 100 arasında olmalıdır.", input.LineId);
         }
 
-        if (input.DiscountPercent is { } discount)
-        {
-            if (input.UnitPrice is null)
-            {
-                throw new SalesRuleException(SalesRuleCodes.DiscountWithoutPrice, "İskonto bir birim fiyat olmadan verilemez.", input.LineId);
-            }
-
-            if (!SalesOrderDraft.IsPercent(discount) || !SalesLinePriceCalculator.TryParseExact(discount, out _))
-            {
-                throw new SalesRuleException(SalesRuleCodes.DiscountOutOfRange, "İskonto yüzdesi 0 ile 100 arasında olmalıdır.", input.LineId);
-            }
-        }
+        _ = SalesLineMoney.From(commercial, Header.CurrencyId, Money.Scale);
     }
 
     private static void RequireMoney(Guid companyId, SalesQuoteHeader header, MoneyProfileSnapshot money)

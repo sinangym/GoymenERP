@@ -160,7 +160,7 @@ public static partial class SalesEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(SalesDraftProblemCodesV1.AccountState, SalesDraftProblemCodesV1.VersionConflict,
-                SalesDraftProblemCodesV1.StateConflict, "sales_quote_request_not_approved",
+                SalesDraftProblemCodesV1.StateConflict, SalesQuoteProblemCodesV1.RequestNotApproved,
                 SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", "unsupported_product", "unsupported_unit",
                 SalesDraftProblemCodesV1.UnsupportedCurrency)

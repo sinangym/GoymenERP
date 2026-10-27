@@ -62,18 +62,34 @@ public sealed class SalesQuotePersistenceModelTests
         Assert.Equal(SalesDbContext.SourceQuoteFilter, source.GetFilter());
         Assert.Contains(drafts.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(QuoteRow));
 
-        var attempts = context.Model.FindEntityType(typeof(DraftAttemptRow))!;
-        Assert.Contains(attempts.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(QuoteRow));
-        var createIndex = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_DraftAttempts_QuoteId");
+        // ADR-SAL-001 §2: the quote commands have their OWN attempt table in the draft attempt's shape; the draft's attempt
+        // table knows nothing of quotes.
+        var attempts = context.Model.FindEntityType(typeof(QuoteAttemptRow))!;
+        Assert.Equal(("QuoteAttempts", SalesDbContext.Schema), (attempts.GetTableName(), attempts.GetSchema()));
+        Assert.Single(attempts.GetDeclaredQueryFilters());
+        Assert.Equal(["CompanyId", "CommandName", "IdempotencyKeyHash"], attempts.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(attempts.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(QuoteRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "QuoteId"]));
+        var createIndex = attempts.GetIndexes().Single(index => index.GetDatabaseName() == "UX_QuoteAttempts_QuoteId");
         Assert.True(createIndex.IsUnique);
         Assert.Equal("[QuoteId] IS NOT NULL AND [CommandName] = N'sales.quote.create.v1'", createIndex.GetFilter());
+        var draftAttempts = context.Model.FindEntityType(typeof(DraftAttemptRow))!;
+        Assert.Null(draftAttempts.FindProperty("QuoteId"));
+        Assert.DoesNotContain(draftAttempts.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(QuoteRow));
 
         var design = context.GetService<IDesignTimeModel>().Model;
-        var attemptChecks = design.FindEntityType(typeof(DraftAttemptRow))!.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
-        Assert.Equal(SalesDbContext.AttemptOutcomeConstraint, attemptChecks["CK_DraftAttempts_Outcome"]);
-        Assert.Equal(SalesDbContext.AttemptQuoteTargetConstraint, attemptChecks["CK_DraftAttempts_QuoteTarget"]);
-        // The conversion is a DRAFT command: its attempt names the order, never the quote.
-        Assert.DoesNotContain(SalesQuoteCommands.ConvertV1, SalesDbContext.AttemptQuoteTargetConstraint, StringComparison.Ordinal);
+        var designAttempts = design.FindEntityType(typeof(QuoteAttemptRow))!;
+        Assert.Equal(SalesDbContext.IdentityCollation, designAttempts.FindProperty(nameof(QuoteAttemptRow.CommandName))!.GetCollation());
+        Assert.Equal(SalesDbContext.IdentityCollation, designAttempts.FindProperty(nameof(QuoteAttemptRow.IdempotencyKeyHash))!.GetCollation());
+        var attemptChecks = designAttempts.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal(SalesDbContext.QuoteAttemptOutcomeConstraint, attemptChecks["CK_QuoteAttempts_Outcome"]);
+        Assert.Equal(SalesDbContext.QuoteAttemptCommandConstraint, attemptChecks["CK_QuoteAttempts_Command"]);
+        Assert.Equal("[ResultJson] IS NULL", attemptChecks["CK_QuoteAttempts_Result"]);
+        Assert.Equal([SalesDbContext.QuoteAttemptImmutabilityTrigger], designAttempts.GetDeclaredTriggers().Select(trigger => trigger.GetDatabaseName()));
+        // The conversion is the ORDER's command (ADR-SAL-001 §3): its attempt is a draft attempt, never a quote attempt.
+        Assert.DoesNotContain(SalesQuoteCommands.ConvertV1, SalesDbContext.QuoteAttemptCommandConstraint, StringComparison.Ordinal);
+        Assert.Equal(SalesDbContext.AttemptOutcomeConstraint,
+            design.FindEntityType(typeof(DraftAttemptRow))!.GetCheckConstraints().Single(check => check.Name == "CK_DraftAttempts_Outcome").Sql);
         var quoteChecks = design.FindEntityType(typeof(QuoteRow))!.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
         Assert.Equal(SalesDbContext.QuoteLifecycleConstraint, quoteChecks["CK_Quotes_Lifecycle"]);
         Assert.Contains("CK_Drafts_SourceQuote", design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Select(check => check.Name));
@@ -134,6 +150,8 @@ public sealed class SalesQuotePersistenceModelTests
     [InlineData("draft-source")]
     [InlineData("delete-quote")]
     [InlineData("other-company")]
+    [InlineData("attempt-update")]
+    [InlineData("attempt-delete")]
     public void Anything_else_on_a_quote_its_revisions_lines_links_or_an_orders_source_is_refused_before_the_database(string fault)
     {
         using var context = Context();
@@ -183,6 +201,12 @@ public sealed class SalesQuotePersistenceModelTests
             case "other-company":
                 context.Quotes.Add(Quote(1, CompanyB));
                 break;
+            case "attempt-update":
+                Attach(context, Attempt()).RequestHash = new string('1', 64);
+                break;
+            case "attempt-delete":
+                context.Remove(Attach(context, Attempt()));
+                break;
         }
 
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
@@ -194,20 +218,26 @@ public sealed class SalesQuotePersistenceModelTests
         var down = new AddSalesQuotes().DownOperations;
         var guard = Assert.IsType<SqlOperation>(down[0]);
         Assert.Contains("IF EXISTS (SELECT 1 FROM [sales].[Quotes])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("EXISTS (SELECT 1 FROM [sales].[QuoteAttempts])", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("[SourceQuoteId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("N'sales.quote.convert.v1'", guard.Sql, StringComparison.Ordinal);
         Assert.Contains("THROW 51066,", guard.Sql, StringComparison.Ordinal);
         Assert.All(down.Skip(1), operation => Assert.IsNotType<SqlOperation>(operation));
         var up = new AddSalesQuotes().UpOperations;
-        foreach (var table in new[] { "Quotes", "QuoteRevisions", "QuoteLines", "QuoteRequests" })
+        foreach (var table in new[] { "Quotes", "QuoteRevisions", "QuoteLines", "QuoteRequests", "QuoteAttempts" })
         {
             Assert.Contains(up, operation => operation is CreateTableOperation { Schema: "sales" } create && create.Name == table);
         }
 
-        Assert.Contains(up, operation => operation is AddColumnOperation { Table: "DraftAttempts", Name: "QuoteId", IsNullable: true });
         Assert.Contains(up, operation => operation is AddColumnOperation { Table: "Drafts", Name: "SourceQuoteId", IsNullable: true });
-        // No existing row is rewritten: the Up path carries no data operation.
-        Assert.DoesNotContain(up, operation => operation is SqlOperation or UpdateDataOperation or DeleteDataOperation);
+        // ADR-SAL-001: the draft's attempt table is not touched (the conversion writes its existing shape).
+        Assert.DoesNotContain(up, operation => operation is ITableMigrationOperation { Table: "DraftAttempts" or "RequestAttempts" });
+        // No existing row is rewritten: the Up path's only raw SQL is the quote attempt table's immutability trigger (§6).
+        Assert.DoesNotContain(up, operation => operation is UpdateDataOperation or DeleteDataOperation);
+        var trigger = Assert.Single(up.OfType<SqlOperation>());
+        Assert.Contains("CREATE TRIGGER [sales].[TR_QuoteAttempts_RejectMutation]", trigger.Sql, StringComparison.Ordinal);
+        Assert.Contains("AFTER UPDATE, DELETE", trigger.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51068,", trigger.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -243,6 +273,13 @@ public sealed class SalesQuotePersistenceModelTests
         ConvertedDraftId = state == 2 ? Guid.NewGuid() : null, ConvertedBy = state == 2 ? "SENTETIK-seller" : null,
         ConvertedAtUtc = state == 2 ? At : null,
         CreatedAtUtc = At, UpdatedAtUtc = At, CreatedBy = "SENTETIK-seller", CorrelationId = "SENTETIK-correlation",
+    };
+
+    private static QuoteAttemptRow Attempt() => new()
+    {
+        CompanyId = CompanyA, CommandName = SalesQuoteCommands.CreateV1, IdempotencyKeyHash = new string('A', 64),
+        RequestHash = new string('0', 64), ActorId = "SENTETIK-preparer", Outcome = 1, QuoteId = Guid.NewGuid(),
+        CorrelationId = "SENTETIK-correlation", RecordedAtUtc = At,
     };
 
     private static QuoteRevisionRow Revision() => new()
