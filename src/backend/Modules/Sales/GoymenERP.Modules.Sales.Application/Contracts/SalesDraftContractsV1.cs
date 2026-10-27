@@ -118,12 +118,13 @@ public sealed record SalesDraftPriceFloorExceptionApprovalRequest(string Expecte
     IReadOnlyList<SalesDraftPriceFloorExceptionApprovalLineV1> Lines);
 
 /// <summary>
-/// SAT-D2 / API-12 (contract delta, additive): the discount-limit check of a line with a positive discount — who set the
-/// discount and when, the limit that applied (<c>null</c> = none defined for that actor, so every discount needs approval),
-/// whether the discount exceeds it, and the reasoned approval of another person when it does (all three or none).
+/// SAT-D2 / API-12 (contract delta, additive): the discount-limit check of a discounted line — who set the price/discount
+/// and when, the list price it was measured against (SAT-D35; <c>null</c> = the line has no list-price reference, so the
+/// discount cannot be measured and needs approval), the limit that applied (<c>null</c> = none defined for that actor, so
+/// every discount needs approval), whether approval is required, and the reasoned approval of another person (all three or none).
 /// </summary>
-public sealed record SalesDraftDiscountLimitCheckV1(string CheckedBy, DateTimeOffset CheckedAtUtc, string? LimitPercent,
-    bool RequiresApproval, string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);
+public sealed record SalesDraftDiscountLimitCheckV1(string CheckedBy, DateTimeOffset CheckedAtUtc, string? ListUnitPrice,
+    string? LimitPercent, bool RequiresApproval, string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);
 
 public sealed record SalesDraftDiscountExceptionApprovalLineV1(Guid LineId, string Reason);
 

@@ -342,20 +342,28 @@ public sealed class SalesOrderDraftTests
 
     // ---- K3 Head B: the commercial revision ----------------------------------------------------------
 
-    /// <summary>SAT-D2: a SENTETIK 10 % limit, so the revision mechanics below run with discounts within it (the boundary included).</summary>
+    /// <summary>
+    /// SAT-D2 / SAT-D35: a SENTETIK 10 % limit, and a discounted line priced from a SENTETIK list at its own unit price, so the
+    /// revision mechanics below run with discounts measured within the limit (the boundary included).
+    /// </summary>
     private static readonly SalesDiscountLimit WithinTenPercent = SalesDiscountLimit.Defined(10m, Guid.Parse("0f0e0d0c-0b0a-4908-8706-050403020100"), 1);
 
     private static SalesOrderDraft PricedDraft(out SalesOrderDraftLine first, out SalesOrderDraftLine second)
     {
         var draft = Draft();
         first = draft.AddLine(1, Line(1m, commercial: SalesOrderDraft.WithDiscountLimitCheck(
-            new CommercialDraftFields("12.50", KgUnit, "5"), WithinTenPercent, "prep", T0)), T0);
+            new CommercialDraftFields("12.50", KgUnit, "5", ListedAt("12.50")), WithinTenPercent, "prep", T0)), T0);
         second = draft.AddLine(2, Line(2m), T0);
         return draft;
     }
 
     private static LineCommercialInput Input(SalesOrderDraftLine line, string? price, Guid? unit, string? discount) =>
-        new(line.Id, new CommercialDraftFields(price, unit, discount));
+        new(line.Id, new CommercialDraftFields(price, unit, discount,
+            price is not null && unit is not null ? ListedAt(price) : null));
+
+    private static PriceReferenceSnapshot ListedAt(string listPrice) =>
+        new(Guid.Parse("abababab-abab-4bab-8bab-abababababab"), "SENTETIK liste", 1, Day.AddDays(-10), null, "TRY", KgUnit, listPrice,
+            null, "ExcludingVat", "0", null);
 
     [Fact]
     public void A_revision_before_any_approval_replaces_the_fields_and_archives_nothing()

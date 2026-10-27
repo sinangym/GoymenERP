@@ -6,15 +6,41 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// SAT-D2 / API-12 (<c>SINAN_KARARLARI_2026-10-25_SATIS.md</c>): a positive discount is checked against the limit of the actor
-/// who set it — read only from the Settings Sales policy port, for the actor's limit groups — and an over-limit (or
-/// limit-less) discount blocks the submission until another person with <c>sales.orders.discount-exception.approve</c>
-/// approves it with a reason. Synthetic ports, NOT_ENV.
+/// SAT-D2 / API-12 (<c>SINAN_KARARLARI_2026-10-25_SATIS.md</c>) with SAT-D34…D37 and SAT-D42/D43: a price below its list
+/// price (before the surcharge) is checked against the HIGHEST limit of the actor's groups — read only from the Settings Sales
+/// policy port — and an over-limit (or limit-less, or list-less) price blocks the submission until another person with
+/// <c>sales.orders.discount-exception.approve</c> approves it with a reason. Synthetic ports, NOT_ENV.
 /// </summary>
 public sealed partial class SalesDraftServiceTests
 {
     private static readonly Guid DiscountGroupA = Guid.Parse("d15c0a00-0000-4000-8000-00000000000a");
     private static readonly Guid DiscountGroupB = Guid.Parse("d15c0b00-0000-4000-8000-00000000000b");
+
+    /// <summary>A line priced from the SENTETIK list (<see cref="FakePriceReferences"/>): its own price, adjustments and the list version.</summary>
+    private static SalesDraftLineCommercialV1 FromList(Guid lineId, string price, string? percent = null, string? amount = null,
+        string? surcharge = null) =>
+        new(lineId, price, KgUnit, percent, new SalesDraftPriceReferenceRequestV1(PriceList, 1), amount, surcharge);
+
+    /// <summary>
+    /// SAT-D43: a priced line without a list price goes to approval; tests whose subject is something else approve it first,
+    /// as another person, and continue as the original actor. Returns the draft version after the approval.
+    /// </summary>
+    private static async Task<string> ApproveDiscountChecksAsync(World world, Guid draftId, string version, params Guid[] lineIds)
+    {
+        var actor = world.User.Id;
+        world.User.Id = "synthetic-discount-manager";
+        try
+        {
+            var approved = await world.Service().ApproveDiscountExceptionsAsync(draftId, new SalesDraftDiscountExceptionApprovalRequest(version,
+                [.. lineIds.Select(lineId => new SalesDraftDiscountExceptionApprovalLineV1(lineId, "SENTETIK liste dışı fiyat"))]),
+                Metadata($"k-discount-checks-{draftId:N}-{version}"));
+            return approved.Detail.Draft.Version;
+        }
+        finally
+        {
+            world.User.Id = actor;
+        }
+    }
 
     private static SalesDraftDiscountExceptionApprovalRequest DiscountApproval(string version, Guid lineId, string reason = "SENTETIK müşteri anlaşması") =>
         new(version, [new SalesDraftDiscountExceptionApprovalLineV1(lineId, reason)]);
@@ -37,12 +63,6 @@ public sealed partial class SalesDraftServiceTests
             Command(created.Draft.Version), Metadata("k-submit-blocked")));
         Assert.Equal((422, "draft", SalesRuleCodes.DiscountExceptionPending),
             (blocked.Status, Assert.Single(blocked.Errors).Field, blocked.Errors[0].Code));
-
-        // Hazırlayan ≠ onaylayan: the actor who set the discount cannot approve it, even holding the permission.
-        var self = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDiscountExceptionsAsync(
-            created.Draft.Id, DiscountApproval(created.Draft.Version, lineId), Metadata("k-self")));
-        Assert.Equal((422, "lines[0].reason", SalesRuleCodes.DiscountExceptionSameActor),
-            (self.Status, Assert.Single(self.Errors).Field, self.Errors[0].Code));
 
         // Another actor without the dedicated permission is refused before anything is read or recorded.
         world.User.Id = "synthetic-manager";
@@ -89,26 +109,31 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Theory]
-    [InlineData("10", null, false)]
-    [InlineData("10.01", null, true)]
-    [InlineData("9.99", null, false)]
-    [InlineData(null, "1.25", false)]
-    [InlineData(null, "1.26", true)]
-    public async Task The_limit_boundary_is_inclusive_for_a_percent_and_an_exact_amount_of_the_unit_price(
-        string? percent, string? amount, bool requiresApproval)
+    [InlineData("12.50", "10", null, null, false)]
+    [InlineData("12.50", "10.01", null, null, true)]
+    [InlineData("12.50", "9.99", null, null, false)]
+    [InlineData("12.50", null, "1.25", null, false)]
+    [InlineData("12.50", null, "1.26", null, true)]
+    // SAT-D35: a manual price below the list price is a discount with no discount field at all.
+    [InlineData("11.25", null, null, null, false)]
+    [InlineData("11.24", null, null, null, true)]
+    // SAT-D42: the price before the maturity surcharge is measured — the surcharge cannot hide the 15 %.
+    [InlineData("12.50", "15", null, "20", true)]
+    public async Task The_limit_boundary_is_inclusive_measured_from_the_list_price_before_the_surcharge(
+        string price, string? percent, string? amount, string? surcharge, bool requiresApproval)
     {
-        var world = new World().AllowDiscountsUpTo(10m);
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m } }.AllowDiscountsUpTo(10m);
         var policies = (FakeSalesPolicies)world.SalesPolicies!;
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         var lineId = created.Lines[0].LineId;
         Assert.Empty(policies.Asked);
 
         var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
-            new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, percent, DiscountAmount: amount)), Metadata("k-revise"));
+            FromList(lineId, price, percent, amount, surcharge)), Metadata("k-revise"));
 
         Assert.Equal((DiscountGroupA, Day), Assert.Single(policies.Asked));
         var check = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!;
-        Assert.Equal(("10", requiresApproval, Actor), (check.LimitPercent, check.RequiresApproval, check.CheckedBy));
+        Assert.Equal(("12.5", "10", requiresApproval, Actor), (check.ListUnitPrice, check.LimitPercent, check.RequiresApproval, check.CheckedBy));
         if (requiresApproval)
         {
             var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Draft.Id,
@@ -128,31 +153,61 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task Several_limit_groups_apply_the_strictest_limit_and_a_group_without_a_limit_leaves_none_defined()
+    public async Task A_price_at_the_list_price_needs_no_check_and_reads_no_limit()
     {
-        var policies = new FakeSalesPolicies { Limits = { [DiscountGroupA] = 15m, [DiscountGroupB] = 5m } };
-        var world = new World { SalesPolicies = policies, DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA, DiscountGroupB]) };
-        var created = (await world.Service().CreateDraftAsync(Priced(discount: "6"), Metadata("k-create"))).Detail;
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m } }.AllowDiscountsUpTo(10m);
+        var policies = (FakeSalesPolicies)world.SalesPolicies!;
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
 
-        var check = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!;
-        Assert.Equal(("5", true), (check.LimitPercent, check.RequiresApproval));
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            FromList(created.Lines[0].LineId, "12.50", surcharge: "3")), Metadata("k-revise"));
+
+        Assert.Empty(policies.Asked);
+        Assert.Null(Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck);
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command(revised.Detail.Draft.Version), Metadata("k-submit"));
+    }
+
+    [Fact]
+    public async Task Several_limit_groups_apply_the_highest_defined_limit_and_a_group_without_one_contributes_nothing()
+    {
+        var policies = new FakeSalesPolicies { Limits = { [DiscountGroupA] = 5m, [DiscountGroupB] = 15m } };
+        var world = new World
+        {
+            PriceReferences = new FakePriceReferences { Price = 12.50m },
+            SalesPolicies = policies,
+            DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA, DiscountGroupB]),
+        };
+
+        async Task<SalesDraftDiscountLimitCheckV1> CheckAsync(string key, string percent)
+        {
+            var created = (await world.Service().CreateDraftAsync(Request(), Metadata($"k-create-{key}"))).Detail;
+            await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+                FromList(created.Lines[0].LineId, "12.50", percent)), Metadata($"k-revise-{key}"));
+            return Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!;
+        }
+
+        // SAT-D34: Satış 5 %, Bölge 15 % → up to 15 % without approval.
+        var highest = await CheckAsync("both", "12");
+        Assert.Equal(("15", false), (highest.LimitPercent, highest.RequiresApproval));
         Assert.Equal([(DiscountGroupA, Day), (DiscountGroupB, Day)], policies.Asked);
 
-        // Group B has no approved limit ("not found"): the actor's limit is undefined, even though group A allows 15 %.
+        // A group without an approved limit ("not found") contributes nothing: the other group's limit applies.
         policies.Limits.Remove(DiscountGroupB);
-        var undefined = (await world.Service().CreateDraftAsync(Priced(discount: "1"), Metadata("k-create-2"))).Detail;
-        var undefinedCheck = Assert.Single((await world.Service().GetDraftLinePricingAsync(undefined.Draft.Id)).Lines).DiscountCheck!;
-        Assert.Equal(((string?)null, true), (undefinedCheck.LimitPercent, undefinedCheck.RequiresApproval));
+        var one = await CheckAsync("one", "6");
+        Assert.Equal(("5", true), (one.LimitPercent, one.RequiresApproval));
 
-        // An inactive policy, or one not in force on the business date, is no approved limit either.
+        // An inactive policy, or one not in force on the business date, contributes nothing either.
         policies.Limits[DiscountGroupB] = 50m;
         policies.Inactive.Add(DiscountGroupB);
-        var inactive = (await world.Service().CreateDraftAsync(Priced(discount: "1"), Metadata("k-create-3"))).Detail;
-        Assert.True(Assert.Single((await world.Service().GetDraftLinePricingAsync(inactive.Draft.Id)).Lines).DiscountCheck!.RequiresApproval);
+        Assert.Equal("5", (await CheckAsync("inactive", "1")).LimitPercent);
         policies.Inactive.Clear();
-        policies.StartsAfterTheBusinessDate.Add(DiscountGroupA);
-        var notYet = (await world.Service().CreateDraftAsync(Priced(discount: "1"), Metadata("k-create-4"))).Detail;
-        Assert.True(Assert.Single((await world.Service().GetDraftLinePricingAsync(notYet.Draft.Id)).Lines).DiscountCheck!.RequiresApproval);
+        policies.StartsAfterTheBusinessDate.Add(DiscountGroupB);
+        Assert.Equal("5", (await CheckAsync("not-yet", "1")).LimitPercent);
+
+        // No group with a defined limit: no limit at all, every discount to approval (SAT-D36).
+        policies.Limits.Clear();
+        var none = await CheckAsync("none", "1");
+        Assert.Equal(((string?)null, true), (none.LimitPercent, none.RequiresApproval));
     }
 
     [Theory]
@@ -160,36 +215,99 @@ public sealed partial class SalesDraftServiceTests
     [InlineData("settings_profile_invalid", 503, SalesDraftProblemCodesV1.DiscountLimitUnavailable)]
     [InlineData("settings_sales_policy_request_invalid", 503, SalesDraftProblemCodesV1.DiscountLimitUnavailable)]
     [InlineData("settings_access_denied", 403, "settings_access_denied")]
-    public async Task A_limit_the_Settings_owner_cannot_answer_refuses_a_positive_discount_and_records_nothing(
+    public async Task A_limit_the_Settings_owner_cannot_answer_refuses_a_measured_discount_and_records_nothing(
         string settingsCode, int status, string code)
     {
         var policies = new FakeSalesPolicies { Faults = { [DiscountGroupA] = settingsCode } };
-        var world = new World { SalesPolicies = policies, DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA]) };
+        var world = new World
+        {
+            PriceReferences = new FakePriceReferences { Price = 12.50m },
+            SalesPolicies = policies,
+            DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA]),
+        };
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
 
-        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().CreateDraftAsync(Priced(discount: "5"), Metadata("k-create")));
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, FromList(created.Lines[0].LineId, "12.50", "5")), Metadata("k-revise")));
 
         Assert.Equal((status, code), (refused.Status, refused.Code));
-        Assert.Equal(0, world.Store.Attempts);
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
 
-        // The same owner state does not stop an order without a discount: nothing about a limit is read for it.
+        // The same owner state does not stop a line at its list price, nor a manual price (SAT-D43: it goes to approval
+        // without a limit): nothing about a limit is read for either.
         policies.Asked.Clear();
-        var plain = await world.Service().CreateDraftAsync(Priced(discount: "0"), Metadata("k-create-zero"));
-        Assert.Null(Assert.Single((await world.Service().GetDraftLinePricingAsync(plain.Detail.Draft.Id)).Lines).DiscountCheck);
+        var atList = await world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(created.Draft.Version, FromList(created.Lines[0].LineId, "12.50")), Metadata("k-revise-list"));
+        var manual = await world.Service().ReviseCommercialAsync(created.Draft.Id,
+            Revision(atList.Detail.Draft.Version, new SalesDraftLineCommercialV1(created.Lines[0].LineId, "12.50", KgUnit, "0")),
+            Metadata("k-revise-manual"));
         Assert.Empty(policies.Asked);
+        var check = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!;
+        Assert.Equal(((string?)null, true), (check.ListUnitPrice, check.RequiresApproval));
+        Assert.NotNull(manual);
     }
 
     [Fact]
     public async Task Limit_groups_without_a_Settings_source_are_503_and_never_a_guessed_limit()
     {
-        var world = new World { DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA]) };
+        var world = new World
+        {
+            PriceReferences = new FakePriceReferences { Price = 12.50m },
+            DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA]),
+        };
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision(created.Draft.Version, new SalesDraftLineCommercialV1(created.Lines[0].LineId, "12.50", KgUnit, "5")), Metadata("k-revise")));
+            Revision(created.Draft.Version, FromList(created.Lines[0].LineId, "12.50", "5")), Metadata("k-revise")));
 
         Assert.Equal((503, SalesDraftProblemCodesV1.DiscountLimitUnavailable), (refused.Status, refused.Code));
         Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ReviseCommercialV1);
+    }
+
+    [Fact]
+    public async Task A_manual_price_without_a_list_price_needs_approval_even_with_no_discount()
+    {
+        var world = new World().AllowDiscountsUpTo(100m);
+        var created = (await world.Service().CreateDraftAsync(Priced(discount: null), Metadata("k-create"))).Detail;
+
+        var check = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!;
+        Assert.Equal(((string?)null, (string?)null, true), (check.ListUnitPrice, check.LimitPercent, check.RequiresApproval));
+        var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().SubmitDraftAsync(created.Draft.Id,
+            Command(created.Draft.Version), Metadata("k-submit")));
+        Assert.Equal(SalesRuleCodes.DiscountExceptionPending, Assert.Single(blocked.Errors).Code);
+    }
+
+    [Fact]
+    public async Task A_no_list_price_may_be_self_approved_but_a_listed_over_limit_discount_needs_another_person()
+    {
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m } }.AllowDiscountsUpTo(10m);
+
+        // SAT-D45: an unlisted line, with or without a discount field, approved by its own writer holding the permission.
+        foreach (var (key, discount) in new[] { ("with", (string?)"5"), ("without", null) })
+        {
+            var unlisted = (await world.Service().CreateDraftAsync(Priced(discount: discount), Metadata($"k-unlisted-{key}"))).Detail;
+            var self = await world.Service().ApproveDiscountExceptionsAsync(unlisted.Draft.Id,
+                DiscountApproval(unlisted.Draft.Version, unlisted.Lines[0].LineId), Metadata($"k-self-{key}"));
+            Assert.Equal(Actor, Assert.Single((await world.Service().GetDraftLinePricingAsync(unlisted.Draft.Id)).Lines).DiscountCheck!.ApprovedBy);
+            await world.Service().SubmitDraftAsync(unlisted.Draft.Id, Command(self.Detail.Draft.Version), Metadata($"k-submit-{key}"));
+        }
+
+        // SAT-D37: a listed line over the limit is refused to the actor who set the discount ...
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-listed"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            FromList(lineId, "12.50", "15")), Metadata("k-revise"));
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDiscountExceptionsAsync(
+            created.Draft.Id, DiscountApproval(revised.Detail.Draft.Version, lineId), Metadata("k-self-listed")));
+        Assert.Equal((422, "lines[0].reason", SalesRuleCodes.DiscountExceptionSameActor),
+            (refused.Status, Assert.Single(refused.Errors).Field, refused.Errors[0].Code));
+
+        // ... and approved by another person.
+        world.User.Id = "synthetic-manager";
+        var approved = await world.Service().ApproveDiscountExceptionsAsync(created.Draft.Id,
+            DiscountApproval(revised.Detail.Draft.Version, lineId), Metadata("k-other-listed"));
+        world.User.Id = Actor;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command(approved.Detail.Draft.Version), Metadata("k-submit-listed"));
     }
 
     [Fact]
@@ -212,14 +330,9 @@ public sealed partial class SalesDraftServiceTests
             Command(revised.Detail.Draft.Version), Metadata("k-submit")));
         Assert.Equal(SalesRuleCodes.DiscountExceptionPending, Assert.Single(blocked.Errors).Code);
 
-        // The approver of the earlier exception may approve the new one; its own reviser may not.
-        var self = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDiscountExceptionsAsync(
-            created.Draft.Id, DiscountApproval(revised.Detail.Draft.Version, lineId), Metadata("k-self")));
-        Assert.Equal(SalesRuleCodes.DiscountExceptionSameActor, Assert.Single(self.Errors).Code);
-
-        // Removing the discount removes the check: nothing waits any more.
+        // Removing the price removes the check: nothing waits any more.
         var cleared = await world.Service().ReviseCommercialAsync(created.Draft.Id,
-            Revision(revised.Detail.Draft.Version, new SalesDraftLineCommercialV1(lineId, "12.50", KgUnit, null)), Metadata("k-clear"));
+            Revision(revised.Detail.Draft.Version, new SalesDraftLineCommercialV1(lineId)), Metadata("k-clear"));
         Assert.Null(Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck);
         world.User.Id = Actor;
         await world.Service().SubmitDraftAsync(created.Draft.Id, Command(cleared.Detail.Draft.Version), Metadata("k-submit-2"));

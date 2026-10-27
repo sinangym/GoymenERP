@@ -3759,8 +3759,9 @@ public sealed partial class OpenApiContractGenerationTests
                     // SAT-D2 / API-12 (additive, optional): the line's discount-limit check.
                     ("discountCheck", "oneOf:ref:SalesDraftDiscountLimitCheckV1|type:null")),
                 ["SalesDraftDiscountLimitCheckV1"] = ObjectSchema(
-                    ["checkedBy", "checkedAtUtc", "limitPercent", "requiresApproval", "approvedBy", "approvedAtUtc", "reason"],
-                    ("checkedBy", "type:string"), ("checkedAtUtc", "type:string;format:date-time"), ("limitPercent", "type:null|string"),
+                    ["checkedBy", "checkedAtUtc", "listUnitPrice", "limitPercent", "requiresApproval", "approvedBy", "approvedAtUtc", "reason"],
+                    ("checkedBy", "type:string"), ("checkedAtUtc", "type:string;format:date-time"), ("listUnitPrice", "type:null|string"),
+                    ("limitPercent", "type:null|string"),
                     ("requiresApproval", "type:boolean"), ("approvedBy", "type:null|string"),
                     ("approvedAtUtc", "type:null|string;format:date-time"), ("reason", "type:null|string")),
                 ["SalesOrderDraftLinePricingResponse"] = ObjectSchema(

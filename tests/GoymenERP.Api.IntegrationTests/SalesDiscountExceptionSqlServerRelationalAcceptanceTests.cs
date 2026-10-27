@@ -24,12 +24,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// SAT-D2 / API-12 against a REAL SQL Server and the REAL host composition: a discount given through the real commercial-revision
-/// route is checked against the reviser's limit read from the REAL Settings Sales policy provider (GDC has no approved discount
-/// limit, so "settings_sales_policy_not_found" = no limit defined = every discount to approval) for the actor's limit group (the
-/// one SYNTHETIC seam: the Identity owner's role → limit group mapping does not exist yet); the submission is refused while the
-/// exception waits; the preparer cannot approve it even holding the permission (hazırlayan ≠ onaylayan); a holder of the draft
-/// read alone is 403; another person with <c>sales.orders.discount-exception.approve</c> approves it in ONE save (line pricing,
+/// SAT-D2 / API-12 (with SAT-D34…D37, SAT-D42/D43) against a REAL SQL Server and the REAL host composition: a manual price
+/// (no list-price reference) given through the real commercial-revision route needs approval whatever its discount fields
+/// (SAT-D43) — it cannot be measured, so no limit is read (the actor's limit-group source, the one SYNTHETIC seam, is never
+/// asked); the submission is refused while the exception waits; a holder of the draft read alone is 403; another person with <c>sales.orders.discount-exception.approve</c> approves it in ONE save (line pricing,
 /// header version, attempt with both price-visibility replay variants, audit event); the same key replays with no second effect,
 /// another body under it is 409, a stale version is the key's recorded 409; another company sees nothing; the replay-result
 /// constraint holds and the migration refuses to roll back over a recorded result (51065). Orders are stored through the real
@@ -68,7 +66,7 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
         var draftPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
         var approvalPath = $"{draftPath}/discount-exception-approval";
 
-        // The reviser gives 5 %: the real Settings provider is asked for the reviser's group and has no approved limit.
+        // The reviser gives a manual price with 5 %: no list price, so it goes to approval (SAT-D43) and no limit is read.
         using (var revised = await preparerClient.SendAsync(Json(HttpMethod.Post, $"{draftPath}/commercial-revision", "SENTETIK-revise",
                    new SalesDraftCommercialRevisionRequest(draft.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
                        [new SalesDraftLineCommercialV1(lineId, "100", KgUnit, "5")]))))
@@ -76,11 +74,12 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.OK, revised.StatusCode);
         }
 
-        Assert.Equal(1, run.Groups.Calls);
+        Assert.Equal(0, run.Groups.Calls);
         var pricing = Assert.Single((await run.JsonAsync(preparerClient, $"{draftPath}/line-pricing")).GetProperty("lines").EnumerateArray());
         var check = pricing.GetProperty("discountCheck");
-        Assert.Equal((preparer, JsonValueKind.Null, true, JsonValueKind.Null), (check.GetProperty("checkedBy").GetString(),
-            check.GetProperty("limitPercent").ValueKind, check.GetProperty("requiresApproval").GetBoolean(), check.GetProperty("approvedBy").ValueKind));
+        Assert.Equal((preparer, JsonValueKind.Null, JsonValueKind.Null, true, JsonValueKind.Null), (check.GetProperty("checkedBy").GetString(),
+            check.GetProperty("listUnitPrice").ValueKind, check.GetProperty("limitPercent").ValueKind,
+            check.GetProperty("requiresApproval").GetBoolean(), check.GetProperty("approvedBy").ValueKind));
         Assert.Equal(("true", preparer), (
             await run.ScalarAsync<string>("SELECT JSON_VALUE([PricingJson], '$.discountCheck.requiresApproval') FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id)),
             await run.ScalarAsync<string>("SELECT JSON_VALUE([PricingJson], '$.discountCheck.checkedBy') FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id))));
@@ -95,16 +94,8 @@ public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
                 (await blocked.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors")[0].GetProperty("code").GetString());
         }
 
-        // Hazırlayan ≠ onaylayan: the preparer holds the permission and is still refused; the draft read alone is 403.
+        // The draft read alone is 403, and nothing is written.
         var before = await run.EffectsAsync(draft.Id);
-        using (var self = await preparerClient.SendAsync(Approval(approvalPath, "SENTETIK-self", $"{version}", lineId, "SENTETIK kendi onayı")))
-        {
-            Assert.Equal(HttpStatusCode.UnprocessableEntity, self.StatusCode);
-            var problem = await self.Content.ReadFromJsonAsync<JsonElement>();
-            Assert.Equal(("lines[0].reason", "sales_discount_exception_same_actor"),
-                (problem.GetProperty("errors")[0].GetProperty("field").GetString(), problem.GetProperty("errors")[0].GetProperty("code").GetString()));
-        }
-
         using (var forbidden = await readerClient.SendAsync(Approval(approvalPath, "SENTETIK-reader", $"{version}", lineId, "SENTETIK")))
         {
             Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);

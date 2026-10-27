@@ -93,8 +93,9 @@ public sealed record OwnerReference(Guid Id, string ExpectedVersion);
 /// <see cref="SalesLinePriceCalculator"/>'s answer from these values.
 /// </para>
 /// <para>
-/// SAT-D2 (API-12): <see cref="DiscountCheck"/> is the discount-limit check of a line with a positive discount, made for the
-/// actor who set the discount; a line without a positive discount carries none.
+/// SAT-D2 (API-12): <see cref="DiscountCheck"/> is the discount-limit check of a priced line that needs one (SAT-D35/D42: its
+/// discounted price before the surcharge is below the list price; SAT-D43: any priced line without a list reference), made
+/// for the actor who set it; any other line carries none.
 /// </para>
 public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent,
     PriceReferenceSnapshot? Reference = null, string? DiscountAmount = null, string? SurchargePercent = null,
@@ -163,18 +164,25 @@ public sealed record SalesDiscountLimit(decimal? MaximumPercent, Guid? ProfileId
 }
 
 /// <summary>
-/// SAT-D2 / API-12: the discount-limit check of one exact positive-discount commercial snapshot — who set the discount and
-/// when, the unit price and discount it was made for, the limit that applied (null = none defined, with its Settings profile
-/// and version otherwise) and whether the discount exceeds it. An exceeding discount needs a reasoned approval by another
-/// person (<see cref="ApprovedBy"/>, <see cref="ApprovedAtUtc"/>, <see cref="Reason"/>: all or none). Any commercial revision
-/// replaces this snapshot, so an approval never floats to another price or discount.
+/// SAT-D2 / API-12: the discount-limit check of one exact priced commercial snapshot — who set the price/discount and when,
+/// the unit price, discount fields and the discounted unit price BEFORE the maturity surcharge it was made for (SAT-D42), the
+/// list-price reference it was measured against (SAT-D35: list id, version and list price; all null when the line has no
+/// reference, so it cannot be measured and always requires approval, SAT-D43),
+/// the limit that applied (null = none defined, with its Settings profile and version otherwise) and whether the discount
+/// requires approval. A required approval is a reasoned approval by another person (<see cref="ApprovedBy"/>,
+/// <see cref="ApprovedAtUtc"/>, <see cref="Reason"/>: all or none). Any commercial revision replaces this snapshot, so an
+/// approval never floats to another price, discount, net or list reference.
 /// </summary>
 public sealed record DiscountLimitCheckSnapshot(
     string CheckedBy, DateTimeOffset CheckedAtUtc, string UnitPrice, string? DiscountPercent, string? DiscountAmount,
+    string DiscountedUnitPrice, Guid? PriceListId, int? PriceListVersionNo, string? ListUnitPrice,
     string? LimitPercent, Guid? LimitProfileId, long? LimitProfileVersion, bool RequiresApproval,
     string? ApprovedBy = null, DateTimeOffset? ApprovedAtUtc = null, string? Reason = null)
 {
     public bool IsApproved => ApprovedBy is not null && ApprovedAtUtc is not null && Reason is not null;
+
+    /// <summary>Whether the price was measured against a list price (SAT-D35); without one it always requires approval (SAT-D43).</summary>
+    public bool IsMeasured => ListUnitPrice is not null;
 }
 
 /// <summary>One current over-limit discount line and the approver's required reason.</summary>

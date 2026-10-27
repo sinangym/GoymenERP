@@ -19,6 +19,29 @@ public static class SalesLinePriceCalculator
     public static decimal? NetUnitPrice(CommercialDraftFields commercial)
     {
         ArgumentNullException.ThrowIfNull(commercial);
+        return ExactNet(commercial) is not { } net
+            ? null
+            : net.TryToDecimal(out var result)
+                ? result
+                : throw new OverflowException("The exact net price is not representable by System.Decimal.");
+    }
+
+    private static ExactDecimal? ExactNet(CommercialDraftFields commercial)
+    {
+        if (ExactDiscounted(commercial) is not { } discounted)
+        {
+            return null;
+        }
+
+        var surcharge = commercial.SurchargePercent is { } surchargePercent
+            ? discounted.Multiply(ExactDecimal.Parse(surchargePercent)).DivideBy100()
+            : commercial.SurchargeAmount is { } surchargeAmount ? ExactDecimal.Parse(surchargeAmount) : ExactDecimal.Zero;
+        return discounted.Add(surcharge);
+    }
+
+    /// <summary>The unit price after the discount and BEFORE the maturity surcharge (steps 1–2 of this calculator).</summary>
+    private static ExactDecimal? ExactDiscounted(CommercialDraftFields commercial)
+    {
         if (commercial.UnitPrice is not { } priceText)
         {
             return null;
@@ -28,34 +51,50 @@ public static class SalesLinePriceCalculator
         var discount = commercial.DiscountPercent is { } percent
             ? price.Multiply(ExactDecimal.Parse(percent)).DivideBy100()
             : commercial.DiscountAmount is { } amount ? ExactDecimal.Parse(amount) : ExactDecimal.Zero;
-        var discounted = price.Subtract(discount);
-        var surcharge = commercial.SurchargePercent is { } surchargePercent
-            ? discounted.Multiply(ExactDecimal.Parse(surchargePercent)).DivideBy100()
-            : commercial.SurchargeAmount is { } surchargeAmount ? ExactDecimal.Parse(surchargeAmount) : ExactDecimal.Zero;
-        var net = discounted.Add(surcharge);
-        return net.TryToDecimal(out var result)
-            ? result
-            : throw new OverflowException("The exact net price is not representable by System.Decimal.");
+        return price.Subtract(discount);
     }
 
     /// <summary>
-    /// SAT-D2: whether the line carries a discount above zero — a percent or an amount (a literal zero is no discount).
-    /// The texts are the line's validated exact texts.
+    /// SAT-D42: the discounted unit price before the maturity surcharge as exact text with no trailing zeros — what the
+    /// discount-limit check measures; null without a price.
     /// </summary>
-    public static bool HasPositiveDiscount(CommercialDraftFields commercial)
+    public static string? DiscountedUnitPriceText(CommercialDraftFields commercial)
     {
         ArgumentNullException.ThrowIfNull(commercial);
-        return (commercial.DiscountPercent is { } percent && Parse(percent) > 0m)
-            || (commercial.DiscountAmount is { } amount && Parse(amount) > 0m);
+        return ExactDiscounted(commercial) is { } discounted
+            ? discounted.TryToDecimal(out var value)
+                ? Format(value)
+                : throw new OverflowException("The exact discounted price is not representable by System.Decimal.")
+            : null;
     }
 
     /// <summary>
-    /// SAT-D2 / API-12: whether the line's discount EXCEEDS <paramref name="limitPercent"/>, a percent of the line's unit price
-    /// (the base of this calculator's discount step). A discount exactly at the limit does not exceed it ("limiti aşan"). A
-    /// percent discount is compared as given; an amount is compared exactly as amount × 100 &gt; limit × unit price, so no
-    /// division ever rounds the decision. A line without a price or without a positive discount never exceeds.
+    /// SAT-D35 / SAT-D42 / SAT-D43 (Sinan, 2026-10-27): whether a priced line needs the discount-limit check. With a list-price
+    /// reference: its discounted unit price BEFORE the maturity surcharge (vade farkı) is below the list price — a manual price
+    /// below list counts even with no discount field, and a surcharge can never hide a discount. Without a reference: always
+    /// (the price cannot be measured against a list price, so every such priced line goes to approval whatever its discount
+    /// fields). A line without a price never needs it.
     /// </summary>
-    public static bool DiscountExceedsPercent(CommercialDraftFields commercial, decimal limitPercent)
+    public static bool NeedsDiscountCheck(CommercialDraftFields commercial)
+    {
+        ArgumentNullException.ThrowIfNull(commercial);
+        if (commercial.UnitPrice is null)
+        {
+            return false;
+        }
+
+        return commercial.Reference is not { } reference
+            || ExactDiscounted(commercial)!.Value.CompareTo(ExactDecimal.Parse(reference.UnitPrice)) < 0;
+    }
+
+    /// <summary>
+    /// SAT-D35 / SAT-D42 / API-12: whether the line's discount from its list price EXCEEDS <paramref name="limitPercent"/>:
+    /// (list − discounted) / list × 100 &gt; limit, with the discounted price taken before the maturity surcharge, compared
+    /// exactly as (list − discounted) × 100 &gt; limit × list, so no division ever rounds the decision. Exactly at the limit is
+    /// within it ("limiti aşan"). Only a line with a list-price reference can be measured (otherwise
+    /// <see cref="InvalidOperationException"/>); a line at or above its list price never exceeds.
+    /// </summary>
+    public static bool DiscountExceedsListPercent(CommercialDraftFields commercial, decimal limitPercent)
     {
         ArgumentNullException.ThrowIfNull(commercial);
         if (limitPercent < 0m || limitPercent > 100m)
@@ -63,19 +102,16 @@ public static class SalesLinePriceCalculator
             throw new ArgumentOutOfRangeException(nameof(limitPercent), "İskonto limiti 0 ile 100 arasında olmalıdır.");
         }
 
-        if (commercial.UnitPrice is not { } priceText || !HasPositiveDiscount(commercial))
+        var reference = commercial.Reference
+            ?? throw new InvalidOperationException("Liste fiyatı referansı olmayan satırın iskontosu ölçülemez.");
+        if (!NeedsDiscountCheck(commercial))
         {
             return false;
         }
 
-        var limit = ExactDecimal.Parse(Format(limitPercent));
-        if (commercial.DiscountPercent is { } percent)
-        {
-            return ExactDecimal.Parse(percent).CompareTo(limit) > 0;
-        }
-
-        var amountTimesHundred = ExactDecimal.Parse(commercial.DiscountAmount!).Multiply(ExactDecimal.Hundred);
-        return amountTimesHundred.CompareTo(limit.Multiply(ExactDecimal.Parse(priceText))) > 0;
+        var list = ExactDecimal.Parse(reference.UnitPrice);
+        var discountTimesHundred = list.Subtract(ExactDiscounted(commercial)!.Value).Multiply(ExactDecimal.Hundred);
+        return discountTimesHundred.CompareTo(ExactDecimal.Parse(Format(limitPercent)).Multiply(list)) > 0;
     }
 
     /// <summary>The net as exact text with no trailing zeros ("41790" / "41790.25"); null without a price.</summary>

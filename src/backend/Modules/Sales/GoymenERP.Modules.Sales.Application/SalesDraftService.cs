@@ -118,11 +118,11 @@ public sealed partial class SalesDraftService(
             return won.Response;
         }
 
-        // SAT-D2 / API-12: a positive discount is checked against the creator's limit, read from the Settings owner on the
-        // business date (under the create fence, again after every read); without one, the check sends it to approval.
+        // SAT-D2 / SAT-D35: a create line carries no list-price reference, so a discount on it cannot be measured against the
+        // list price and its check always requires approval; the creator's limit decides nothing and is read only if a line is
+        // measurable (under the create fence, again after every read).
         var discountLimit = SalesDiscountLimit.Undefined;
-        if (lineInputs.Any(input => input.Commercial is { } commercial
-                && (MayBePositiveDiscount(commercial.DiscountPercent) || MayBePositiveDiscount(commercial.DiscountAmount))))
+        if (lineInputs.Any(input => input.Commercial is { } commercial && SalesOrderDraft.IsMeasurablyDiscounted(commercial)))
         {
             (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, bindings.CreatePermission, request.BusinessDate,
                 cancellationToken);
@@ -473,19 +473,20 @@ public sealed partial class SalesDraftService(
         var resolved = await ResolvePriceReferencesAsync(scope, permission!, draftId, request, cancellationToken);
         scope = resolved.Scope;
 
-        // SAT-D2 / API-12: the reviser's discount limit on the draft's business date, read only when a line gives a positive discount.
-        var discountLimit = SalesDiscountLimit.Undefined;
-        if (request.Lines.Any(line => line is not null
-                && (MayBePositiveDiscount(line.DiscountPercent) || MayBePositiveDiscount(line.DiscountAmount))))
-        {
-            var current = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
-            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, permission, current.Money.EffectiveOn, cancellationToken);
-        }
         var inputs = request.Lines
             .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent,
                 resolved.References.TryGetValue(line.LineId, out var reference) ? reference : null, line.DiscountAmount, line.SurchargePercent,
                 line.SurchargeAmount)))
             .ToArray();
+
+        // SAT-D2 / SAT-D34 / SAT-D35: the reviser's discount limit on the draft's business date, read only when a line is
+        // discounted against its list-price reference (only then does a limit decide anything).
+        var discountLimit = SalesDiscountLimit.Undefined;
+        if (inputs.Any(input => SalesOrderDraft.IsMeasurablyDiscounted(input.Commercial)))
+        {
+            var current = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
+            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, permission, current.Money.EffectiveOn, cancellationToken);
+        }
         var audit = new SalesDraftStateAudit("sales.order-draft.commercial-revised.v1", "ReviseCommercial",
             "Satış sipariş taslağının fiyat ve iskontosu revize edildi");
 

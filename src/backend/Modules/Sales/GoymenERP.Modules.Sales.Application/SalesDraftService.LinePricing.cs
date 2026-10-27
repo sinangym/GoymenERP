@@ -197,7 +197,8 @@ public sealed partial class SalesDraftService
                     exception.ApprovedAtUtc, exception.Reason)
                 : null,
             commercial.DiscountCheck is { } check
-                ? new SalesDraftDiscountLimitCheckV1(check.CheckedBy, check.CheckedAtUtc, check.LimitPercent, check.RequiresApproval,
+                ? new SalesDraftDiscountLimitCheckV1(check.CheckedBy, check.CheckedAtUtc, check.ListUnitPrice, check.LimitPercent,
+                    check.RequiresApproval,
                     check.ApprovedBy, check.ApprovedAtUtc, check.Reason)
                 : null);
 }

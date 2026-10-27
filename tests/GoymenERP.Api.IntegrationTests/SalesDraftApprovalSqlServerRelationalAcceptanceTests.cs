@@ -408,7 +408,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesOrderLineReferenceOutcomeV1.Approved,
                 (await a.Port.GetApprovedLineAsync(required.Id, requiredLineId)).Outcome);
 
-            LineCommercialInput[] revisedPrice = [new(requiredLineId, new CommercialDraftFields("13.00", KgUnit, "5"))];
+            LineCommercialInput[] revisedPrice = [new(requiredLineId, new CommercialDraftFields("13.00", KgUnit, "5", ListedAt("13.00")))];
             await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-q9-revise", actor: "SENTETIK-pricer"), Hash("q9-revise"),
                 SalesDraftCommands.ReviseCommercialV1, required.Id,
                 (draft, now) => draft.ReviseCommercial(5, revisedPrice, "SENTETIK-pricer", now, WithinTenPercent), Revised,
@@ -664,7 +664,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
                 (d, now) => d.Submit(2, run.Actor, now), Submitted);
             await a.Store.UpdateDraftStateAsync(run.Envelope("k-approve", actor: "SENTETIK-approver"), Hash("approve-3"),
                 SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
-            LineCommercialInput[] priced = [new(lineId, new CommercialDraftFields("13.00", KgUnit, "5"))];
+            LineCommercialInput[] priced = [new(lineId, new CommercialDraftFields("13.00", KgUnit, "5", ListedAt("13.00")))];
             await a.Store.ReviseDraftCommercialAsync(run.Envelope("k-revise", actor: pricer), Hash("revise-4"),
                 SalesDraftCommands.ReviseCommercialV1, draft.Id, (d, now) => d.ReviseCommercial(4, priced, pricer, now, WithinTenPercent), Revised,
                 static _ => Task.CompletedTask);
@@ -1224,12 +1224,19 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var binding = new UnitBindingSnapshot(owners.Company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
         draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), product, unit, "1.25", 1.25m,
-            Commercial: SalesOrderDraft.WithDiscountLimitCheck(new CommercialDraftFields("12.50", KgUnit, "5"), WithinTenPercent,
+            Commercial: SalesOrderDraft.WithDiscountLimitCheck(new CommercialDraftFields("12.50", KgUnit, "5", ListedAt("12.50")), WithinTenPercent,
                 "SENTETIK-preparer", at)), at);
         return draft;
     }
 
-    /// <summary>SAT-D2 / API-12: a SENTETIK 10 % limit, so these orders' 5 % discounts need no exception approval.</summary>
+    /// <summary>
+    /// SAT-D2 / SAT-D35 / SAT-D43: these orders' lines are priced from a SENTETIK list at their own unit price (a price without
+    /// a list price would always go to approval), and a SENTETIK 10 % limit keeps their 5 % discounts within it.
+    /// </summary>
+    private static PriceReferenceSnapshot ListedAt(string listPrice) =>
+        new(Guid.Parse("4d15c0a1-0000-4000-8000-0000000000b1"), "SENTETIK liste", 1, Day, null, "TRY", KgUnit, listPrice, null,
+            "ExcludingVat", "0", null);
+
     private static readonly SalesDiscountLimit WithinTenPercent =
         SalesDiscountLimit.Defined(10m, Guid.Parse("4d15c0a1-0000-4000-8000-0000000000a1"), 1);
 

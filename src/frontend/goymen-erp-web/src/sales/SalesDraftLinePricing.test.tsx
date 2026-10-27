@@ -256,7 +256,7 @@ describe('AT-018 list price on the order line', () => {
   it('reads the SAT-D2 discount-limit check as an additive member and fails closed on a malformed one', () => {
     const base = { unitPrice: '100', priceUnitId: KG, priceSource: 'Manual', discountPercent: '5', netUnitPrice: '95' }
     const pending = {
-      checkedBy: 'maker', checkedAtUtc: '2026-10-27T08:00:00Z', limitPercent: null, requiresApproval: true,
+      checkedBy: 'maker', checkedAtUtc: '2026-10-27T08:00:00Z', listUnitPrice: '100', limitPercent: null, requiresApproval: true,
       approvedBy: null, approvedAtUtc: null, reason: null,
     }
     // Absent (an older server) and null both read as "no check".
@@ -271,6 +271,7 @@ describe('AT-018 list price on the order line', () => {
       { ...within, approvedBy: 'checker', approvedAtUtc: '2026-10-27T08:05:00Z', reason: 'x' },
       { ...pending, approvedBy: 'checker' },
       { ...pending, limitPercent: 'on' },
+      { ...within, listUnitPrice: null },
       { ...pending, requiresApproval: 'true' },
       { ...pending, extra: true },
     ]) {

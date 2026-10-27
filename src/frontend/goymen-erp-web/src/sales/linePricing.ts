@@ -60,12 +60,14 @@ export interface PriceFloorException {
 }
 
 /**
- * SAT-D2 / API-12: who gave the discount, the limit that applied (null = none defined, so every discount goes to approval),
- * whether the discount exceeds it and, when it does, another person's reasoned approval (all three or none).
+ * SAT-D2 / API-12: who gave the discount, the list price it was measured against (SAT-D35; null = no list reference, the
+ * discount cannot be measured and goes to approval), the limit that applied (null = none defined, so every discount goes to
+ * approval), whether approval is required and another person's reasoned approval (all three or none).
  */
 export interface DiscountLimitCheck {
   readonly checkedBy: string
   readonly checkedAtUtc: string
+  readonly listUnitPrice: string | null
   readonly limitPercent: string | null
   readonly requiresApproval: boolean
   readonly approvedBy: string | null
@@ -146,12 +148,14 @@ function decodeFloorException(value: unknown): PriceFloorException | null {
   return pending || approved ? o as unknown as PriceFloorException : null
 }
 
-const DISCOUNT_CHECK_KEYS = ['checkedBy', 'checkedAtUtc', 'limitPercent', 'requiresApproval', 'approvedBy', 'approvedAtUtc', 'reason'] as const
+const DISCOUNT_CHECK_KEYS = ['checkedBy', 'checkedAtUtc', 'listUnitPrice', 'limitPercent', 'requiresApproval', 'approvedBy', 'approvedAtUtc', 'reason'] as const
 
 function decodeDiscountCheck(value: unknown): DiscountLimitCheck | null {
   const o = exact(value, DISCOUNT_CHECK_KEYS)
   if (o === null || !isText(o.checkedBy) || typeof o.checkedAtUtc !== 'string' || Number.isNaN(Date.parse(o.checkedAtUtc))
-    || !isNullableDecimal(o.limitPercent) || typeof o.requiresApproval !== 'boolean') return null
+    || !isNullableDecimal(o.listUnitPrice) || !isNullableDecimal(o.limitPercent) || typeof o.requiresApproval !== 'boolean') return null
+  // An unmeasured discount (no list price) always requires approval.
+  if (o.listUnitPrice === null && o.requiresApproval !== true) return null
   const pending = o.approvedBy === null && o.approvedAtUtc === null && o.reason === null
   // Only an over-limit discount is ever approved.
   const approved = o.requiresApproval && isText(o.approvedBy) && typeof o.approvedAtUtc === 'string'

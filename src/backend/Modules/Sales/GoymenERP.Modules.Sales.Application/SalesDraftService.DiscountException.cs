@@ -8,18 +8,19 @@ namespace GoymenERP.Modules.Sales.Application;
 
 /// <summary>
 /// SAT-D2 / API-12 (<c>docs/decisions/SINAN_KARARLARI_2026-10-25_SATIS.md</c>): "Rol bazlı yüzde limiti, Ayarlar'dan; limiti
-/// aşan iskonto Müdür onayına gider. Limiti tanımlı olmayan rol için her iskonto onaya düşer (fail-closed)."
+/// aşan iskonto Müdür onayına gider. Limiti tanımlı olmayan rol için her iskonto onaya düşer (fail-closed)", as applied by
+/// SAT-D34…D37 (<c>SINAN_KARARLARI_2026-10-27_SATIS_EK4.md</c>).
 /// <list type="bullet">
-/// <item><b>The limit</b> of the actor who sets a positive discount (create, commercial revision) is read only from the Settings
-/// owner (<see cref="ISettingsSalesPolicyProviderV1"/>) for each of the actor's limit groups
-/// (<see cref="ISalesDiscountLimitGroupSourceV1"/>, the Identity owner's mapping) on the draft's business date. Several groups:
-/// the STRICTEST (lowest) limit applies, and a group without an approved limit makes the actor's limit undefined (the
-/// fail-closed reading; NEEDS-SINAN on which limit of a multi-role user applies). No group, no group source, "not found", an
-/// inactive policy or one outside its window: no limit defined — every positive discount goes to approval. A Settings source
-/// that cannot answer (not composed, not served, malformed) refuses the command (503) — never a guessed limit.</item>
-/// <item><b>The approval</b> is the price-floor exception's shape: its own permission, every current over-limit line once
-/// with a reason, never the actor who set the discount, one keyed save with the attempt, the audit event and both price
-/// visibility variants of the first answer.</item>
+/// <item><b>The limit</b> of the actor who discounts a line against its list price is read only from the Settings owner
+/// (<see cref="ISettingsSalesPolicyProviderV1"/>) for each of the actor's limit groups
+/// (<see cref="ISalesDiscountLimitGroupSourceV1"/>, the Identity owner's mapping) on the draft's business date. SAT-D34: the
+/// HIGHEST limit among the groups that have one applies; a group without an approved limit ("not found"), an inactive policy
+/// or one outside its window contributes nothing; no group with a limit (or no group, or no group source) means no limit
+/// defined — every discount goes to approval (SAT-D36). A Settings source that cannot answer (not composed, not served,
+/// malformed) refuses the command (503) — never a guessed limit.</item>
+/// <item><b>The approval</b> is the price-floor exception's shape: its own permission (Müdür's, SAT-D37 — a grant, not a role
+/// created here), every current over-limit line once with a reason, never the actor who set the discount, one keyed save with
+/// the attempt, the audit event and both price visibility variants of the first answer.</item>
 /// </list>
 /// </summary>
 public sealed partial class SalesDraftService
@@ -154,13 +155,6 @@ public sealed partial class SalesDraftService
     }
 
     /// <summary>
-    /// Whether a discount text may be above zero: a readable positive value, or a text the calculator cannot read (the domain
-    /// refuses that line; reading the limit for it costs nothing and decides nothing).
-    /// </summary>
-    private static bool MayBePositiveDiscount(string? text) =>
-        text is not null && (!SalesLinePriceCalculator.TryParseExact(text, out var value) || value > 0m);
-
-    /// <summary>
     /// SAT-D2: the limit that applies to the fenced actor on <paramref name="effectiveOn"/>, read under
     /// <paramref name="permission"/> (the fence again after every awaited read). See the class summary for the rules.
     /// </summary>
@@ -188,7 +182,7 @@ public sealed partial class SalesDraftService
 
         var policies = salesPolicies
             ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DiscountLimitUnavailable);
-        SalesDiscountLimit? strictest = null;
+        SalesDiscountLimit? highest = null;
         foreach (var group in groups.Distinct())
         {
             SalesDiscountLimitPolicyV1 policy;
@@ -199,8 +193,8 @@ public sealed partial class SalesDraftService
             }
             catch (SettingsPrerequisiteException exception) when (exception.Code == SettingsPrerequisiteCodesV1.SalesPolicyNotFound)
             {
-                // "Limiti tanımlı olmayan rol için her iskonto onaya düşer": one undefined group makes the actor's limit undefined.
-                return (SalesDiscountLimit.Undefined, scope);
+                // SAT-D34: a group without a defined limit contributes nothing.
+                continue;
             }
             catch (SettingsPrerequisiteException exception)
             {
@@ -219,16 +213,17 @@ public sealed partial class SalesDraftService
             if (!policy.IsActive || policy.EffectiveFrom > effectiveOn
                 || (policy.EffectiveThrough is { } through && through < effectiveOn))
             {
-                // Not in force on the date: no approved limit defined for this group.
-                return (SalesDiscountLimit.Undefined, scope);
+                // Not in force on the date: no approved limit defined for this group; it contributes nothing (SAT-D34).
+                continue;
             }
 
-            if (strictest?.MaximumPercent is not { } current || policy.MaximumDiscountPercent < current)
+            // SAT-D34: the highest defined limit of the actor's groups applies (the first one read wins a tie).
+            if (highest?.MaximumPercent is not { } current || policy.MaximumDiscountPercent > current)
             {
-                strictest = SalesDiscountLimit.Defined(policy.MaximumDiscountPercent, policy.Profile.ProfileId, policy.Profile.Version);
+                highest = SalesDiscountLimit.Defined(policy.MaximumDiscountPercent, policy.Profile.ProfileId, policy.Profile.Version);
             }
         }
 
-        return (strictest ?? SalesDiscountLimit.Undefined, scope);
+        return (highest ?? SalesDiscountLimit.Undefined, scope);
     }
 }

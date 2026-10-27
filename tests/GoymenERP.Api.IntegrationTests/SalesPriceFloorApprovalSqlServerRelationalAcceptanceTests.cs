@@ -86,7 +86,9 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
             var priced = await scope.Store.ReviseDraftCommercialAsync(Envelope("price", Requester), Hash("price"),
                 SalesDraftCommands.ReviseCommercialV1, draft.Id,
                 (target, now) => target.ReviseCommercial(target.Version,
-                    [new LineCommercialInput(line.Id, new CommercialDraftFields("90", Kg, null, reference))], Requester, now),
+                    [new LineCommercialInput(line.Id, new CommercialDraftFields("90", Kg, null, reference))], Requester, now,
+                    // SAT-D35: 90 against the list price 100 is a 10 % discount; a SENTETIK 10 % limit keeps it within (at the limit).
+                    SalesDiscountLimit.Defined(10m, Guid.Parse("4d15c0a1-0000-4000-8000-0000000000c1"), 1)),
                 Priced, _ => Task.CompletedTask);
             Assert.NotNull(priced);
 
@@ -99,6 +101,7 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
                     return null;
                 }, FloorApproved, _ => Task.CompletedTask, default, ReplayResult);
             firstResult = Assert.IsType<SalesDraftReplayResult>(approved!.Result);
+
 
             var submitted = await scope.Store.UpdateDraftStateAsync(Envelope("submit", Requester), Hash("submit"),
                 SalesDraftCommands.SubmitV1, draft.Id, (target, now) => target.Submit(target.Version, Requester, now), Submitted);
