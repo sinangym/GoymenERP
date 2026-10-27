@@ -1,0 +1,49 @@
+.action {
+  display: grid;
+  gap: var(--goy-ds-space-1);
+  justify-items: end;
+  max-width: 22rem;
+  min-width: 0;
+}
+
+.note {
+  margin: 0;
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-sm);
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-sm);
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.status:empty {
+  display: none;
+}
+
+.problem {
+  display: grid;
+  gap: var(--goy-ds-space-1);
+  justify-items: end;
+  font-size: var(--goy-ds-font-size-sm);
+  color: var(--goy-ds-color-danger);
+  text-align: end;
+}
+
+.problem p {
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  .action,
+  .note,
+  .status,
+  .problem {
+    justify-items: start;
+    text-align: start;
+  }
+}

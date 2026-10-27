@@ -43,6 +43,7 @@ import {
   SALES_REFERENCE_PRODUCTS_PATH,
 } from './api'
 import { salesDraftLinePriceReferencesPath, salesDraftLinePricingPath } from './linePricing'
+import { salesDraftPdfPath } from './orderPdf'
 import { salesDraftStatusPath } from './orderStatus'
 import { salesDraftTotalsPath } from './orderTotals'
 import { validateOrderDraft, type OrderDraftFormValues, type OrderDraftOptions } from './orderDraftForm'
@@ -136,6 +137,7 @@ describe('Sales client ↔ canonical OpenAPI', () => {
       salesDraftLinePricingPath('ID'),
       salesDraftLinePriceReferencesPath('ID', 'LINE'),
       remainderChangesPath('ID'),
+      salesDraftPdfPath('ID'),
       SALES_REFERENCE_ACCOUNTS_PATH,
       SALES_REFERENCE_CURRENCIES_PATH,
       SALES_REFERENCE_CONTACT_INFORMATION_PATH,

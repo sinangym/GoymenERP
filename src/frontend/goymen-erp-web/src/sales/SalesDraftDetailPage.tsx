@@ -130,6 +130,7 @@ import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import { ORDER_TAB, parseOrderTab, type OrderTab } from './orderTabs'
 import { SalesOrderTabs } from './SalesOrderTabs'
 import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
+import { SalesOrderPdfAction } from './SalesOrderPdfAction'
 import styles from './SalesDraftDetailPage.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
@@ -220,6 +221,16 @@ export function SalesDraftDetailPage() {
       backLink={backLink}
       activeTab={activeTab}
       onTabChange={changeTab}
+      pdfAction={
+        companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesOrderPdfAction
+            key={`pdf:${namespace ?? ''}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            draftId={outcome.data.draft.id}
+            companyId={companyId}
+            documentNo={outcome.data.draft.documentNo}
+          />
+        ) : null
+      }
       documents={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
           <SalesOrderDocumentsWorkspace
@@ -435,6 +446,7 @@ export function DraftView({
   cancellation = null,
   forceClose = null,
   documents = null,
+  pdfAction = null,
   activeTab,
   onTabChange,
 }: {
@@ -481,6 +493,8 @@ export function DraftView({
    * their timeline; null when no single company is bound.
    */
   readonly documents?: React.ReactNode
+  /** MOD-07: "PDF indir" — the server-rendered order PDF; null when no single company is bound. */
+  readonly pdfAction?: React.ReactNode
   /** The open tab; when omitted the view keeps its own (an isolated render has no router). */
   readonly activeTab?: OrderTab
   readonly onTabChange?: (tab: OrderTab) => void
@@ -508,11 +522,14 @@ export function DraftView({
           </h1>
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
-        <StatusIndicator tone={approvalTone(draft.approvalState, cancelled || closed)} className={styles.badge}>
-          <span data-testid="sales-draft-state">
-            {lifecycleText} · {APPROVAL_STATE_TEXT[draft.approvalState]}
-          </span>
-        </StatusIndicator>
+        <div className={styles.headerAside}>
+          <StatusIndicator tone={approvalTone(draft.approvalState, cancelled || closed)} className={styles.badge}>
+            <span data-testid="sales-draft-state">
+              {lifecycleText} · {APPROVAL_STATE_TEXT[draft.approvalState]}
+            </span>
+          </StatusIndicator>
+          {pdfAction}
+        </div>
       </header>
 
       <dl className={`${styles.facts} ${styles.summaryFacts}`} data-testid="sales-order-status-facts">

@@ -930,6 +930,23 @@ export const SALES_DOCUMENTS_TEXT = {
 } as const
 
 /**
+ * MOD-07 — "PDF indir" on the order detail: the server renders the order's current revision; prices are printed only for a
+ * caller who may see them (otherwise the PDF itself says it carries no prices). Totals and VAT are not printed yet.
+ */
+export const SALES_ORDER_PDF_TEXT = {
+  download: 'PDF indir',
+  preparing: 'PDF hazırlanıyor…',
+  saved: (fileName: string) => `PDF indirildi: ${fileName}`,
+  note: 'Siparişin güncel revizyonu indirilir. Fiyatlar yalnız fiyat görme yetkiniz varsa yer alır; toplam ve KDV henüz yazdırılmaz.',
+  forbidden: "Bu siparişin PDF'ini indirme yetkiniz yok.",
+  notFound: 'Sipariş bu şirkette bulunamadı; PDF indirilemedi.',
+  changed: "Sipariş bu sırada değişti. PDF'i yeniden indirin.",
+  tooLarge: "Sipariş tek bir PDF'e sığmayacak kadar uzun (sayfa sınırı aşılıyor). Yeniden denemek sonucu değiştirmez; destek ekibine bildirin.",
+  failed: 'PDF oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.',
+  retry: 'Yeniden dene',
+} as const
+
+/**
  * DEC-SAL-001 / API-08 / UI-15: the order's seven status axes card on S-04. Every state the contract answers has its own
  * text here; a state without a text is refused by the decoder, so no wire name ever reaches the screen. SAT-D29…D33: the
  * realization ladder, the warning and approved-over-delivery marks, "Aktif" and "kapanmaya hazır", returns shown apart.

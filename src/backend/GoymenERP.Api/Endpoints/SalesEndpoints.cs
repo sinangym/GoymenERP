@@ -408,6 +408,7 @@ public static partial class SalesEndpoints
         MapDraftRevisions(drafts);
         MapDraftLinePricing(drafts);
         MapDraftTotals(drafts);
+        MapOrderPdf(drafts);
         MapPriceFloorExceptionApproval(drafts);
         MapDiscountExceptionApproval(drafts);
         MapCommercialRevisionCommand(drafts);
