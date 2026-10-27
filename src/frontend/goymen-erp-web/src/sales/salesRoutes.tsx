@@ -15,6 +15,14 @@ import { SALES_CAPABILITY, SALES_ROUTE, type SalesCapabilityId } from './capabil
 import { SalesDraftListPage } from './SalesDraftListPage'
 import { SalesDraftCreatePage } from './SalesDraftCreatePage'
 import { SalesDraftDetailPage } from './SalesDraftDetailPage'
+import { SalesPoolRoute } from './SalesPoolRoute'
+import { SALES_POOL_ROUTE } from './poolCapabilities'
+import { SalesRequestListPage } from './SalesRequestListPage'
+import { SalesRequestCreatePage } from './SalesRequestCreatePage'
+import { SalesRequestDetailPage } from './SalesRequestDetailPage'
+import { SalesQuoteListPage } from './SalesQuoteListPage'
+import { SalesQuoteCreatePage } from './SalesQuoteCreatePage'
+import { SalesQuoteDetailPage } from './SalesQuoteDetailPage'
 
 /**
  * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which cannot
@@ -33,4 +41,13 @@ export const salesRoutes: RouteObject[] = [
   // default source is the real one; a test or an isolated screen provides its own.
   { path: SALES_ROUTE.create.slice(1), element: gate(SALES_CAPABILITY.draftsCreate, <SalesDraftCreatePage />) },
   { path: SALES_ROUTE.detail.slice(1), element: gate(SALES_CAPABILITY.draftsDetail, <SalesDraftDetailPage />) },
+  // S-01 Talep/Teklif Havuzu (UI-20). NEEDS-CAPABILITY: the backend publishes no id for these screens yet, so each
+  // gate holds an EMPTY list (./poolCapabilities.ts) and closes onto the neutral not-found block — no id is invented.
+  // Static `yeni` before the parameter routes.
+  { path: SALES_POOL_ROUTE.requests.slice(1), element: <SalesPoolRoute capability="requestsList"><SalesRequestListPage /></SalesPoolRoute> },
+  { path: SALES_POOL_ROUTE.requestCreate.slice(1), element: <SalesPoolRoute capability="requestsCreate"><SalesRequestCreatePage /></SalesPoolRoute> },
+  { path: SALES_POOL_ROUTE.requestDetail.slice(1), element: <SalesPoolRoute capability="requestsDetail"><SalesRequestDetailPage /></SalesPoolRoute> },
+  { path: SALES_POOL_ROUTE.quotes.slice(1), element: <SalesPoolRoute capability="quotesList"><SalesQuoteListPage /></SalesPoolRoute> },
+  { path: SALES_POOL_ROUTE.quoteCreate.slice(1), element: <SalesPoolRoute capability="quotesCreate"><SalesQuoteCreatePage /></SalesPoolRoute> },
+  { path: SALES_POOL_ROUTE.quoteDetail.slice(1), element: <SalesPoolRoute capability="quotesDetail"><SalesQuoteDetailPage /></SalesPoolRoute> },
 ]
