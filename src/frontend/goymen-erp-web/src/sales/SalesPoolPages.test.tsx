@@ -186,6 +186,7 @@ describe('Yeni talep', () => {
 
     await user.click(screen.getByRole('button', { name: POOL_TEXT.common.retry }))
     await waitFor(() => expect(router.state.location.pathname).toBe(`/satis/talepler/${REQUEST_ID}`))
+    await screen.findByTestId('pool-request-state')
     const [first, second] = fetch.posts()
     expect(second.idempotencyKey).toBe(first.idempotencyKey)
     expect(second.body).toEqual(first.body)
@@ -271,7 +272,9 @@ describe('Talep detayı', () => {
     renderPool(`/satis/talepler/${REQUEST_ID}`)
     await user.type(await screen.findByLabelText(POOL_TEXT.requestDetail.reasonLabel), 'İptal')
     await user.click(screen.getByRole('button', { name: POOL_TEXT.requestDetail.reject }))
-    expect((await screen.findByTestId('pool-request-notice-rejection')).textContent).toContain('talep reddedilemez')
+    const notice = (await screen.findByTestId('pool-request-notice-rejection')).textContent
+    expect(notice).toContain('talep reddedilemez')
+    expect(notice).toContain('iptal edilmemiş bir sipariş')
   })
 })
 

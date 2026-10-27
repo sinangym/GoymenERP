@@ -8,7 +8,8 @@
  * Every command is one keyed attempt (./poolAttempt.ts). After a recorded command, or a 409 (the quote moved, is no
  * longer open, or a covered request is not approved — `sales_quote_request_not_approved`, not recorded, may be retried
  * after the approval), the quote is re-read; what the person typed is kept. A withheld price reads "Gizli", never zero.
- * The validity date is shown as stored; whether an expired quote may convert is the server's (no expiry rule is chosen).
+ * The validity date is shown as stored. SAT-D24 interim (#828): the server refuses converting a quote whose validity
+ * date is before the order date (409 `sales_quote_expired`) until the manager-approval step exists.
  */
 
 import { useContext, useState } from 'react'

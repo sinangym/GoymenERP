@@ -129,7 +129,8 @@ export const POOL_TEXT = {
     back: 'Tekliflere dön',
     currency: 'Para birimi',
     validUntil: 'Geçerlilik tarihi',
-    validUntilNote: 'Geçerlilik tarihi teklifte bilgi olarak saklanır.',
+    validUntilNote:
+      'Geçerlilik tarihi geçmiş teklif, yönetici onayı adımı gelene kadar siparişe dönüştürülemez.',
     coveredRequests: 'Karşılanan talepler',
     price: 'Birim fiyat',
     priceUnit: 'Fiyat birimi',
@@ -251,7 +252,7 @@ const POOL_PROBLEM_TEXT: Record<PoolProblemCode, string> = {
   [POOL_PROBLEM_CODE.requestRejectionReasonRequired]: 'Ret nedeni zorunludur.',
   [POOL_PROBLEM_CODE.requestRejectionReasonTooLong]: 'Ret nedeni en fazla 4000 karakter olabilir.',
   [POOL_PROBLEM_CODE.requestHasApprovedOrder]:
-    'Bu talebi karşılayan teklif onaylı bir siparişe dönüştü; talep reddedilemez. Önce sipariş iptal edilmelidir.',
+    'Bu talebi karşılayan teklif iptal edilmemiş bir siparişe dönüştü; talep reddedilemez. Önce sipariş iptal edilmelidir.',
   [POOL_PROBLEM_CODE.requestWithoutLines]: 'Talep en az bir satır ister.',
   [POOL_PROBLEM_CODE.quoteRequestUnknown]: 'Seçilen taleplerden biri bu şirkette bulunamadı.',
   [POOL_PROBLEM_CODE.quoteRequestCustomerMismatch]: 'Seçilen taleplerden biri başka bir cariye ait.',

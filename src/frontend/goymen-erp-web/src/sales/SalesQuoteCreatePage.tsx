@@ -8,7 +8,8 @@
  * the person adds prices. Without requests the customer is chosen from the Cari owner's accounts.
  *
  * Price, price unit and discount are optional texts; the server judges scale, range and who may write a price (no
- * permission or discount policy is chosen here). The validity date is stored as typed — no default period, no expiry rule.
+ * permission or discount policy is chosen here). The validity date is stored as typed — no default period yet
+ * (SAT-D39 will suggest one from Settings); an expired quote is refused at conversion (SAT-D24 interim).
  */
 
 import { useEffect, useState } from 'react'
