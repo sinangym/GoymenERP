@@ -25,8 +25,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // DEC-SAL-003 (1.2): the delivery-schedule control joins the approve and commercial-revision controls;
         // DEC-SAL-005 (1.3): cancel; DEC-SAL-002 (1.4): quantity revision; Q9 (1.5): customer acceptance;
         // AT-021 (1.6): reasoned floor-exception approval remains a separate child control; No 30 (1.7): force-close.
-        Assert.Equal(("SALES", "1.7"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(11, declarations.Count);
+        // UI-20 (1.8): the S-01 request and quote screens with their decision, write and conversion controls.
+        Assert.Equal(("SALES", "1.8"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(20, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -123,6 +124,83 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, customerAcceptance.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord],
             customerAcceptance.RequiredPermissions);
+    }
+
+    [Fact]
+    public void The_S01_pool_screens_and_their_controls_are_declared_with_the_frontends_ids_routes_and_the_real_names()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
+        var declarations = new SalesShellCapabilityProvider().GetDeclarations();
+
+        // Routed screens: each its own grant, list/detail on the read name, create on the write name (UI-20, plan §3.2 S-01).
+        var routes = new (string Id, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence,
+            ShellCapabilityContextRequirement Context, string[] Permissions)[]
+        {
+            ("sales.requests.list", "/satis/talepler", "S-01", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead, [SalesPermissionManifestV1.RequestsRead]),
+            ("sales.requests.create", "/satis/talepler/yeni", "S-01-NEW", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, [SalesPermissionManifestV1.RequestsWrite]),
+            ("sales.requests.detail", "/satis/talepler/:requestId", "S-01-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead, [SalesPermissionManifestV1.RequestsRead]),
+            ("sales.quotes.list", "/satis/teklifler", "S-01-QUOTES", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead, [SalesPermissionManifestV1.QuotesRead]),
+            ("sales.quotes.create", "/satis/teklifler/yeni", "S-01-QUOTE-NEW", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany, [SalesPermissionManifestV1.QuotesWrite]),
+            ("sales.quotes.detail", "/satis/teklifler/:quoteId", "S-01-QUOTE-DETAIL", ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead, [SalesPermissionManifestV1.QuotesRead]),
+        };
+        foreach (var expected in routes)
+        {
+            var declaration = Assert.Single(declarations, item => item.CapabilityId == expected.Id);
+            Assert.Equal((expected.Id, expected.Path, expected.Screen, expected.Precedence, expected.Context),
+                (declaration.RouteId, declaration.RoutePath, declaration.ScreenId, declaration.RoutePrecedence, declaration.ContextRequirement));
+            Assert.Equal(expected.Permissions, declaration.RequiredPermissions);
+            Assert.Null(declaration.ParentCapabilityId);
+            Assert.Contains($"'{expected.Id}'", source);
+            Assert.Contains($"'{expected.Path}'", source);
+        }
+
+        // Controls: exactly the parent's route, screen, precedence, context and scope, the parent's read plus their own names.
+        var controls = new (string Id, string Parent, string[] Permissions)[]
+        {
+            // SAT-D22: the single-approver decision; the write name never confers it.
+            ("sales.requests.approve", "sales.requests.detail",
+                [SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsApprove]),
+            // Revision and loss (SAT-D26: the quote write name alone writes the quote's price).
+            ("sales.quotes.write", "sales.quotes.detail",
+                [SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesWrite]),
+            // Conversion: the two names the command measures — the quote write name and the order create name.
+            ("sales.quotes.convert", "sales.quotes.detail",
+                [SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesWrite, SalesPermissionManifestV1.DraftsCreate]),
+        };
+        foreach (var expected in controls)
+        {
+            var control = Assert.Single(declarations, item => item.CapabilityId == expected.Id);
+            var parent = Assert.Single(declarations, item => item.CapabilityId == expected.Parent);
+            Assert.Equal(expected.Parent, control.ParentCapabilityId);
+            Assert.Equal((parent.RouteId, parent.RoutePath, parent.ScreenId, parent.RoutePrecedence, parent.ContextRequirement, parent.ScopeRequirement),
+                (control.RouteId, control.RoutePath, control.ScreenId, control.RoutePrecedence, control.ContextRequirement, control.ScopeRequirement));
+            Assert.Equal(expected.Permissions, control.RequiredPermissions);
+            Assert.True(control.ImplementationAvailable);
+            Assert.Contains($"'{expected.Id}'", source);
+        }
+
+        // No pool declaration asks for an order name it does not use, and no draft/order declaration gained a pool name.
+        var poolIds = routes.Select(item => item.Id).Concat(controls.Select(item => item.Id)).ToHashSet(StringComparer.Ordinal);
+        var poolNames = new[]
+        {
+            SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsApprove,
+            SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesWrite,
+        };
+        foreach (var declaration in declarations.Where(item => !poolIds.Contains(item.CapabilityId)))
+        {
+            Assert.DoesNotContain(declaration.RequiredPermissions, permission => poolNames.Contains(permission, StringComparer.Ordinal));
+        }
+
+        Assert.All(declarations.Where(item => poolIds.Contains(item.CapabilityId)), declaration =>
+            Assert.All(declaration.RequiredPermissions, permission =>
+                Assert.True(poolNames.Contains(permission, StringComparer.Ordinal)
+                    || (declaration.CapabilityId == "sales.quotes.convert" && permission == SalesPermissionManifestV1.DraftsCreate))));
     }
 
     [Fact]

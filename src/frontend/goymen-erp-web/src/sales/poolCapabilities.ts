@@ -1,20 +1,20 @@
 /**
  * S-01 "Satış Talebi / Teklif Havuzu" — the routes of the pool and the capabilities that open them.
  *
- * NEEDS-CAPABILITY. The backend shell provider (`SalesShellCapabilityProvider`, contract 1.6 on #828) publishes NO
- * capability for the sales request or the sales quote screens, and this lane does not invent one: every list below is
- * EMPTY, so `CapabilityRoute` (which opens a list only when one of its ids is granted, and an empty list never) closes
- * every pool route onto the neutral not-found block in the running app, and every pool control stays hidden. The server
- * still re-authorizes every request (`sales.requests.*`, `sales.quotes.*`, granted to no role today).
- *
- * When the central owner publishes the ids, they are written HERE (one place), the backend contract test pins them, and
- * the screens open for an actor the shell grants them to — nothing else changes. Tests provide their own map through
- * `SalesPoolCapabilityContext`; the production default is this empty one.
+ * PUBLISHED. The backend shell provider (`SalesShellCapabilityProvider`, Sales shell contract 1.8) publishes one id per
+ * pool screen and control; they are declared once, in `./capabilities.ts` (`SALES_POOL_CAPABILITY_ID`, pinned there by the
+ * backend contract test), and mapped here onto the pool's keys. `CapabilityRoute` opens a route only when the shell grants
+ * its id, so an actor without the request / quote names still meets the neutral not-found block, and the server
+ * re-authorizes every request (`sales.requests.*`, `sales.quotes.*`, granted to no role today — a human gate). Tests
+ * provide their own map through `SalesPoolCapabilityContext`; the production default is the published one.
  */
 
 import { createContext, useContext } from 'react'
 import { useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
+import { SALES_POOL_CAPABILITY_ID, SALES_POOL_ROUTE } from './capabilities'
+
+export { SALES_POOL_ROUTE }
 
 export type SalesPoolCapabilityKey =
   /** S-01 requests list (`sales.requests.read` on the server). */
@@ -38,17 +38,17 @@ export type SalesPoolCapabilityKey =
 
 export type SalesPoolCapabilities = Readonly<Record<SalesPoolCapabilityKey, readonly string[]>>
 
-/** Production: nothing is published, so nothing opens. */
+/** Production: each key opens on exactly the one id the backend publishes for it (Sales shell contract 1.8). */
 export const SALES_POOL_CAPABILITY: SalesPoolCapabilities = {
-  requestsList: [],
-  requestsDetail: [],
-  requestsCreate: [],
-  requestsDecide: [],
-  quotesList: [],
-  quotesDetail: [],
-  quotesCreate: [],
-  quotesWrite: [],
-  quotesConvert: [],
+  requestsList: [SALES_POOL_CAPABILITY_ID.requestsList],
+  requestsDetail: [SALES_POOL_CAPABILITY_ID.requestsDetail],
+  requestsCreate: [SALES_POOL_CAPABILITY_ID.requestsCreate],
+  requestsDecide: [SALES_POOL_CAPABILITY_ID.requestsDecide],
+  quotesList: [SALES_POOL_CAPABILITY_ID.quotesList],
+  quotesDetail: [SALES_POOL_CAPABILITY_ID.quotesDetail],
+  quotesCreate: [SALES_POOL_CAPABILITY_ID.quotesCreate],
+  quotesWrite: [SALES_POOL_CAPABILITY_ID.quotesWrite],
+  quotesConvert: [SALES_POOL_CAPABILITY_ID.quotesConvert],
 }
 
 export const SalesPoolCapabilityContext = createContext<SalesPoolCapabilities>(SALES_POOL_CAPABILITY)
@@ -59,16 +59,6 @@ export function useSalesPoolCapability(key: SalesPoolCapabilityKey): boolean {
   const ids = useContext(SalesPoolCapabilityContext)[key]
   return ids.some((id) => hasCapability(shell, id))
 }
-
-export const SALES_POOL_ROUTE = {
-  requests: '/satis/talepler',
-  // Static `yeni` before the parameter route: it must never be read as a record id.
-  requestCreate: '/satis/talepler/yeni',
-  requestDetail: '/satis/talepler/:requestId',
-  quotes: '/satis/teklifler',
-  quoteCreate: '/satis/teklifler/yeni',
-  quoteDetail: '/satis/teklifler/:quoteId',
-} as const
 
 export const salesRequestScreenPath = (requestId: string) => `${SALES_POOL_ROUTE.requests}/${encodeURIComponent(requestId)}`
 export const salesQuoteScreenPath = (quoteId: string) => `${SALES_POOL_ROUTE.quotes}/${encodeURIComponent(quoteId)}`

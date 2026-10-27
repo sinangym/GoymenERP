@@ -4,7 +4,8 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 
 /// <summary>
-/// Publishes the three Sales draft screens of #260 (S-02 list, S-03 create, S-04 detail) to the
+/// Publishes the three Sales draft screens of #260 (S-02 list, S-03 create, S-04 detail) — and, since shell contract 1.8,
+/// the six S-01 request / quote pool screens of UI-20 with their controls — to the
 /// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
@@ -22,7 +23,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.7";
+    public const string OwnerContractVersion = "1.8";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -74,6 +75,49 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// force-closure of an approved order. Create, approve, price, schedule, quantity and cancel never confer it (shell contract 1.7).
     /// </summary>
     public const string ForceCloseCapabilityId = "sales.orders.force-close";
+
+    /// <summary>
+    /// UI-20 / S-01 "Satış Talebi / Teklif Havuzu" (shell contract 1.8): the sales request screens — list, create, detail —
+    /// and the single-approver decision control of the detail (SAT-D22). Each screen is its own grant, the Sales draft way:
+    /// the list and the detail need <see cref="SalesPermissionManifestV1.RequestsRead"/>, the create screen
+    /// <see cref="SalesPermissionManifestV1.RequestsWrite"/>, the decision the read plus
+    /// <see cref="SalesPermissionManifestV1.RequestsApprove"/>. No draft or order name confers any of them.
+    /// </summary>
+    public const string RequestListCapabilityId = "sales.requests.list";
+    public const string RequestListRouteId = "sales.requests.list";
+    public const string RequestListRoutePath = "/satis/talepler";
+    public const string RequestListScreenId = "S-01";
+    public const string RequestCreateCapabilityId = "sales.requests.create";
+    public const string RequestCreateRouteId = "sales.requests.create";
+    public const string RequestCreateRoutePath = "/satis/talepler/yeni";
+    public const string RequestCreateScreenId = "S-01-NEW";
+    public const string RequestDetailCapabilityId = "sales.requests.detail";
+    public const string RequestDetailRouteId = "sales.requests.detail";
+    public const string RequestDetailRoutePath = "/satis/talepler/:requestId";
+    public const string RequestDetailScreenId = "S-01-DETAIL";
+    public const string RequestApproveCapabilityId = "sales.requests.approve";
+
+    /// <summary>
+    /// UI-20 / S-01 (shell contract 1.8): the sales quote screens — list, create, detail — and two controls of the detail:
+    /// the revision and loss control (the read plus <see cref="SalesPermissionManifestV1.QuotesWrite"/>; SAT-D26: the quote
+    /// write name alone writes its price) and the "Siparişe dönüştür" control (the read, the quote write name AND
+    /// <see cref="SalesPermissionManifestV1.DraftsCreate"/>, exactly the two names the conversion command measures; a priced
+    /// quote additionally meets the order's own price-write fence on the server, which the control does not stand in for).
+    /// </summary>
+    public const string QuoteListCapabilityId = "sales.quotes.list";
+    public const string QuoteListRouteId = "sales.quotes.list";
+    public const string QuoteListRoutePath = "/satis/teklifler";
+    public const string QuoteListScreenId = "S-01-QUOTES";
+    public const string QuoteCreateCapabilityId = "sales.quotes.create";
+    public const string QuoteCreateRouteId = "sales.quotes.create";
+    public const string QuoteCreateRoutePath = "/satis/teklifler/yeni";
+    public const string QuoteCreateScreenId = "S-01-QUOTE-NEW";
+    public const string QuoteDetailCapabilityId = "sales.quotes.detail";
+    public const string QuoteDetailRouteId = "sales.quotes.detail";
+    public const string QuoteDetailRoutePath = "/satis/teklifler/:quoteId";
+    public const string QuoteDetailScreenId = "S-01-QUOTE-DETAIL";
+    public const string QuoteWriteCapabilityId = "sales.quotes.write";
+    public const string QuoteConvertCapabilityId = "sales.quotes.convert";
 
     public string Owner => OwnerId;
 
@@ -169,6 +213,110 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersForceClose],
         },
+        .. RequestDeclarations(),
+        .. QuoteDeclarations(),
+        ];
+    }
+
+    private static ShellCapabilityDeclaration[] RequestDeclarations()
+    {
+        var detail = new ShellCapabilityDeclaration(
+            RequestDetailCapabilityId,
+            RequestDetailRouteId,
+            RequestDetailRoutePath,
+            RequestDetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.RequestsRead],
+            ImplementationAvailable: true);
+        return
+        [
+            new ShellCapabilityDeclaration(
+                RequestListCapabilityId,
+                RequestListRouteId,
+                RequestListRoutePath,
+                RequestListScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SalesPermissionManifestV1.RequestsRead],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                RequestCreateCapabilityId,
+                RequestCreateRouteId,
+                RequestCreateRoutePath,
+                RequestCreateScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SalesPermissionManifestV1.RequestsWrite],
+                ImplementationAvailable: true),
+            detail,
+            // SAT-D22: the single-approver decision (approve / reject) is a control of the request detail, the order approve way.
+            detail with
+            {
+                CapabilityId = RequestApproveCapabilityId,
+                ParentCapabilityId = RequestDetailCapabilityId,
+                RequiredPermissions = [SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsApprove],
+            },
+        ];
+    }
+
+    private static ShellCapabilityDeclaration[] QuoteDeclarations()
+    {
+        var detail = new ShellCapabilityDeclaration(
+            QuoteDetailCapabilityId,
+            QuoteDetailRouteId,
+            QuoteDetailRoutePath,
+            QuoteDetailScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.QuotesRead],
+            ImplementationAvailable: true);
+        return
+        [
+            new ShellCapabilityDeclaration(
+                QuoteListCapabilityId,
+                QuoteListRouteId,
+                QuoteListRoutePath,
+                QuoteListScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SalesPermissionManifestV1.QuotesRead],
+                ImplementationAvailable: true),
+            new ShellCapabilityDeclaration(
+                QuoteCreateCapabilityId,
+                QuoteCreateRouteId,
+                QuoteCreateRoutePath,
+                QuoteCreateScreenId,
+                ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide,
+                [SalesPermissionManifestV1.QuotesWrite],
+                ImplementationAvailable: true),
+            detail,
+            // Revision and loss: the read plus the quote's own write name.
+            detail with
+            {
+                CapabilityId = QuoteWriteCapabilityId,
+                ParentCapabilityId = QuoteDetailCapabilityId,
+                RequiredPermissions = [SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesWrite],
+            },
+            // Conversion to one order: the read plus the two names the command measures — neither confers the other.
+            detail with
+            {
+                CapabilityId = QuoteConvertCapabilityId,
+                ParentCapabilityId = QuoteDetailCapabilityId,
+                RequiredPermissions =
+                [
+                    SalesPermissionManifestV1.QuotesRead,
+                    SalesPermissionManifestV1.QuotesWrite,
+                    SalesPermissionManifestV1.DraftsCreate,
+                ],
+            },
         ];
     }
 }

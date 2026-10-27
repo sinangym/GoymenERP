@@ -28,10 +28,13 @@ public static class SalesProductCandidateEndpoints
             ICurrentUser user,
             IErpAuthorityRevalidationService authority,
             IProductSalesCandidatesV1 candidates,
+            [FromServices] SalesReferenceReadBindings bindings,
             CancellationToken cancellationToken) =>
         {
             SetPrivateNoStore(context.Response);
-            var scope = await CaptureScopeAsync(company, user, authority, cancellationToken);
+            // SAT-D27 (2): the product binding of the reference reads, or the request / quote write names beside it.
+            var names = bindings.AnswerableBy(bindings.ProductPermission);
+            var scope = await CaptureScopeAsync(company, user, authority, names, cancellationToken);
             if (scope.Status != StatusCodes.Status200OK) return Problem(scope.Status);
             if (!HasOnlySingleQuery(context.Request.Query) || !HasExactDate(context.Request.Query, "effectiveOn"))
                 return Problem(StatusCodes.Status400BadRequest, "validation_failed");
@@ -39,20 +42,20 @@ public static class SalesProductCandidateEndpoints
             try
             {
                 var result = await candidates.SearchAsync(new(q, effectiveOn, limit ?? 25), cancellationToken);
-                if (!await StillAuthorizedAsync(scope, company, user, authority, cancellationToken))
+                if (!await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Results.Ok(result);
             }
             catch (ProductValidationException)
             {
-                if (!await StillAuthorizedAsync(scope, company, user, authority, cancellationToken))
+                if (!await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Problem(StatusCodes.Status400BadRequest, "validation_failed");
             }
             catch (ProductOperationException exception)
             {
                 if (exception.StatusCode == StatusCodes.Status403Forbidden
-                    || !await StillAuthorizedAsync(scope, company, user, authority, cancellationToken))
+                    || !await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Problem(StatusCodes.Status503ServiceUnavailable, "service_unavailable");
             }
@@ -62,7 +65,7 @@ public static class SalesProductCandidateEndpoints
             }
             catch (InvalidOperationException)
             {
-                if (!await StillAuthorizedAsync(scope, company, user, authority, cancellationToken))
+                if (!await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
                 return Problem(StatusCodes.Status503ServiceUnavailable, "service_unavailable");
             }
@@ -80,24 +83,34 @@ public static class SalesProductCandidateEndpoints
     }
 
     private static async Task<ConsumerScope> CaptureScopeAsync(ICompanyContext company, ICurrentUser user,
-        IErpAuthorityRevalidationService authority, CancellationToken cancellationToken)
+        IErpAuthorityRevalidationService authority, IReadOnlyList<string> names, CancellationToken cancellationToken)
     {
         if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId))
             return new(StatusCodes.Status401Unauthorized, Guid.Empty, null);
         if (!company.IsResolved || company.CompanyId == Guid.Empty || !user.CanAccessCompany(company.CompanyId))
             return new(StatusCodes.Status403Forbidden, Guid.Empty, null);
         var scope = new ConsumerScope(StatusCodes.Status200OK, company.CompanyId, user.UserId);
-        return await StillAuthorizedAsync(scope, company, user, authority, cancellationToken)
+        return await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken)
             ? scope : new(StatusCodes.Status403Forbidden, Guid.Empty, null);
     }
 
+    /// <summary>
+    /// Freshly measured: one of <paramref name="names"/> (the product binding first, then SAT-D27's request / quote write
+    /// names) is held in the scope's company now. No name — a missing product binding — refuses.
+    /// </summary>
     private static async Task<bool> StillAuthorizedAsync(ConsumerScope scope, ICompanyContext company,
-        ICurrentUser user, IErpAuthorityRevalidationService authority, CancellationToken cancellationToken)
+        ICurrentUser user, IErpAuthorityRevalidationService authority, IReadOnlyList<string> names,
+        CancellationToken cancellationToken)
     {
-        if (!Matches(scope, company, user)) return false;
-        var permissionScope = await authority.RevalidatePermissionScopeAsync(
-            SalesPermissionManifestV1.DraftsCreate, scope.CompanyId, cancellationToken);
-        return permissionScope.IsGranted && Matches(scope, company, user);
+        if (names.Count == 0 || !Matches(scope, company, user)) return false;
+        foreach (var name in names)
+        {
+            var permissionScope = await authority.RevalidatePermissionScopeAsync(name, scope.CompanyId, cancellationToken);
+            if (permissionScope.IsGranted) return Matches(scope, company, user);
+            if (!Matches(scope, company, user)) return false;
+        }
+
+        return false;
     }
 
     private static bool Matches(ConsumerScope scope, ICompanyContext company, ICurrentUser user) =>

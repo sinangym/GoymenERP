@@ -155,5 +155,9 @@ public sealed class SalesAccountSearchNormalizationHttpTests(GoymenErpApiFactory
         public Task<SalesReferenceReadResult<SalesCurrencyOptionsV1>> GetCurrenciesAsync(
             SalesCurrencyListQueryV1 query, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<SalesReferenceReadResult<SalesOwnerOptionsV1>> GetSalesOwnersAsync(
+            SalesOwnerQueryV1 query, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }
