@@ -148,7 +148,11 @@ public sealed class SalesShellCapabilityProviderContractTests
         // No 30: the SEPARATE force-close name, the decision's own literal, distinct from the cancel name.
         Assert.Equal("sales.orders.force-close", SalesPermissionManifestV1.OrdersForceClose);
         Assert.NotEqual(SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersForceClose);
-        Assert.Equal((11, 11), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // API-20 / API-21 (plan §3.2, S-01): the sales request's own three names; no draft or order name confers them.
+        Assert.Equal("sales.requests.write", SalesPermissionManifestV1.RequestsWrite);
+        Assert.Equal("sales.requests.read", SalesPermissionManifestV1.RequestsRead);
+        Assert.Equal("sales.requests.approve", SalesPermissionManifestV1.RequestsApprove);
+        Assert.Equal((12, 14), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -162,6 +166,9 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersCancel,
                 SalesPermissionManifestV1.OrdersForceClose,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
+                SalesPermissionManifestV1.RequestsWrite,
+                SalesPermissionManifestV1.RequestsRead,
+                SalesPermissionManifestV1.RequestsApprove,
             ],
             StringComparer.Ordinal);
         Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));
@@ -170,7 +177,8 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead, SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersQuantityWrite,
                 SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
-                SalesPermissionManifestV1.OrdersForceClose));
+                SalesPermissionManifestV1.OrdersForceClose,
+                SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsApprove));
     }
 
     private static string FindRepositoryRoot()

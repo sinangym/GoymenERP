@@ -440,6 +440,21 @@ public static class ErpPermissions
     public const string SalesOrdersForceClose = "sales.orders.force-close";
 
     /// <summary>
+    /// API-20 / API-21 (plan §3.2, S-01; delegation No 160, 161): the sales request names — record, read, and decide (approve
+    /// or reject) a request (Sales owner names SalesPermissionManifestV1.RequestsWrite / RequestsRead / RequestsApprove, same
+    /// strings). Each its own name: none confers another or any order name, and no order name confers them. Registration
+    /// grants nothing: no seeded role and no real user receives them; the real-user mapping stays a human gate. Company-wide
+    /// only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesRequestsWrite = "sales.requests.write";
+
+    /// <inheritdoc cref="SalesRequestsWrite"/>
+    public const string SalesRequestsRead = "sales.requests.read";
+
+    /// <inheritdoc cref="SalesRequestsWrite"/>
+    public const string SalesRequestsApprove = "sales.requests.approve";
+
+    /// <summary>
     /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
     /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
     /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
@@ -659,6 +674,9 @@ public static class ErpPermissions
             SalesOrdersForceClose,
             SalesOrdersQuantityWrite,
             SalesOrdersCustomerAcceptanceRecord,
+            SalesRequestsWrite,
+            SalesRequestsRead,
+            SalesRequestsApprove,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -781,6 +799,9 @@ public static class ErpPermissions
             SalesOrdersForceClose,
             SalesOrdersQuantityWrite,
             SalesOrdersCustomerAcceptanceRecord,
+            SalesRequestsWrite,
+            SalesRequestsRead,
+            SalesRequestsApprove,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

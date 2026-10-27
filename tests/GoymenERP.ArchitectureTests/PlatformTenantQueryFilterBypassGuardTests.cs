@@ -312,9 +312,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
             // TEK-13: +5 SalesRemainderChangeSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (5932b012… -> f2c6c3ac…).
             // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
-            // DEC-SAL-001 / API-08: +2 SalesOrderStatusSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (aabdd034… -> db01097b…).
+            // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted
+            // (merged over main's: aabdd034… -> 19d5e743…).
+            // DEC-SAL-001 / API-08: +2 SalesOrderStatusSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (merged over
+            // API-20/21: 19d5e743… -> a9873855…).
             ["tools/relational_inventory/sales.txt"] =
-                "db01097b794652ed88fff690dcf81534ce6a813ac787564d9a3f831298d37d9c",
+                "a98738558f96ae42862721baad557516dd80f0b30a1dc58015db10aa33a0a68b",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -381,9 +384,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
             // Re-fingerprinted for No 30 / SAT-D12: the force-closure table (DraftForceClosures), with the same CompanyId
             // query filter and a company-leading key, the widened lifecycle CK (Closed = 3) and the Draft -> Closed guard.
+            // Re-fingerprinted for API-20 / API-21: the sales request tables (Requests, RequestLines, DocumentCounters and the
+            // request commands' own RequestAttempts, ADR-SAL-001 §2), each with the same CompanyId query filter and a
+            // company-leading key, the attempt table's declared immutability trigger, and the request's decision-only write guard.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "524d03508fd0890a2809baec2471fed66e7abe76e057eb65057e1a42c3cafc03",
+                "0eeccdcd64c41ada685525680cfdd9121ab7148c14f1638bc81f4bdf85ae0eac",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1271,10 +1277,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // branch and its database capability token counts are unchanged.
                     // Re-fingerprinted for SAT-D8 / API-10: the draft service also receives the optional Logistics
                     // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for API-20 / API-21: the request store and service are DI-only seams over the same
+                    // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for DEC-SAL-001 / API-08: the draft service also receives the optional Settings
                     // Sales policy port (DI-only, SAT-D5 tolerance); the provider branch and its token counts are unchanged.
                     new(
-                        "94076d38483c5eea2b1fdae688674b9e0fd81a9241b319c5e40e3274c9ea553c",
+                        "f5b4f1b7b01f7aa29ab402b11cb534c014ed03f3bdb8095d02e168583e8d63ec",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1298,8 +1306,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // replaces record equality; no database, connection, command, raw SQL or filter-bypass API was added.
                     // Re-fingerprinted for No 30 / SAT-D12: the force-close write and its restore, company-resolved and saved
                     // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
+                    // Re-fingerprinted for API-20 / API-21: the class became partial (the request half lives in SalesStore.Requests.cs,
+                    // same filtered context, one save) and the list cursor takes an ordering label; SqlClient count unchanged.
                     new(
-                        "52a9cb9c3f6b709bc89a5ef0a1286f1b902cb36f5f4099123027d2a3f1036a49",
+                        "f942408eaa2ba3e75c0acb66dc5e71492582c39582ed7415914b21f6477e9048",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1708,6 +1718,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("adaea424b2a2238dbd0a962f96c660c9855756b67148f774aa4463118a3fe8a6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // API-20 / API-21: two raw SQL statements. Up creates the request attempt table's immutability trigger
+                // (ADR-SAL-001 §6: TR_RequestAttempts_RejectMutation, THROW 51067 on any UPDATE/DELETE); the Down's refuses
+                // rollback (51065) while any sales request or request attempt is stored, before every drop. Forward fix. Both
+                // codes are used by no other migration.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027063346_AddSalesRequests.cs"] =
+                    new("3acdd5d39c1a8f740211ed8c35395978b02d0e4c3441c559e2ecae34e2656927",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

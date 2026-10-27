@@ -40,11 +40,11 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// rebuilt through the same domain rules, so a corrupt row is refused, not repaired.</item>
 /// </list>
 /// </summary>
-public sealed class SalesStore(
+public sealed partial class SalesStore(
     SalesDbContext dbContext,
     ICompanyContext companyContext,
     IAuditEventCollector auditEvents,
-    TimeProvider timeProvider) : ISalesOrderDraftStore
+    TimeProvider timeProvider) : ISalesOrderDraftStore, ISalesRequestStore
 {
     private const string DraftEntityType = "Sales.OrderDraft";
     private const int ActorMaximumLength = 128;
@@ -1802,12 +1802,15 @@ public sealed class SalesStore(
     {
         private const string Ordering = "createdAtUtc desc, id desc";
 
-        public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id) =>
+        /// <summary>API-20: the sales request list's ordering label, so a draft cursor never pages the requests (and back).</summary>
+        public const string RequestOrdering = "requests: createdAtUtc desc, id desc";
+
+        public static string Encode(Guid companyId, DateTimeOffset createdAtUtc, Guid id, string ordering = Ordering) =>
             Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-                new Payload(companyId, Ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
+                new Payload(companyId, ordering, createdAtUtc.UtcDateTime.ToString("O", CultureInfo.InvariantCulture), id), Json)))
                 .TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
-        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId)
+        public static (DateTimeOffset CreatedAtUtc, Guid Id) Decode(string cursor, Guid companyId, string ordering = Ordering)
         {
             Payload? payload;
             try
@@ -1821,7 +1824,7 @@ public sealed class SalesStore(
                 throw Refused(SalesDraftStoreCodes.InvalidCursor, "Liste imleci çözülemedi.", exception);
             }
 
-            if (payload is null || payload.Company != companyId || !string.Equals(payload.Ordering, Ordering, StringComparison.Ordinal)
+            if (payload is null || payload.Company != companyId || !string.Equals(payload.Ordering, ordering, StringComparison.Ordinal)
                 || payload.Id == Guid.Empty
                 || !DateTimeOffset.TryParseExact(payload.CreatedAtUtc, "O", CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var createdAtUtc))

@@ -56,7 +56,8 @@ public sealed partial class SalesDraftService(
     ISalesOrderLoadingReadPortV1? loadings = null,
     IProductQuantityPriceReferenceReaderV1? priceReferences = null,
     ISalesOrderCustomerReturnReadPortV1? customerReturns = null,
-    ISettingsSalesPolicyProviderV1? salesPolicies = null) : ISalesDraftService
+    ISalesRequestStore? requests = null,
+    ISettingsSalesPolicyProviderV1? salesPolicies = null) : ISalesDraftService, ISalesRequestService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -1103,14 +1104,22 @@ public sealed partial class SalesDraftService(
 
     // ---- owners ---------------------------------------------------------------------------------
 
-    private async Task RequireAccountAsync(Scope scope, CreateSalesOrderDraftRequest request, CancellationToken cancellationToken)
+    private Task RequireAccountAsync(Scope scope, CreateSalesOrderDraftRequest request, CancellationToken cancellationToken) =>
+        RequireAccountAsync(scope, bindings.CreatePermission, request.PartyId, request.CompanyAccountId, cancellationToken);
+
+    /// <summary>
+    /// The Cari owner's answer for the customer (party + account of that party + this company + both active), measured under
+    /// <paramref name="permission"/> — the draft's create name, or (API-20) the request's write name. The draft's rules, unchanged.
+    /// </summary>
+    private async Task RequireAccountAsync(Scope scope, string? permission, Guid partyId, Guid companyAccountId,
+        CancellationToken cancellationToken)
     {
-        var answer = await GuardedAsync(scope, bindings.CreatePermission,
-            () => accounts.GetAuthorizedAsync(request.PartyId, request.CompanyAccountId, cancellationToken), cancellationToken);
+        var answer = await GuardedAsync(scope, permission,
+            () => accounts.GetAuthorizedAsync(partyId, companyAccountId, cancellationToken), cancellationToken);
         switch (answer.Outcome)
         {
             case SalesPartyAccountOutcomeV1.Found when answer.Account is { } account:
-                if (account.PartyId != request.PartyId || account.CompanyAccountId != request.CompanyAccountId)
+                if (account.PartyId != partyId || account.CompanyAccountId != companyAccountId)
                 {
                     throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
                 }
@@ -1273,6 +1282,27 @@ public sealed partial class SalesDraftService(
         int index, SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken)
     {
         var line = request.Lines[index];
+        var (product, orderUnit) = await ReadProductUnitAsync(scope, bindings.CreatePermission, index, line.ProductId,
+            line.ExpectedProductVersion, line.OrderUnitId, request.BusinessDate,
+            refusal => TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash, refusal, cancellationToken), cancellationToken);
+        var slices = line.RequestedDeliverySlices?
+            .Select(slice => new DeliverySliceInput(slice.SliceId, slice.OrderUnitId, slice.Quantity, Decimal(slice.Quantity),
+                slice.RequestedDeliveryDate))
+            .ToArray();
+        return new SalesDraftLineInput(line.LineId, product, orderUnit, line.Quantity, Decimal(line.Quantity),
+            line.RequestedDeliveryDate, line.Note, Commercial: Commercial(line, index, product, money), RequestedDeliverySlices: slices);
+    }
+
+    /// <summary>
+    /// The Product owner's eligibility of one line (three unit bindings) and the Settings owner's profile of its order unit,
+    /// both for this company on the business date and measured under <paramref name="permission"/> — the draft's create
+    /// name, or (API-20) the request's write name. A stale product version is the key's terminal refusal through
+    /// <paramref name="terminal"/> (ADR-011 §7). The draft's rules, unchanged; only the caller's line shape moved out.
+    /// </summary>
+    private async Task<(ProductSnapshot Product, UnitProfileSnapshot OrderUnit)> ReadProductUnitAsync(Scope scope, string? permission,
+        int index, Guid productId, string expectedProductVersion, Guid orderUnitId, DateOnly businessDate,
+        Func<SalesDraftTerminalRefusal, Task<SalesDraftServiceException>> terminal, CancellationToken cancellationToken)
+    {
         var productField = $"lines[{index}].productId";
         var unitField = $"lines[{index}].orderUnitId";
         if (products is null)
@@ -1283,9 +1313,9 @@ public sealed partial class SalesDraftService(
         ProductSalesEligibilityV1 eligibility;
         try
         {
-            eligibility = await GuardedAsync(scope, bindings.CreatePermission,
-                () => products.EvaluateAsync(new ProductSalesSelectionV1(line.ProductId, line.ExpectedProductVersion, line.OrderUnitId,
-                    request.BusinessDate), cancellationToken), cancellationToken);
+            eligibility = await GuardedAsync(scope, permission,
+                () => products.EvaluateAsync(new ProductSalesSelectionV1(productId, expectedProductVersion, orderUnitId,
+                    businessDate), cancellationToken), cancellationToken);
         }
         catch (ProductOperationException exception)
         {
@@ -1293,9 +1323,8 @@ public sealed partial class SalesDraftService(
             {
                 401 => new SalesDraftServiceException(401, "unauthenticated"),
                 403 => new SalesDraftServiceException(403, "forbidden"),
-                409 => await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash,
-                    new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, [new(productField, exception.Code)]),
-                    cancellationToken),
+                409 => await terminal(
+                    new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, [new(productField, exception.Code)])),
                 400 or 404 or 422 => new SalesDraftServiceException(422, "unsupported_product", [new(productField, exception.Code)]),
                 _ => new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ProductEligibilityUnavailable),
             };
@@ -1312,14 +1341,13 @@ public sealed partial class SalesDraftService(
             // A stale product version is the terminal refusal of ADR-011 §7: recorded and replayed under this key.
             if (errors.Any(error => error.Code == ProductApiV1.VersionConflict))
             {
-                throw await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash,
-                    new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, errors), cancellationToken);
+                throw await terminal(new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, errors));
             }
 
             throw new SalesDraftServiceException(422, "unsupported_product", errors);
         }
 
-        if (snapshot.ProductId != line.ProductId || snapshot.EffectiveOn != request.BusinessDate
+        if (snapshot.ProductId != productId || snapshot.EffectiveOn != businessDate
             || string.IsNullOrWhiteSpace(snapshot.ProductVersion) || string.IsNullOrWhiteSpace(snapshot.Code)
             || string.IsNullOrWhiteSpace(snapshot.Name)
             || new[] { snapshot.StockUnit, snapshot.SalesUnit, snapshot.OrderUnit }.Any(unit =>
@@ -1329,7 +1357,7 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
         }
 
-        if (snapshot.OrderUnit.UnitId != line.OrderUnitId)
+        if (snapshot.OrderUnit.UnitId != orderUnitId)
         {
             throw new SalesDraftServiceException(422, "unsupported_unit", [new(unitField, "unsupported_unit")]);
         }
@@ -1337,15 +1365,15 @@ public sealed partial class SalesDraftService(
         UnitProfileV1 profile;
         try
         {
-            profile = await GuardedAsync(scope, bindings.CreatePermission,
-                () => settings.GetUnitProfileAsync(line.OrderUnitId, request.BusinessDate, cancellationToken), cancellationToken);
+            profile = await GuardedAsync(scope, permission,
+                () => settings.GetUnitProfileAsync(orderUnitId, businessDate, cancellationToken), cancellationToken);
         }
         catch (SettingsPrerequisiteException exception)
         {
             throw Settings(exception, unitField, SettingsPrerequisiteCodesV1.UnitProfileNotFound, "unsupported_unit");
         }
 
-        if (profile.CompanyId != scope.CompanyId || profile.UnitId != line.OrderUnitId
+        if (profile.CompanyId != scope.CompanyId || profile.UnitId != orderUnitId
             || profile.Profile.ProfileId != snapshot.OrderUnit.ProfileId
             || profile.Profile.Version.ToString(CultureInfo.InvariantCulture) != snapshot.OrderUnit.Version
             || profile.Scale < 0 || string.IsNullOrWhiteSpace(profile.UnitCode) || string.IsNullOrWhiteSpace(profile.DimensionCode))
@@ -1359,12 +1387,7 @@ public sealed partial class SalesDraftService(
             profile.Profile.ProfileId, profile.Profile.Version.ToString(CultureInfo.InvariantCulture), profile.IsKilogram,
             profile.Scale, Math.Min(profile.Scale, Quantity.AllowedScale(profile.IsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece)),
             profile.IsActive, profile.EffectiveFrom, profile.EffectiveThrough);
-        var slices = line.RequestedDeliverySlices?
-            .Select(slice => new DeliverySliceInput(slice.SliceId, slice.OrderUnitId, slice.Quantity, Decimal(slice.Quantity),
-                slice.RequestedDeliveryDate))
-            .ToArray();
-        return new SalesDraftLineInput(line.LineId, product, orderUnit, line.Quantity, Decimal(line.Quantity),
-            line.RequestedDeliveryDate, line.Note, Commercial: Commercial(line, index, product, money), RequestedDeliverySlices: slices);
+        return (product, orderUnit);
     }
 
     /// <summary>
