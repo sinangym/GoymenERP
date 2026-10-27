@@ -21,10 +21,11 @@ public sealed class SalesRealizationCalculatorTests
     {
         // ordered, shipped, closed → state, direction, deviation, band
         { "1000", "1000", false, "Completed", "None", "0", "Within" },
-        // Over-delivery is measured on every shipment.
+        // Over-delivery is measured on every shipment; the warn band is "Tamamlandı" with its warning (SAT-D24).
         { "1000", "1009.999", false, "Completed", "Over", "9.999", "Within" },
-        { "1000", "1010", false, "OutsideTolerance", "Over", "10", "Warn" },
-        { "1000", "1019.999", false, "OutsideTolerance", "Over", "19.999", "Warn" },
+        { "1000", "1010", false, "Completed", "Over", "10", "Warn" },
+        { "1000", "1019.999", false, "Completed", "Over", "19.999", "Warn" },
+        { "1000", "1010", true, "Completed", "Over", "10", "Warn" },
         { "1000", "1020", false, "OutsideTolerance", "Over", "20", "Approval" },
         { "1000", "1029.999", false, "OutsideTolerance", "Over", "29.999", "Approval" },
         { "1000", "1030", false, "OutsideTolerance", "Over", "30", "Block" },
@@ -44,7 +45,7 @@ public sealed class SalesRealizationCalculatorTests
         // Nothing shipped on an open line: not started, and the tolerance is not needed.
         { "1000", "0", false, "NotStarted", "Under", "1000", null },
         // Ö2: the smallest kilogram step decides exactly.
-        { "0.1", "0.101", false, "OutsideTolerance", "Over", "0.001", "Warn" },
+        { "0.1", "0.101", false, "Completed", "Over", "0.001", "Warn" },
         { "0.2", "0.201", false, "Completed", "Over", "0.001", "Within" },
     };
 
@@ -62,7 +63,7 @@ public sealed class SalesRealizationCalculatorTests
     }
 
     [Theory]
-    [InlineData(100, 101, false, "OutsideTolerance", "Warn")]
+    [InlineData(100, 101, false, "Completed", "Warn")]
     [InlineData(100, 100, false, "Completed", "Within")]
     [InlineData(100, 99, false, "Partial", null)]
     [InlineData(100, 99, true, "ClosedWithRemainder", "Warn")]
@@ -77,6 +78,18 @@ public sealed class SalesRealizationCalculatorTests
 
         Assert.Equal((state, band), (line.State.ToString(), line.Band?.ToString()));
         Assert.Equal(QuantityUnit.Piece, line.Deviation.Unit);
+    }
+
+    [Fact]
+    public void Only_a_completed_line_in_the_warn_band_carries_the_sat_d24_warning()
+    {
+        // Over in the warn band: completed WITH the warning.
+        Assert.True(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(1015m), false, Ladder)));
+        // Within, approval band over, open or closed under in the warn band: no SAT-D24 warning.
+        Assert.False(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(1005m), false, Ladder)));
+        Assert.False(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(1020m), false, Ladder)));
+        Assert.False(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(985m), false, Ladder)));
+        Assert.False(SalesRealizationCalculator.IsCompletedWithWarning(SalesRealizationCalculator.Line(Kg(1000m), Kg(985m), true, Ladder)));
     }
 
     [Fact]

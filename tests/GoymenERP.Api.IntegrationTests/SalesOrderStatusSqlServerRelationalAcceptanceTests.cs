@@ -87,6 +87,7 @@ public sealed class SalesOrderStatusSqlServerRelationalAcceptanceTests
             State(status, "customerAcceptance")));
         Assert.Equal(("NoSource", "NoSource", "NoSource"), (State(status, "source"), State(status, "invoicing"), State(status, "financialClosure")));
         Assert.Equal("Partial", State(status, "realization"));
+        Assert.Equal(JsonValueKind.False, status.GetProperty("realization").GetProperty("warning").ValueKind);
         // The tolerance is the REAL approved GDC record, asked for the order's business date.
         var gdc = ApprovedSalesPolicyCatalog.GdcDeliveryToleranceV1;
         var tolerance = status.GetProperty("realization").GetProperty("tolerance");
@@ -176,6 +177,8 @@ public sealed class SalesOrderStatusSqlServerRelationalAcceptanceTests
         string? Band, string? ClosedRemainder) Line(JsonElement status)
     {
         var line = Assert.Single(status.GetProperty("realization").GetProperty("lines").EnumerateArray());
+        // SAT-D24's warning marks only a completed warn-band over-delivery; Logistics ships no more than ordered, so never here.
+        Assert.Equal(JsonValueKind.False, line.GetProperty("warning").ValueKind);
         return (line.GetProperty("lineId").GetString(), line.GetProperty("ordered").GetString(), line.GetProperty("shipped").GetString(),
             line.GetProperty("delivered").GetString(), line.GetProperty("state").GetString(), line.GetProperty("direction").GetString(),
             line.GetProperty("deviation").GetString(), line.GetProperty("band").GetString(), line.GetProperty("closedRemainder").GetString());

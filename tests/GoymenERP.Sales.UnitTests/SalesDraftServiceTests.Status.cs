@@ -40,13 +40,13 @@ public sealed partial class SalesDraftServiceTests
         // Owner modules that do not exist on main: "no source", never complete or zero.
         Assert.Equal(("NoSource", "NoSource", "NoSource"), (status.Source.State, status.Invoicing.State, status.FinancialClosure.State));
 
-        Assert.Equal("Partial", status.Realization.State);
+        Assert.Equal(("Partial", false), (status.Realization.State, status.Realization.Warning));
         Assert.Equal(new SalesDraftDeliveryToleranceV1(TolerancePolicyProfile, 3, "1", "2", "3", new DateOnly(2026, 9, 1), null, Day),
             status.Realization.Tolerance);
         Assert.Equal(
             [
-                new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1", "Completed", "None", "0", "Within", null),
-                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "1", "0.5", "Partial", "Under", "1.25", null, null),
+                new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1", "Completed", "None", "0", "Within", false, null),
+                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "1", "0.5", "Partial", "Under", "1.25", null, false, null),
             ],
             status.Realization.Lines);
         // The tolerance is asked once, for the order's business date; each owner once, for this draft only.
@@ -74,7 +74,26 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task Over_delivery_outside_the_tolerance_is_outside_tolerance_and_never_folded_into_completed()
+    public async Task Over_delivery_in_the_warn_band_is_completed_with_the_sat_d24_warning_on_the_line_and_the_axis()
+    {
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        var (first, second) = (approved.Lines[0].LineId, approved.Lines[1].LineId);
+        // Line 1: exactly as ordered; line 2: 2.25 → 2.275 is 1.11 % over (warn band; the bound itself is the calculator test's).
+        world.Deliveries = new FakeDeliveries(order => new(Company, order,
+            [new(first, KgUnit, 1.25m, 1.25m), new(second, KgUnit, 2.275m, 2.275m)]));
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+
+        var status = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
+
+        Assert.Equal(("Completed", true), (status.Realization.State, status.Realization.Warning));
+        Assert.Equal(
+            [("Completed", "None", "Within", false), ("Completed", "Over", "Warn", true)],
+            status.Realization.Lines.Select(line => (line.State, line.Direction!, line.Band!, line.Warning)));
+    }
+
+    [Fact]
+    public async Task Over_delivery_in_the_approval_band_is_outside_tolerance_and_never_folded_into_completed()
     {
         var world = new World();
         var approved = await ApprovedTwoLineAsync(world);
@@ -86,7 +105,7 @@ public sealed partial class SalesDraftServiceTests
 
         var status = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
 
-        Assert.Equal("OutsideTolerance", status.Realization.State);
+        Assert.Equal(("OutsideTolerance", false), (status.Realization.State, status.Realization.Warning));
         Assert.Equal(
             [("Completed", "Over", "0.012", "Within"), ("OutsideTolerance", "Over", "0.045", "Approval")],
             status.Realization.Lines.Select(line => (line.State, line.Direction!, line.Deviation!, line.Band!)));
@@ -151,8 +170,8 @@ public sealed partial class SalesDraftServiceTests
         // The facts stay visible; a line that needs the tolerance carries no judged state, one with nothing shipped is not started.
         Assert.Equal(
             [
-                new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1.25", "PolicyUnavailable", null, null, null, null),
-                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "0", "0", "NotStarted", null, null, null, null),
+                new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1.25", "PolicyUnavailable", null, null, null, false, null),
+                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "0", "0", "NotStarted", null, null, null, false, null),
             ],
             status.Realization.Lines);
         // The other axes are still answered (the realization's policy does not take them down).
@@ -255,7 +274,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("Closed", "Approved", "ClosedWithRemainder"), (status.Lifecycle.State, status.InternalApproval.State,
             status.Realization.State));
         // 1 of 1.25 kg is 20 % short: measured because the line is closed (SAT-D16), block band, the rest is the closed remainder.
-        Assert.Equal(new SalesDraftLineRealizationV1(line, 1, KgUnit, "1.25", "1", "1", "ClosedWithRemainder", "Under", "0.25", "Block", "0.25"),
+        Assert.Equal(new SalesDraftLineRealizationV1(line, 1, KgUnit, "1.25", "1", "1", "ClosedWithRemainder", "Under", "0.25", "Block", false, "0.25"),
             Assert.Single(status.Realization.Lines));
     }
 

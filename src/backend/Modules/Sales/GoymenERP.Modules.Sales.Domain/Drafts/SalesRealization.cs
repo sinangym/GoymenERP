@@ -64,10 +64,16 @@ public enum LineRealizationState
     /// <summary>Shipped below the ordered quantity, outside the tolerance, line still open: the open remainder is not a shortfall (SAT-D16).</summary>
     Partial = 2,
 
-    /// <summary>The shipped total is within the tolerance of the ordered quantity, over or under (SAT-D5: "Tamamlandı").</summary>
+    /// <summary>
+    /// The shipped total is within the tolerance of the ordered quantity, over or under (SAT-D5: "Tamamlandı"), or over it in
+    /// the WARN band (SAT-D24: "Tamamlandı" with the warning — the line's band stays <see cref="DeliveryToleranceBand.Warn"/>).
+    /// </summary>
     Completed = 3,
 
-    /// <summary>Shipped ABOVE the ordered quantity in the warn, approval or block band (over-delivery is measured on every shipment).</summary>
+    /// <summary>
+    /// Shipped ABOVE the ordered quantity in the approval or block band (over-delivery is measured on every shipment). Whether an
+    /// approval-band over-delivery becomes "Tamamlandı" after its approval is not decided (no approval record exists).
+    /// </summary>
     OutsideTolerance = 4,
 
     /// <summary>
@@ -92,7 +98,8 @@ public sealed record LineRealization(
 /// shipments ("bütün sevklerin toplamı"). Deviation = |shipped − ordered|; deviation % = deviation / ordered × 100.</item>
 /// <item><b>Exact</b>: the band is decided by comparing deviation × 100 with percent × ordered in <see cref="decimal"/> — no
 /// division, no rounding, no floating point. A zero deviation is no deviation and always <see cref="DeliveryToleranceBand.Within"/>.</item>
-/// <item><b>Over-delivery</b> is measured on every shipment: within → Completed; any other band → OutsideTolerance.</item>
+/// <item><b>Over-delivery</b> is measured on every shipment: within → Completed; WARN band → Completed with the Warn band as its
+/// warning (SAT-D24, Sinan 2026-10-27); approval or block band → OutsideTolerance.</item>
 /// <item><b>Under-delivery</b> on an open line: within → Completed (SAT-D5); otherwise Partial and NOT banded — the open
 /// remainder is not a shortfall (SAT-D16). On a force-closed order the line is closed, so the shortfall is measured: within →
 /// Completed (SAT-D17), otherwise ClosedWithRemainder with its band.</item>
@@ -100,6 +107,13 @@ public sealed record LineRealization(
 /// </summary>
 public static class SalesRealizationCalculator
 {
+    /// <summary>SAT-D24: a line counted "Tamamlandı" in spite of a warn-band deviation — the warning the axis shows.</summary>
+    public static bool IsCompletedWithWarning(LineRealization line)
+    {
+        ArgumentNullException.ThrowIfNull(line);
+        return line.State == LineRealizationState.Completed && line.Band == DeliveryToleranceBand.Warn;
+    }
+
     /// <summary>Whether the line's state depends on the tolerance: anything shipped, or a closed line (its shortfall is measured).</summary>
     public static bool NeedsTolerance(Quantity shipped, bool lineClosed) => lineClosed || !shipped.IsZero;
 
@@ -137,6 +151,9 @@ public static class SalesRealizationCalculator
 
         return direction switch
         {
+            // SAT-D24: an over-delivery in the warn band is "Tamamlandı" with the warning; the band carries the warning.
+            DeliveryDeviationDirection.Over when band == DeliveryToleranceBand.Warn =>
+                new LineRealization(LineRealizationState.Completed, direction, deviation, band),
             DeliveryDeviationDirection.Over => new LineRealization(LineRealizationState.OutsideTolerance, direction, deviation, band),
             _ when lineClosed => new LineRealization(LineRealizationState.ClosedWithRemainder, direction, deviation, band),
             // SAT-D16: the open remainder is not a shortfall, so an open under-delivered line is not banded.

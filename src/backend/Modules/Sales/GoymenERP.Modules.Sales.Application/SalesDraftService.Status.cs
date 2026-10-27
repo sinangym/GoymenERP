@@ -13,10 +13,10 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <item><b>From the Sales aggregate</b>: lifecycle (<c>Draft</c> / <c>Cancelled</c> / <c>Closed</c>, as stored — "Aktif" is not
 /// derived), internal approval (the stored state) and customer acceptance (<c>NotRequired</c> / <c>Pending</c> /
 /// <c>Accepted</c> of the current revision).</item>
-/// <item><b>Realization</b> (SAT-D5, SAT-D15–D17): the Logistics shipped totals through the AT-024
+/// <item><b>Realization</b> (SAT-D5, SAT-D15–D17, SAT-D24): the Logistics shipped totals through the AT-024
 /// <see cref="ISalesOrderDeliveryReadPortV1"/> (never Logistics tables), judged by <see cref="SalesRealizationCalculator"/> with the
 /// company's delivery tolerance read ONLY through <see cref="ISettingsSalesPolicyProviderV1"/> for the order's business date
-/// (the date Sales reads its other Settings profiles on). The tolerance is asked only when a line needs it. A missing,
+/// (SAT-D24 b; the date Sales reads its other Settings profiles on). The tolerance is asked only when a line needs it. A missing,
 /// refused, inactive, out-of-window, other-company or malformed policy is <c>PolicyUnavailable</c> — never a default; an
 /// owner that is not composed, fails or answers a malformed value is <c>Unreadable</c> — never zero.</item>
 /// <item><b>No source yet</b>: source/allocation strategy (MOD-05, API-11), invoicing (S5) and financial closure (MOD-04)
@@ -90,7 +90,7 @@ public sealed partial class SalesDraftService
         var policy = needsTolerance ? await ToleranceAsync(scope, draft, cancellationToken) : null;
         if (needsTolerance && policy is null)
         {
-            return new SalesDraftRealizationAxisV1(SalesDraftStatusAxisStatesV1.PolicyUnavailable, null,
+            return new SalesDraftRealizationAxisV1(SalesDraftStatusAxisStatesV1.PolicyUnavailable, false, null,
                 [.. ordered.Select(line =>
                 {
                     var (shipped, delivered) = recorded[line.Id];
@@ -98,11 +98,11 @@ public sealed partial class SalesDraftService
                         ? SalesDraftStatusAxisStatesV1.PolicyUnavailable
                         : SalesDraftStatusAxisStatesV1.NotStarted;
                     return new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-                        QuantityText(shipped), QuantityText(delivered), state, null, null, null, ClosedRemainder(draft, line.Id));
+                        QuantityText(shipped), QuantityText(delivered), state, null, null, null, false, ClosedRemainder(draft, line.Id));
                 })]);
         }
 
-        var lines = new List<(SalesDraftLineRealizationV1 Wire, LineRealizationState State)>(ordered.Length);
+        var lines = new List<(SalesDraftLineRealizationV1 Wire, LineRealizationState State, bool Warning)>(ordered.Length);
         foreach (var line in ordered)
         {
             var (shipped, delivered) = recorded[line.Id];
@@ -117,13 +117,15 @@ public sealed partial class SalesDraftService
                 return Unreadable(ordered);
             }
 
+            var warning = SalesRealizationCalculator.IsCompletedWithWarning(realization);
             lines.Add((new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
                 QuantityText(shipped), QuantityText(delivered), realization.State.ToString(), realization.Direction.ToString(),
-                QuantityText(realization.Deviation), realization.Band?.ToString(), ClosedRemainder(draft, line.Id)), realization.State));
+                QuantityText(realization.Deviation), realization.Band?.ToString(), warning, ClosedRemainder(draft, line.Id)),
+                realization.State, warning));
         }
 
         return new SalesDraftRealizationAxisV1(SalesRealizationCalculator.Axis([.. lines.Select(line => line.State)]).ToString(),
-            policy?.Wire, [.. lines.Select(line => line.Wire)]);
+            lines.Any(line => line.Warning), policy?.Wire, [.. lines.Select(line => line.Wire)]);
     }
 
     /// <summary>
@@ -216,9 +218,9 @@ public sealed partial class SalesDraftService
     }
 
     private static SalesDraftRealizationAxisV1 Unreadable(IReadOnlyList<SalesOrderDraftLine> ordered) =>
-        new(SalesDraftStatusAxisStatesV1.Unreadable, null,
+        new(SalesDraftStatusAxisStatesV1.Unreadable, false, null,
             [.. ordered.Select(line => new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-                null, null, SalesDraftStatusAxisStatesV1.Unreadable, null, null, null, null))]);
+                null, null, SalesDraftStatusAxisStatesV1.Unreadable, null, null, null, false, null))]);
 
     /// <summary>The recorded force-closure remainder of the line (No 30 / SAT-D12), verbatim; null when the order was not force-closed.</summary>
     private static string? ClosedRemainder(SalesOrderDraft draft, Guid lineId) =>

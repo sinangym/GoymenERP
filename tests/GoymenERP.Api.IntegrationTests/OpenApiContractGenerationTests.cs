@@ -3581,8 +3581,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("state", "type:string"),
                     ("acceptedRevision", "type:null|string")),
                 ["SalesDraftRealizationAxisV1"] = ObjectSchema(
-                    ["state", "tolerance", "lines"],
+                    ["state", "warning", "tolerance", "lines"],
                     ("state", "type:string"),
+                    ("warning", "type:boolean"),
                     ("tolerance", "oneOf:ref:SalesDraftDeliveryToleranceV1|type:null"),
                     ("lines", "type:array;items:ref:SalesDraftLineRealizationV1")),
                 ["SalesDraftDeliveryToleranceV1"] = ObjectSchema(
@@ -3598,7 +3599,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("evaluatedOn", "type:string;format:date")),
                 ["SalesDraftLineRealizationV1"] = ObjectSchema(
                     ["lineId", "lineNo", "orderUnitId", "ordered", "shipped", "delivered", "state", "direction", "deviation", "band",
-                        "closedRemainder"],
+                        "warning", "closedRemainder"],
                     ("lineId", "type:string;format:uuid"),
                     ("lineNo", "type:integer|string;format:int32"),
                     ("orderUnitId", "type:string;format:uuid"),
@@ -3609,6 +3610,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("direction", "type:null|string"),
                     ("deviation", "type:null|string"),
                     ("band", "type:null|string"),
+                    ("warning", "type:boolean"),
                     ("closedRemainder", "type:null|string")),
                 ["SalesDraftLineCustomerReturnV1"] = ObjectSchema(
                     ["lineId", "lineNo", "orderUnitId", "ordered", "approvedReturned"],

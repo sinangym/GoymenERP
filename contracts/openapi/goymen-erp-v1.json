@@ -84024,6 +84024,7 @@
           "direction",
           "deviation",
           "band",
+          "warning",
           "closedRemainder"
         ],
         "type": "object",
@@ -84079,6 +84080,9 @@
               "null",
               "string"
             ]
+          },
+          "warning": {
+            "type": "boolean"
           },
           "closedRemainder": {
             "type": [
@@ -84358,6 +84362,7 @@
       "SalesDraftRealizationAxisV1": {
         "required": [
           "state",
+          "warning",
           "tolerance",
           "lines"
         ],
@@ -84365,6 +84370,9 @@
         "properties": {
           "state": {
             "type": "string"
+          },
+          "warning": {
+            "type": "boolean"
           },
           "tolerance": {
             "oneOf": [

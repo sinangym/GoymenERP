@@ -65,7 +65,8 @@ public sealed record SalesDraftDeliveryToleranceV1(
 /// (<c>None</c>/<c>Under</c>/<c>Over</c>) and <c>deviation</c> (|shipped − ordered|) are null when unreadable; <c>band</c>
 /// (<c>Within</c>/<c>Warn</c>/<c>Approval</c>/<c>Block</c>) is null when not measured (nothing shipped on an open line, an open
 /// under-delivered line outside the tolerance — SAT-D16 — or no tolerance). <c>closedRemainder</c> is the recorded force-closure
-/// remainder (No 30), null otherwise.
+/// remainder (No 30), null otherwise. <c>warning</c> is true exactly when the line counts <c>Completed</c> in spite of a deviation
+/// in the warn band (SAT-D24: an over-delivery between the warn and the approval percent is "Tamamlandı" with a warning).
 /// </summary>
 public sealed record SalesDraftLineRealizationV1(
     Guid LineId,
@@ -78,14 +79,17 @@ public sealed record SalesDraftLineRealizationV1(
     string? Direction,
     string? Deviation,
     string? Band,
+    bool Warning,
     string? ClosedRemainder);
 
 /// <summary>
-/// The realization axis: its state, the tolerance it was judged with (null when none was needed or none is available) and
-/// every order line once, in line order.
+/// The realization axis: its state, whether any line carries the SAT-D24 warning (a <c>Completed</c> line in the warn band —
+/// the axis may then read <c>Completed</c> with <c>warning</c> true), the tolerance it was judged with (null when none was needed
+/// or none is available) and every order line once, in line order.
 /// </summary>
 public sealed record SalesDraftRealizationAxisV1(
     string State,
+    bool Warning,
     SalesDraftDeliveryToleranceV1? Tolerance,
     IReadOnlyList<SalesDraftLineRealizationV1> Lines);
 
