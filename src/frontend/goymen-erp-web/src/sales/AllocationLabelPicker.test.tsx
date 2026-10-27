@@ -211,6 +211,7 @@ describe('UI-13 allocation label picker', () => {
     ['owned by a counterparty', { ownerKind: 'Counterparty', ownerId: OTHER_COMPANY }],
     ['held by a counterparty', { custodianKind: 'Counterparty', custodianId: OTHER_COMPANY }],
     ['owned by another company id', { ownerId: OTHER_COMPANY }],
+    ['held by another company id', { custodianId: OTHER_COMPANY }],
   ])('lists a label %s as not selectable with the reason (SAT-D20 1)', async (_name, overrides) => {
     vi.stubGlobal('fetch', vi.fn(async () => answer({ items: [position(overrides)], searchWindowFull: false })))
     const onSelect = vi.fn()

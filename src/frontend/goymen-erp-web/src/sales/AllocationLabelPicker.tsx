@@ -175,7 +175,7 @@ export function AllocationLabelPicker({
                   </td>
                   {canOpenLabelHistory ? (
                     <td>
-                      <Link to={inventoryLabelDetailPath(item.labelId)}
+                      <Link to={inventoryLabelDetailPath(item.labelId)} target="_blank" rel="noopener noreferrer"
                         aria-label={`${item.labelCode} ${T.labelHistoryAria}`}
                         data-testid={`sales-allocation-label-history-${item.labelId}`}>{T.labelHistory}</Link>
                     </td>
