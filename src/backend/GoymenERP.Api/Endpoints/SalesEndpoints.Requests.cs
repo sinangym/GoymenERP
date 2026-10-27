@@ -151,15 +151,17 @@ public static partial class SalesEndpoints
         // again (ADR-011 §4); a stale version or a wrong state is the key's recorded 409 (§7).
         MapRequestDecision(requests, "approval", "ApproveSalesRequestV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveRequestAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: []);
+            unprocessableCodes: [], extraConflictCodes: []);
+        // No 161 (fail-closed): a request with any order that is not cancelled is refused (409 sales_request_has_approved_order).
         MapRequestDecision(requests, "rejection", "RejectSalesRequestV1", allowReason: true,
             (service, id, body, metadata, cancellationToken) => service.RejectRequestAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: ["sales_request_rejection_reason_required", "sales_request_rejection_reason_too_long"]);
+            unprocessableCodes: ["sales_request_rejection_reason_required", "sales_request_rejection_reason_too_long"],
+            extraConflictCodes: [SalesRequestProblemCodesV1.HasOrder]);
     }
 
     private static void MapRequestDecision(RouteGroupBuilder requests, string segment, string name, bool allowReason,
         Func<ISalesRequestService, Guid, SalesDraftStateCommandRequest, SalesCommandMetadata, CancellationToken, Task<SalesRequestResponse>> command,
-        string[] unprocessableCodes)
+        string[] unprocessableCodes, string[] extraConflictCodes)
     {
         var route = requests.MapPost($"/{{id:guid}}/{segment}", async (
             Guid id,
@@ -216,8 +218,8 @@ public static partial class SalesEndpoints
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
-                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpConflict([SalesDraftProblemCodesV1.VersionConflict, SalesDraftProblemCodesV1.StateConflict,
+                SalesDraftProblemCodesV1.SameKeyPayloadMismatch, SalesDraftProblemCodesV1.ConcurrentChange, .. extraConflictCodes])
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
         if (unprocessableCodes.Length > 0)

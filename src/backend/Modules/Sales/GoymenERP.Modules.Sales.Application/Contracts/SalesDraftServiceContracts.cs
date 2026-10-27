@@ -211,4 +211,7 @@ public sealed record SalesDraftServiceBindings(
     // API-20 / API-21: the sales request names (record, read, decide).
     string? RequestWritePermission = SalesPermissionManifestV1.RequestsWrite,
     string? RequestReadPermission = SalesPermissionManifestV1.RequestsRead,
-    string? RequestApprovePermission = SalesPermissionManifestV1.RequestsApprove);
+    string? RequestApprovePermission = SalesPermissionManifestV1.RequestsApprove,
+    // API-22 / API-23 / API-24: the sales quote names (record/revise/lose/convert, read).
+    string? QuoteWritePermission = SalesPermissionManifestV1.QuotesWrite,
+    string? QuoteReadPermission = SalesPermissionManifestV1.QuotesRead);
