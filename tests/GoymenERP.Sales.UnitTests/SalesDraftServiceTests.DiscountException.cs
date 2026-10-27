@@ -400,6 +400,107 @@ public sealed partial class SalesDraftServiceTests
             both.Detail.Draft.Version);
     }
 
+    // Review B (#834): the discount-exception approval's own race, drift, withheld-replay and revoked-approver lines, the
+    // twins of the price-floor approval's tests in SalesDraftServiceTests.LinePricing.cs.
+
+    [Fact]
+    public async Task A_lost_same_key_discount_approval_race_answers_the_winners_recorded_result()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Priced(discount: "5"), Metadata("k-race-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        world.User.Id = "synthetic-discount-approver";
+        var approved = await world.Service().ApproveDiscountExceptionsAsync(created.Draft.Id,
+            DiscountApproval(created.Draft.Version, lineId), Metadata("k-race-approve"));
+        world.User.Id = Actor;
+        // The live draft advances past the approval, so only the winner's immutable result can answer the loser.
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command(approved.Detail.Draft.Version), Metadata("k-race-submit"));
+        world.User.Id = "synthetic-discount-approver";
+
+        world.Store.Race = "floor-result-at-refusal";
+        var raced = await world.Service().ApproveDiscountExceptionsAsync(created.Draft.Id,
+            DiscountApproval(created.Draft.Version, lineId), Metadata("k-race-loser"));
+
+        Assert.Equal((true, "winner-floor-correlation", JsonSerializer.Serialize(approved.Detail, SalesDraftJson.Options)),
+            (raced.IsReplay, raced.OriginalCorrelationId, JsonSerializer.Serialize(raced.Detail, SalesDraftJson.Options)));
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApproveDiscountExceptionsV1);
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("company")]
+    public async Task A_discount_result_replay_denies_identity_or_company_drift_during_the_final_price_read(string drift)
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Priced(discount: "5"), Metadata("k-drift-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        world.User.Id = "synthetic-drift-approver";
+        await world.Service().ApproveDiscountExceptionsAsync(created.Draft.Id,
+            DiscountApproval(created.Draft.Version, lineId, "SENTETIK drift anlaşması"), Metadata("k-drift-discount"));
+
+        world.Authority.OnRead = (permission, _) =>
+        {
+            if (permission != PriceReadPermission) return;
+            if (drift == "actor") world.User.Id = "synthetic-swapped-during-price-read";
+            else world.User.Company = Guid.NewGuid();
+        };
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDiscountExceptionsAsync(
+            created.Draft.Id, DiscountApproval(created.Draft.Version, lineId, "SENTETIK drift anlaşması"), Metadata("k-drift-discount")));
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApproveDiscountExceptionsV1);
+    }
+
+    [Fact]
+    public async Task A_discount_result_replay_refreshes_own_support_restriction_while_price_denial_stays_withheld()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Priced(discount: "5"), Metadata("k-own-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        // SAT-D45: the unlisted line's own writer approves it.
+        var approved = await world.Service().ApproveDiscountExceptionsAsync(created.Draft.Id,
+            DiscountApproval(created.Draft.Version, lineId, "SENTETIK own anlaşması"), Metadata("k-own-discount"));
+        Assert.Equal((true, false), (approved.Detail.IsOwnDraft, approved.Detail.IsOwnDecisionRestricted));
+
+        world.ActiveRoleCodes.Codes.Add(GoymenERP.BuildingBlocks.Security.ErpPersonaRoleCodes.SalesSupport);
+        world.Authority.Denied.Add(PriceReadPermission);
+        var replay = await world.Service().ApproveDiscountExceptionsAsync(created.Draft.Id,
+            DiscountApproval(created.Draft.Version, lineId, "SENTETIK own anlaşması"), Metadata("k-own-discount"));
+
+        Assert.Equal((true, true, true), (replay.IsReplay, replay.Detail.IsOwnDraft, replay.Detail.IsOwnDecisionRestricted));
+        Assert.All(replay.Detail.Lines, line =>
+        {
+            Assert.Equal(SalesPriceDisclosure.Withheld, line.PriceDisclosure);
+            Assert.Null(line.UnitPrice);
+            Assert.Null(line.PriceUnitId);
+            Assert.Null(line.DiscountPercent);
+        });
+        Assert.Single(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApproveDiscountExceptionsV1);
+    }
+
+    [Fact]
+    public async Task A_discount_exception_refuses_its_listed_discount_writer_and_an_approver_revoked_after_the_reads_without_an_effect()
+    {
+        var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m } }.AllowDiscountsUpTo(10m);
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-revoke-create"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            FromList(lineId, "12.50", "15")), Metadata("k-revoke-revise"));
+        var request = DiscountApproval(revised.Detail.Draft.Version, lineId, "SENTETIK gerekçe");
+
+        var same = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDiscountExceptionsAsync(
+            created.Draft.Id, request, Metadata("k-revoke-same")));
+        Assert.Equal(SalesRuleCodes.DiscountExceptionSameActor, Assert.Single(same.Errors).Code);
+
+        world.User.Id = "synthetic-discount-approver";
+        world.Store.OnStore = () => world.Authority.Denied.Add(SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
+        var revoked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ApproveDiscountExceptionsAsync(
+            created.Draft.Id, request, Metadata("k-revoke-approver")));
+        Assert.Equal((403, "forbidden"), (revoked.Status, revoked.Code));
+        Assert.DoesNotContain(world.Store.Transitions, item => item.Command == SalesDraftCommands.ApproveDiscountExceptionsV1);
+        Assert.Null(Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!.ApprovedBy);
+    }
+
     /// <summary>The Identity owner's role → limit group mapping, as a fixed answer.</summary>
     private sealed class FakeDiscountLimitGroups(IReadOnlyList<Guid> groups) : ISalesDiscountLimitGroupSourceV1
     {

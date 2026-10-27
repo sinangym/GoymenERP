@@ -156,6 +156,8 @@ function decodeDiscountCheck(value: unknown): DiscountLimitCheck | null {
     || !isNullableDecimal(o.listUnitPrice) || !isNullableDecimal(o.limitPercent) || typeof o.requiresApproval !== 'boolean') return null
   // An unmeasured discount (no list price) always requires approval.
   if (o.listUnitPrice === null && o.requiresApproval !== true) return null
+  // A measured line with no defined limit always requires approval (SAT-D2 fail-closed); the server never sends otherwise.
+  if (o.listUnitPrice !== null && o.limitPercent === null && o.requiresApproval !== true) return null
   const pending = o.approvedBy === null && o.approvedAtUtc === null && o.reason === null
   // Only an over-limit discount is ever approved.
   const approved = o.requiresApproval && isText(o.approvedBy) && typeof o.approvedAtUtc === 'string'
