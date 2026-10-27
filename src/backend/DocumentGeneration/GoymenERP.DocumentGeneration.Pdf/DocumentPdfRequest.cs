@@ -7,13 +7,18 @@ namespace GoymenERP.DocumentGeneration.Pdf;
 /// independent of <see cref="TechnicalId"/>.
 /// </summary>
 /// <param name="PageLabelFormat">A composite format with <c>{0}</c> the page number and <c>{1}</c> the page count.</param>
+/// <param name="Watermark">
+/// Optional large diagonal text drawn behind the content of EVERY page (e.g. a draft marker); null draws none. It stays
+/// extractable text, so the page text carries it too.
+/// </param>
 public sealed record DocumentPdfRequest(
     Guid TechnicalId,
     PdfDocumentFileNameParts FileNameParts,
     string Title,
     IReadOnlyList<DocumentPdfBlock> Blocks,
     string FooterText,
-    string PageLabelFormat);
+    string PageLabelFormat,
+    string? Watermark = null);
 
 /// <summary>One block of a <see cref="DocumentPdfRequest"/>; the closed set below is the whole layout vocabulary.</summary>
 public abstract record DocumentPdfBlock;

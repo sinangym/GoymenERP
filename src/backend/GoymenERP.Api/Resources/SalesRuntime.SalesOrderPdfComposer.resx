@@ -7,6 +7,7 @@
   <data name="TitleOrder" xml:space="preserve"><value>Satış Siparişi {0}</value></data>
   <data name="TitleQuote" xml:space="preserve"><value>Satış Teklifi {0}</value></data>
   <data name="Footer" xml:space="preserve"><value>{0} · {1} · Bilgi amaçlı teknik çıktıdır; resmî belge değildir.</value></data>
+  <data name="DraftWatermark" xml:space="preserve"><value>TASLAK</value></data>
   <data name="PageLabel" xml:space="preserve"><value>Sayfa {0} / {1}</value></data>
   <data name="HeadingOrder" xml:space="preserve"><value>Sipariş bilgileri</value></data>
   <data name="HeadingApproval" xml:space="preserve"><value>Onay bilgileri</value></data>
@@ -25,7 +26,7 @@
   <data name="FieldDecidedBy" xml:space="preserve"><value>Karar veren</value></data>
   <data name="FieldCustomerAcceptance" xml:space="preserve"><value>Müşteri kabulü</value></data>
   <data name="ActorAt" xml:space="preserve"><value>{0} · {1}</value></data>
-  <data name="InstantUtc" xml:space="preserve"><value>{0} UTC</value></data>
+  <data name="InstantIstanbul" xml:space="preserve"><value>{0} (İstanbul saati)</value></data>
   <data name="CustomerWithTradeName" xml:space="preserve"><value>{0} — {1} ({2})</value></data>
   <data name="Customer" xml:space="preserve"><value>{0} — {1}</value></data>
   <data name="StateWithApproval" xml:space="preserve"><value>{0} · {1}</value></data>

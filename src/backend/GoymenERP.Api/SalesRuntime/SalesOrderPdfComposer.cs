@@ -21,6 +21,9 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
     private const int MaximumFileNamePartyTextElements = 40;
     private const string DateFormat = "dd.MM.yyyy";
     private const string InstantFormat = "dd.MM.yyyy HH:mm";
+    // SAT-D10: the business time zone. Instants are stored in UTC and printed in Turkish local time, labelled as such.
+    private const string BusinessTimeZoneId = "Europe/Istanbul";
+    private static readonly Lazy<TimeZoneInfo?> BusinessTimeZone = new(FindBusinessTimeZone);
 
     // Column weights of the line table: layout proportions only.
     private const double NarrowColumn = 0.7;
@@ -82,7 +85,8 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             title,
             blocks,
             Format("Footer", draft.DocumentNo, draft.Revision),
-            T("PageLabel"));
+            T("PageLabel"),
+            IsApprovedRevision(draft) ? null : T("DraftWatermark"));
         return (request, pricesVisible);
     }
 
@@ -281,6 +285,14 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             ? number + 1
             : throw new InvalidOperationException("The order revision is not a revision text.");
 
+    /// <summary>
+    /// SAT-D56 (Sinan, 2026-10-27, "Evet, ama 'TASLAK' filigranıyla"): an order whose current revision is not approved
+    /// (preparing, pending approval, rejected, withdrawn) is printed with the draft watermark on every page; only an
+    /// approved revision prints without it. The lifecycle (cancelled/closed) does not change what was approved.
+    /// </summary>
+    private static bool IsApprovedRevision(SalesOrderDraftSummaryView draft) =>
+        string.Equals(draft.ApprovalState, "Approved", StringComparison.Ordinal);
+
     private string StateText(SalesOrderDraftSummaryView draft) => Format("StateWithApproval", LifecycleText(draft.State), ApprovalText(draft.ApprovalState));
 
     /// <summary>The file name's status: the terminal lifecycle when there is one, otherwise the internal approval state.</summary>
@@ -307,8 +319,29 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
 
     private static string Date(DateOnly value) => value.ToString(DateFormat, CultureInfo.InvariantCulture);
 
-    private string Instant(DateTimeOffset value) =>
-        Format("InstantUtc", value.UtcDateTime.ToString(InstantFormat, CultureInfo.InvariantCulture));
+    /// <summary>
+    /// An instant in the SAT-D10 business time zone with its label. Without the zone's rules on the host the PDF is not
+    /// printed (a server fault), never printed in another zone.
+    /// </summary>
+    private string Instant(DateTimeOffset value)
+    {
+        var zone = BusinessTimeZone.Value
+            ?? throw new InvalidOperationException("The business time zone is not available on this host.");
+        return Format("InstantIstanbul",
+            TimeZoneInfo.ConvertTime(value, zone).ToString(InstantFormat, CultureInfo.InvariantCulture));
+    }
+
+    private static TimeZoneInfo? FindBusinessTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(BusinessTimeZoneId);
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return null;
+        }
+    }
 
     private string Format(string key, params object[] values) =>
         string.Format(CultureInfo.InvariantCulture, T(key), values);

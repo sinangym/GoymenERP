@@ -76,7 +76,7 @@ public static partial class SalesEndpoints
                 // carries the reason's type and message (no order content: the messages name rules, never values).
                 logger.LogWarning(
                     "Sales order PDF was not rendered. DraftId={DraftId} Reason={Reason}: {Message} CorrelationId={CorrelationId}",
-                    id, exception.GetType().Name, exception.Message, correlation.IsResolved ? correlation.CorrelationId : null);
+                    id, exception is ArgumentException ? "layout" : "composition", exception.Message, correlation.IsResolved ? correlation.CorrelationId : null);
                 return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 

@@ -67,6 +67,55 @@ public sealed class DocumentPdfGeneratorTests
     }
 
     [Fact]
+    public void A_watermark_is_drawn_large_behind_every_page_and_the_content_still_reads_back()
+    {
+        var rows = Enumerable.Range(1, 90)
+            .Select(index => (IReadOnlyList<string>)[index.ToString("D3", System.Globalization.CultureInfo.InvariantCulture), $"Ürün {index}"])
+            .ToArray();
+        var request = Request([new DocumentPdfTable([new DocumentPdfColumn("Sıra", 1), new DocumentPdfColumn("Ürün adı", 4)], rows)])
+            with { Watermark = "TASLAK" };
+
+        var artifact = new DocumentPdfGenerator().Generate(request);
+
+        using var pdf = PdfDocument.Open(artifact.Content);
+        var pages = pdf.GetPages().ToArray();
+        Assert.True(pages.Length > 1);
+        foreach (var page in pages)
+        {
+            Assert.Contains("TASLAK", page.Text, StringComparison.Ordinal);
+            var marks = page.Letters.Where(letter => letter.PointSize > 100).ToArray();
+            Assert.Equal("TASLAK", string.Concat(marks.Select(letter => letter.Value)));
+            // Behind the content: the watermark is the first thing the page draws.
+            Assert.StartsWith("TASLAK", page.Text, StringComparison.Ordinal);
+            Assert.Contains("SıraÜrün adı", page.Text, StringComparison.Ordinal);
+        }
+
+        var text = string.Concat(pages.Select(page => page.Text));
+        foreach (var row in rows)
+        {
+            Assert.Contains(string.Concat(row), text, StringComparison.Ordinal);
+        }
+
+        var unmarked = new DocumentPdfGenerator().Generate(request with { Watermark = null });
+        using var plain = PdfDocument.Open(unmarked.Content);
+        Assert.All(plain.GetPages(), page =>
+        {
+            Assert.DoesNotContain("TASLAK", page.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(page.Letters, letter => letter.PointSize > 100);
+        });
+    }
+
+    [Fact]
+    public void A_blank_or_too_wide_watermark_is_refused()
+    {
+        var generator = new DocumentPdfGenerator();
+
+        Assert.Throws<ArgumentException>(() => generator.Generate(Request([]) with { Watermark = "  " }));
+        var wide = Assert.Throws<ArgumentException>(() => generator.Generate(Request([]) with { Watermark = new string('W', 40) }));
+        Assert.Contains("wider than the page", wide.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Fields_and_paragraphs_keep_turkish_text_and_a_word_wider_than_its_column_is_wrapped_not_cut()
     {
         var longWord = string.Concat(Enumerable.Repeat("İŞĞÜÖÇışğüöç", 30));

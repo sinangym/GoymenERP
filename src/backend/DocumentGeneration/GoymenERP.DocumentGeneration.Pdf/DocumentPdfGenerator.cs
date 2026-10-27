@@ -21,6 +21,11 @@ public sealed class DocumentPdfGenerator
     private const double HeadingFontSize = 11.5;
     private const double BodyFontSize = 9;
     private const double FooterFontSize = 7.5;
+    private const double WatermarkFontSize = 120;
+    private const double WatermarkAngleDegrees = -30;
+    private const int WatermarkAlpha = 56;
+    private const int WatermarkGray = 128;
+    private const double WatermarkMaximumWidthShare = 0.9;
     private const double LineHeightFactor = 1.32;
     private const double CellPaddingPoints = 3;
     private const double BlockGapPoints = 8;
@@ -53,6 +58,12 @@ public sealed class DocumentPdfGenerator
 
         var footer = Text(request.FooterText, nameof(request.FooterText));
         var pageLabelFormat = PageLabelFormat(request.PageLabelFormat);
+        var watermark = request.Watermark is null ? null : Text(request.Watermark, nameof(request.Watermark));
+        if (watermark is { Length: 0 })
+        {
+            throw new ArgumentException("A watermark, when given, cannot be empty.", nameof(request));
+        }
+
         var blocks = Blocks(request.Blocks);
         var visibleFileName = PdfVisibleFileName.Build(request.FileNameParts);
         NotoSansRegularFont.EnsureIntegrity();
@@ -85,11 +96,34 @@ public sealed class DocumentPdfGenerator
             }
         }
 
+        if (watermark is not null)
+        {
+            DrawWatermarks(pages, fonts, watermark);
+        }
+
         DrawFooters(pages, fonts, footer, pageLabelFormat);
 
         using var output = new MemoryStream();
         document.Save(output, closeStream: false);
         return new GeneratedPdf(request.TechnicalId, visibleFileName, TechnicalPdfGenerator.PdfMediaType, output.ToArray());
+    }
+
+    /// <summary>The watermark behind every page's content (prepended), centred and diagonal, translucent gray.</summary>
+    private static void DrawWatermarks(List<PdfPage> pages, Fonts fonts, string watermark)
+    {
+        var brush = new XSolidBrush(XColor.FromArgb(WatermarkAlpha, WatermarkGray, WatermarkGray, WatermarkGray));
+        foreach (var page in pages)
+        {
+            using var graphics = XGraphics.FromPdfPage(page, XGraphicsPdfPageOptions.Prepend);
+            if (graphics.MeasureString(watermark, fonts.Watermark).Width > page.Width.Point * WatermarkMaximumWidthShare)
+            {
+                throw new ArgumentException("The watermark is wider than the page.", nameof(watermark));
+            }
+
+            var center = new XPoint(page.Width.Point / 2, page.Height.Point / 2);
+            graphics.RotateAtTransform(WatermarkAngleDegrees, center);
+            graphics.DrawString(watermark, fonts.Watermark, brush, center, XStringFormats.Center);
+        }
     }
 
     private static void DrawFooters(List<PdfPage> pages, Fonts fonts, string footer, string pageLabelFormat)
@@ -252,6 +286,7 @@ public sealed class DocumentPdfGenerator
         public XFont Heading { get; } = Create(HeadingFontSize);
         public XFont Body { get; } = Create(BodyFontSize);
         public XFont Footer { get; } = Create(FooterFontSize);
+        public XFont Watermark { get; } = Create(WatermarkFontSize);
 
         private static XFont Create(double size) => new(
             NotoSansRegularFont.FamilyName,

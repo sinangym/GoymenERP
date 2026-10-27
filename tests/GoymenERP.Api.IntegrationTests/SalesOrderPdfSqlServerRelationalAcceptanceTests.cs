@@ -112,6 +112,8 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
             Assert.Contains("Sipariş toplamı, KDV ve genel toplam henüz hesaplanmıyor", text, StringComparison.Ordinal);
             // 6 kg × 11.875 = 71.25: no line amount or total is computed.
             Assert.DoesNotContain("71.25", text, StringComparison.Ordinal);
+            // SAT-D56: the approved revision carries no draft watermark.
+            Assert.DoesNotContain("TASLAK", text, StringComparison.Ordinal);
         }
 
         // A read: no attempt, audit event, vault document or version change in any module.

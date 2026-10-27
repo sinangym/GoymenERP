@@ -43,7 +43,7 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         Assert.Contains("Satış Siparişi SO-2026-000123", text, StringComparison.Ordinal);
         Assert.Contains("CAR-000042 — SENTETIK Gıda Sanayi A.Ş. (SENTETIK Gıda)", text, StringComparison.Ordinal);
         Assert.Contains("Taslak · Onaylı", text, StringComparison.Ordinal);
-        Assert.Contains("SENTETIK Onaylayan · 27.10.2026 09:30 UTC", text, StringComparison.Ordinal);
+        Assert.Contains("SENTETIK Onaylayan · 27.10.2026 12:30 (İstanbul saati)", text, StringComparison.Ordinal);
         Assert.Contains("GDC-001", text, StringComparison.Ordinal);
         Assert.Contains("Sentetik bant", text, StringComparison.Ordinal);
         Assert.Contains("12.50 TRY / kg", text, StringComparison.Ordinal);
@@ -57,6 +57,81 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         // Nothing is computed: 4 kg × 12.125 = 48.5 is no line amount or total of this document.
         Assert.DoesNotContain("48.5", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Fiyat bilgileri bu belgede yer almaz", text, StringComparison.Ordinal);
+        // SAT-D56: an approved revision carries no draft watermark.
+        Assert.DoesNotContain("TASLAK", text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// SAT-D56 (Sinan, "Evet, ama 'TASLAK' filigranıyla"): an order whose current revision is not approved is downloadable
+    /// but carries the large "TASLAK" watermark on EVERY page; the content still reads back.
+    /// </summary>
+    [Theory]
+    [InlineData("Preparing")]
+    [InlineData("PendingApproval")]
+    [InlineData("Rejected")]
+    [InlineData("Withdrawn")]
+    public async Task An_unapproved_order_is_printed_with_the_draft_watermark_on_every_page(string approvalState)
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Withheld);
+        var template = Assert.Single(detail.Lines);
+        var lines = Enumerable.Range(1, 60)
+            .Select(lineNo => template with { LineId = Guid.NewGuid(), LineNo = lineNo, ProductCode = $"GDC-{lineNo:D3}" })
+            .ToArray();
+        var unapproved = detail with
+        {
+            Draft = detail.Draft with { ApprovalState = approvalState, LineCount = lines.Length },
+            Lines = lines,
+            Approval = detail.Approval with { DecidedBy = null, DecidedAtUtc = null },
+        };
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(unapproved)), new StubPricing(_ => Task.FromResult(pricing)));
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var pdf = PdfDocument.Open(await response.Content.ReadAsByteArrayAsync());
+        var pages = pdf.GetPages().ToArray();
+        Assert.True(pages.Length > 1, "60 lines span more than one page.");
+        foreach (var page in pages)
+        {
+            Assert.Equal("TASLAK", string.Concat(page.Letters.Where(letter => letter.PointSize > 100).Select(letter => letter.Value)));
+        }
+
+        var text = string.Concat(pages.Select(page => page.Text));
+        Assert.Contains("Satış Siparişi SO-2026-000123", text, StringComparison.Ordinal);
+        foreach (var line in lines)
+        {
+            Assert.Contains(line.ProductCode, text, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D10: instants are stored in UTC and printed in Europe/Istanbul local time, labelled — a UTC evening is the next
+    /// business day in Istanbul, and an instant given with another offset is the same moment.
+    /// </summary>
+    [Fact]
+    public async Task Times_are_printed_in_istanbul_local_time_with_their_label_never_as_utc()
+    {
+        var draftId = Guid.NewGuid();
+        var (detail, pricing) = Order(draftId, SalesPriceDisclosure.Withheld);
+        // 09:30 UTC given as 14:30 at +05:00: the same moment.
+        var shifted = detail with
+        {
+            Approval = detail.Approval with { DecidedAtUtc = new DateTimeOffset(2026, 10, 27, 14, 30, 0, TimeSpan.FromHours(5)) },
+        };
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(shifted)), new StubPricing(_ => Task.FromResult(pricing)));
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var text = await TextAsync(response);
+        // 2026-10-26 21:15 UTC is already 27.10.2026 00:15 in Istanbul.
+        Assert.Contains("SENTETIK-preparer · 27.10.2026 00:15 (İstanbul saati)", text, StringComparison.Ordinal);
+        Assert.Contains("SENTETIK Onaylayan · 27.10.2026 12:30 (İstanbul saati)", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("UTC", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("26.10.2026 21:15", text, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -228,7 +303,7 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
             visible ? "5" : null, disclosure, "kg");
         var detail = new SalesOrderDraftReadDetailViewV1(
             summary, new DateOnly(2026, 11, 3), "SENTETIK sipariş notu", [line], null, null, null, null, null, null,
-            new SalesDraftApprovalV1("SENTETIK-preparer", new DateTimeOffset(2026, 10, 27, 9, 0, 0, TimeSpan.Zero),
+            new SalesDraftApprovalV1("SENTETIK-preparer", new DateTimeOffset(2026, 10, 26, 21, 15, 0, TimeSpan.Zero),
                 approver.ToString("D"), new DateTimeOffset(2026, 10, 27, 9, 30, 0, TimeSpan.Zero), null),
             new SalesDraftCustomerAcceptanceV1(false, null, null, null, false), false, false,
             new SalesPartyDisplayV1(summary.PartyId, "CAR-000042", "SENTETIK Gıda Sanayi A.Ş.", "SENTETIK Gıda"),
