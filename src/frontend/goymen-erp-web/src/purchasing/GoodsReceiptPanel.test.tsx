@@ -58,10 +58,13 @@ function fixture(unknownFirst = false) {
   }))
   return { posts, receipts, comparisonReads }
 }
-function mount(enabled = true) {
+// The query namespace carries the capability generation; the attempt identity does not (BLG-01).
+const NAMESPACE = 'actor:session:company:gen-1'
+const ATTEMPT = 'actor:session:company'
+function mount(enabled = true, binding = NAMESPACE) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><GoodsReceiptPanel enabled={enabled} binding="actor:session:company"
-    detail={detail} onRecorded={vi.fn()} /></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><GoodsReceiptPanel enabled={enabled} binding={binding}
+    attemptBinding={ATTEMPT} detail={detail} onRecorded={vi.fn()} /></QueryClientProvider>)
 }
 async function fill() {
   await screen.findByRole('option', { name: 'Fabrika / D-01 Mal Kabul' })
@@ -109,6 +112,25 @@ describe('Purchasing goods receipt consumer, synthetic NOT_ENV', () => {
     page.unmount()
     mount()
     await screen.findByText(T.unknown)
+    await userEvent.click(screen.getByRole('button', { name: T.retry }))
+    await waitFor(() => expect(server.posts).toHaveLength(2))
+    expect(server.posts[1]).toEqual(server.posts[0])
+    await screen.findByText(new RegExp(T.replayed))
+    expect(server.receipts).toHaveLength(1)
+  })
+  it('finds the unknown receipt again under a NEW capability generation and retries only when asked, with the same key (BLG-01)', async () => {
+    const server = fixture(true)
+    const page = mount()
+    await fill()
+    await userEvent.click(screen.getByRole('button', { name: T.save }))
+    await screen.findByText(T.unknown)
+    page.unmount()
+    // A 403 re-fence and a fresh authorized entry: same person, same session, same company, new query namespace.
+    mount(true, 'actor:session:company:gen-2')
+    await screen.findByText(T.unknown)
+    expect((screen.getByLabelText(T.label) as HTMLInputElement).value).toBe('SYNTHETIC-RECEIPT-001')
+    // Recalling is not retrying: nothing left the client on its own.
+    expect(server.posts).toHaveLength(1)
     await userEvent.click(screen.getByRole('button', { name: T.retry }))
     await waitFor(() => expect(server.posts).toHaveLength(2))
     expect(server.posts[1]).toEqual(server.posts[0])

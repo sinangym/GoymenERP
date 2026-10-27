@@ -220,8 +220,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
+            // BLG-03: +1 IdentityAuditReadFreshAuthoritySqlServerRelationalAcceptanceTests fact (a521143a… -> 9a5ea313…).
             ["tools/relational_inventory/identity.txt"] =
-                "a521143a709900ff57b12388bc80b4b45f92f802102963d53e01971132788b50",
+                "9a5ea313a3a1f4ba1980292c5e78319fa1d31363f815834001d9bddb4c5ac3e5",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
