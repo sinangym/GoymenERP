@@ -4,9 +4,10 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// SAT-D27 (EK3): (2) the reference reads also answer a holder of the request or quote write name, beside their own binding —
-/// never in place of a missing one, always in the context company and re-measured after the owner read; (1) the sales-owner
-/// picker passes the server's eligibility binding to the Identity adapter and releases only a well-formed answer.
+/// SAT-D27 (EK3): (2) the customer / product / currency reference reads also answer a holder of the request or quote write
+/// name, beside their own binding — never in place of a missing one, always in the context company and re-measured after the
+/// owner read; (1) the sales-owner picker opens on its own binding alone (the order create name), passes the server's
+/// eligibility binding to the Identity adapter and releases only a well-formed answer.
 /// </summary>
 public sealed partial class SalesReferenceReadHandlerTests
 {
@@ -25,7 +26,7 @@ public sealed partial class SalesReferenceReadHandlerTests
 
     [Theory]
     [MemberData(nameof(PoolWriteNames))]
-    public async Task Every_reference_read_answers_the_holder_of_one_write_name_alone(string held)
+    public async Task Every_selection_list_read_answers_the_holder_of_one_write_name_alone(string held)
     {
         var f = new Fixture();
         f.Auth.Granted = [(held, f.Company)];
@@ -36,7 +37,26 @@ public sealed partial class SalesReferenceReadHandlerTests
         Assert.Equal(200, (await handler.GetProductAsync(f.ProductQuery)).StatusCode);
         Assert.Equal(200, (await handler.GetContactInformationAsync(f.ContactQuery)).StatusCode);
         Assert.Equal(200, (await handler.GetCurrenciesAsync(f.CurrenciesQuery)).StatusCode);
-        Assert.Equal(200, (await handler.GetSalesOwnersAsync(new(null, 10))).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("sales.requests.write", 403)]
+    [InlineData("sales.quotes.write", 403)]
+    [InlineData("sales.drafts.create", 200)]
+    public async Task The_sales_owner_picker_opens_on_the_order_create_name_alone_never_on_a_request_or_quote_write_name(
+        string held, int expected)
+    {
+        var f = new Fixture();
+        f.Auth.Granted = [(held, f.Company)];
+        var owners = new Owners { Answer = new(SalesOwnerCandidateOutcomeV1.Success, [], false) };
+
+        var result = await SatD27Handler(f, owners).GetSalesOwnersAsync(new(null, 10));
+
+        Assert.Equal(expected, result.StatusCode);
+        Assert.Equal(expected == 200 ? 1 : 0, owners.Calls);
+        // The narrowed read never even asks for the alternatives.
+        Assert.DoesNotContain(SalesPermissionManifestV1.RequestsWrite, f.Auth.Asked);
+        Assert.DoesNotContain(SalesPermissionManifestV1.QuotesWrite, f.Auth.Asked);
     }
 
     [Theory]
@@ -209,7 +229,7 @@ public sealed partial class SalesReferenceReadHandlerTests
     public async Task The_picker_answer_is_discarded_when_the_authority_is_lost_or_the_company_moves_during_the_owner_read()
     {
         var f = new Fixture();
-        f.Auth.Granted = [(SalesPermissionManifestV1.RequestsWrite, f.Company)];
+        f.Auth.Granted = [(SalesPermissionManifestV1.DraftsCreate, f.Company)];
         var owners = new Owners
         {
             Answer = new(SalesOwnerCandidateOutcomeV1.Success, [new(Guid.NewGuid(), "Alice")], false),

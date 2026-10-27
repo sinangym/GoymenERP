@@ -109,7 +109,8 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
     /// SAT-D27 (1): the sales-owner picker lists only the people active in the company who hold the order create name there
     /// now. The holder predicate (active assignment inside its validity, active role carrying the name, company scope for a
     /// company-wide-only name) is a SQL translation here; the Sales adapter and the Sales handler are resolved from the same
-    /// host, and the handler itself is authorized by a real grant of the caller (the request write name, SAT-D27 (2)).
+    /// host. The Sales handler opens on the order create name alone: a caller holding only the request write name is refused,
+    /// a holder of the order create name gets the list.
     /// </summary>
     [SqlServerFact]
     public async Task The_sales_owner_picker_lists_only_the_order_create_holders_of_the_context_company_on_real_SQL()
@@ -147,7 +148,14 @@ public sealed class IdentityUserDirectorySqlServerRelationalAcceptanceTests
                 Assert.True(adapter.HasMore);
                 Assert.Equal([new SalesOwnerOptionV1(seeded.Holder, "SENTETIK Satisci")], adapter.Items);
 
-                // The Sales handler: the caller holds only the request write name (SAT-D27 (2)) and gets the same list.
+                // The Sales handler: the caller holds only the request write name, which does not open the picker.
+                var refused = await services.GetRequiredService<ISalesReferenceReadService>().GetSalesOwnersAsync(new SalesOwnerQueryV1(null, 10));
+                Assert.Equal((403, null), (refused.StatusCode, refused.Value));
+            });
+
+            // A holder of the order create name opens the picker and gets the same list (itself included).
+            await AsCallerAsync(factory, seeded.Holder, companyX, async services =>
+            {
                 var picker = await services.GetRequiredService<ISalesReferenceReadService>().GetSalesOwnersAsync(new SalesOwnerQueryV1(null, 10));
                 Assert.Equal(200, picker.StatusCode);
                 Assert.Equal(companyX, picker.Value!.CompanyId);

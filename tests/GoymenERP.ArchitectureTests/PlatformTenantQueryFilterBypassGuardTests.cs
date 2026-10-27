@@ -119,10 +119,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // with its comment (4cf4cba9… -> cae283bd…); it adds no OpenAPI-generation, network or hosted-service surface.
     // SAT-D27 adds the reference reads' alternative request/quote write names and the sales-owner eligibility name to the
     // existing SalesReferenceReadBindings singleton, passes the optional ISalesOwnerCandidateSourceV1 to the Sales reference
-    // read factory, and registers one scoped in-process SalesOwnerCandidateHost, with comments (cae283bd… -> 2eae99cc…); no
+    // read factory, and registers one scoped in-process SalesOwnerCandidateHost, with comments (cae283bd… -> 2eae99cc…), then
+    // a COMMENT-ONLY edit saying the sales-owner picker opens on the order create name alone (2eae99cc… -> 13f02f10…); no
     // OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "2eae99ccf144d7efaddc9500e7d58a52f8c1ee173c2506790db1feddcb1e25ad";
+        "13f02f10dd4cdd0a1a245c41326bfddfbc2f3454265be791f9d4c0d621ef08fb";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =

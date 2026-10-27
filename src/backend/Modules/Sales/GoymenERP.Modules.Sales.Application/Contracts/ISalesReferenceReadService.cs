@@ -55,9 +55,9 @@ public sealed record SalesProductReferenceV1(Guid CompanyId, DateOnly EffectiveO
 
 // Server composition only. These values are accepted Identity/Settings bindings,
 // not UI capability IDs or a new permission catalogue. Missing binding denies.
-// SAT-D27 (2): AlternativePermissions — each reference read (and the product candidate search) is ALSO answered for a holder
-// of any one of these names (the request / quote write names), beside the read's own binding; it never stands in for a
-// missing own binding. SAT-D27 (1): OwnerEligibilityPermission — the name a person must hold to be listed by the sales-owner
+// SAT-D27 (2): AlternativePermissions — each customer / product / currency reference read (and the product candidate search)
+// is ALSO answered for a holder of any one of these names (the request / quote write names), beside the read's own binding;
+// it never stands in for a missing own binding, and the sales-owner picker ignores it (its own binding alone). SAT-D27 (1): OwnerEligibilityPermission — the name a person must hold to be listed by the sales-owner
 // picker; missing, the picker answers 503 (a setup problem, never "everyone").
 public sealed record SalesReferenceReadBindings(
     string? AccountsPermission = null, string? CurrencyPermission = null,

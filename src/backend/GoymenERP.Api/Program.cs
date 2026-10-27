@@ -199,8 +199,8 @@ builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUn
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();
 // SALES-API (#321): the Sales reference reads are bound to the draft form's permission (the Sales
 // owner's decision), and the Cari account port serves the draft use case.
-// SAT-D27 (2): a holder of the request or quote write name reads the same selection lists; SAT-D27 (1): the sales-owner
-// picker lists the company's active people who hold the order create name.
+// SAT-D27 (2): a holder of the request or quote write name reads the same customer/product/currency lists; SAT-D27 (1):
+// the sales-owner picker (opened by the order create name alone) lists the company's active holders of that name.
 builder.Services.AddSingleton(new SalesReferenceReadBindings(
     AccountsPermission: SalesPermissionManifestV1.DraftsCreate,
     CurrencyPermission: SalesPermissionManifestV1.DraftsCreate,

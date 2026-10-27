@@ -214,8 +214,9 @@ public static partial class SalesEndpoints
             .ProducesErpAuthenticatedProblems();
 
         // SAT-D27 (1): the company's active people who hold the order create name, for the satış sorumlusu picker. A LIST read
-        // like the accounts route (same binding, and SAT-D27 (2)'s request / quote write names); the Identity owner measures
-        // both the membership and the held name. An empty list is a 200 answer; a missing owner is 503, never "everyone".
+        // on the accounts route's binding ALONE (the order create name; SAT-D27 (2)'s request / quote write names do not open
+        // it); the Identity owner measures both the membership and the held name. An empty list is a 200 answer; a missing
+        // owner is 503, never "everyone".
         group.MapGet("/sales-owners", async (
             [FromQuery] string? q,
             [FromQuery] int? limit,

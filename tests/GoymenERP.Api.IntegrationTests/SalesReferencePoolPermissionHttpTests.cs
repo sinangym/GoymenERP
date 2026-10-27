@@ -18,9 +18,10 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// SAT-D27 (EK3) through the real host composition (Program's <see cref="SalesReferenceReadBindings"/>, the real handler and
 /// the real product-candidate route) over SENTETIK owners: (2) a holder of <c>sales.requests.write</c> or
-/// <c>sales.quotes.write</c> reads the selection lists beside the order create name, a read or decision name does not, and a
-/// grant of another company opens nothing; (1) the sales-owner picker route's query boundary, its answer shape and that it
-/// hands the Identity adapter the order create name as the eligibility. The Identity measurement itself is real-SQL tested in
+/// <c>sales.quotes.write</c> reads the customer / product lists beside the order create name, a read or decision name does
+/// not, and a grant of another company opens nothing; (1) the sales-owner picker opens on the order create name ALONE (a
+/// request / quote writer is refused), its query boundary, its answer shape and that it hands the Identity adapter the order
+/// create name as the eligibility. The Identity measurement itself is real-SQL tested in
 /// <see cref="IdentityUserDirectorySqlServerRelationalAcceptanceTests"/>. No grant is real; the authority is a test double.
 /// </summary>
 public sealed class SalesReferencePoolPermissionHttpTests(GoymenErpApiFactory factory) : IClassFixture<GoymenErpApiFactory>
@@ -50,7 +51,7 @@ public sealed class SalesReferencePoolPermissionHttpTests(GoymenErpApiFactory fa
 
     [Theory]
     [MemberData(nameof(WriteNames))]
-    public async Task One_write_name_alone_opens_the_account_product_and_sales_owner_lists(string held)
+    public async Task One_write_name_alone_opens_the_account_and_product_lists(string held)
     {
         var world = new World([(held, TestCompanyIds.CompanyA)]);
         using var host = CreateHost(world);
@@ -68,14 +69,48 @@ public sealed class SalesReferencePoolPermissionHttpTests(GoymenErpApiFactory fa
             Assert.Equal(HttpStatusCode.OK, products.StatusCode);
         }
 
-        using (var owners = await client.GetAsync(SalesEndpoints.SalesOwnersPath))
-        {
-            Assert.Equal(HttpStatusCode.OK, owners.StatusCode);
-        }
-
         Assert.Single(world.Accounts.Requests);
         Assert.Single(world.Products.Queries);
-        Assert.Single(world.Owners.Requests);
+    }
+
+    [Theory]
+    [InlineData("sales.requests.write", HttpStatusCode.Forbidden)]
+    [InlineData("sales.quotes.write", HttpStatusCode.Forbidden)]
+    [InlineData("sales.drafts.create", HttpStatusCode.OK)]
+    public async Task The_sales_owner_picker_opens_on_the_order_create_name_alone(string held, HttpStatusCode expected)
+    {
+        var world = new World([(held, TestCompanyIds.CompanyA)]);
+        using var host = CreateHost(world);
+        using var client = CreateClient(host, TestCompanyIds.CompanyA);
+
+        using var owners = await client.GetAsync(SalesEndpoints.SalesOwnersPath);
+
+        Assert.Equal(expected, owners.StatusCode);
+        // A refused writer reaches no Identity read.
+        Assert.Equal(expected == HttpStatusCode.OK ? 1 : 0, world.Owners.Requests.Count);
+    }
+
+    [Fact]
+    public async Task A_request_and_quote_writer_still_reads_the_selection_lists_but_not_the_sales_owner_picker()
+    {
+        var world = new World([
+            (SalesPermissionManifestV1.RequestsWrite, TestCompanyIds.CompanyA),
+            (SalesPermissionManifestV1.QuotesWrite, TestCompanyIds.CompanyA),
+        ]);
+        using var host = CreateHost(world);
+        using var client = CreateClient(host, TestCompanyIds.CompanyA);
+
+        using (var accounts = await client.GetAsync(SalesEndpoints.AccountsPath + "?pageSize=10"))
+        {
+            Assert.Equal(HttpStatusCode.OK, accounts.StatusCode);
+        }
+
+        using (var owners = await client.GetAsync(SalesEndpoints.SalesOwnersPath))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, owners.StatusCode);
+        }
+
+        Assert.Empty(world.Owners.Requests);
     }
 
     [Theory]
@@ -123,8 +158,8 @@ public sealed class SalesReferencePoolPermissionHttpTests(GoymenErpApiFactory fa
             Assert.Empty(onlyA.Owners.Requests);
         }
 
-        // Control: the same actor with the quote write name in B is answered in B, so the refusal above is the company's.
-        var inB = new World([(SalesPermissionManifestV1.QuotesWrite, TestCompanyIds.CompanyB)]);
+        // Control: the same actor with the order create name in B is answered in B, so the refusal above is the company's.
+        var inB = new World([(SalesPermissionManifestV1.DraftsCreate, TestCompanyIds.CompanyB)]);
         using (var host = CreateHost(inB))
         using (var client = CreateClient(host, TestCompanyIds.CompanyB))
         using (var owners = await client.GetAsync(SalesEndpoints.SalesOwnersPath))
@@ -138,7 +173,7 @@ public sealed class SalesReferencePoolPermissionHttpTests(GoymenErpApiFactory fa
     public async Task The_sales_owner_picker_asks_identity_for_the_order_create_holders_and_answers_only_id_and_name()
     {
         var alice = Guid.Parse("a11ce000-0000-4000-8000-000000000001");
-        var world = new World([(SalesPermissionManifestV1.RequestsWrite, TestCompanyIds.CompanyA)])
+        var world = new World([(SalesPermissionManifestV1.DraftsCreate, TestCompanyIds.CompanyA)])
         {
             Owners = { Answer = new(SalesOwnerCandidateOutcomeV1.Success, [new(alice, "SENTETIK Alice")], true) },
         };
