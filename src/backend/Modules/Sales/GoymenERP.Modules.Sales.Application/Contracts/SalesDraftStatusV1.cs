@@ -40,6 +40,12 @@ public static class SalesDraftStatusAxisStatesV1
 
     /// <summary>SAT-D30: an approval-band over-delivery without a recorded over-delivery approval ("onay bekliyor").</summary>
     public const string AwaitingApproval = "AwaitingApproval";
+
+    /// <summary>
+    /// A revision awaits re-approval and the last approved revision's quantities cannot be taken exactly (a line it does not
+    /// hold, another unit): the realization is not judged against unapproved quantities (fail-closed), no owner is asked.
+    /// </summary>
+    public const string PendingReapproval = "PendingReapproval";
 }
 
 /// <summary>An axis that carries only its state (lifecycle, internal approval, and the three "NoSource" axes).</summary>
@@ -68,10 +74,14 @@ public sealed record SalesDraftDeliveryToleranceV1(
     DateOnly EvaluatedOn);
 
 /// <summary>
-/// One order line on the realization axis, in the line's order unit, exact (Ö2). <c>shipped</c> / <c>delivered</c> are the
+/// One order line on the realization axis, in the line's order unit, exact (Ö2). <c>ordered</c> is the quantity the line is
+/// measured against — the axis's <c>basisRevision</c>: the current quantity, or while a revision awaits re-approval the last
+/// APPROVED revision's quantity (never the new unapproved one). <c>shipped</c> / <c>delivered</c> are the
 /// delivery owner's recorded totals (Logistics, AT-024 port), null when the owner is unreadable. <c>direction</c>
 /// (<c>None</c>/<c>Under</c>/<c>Over</c>) and <c>deviation</c> (|shipped − ordered|) are null when unreadable; <c>band</c>
-/// (<c>Within</c>/<c>Warn</c>/<c>Approval</c>/<c>Block</c>) is null when not measured (nothing shipped on an open line, an open
+/// (<c>Within</c>/<c>Warn</c>/<c>Approval</c>/<c>Block</c>) is null when not measured. One shape per state: a <c>NotStarted</c>
+/// line always carries <c>direction</c> "Under", <c>deviation</c> = <c>ordered</c> and no band; a <c>PolicyUnavailable</c>,
+/// <c>Unreadable</c> or <c>PendingReapproval</c> line carries no direction, deviation or band (nothing shipped on an open line, an open
 /// under-delivered line outside the tolerance — SAT-D16 — or no tolerance). <c>closedRemainder</c> is the recorded force-closure
 /// remainder (No 30), null otherwise. <c>warning</c> is true exactly when the line counts <c>Completed</c> in spite of a deviation
 /// in the warn band (SAT-D29: an over-delivery between the warn and the approval percent; SAT-D31: a force-closed shortfall in
@@ -99,22 +109,25 @@ public sealed record SalesDraftLineRealizationV1(
 
 /// <summary>
 /// The realization axis: its state, whether any line carries the SAT-D29 warning (a <c>Completed</c> line in the warn band —
-/// the axis may then read <c>Completed</c> with <c>warning</c> true), the tolerance it was judged with (null when none was needed
-/// or none is available) and every order line once, in line order.
+/// the axis may then read <c>Completed</c> with <c>warning</c> true), the revision whose approved quantities the lines were
+/// measured against ("Rev.N"; null only for <c>PendingReapproval</c>), the tolerance it was judged with (null when none was
+/// needed or none is available) and every order line once, in line order.
 /// </summary>
 public sealed record SalesDraftRealizationAxisV1(
     string State,
     bool Warning,
+    string? BasisRevision,
     SalesDraftDeliveryToleranceV1? Tolerance,
     IReadOnlyList<SalesDraftLineRealizationV1> Lines);
 
 /// <summary>
 /// DEC-SAL-001 / API-08: GET …/{id}/status — the seven axes, read afresh on every request under the draft read; nothing is
 /// written or cached. <c>draftVersion</c> is the concurrency version the axes were read against; <c>revision</c> is the
-/// commercial revision ("Rev.N"). <c>readyToClose</c> (SAT-D32, "kapanmaya hazır") is true when every axis that has a source
-/// is complete: lifecycle <c>Active</c>, internal approval <c>Approved</c>, customer acceptance <c>Accepted</c> or
-/// <c>NotRequired</c>, realization <c>Completed</c>; the <c>NoSource</c> axes are not counted. It is a flag only: closing stays
-/// a user action and nothing closes automatically.
+/// commercial revision ("Rev.N"). <c>readyToClose</c> (SAT-D32, "kapanmaya hazır") is true only when ALL seven axes are
+/// complete: lifecycle <c>Active</c>, internal approval <c>Approved</c>, customer acceptance <c>Accepted</c> or
+/// <c>NotRequired</c>, realization <c>Completed</c>, and source, invoicing and financial closure complete. An axis that is
+/// <c>NoSource</c>, <c>Unreadable</c> or <c>PolicyUnavailable</c> is never complete, so while those three owners do not exist
+/// the flag is always false. It is a flag only: closing stays a user action and nothing closes automatically.
 /// </summary>
 public sealed record SalesOrderDraftStatusResponse(
     string DraftVersion,

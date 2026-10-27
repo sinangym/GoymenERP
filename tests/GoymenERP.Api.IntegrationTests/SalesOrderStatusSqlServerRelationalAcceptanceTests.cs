@@ -108,11 +108,15 @@ public sealed class SalesOrderStatusSqlServerRelationalAcceptanceTests
         // A second real shipment brings the line to 99.5 of 100 kg: 0.5 % short is within SAT-D5's 1 % — "Completed".
         await run.ShipMoreAsync(CompanyA, instructionId, lineId, version, "k-l-ship-2", 49.5m);
         var completed = await run.StatusAsync(client, path);
-        Assert.Equal("Completed", State(completed, "realization"));
+        Assert.Equal(("Completed", "Rev.0"), (State(completed, "realization"),
+            completed.GetProperty("realization").GetProperty("basisRevision").GetString()));
         Assert.Equal((orderLine.Id.ToString("D"), "100", "99.5", "0", "Completed", "Under", "0.5", "Within", null), Line(completed));
-        // SAT-D32: every axis with a source is complete (approved, acceptance not required, realization complete) — ready to
-        // close; nothing closes it: the stored lifecycle stays Draft (1) and no attempt is written.
-        Assert.Equal(JsonValueKind.True, completed.GetProperty("readyToClose").ValueKind);
+        // SAT-D32 "tüm eksenler": approved, acceptance not required and realization complete, but source, invoicing and
+        // financial closure have no owner on main (NoSource is never complete) — NOT ready to close; and nothing closes the
+        // order: the stored lifecycle stays Draft (1).
+        Assert.Equal(("NoSource", "NoSource", "NoSource"), (State(completed, "source"), State(completed, "invoicing"),
+            State(completed, "financialClosure")));
+        Assert.Equal(JsonValueKind.False, completed.GetProperty("readyToClose").ValueKind);
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT [State] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)));
         // Sales holds no copy of any of it: the approved draft is untouched (version 4, Approved, Rev.0).
         Assert.Equal((4L, 3, 0), (await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),

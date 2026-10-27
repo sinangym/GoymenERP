@@ -76,8 +76,10 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(new SalesDraftCustomerAcceptanceAxisV1("Accepted", SalesDraftApiV1.Rev0), accepted.CustomerAcceptance);
         Assert.Equal(("6", "Active", "Approved", "Completed"), (accepted.DraftVersion, accepted.Lifecycle.State,
             accepted.InternalApproval.State, accepted.Realization.State));
-        // SAT-D32: every axis that has a source is complete — "kapanmaya hazır"; the order is NOT closed (no command, no write).
-        Assert.True(accepted.ReadyToClose);
+        // SAT-D32 "tüm eksenler": lifecycle, approval, acceptance and realization are complete, but source, invoicing and
+        // financial closure have no owner (NoSource is never complete) — not ready to close; nothing is closed or written.
+        Assert.Equal(("NoSource", "NoSource", "NoSource", false), (accepted.Source.State, accepted.Invoicing.State,
+            accepted.FinancialClosure.State, accepted.ReadyToClose));
         Assert.Equal("Draft", (await world.Service().GetDraftDetailAsync(approved.Draft.Id)).Draft.State);
 
         // An unreadable return owner shows no returned number and does not take the realization down.
@@ -187,7 +189,8 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(
             [
                 new SalesDraftLineRealizationV1(first, 1, KgUnit, "1.25", "1.25", "1.25", "PolicyUnavailable", null, null, null, false, false, null, null),
-                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "0", "0", "NotStarted", null, null, null, false, false, null, null),
+                // One NotStarted shape in every branch: "Under", the whole ordered quantity as the deviation, no band.
+                new SalesDraftLineRealizationV1(second, 2, KgUnit, "2.25", "0", "0", "NotStarted", "Under", "2.25", null, false, false, null, null),
             ],
             status.Realization.Lines);
         // The other axes are still answered (the realization's policy does not take them down).
@@ -256,20 +259,27 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Theory]
-    [InlineData(2)]
-    [InlineData(3)]
-    public async Task A_draft_read_lost_while_an_owner_answered_is_403_and_no_axis_is_released(int lostAt)
+    [InlineData(2, false)]
+    [InlineData(3, false)]
+    [InlineData(2, true)]
+    [InlineData(3, true)]
+    [InlineData(4, true)]
+    public async Task A_draft_read_lost_while_an_owner_answered_is_403_and_no_axis_is_released(int lostAt, bool withReturns)
     {
         var world = new World();
         var approved = await ApprovedTwoLineAsync(world);
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(approved.Lines[0].LineId, KgUnit, 1m, 1m)]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
-        // Granted before and after the draft read; lost after the delivery owner (2) or after Settings (3) (no return owner).
+        var returns = new FakeCustomerReturns(order => new(Company, order, []));
+        world.CustomerReturns = withReturns ? returns : null;
+        // Granted before and after the draft read; lost after the delivery owner (2), then — with a return owner — after it (3)
+        // and after Settings (4); without one after Settings (3).
         world.Authority.LostLater = (ReadPermission, world.Authority.Calls + lostAt);
 
         var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetDraftStatusAsync(approved.Draft.Id));
 
         Assert.Equal((403, "forbidden"), Status(refused));
+        Assert.Equal(withReturns && lostAt >= 3 ? 1 : 0, returns.Asked.Count);
     }
 
     [Fact]
@@ -341,6 +351,39 @@ public sealed partial class SalesDraftServiceTests
         var revised = await world.Service().GetDraftStatusAsync(created.Id);
         Assert.Equal(("Active", "Preparing", "Rev.1", false), (revised.Lifecycle.State, revised.InternalApproval.State, revised.Revision,
             revised.ReadyToClose));
+    }
+
+    [Fact]
+    public async Task While_a_quantity_revision_awaits_re_approval_the_realization_is_measured_against_the_last_approved_quantities()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        var line = approved.Lines[0].LineId;
+        Owners(world);
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
+        // 1.25 kg approved (Rev.0) and fully shipped: complete.
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(line, KgUnit, 1.25m, 1.25m)]));
+        var before = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
+        Assert.Equal(("Completed", "Rev.0", "1.25"), (before.Realization.State, before.Realization.BasisRevision,
+            before.Realization.Lines[0].Ordered));
+
+        // Rev.1 asks 2 kg and awaits re-approval: the realization is still measured against the APPROVED 1.25 (Rev.0) — never
+        // "Partial" against the unapproved 2.
+        await world.Service().ReviseQuantityAsync(approved.Draft.Id,
+            new SalesDraftQuantityRevisionRequest("4", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity"));
+        Assert.Equal("2", (await world.Service().GetDraftDetailAsync(approved.Draft.Id)).Lines[0].Quantity);
+        var pending = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
+        Assert.Equal(("Rev.1", "Preparing", "Completed", "Rev.0"), (pending.Revision, pending.InternalApproval.State,
+            pending.Realization.State, pending.Realization.BasisRevision));
+        Assert.Equal(("1.25", "1.25", "None", "0"), (pending.Realization.Lines[0].Ordered, pending.Realization.Lines[0].Shipped,
+            pending.Realization.Lines[0].Direction, pending.Realization.Lines[0].Deviation));
+
+        // Rev.1 approved: now 2 kg is the approved quantity and the same shipments are partial against it.
+        await world.Service().SubmitDraftAsync(approved.Draft.Id, Command("5"), Metadata("k-submit-1"));
+        await world.Service().ApproveDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-approve-1"));
+        var reapproved = await world.Service().GetDraftStatusAsync(approved.Draft.Id);
+        Assert.Equal(("Partial", "Rev.1", "2"), (reapproved.Realization.State, reapproved.Realization.BasisRevision,
+            reapproved.Realization.Lines[0].Ordered));
     }
 
     /// <summary>A two-line order (1.25 and 2.25 kg), submitted and approved: version 5.</summary>

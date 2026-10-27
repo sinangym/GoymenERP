@@ -57,24 +57,40 @@ public sealed partial class SalesDraftService
         var noSource = new SalesDraftStatusAxisV1(SalesDraftStatusAxisStatesV1.NoSource);
         var lifecycle = Lifecycle(draft);
         var acceptance = CustomerAcceptanceAxis(draft);
-        // SAT-D32 "kapanmaya hazır": every axis that has a source is complete; the NoSource axes are not counted. A flag only —
-        // closing stays the user's action and nothing is closed here.
+        var (source, invoicing, financialClosure) = (noSource, noSource, noSource);
+        // SAT-D32 "kapanmaya hazır": ALL seven axes complete ("tüm eksenler tamamlansa"). An axis that is NoSource, Unreadable or
+        // PolicyUnavailable is never complete, so while source (MOD-05), invoicing (S5) and financial closure (MOD-04) have no
+        // owner the flag is always false. A flag only — closing stays the user's action and nothing is closed here.
         var readyToClose = lifecycle == SalesDraftStatusAxisStatesV1.Active
             && draft.ApprovalState == InternalApprovalState.Approved
             && acceptance.State is SalesDraftStatusAxisStatesV1.Accepted or SalesDraftStatusAxisStatesV1.NotRequired
-            && realization.State == SalesDraftStatusAxisStatesV1.Completed;
+            && realization.State == SalesDraftStatusAxisStatesV1.Completed
+            && IsComplete(source) && IsComplete(invoicing) && IsComplete(financialClosure);
         return new SalesOrderDraftStatusResponse(
             draft.Version.ToString(CultureInfo.InvariantCulture),
             SalesDraftApiV1.RevisionText(draft.Revision),
             new SalesDraftStatusAxisV1(lifecycle),
             new SalesDraftStatusAxisV1(draft.ApprovalState.ToString()),
             acceptance,
-            noSource,
+            source,
             realization,
-            noSource,
-            noSource,
+            invoicing,
+            financialClosure,
             readyToClose);
     }
+
+    /// <summary>
+    /// Whether an owner-less axis (source, invoicing, financial closure) is complete. None of their owners exists, so no complete
+    /// state exists: "NoSource" (like "Unreadable" or "PolicyUnavailable") is never complete. When an owner arrives, its
+    /// complete state (DURUM_MAKINELERI "Tam kaynaklı" / "Tam" / "Kapalı") is named here explicitly.
+    /// </summary>
+    private static bool IsComplete(SalesDraftStatusAxisV1 axis) =>
+        axis.State is not (SalesDraftStatusAxisStatesV1.NoSource or SalesDraftStatusAxisStatesV1.Unreadable
+            or SalesDraftStatusAxisStatesV1.PolicyUnavailable)
+        && OwnerAxisCompleteStates.Contains(axis.State);
+
+    /// <summary>The complete states of the owner-less axes: none until an owner exists (fail-closed).</summary>
+    private static readonly IReadOnlySet<string> OwnerAxisCompleteStates = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>
     /// SAT-D32: the stored terminal states (<c>Cancelled</c>, <c>Closed</c>) as they are; otherwise <c>Active</c> once the order
@@ -96,14 +112,63 @@ public sealed partial class SalesDraftService
 
     // ---- realization ----------------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The quantities realization is measured against: the CURRENT lines while the current revision is approved (or the order
+    /// was never approved — nothing can ship then), else — a revision awaiting re-approval — the LAST APPROVED revision's line
+    /// quantities, never the new unapproved ones. Null (fail-closed) when that approved revision does not hold every current
+    /// line in the same unit with an exact quantity.
+    /// </summary>
+    private sealed record MeasurementBasis(string Revision, IReadOnlyDictionary<Guid, (Quantity Quantity, string Text)> Lines);
+
+    private static MeasurementBasis? Basis(SalesOrderDraft draft)
+    {
+        if (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count == 0)
+        {
+            return new MeasurementBasis(SalesDraftApiV1.RevisionText(draft.Revision),
+                draft.Lines.ToDictionary(line => line.Id, line => (line.Quantity, line.QuantityText)));
+        }
+
+        var approved = draft.ArchivedRevisions[^1];
+        var lines = new Dictionary<Guid, (Quantity Quantity, string Text)>();
+        foreach (var line in draft.Lines)
+        {
+            var archived = approved.Lines.FirstOrDefault(candidate => candidate.LineId == line.Id);
+            if (archived is null || archived.OrderUnitId != line.OrderUnit.UnitId
+                || !decimal.TryParse(archived.QuantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value))
+            {
+                return null;
+            }
+
+            try
+            {
+                lines[line.Id] = (Quantity.Of(value, line.Quantity.Unit), archived.QuantityText);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        return new MeasurementBasis(SalesDraftApiV1.RevisionText(approved.Revision), lines);
+    }
+
     private async Task<SalesDraftRealizationAxisV1> RealizationAsync(Scope scope, SalesOrderDraft draft,
         CancellationToken cancellationToken)
     {
         var ordered = draft.Lines.OrderBy(line => line.LineNo).ToArray();
+        if (Basis(draft) is not { } basis)
+        {
+            // A revision awaits re-approval and the last approved quantities cannot be taken exactly: nothing is judged against
+            // unapproved quantities (fail-closed) and no owner is asked.
+            return new SalesDraftRealizationAxisV1(SalesDraftStatusAxisStatesV1.PendingReapproval, false, null, null,
+                [.. ordered.Select(line => new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
+                    null, null, SalesDraftStatusAxisStatesV1.PendingReapproval, null, null, null, false, false, null, null))]);
+        }
+
         var recorded = await RecordedShipmentsAsync(scope, draft, cancellationToken);
         if (recorded is null)
         {
-            return Unreadable(ordered);
+            return Unreadable(ordered, basis);
         }
 
         // SAT-D33: approved customer returns are shown per line beside the shipped total, never netted against it; an
@@ -112,46 +177,48 @@ public sealed partial class SalesDraftService
         var closed = draft.State == SalesDraftState.Closed;
         var needsTolerance = ordered.Any(line => SalesRealizationCalculator.NeedsTolerance(recorded[line.Id].Shipped, closed));
         var policy = needsTolerance ? await ToleranceAsync(scope, draft, cancellationToken) : null;
-        if (needsTolerance && policy is null)
-        {
-            return new SalesDraftRealizationAxisV1(SalesDraftStatusAxisStatesV1.PolicyUnavailable, false, null,
-                [.. ordered.Select(line =>
-                {
-                    var (shipped, delivered) = recorded[line.Id];
-                    var state = SalesRealizationCalculator.NeedsTolerance(shipped, closed)
-                        ? SalesDraftStatusAxisStatesV1.PolicyUnavailable
-                        : SalesDraftStatusAxisStatesV1.NotStarted;
-                    return new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
-                        QuantityText(shipped), QuantityText(delivered), state, null, null, null, false, false, ClosedRemainder(draft, line.Id),
-                        returned?.GetValueOrDefault(line.Id));
-                })]);
-        }
+        var policyUnavailable = needsTolerance && policy is null;
 
         var lines = new List<(SalesDraftLineRealizationV1 Wire, LineRealizationState State, bool Warning)>(ordered.Length);
         foreach (var line in ordered)
         {
             var (shipped, delivered) = recorded[line.Id];
+            var (basisQuantity, basisText) = basis.Lines[line.Id];
+            if (policyUnavailable && SalesRealizationCalculator.NeedsTolerance(shipped, closed))
+            {
+                // No approved tolerance: the facts stay visible, nothing is judged (no direction, deviation, band or state).
+                lines.Add((new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, basisText,
+                    QuantityText(shipped), QuantityText(delivered), SalesDraftStatusAxisStatesV1.PolicyUnavailable, null, null, null,
+                    false, false, ClosedRemainder(draft, line.Id), returned?.GetValueOrDefault(line.Id)), LineRealizationState.NotStarted,
+                    false));
+                continue;
+            }
+
             LineRealization realization;
             try
             {
-                // SAT-D30: no over-delivery approval record exists yet, so an approval-band over-delivery awaits approval.
-                realization = SalesRealizationCalculator.Line(line.Quantity, shipped, closed, policy?.Tolerance, overDeliveryApproved: false);
+                // SAT-D30: no over-delivery approval record exists yet, so an approval-band over-delivery awaits approval. A line
+                // that needs no tolerance (nothing shipped, open) has the same NotStarted shape in every branch.
+                realization = SalesRealizationCalculator.Line(basisQuantity, shipped, closed, policy?.Tolerance, overDeliveryApproved: false);
             }
             catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
             {
                 // A value the calculator cannot judge exactly is shown as no state, never as a plausible one.
-                return Unreadable(ordered);
+                return Unreadable(ordered, basis);
             }
 
             var warning = SalesRealizationCalculator.IsCompletedWithWarning(realization);
-            lines.Add((new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
+            lines.Add((new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, basisText,
                 QuantityText(shipped), QuantityText(delivered), realization.State.ToString(), realization.Direction.ToString(),
                 QuantityText(realization.Deviation), realization.Band?.ToString(), warning, realization.ApprovedOverDelivery,
                 ClosedRemainder(draft, line.Id), returned?.GetValueOrDefault(line.Id)), realization.State, warning));
         }
 
-        return new SalesDraftRealizationAxisV1(SalesRealizationCalculator.Axis([.. lines.Select(line => line.State)]).ToString(),
-            lines.Any(line => line.Warning), policy?.Wire, [.. lines.Select(line => line.Wire)]);
+        return policyUnavailable
+            ? new SalesDraftRealizationAxisV1(SalesDraftStatusAxisStatesV1.PolicyUnavailable, false, basis.Revision, null,
+                [.. lines.Select(line => line.Wire)])
+            : new SalesDraftRealizationAxisV1(SalesRealizationCalculator.Axis([.. lines.Select(line => line.State)]).ToString(),
+                lines.Any(line => line.Warning), basis.Revision, policy?.Wire, [.. lines.Select(line => line.Wire)]);
     }
 
     /// <summary>
@@ -276,9 +343,9 @@ public sealed partial class SalesDraftService
         }
     }
 
-    private static SalesDraftRealizationAxisV1 Unreadable(IReadOnlyList<SalesOrderDraftLine> ordered) =>
-        new(SalesDraftStatusAxisStatesV1.Unreadable, false, null,
-            [.. ordered.Select(line => new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, line.QuantityText,
+    private static SalesDraftRealizationAxisV1 Unreadable(IReadOnlyList<SalesOrderDraftLine> ordered, MeasurementBasis basis) =>
+        new(SalesDraftStatusAxisStatesV1.Unreadable, false, basis.Revision, null,
+            [.. ordered.Select(line => new SalesDraftLineRealizationV1(line.Id, line.LineNo, line.OrderUnit.UnitId, basis.Lines[line.Id].Text,
                 null, null, SalesDraftStatusAxisStatesV1.Unreadable, null, null, null, false, false, null, null))]);
 
     /// <summary>The recorded force-closure remainder of the line (No 30 / SAT-D12), verbatim; null when the order was not force-closed.</summary>

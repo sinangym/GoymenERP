@@ -3582,9 +3582,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ("state", "type:string"),
                     ("acceptedRevision", "type:null|string")),
                 ["SalesDraftRealizationAxisV1"] = ObjectSchema(
-                    ["state", "warning", "tolerance", "lines"],
+                    ["state", "warning", "basisRevision", "tolerance", "lines"],
                     ("state", "type:string"),
                     ("warning", "type:boolean"),
+                    ("basisRevision", "type:null|string"),
                     ("tolerance", "oneOf:ref:SalesDraftDeliveryToleranceV1|type:null"),
                     ("lines", "type:array;items:ref:SalesDraftLineRealizationV1")),
                 ["SalesDraftDeliveryToleranceV1"] = ObjectSchema(

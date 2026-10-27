@@ -1178,7 +1178,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Status = id => Task.FromResult(new SalesOrderDraftStatusResponse("7", "Rev.0",
                 new SalesDraftStatusAxisV1("Closed"), new SalesDraftStatusAxisV1("Approved"),
                 new SalesDraftCustomerAcceptanceAxisV1("Accepted", "Rev.0"), new SalesDraftStatusAxisV1("NoSource"),
-                new SalesDraftRealizationAxisV1("ClosedWithRemainder", false,
+                new SalesDraftRealizationAxisV1("ClosedWithRemainder", false, "Rev.0",
                     new SalesDraftDeliveryToleranceV1(profileId, 1, "1", "2", "3", new DateOnly(2026, 10, 25), null, new DateOnly(2026, 10, 26)),
                     [new SalesDraftLineRealizationV1(lineId, 1, unitId, "100", "97", "90", "ClosedWithRemainder", "Under", "3", "Block", false, false, "3", "1.5")]),
                 new SalesDraftStatusAxisV1("NoSource"), new SalesDraftStatusAxisV1("NoSource"), false)),
@@ -1206,7 +1206,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             }
 
             var realization = body.GetProperty("realization");
-            Assert.Equal(["state", "warning", "tolerance", "lines"], realization.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(["state", "warning", "basisRevision", "tolerance", "lines"], realization.EnumerateObject().Select(member => member.Name));
+            Assert.Equal("Rev.0", realization.GetProperty("basisRevision").GetString());
             Assert.Equal(JsonValueKind.False, realization.GetProperty("warning").ValueKind);
             var tolerance = realization.GetProperty("tolerance");
             Assert.Equal(["profileId", "profileVersion", "warnPercent", "approvalPercent", "blockPercent", "effectiveFrom",
@@ -1237,7 +1238,8 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         }
 
-        // The only 503 of this read is the Sales store's own (owner failures are axis states, never a 503).
+        // A 503 of this read is the service's own (the Sales store, an unregistered permission name); an owner failure is an
+        // axis state, never a 503.
         service.Status = _ => throw new SalesDraftServiceException(503, "service_unavailable");
         using (var unavailable = await client.GetAsync(path))
         {
