@@ -80,6 +80,16 @@ public interface ISalesDraftService
     Task<SalesOrderDraftCancellationResponse> GetDraftCancellationAsync(Guid draftId,
         CancellationToken cancellationToken = default);
 
+    // No 30 / SAT-D12 — the force-close preview and the force-closure of an approved order under `sales.orders.force-close`
+    // (the cancellation's owners and ports; an active allocation, open loading or an unreadable owner refuses; an uninvoiced
+    // dispatch note is a warning), and the read of the recorded closure with its closed remainders (`sales.drafts.read`).
+    Task<SalesOrderDraftForceCloseImpactResponse> GetForceCloseImpactAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftResponse> ForceCloseDraftAsync(Guid draftId, SalesDraftForceCloseRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<SalesOrderDraftForceClosureResponse> GetDraftForceClosureAsync(Guid draftId,
+        CancellationToken cancellationToken = default);
+
     // Partial delivery (user decision 2026-09-30) — the undelivered remainder of a partly delivered line is cancelled or
     // its quantity revised: requested under `sales.orders.quantity.write`, approved or rejected under `sales.orders.approve`;
     // the floor (loaded ≥ shipped ≥ delivered) is read from the delivery owner. The read of the lines' remainder facts and the

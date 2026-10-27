@@ -106,6 +106,26 @@ public static class SalesDraftProblemCodesV1
     public const string CancellationImpactChanged = "sales_cancellation_impact_changed";
 
     /// <summary>
+    /// 503 (No 30): an impact owner that exists on main (Inventory allocations, Logistics loading and dispatch notes) is not
+    /// composed or cannot answer at the force-close command; the order is not closed on an unread impact. Code-less on the wire.
+    /// </summary>
+    public const string ForceCloseImpactUnavailable = "force_close_impact_unavailable";
+
+    /// <summary>
+    /// 409 (No 30 / SAT-D12, contract delta): a BLOCKING source is present (an active allocation, open loading — a line whose
+    /// instructed total exceeds its shipped total); the field errors name each blocking source. An uninvoiced approved dispatch
+    /// note does not block (SAT-D12). Terminal for the key (recorded, replayed): after the owner's record is resolved in its own
+    /// screen the user reads the preview again and closes with a new key.
+    /// </summary>
+    public const string ForceCloseBlocked = "sales_force_close_blocked";
+
+    /// <summary>
+    /// 409 (No 30, contract delta): the impact now differs from the preview the command names (its token): the order is never
+    /// force-closed on a preview the user did not see. Terminal for the key; the user reads the preview again.
+    /// </summary>
+    public const string ForceCloseImpactChanged = "sales_force_close_impact_changed";
+
+    /// <summary>
     /// 409 (DEC-SAL-002 quantity revision, contract delta): an owner records a link to the order's lines (an active allocation,
     /// a loading-instruction line) that a changed quantity would leave inconsistent — the fail-closed reading refuses the
     /// revision, exactly like the cancellation; the field errors name each blocking source. Terminal for the key (recorded,
@@ -177,4 +197,5 @@ public sealed record SalesDraftServiceBindings(
     string? CancelPermission = SalesPermissionManifestV1.OrdersCancel,
     string? QuantityPermission = SalesPermissionManifestV1.OrdersQuantityWrite,
     string? CustomerAcceptancePermission = SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord,
-    string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove);
+    string? PriceFloorExceptionApprovePermission = SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+    string? ForceClosePermission = SalesPermissionManifestV1.OrdersForceClose);
