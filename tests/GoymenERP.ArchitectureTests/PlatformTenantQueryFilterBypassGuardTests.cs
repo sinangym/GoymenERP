@@ -220,8 +220,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
+            // BLG-03: +1 IdentityAuditReadFreshAuthoritySqlServerRelationalAcceptanceTests fact (a521143a… -> 9a5ea313…).
             ["tools/relational_inventory/identity.txt"] =
-                "a521143a709900ff57b12388bc80b4b45f92f802102963d53e01971132788b50",
+                "9a5ea313a3a1f4ba1980292c5e78319fa1d31363f815834001d9bddb4c5ac3e5",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -841,11 +842,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for ACC reversal: its lifecycle and proposal store are registered;
                 // Ensure/Migrate counts remain unchanged. Re-fingerprinted for the approved Finance receipt
                 // source binding provider registration; the database initialization surface is unchanged.
+                // BLG-05b: re-fingerprinted for two read-only registrations (IAccountPlanMirrorReaderV1 ->
+                // ApprovedAccountPlanMirrorReaderV1, NormalJournalDraftAccountReadServiceV1); no bypass,
+                // Ensure/Migrate or initialization change (a09a1e08… -> 3783d2ed…).
                 ["src/backend/Modules/Accounting/"
                  + "GoymenERP.Modules.Accounting.Infrastructure/"
                  + "AccountingModuleExtensions.cs"] =
                     new(
-                        "a09a1e081b572c23527ec66de4700040b040129b849f1314b25003e970dec097",
+                        "3783d2ed9dcc22d182072dcb4e9b809b4dc5e5774f947075a77aab9a863febe5",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

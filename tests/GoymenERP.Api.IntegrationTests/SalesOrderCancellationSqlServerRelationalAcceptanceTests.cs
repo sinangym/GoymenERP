@@ -23,8 +23,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
-using LogisticsQuantity = GoymenERP.Modules.Logistics.Domain.Quantities.Quantity;
-using LogisticsQuantityUnit = GoymenERP.Modules.Logistics.Domain.Quantities.QuantityUnit;
+using LogisticsQuantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Logistics.Domain.Quantities.LogisticsQuantityRefusals>;
+using LogisticsQuantityUnit = GoymenERP.BuildingBlocks.Quantities.QuantityUnit;
 
 namespace GoymenERP.Api.IntegrationTests;
 

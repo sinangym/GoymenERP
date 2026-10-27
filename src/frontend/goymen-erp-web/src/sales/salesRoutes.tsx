@@ -2,28 +2,23 @@
  * The Sales route table, owned by the Sales lane, for the shell router's single
  * writer to spread in — never written into `src/shell/**` from here.
  *
- * Each route reuses the shared `CapabilityRoute` entry gate. The ids are PROPOSED and
- * unpublished (see ./capabilities.ts), so in the running app every route closes onto
- * the neutral not-found block and calls nothing.
+ * Each route reuses the shared `CapabilityRoute` entry gate. The backend shell provider
+ * (`SalesShellCapabilityProvider`) publishes the three route ids; an actor without the
+ * grant gets the neutral not-found block and no request is sent.
  */
 
 import type { ReactNode } from 'react'
 import type { RouteObject } from 'react-router'
 import { CapabilityRoute } from '../shell/CapabilityRoute'
 import type { CapabilityId } from '../shell/capabilities'
-import { SALES_CAPABILITY, SALES_ROUTE, type SalesCapabilityId } from './capabilities'
+import { SALES_CAPABILITY, SALES_ROUTE } from './capabilities'
 import { SalesDraftListPage } from './SalesDraftListPage'
 import { SalesDraftCreatePage } from './SalesDraftCreatePage'
 import { SalesDraftDetailPage } from './SalesDraftDetailPage'
 
-/**
- * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which cannot
- * contain the Sales ids until the shell owner adds them. The cast widens a compile-time
- * union only: `hasCapability` compares plain strings against the server's list, so an
- * unpublished id still fails closed.
- */
-function gate(capability: SalesCapabilityId, children: ReactNode) {
-  return <CapabilityRoute capability={capability as unknown as CapabilityId}>{children}</CapabilityRoute>
+/** The shell's `CapabilityId` union carries the three Sales route ids, so no cast is needed. */
+function gate(capability: CapabilityId, children: ReactNode) {
+  return <CapabilityRoute capability={capability}>{children}</CapabilityRoute>
 }
 
 export const salesRoutes: RouteObject[] = [
