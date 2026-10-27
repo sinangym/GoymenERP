@@ -158,8 +158,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for #391: two linked Compile items (the browser-suite runner's BrowserSuiteHost.cs
     // and its closed seed-output validator, both for BrowserSuiteHostEnvelopeTests), after the module SQL
     // acceptance ProjectReferences. Publish target and discovery contract unchanged.
+    // Re-fingerprinted for MOD-07: the PdfPig test package (the sales order PDF's text is read back from its bytes, as
+    // the PDF component's own tests do). Publish target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "042bd595603757b528ba7dca7bf77ecf6b2ec7ce75cb5d219c038504878fe7c3";
+        "82a6bb89fa2bacd24c30c92fd71f3927fbfff42c2d640630d3b76d1b7babbd05";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
@@ -316,8 +318,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (merged over main's: aabdd034… -> 19d5e743…).
             // DEC-SAL-001 / API-08: +2 SalesOrderStatusSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (merged over
             // API-20/21: 19d5e743… -> a9873855…).
+            // MOD-07: +1 SalesOrderPdfSqlServerRelationalAcceptanceTests fact, kept ordinal-sorted (a9873855… -> 973e6ff6…).
             ["tools/relational_inventory/sales.txt"] =
-                "a98738558f96ae42862721baad557516dd80f0b30a1dc58015db10aa33a0a68b",
+                "973e6ff6f89abb6f8ee86909bb23eef2adb4aa12e85b4c3f0af76305e7fc4bbd",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1281,8 +1284,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for DEC-SAL-001 / API-08: the draft service also receives the optional Settings
                     // Sales policy port (DI-only, SAT-D5 tolerance); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for MOD-07: the sales order PDF's print read is a DI-only seam over the same
+                    // SalesDraftService; the provider branch and its database token counts are unchanged.
                     new(
-                        "f5b4f1b7b01f7aa29ab402b11cb534c014ed03f3bdb8095d02e168583e8d63ec",
+                        "ba448140ec2f300e2a22e95f24f7c301bdad3345399d34b48d39256b10526c43",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

@@ -239,6 +239,8 @@ export interface HarnessConfig {
   readonly onLinePricing?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** UI-11: GET `/documents?ownerKind=sales.order&ownerId=…` (read only once the "Sözleşme / Belgeler" tab is opened). */
   readonly onDocuments?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** MOD-07: GET `/sales/drafts/{id}/pdf` (read only when the user asks for the PDF). */
+  readonly onPdf?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/lines/{lineId}/price-references`. */
   readonly onPriceReferences?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
@@ -284,6 +286,10 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/below-floor-exception-approval$/.test(url)) {
           if (config.onPriceFloorExceptionApproval === undefined) throw new Error('unexpected price-floor exception approval')
           return config.onPriceFloorExceptionApproval(call)
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/pdf$/.test(url)) {
+          if (config.onPdf === undefined) throw new Error('unexpected order PDF read')
+          return config.onPdf(call)
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/line-pricing$/.test(url)) {
           return config.onLinePricing?.(url, call.companyId) ?? json({ status: 404 }, 404)
