@@ -5,7 +5,8 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 namespace GoymenERP.Modules.Sales.Application;
 
 /// <summary>
-/// Enriches the existing Sales draft reads with the Cari owner's current party presentation.
+/// Enriches the existing Sales draft reads with the Cari owner's current party presentation and (MOD-08, detail only)
+/// the Identity owner's display name of the people the detail already identifies by id.
 /// The existing service remains the owner of tenant, draft, price and persona semantics. This
 /// decorator adds a fresh Sales read fence around one bounded Cari batch and is deliberately
 /// absent from production DI until central integration changes endpoint, adapter and OpenAPI
@@ -14,6 +15,7 @@ namespace GoymenERP.Modules.Sales.Application;
 public sealed class SalesDraftReadServiceV1(
     ISalesDraftService drafts,
     ISalesPartyDisplaySourceV1 partyDisplays,
+    ISalesUserDisplaySourceV1 userDisplays,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
@@ -28,12 +30,13 @@ public sealed class SalesDraftReadServiceV1(
         var detail = await drafts.GetDraftDetailAsync(draftId, cancellationToken);
         var displays = await ReadPartyDisplaysAsync([detail.Draft.PartyId], detail.Draft.CompanyId, cancellationToken);
         var display = displays[detail.Draft.PartyId];
+        var users = await ReadUserDisplaysAsync(detail, cancellationToken);
 
         return new SalesOrderDraftReadDetailViewV1(
             detail.Draft, detail.RequestedDeliveryDate, detail.Note, detail.Lines,
             detail.DeliveryAddress, detail.Contact, detail.Responsible, detail.PaymentTerms,
             detail.SourceStrategy, detail.Package, detail.Approval, detail.CustomerAcceptance,
-            detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display);
+            detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display, users);
     }
 
     public async Task<SalesOrderDraftReadListResponseV1> GetDraftListAsync(
@@ -130,6 +133,83 @@ public sealed class SalesDraftReadServiceV1(
         return byId;
     }
 
+    /// <summary>
+    /// MOD-08: the people the detail names (approval submitter and decider, acceptance recorder), resolved once each by
+    /// the Identity owner in the record's company under the same fresh Sales read fence as the party display. An actor
+    /// id that is not a canonical user id is not asked; a person the owner does not answer has no entry.
+    /// </summary>
+    private async Task<IReadOnlyList<SalesUserDisplayV1>> ReadUserDisplaysAsync(
+        SalesOrderDraftDetailView detail,
+        CancellationToken cancellationToken)
+    {
+        var ids = ActorUserIds(detail);
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        var scope = await RequireScopeAsync(cancellationToken);
+        if (scope.CompanyId != detail.Draft.CompanyId)
+        {
+            throw UserDirectoryUnavailable();
+        }
+
+        SalesUserDisplayBatchAnswerV1 answer;
+        try
+        {
+            answer = await userDisplays.GetAuthorizedBatchAsync(
+                new SalesUserDisplayBatchRequestV1(scope.CompanyId, scope.ActorId, ids),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            await RequireStillAsync(scope, cancellationToken);
+            throw UserDirectoryUnavailable();
+        }
+
+        await RequireStillAsync(scope, cancellationToken);
+
+        if (answer is null)
+        {
+            throw UserDirectoryUnavailable();
+        }
+
+        if (answer.Outcome == SalesUserDisplayBatchOutcomeV1.Denied)
+        {
+            throw new SalesDraftServiceException(403, "forbidden");
+        }
+
+        if (answer.Outcome != SalesUserDisplayBatchOutcomeV1.Success || answer.Items is null
+            || answer.Items.Count > ids.Length)
+        {
+            throw UserDirectoryUnavailable();
+        }
+
+        var requested = ids.ToHashSet();
+        var byId = new Dictionary<Guid, SalesUserDisplayV1>();
+        foreach (var item in answer.Items)
+        {
+            if (item is null || !requested.Contains(item.UserId) || string.IsNullOrWhiteSpace(item.DisplayName)
+                || !byId.TryAdd(item.UserId, item))
+            {
+                throw UserDirectoryUnavailable();
+            }
+        }
+
+        return [.. ids.Where(byId.ContainsKey).Select(id => byId[id])];
+    }
+
+    private static Guid[] ActorUserIds(SalesOrderDraftDetailView detail) =>
+        [.. new[] { detail.Approval.SubmittedBy, detail.Approval.DecidedBy, detail.CustomerAcceptance.AcceptedBy }
+            .Select(actor => Guid.TryParseExact(actor, "D", out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .Order()];
+
     private async Task<ReadScope> RequireScopeAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -189,6 +269,9 @@ public sealed class SalesDraftReadServiceV1(
 
     private static SalesDraftServiceException Unavailable() =>
         new(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+
+    private static SalesDraftServiceException UserDirectoryUnavailable() =>
+        new(503, SalesDraftProblemCodesV1.IdentityProviderUnavailable);
 
     private sealed record ReadScope(Guid CompanyId, string ActorId);
 }

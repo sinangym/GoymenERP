@@ -4,6 +4,7 @@ import {
   isPositiveDecimalString,
   isReferenceId,
   isVersionString,
+  parseDecimalInput,
   parseQuantityInput,
 } from './wirePrimitives'
 
@@ -87,5 +88,25 @@ describe('isReferenceId', () => {
     expect(isReferenceId('00000000-0000-0000-0000-000000000000')).toBe(false)
     expect(isReferenceId('SP-2026-1842')).toBe(false)
     expect(isReferenceId(undefined)).toBe(false)
+  })
+})
+
+describe('parseDecimalInput (UI-14 price and discount text)', () => {
+  it('canonicalizes as text with either separator, keeps zero as a value and never invents a scale', () => {
+    expect(parseDecimalInput(' 0 ')).toEqual({ ok: true, value: '0' })
+    expect(parseDecimalInput('0,00')).toEqual({ ok: true, value: '0' })
+    expect(parseDecimalInput('001250,500')).toEqual({ ok: true, value: '1250.5' })
+    expect(parseDecimalInput('12345678901234567890.123456789')).toEqual({ ok: true, value: '12345678901234567890.123456789' })
+  })
+
+  it('refuses what is not one plain decimal, and the ambiguous thousands dot', () => {
+    expect(parseDecimalInput('')).toEqual({ ok: false, error: 'required' })
+    for (const raw of ['-1', '1e3', '1,2,3', '%10', '1 000', '1.']) expect(parseDecimalInput(raw)).toEqual({ ok: false, error: 'invalid' })
+    expect(parseDecimalInput('1.250')).toEqual({ ok: false, error: 'ambiguous-separator' })
+  })
+
+  it('leaves the quantity rule unchanged: zero is not a quantity', () => {
+    expect(parseQuantityInput('0')).toEqual({ ok: false, error: 'not-positive' })
+    expect(parseQuantityInput('1,50')).toEqual({ ok: true, value: '1.5' })
   })
 })

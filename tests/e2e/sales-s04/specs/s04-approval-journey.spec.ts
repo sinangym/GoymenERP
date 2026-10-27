@@ -54,6 +54,29 @@ async function readDraft(page: Page, actor: string): Promise<DraftReading> {
   return reading
 }
 
+/**
+ * MOD-08: the text the screen shows for an actor id — the Identity directory's name from the enriched detail (the read the
+ * screen itself makes), never the raw id when the directory names the person. Every actor of this journey acted in the
+ * company, so the directory must name each of them.
+ */
+async function actorText(page: Page, actor: string, actorId: string): Promise<string> {
+  const response = await page.request.get(`${env.apiBaseUrl}${DRAFT_PATH}`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: actor,
+      'X-Company-Id': companyId,
+      'X-ERP-Sales-Read-Contract': 'record-party-display-v1',
+    },
+  })
+  expect(response.status(), `the enriched detail answers ${actor}`).toBe(200)
+  const body = (await response.json()) as {
+    readonly userDisplays: readonly { readonly userId: string; readonly displayName: string; readonly isActiveInCompany: boolean }[]
+  }
+  const person = body.userDisplays.find((entry) => entry.userId.toLowerCase() === actorId.toLowerCase())
+  expect(person, 'the Identity directory names the actor').toBeDefined()
+  expect(person!.displayName).not.toBe(actorId)
+  return person!.isActiveInCompany ? person!.displayName : `${person!.displayName} (artık bu şirkette aktif değil)`
+}
+
 /** Collects the browser's own answers on one state command route of the draft. */
 function watchCommand(page: Page, command: 'submission' | 'approval' | 'rejection'): Response[] {
   const answers: Response[] = []
@@ -113,7 +136,8 @@ test('S04-01 the preparer submits the seeded draft; a double click makes exactly
   const after = await readDraft(page, preparerActor)
   expect([after.draft.approvalState, after.draft.version]).toEqual(['PendingApproval', '4'])
   expect(after.approval.submittedBy, 'the submission names its actor').toBeTruthy()
-  await expect(page.getByTestId('sales-approval-submitted-by')).toHaveText(after.approval.submittedBy as string)
+  await expect(page.getByTestId('sales-approval-submitted-by')).toHaveText(
+    await actorText(page, preparerActor, after.approval.submittedBy as string))
 
   expect(submissions.length, 'the browser sent the command').toBeGreaterThan(0)
   for (const answer of submissions) expect(answer.status()).toBe(200)
@@ -149,7 +173,8 @@ test('S04-02 the approver rejects with a reason and the preparer resubmits', asy
     'SENTETIK s04 red nedeni',
   ])
   expect(rejected.approval.decidedBy).toBeTruthy()
-  await expect(page.getByTestId('sales-approval-decided-by')).toHaveText(rejected.approval.decidedBy as string)
+  await expect(page.getByTestId('sales-approval-decided-by')).toHaveText(
+    await actorText(page, approverActor, rejected.approval.decidedBy as string))
   await expectNoCommand(page)
 
   // The preparer sees the rejection and may submit the same revision again (DEC-SAL-002).
@@ -214,8 +239,10 @@ test('S04-04 the reader sees the approval facts and no command', async ({ page }
   await openDraft(page)
   await expect(state(page)).toHaveText('Onaylı')
   await expect(page.getByTestId('sales-approval')).toBeVisible()
-  await expect(page.getByTestId('sales-approval-submitted-by')).toHaveText(reading.approval.submittedBy as string)
-  await expect(page.getByTestId('sales-approval-decided-by')).toHaveText(reading.approval.decidedBy as string)
+  await expect(page.getByTestId('sales-approval-submitted-by')).toHaveText(
+    await actorText(page, readerActor, reading.approval.submittedBy as string))
+  await expect(page.getByTestId('sales-approval-decided-by')).toHaveText(
+    await actorText(page, readerActor, reading.approval.decidedBy as string))
   await expectNoCommand(page)
   await expect(page.getByLabel('Ret nedeni (isteğe bağlı)')).toHaveCount(0)
 

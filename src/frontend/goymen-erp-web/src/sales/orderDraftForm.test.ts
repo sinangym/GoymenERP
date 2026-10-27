@@ -75,6 +75,9 @@ function exampleForm(over: Partial<OrderDraftFormValues> = {}): OrderDraftFormVa
           { sliceId: SLICE_1, quantityText: '400', requestedDeliveryDate: '2026-09-20' },
           { sliceId: SLICE_2, quantityText: '600', requestedDeliveryDate: '2026-09-22' },
         ],
+        unitPriceText: '',
+        priceUnitId: '',
+        discountPercentText: '',
       },
     ],
     deliveryAddressId: '',
@@ -120,7 +123,7 @@ describe('validateOrderDraft — consumes #257 create-request.json', () => {
     expect(result.ok && result.payload.lines[0].expectedProductVersion).toBe('8')
   })
 
-  it('sends notes verbatim, a blank note as null, and never price or discount', () => {
+  it('sends notes verbatim, a blank note as null, and no price or discount by default', () => {
     const form = exampleForm({ note: '  Tır ile  ' })
     const result = validateOrderDraft(
       { ...form, lines: [{ ...form.lines[0], note: '   ', slices: null }] },
@@ -330,5 +333,74 @@ describe('SALES-A2a — delivery address and contact are chosen from the owner, 
     expect(isOrderDraftPristine({ ...emptyOrderDraftForm(LINE), contactId: CONTACT })).toBe(false)
     expect(formFieldForServerPath('deliveryAddress', [])).toBe(ORDER_FIELD.deliveryAddress)
     expect(formFieldForServerPath('contact', [])).toBe(ORDER_FIELD.contact)
+  })
+})
+
+/** UI-14: the example line with the price fields filled as a person types them. */
+function pricedForm(price: Partial<Pick<OrderDraftFormValues['lines'][number], 'unitPriceText' | 'priceUnitId' | 'discountPercentText'>>) {
+  const form = exampleForm()
+  return { ...form, lines: [{ ...form.lines[0], ...price }] }
+}
+
+describe('UI-14 — price entry on the new order', () => {
+  it('sends the typed price, its offered unit and the discount as canonical decimal text — only with price write', () => {
+    const form = pricedForm({ unitPriceText: ' 1250,50 ', priceUnitId: KG, discountPercentText: '12,5' })
+    const priced = validateOrderDraft(form, OPTIONS, null, true)
+    expect(priced.ok && priced.payload.lines[0]).toMatchObject({ unitPrice: '1250.5', priceUnitId: KG, discountPercent: '12.5' })
+    // Without the shell's price-write control the same form sends nothing of a price (null = unknown, never zero).
+    const withheld = validateOrderDraft(form, OPTIONS)
+    expect(withheld.ok && withheld.payload.lines[0]).toMatchObject({ unitPrice: null, priceUnitId: null, discountPercent: null })
+  })
+
+  it('keeps zero as an explicit price and an empty price as null; never computes an amount', () => {
+    const zero = validateOrderDraft(pricedForm({ unitPriceText: '0', priceUnitId: KG }), OPTIONS, null, true)
+    expect(zero.ok && zero.payload.lines[0]).toMatchObject({ unitPrice: '0', priceUnitId: KG, discountPercent: null })
+    const empty = validateOrderDraft(pricedForm({}), OPTIONS, null, true)
+    expect(empty.ok && empty.payload.lines[0]).toMatchObject({ unitPrice: null, priceUnitId: null, discountPercent: null })
+    // The line request has no amount, net or total member: the wire carries only what was typed.
+    expect(zero.ok && Object.keys(zero.payload.lines[0]).filter((key) => /net|total|amount/i.test(key))).toEqual([])
+  })
+
+  it('judges the text shape only: no invented scale or range (the server owns both)', () => {
+    const manyDecimals = validateOrderDraft(pricedForm({ unitPriceText: '1,123456789', priceUnitId: KG, discountPercentText: '250' }), OPTIONS, null, true)
+    expect(manyDecimals.ok && manyDecimals.payload.lines[0]).toMatchObject({ unitPrice: '1.123456789', discountPercent: '250' })
+    const text = ORDER_DRAFT_TEXT.validation
+    const bad = validateOrderDraft(pricedForm({ unitPriceText: '-5', priceUnitId: KG, discountPercentText: '1.250' }), OPTIONS, null, true)
+    expect(!bad.ok && bad.errors).toEqual({
+      [lineFieldId(LINE, 'unitPrice')]: text.priceInvalid,
+      [lineFieldId(LINE, 'discountPercent')]: text.discountAmbiguous,
+    })
+  })
+
+  it('requires the wire pairings: a price names its unit, a unit needs a price, a discount needs a price', () => {
+    const text = ORDER_DRAFT_TEXT.validation
+    const noUnit = validateOrderDraft(pricedForm({ unitPriceText: '10' }), OPTIONS, null, true)
+    expect(!noUnit.ok && noUnit.errors).toEqual({ [lineFieldId(LINE, 'priceUnitId')]: text.priceUnitRequired })
+    const noPrice = validateOrderDraft(pricedForm({ priceUnitId: KG, discountPercentText: '5' }), OPTIONS, null, true)
+    expect(!noPrice.ok && noPrice.errors).toEqual({
+      [lineFieldId(LINE, 'priceUnitId')]: text.priceUnitWithoutPrice,
+      [lineFieldId(LINE, 'discountPercent')]: text.discountWithoutPrice,
+    })
+  })
+
+  it('refuses a price unit the product does not offer, and clears it when the product changes', () => {
+    const other = validateOrderDraft(pricedForm({ unitPriceText: '10', priceUnitId: PIECE }), OPTIONS, null, true)
+    expect(!other.ok && other.errors[lineFieldId(LINE, 'priceUnitId')]).toBe(ORDER_DRAFT_TEXT.validation.priceUnitNotOffered)
+    expect(setLineProduct(pricedForm({ priceUnitId: KG }), LINE, OTHER_PRODUCT).lines[0].priceUnitId).toBe('')
+  })
+
+  it('places the price errors in DOM order, before the optional details of the same line', () => {
+    const form = pricedForm({ unitPriceText: 'x', priceUnitId: KG })
+    const result = validateOrderDraft({ ...form, lines: [{ ...form.lines[0], requestedDeliveryDate: '2026-02-30' }] }, OPTIONS, null, true)
+    expect(!result.ok && Object.keys(result.errors)).toEqual([lineFieldId(LINE, 'unitPrice'), lineFieldId(LINE, 'requestedDeliveryDate')])
+  })
+
+  it('is not pristine with a typed price, and maps the server price paths onto the SENT line', () => {
+    expect(isOrderDraftPristine({ ...emptyOrderDraftForm(LINE), lines: [{ ...emptyOrderDraftForm(LINE).lines[0], unitPriceText: '1' }] })).toBe(false)
+    const sent = [{ lineId: LINE }, { lineId: 'line-2' }]
+    expect(formFieldForServerPath('lines[1].unitPrice', sent)).toBe(lineFieldId('line-2', 'unitPrice'))
+    expect(formFieldForServerPath('lines[0].priceUnitId', sent)).toBe(lineFieldId(LINE, 'priceUnitId'))
+    expect(formFieldForServerPath('lines[0].discountPercent', sent)).toBe(lineFieldId(LINE, 'discountPercent'))
+    expect(formFieldForServerPath('draft', sent)).toBeNull()
   })
 })
