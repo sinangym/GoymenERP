@@ -72,3 +72,40 @@ export const SALES_ROUTE = {
 } as const
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
+
+/**
+ * UI-20 / S-01 "Satış Talebi / Teklif Havuzu": the ids the backend shell provider publishes (Sales shell contract 1.8), keyed
+ * by the pool's own capability keys. Each screen is its own grant (a list grant does not imply a detail or a create grant);
+ * the three non-routed controls share their detail's route. Listing an id grants nothing: the shell publishes it only to an
+ * actor holding the names beside it, and the API re-measures every call.
+ */
+export const SALES_POOL_CAPABILITY_ID = {
+  /** S-01 talep listesi — `sales.requests.read`. */
+  requestsList: 'sales.requests.list',
+  /** S-01 talep detayı — `sales.requests.read`. */
+  requestsDetail: 'sales.requests.detail',
+  /** S-01 yeni talep — `sales.requests.write`. */
+  requestsCreate: 'sales.requests.create',
+  /** Talep detayında onay / ret kontrolü — `sales.requests.read` + `sales.requests.approve` (SAT-D22). */
+  requestsDecide: 'sales.requests.approve',
+  /** S-01 teklif listesi — `sales.quotes.read`. */
+  quotesList: 'sales.quotes.list',
+  /** S-01 teklif detayı — `sales.quotes.read`. */
+  quotesDetail: 'sales.quotes.detail',
+  /** S-01 yeni teklif — `sales.quotes.write`. */
+  quotesCreate: 'sales.quotes.create',
+  /** Teklif detayında revizyon ve kayıp kontrolü — `sales.quotes.read` + `sales.quotes.write`. */
+  quotesWrite: 'sales.quotes.write',
+  /** Teklif detayında "Siparişe dönüştür" — `sales.quotes.read` + `sales.quotes.write` + `sales.drafts.create`. */
+  quotesConvert: 'sales.quotes.convert',
+} as const
+
+/** The S-01 pool routes the backend declares beside the ids above. Static `yeni` before each parameter route. */
+export const SALES_POOL_ROUTE = {
+  requests: '/satis/talepler',
+  requestCreate: '/satis/talepler/yeni',
+  requestDetail: '/satis/talepler/:requestId',
+  quotes: '/satis/teklifler',
+  quoteCreate: '/satis/teklifler/yeni',
+  quoteDetail: '/satis/teklifler/:quoteId',
+} as const

@@ -967,6 +967,14 @@ public sealed partial class OpenApiContractGenerationTests
         new("get", "/api/v1/sales/references/currencies", "GetSalesCurrencyReferencesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["query:effectiveOn:true:type:string;format:date"]),
+        // SAT-D27 (1): the sales-owner picker.
+        new("get", "/api/v1/sales/references/sales-owners", "GetSalesOwnerReferencesV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
+            ParameterValues:
+            [
+                "query:q:false:type:string;canonicalization:trim;canonical-max-length:100",
+                "query:limit:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$;normalized-minimum:1;normalized-maximum:50",
+            ]),
         new("get", "/api/v1/sales/references/products", "GetSalesProductCandidatesV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues:
@@ -1228,6 +1236,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetDocumentVersionContentV1"] = "ref:Stream",
             ["GetSalesContactInformationReferencesV1"] = "ref:SalesContactInformationOptionsV1",
             ["GetSalesCurrencyReferencesV1"] = "ref:SalesCurrencyOptionsV1",
+            ["GetSalesOwnerReferencesV1"] = "ref:SalesOwnerOptionsV1",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -1466,6 +1475,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetDocumentVersionContentV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
+        "GetSalesOwnerReferencesV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -1952,6 +1962,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetLogisticsPurchaseWorkV1",
         "GetSalesContactInformationReferencesV1",
         "GetSalesCurrencyReferencesV1",
+        "GetSalesOwnerReferencesV1",
         "UploadDocumentV1",
         "GetDocumentsV1",
         "GetDocumentContentV1",
@@ -2690,6 +2701,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["GetDocumentVersionContentV1:409"] = ["concurrent_change", "document_not_scanned"],
             ["GetSalesContactInformationReferencesV1:400"] = ["validation_failed"],
             ["GetSalesCurrencyReferencesV1:400"] = ["validation_failed"],
+            ["GetSalesOwnerReferencesV1:400"] = ["validation_failed"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -2836,6 +2848,16 @@ public sealed partial class OpenApiContractGenerationTests
                     ("companyId", "type:string;format:uuid"),
                     ("effectiveOn", "type:string;format:date"),
                     ("currencies", "type:array;items:ref:SalesCurrencyReferenceV1")),
+                // SAT-D27 (1): the sales-owner picker answers id + display name only.
+                ["SalesOwnerOptionsV1"] = ObjectSchema(
+                    ["companyId", "owners", "hasMore"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("owners", "type:array;items:ref:SalesOwnerOptionV1"),
+                    ("hasMore", "type:boolean")),
+                ["SalesOwnerOptionV1"] = ObjectSchema(
+                    ["userId", "displayName"],
+                    ("userId", "type:string;format:uuid"),
+                    ("displayName", "type:string")),
                 ["OrderListViewV1"] = ObjectSchema(
                     ["orders", "nextCursor"],
                     ("orders", "type:array;items:ref:OrderSummaryViewV1"),
