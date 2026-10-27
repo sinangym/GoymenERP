@@ -307,8 +307,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
             // D-05: +1 pending-approval owner-read SQL fact, kept ordinal-sorted.
             // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
+            // TEK-13: +5 SalesRemainderChangeSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (5932b012… -> f2c6c3ac…).
             ["tools/relational_inventory/sales.txt"] =
-                "5932b01260252b79f1ca104b5a524cc897ef1ac31088ef92e8b4d1528b7f4605",
+                "f2c6c3ac65068e966d4266b4bc153c379bbf017b84fd7db5e63ea6b998dec899",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
