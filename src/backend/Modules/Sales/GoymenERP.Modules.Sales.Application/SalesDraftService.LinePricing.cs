@@ -195,5 +195,10 @@ public sealed partial class SalesDraftService
             commercial.FloorException is { } exception
                 ? new SalesDraftPriceFloorExceptionV1(exception.RequestedBy, exception.RequestedAtUtc, exception.ApprovedBy,
                     exception.ApprovedAtUtc, exception.Reason)
+                : null,
+            commercial.DiscountCheck is { } check
+                ? new SalesDraftDiscountLimitCheckV1(check.CheckedBy, check.CheckedAtUtc, check.ListUnitPrice, check.LimitPercent,
+                    check.RequiresApproval,
+                    check.ApprovedBy, check.ApprovedAtUtc, check.Reason)
                 : null);
 }

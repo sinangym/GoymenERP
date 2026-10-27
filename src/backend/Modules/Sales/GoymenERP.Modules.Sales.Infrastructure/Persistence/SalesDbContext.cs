@@ -157,7 +157,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         "([State] = 1 AND [DecidedBy] IS NULL AND [DecidedAtUtc] IS NULL AND [RejectionReason] IS NULL) "
         + "OR ([State] = 2 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NULL) "
         + "OR ([State] = 3 AND [DecidedBy] IS NOT NULL AND LEN([DecidedBy]) > 0 AND [DecidedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0)";
+    /// <summary>
+    /// CK_DraftAttempts_Result: a recorded success of the price-floor (PL04) or discount (SAT-D2 / API-12) exception approval
+    /// keeps its first complete answer as JSON; every other attempt keeps none.
+    /// </summary>
     internal const string AttemptResultConstraint =
+        "([CommandName] IN (N'sales.order-draft.approve-price-floor-exceptions.v1', N'sales.order-draft.approve-discount-exceptions.v1') AND [Outcome] = 1 "
+        + "AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR "
+        + "(([CommandName] NOT IN (N'sales.order-draft.approve-price-floor-exceptions.v1', N'sales.order-draft.approve-discount-exceptions.v1') OR [Outcome] <> 1) AND [ResultJson] IS NULL)";
+
+    /// <summary>The CK_DraftAttempts_Result before API-12 (price-floor approval only); the discount-exception migration's Down restores it.</summary>
+    internal const string AttemptResultConstraintBeforeDiscountExceptions =
         "([CommandName] = N'sales.order-draft.approve-price-floor-exceptions.v1' AND [Outcome] = 1 "
         + "AND [ResultJson] IS NOT NULL AND ISJSON([ResultJson]) = 1) OR "
         + "(([CommandName] <> N'sales.order-draft.approve-price-floor-exceptions.v1' OR [Outcome] <> 1) AND [ResultJson] IS NULL)";

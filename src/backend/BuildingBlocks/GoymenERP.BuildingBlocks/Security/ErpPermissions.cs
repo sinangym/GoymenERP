@@ -408,6 +408,15 @@ public static class ErpPermissions
     public const string SalesOrdersPriceFloorExceptionApprove = "sales.orders.price-floor-exception.approve";
 
     /// <summary>
+    /// SAT-D2 / API-12: a separate permission for the reasoned approval of the current lines below their list price beyond the
+    /// limit of the actor who set it, or priced without a list price (SAT-D34…D37, SAT-D42/D43; Sales owner name
+    /// SalesPermissionManifestV1.OrdersDiscountExceptionApprove). It grants neither price write, order approval nor the
+    /// price-floor exception approval. Registration grants nothing: no seeded role and no real user receives it; SAT-D37 names
+    /// the Müdür persona, and the grant stays a human gate. Company-wide only, like the other Sales names. Not Critical.
+    /// </summary>
+    public const string SalesOrdersDiscountExceptionApprove = "sales.orders.discount-exception.approve";
+
+    /// <summary>
     /// DEC-SAL-003 (KILITLI): moving the requested delivery dates of an order (POST …/{id}/delivery-schedule) without
     /// re-approval, audited — the Sales owner's name (<c>SalesPermissionManifestV1.OrdersDeliveryScheduleWrite</c>, same
     /// string). The literal is the owner's technical mapping, confirmed by the coordinator (technical names are not
@@ -680,6 +689,7 @@ public static class ErpPermissions
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
             SalesOrdersPriceFloorExceptionApprove,
+            SalesOrdersDiscountExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,
@@ -807,6 +817,7 @@ public static class ErpPermissions
             SalesOrdersPriceWrite,
             SalesOrdersPriceRead,
             SalesOrdersPriceFloorExceptionApprove,
+            SalesOrdersDiscountExceptionApprove,
             SalesOrdersDeliveryScheduleWrite,
             SalesOrdersCancel,
             SalesOrdersForceClose,

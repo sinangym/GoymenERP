@@ -318,10 +318,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (merged over main's: aabdd034… -> 19d5e743…).
             // API-22…24: +5 sales quote SQL facts; merged over DEC-SAL-001 / API-08's +2 SalesOrderStatusSqlServerRelationalAcceptanceTests
             // facts, kept ordinal-sorted (a9873855… -> 06afeb99…).
-            // MOD-07: +1 SalesOrderPdfSqlServerRelationalAcceptanceTests fact, kept ordinal-sorted (merged over API-22…24:
-            // 06afeb99… -> 26a19c11…).
+            // SAT-D2 / API-12: +2 SalesDiscountExceptionSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (06afeb99… -> b1a5335a…).
+            // MOD-07: +1 SalesOrderPdfSqlServerRelationalAcceptanceTests fact, kept ordinal-sorted (merged over SAT-D2 / API-12:
+            // b1a5335a… -> 44adfee2…).
             ["tools/relational_inventory/sales.txt"] =
-                "26a19c11225eb6e762781420e6e752e3f92baf2026f29866b902654ca9189f0c",
+                "44adfee2640812ea20f7d37d7615b4abe84a79640a304c4cb13626b37e1593ee",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -395,9 +396,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // same CompanyId query filter and a company-leading key; the quote commands' own QuoteAttempts (ADR-SAL-001 §2, declared
             // immutability trigger) and the order's nullable SourceQuoteId (company-leading foreign keys, filtered unique
             // UX_Drafts_SourceQuoteId); the quote's lifecycle-only guard. DraftAttempts is unchanged.
+            // Re-fingerprinted for SAT-D2 / API-12: CK_DraftAttempts_Result admits the discount-exception approval's replay
+            // result on the same company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "c0a9a381642ebfd89f46d3086ae21d8112ace0d867df08594560f1d5b391e676",
+                "45b867ceca4a8398cac31315835efa8ff6d52aabdd33e9dd1c84b2b6fb9a9927",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1289,10 +1292,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for API-22…24 over DEC-SAL-001 / API-08: the quote store and the optional Settings Sales
                     // policy port are DI-only seams; the provider branch and its database token counts are unchanged.
-                    // Re-fingerprinted for MOD-07 (merged over API-22…24): the sales order PDF's print read is a DI-only
+                    // Re-fingerprinted for SAT-D2 / API-12: the draft service also receives the optional limit-group source
+                    // (DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for MOD-07 (merged over SAT-D2 / API-12): the sales order PDF's print read is a DI-only
                     // seam over the same SalesDraftService; the provider branch and its database token counts are unchanged.
                     new(
-                        "6b12d52d4e7ae54dbd53b402a743efcc3fd852c0b2afeef40a1d222503eeb8f4",
+                        "9b5ae913f9105d16cebd7a158ca621a8298ff2add1d52ce19d9a3a7bbcbe0f9d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1322,8 +1327,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // per command), the cursor gains the quote ordering label and the draft command check admits the conversion;
                     // the order's submit/approve reads its source quote's requests through the same filtered context (No 160);
                     // SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D2 / API-12: the discount-exception approval shares the commercial line save and
+                    // the replay-result path; no connection, command or raw SQL; SqlClient count unchanged.
                     new(
-                        "bb7e78351c6634783aefc3c25e8c763777623ecb9b9651fa8117543727dbe2e9",
+                        "92bf806fa5047eacc4ed5b7b33c13b661fa101de55f36a36e9cb462bcd39144c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1748,6 +1755,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("372aa029a3b74e41404828d8a83cccc0abb3723ec5912df75a1773fa89396b7d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // SAT-D2 / API-12: the Down's only raw SQL refuses rollback (51069, used by no other migration) while a
+                // discount-exception approval replay result exists; the THROW precedes the constraint narrowing. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027134109_AddSalesDiscountExceptionApprovalReplayResults.cs"] =
+                    new("d240f6b2dcb9cf474af621a47c84daa70881abda4bce6a665a005e80ddbb3cc4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

@@ -111,8 +111,13 @@ public static class SalesModuleExtensions
         // API-22…24: the sales quote store (this module's own).
         serviceProvider.GetRequiredService<ISalesQuoteStore>(),
         // DEC-SAL-001 / API-08 (SAT-D5): the Settings Sales policy port, registered by the host from the Settings owner;
-        // until it is, the realization axis is "PolicyUnavailable", never a default tolerance.
-        serviceProvider.GetService<ISettingsSalesPolicyProviderV1>());
+        // until it is, the realization axis is "PolicyUnavailable", never a default tolerance. SAT-D2 / API-12 reads the
+        // discount limits through the same port.
+        serviceProvider.GetService<ISettingsSalesPolicyProviderV1>(),
+        // SAT-D2 / SAT-D34: the actor's discount limit groups (the Identity owner's role mapping, not registered yet). Without
+        // groups no limit is defined: every line below its list price goes to approval; with groups but no Settings source,
+        // such a line is 503, never checked against a guessed limit.
+        serviceProvider.GetService<ISalesDiscountLimitGroupSourceV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(
