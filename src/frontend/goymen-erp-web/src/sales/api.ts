@@ -98,6 +98,7 @@ import {
   type OwnerReference,
 } from './contract'
 import type { OrderCommandOutcome } from './orderAttempt'
+import { decodeOrderStatus, salesDraftStatusPath, type OrderStatus } from './orderStatus'
 import type { ViewOutcome } from '../shell/uiState'
 import type { OrderDraftOptions } from './orderDraftForm'
 import { isReferenceId } from './wirePrimitives'
@@ -114,14 +115,14 @@ export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
 const DEV_IDENTITY_ENABLED = import.meta.env.DEV || import.meta.env.VITE_BOOTSTRAP_IDENTITY_ENABLED === 'true'
 
-function headers(companyId: string): Record<string, string> {
+export function headers(companyId: string): Record<string, string> {
   return {
     ...(DEV_IDENTITY_ENABLED ? { 'X-Development-User': DEV_USER } : {}),
     'X-Company-Id': companyId,
   }
 }
 
-type Raw =
+export type Raw =
   | {
       readonly status: number
       readonly body: unknown
@@ -132,7 +133,7 @@ type Raw =
     }
   | { readonly failure: 'aborted' | 'offline' | 'unreachable' }
 
-async function request(path: string, init: RequestInit, signal: AbortSignal | undefined): Promise<Raw> {
+export async function request(path: string, init: RequestInit, signal: AbortSignal | undefined): Promise<Raw> {
   let response: Response
   try {
     response = await fetch(`${API_BASE}${path}`, { ...init, signal })
@@ -159,7 +160,7 @@ async function request(path: string, init: RequestInit, signal: AbortSignal | un
 
 /* ── Reads ────────────────────────────────────────────────────────────────── */
 
-function readFailure<T>(failure: 'aborted' | 'offline' | 'unreachable'): ViewOutcome<T> {
+export function readFailure<T>(failure: 'aborted' | 'offline' | 'unreachable'): ViewOutcome<T> {
   if (failure === 'aborted') return { type: 'fence-stale' }
   if (failure === 'offline') return { type: 'offline' }
   return { type: 'network-error' }
@@ -318,6 +319,24 @@ export async function fetchDraftCustomerReturns(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const returns = decodeCustomerReturns(raw.body, detail)
   return returns === null ? { type: 'malformed' } : { type: 'ok-single', data: returns }
+}
+
+/**
+ * DEC-SAL-001 / API-08: the seven status axes of `detail`, read-only under the draft read; the server reads every owner
+ * afresh on every request and caches nothing. Data only when it describes exactly this detail (`decodeOrderStatus`);
+ * anything else is `malformed`, and a failed read is never shown as a state. A non-200 keeps its status and body so the
+ * card can tell a 503 from a 404 (`ViewOutcome.http`).
+ */
+export async function fetchDraftStatus(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<OrderStatus>> {
+  const raw = await request(salesDraftStatusPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const status = decodeOrderStatus(raw.body, detail)
+  return status === null ? { type: 'malformed' } : { type: 'ok-single', data: status }
 }
 
 /** Partial-delivery remainder facts; owner quantities stay nullable when the Logistics read is unavailable. */

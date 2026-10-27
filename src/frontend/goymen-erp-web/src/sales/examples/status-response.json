@@ -1,0 +1,44 @@
+{
+  "draftVersion": "4",
+  "revision": "Rev.0",
+  "lifecycle": { "state": "Active" },
+  "internalApproval": { "state": "Approved" },
+  "customerAcceptance": { "state": "NotRequired", "acceptedRevision": null },
+  "source": { "state": "NoSource" },
+  "realization": {
+    "state": "Completed",
+    "warning": true,
+    "basisRevision": "Rev.0",
+    "tolerance": {
+      "profileId": "eeeeeeee-1111-4111-8111-000000000401",
+      "profileVersion": 3,
+      "warnPercent": "1",
+      "approvalPercent": "2",
+      "blockPercent": "3",
+      "effectiveFrom": "2026-01-01",
+      "effectiveThrough": null,
+      "evaluatedOn": "2026-09-13"
+    },
+    "lines": [
+      {
+        "lineId": "66666666-6666-6666-6666-666666666666",
+        "lineNo": 1,
+        "orderUnitId": "44444444-4444-4444-4444-444444444444",
+        "ordered": "1000",
+        "shipped": "1015",
+        "delivered": "1010",
+        "state": "Completed",
+        "direction": "Over",
+        "deviation": "15",
+        "band": "Warn",
+        "warning": true,
+        "approvedOverDelivery": false,
+        "closedRemainder": null,
+        "approvedReturned": "2.5"
+      }
+    ]
+  },
+  "invoicing": { "state": "NoSource" },
+  "financialClosure": { "state": "NoSource" },
+  "readyToClose": false
+}

@@ -266,3 +266,23 @@ Her yeni Satış komutu için asgari kabul:
 - deneme veya audit insert hatasında iş yazımı geri alınır (gerçek SQL);
 - yeni deneme tablosunda UPDATE/DELETE SQL tarafından reddedilir (gerçek SQL);
 - yeni `[SqlServerFact]` testleri `tools/relational_inventory/sales.txt` ve tenant guard pin'ine kaydedilir.
+
+## Uygulama kaydı — S4 dilimi (API-20…24; PR #824, #828)
+
+Bu bölüm kararı değiştirmez; §2 ve §3'ün dilimde nasıl uygulandığını kaydeder.
+
+- **Talep (API-20/21, #824):** `sales.RequestAttempts` — `DraftAttempts` biçimi (PK `(CompanyId, CommandName,
+  IdempotencyKeyHash)` BIN2, `RequestHash`, `ActorId`, `Outcome`, `RequestId` FK, `RefusalJson`, her zaman NULL olan
+  `ResultJson`, `CorrelationId`, `RecordedAtUtc`), create'e filtreli `UX_RequestAttempts_RequestId`,
+  `CK_RequestAttempts_Command`, şirket filtresi, EF write guard ve SQL trigger `TR_RequestAttempts_RejectMutation`
+  (`THROW 51067`). Migration `20261027063346_AddSalesRequests`; `Down` veri varken `THROW 51065` ile reddeder.
+- **Teklif (API-22/24, #828):** `sales.QuoteAttempts` — aynı biçim, `QuoteId` FK, `UX_QuoteAttempts_QuoteId`,
+  `CK_QuoteAttempts_Command` (yalnız create / revise / lose), trigger `TR_QuoteAttempts_RejectMutation` (`THROW 51068`).
+  Migration `20261027071300_AddSalesQuotes`; `Down` veri varken `THROW 51066` ile reddeder.
+- **Teklif → sipariş dönüşümü (API-23, §3):** tek deneme satırı **siparişin** `sales.DraftAttempts` tablosuna,
+  `sales.quote.convert.v1` komut adıyla ve `DraftId` = oluşan sipariş olarak yazılır. Gerekçe: komutun oluşturduğu
+  aggregate sipariştir; replay siparişi (201 + siparişin `Location`'ı) taslağın kendi replay yoluyla döner; `DraftId` FK'si
+  bütünlüğü taşır; sipariş anahtar başına bir kez oluşur (`DraftAttempts` PK) ve teklif başına bir kez oluşur
+  (`UX_Drafts_SourceQuoteId`). Teklifin `Converted` durumu ve kapsanan talep satırlarının eşzamanlılık dokunuşu aynı
+  save'dedir. `sales.DraftAttempts`'in şekli değişmez (kolon, CK veya indeks eklenmez).
+- `sales.DraftAttempts` için SQL değişmezlik trigger'ı takip işi olarak kalır (§6).

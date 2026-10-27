@@ -53,6 +53,8 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesOrderDraftStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // API-20 / API-21: the sales request store is the same Sales store (one context, one attempt table).
         services.AddScoped<ISalesRequestStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        // API-22…24: the sales quote store is the same Sales store (the conversion writes the order in the quote's one save).
+        services.AddScoped<ISalesQuoteStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // The draft use cases (Sales API slice). The host supplies the Cari account port, the Settings
         // provider, the optional Product eligibility port and the central authority; the shell
         // capability provider is registered by the host once the Sales names are in the catalogue.
@@ -61,6 +63,7 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesDraftService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // API-20 / API-21: the request use cases share the draft service's fence and owner reads (one scoped instance).
         services.AddScoped<ISalesRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        services.AddScoped<ISalesQuoteService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesOrderDraftPendingApprovalReadServiceV1,
             SalesOrderDraftPendingApprovalReadServiceV1>();
         // SALES-A1: the Sales-owned line reference port (Business 5737989917 = B) for the allocation
@@ -103,6 +106,8 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISalesOrderCustomerReturnReadPortV1>(),
         // API-20 / API-21: the sales request store (this module's own).
         serviceProvider.GetRequiredService<ISalesRequestStore>(),
+        // API-22…24: the sales quote store (this module's own).
+        serviceProvider.GetRequiredService<ISalesQuoteStore>(),
         // DEC-SAL-001 / API-08 (SAT-D5): the Settings Sales policy port, registered by the host from the Settings owner;
         // until it is, the realization axis is "PolicyUnavailable", never a default tolerance.
         serviceProvider.GetService<ISettingsSalesPolicyProviderV1>());
