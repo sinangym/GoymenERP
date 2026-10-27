@@ -1281,7 +1281,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for API-22…24: the quote store and service are DI-only seams over the same SalesStore and
                     // SalesDraftService; the provider branch and its database token counts are unchanged.
                     new(
-                        "PENDING",
+                        "3c1ae5b12e6f67a9199dc53e3a758f1fe3c3b99dc1fe9e4581d76daefe522473",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
