@@ -432,7 +432,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 100, "durableStores": 23},
+            {"dbContexts": 18, "migrations": 101, "durableStores": 23},
             self.inventory["counts"],
         )
         actual = {
@@ -1917,7 +1917,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(100, len(migrations))
+        self.assertEqual(101, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -2258,7 +2258,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1125, len(source_paths))
+        self.assertEqual(1132, len(source_paths))
         # MOD-02 (SAT-D9 / SAT-D10): the Product price tier chain, its contracts, the Cari customer port adapter
         # and the AddPriceListScope migration.
         for mod02_source in (
