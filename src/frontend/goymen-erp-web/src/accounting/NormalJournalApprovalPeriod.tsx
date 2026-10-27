@@ -83,9 +83,16 @@ export function NormalJournalApprovalPeriod({
   const holding = open.filter((period) => holds(period, accountingDate))
   const preselect = value === '' && holding.length === 1 ? holding[0].periodId : null
 
+  // A choice the list no longer shows (a restarted list dropped its page) is cleared, so what is sent is what is seen.
+  const unseen = state.kind === 'ready' && value !== '' && !open.some((period) => period.periodId === value)
+
   useEffect(() => {
     if (preselect !== null) onChange(preselect)
   }, [preselect, onChange])
+
+  useEffect(() => {
+    if (unseen) onChange('')
+  }, [unseen, onChange])
 
   if (!canList) return <p role="note" className={styles.noticeWarn}>{T.periodListUnavailable}</p>
   if (state.kind !== 'ready') return <StateBlock state={state} subject={T.periodsSubject} onRetry={() => void query.refetch()} />
