@@ -28,7 +28,7 @@ metnini yazdı; o metin aynen verilir.
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
 | SAT-D42 | İskonto ölçümünde vade farkı (SAT-D35'in uygulaması) | İskonto limit kontrolü **vade farkı eklenmeden önceki** iskontolu birim fiyatı liste fiyatıyla karşılaştırır. Vade farkı iskontoyu gizleyemez | API-12 (#834) |
-| SAT-D43 | Liste fiyatı olmayan satır | Liste fiyatı referansı olmayan satıra fiyat **elle yazılabilir**; böyle her fiyatlı satır, fiyat ne olursa olsun ve iskonto alanlarından bağımsız olarak **yönetici onayına gider** (SAT-D37 onaycısı). EK4'teki "Liste fiyatı olmayan satır" açık maddesini kapatır | API-12 (#834) |
+| SAT-D43 | Liste fiyatı olmayan satır | Liste fiyatı referansı olmayan satıra fiyat **elle yazılabilir**; böyle her fiyatlı satır, fiyat ne olursa olsun ve iskonto alanlarından bağımsız olarak **yönetici onayına gider** (SAT-D37 onaycısı). EK4'teki "Liste fiyatı olmayan satır" açık maddesini kapatır | API-12 (#834); bugün liste fiyatı referansı yalnız ticari revizyonda bağlandığı için yeni sipariş ve tekliften dönüşen fiyatlı satırlar da bu kurala girer — teklif satırlarının referans taşıması takip işidir (UI-20/API-22) |
 | SAT-D44 | Süresi geçmiş teklifin yönetici onayı — kişi (SAT-D24; **SAT-D40'ın yerine geçer**) | (1) Teklifi **oluşturan, revize eden ve onaylayan** kişiler teklifte görünür. (2) Süresi geçmiş teklifin siparişe dönüştürülmesini **onaylama yetkisi olan kişi her zaman onaylayabilir**; teklifi oluşturmuş veya revize etmiş olması onayı engellemez. Bu, `SINAN_KARARLARI_2026-10-21.md` P6'daki "hazırlayan ≠ onaylayan" ilkesine **süresi geçmiş teklif onayı için açık bir istisnadır** (SAT-D22'deki talep onayı istisnası gibi); başka onaylarda — SAT-D37 iskonto istisnası dahil — P6 aynen geçerlidir. Onay yetkisinin adı uygulama PR'ında permission manifest'e eklenir; kime verileceği grant kararıdır ve insan kapısında kalır | SAT-D24 takip işi (API-23), UI-20 |
 
 ## EK4 metin netleştirmeleri (anlam değişmez)
@@ -40,13 +40,16 @@ netleştirir:
   hakkı yoktur** (limit %0 sayılır) ve her pozitif iskonto yönetici onayına gider.
 - **SAT-D37:** "Müdür rolü" ifadesi `docs/security/PERSONA_GRANT_MATRISI_KARTI_v0.md`'deki **Müdür
   personasıdır**; Kimlik'te bugün bu adla bir rol kodu yoktur ve bu karar rol kodu veya seed açmaz.
-  İzin Critical değildir.
+  Bu belge iznin Critical sınıflandırmasını yapmaz (o insan kapısıdır); PR #834'ün permission
+  manifest'inde izin Critical işaretlenmemiştir, bu bir uygulama seçimidir.
 - **EK4 "Sınırlar":** EK4'teki insan kapıları listesinde `grant/rol/Critical` de değişmeden kalır;
   tek istisna SAT-D37'deki `sales.orders.discount-exception.approve` → Müdür personası eşlemesidir.
 
 ## Açık kalanlar
 
-- Yok (bu belgedeki sorular cevaplandı). SAT-D44'teki onay yetkisinin kime verileceği grant kararıdır.
+- **SAT-D43 onayında aynı kişi kuralı:** liste fiyatı olmayan satırın fiyatını yazan kişinin o satırı
+  onaylayıp onaylayamayacağı sorulmadı; karar verilene kadar P6 gereği fiyatı yazandan farklı kişi aranır.
+- SAT-D44'teki onay yetkisinin kime verileceği grant kararıdır.
 
 ## Sınırlar
 
