@@ -13,6 +13,6 @@ namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 /// </summary>
 public static class SettingsCurrencyIdentitiesV1
 {
-    /// <summary>Turkish lira. The only currency with an approved money profile today (GDC/TRY, Ö2).</summary>
+    /// <summary>Turkish lira. The only currency with an approved money profile today (GDC/TRY, Ö2; GSP/GIN Sales draft, SAT-D18).</summary>
     public static readonly Guid TurkishLira = Guid.Parse("9e60dcf0-f4bd-5bca-b464-f9a2db98e31a");
 }
