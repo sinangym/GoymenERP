@@ -1,0 +1,91 @@
+/* UI-15 status-axes card on GOY-DS-001. Layout only; every value comes from design-system tokens. */
+
+.axes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--goy-ds-space-2) var(--goy-ds-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.axis {
+  display: grid;
+  gap: var(--goy-ds-space-1);
+  min-width: 0;
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-sm);
+  background: var(--goy-ds-color-surface-muted);
+}
+
+.axisLabel {
+  color: var(--goy-ds-color-text-tertiary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+.axisState {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-1) var(--goy-ds-space-2);
+  font-size: var(--goy-ds-font-size-md);
+  font-weight: var(--goy-ds-font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.axisNote {
+  margin: 0;
+  color: var(--goy-ds-color-text-secondary);
+  font-size: var(--goy-ds-font-size-xs);
+  line-height: 16px;
+}
+
+/* The mark is a word with a glyph, never a colour alone; the border keeps it visible in forced-colours mode. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--goy-ds-space-1);
+  padding: 0 var(--goy-ds-space-2);
+  border: 1px solid var(--goy-ds-color-warning);
+  border-radius: 999px;
+  color: var(--goy-ds-color-warning);
+  font-size: var(--goy-ds-font-size-xs);
+  font-weight: var(--goy-ds-font-weight-semibold);
+  line-height: 18px;
+}
+
+.ready {
+  display: grid;
+  gap: var(--goy-ds-space-1);
+  margin: 0;
+}
+
+.ready dt {
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.ready dd {
+  margin: 0;
+}
+
+.realization {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  min-width: 0;
+}
+
+.realization > h3 {
+  margin: 0;
+  font-size: var(--goy-ds-font-size-base);
+  font-weight: var(--goy-ds-font-weight-semibold);
+}
+
+.stateCell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-1);
+}

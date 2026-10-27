@@ -314,11 +314,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D8 / API-10: +2 SalesCustomerReturnsSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (f2c6c3ac… -> aabdd034…).
             // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted
             // (merged over main's: aabdd034… -> 19d5e743…).
-            // DEC-SAL-001 / API-08: +2 SalesOrderStatusSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (merged over
-            // API-20/21: 19d5e743… -> a9873855…).
-            // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (a9873855… -> a75b029d…).
+            // API-22…24: +5 sales quote SQL facts; merged over DEC-SAL-001 / API-08's +2 SalesOrderStatusSqlServerRelationalAcceptanceTests
+            // facts, kept ordinal-sorted (a9873855… -> 06afeb99…).
+            // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over API-22…24, kept ordinal-sorted
+            // (06afeb99… -> 4f5d6def…).
             ["tools/relational_inventory/sales.txt"] =
-                "a75b029d25c2cff72b385cf6fb07579413f2f923e308e002dbc75da24518e478",
+                "4f5d6def5b2346c8bb57d6298731e988c1635b8e4885abca9cdc709dc5309df3",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -388,9 +389,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for API-20 / API-21: the sales request tables (Requests, RequestLines, DocumentCounters and the
             // request commands' own RequestAttempts, ADR-SAL-001 §2), each with the same CompanyId query filter and a
             // company-leading key, the attempt table's declared immutability trigger, and the request's decision-only write guard.
+            // Re-fingerprinted for API-22…24: the quote tables (Quotes, QuoteRevisions, QuoteLines, QuoteRequests), each with the
+            // same CompanyId query filter and a company-leading key; the quote commands' own QuoteAttempts (ADR-SAL-001 §2, declared
+            // immutability trigger) and the order's nullable SourceQuoteId (company-leading foreign keys, filtered unique
+            // UX_Drafts_SourceQuoteId); the quote's lifecycle-only guard. DraftAttempts is unchanged.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "0eeccdcd64c41ada685525680cfdd9121ab7148c14f1638bc81f4bdf85ae0eac",
+                "c0a9a381642ebfd89f46d3086ae21d8112ace0d867df08594560f1d5b391e676",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1282,12 +1287,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // customer-return read port (DI-only); the provider branch and its token counts are unchanged.
                     // Re-fingerprinted for API-20 / API-21: the request store and service are DI-only seams over the same
                     // SalesStore and SalesDraftService; the provider branch and its database token counts are unchanged.
-                    // Re-fingerprinted for DEC-SAL-001 / API-08: the draft service also receives the optional Settings
-                    // Sales policy port (DI-only, SAT-D5 tolerance); the provider branch and its token counts are unchanged.
-                    // Re-fingerprinted for MOD-01 / API-06: the draft service also receives the optional customer-finance
-                    // risk-input port (DI-only, owner-registered); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for API-22…24 over DEC-SAL-001 / API-08: the quote store and the optional Settings Sales
+                    // policy port are DI-only seams; the provider branch and its database token counts are unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06 (merged over API-22…24): the draft service also receives the optional
+                    // customer-finance risk-input port (DI-only, owner-registered); the provider branch and its token counts are unchanged.
                     new(
-                        "e6c27d5c3e7ce02e2387c41d8e491306ae7c655b7699bb5c086c15f741e3bc86",
+                        "1609028311bc5642ceca2f22d3e2c52bc7a8947ae298bc9a8151beda40af54ee",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1313,11 +1318,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // once through the filtered context; no connection, command or raw SQL; SqlClient count unchanged.
                     // Re-fingerprinted for API-20 / API-21: the class became partial (the request half lives in SalesStore.Requests.cs,
                     // same filtered context, one save) and the list cursor takes an ordering label; SqlClient count unchanged.
-                    // Re-fingerprinted for MOD-01 / API-06: one untracked read of a customer's open approved orders through the
-                    // same filtered context (explicit company predicate too, rebuilt through the domain); no write, connection,
-                    // command, raw SQL or filter-bypass API; SqlClient count unchanged.
+                    // Re-fingerprinted for API-22…24: the quote half lives in SalesStore.Quotes.cs (same filtered context, one save
+                    // per command), the cursor gains the quote ordering label and the draft command check admits the conversion;
+                    // the order's submit/approve reads its source quote's requests through the same filtered context (No 160);
+                    // SqlClient count unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06 (merged over API-22…24): one untracked read of a customer's open approved
+                    // orders through the same filtered context (explicit company predicate too, rebuilt through the domain); no write,
+                    // connection, command, raw SQL or filter-bypass API; SqlClient count unchanged.
                     new(
-                        "5b97d70366827343e8a48478275dc6d47a486e3ea69e3e6e95fecef8ef0f761d",
+                        "e7b34ed694efade4a82150d946d2f4ae033efc2a537323f3627a0ca7827f63e8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1732,6 +1741,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // codes are used by no other migration.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027063346_AddSalesRequests.cs"] =
                     new("3acdd5d39c1a8f740211ed8c35395978b02d0e4c3441c559e2ecae34e2656927",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
+                // API-22…24: two raw SQL statements. Up creates the quote attempt table's immutability trigger (ADR-SAL-001 §6:
+                // TR_QuoteAttempts_RejectMutation, THROW 51068 on any UPDATE/DELETE); the Down's refuses rollback (51066) while any
+                // quote, quote attempt, converted order or conversion attempt is stored, before every drop. Forward fix. Both codes
+                // are used by no other migration.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027071300_AddSalesQuotes.cs"] =
+                    new("372aa029a3b74e41404828d8a83cccc0abb3723ec5912df75a1773fa89396b7d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

@@ -363,25 +363,40 @@ public sealed partial class SalesOrderDraft
     /// </summary>
     private void RequireCommercial(CommercialDraftFields commercial, ProductSnapshot product, Guid lineId)
     {
+        RequireLineCommercialFields(commercial, product, Money.Scale);
+        RequirePricingDetail(commercial, lineId);
+    }
+
+    /// <summary>
+    /// The K3 line commercial rule in ONE place, shared by the order line and (API-22) the quote line whose prices become the
+    /// order's (No 162): the price/price-unit pairing, the price's decimals within the money profile's scale (never rounded),
+    /// the price unit as one of the product owner's three bindings, and a discount that needs a price and is 0..100. A quote
+    /// passes its client line id so the refusal names the line; the order keeps its draft-level refusal (null).
+    /// </summary>
+    public static void RequireLineCommercialFields(CommercialDraftFields commercial, ProductSnapshot product, int moneyScale,
+        Guid? lineId = null)
+    {
+        ArgumentNullException.ThrowIfNull(commercial);
+        ArgumentNullException.ThrowIfNull(product);
         if ((commercial.UnitPrice is null) != (commercial.PriceUnitId is null))
         {
             throw new SalesRuleException(SalesRuleCodes.PriceUnitPairing,
-                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.");
+                "Birim fiyat kendi fiyat birimini ister; fiyat birimi fiyatsız verilemez.", lineId);
         }
 
         if (commercial.UnitPrice is { } price)
         {
-            if (DecimalPlaces(price) > Money.Scale)
+            if (DecimalPlaces(price) > moneyScale)
             {
                 throw new SalesRuleException(SalesRuleCodes.PriceScaleExceeded,
-                    $"Birim fiyat en fazla {Money.Scale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.");
+                    $"Birim fiyat en fazla {moneyScale} ondalık taşıyabilir; fazlası yuvarlanmaz, reddedilir.", lineId);
             }
 
             var priceUnit = commercial.PriceUnitId!.Value;
             if (priceUnit != product.StockUnit.UnitId && priceUnit != product.SalesUnit.UnitId && priceUnit != product.OrderUnit.UnitId)
             {
                 throw new SalesRuleException(SalesRuleCodes.PriceUnitUnsupported,
-                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır; Sales birim uydurmaz.");
+                    "Fiyat birimi, ürün sahibinin stok, satış ya da sipariş birimlerinden biri olmalıdır; Sales birim uydurmaz.", lineId);
             }
         }
 
@@ -390,17 +405,15 @@ public sealed partial class SalesOrderDraft
             if (commercial.UnitPrice is null)
             {
                 throw new SalesRuleException(SalesRuleCodes.DiscountWithoutPrice,
-                    "İskonto uygulanacak bir birim fiyat olmadan verilemez.");
+                    "İskonto uygulanacak bir birim fiyat olmadan verilemez.", lineId);
             }
 
             if (!IsPercent(discount))
             {
                 throw new SalesRuleException(SalesRuleCodes.DiscountOutOfRange,
-                    "İskonto yüzdesi 0 ile 100 arasında olmalıdır.");
+                    "İskonto yüzdesi 0 ile 100 arasında olmalıdır.", lineId);
             }
         }
-
-        RequirePricingDetail(commercial, lineId);
     }
 
     /// <summary>
