@@ -115,8 +115,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // provider); it adds no OpenAPI-generation, network, hosted-service or production-activation surface.
     // SAT-D18 follow-up adds one scoped in-process operation-aware Settings candidate reader registration and
     // passes it to the Sales reference read; no OpenAPI-generation, network or hosted-service surface changes.
+    // MOD-08 adds one scoped in-process Sales-to-Identity user display adapter beside the Sales-Cari display host,
+    // with its comment (4cf4cba9… -> cae283bd…); it adds no OpenAPI-generation, network or hosted-service surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "4cf4cba980d368cebfef59ee0abed68a8e513bbe9a83783459af5e2c944ca6a6";
+        "cae283bdee5fc266d1d45a773f9be8028088868523d30ac848e8cd071715c307";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -226,8 +228,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
             // BLG-03: +1 IdentityAuditReadFreshAuthoritySqlServerRelationalAcceptanceTests fact (a521143a… -> 9a5ea313…).
+            // MOD-08: +1 IdentityUserDirectorySqlServerRelationalAcceptanceTests fact (9a5ea313… -> b2ba31aa…).
             ["tools/relational_inventory/identity.txt"] =
-                "9a5ea313a3a1f4ba1980292c5e78319fa1d31363f815834001d9bddb4c5ac3e5",
+                "b2ba31aa0066ac18800af3ec6333efcaaa8f49d68e897bee9bed0c063714d92b",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -686,8 +689,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // counts hold.
                     // Re-fingerprinted for SY-01/SY-02: one scoped registration of the read-only
                     // IIdentityAccessReadService; the database startup surface and its counts are unchanged.
+                    // Re-fingerprinted for MOD-08: one scoped registration of the read-only IUserDirectoryReadPortV1,
+                    // with its comment (f2b86575… -> a27b4290…); the database startup surface and its counts are unchanged.
                     new(
-                        "f2b86575654154bf37b763914b0d2f6107166cd9e8a9787984abf46f29f91798",
+                        "a27b42909630c3d6ee0180d3b3cdf98587f576f411b07469e8697f8bd5599799",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

@@ -85128,7 +85128,8 @@
           "customerAcceptance",
           "isOwnDraft",
           "isOwnDecisionRestricted",
-          "partyDisplay"
+          "partyDisplay",
+          "userDisplays"
         ],
         "type": "object",
         "properties": {
@@ -85228,6 +85229,12 @@
           },
           "partyDisplay": {
             "$ref": "#/components/schemas/SalesPartyDisplayV1"
+          },
+          "userDisplays": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesUserDisplayV1"
+            }
           }
         }
       },
@@ -85600,6 +85607,26 @@
           },
           "profileVersion": {
             "type": "string"
+          }
+        }
+      },
+      "SalesUserDisplayV1": {
+        "required": [
+          "userId",
+          "displayName",
+          "isActiveInCompany"
+        ],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "isActiveInCompany": {
+            "type": "boolean"
           }
         }
       },
