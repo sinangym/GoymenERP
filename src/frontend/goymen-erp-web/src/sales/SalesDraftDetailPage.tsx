@@ -114,8 +114,7 @@ import { Button } from '../ui/Button'
 import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import { ORDER_TAB, parseOrderTab, type OrderTab } from './orderTabs'
 import { SalesOrderTabs } from './SalesOrderTabs'
-import { DocumentsPanel } from '../documents/DocumentsPanel'
-import { OWNER_KIND } from '../documents/contract'
+import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
 import styles from './SalesDraftDetailPage.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
@@ -192,10 +191,12 @@ export function SalesDraftDetailPage() {
       onTabChange={changeTab}
       documents={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
-          <DocumentsPanel
+          <SalesOrderDocumentsWorkspace
             key={`documents:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
-            ownerKind={OWNER_KIND.salesOrder}
-            ownerId={outcome.data.draft.id}
+            orderId={outcome.data.draft.id}
+            orderDocumentNo={outcome.data.draft.documentNo}
+            party={outcome.data.partyDisplay}
+            canReadCustomer={hasCapability(shell, CAPABILITY.cariPartiesDetail)}
             companyId={companyId}
             namespace={namespace}
             entryGeneration={shell.routeEntryGeneration}
@@ -388,7 +389,10 @@ export function DraftView({
   readonly linkedEffects?: React.ReactNode
   /** DEC-SAL-005 / AT-007: the impact preview and cancel control, or the recorded cancellation of a cancelled order. */
   readonly cancellation?: React.ReactNode
-  /** UI-11: the Document Vault panel of this order ("Sözleşme / Belgeler"); null when no single company is bound. */
+  /**
+   * UI-11 / UI-71 (S-11): the "Sözleşme / Belgeler" workspace — the order's and the customer's Document Vault panels and
+   * their timeline; null when no single company is bound.
+   */
   readonly documents?: React.ReactNode
   /** The open tab; when omitted the view keeps its own (an isolated render has no router). */
   readonly activeTab?: OrderTab

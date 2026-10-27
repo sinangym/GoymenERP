@@ -62,6 +62,15 @@ async function jsonBody(response: Response): Promise<unknown> {
 
 /* ── The owner record's documents ─────────────────────────────────────────── */
 
+/**
+ * The cache key of one owner record's document list. A screen that reads the same owner's list beside its
+ * `DocumentsPanel` (S-11's document timeline) uses this key, so both share ONE request and an upload in the panel
+ * refreshes both.
+ */
+export function documentsQueryKey(namespace: string, entryGeneration: number, ownerKind: OwnerKind, ownerId: string) {
+  return [namespace, entryGeneration, 'documents', ownerKind, ownerId] as const
+}
+
 export async function fetchDocuments(
   ownerKind: OwnerKind,
   ownerId: string,

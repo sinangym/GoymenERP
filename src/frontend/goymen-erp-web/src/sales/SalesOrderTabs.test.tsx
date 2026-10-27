@@ -9,7 +9,7 @@ import detailResponseRaw from './examples/detail-response.json?raw'
 import { decodeDraftDetailWithParty } from './contract'
 import { DraftView } from './SalesDraftDetailPage'
 import { ORDER_TAB, ORDER_TABS, parseOrderTab } from './orderTabs'
-import { ORDER_TABS_TEXT } from './salesText'
+import { ORDER_TABS_TEXT, SALES_DOCUMENTS_TEXT } from './salesText'
 import { COMPANY_A, HARNESS_PARTY_DISPLAY, installFetch, json, renderSalesApp } from './testHarness'
 
 const DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -146,6 +146,6 @@ describe('S-04 tabs in the routed page', () => {
     expect(query.get('ownerId')).toBe(raw.draft.id)
     expect(read).toMatchObject({ method: 'GET', companyId: COMPANY_A })
     const panel = screen.getByTestId(`sales-order-tabpanel-${ORDER_TAB.documents}`)
-    expect(await within(panel).findByRole('heading', { name: 'Belgeler' })).toBeTruthy()
+    expect(await within(panel).findByRole('heading', { name: SALES_DOCUMENTS_TEXT.orderPanelHeading })).toBeTruthy()
   })
 })
