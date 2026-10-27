@@ -25,7 +25,7 @@ internal static class SalesLinePricingJson
         ArgumentNullException.ThrowIfNull(commercial);
         return commercial.HasPricingDetail
             ? JsonSerializer.Serialize(new StoredPricing(commercial.Reference, commercial.DiscountAmount, commercial.SurchargePercent,
-                commercial.SurchargeAmount, commercial.FloorException), Json)
+                commercial.SurchargeAmount, commercial.FloorException, commercial.DiscountCheck), Json)
             : null;
     }
 
@@ -47,15 +47,17 @@ internal static class SalesLinePricingJson
         }
 
         if (stored is null || (stored.Reference is null && stored.DiscountAmount is null && stored.SurchargePercent is null
-            && stored.SurchargeAmount is null && stored.FloorException is null))
+            && stored.SurchargeAmount is null && stored.FloorException is null && stored.DiscountCheck is null))
         {
             throw new InvalidOperationException("Kayıtlı satır fiyat ayrıntısı boş olamaz.");
         }
 
         return new CommercialDraftFields(unitPrice, priceUnitId, discountPercent, stored.Reference, stored.DiscountAmount,
-            stored.SurchargePercent, stored.SurchargeAmount, stored.FloorException);
+            stored.SurchargePercent, stored.SurchargeAmount, stored.FloorException, stored.DiscountCheck);
     }
 
+    // SAT-D2 / API-12: the discount-limit check is omitted when absent, so a row written before it keeps its exact JSON.
     private sealed record StoredPricing(PriceReferenceSnapshot? Reference, string? DiscountAmount, string? SurchargePercent,
-        string? SurchargeAmount, PriceFloorExceptionSnapshot? FloorException = null);
+        string? SurchargeAmount, PriceFloorExceptionSnapshot? FloorException = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DiscountLimitCheckSnapshot? DiscountCheck = null);
 }

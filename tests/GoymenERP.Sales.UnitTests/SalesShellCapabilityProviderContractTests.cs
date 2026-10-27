@@ -155,7 +155,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-22…24: the sales quote's own two names; the conversion additionally needs the draft create name.
         Assert.Equal("sales.quotes.write", SalesPermissionManifestV1.QuotesWrite);
         Assert.Equal("sales.quotes.read", SalesPermissionManifestV1.QuotesRead);
-        Assert.Equal((13, 16), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // SAT-D2 / API-12: the SEPARATE discount-exception approval name; price write, order approval and the floor approval do not confer it.
+        Assert.Equal("sales.orders.discount-exception.approve", SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
+        Assert.Equal((14, 17), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -165,6 +167,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersPriceWrite,
                 SalesPermissionManifestV1.OrdersPriceRead,
                 SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
+                SalesPermissionManifestV1.OrdersDiscountExceptionApprove,
                 SalesPermissionManifestV1.OrdersDeliveryScheduleWrite,
                 SalesPermissionManifestV1.OrdersCancel,
                 SalesPermissionManifestV1.OrdersForceClose,
