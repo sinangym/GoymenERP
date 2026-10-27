@@ -32,6 +32,8 @@ import { Button } from '../ui/Button'
 
 export interface SalesDraftAllocationPanelProps {
   readonly enabled: boolean
+  /** SAT-D20 (2): the viewer may open Inventory's label detail; the picker links each row to it only then. */
+  readonly canOpenLabelHistory: boolean
   readonly companyId: string
   readonly namespace: string
   readonly routeEntryGeneration: number
@@ -60,7 +62,7 @@ function httpRefusalText(status: number, code: string | null): string {
   return T.failed
 }
 
-function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrderId, line }: SalesDraftAllocationPanelProps & {
+function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrderId, line, canOpenLabelHistory }: SalesDraftAllocationPanelProps & {
   readonly line: DraftLine
 }) {
   const boundary = useAuthBoundary()
@@ -242,7 +244,8 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
           )}
           {pendingCreate === null ? (
             <AllocationLabelPicker key={pickerGeneration} companyId={companyId} productId={line.productId}
-              lineId={line.lineId} disabled={busy} selected={selectedLabel} onSelect={setSelectedLabel} />
+              lineId={line.lineId} disabled={busy} canOpenLabelHistory={canOpenLabelHistory}
+              selected={selectedLabel} onSelect={setSelectedLabel} />
           ) : null}
           <div className={styles.grid}>
             <label htmlFor={`allocation-quantity-${line.lineId}`}>{T.quantity}</label>

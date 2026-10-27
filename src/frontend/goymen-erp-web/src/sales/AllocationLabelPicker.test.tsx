@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MemoryRouter } from 'react-router'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -30,13 +31,15 @@ function answer(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-function Harness({ disabled = false, onSelect }: {
+function Harness({ disabled = false, canOpenLabelHistory = false, onSelect }: {
   readonly disabled?: boolean
+  readonly canOpenLabelHistory?: boolean
   readonly onSelect?: (choice: AllocationLabelChoice | null) => void
 }) {
   const [selected, setSelected] = useState<AllocationLabelChoice | null>(null)
-  return <AllocationLabelPicker companyId={COMPANY} productId={PRODUCT} lineId={LINE} disabled={disabled}
-    selected={selected} onSelect={(choice) => { setSelected(choice); onSelect?.(choice) }} />
+  return <MemoryRouter><AllocationLabelPicker companyId={COMPANY} productId={PRODUCT} lineId={LINE} disabled={disabled}
+    canOpenLabelHistory={canOpenLabelHistory}
+    selected={selected} onSelect={(choice) => { setSelected(choice); onSelect?.(choice) }} /></MemoryRouter>
 }
 
 async function searchFor(text: string) {
@@ -61,7 +64,7 @@ describe('UI-13 allocation label picker', () => {
 
     await searchFor('  ETK-0  ')
     const choose = await screen.findByRole('button', { name: 'ETK-001 etiketini seç' })
-    expect(screen.getByRole('table', { name: 'Seçilebilir etiketler' })).toBeTruthy()
+    expect(screen.getByRole('table', { name: 'Bu ürünün etiketleri' })).toBeTruthy()
     expect(screen.getByText('D-1 / B-9')).toBeTruthy()
     const [input, init] = fetch.mock.calls[0] as unknown as [string, RequestInit]
     const url = new URL(input, 'http://localhost')
@@ -187,12 +190,133 @@ describe('UI-13 allocation label picker', () => {
     expect(signal?.aborted).toBe(true)
   })
 
+  it('does not show a fresher version of the picked label as already chosen (chosen = id and version)', async () => {
+    let version = '11'
+    vi.stubGlobal('fetch', vi.fn(async () => answer({ items: [position({ labelVersion: version })], searchWindowFull: false })))
+    render(<Harness />)
+    await searchFor('ETK')
+    await userEvent.click(await screen.findByRole('button', { name: 'ETK-001 etiketini seç' }))
+    expect(screen.getByRole('button', { name: 'ETK-001 etiketi seçildi' }).getAttribute('aria-pressed')).toBe('true')
+
+    version = '12'
+    await userEvent.click(screen.getByRole('button', { name: 'Etiketleri getir' }))
+    const fresher = await screen.findByRole('button', { name: 'ETK-001 etiketini seç' })
+    expect(fresher.getAttribute('aria-pressed')).toBe('false')
+    expect(fresher.textContent).toBe('Seç')
+    // The pick still names the version it was read at; the command would carry 11, never a silently swapped 12.
+    expect(screen.getByTestId(`sales-allocation-label-selected-${LINE}`).textContent).toContain('sürüm 11')
+  })
+
+  it.each([
+    ['owned by a counterparty', { ownerKind: 'Counterparty', ownerId: OTHER_COMPANY }],
+    ['held by a counterparty', { custodianKind: 'Counterparty', custodianId: OTHER_COMPANY }],
+    ['owned by another company id', { ownerId: OTHER_COMPANY }],
+    ['held by another company id', { custodianId: OTHER_COMPANY }],
+  ])('lists a label %s as not selectable with the reason (SAT-D20 1)', async (_name, overrides) => {
+    vi.stubGlobal('fetch', vi.fn(async () => answer({ items: [position(overrides)], searchWindowFull: false })))
+    const onSelect = vi.fn()
+    render(<Harness onSelect={onSelect} />)
+    await searchFor('ETK')
+    const cell = await screen.findByTestId(`sales-allocation-label-unselectable-${LABEL}`)
+    expect(cell.textContent).toBe('Seçilemez: Stok şirketin kendi malı ve kendi gözetiminde değil.')
+    expect(screen.getByTestId(`sales-allocation-label-row-${LABEL}`).getAttribute('data-selectable')).toBe('false')
+    expect(screen.queryByRole('button', { name: /ETK-001 etiketini seç/ })).toBeNull()
+    expect(screen.queryByTestId(`sales-allocation-label-option-${LABEL}`)).toBeNull()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('names every reason when a counterparty label is also fully allocated', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => answer({ items: [position({ ownerKind: 'Counterparty', ownerId: OTHER_COMPANY,
+      activeAllocationKg: '20', availableKg: '0' })], searchWindowFull: false })))
+    render(<Harness />)
+    await searchFor('ETK')
+    await userEvent.click(await screen.findByLabelText('Kullanılabilir miktarı sıfır olanları da göster'))
+    expect(screen.getByTestId(`sales-allocation-label-unselectable-${LABEL}`).textContent).toBe(
+      'Seçilemez: Stok şirketin kendi malı ve kendi gözetiminde değil. Serbest miktarın tamamı başka tahsislerde.')
+  })
+
+  it('hides zero-available labels by default and lists them, not selectable, once the filter is lifted (SAT-D20 3)', async () => {
+    const BLOCKED = '50000000-0000-4000-8000-000000000002'
+    const ALLOCATED = '50000000-0000-4000-8000-000000000003'
+    const fetch = vi.fn(async () => answer({ items: [
+      position(),
+      position({ labelId: BLOCKED, labelCode: 'ETK-002', freePhysicalKg: '0', blockedPhysicalKg: '20', availableKg: '0' }),
+      position({ labelId: ALLOCATED, labelCode: 'ETK-003', activeAllocationKg: '20', availableKg: '0' }),
+    ], searchWindowFull: false }))
+    vi.stubGlobal('fetch', fetch)
+    render(<Harness />)
+    await searchFor('ETK')
+    expect(await screen.findByRole('button', { name: 'ETK-001 etiketini seç' })).toBeTruthy()
+    const toggle = screen.getByLabelText('Kullanılabilir miktarı sıfır olanları da göster') as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    expect(screen.queryByText('ETK-002')).toBeNull()
+    expect(screen.queryByText('ETK-003')).toBeNull()
+    expect(screen.getByText('Kullanılabilir miktarı sıfır olan 2 etiket varsayılan filtreyle gizlendi.')).toBeTruthy()
+
+    await userEvent.click(toggle)
+    expect(toggle.checked).toBe(true)
+    expect(screen.getByTestId(`sales-allocation-label-unselectable-${BLOCKED}`).textContent)
+      .toBe('Seçilemez: Serbest stok yok; etiketteki miktar blokeli.')
+    expect(screen.getByTestId(`sales-allocation-label-unselectable-${ALLOCATED}`).textContent)
+      .toBe('Seçilemez: Serbest miktarın tamamı başka tahsislerde.')
+    expect(screen.queryByTestId(`sales-allocation-label-option-${BLOCKED}`)).toBeNull()
+    expect(screen.queryByTestId(`sales-allocation-label-option-${ALLOCATED}`)).toBeNull()
+    expect(screen.queryByText(/varsayılan filtreyle gizlendi/)).toBeNull()
+    // The filter is view-only: lifting it reads nothing again.
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    await userEvent.click(toggle)
+    expect(screen.queryByText('ETK-002')).toBeNull()
+  })
+
+  it('says a page of only zero-available labels is hidden, never that nothing matched', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => answer({ items: [position({ activeAllocationKg: '20', availableKg: '0' })],
+      searchWindowFull: true })))
+    render(<Harness />)
+    await searchFor('ETK')
+    expect((await screen.findByTestId(`sales-allocation-label-all-hidden-${LINE}`)).textContent).toContain(
+      'Aramaya uyan 1 etiketin hiçbirinde kullanılabilir miktar yok; varsayılan filtre bunları gizliyor.')
+    expect(screen.queryByTestId(`sales-allocation-label-empty-${LINE}`)).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.getByText(/yalnız ilk sayfasını döndürdü ve bu sayfadaki kullanılabilir miktarı sıfır olan etiketler gizlendi/))
+      .toBeTruthy()
+    await userEvent.click(screen.getByLabelText('Kullanılabilir miktarı sıfır olanları da göster'))
+    expect(screen.getByTestId(`sales-allocation-label-unselectable-${LABEL}`)).toBeTruthy()
+    expect(screen.queryByTestId(`sales-allocation-label-all-hidden-${LINE}`)).toBeNull()
+    expect(screen.getByText('Aramaya uyan etiketlerin yalnız ilk sayfası gösteriliyor; etiket kodunu daraltarak arayın.'))
+      .toBeTruthy()
+  })
+
+  it('links every row, selectable or not, to the Inventory label history when the viewer may open it (SAT-D20 2)', async () => {
+    const OTHER = '50000000-0000-4000-8000-000000000002'
+    vi.stubGlobal('fetch', vi.fn(async () => answer({ items: [
+      position(), position({ labelId: OTHER, labelCode: 'ETK-002', ownerKind: 'Counterparty', ownerId: OTHER_COMPANY }),
+    ], searchWindowFull: false })))
+    render(<Harness canOpenLabelHistory />)
+    await searchFor('ETK')
+    const selectable = await screen.findByRole('link', { name: 'ETK-001 etiket geçmişini aç' })
+    expect(selectable.getAttribute('href')).toBe(`/stok/etiket/${LABEL}`)
+    const unselectable = screen.getByRole('link', { name: 'ETK-002 etiket geçmişini aç' })
+    expect(unselectable.getAttribute('href')).toBe(`/stok/etiket/${OTHER}`)
+    expect(screen.getByRole('columnheader', { name: 'Geçmiş' })).toBeTruthy()
+  })
+
+  it('renders no label-history link or column without the Inventory read capability', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => answer({ items: [position()], searchWindowFull: false })))
+    render(<Harness />)
+    await searchFor('ETK')
+    expect(await screen.findByRole('button', { name: 'ETK-001 etiketini seç' })).toBeTruthy()
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.queryByRole('columnheader', { name: 'Geçmiş' })).toBeNull()
+  })
+
   it('keeps every control inert while the panel is busy', () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)
     render(<Harness disabled />)
     expect((screen.getByLabelText('Etiket kodu ara') as HTMLInputElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: 'Etiketleri getir' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByLabelText('Kullanılabilir miktarı sıfır olanları da göster') as HTMLInputElement).disabled).toBe(true)
     expect(fetch).not.toHaveBeenCalled()
   })
 })

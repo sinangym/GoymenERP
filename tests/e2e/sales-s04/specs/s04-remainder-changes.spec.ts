@@ -203,7 +203,8 @@ async function readRemainders(request: APIRequestContext, draftId: string, actor
 
 async function openDetail(page: Page, draftId: string, actor: string): Promise<void> {
   await page.setExtraHTTPHeaders({ [DEVELOPMENT_USER_HEADER]: actor })
-  await page.goto(`/satis/siparisler/${draftId}`)
+  // UI-10: the remainder panel lives in the S-04 "Gerçekleşme / İrsaliye" tab, opened through its link.
+  await page.goto(`/satis/siparisler/${draftId}?sekme=gerceklesme`)
   await expect(page.getByTestId('sales-draft-approval-state')).toBeVisible({ timeout: 30_000 })
 }
 
