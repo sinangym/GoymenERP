@@ -78,6 +78,7 @@ EXPECTED_STORES = {
         "PurchaseAttemptRow", "idempotency", "PurchasingDbContext"
     ),
     ("sales", "DraftAttempts"): ("DraftAttemptRow", "idempotency", "SalesDbContext"),
+    ("sales", "RequestAttempts"): ("RequestAttemptRow", "idempotency", "SalesDbContext"),
     ("work", "ObservationInbox"): ("WorkObservationInboxRow", "inbox", "WorkDbContext"),
     ("work", "OutboxMessages"): ("WorkOutboxRow", "outbox", "WorkDbContext"),
 }
@@ -430,7 +431,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 97, "durableStores": 21},
+            {"dbContexts": 18, "migrations": 98, "durableStores": 22},
             self.inventory["counts"],
         )
         actual = {
@@ -440,13 +441,13 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
             for store in self.inventory["durableStores"]
         }
         self.assertEqual(EXPECTED_STORES, actual)
-        self.assertEqual(21, len(actual))
+        self.assertEqual(22, len(actual))
         self.assertEqual(self.inventory, generator.build_inventory(REPOSITORY_ROOT, SOURCE_COMMIT))
         generator.validate_inventory(REPOSITORY_ROOT, self.inventory)
 
     def test_every_store_has_mapping_migration_and_live_writer_evidence(self) -> None:
         specs_by_id = {spec.identifier: spec for spec in generator.DURABLE_STORE_SPECS}
-        self.assertEqual(21, len(specs_by_id))
+        self.assertEqual(22, len(specs_by_id))
         for record in self.inventory["durableStores"]:
             spec = specs_by_id[record["id"]]
             tokens = [token for evidence in spec.evidence for token in evidence.required_tokens]
@@ -1915,7 +1916,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(97, len(migrations))
+        self.assertEqual(98, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -2256,7 +2257,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1093, len(source_paths))
+        self.assertEqual(1101, len(source_paths))
         for shared_value_object in (
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/Money.cs",
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/ExchangeRate.cs",

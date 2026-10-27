@@ -302,9 +302,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Sales-Cari bounded display acceptance: +1 reviewed Sales SQL fact, kept ordinal-sorted.
             // D-05: +1 pending-approval owner-read SQL fact, kept ordinal-sorted.
             // No 30 / SAT-D12: +4 SalesOrderForceCloseSqlServerRelationalAcceptanceTests facts (38262b4b… -> 5932b012…).
-            // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted.
+            // API-20 / API-21: +3 sales request SQL facts (one save + decisions, company isolation + race, routes + rollback), ordinal-sorted
+            // (merged over No 30's four: 5932b012… -> b15969f6…).
             ["tools/relational_inventory/sales.txt"] =
-                "0742fcb91888866bca2854c478f6502e98e1cb99cc1108e8066213b6eabfbc8c",
+                "b15969f6db51542bdf3b877223084b611aaffd4e55d4a7f3d992c96d2314ff2e",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -371,12 +372,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
             // Re-fingerprinted for No 30 / SAT-D12: the force-closure table (DraftForceClosures), with the same CompanyId
             // query filter and a company-leading key, the widened lifecycle CK (Closed = 3) and the Draft -> Closed guard.
-            // Re-fingerprinted for API-20 / API-21: the sales request tables (Requests, RequestLines, DocumentCounters), each with
-            // the same CompanyId query filter and a company-leading key, the attempt row's nullable RequestId (company-leading
-            // foreign key, widened outcome CK, request-target CK) and the request's decision-only write guard.
+            // Re-fingerprinted for API-20 / API-21: the sales request tables (Requests, RequestLines, DocumentCounters and the
+            // request commands' own RequestAttempts, ADR-SAL-001 §2), each with the same CompanyId query filter and a
+            // company-leading key, the attempt table's declared immutability trigger, and the request's decision-only write guard.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "0149424fd40f6f07e6a459843d0b378a1a5d09a5e705ab1ed1f24af73d88a12d",
+                "0eeccdcd64c41ada685525680cfdd9121ab7148c14f1638bc81f4bdf85ae0eac",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1287,7 +1288,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for API-20 / API-21: the class became partial (the request half lives in SalesStore.Requests.cs,
                     // same filtered context, one save) and the list cursor takes an ordering label; SqlClient count unchanged.
                     new(
-                        "c944d6b82c356e6d041925318e3b4d3b5082c9b58b9152a53da7e8520e66447c",
+                        "f942408eaa2ba3e75c0acb66dc5e71492582c39582ed7415914b21f6477e9048",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1696,12 +1697,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("adaea424b2a2238dbd0a962f96c660c9855756b67148f774aa4463118a3fe8a6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
-                // API-20 / API-21: the Down's only raw SQL refuses rollback (51065, used by no other migration) while any sales
-                // request or request attempt is stored; the THROW precedes every drop and the CK restore. Forward fix.
-                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261026221938_AddSalesRequests.cs"] =
-                    new("08616ba0bfa3cdd274571eff7d7d0b06fecc22f2b59dad9e4d3d9ffe6dc1e4ad",
+                // API-20 / API-21: two raw SQL statements. Up creates the request attempt table's immutability trigger
+                // (ADR-SAL-001 §6: TR_RequestAttempts_RejectMutation, THROW 51067 on any UPDATE/DELETE); the Down's refuses
+                // rollback (51065) while any sales request or request attempt is stored, before every drop. Forward fix. Both
+                // codes are used by no other migration.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027063346_AddSalesRequests.cs"] =
+                    new("3acdd5d39c1a8f740211ed8c35395978b02d0e4c3441c559e2ecae34e2656927",
                         new Dictionary<string, int>(StringComparer.Ordinal)
-                        { ["Sql"] = 1 }),
+                        { ["Sql"] = 2 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =
