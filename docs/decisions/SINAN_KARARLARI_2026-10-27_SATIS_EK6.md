@@ -23,10 +23,12 @@ yetkili verir (genel 'hazırlayan ≠ onaylayan' kuralı, şu anki durum).").
 
 ## Uygulama notu
 
-- Aynı satır hem listesizlik (SAT-D43) hem de girilmiş bir iskonto nedeniyle onaya gidiyorsa iki kural
-  birlikte uygulanır: SAT-D45 listesizlik gerekçesi için aynı kişiye izin verir, ama iskonto gerekçesi için
-  SAT-D37'nin "iskontoyu giren onaylayamaz" kuralı kalkmaz. Bu, iki kararın birleşimidir; yeni bir politika
-  seçmez. Sinan aksine karar verirse bu not değişir.
+- Liste fiyatı olmayan satırda SAT-D35/SAT-D42'ye göre ölçülebilir bir iskonto yoktur; böyle bir satırın
+  iskonto kontrolü SAT-D43 onayıdır (iskonto alanlarından bağımsız). SAT-D45 bu onayın tamamını kapsar:
+  fiyatı veya iskonto alanını yazan kişi, onay yetkisi varsa satırı kendisi onaylayabilir. SAT-D37'deki
+  "iskontoyu giren kendi iskontosunu onaylayamaz" kuralı liste fiyatı **olan** satırlarda aynen geçerlidir.
+- "Onay yetkisi" SAT-D37'deki onaycı iznidir (`sales.orders.discount-exception.approve`, PR #834); kime
+  verileceği grant kararıdır ve insan kapısında kalır.
 
 ## Açık kalanlar
 
