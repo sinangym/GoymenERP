@@ -293,7 +293,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Product 4A: +3 initial technical-definition release/rollback SQL facts.
             // PRODUCT-TECH-FAMILY-02: replace one renamed runtime fact and add two cut-sheet/plate facts.
             ["tools/relational_inventory/product.txt"] =
-                "4ee929b04b956241e5a7ccc567cfdb71c9fad842d431a86670fb9fd5e1ca7bb3",
+                "100c0a2fe25bdef04fa0ce1bc7e2f6230287acb40d5b3633d7dac008555086b4",
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
@@ -646,7 +646,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "PriceLists/ProductPriceListStore.cs"] =
                     new(
-                        "248270c7dc6205a87261db5bad77fe0a7b9c0dfc61c4f1e5269f87efa995966a",
+                        "0ec797ef39bd37ee97ffb8a945de0c7fd515a38d2ee6891914e6dac6e3e2362d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

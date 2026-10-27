@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Product.Application.Contracts;
+using GoymenERP.Modules.Product.Domain.PriceLists;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -145,6 +146,51 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM product.PriceLists"));
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType = N'Product.PriceList'"));
+    }
+
+    [SqlServerFact]
+    public async Task On_a_fixed_clock_the_service_takes_publication_and_status_today_as_the_Istanbul_business_day()
+    {
+        await using var run = await Run.StartAsync();
+        // 2026-10-31T21:30Z is 1 November 00:30 in Istanbul; the UTC calendar day is still 31 October (SAT-D10).
+        var clock = new FixedClock(new DateTimeOffset(2026, 10, 31, 21, 30, 0, TimeSpan.Zero));
+        var publisher = Guid.NewGuid();
+        var backdatedId = Guid.NewGuid();
+        var onTimeId = Guid.NewGuid();
+        await using (var creator = run.Request(clock: clock))
+        {
+            foreach (var (id, name, validFrom) in ((Guid, string, string)[])[(backdatedId, "SENTETIK 31 Ekim", "2026-10-31"),
+                         (onTimeId, "SENTETIK 1 Kasım", "2026-11-01")])
+            {
+                await creator.Service.CreateAsync(new CreatePriceListRequestV1(id, Guid.NewGuid(), name, "TRY", "Sales", "ExcludingVat",
+                    validFrom, null, [new PriceListLineRequestV1(Guid.NewGuid(), ProductId, Kg, "10", null)]), Metadata($"clock-create-{id:N}"));
+            }
+        }
+
+        await using (var publishing = run.Request(actor: publisher, clock: clock))
+        {
+            // A start of 31 October is already in the past on the Istanbul day (a UTC "today" would have accepted it).
+            var refused = await Assert.ThrowsAsync<ProductPriceListException>(() => publishing.Service.PublishAsync(backdatedId,
+                new PublishPriceListVersionRequestV1("1", 1), Metadata("clock-publish-backdated")));
+            Assert.Equal((422, ProductPriceListCodesV1.ValidationFailed, PriceListRuleCodes.ValidFromInPast),
+                (refused.Status, refused.Code, Assert.Single(refused.Errors).Code));
+
+            // A start of 1 November is today in Istanbul: published, and Active now (a UTC "today" would call it Planned).
+            var published = await publishing.Service.PublishAsync(onTimeId, new PublishPriceListVersionRequestV1("1", 1),
+                Metadata("clock-publish-on-time"));
+            Assert.Equal(("Published", "Active", (int?)1), (published.PriceList.Versions[0].State, published.PriceList.Versions[0].Status,
+                published.PriceList.ActiveVersionNo));
+            var reread = await publishing.Service.GetAsync(onTimeId);
+            Assert.Equal(("Active", (int?)1), (reread.Versions[0].Status, reread.ActiveVersionNo));
+            var summary = Assert.Single((await publishing.Service.ListAsync(null, null)).Items, item => item.Id == onTimeId);
+            Assert.Equal(((int?)1, "2026-11-01"), (summary.ActiveVersionNo, summary.ActiveValidFrom));
+        }
+    }
+
+    /// <summary>A fixed UTC clock for the service and the store of one request.</summary>
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     private static ProductPriceResolutionRequestV2 Ask(DateOnly on, ProductPriceCustomerV2? customer) =>

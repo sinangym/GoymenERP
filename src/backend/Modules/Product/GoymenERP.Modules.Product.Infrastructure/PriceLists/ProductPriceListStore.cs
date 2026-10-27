@@ -288,7 +288,6 @@ internal sealed class ProductPriceListStore(
         return (items, next);
     }
 
-    /// <summary>The published lines of this company's Sales-channel lists that price the product in one of the units.</summary>
     /// <summary>
     /// The company's Sales lists in the currency that carry the product on some version: the company-wide ones, and — only
     /// when <paramref name="customerAccountId"/> is given — that one customer account's own lists (MOD-02). Another

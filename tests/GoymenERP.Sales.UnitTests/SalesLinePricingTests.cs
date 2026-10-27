@@ -80,6 +80,12 @@ public sealed class SalesLinePricingTests
             + "\"discountAmount\":null,\"surchargePercent\":null,\"surchargeAmount\":null,\"floorException\":null}";
         var restored = SalesLinePricingJson.Restore("100", Unit, null, legacy).Reference!;
         Assert.Equal((Reference("100"), (string?)null), (restored, restored.Tier));
+
+        // A line without a tier round-trips WITHOUT the member: a pre-MOD-02 row is never rewritten with "tier": null.
+        var untiered = SalesLinePricingJson.Serialize(new CommercialDraftFields("100", Unit, null, Reference("100")))!;
+        Assert.DoesNotContain("tier", untiered, StringComparison.Ordinal);
+        Assert.Equal(untiered, SalesLinePricingJson.Serialize(SalesLinePricingJson.Restore("100", Unit, null, untiered)));
+        Assert.Equal(legacy, SalesLinePricingJson.Serialize(SalesLinePricingJson.Restore("100", Unit, null, legacy)));
     }
 
     [Fact]

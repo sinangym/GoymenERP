@@ -744,7 +744,7 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
         }
 
         public RequestScope Request(Guid? company = null, Guid? actor = null, IErpAuthorityRevalidationService? authority = null,
-            bool driftableCompanyContext = false, IProductPriceListCustomerPortV1? customers = null)
+            bool driftableCompanyContext = false, IProductPriceListCustomerPortV1? customers = null, TimeProvider? clock = null)
         {
             var scope = factory.Services.CreateAsyncScope();
             var provider = scope.ServiceProvider;
@@ -752,13 +752,13 @@ public sealed partial class ProductPriceListSqlServerRelationalAcceptanceTests
             companyContext.Set(company ?? TestCompanyIds.CompanyA);
             var context = provider.GetRequiredService<ProductPriceListDbContext>();
             var store = new ProductPriceListStore(context, companyContext,
-                provider.GetRequiredService<GoymenERP.Modules.Audit.Application.Contracts.IAuditEventCollector>(), TimeProvider.System);
+                provider.GetRequiredService<GoymenERP.Modules.Audit.Application.Contracts.IAuditEventCollector>(), clock ?? TimeProvider.System);
             var requestUser = actor is null ? user : new User(actor.Value);
             ICompanyContext serviceCompanyContext = driftableCompanyContext
                 ? new DriftableCompanyContext(companyContext.CompanyId)
                 : companyContext;
             var service = new ProductPriceListService(serviceCompanyContext, requestUser, authority ?? new Granted(), store,
-                TimeProvider.System, null, _ => true, customers);
+                clock ?? TimeProvider.System, null, _ => true, customers);
             var reader = new ProductPriceReferenceReader(store, provider.GetRequiredService<ICompanyContext>());
             return new RequestScope(scope, service, reader, reader, context, serviceCompanyContext, reader);
         }
