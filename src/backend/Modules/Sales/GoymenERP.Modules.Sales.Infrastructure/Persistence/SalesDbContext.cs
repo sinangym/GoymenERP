@@ -68,28 +68,40 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// refusals have no draft and new mutation refusals identify the existing draft; null remains valid
     /// for legacy mutation refusals written before that identity was retained, so upgrades preserve replay.
     /// </summary>
-    /// <para>
-    /// API-20 / API-21: the same table records the sales request commands' attempts; a stored outcome identifies EXACTLY one
-    /// target — a draft or a request, never both — and a refusal names at most one.
-    /// </para>
     internal const string AttemptOutcomeConstraint =
-        "([Outcome] = 1 AND [RefusalJson] IS NULL AND (([DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RequestId] IS NULL) "
-        + "OR ([RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL))) "
+        "([Outcome] = 1 AND [DraftId] IS NOT NULL AND [DraftId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
         + "OR ([Outcome] = 2 AND ([DraftId] IS NULL OR [DraftId] <> '00000000-0000-0000-0000-000000000000') "
-        + "AND ([RequestId] IS NULL OR ([RequestId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] IS NULL)) "
         + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
     /// <summary>
-    /// API-20 / API-21 (CK_DraftAttempts_RequestTarget): only a sales request command names a request, and a sales request
-    /// command never names a draft.
+    /// ADR-SAL-001 §2 (API-20 / API-21): the sales request is its own aggregate, so its commands record their attempts in their
+    /// OWN table, the draft attempt's shape: a stored outcome names its request and carries no refusal; a recorded terminal
+    /// refusal carries its JSON and, when the request is known, its request (CK_RequestAttempts_Outcome).
     /// </summary>
-    internal const string AttemptRequestTargetConstraint =
-        "([RequestId] IS NULL OR [CommandName] IN (N'" + SalesRequestCommands.CreateV1 + "', N'" + SalesRequestCommands.ApproveV1
-        + "', N'" + SalesRequestCommands.RejectV1 + "')) AND ([DraftId] IS NULL OR [CommandName] NOT IN (N'" + SalesRequestCommands.CreateV1
-        + "', N'" + SalesRequestCommands.ApproveV1 + "', N'" + SalesRequestCommands.RejectV1 + "'))";
+    internal const string RequestAttemptOutcomeConstraint =
+        "([Outcome] = 1 AND [RequestId] IS NOT NULL AND [RequestId] <> '00000000-0000-0000-0000-000000000000' AND [RefusalJson] IS NULL) "
+        + "OR ([Outcome] = 2 AND ([RequestId] IS NULL OR [RequestId] <> '00000000-0000-0000-0000-000000000000') "
+        + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
-    /// <summary>UX_DraftAttempts_RequestId: a stored request is born from exactly one create attempt (the draft's rule).</summary>
+    /// <summary>CK_RequestAttempts_Command: only the sales request's own versioned commands record here.</summary>
+    internal const string RequestAttemptCommandConstraint =
+        "[CommandName] IN (N'" + SalesRequestCommands.CreateV1 + "', N'" + SalesRequestCommands.ApproveV1 + "', N'"
+        + SalesRequestCommands.RejectV1 + "')";
+
+    /// <summary>
+    /// CK_RequestAttempts_Result (ADR-SAL-001 §2/§4): the column keeps the attempt shape, but no request command stores a
+    /// response snapshot — every request answer is reproduced from the stored request.
+    /// </summary>
+    internal const string RequestAttemptResultConstraint = "[ResultJson] IS NULL";
+
+    /// <summary>UX_RequestAttempts_RequestId: a stored request is born from exactly one create attempt (the draft's rule).</summary>
     internal const string RequestCreateAttemptFilter = "[RequestId] IS NOT NULL AND [CommandName] = N'" + SalesRequestCommands.CreateV1 + "'";
+
+    /// <summary>
+    /// ADR-SAL-001 §6: the SQL trigger that refuses any UPDATE or DELETE of a request attempt (THROW 51067, used by no other
+    /// migration), beside the EF write guard. Declared on the model so EF writes the table without an OUTPUT clause.
+    /// </summary>
+    internal const string RequestAttemptImmutabilityTrigger = "TR_RequestAttempts_RejectMutation";
 
     /// <summary>
     /// CK_Requests_Decision (API-21): Submitted (1) carries no decision; Approved (2) a decision without a reason; Rejected (3)
@@ -144,6 +156,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>API-20: the requests' lines with the owners' snapshots (append-only).</summary>
     internal DbSet<RequestLineRow> RequestLines => Set<RequestLineRow>();
+
+    /// <summary>API-20 / API-21 (ADR-SAL-001 §2): the request commands' own attempt records (append-only).</summary>
+    internal DbSet<RequestAttemptRow> RequestAttempts => Set<RequestAttemptRow>();
 
     /// <summary>CK_DraftRemainderChanges_Kind: a cancel carries no quantity; a revise carries a positive quantity and its text.</summary>
     internal const string RemainderKindConstraint =
@@ -379,7 +394,6 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             // ADR-011 §7: new mutation refusals bind to their draft; legacy null refusals remain replayable.
             table.HasCheckConstraint("CK_DraftAttempts_Outcome", AttemptOutcomeConstraint);
             table.HasCheckConstraint("CK_DraftAttempts_Result", AttemptResultConstraint);
-            table.HasCheckConstraint("CK_DraftAttempts_RequestTarget", AttemptRequestTargetConstraint);
         });
         entity.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
         entity.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
@@ -395,14 +409,6 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<DraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })
-            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
-            .IsRequired(false)
-            .OnDelete(DeleteBehavior.Restrict);
-        // API-20 / API-21: a request command's attempt names its request (same company, by foreign key).
-        entity.HasIndex(x => new { x.CompanyId, x.RequestId }).IsUnique().HasDatabaseName("UX_DraftAttempts_RequestId")
-            .HasFilter(RequestCreateAttemptFilter);
-        entity.HasOne<RequestRow>().WithMany()
-            .HasForeignKey(x => new { x.CompanyId, x.RequestId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
@@ -495,6 +501,38 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // ADR-SAL-001 §2/§6: the request commands' own attempt table, the draft attempt's shape, append-only in EF and in SQL.
+        var attempt = modelBuilder.Entity<RequestAttemptRow>();
+        attempt.ToTable("RequestAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_RequestAttempts_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_RequestAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_RequestAttempts_Command", RequestAttemptCommandConstraint);
+            table.HasCheckConstraint("CK_RequestAttempts_Outcome", RequestAttemptOutcomeConstraint);
+            table.HasCheckConstraint("CK_RequestAttempts_Result", RequestAttemptResultConstraint);
+            table.HasTrigger(RequestAttemptImmutabilityTrigger);
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.RefusalJson).HasColumnType("nvarchar(max)");
+        attempt.Property(x => x.ResultJson).HasColumnType("nvarchar(max)");
+        attempt.HasIndex(x => new { x.CompanyId, x.RequestId }).IsUnique().HasDatabaseName("UX_RequestAttempts_RequestId")
+            .HasFilter(RequestCreateAttemptFilter);
+        attempt.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasOne<RequestRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RequestId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .IsRequired(false)
+            .OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     // DEC-SAL-003: the recorded delivery-schedule changes and their dates — append-only history beside the draft.
@@ -775,6 +813,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(RequestRow.RejectionReason), nameof(RequestRow.UpdatedAtUtc),
                     ],
                     RequestLineRow => [],
+                    // ADR-SAL-001 §2: a request attempt is APPEND-ONLY (the SQL trigger refuses the same).
+                    RequestAttemptRow => [],
                     _ => [],
                 };
                 if (entry.Entity is RequestRow)

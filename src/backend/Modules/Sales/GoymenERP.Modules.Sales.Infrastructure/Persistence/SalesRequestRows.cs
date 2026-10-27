@@ -94,6 +94,31 @@ internal sealed class RequestLineRow : ISalesTenantRow
     public string? Note { get; set; }
 }
 
+/// <summary>
+/// ADR-SAL-001 §2 (API-20 / API-21): the sales request commands' attempt record — the draft attempt's shape in the request's
+/// own table. (company, command name, uppercase SHA-256 of the trimmed idempotency key) is the identity, the raw key is never
+/// stored; the canonical request hash is its content and the actor is stored to be compared. Written with the request in the
+/// same save; a replay reads it first. Append-only: the EF write guard and the SQL trigger refuse every UPDATE and DELETE.
+/// </summary>
+internal sealed class RequestAttemptRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public string CommandName { get; set; } = string.Empty;
+    public string IdempotencyKeyHash { get; set; } = string.Empty;
+    public string RequestHash { get; set; } = string.Empty;
+    public string ActorId { get; set; } = string.Empty;
+
+    /// <summary>1 = a stored request (<see cref="RequestId"/> set); 2 = a recorded terminal refusal (<see cref="RefusalJson"/> set) — ADR-011 §7.</summary>
+    public int Outcome { get; set; }
+    public Guid? RequestId { get; set; }
+    public string? RefusalJson { get; set; }
+
+    /// <summary>ADR-SAL-001 §2: kept for the shape; no request command stores a response snapshot (CK_RequestAttempts_Result).</summary>
+    public string? ResultJson { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+}
+
 /// <summary>The one mapping between a domain request and its rows (write) and back through the domain (read).</summary>
 internal static class SalesRequestRows
 {

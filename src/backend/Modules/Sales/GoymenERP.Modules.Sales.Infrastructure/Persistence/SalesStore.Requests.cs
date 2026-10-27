@@ -8,8 +8,8 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 
 /// <summary>
-/// API-20 / API-21: the sales request half of the Sales store. The attempt rules are the draft's own (ADR-011 §2–§8) on the
-/// same attempt table — (company, command, key hash) is the identity, the raw key is never stored, the same key, content
+/// API-20 / API-21: the sales request half of the Sales store. The attempt rules are the draft's own (ADR-011 §2–§8) in the
+/// request's own attempt table (ADR-SAL-001 §2, <c>sales.RequestAttempts</c>) — (company, command, key hash) is the identity, the raw key is never stored, the same key, content
 /// and actor answers the stored result, another content or actor is one 409, a lost race stores nothing — and every write
 /// is one save with its attempt record and its audit event. Another company's request is invisible under the tenant filter.
 /// </summary>
@@ -29,7 +29,7 @@ public sealed partial class SalesStore
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
-        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+        var attempt = await dbContext.RequestAttempts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == SalesRequestCommands.CreateV1 && row.IdempotencyKeyHash == keyHash,
                 cancellationToken);
         if (attempt is not null)
@@ -67,7 +67,7 @@ public sealed partial class SalesStore
         RequireRequestCommand(commandName);
         RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+        var attempt = await dbContext.RequestAttempts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
         if (attempt is null)
         {
@@ -117,13 +117,13 @@ public sealed partial class SalesStore
         }
 
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        if (await dbContext.DraftAttempts.AsNoTracking()
+        if (await dbContext.RequestAttempts.AsNoTracking()
                 .AnyAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken))
         {
             throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
         }
 
-        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        dbContext.RequestAttempts.Add(new RequestAttemptRow
         {
             CompanyId = companyId,
             CommandName = commandName,
@@ -159,7 +159,7 @@ public sealed partial class SalesStore
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
-        var attempt = await dbContext.DraftAttempts.AsNoTracking()
+        var attempt = await dbContext.RequestAttempts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
         if (attempt is not null)
         {
@@ -258,7 +258,7 @@ public sealed partial class SalesStore
     }
 
     /// <summary>ADR-011 §3/§4: the same content of the same actor answers the stored record as it is now; anything else is one 409.</summary>
-    private async Task<SalesRequestStoreResult> ReplayRequestAttemptAsync(DraftAttemptRow attempt, string actorId, string requestHash,
+    private async Task<SalesRequestStoreResult> ReplayRequestAttemptAsync(RequestAttemptRow attempt, string actorId, string requestHash,
         CancellationToken cancellationToken)
     {
         if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
@@ -298,7 +298,7 @@ public sealed partial class SalesStore
 
     private void AddRequestAttempt(Guid companyId, string commandName, string keyHash, string requestHash, string actorId, Guid requestId,
         SalesDraftWriteEnvelope envelope, DateTimeOffset now) =>
-        dbContext.DraftAttempts.Add(new DraftAttemptRow
+        dbContext.RequestAttempts.Add(new RequestAttemptRow
         {
             CompanyId = companyId,
             CommandName = commandName,
