@@ -538,6 +538,8 @@ export const ORDER_DETAIL_TEXT = {
   createdAt: 'Oluşturulma',
   /** The record-bound Cari code and name (no longer the bare id). */
   party: 'Cari',
+  /** TEK-11: the stored ids stay reachable for support, folded away below the names the user reads. */
+  technicalIds: 'Teknik kimlikler',
   account: 'Şirket hesabı kimliği',
   currency: 'Para birimi kimliği',
   requestedDeliveryDate: 'Üst termin',
@@ -548,7 +550,7 @@ export const ORDER_DETAIL_TEXT = {
   product: 'Ürün',
   productVersion: 'Ürün sürümü',
   quantity: 'Miktar',
-  orderUnit: 'Sipariş birimi kimliği',
+  orderUnit: 'Sipariş birimi',
   lineDeliveryDate: 'Satır termini',
   price: 'Birim fiyat',
   discount: 'İskonto %',
