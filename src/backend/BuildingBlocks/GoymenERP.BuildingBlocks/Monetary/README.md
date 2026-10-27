@@ -15,11 +15,13 @@ ağ, veritabanı, tatil, hafta günü ya da geriye bakış ayarı yoktur.
     günde yoksa `exchange_rate_currency_missing`; daha eski güne geçilmez.
   - Bülten yok → atlanır (`SkippedDays` artar).
   - Kayıt yok ya da `Unconfirmed` → `exchange_rate_day_unconfirmed`; sessizce eski kura kayılmaz.
+  - Günün iş günü olup olmadığına yalnız **resmî** kayıt karar verir. O günün elle kaydı bunu değiştirmeye
+    kalkarsa → `exchange_rate_manual_conflict` (aşağıda).
 - **Sınır yok**: yürüyüş yalnız kesin "bülten yok" kaydı olan günlerden geçebildiği için kendiliğinden
   sınırlıdır; ayrı bir geriye bakış ayarı tutulmaz.
-- **Sonuç**: kontrol günü, kaynak (TCMB), atlanan gün sayısı ve bunların kaçının elle işaretlendiği
-  (`ManualNoBulletinDaysSkipped`); çözüldüyse bülten tarihi, kur ve kurun kaynağı (`RateProvenance`:
-  resmî/elle), çözülmediyse kod ve yürüyüşü durduran gün (`StoppedAt`).
+- **Sonuç**: kontrol günü, kaynak (TCMB), istenen çift (kaynak/hedef para birimi), atlanan resmî "bülten yok"
+  gün sayısı; çözüldüyse bülten tarihi, kur ve kurun kaynağı (`RateProvenance`: resmî/elle), çözülmediyse kod
+  ve yürüyüşü durduran gün (`StoppedAt`).
 
 ### Kur kaydı sözleşmesi (`ExchangeRateBulletinDay`)
 
@@ -32,8 +34,11 @@ sahibin deposundaki günleri verir. Gelecekteki içe aktarma bu sözleşmeye uym
   bilinmez: içe aktarma o günleri TCMB'nin cevabına göre işaretler. Arife yalnız TCMB o gün yayımladıysa
   yayımlandı olur (SAT-D55).
 - `Published`: en az bir satış kuru; çift başına tek kur; kur **bir** kaynak para birimi içindir (bültende
-  100 birim için verilen satır kaydeden tarafından bire indirgenir). Ters çift kendi yayımlanmış kurudur,
-  1/kur olarak türetilmez.
+  100 birim için verilen satır kaydeden tarafından bire indirgenir). Boş çift ya da sıfır kur reddedilir.
+- **Ters çift türetilmez.** TCMB yalnız yabancı para → TRY satış kuru yayımlar; TRY→USD ya da USD→EUR gibi
+  çiftler bu çözümleyiciden her zaman `exchange_rate_currency_missing` döner, 1/kur ya da çapraz kur
+  hesaplanmaz. SAT-D53'teki limit para birimi toplamı (ör. TL kalemini USD limitine çevirmek) için çevrim
+  formülü (bölme mi, çapraz kur mu) risk diliminde ayrıca karar ister.
 - `ConfirmedNoBulletin`: yalnız **kesin** bir cevapla yazılır (TCMB'nin resmî kaynağı o tarihli bültenin
   bulunmadığını bildirir). Kur taşımaz.
 - `Unconfirmed`: diğer her cevap (ağ hatası, zaman aşımı, beklenmeyen yanıt). Kayıtsız günle aynıdır:
@@ -43,14 +48,23 @@ sahibin deposundaki günleri verir. Gelecekteki içe aktarma bu sözleşmeye uym
 ### Elle değişiklik (DEC-FIN-010)
 
 `ExchangeRateBulletinDayProvenance.Manual` kaydı, DEC-FIN-010'un izin verdiği manuel kur değişikliğidir;
-resmî kaydın yanında durur, onu silmez. `ExchangeRateManualEntry` işlemi yapan kullanıcıyı ve gerekçeyi
-taşır (ikisi de zorunlu). Yetki ve audit sahibin deposunun/komutunun işidir; o yetkinin kime verileceği
-insan kapısındadır, manuel istisna sınırı OPEN-012'de açıktır. Giriş komutu bu dilimde yoktur.
+resmî kaydın yanında durur, onu silmez. `ExchangeRateManualEntry` işlemi yapan kullanıcıyı (repodaki diğer
+modüller gibi metin `ActorId`, en çok `MaximumActorIdLength` = 128) ve gerekçeyi (kırpılır, en çok
+`MaximumReasonLength` = 1000) taşır; ikisi de zorunludur. Yetki ve audit sahibin deposunun/komutunun işidir;
+o yetkinin kime verileceği insan kapısındadır, manuel istisna sınırı OPEN-012'de açıktır. Giriş komutu bu
+dilimde yoktur.
 
-- **Elle "bülten yok"**: günü, resmî kayıt ne derse desin atlatır; çözümleyiciyi daha eski bir kura
-  kaydırdığı için bir manuel değişikliktir ve sonuçta `ManualNoBulletinDaysSkipped` ile görünür.
-- **Elle kur**: taşıdığı çiftler için o günün kurudur (`RateProvenance = Manual`); taşımadığı çiftler için o
-  günün resmî yayımlanmış kuru geçerlidir, o da yoksa `exchange_rate_currency_missing`.
+Elle kayıt **yalnız kur değerini** değiştirebilir; bir günün iş günü olup olmadığını değiştiremez (SAT-D55:
+iş gününü yalnız TCMB'nin yayımı belirler).
+
+- **Elle kur, resmî kaydı yayımlandı olan günde**: taşıdığı çiftler için o günün kurudur
+  (`RateProvenance = Manual`); taşımadığı çiftler için resmî kur geçerlidir.
+- **Elle kur, resmî kaydı "bülten yok", `Unconfirmed` olan ya da resmî kaydı olmayan günde**: o günü kur günü
+  yapmaz; yürüyüş `exchange_rate_manual_conflict` ile o günde durur.
+- **Elle "bülten yok"** (hangi resmî kaydın yanında olursa olsun): gün atlanmaz; yürüyüş
+  `exchange_rate_manual_conflict` ile durur. "Bülten yok"u yalnız resmî kesin cevap yazar. Bu tür bir kayıt,
+  saklanmış bir satır sessizce yok sayılmasın diye modellenmiştir.
+- D ve sonraki günlerin elle kayıtları yürüyüşe girmez.
 
 ### Kapsam dışı
 

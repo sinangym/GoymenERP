@@ -38,8 +38,10 @@ public enum ExchangeRateBulletinDayProvenance
     Official = 1,
 
     /// <summary>
-    /// A DEC-FIN-010 manual rate change: a manual rate, or a day marked "no bulletin" by hand (which moves the
-    /// resolver to an older rate). It carries a reason and an actor; the owning store authorises and audits it.
+    /// A DEC-FIN-010 manual rate change. It may only change rate values of a day whose official record is
+    /// published (SAT-D55: only the source's publication decides a business day); any other manual record is a
+    /// conflict the resolver fails closed on. It carries a reason and an actor; the owning store authorises and
+    /// audits it, and the manual-exception limit is open under OPEN-012.
     /// </summary>
     Manual = 2,
 }
@@ -47,23 +49,32 @@ public enum ExchangeRateBulletinDayProvenance
 /// <summary>Who made a manual change and why (DEC-FIN-010). Authority and audit are the owning store's; the limit is OPEN-012.</summary>
 public sealed record ExchangeRateManualEntry
 {
-    public ExchangeRateManualEntry(Guid actorUserId, string reason)
+    /// <summary>The repository's actor identity column width (string actor ids, as every module stores them).</summary>
+    public const int MaximumActorIdLength = 128;
+
+    /// <summary>The repository's common reason column width.</summary>
+    public const int MaximumReasonLength = 1000;
+
+    public ExchangeRateManualEntry(string actorId, string reason)
     {
-        if (actorUserId == Guid.Empty)
+        var actor = actorId?.Trim();
+        if (string.IsNullOrEmpty(actor) || actor.Length > MaximumActorIdLength)
         {
-            throw new ArgumentException("Elle kur değişikliğini yapan kullanıcı belirtilmelidir.", nameof(actorUserId));
+            throw new ArgumentException("Elle kur değişikliğini yapan kullanıcı belirtilmelidir.", nameof(actorId));
         }
 
-        if (string.IsNullOrWhiteSpace(reason))
+        var trimmedReason = reason?.Trim();
+        if (string.IsNullOrEmpty(trimmedReason) || trimmedReason.Length > MaximumReasonLength)
         {
-            throw new ArgumentException("Elle kur değişikliği bir gerekçe taşır.", nameof(reason));
+            throw new ArgumentException(
+                $"Elle kur değişikliği en fazla {MaximumReasonLength} karakterlik bir gerekçe taşır.", nameof(reason));
         }
 
-        ActorUserId = actorUserId;
-        Reason = reason;
+        ActorId = actor;
+        Reason = trimmedReason;
     }
 
-    public Guid ActorUserId { get; }
+    public string ActorId { get; }
     public string Reason { get; }
 }
 
@@ -79,7 +90,9 @@ public sealed record ExchangeRateManualEntry
 /// <para>
 /// A day may have one <see cref="ExchangeRateBulletinDayProvenance.Official"/> record and, next to it, one
 /// <see cref="ExchangeRateBulletinDayProvenance.Manual"/> record. Only official records can be
-/// <see cref="ExchangeRateBulletinDayStatus.Unconfirmed"/>.
+/// <see cref="ExchangeRateBulletinDayStatus.Unconfirmed"/>. A manual record never changes whether a day is a
+/// business day: a manual rate is honoured only next to an official published record, and a manual
+/// "no bulletin" is never honoured (only an official definite answer marks a day "no bulletin").
 /// </para>
 /// </summary>
 public sealed class ExchangeRateBulletinDay
@@ -129,7 +142,10 @@ public sealed class ExchangeRateBulletinDay
     public static ExchangeRateBulletinDay Unconfirmed(DateOnly bulletinDate, ExchangeRateBulletinSource source) =>
         NoRateDay(bulletinDate, source, ExchangeRateBulletinDayStatus.Unconfirmed, null);
 
-    /// <summary>A DEC-FIN-010 manual rate change for the day (one or more pairs).</summary>
+    /// <summary>
+    /// A DEC-FIN-010 manual rate change for the day (one or more pairs). It replaces only the pairs it carries and
+    /// only on a day whose official record is published; anywhere else the resolver stops with a manual conflict.
+    /// </summary>
     public static ExchangeRateBulletinDay ManualPublished(
         DateOnly bulletinDate,
         ExchangeRateBulletinSource source,
@@ -140,7 +156,10 @@ public sealed class ExchangeRateBulletinDay
         return PublishedDay(bulletinDate, source, sellingRates, manualEntry);
     }
 
-    /// <summary>A day marked "no bulletin" by hand: a DEC-FIN-010 manual change, since it moves the resolver to an older rate.</summary>
+    /// <summary>
+    /// A day marked "no bulletin" by hand. SAT-D55 leaves that answer to the source alone, so the resolver never
+    /// skips such a day: it stops with a manual conflict. Modelled so a stored row fails closed instead of being ignored.
+    /// </summary>
     public static ExchangeRateBulletinDay ManualNoBulletin(
         DateOnly bulletinDate,
         ExchangeRateBulletinSource source,
@@ -169,6 +188,11 @@ public sealed class ExchangeRateBulletinDay
         var rates = new Dictionary<(Guid Source, Guid Target), ExchangeRate>();
         foreach (var rate in sellingRates)
         {
+            if (rate.SourceCurrencyId == Guid.Empty || rate.TargetCurrencyId == Guid.Empty || rate.Rate <= 0m)
+            {
+                throw new ArgumentException("Bülten kuru boş bir çift ya da sıfır kur olamaz.", nameof(sellingRates));
+            }
+
             if (!rates.TryAdd((rate.SourceCurrencyId, rate.TargetCurrencyId), rate))
             {
                 throw new ArgumentException("Bir bülten gününde aynı para birimi çifti için tek satış kuru olur.", nameof(sellingRates));

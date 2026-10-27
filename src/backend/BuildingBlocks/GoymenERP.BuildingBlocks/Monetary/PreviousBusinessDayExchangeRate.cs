@@ -12,6 +12,13 @@ public static class PreviousBusinessDayExchangeRateCodes
 
     /// <summary>The nearest published day carries no selling rate for the requested pair; no older day is tried.</summary>
     public const string CurrencyMissing = "exchange_rate_currency_missing";
+
+    /// <summary>
+    /// The walk reached a day whose manual record would change whether the day is a business day: a manual rate
+    /// next to an official record that is not published (or no official record), or any manual "no bulletin".
+    /// SAT-D55 leaves that to the source's publication alone, so the walk stops.
+    /// </summary>
+    public const string ManualConflict = "exchange_rate_manual_conflict";
 }
 
 /// <summary>
@@ -26,17 +33,17 @@ public readonly record struct PreviousBusinessDayExchangeRateRequest(
     Guid TargetCurrencyId);
 
 /// <summary>
-/// The resolver's answer. Resolved: <see cref="BulletinDate"/>, <see cref="Rate"/> (selling side) and
-/// <see cref="RateProvenance"/> are set. Unavailable: <see cref="Code"/> is one of
-/// <see cref="PreviousBusinessDayExchangeRateCodes"/> and <see cref="StoppedAt"/> is the day that stopped
-/// the walk. In both cases <see cref="SkippedDays"/> counts the "no bulletin" days walked over, and
-/// <see cref="ManualNoBulletinDaysSkipped"/> how many of them were marked by hand (DEC-FIN-010 manual changes).
+/// The resolver's answer, carrying the request (check day, source, pair) in both outcomes. Resolved:
+/// <see cref="BulletinDate"/>, <see cref="Rate"/> (selling side) and <see cref="RateProvenance"/> are set.
+/// Unavailable: <see cref="Code"/> is one of <see cref="PreviousBusinessDayExchangeRateCodes"/> and
+/// <see cref="StoppedAt"/> is the day that stopped the walk. <see cref="SkippedDays"/> counts the official
+/// "no bulletin" days walked over.
 /// </summary>
 public sealed record PreviousBusinessDayExchangeRateResult
 {
     private PreviousBusinessDayExchangeRateResult(
         PreviousBusinessDayExchangeRateRequest request,
-        WalkCount walked,
+        int skippedDays,
         DateOnly? bulletinDate,
         ExchangeRate? rate,
         ExchangeRateBulletinDayProvenance? rateProvenance,
@@ -45,8 +52,9 @@ public sealed record PreviousBusinessDayExchangeRateResult
     {
         CheckDate = request.CheckDate;
         Source = request.Source;
-        SkippedDays = walked.Skipped;
-        ManualNoBulletinDaysSkipped = walked.ManualSkipped;
+        SourceCurrencyId = request.SourceCurrencyId;
+        TargetCurrencyId = request.TargetCurrencyId;
+        SkippedDays = skippedDays;
         BulletinDate = bulletinDate;
         Rate = rate;
         RateProvenance = rateProvenance;
@@ -56,8 +64,9 @@ public sealed record PreviousBusinessDayExchangeRateResult
 
     public DateOnly CheckDate { get; }
     public ExchangeRateBulletinSource Source { get; }
+    public Guid SourceCurrencyId { get; }
+    public Guid TargetCurrencyId { get; }
     public int SkippedDays { get; }
-    public int ManualNoBulletinDaysSkipped { get; }
     public DateOnly? BulletinDate { get; }
     public ExchangeRate? Rate { get; }
     public ExchangeRateBulletinDayProvenance? RateProvenance { get; }
@@ -67,15 +76,13 @@ public sealed record PreviousBusinessDayExchangeRateResult
     public bool IsResolved => Code is null;
 
     internal static PreviousBusinessDayExchangeRateResult Resolved(
-        PreviousBusinessDayExchangeRateRequest request, WalkCount walked, DateOnly bulletinDate, ExchangeRate rate,
+        PreviousBusinessDayExchangeRateRequest request, int skippedDays, DateOnly bulletinDate, ExchangeRate rate,
         ExchangeRateBulletinDayProvenance provenance) =>
-        new(request, walked, bulletinDate, rate, provenance, null, null);
+        new(request, skippedDays, bulletinDate, rate, provenance, null, null);
 
     internal static PreviousBusinessDayExchangeRateResult Unavailable(
-        PreviousBusinessDayExchangeRateRequest request, WalkCount walked, string code, DateOnly? stoppedAt) =>
-        new(request, walked, null, null, null, code, stoppedAt);
-
-    internal readonly record struct WalkCount(int Skipped, int ManualSkipped);
+        PreviousBusinessDayExchangeRateRequest request, int skippedDays, string code, DateOnly? stoppedAt) =>
+        new(request, skippedDays, null, null, null, code, stoppedAt);
 }
 
 /// <summary>
@@ -83,21 +90,23 @@ public sealed record PreviousBusinessDayExchangeRateResult
 /// day <b>strictly before</b> D on which the source published a bulletin. D's own bulletin is never used.
 /// <para>
 /// Pure and deterministic: no clock, no time zone, no I/O, no holiday or weekday knowledge, no lookback
-/// setting. The walk starts at D−1 and moves back one calendar day at a time over the day's effective record
-/// (a manual record, when present, decides the day's status; see below):
+/// setting. The walk starts at D−1 and moves back one calendar day at a time. Whether a day is a business day
+/// is decided by its <b>official</b> record alone:
 /// <list type="bullet">
 /// <item>published → that day's selling rate for the pair, or <see cref="PreviousBusinessDayExchangeRateCodes.CurrencyMissing"/>
 /// when the day lacks the pair (never an older day);</item>
-/// <item>"no bulletin" → skipped;</item>
+/// <item>definite "no bulletin" → skipped;</item>
 /// <item>no record, or an unconfirmed one → <see cref="PreviousBusinessDayExchangeRateCodes.DayUnconfirmed"/>.</item>
 /// </list>
-/// The walk is bounded by itself: it only passes days with a definite "no bulletin" record. Weekends are
-/// skipped only because their records say "no bulletin"; nothing here knows a Saturday.
+/// The walk is bounded by itself: it only passes days with a definite official "no bulletin" record. Weekends
+/// are skipped only because their records say "no bulletin"; nothing here knows a Saturday.
 /// </para>
 /// <para>
-/// Manual records (DEC-FIN-010 manual change): a manual "no bulletin" skips the day whatever the official
-/// record says. A manual published record gives its own rate for the pairs it carries; for any other pair
-/// the day's official published rate applies, or the pair is missing.
+/// Manual records (DEC-FIN-010 manual change) can only change rate values: on a day whose official record is
+/// published, a manual rate replaces the official rate for the pairs it carries, and the official rate stays for
+/// the others. Any other manual record on a walked day — a manual rate next to an official "no bulletin",
+/// unconfirmed or missing record, or any manual "no bulletin" — stops the walk with
+/// <see cref="PreviousBusinessDayExchangeRateCodes.ManualConflict"/>.
 /// </para>
 /// </summary>
 public static class PreviousBusinessDayExchangeRate
@@ -119,48 +128,54 @@ public static class PreviousBusinessDayExchangeRate
 
         var days = Index(request.Source, bulletinDays);
         var pair = (request.SourceCurrencyId, request.TargetCurrencyId);
-        var walked = new PreviousBusinessDayExchangeRateResult.WalkCount(0, 0);
+        var skipped = 0;
         for (var dayNumber = request.CheckDate.DayNumber - 1; dayNumber >= DateOnly.MinValue.DayNumber; dayNumber--)
         {
             var date = DateOnly.FromDayNumber(dayNumber);
             days.TryGetValue((date, ExchangeRateBulletinDayProvenance.Official), out var official);
             days.TryGetValue((date, ExchangeRateBulletinDayProvenance.Manual), out var manual);
-            var effective = manual ?? official;
-            switch (effective?.Status)
+            var officiallyPublished = official?.Status == ExchangeRateBulletinDayStatus.Published;
+            if (manual is not null && (manual.Status != ExchangeRateBulletinDayStatus.Published || !officiallyPublished))
+            {
+                return PreviousBusinessDayExchangeRateResult.Unavailable(
+                    request, skipped, PreviousBusinessDayExchangeRateCodes.ManualConflict, date);
+            }
+
+            switch (official?.Status)
             {
                 case ExchangeRateBulletinDayStatus.ConfirmedNoBulletin:
-                    walked = new(walked.Skipped + 1, walked.ManualSkipped + (manual is null ? 0 : 1));
+                    skipped++;
                     continue;
                 case ExchangeRateBulletinDayStatus.Published:
-                    return Published(request, walked, date, pair, manual, official);
+                    return Published(request, skipped, date, pair, manual, official);
                 default:
                     return PreviousBusinessDayExchangeRateResult.Unavailable(
-                        request, walked, PreviousBusinessDayExchangeRateCodes.DayUnconfirmed, date);
+                        request, skipped, PreviousBusinessDayExchangeRateCodes.DayUnconfirmed, date);
             }
         }
 
         return PreviousBusinessDayExchangeRateResult.Unavailable(
-            request, walked, PreviousBusinessDayExchangeRateCodes.DayUnconfirmed, null);
+            request, skipped, PreviousBusinessDayExchangeRateCodes.DayUnconfirmed, null);
     }
 
     private static PreviousBusinessDayExchangeRateResult Published(
         PreviousBusinessDayExchangeRateRequest request,
-        PreviousBusinessDayExchangeRateResult.WalkCount walked,
+        int skipped,
         DateOnly date,
         (Guid, Guid) pair,
         ExchangeRateBulletinDay? manual,
-        ExchangeRateBulletinDay? official)
+        ExchangeRateBulletinDay official)
     {
         foreach (var day in new[] { manual, official })
         {
-            if (day is { Status: ExchangeRateBulletinDayStatus.Published } && day.SellingRates.TryGetValue(pair, out var rate))
+            if (day is not null && day.SellingRates.TryGetValue(pair, out var rate))
             {
-                return PreviousBusinessDayExchangeRateResult.Resolved(request, walked, date, rate, day.Provenance);
+                return PreviousBusinessDayExchangeRateResult.Resolved(request, skipped, date, rate, day.Provenance);
             }
         }
 
         return PreviousBusinessDayExchangeRateResult.Unavailable(
-            request, walked, PreviousBusinessDayExchangeRateCodes.CurrencyMissing, date);
+            request, skipped, PreviousBusinessDayExchangeRateCodes.CurrencyMissing, date);
     }
 
     private static Dictionary<(DateOnly, ExchangeRateBulletinDayProvenance), ExchangeRateBulletinDay> Index(

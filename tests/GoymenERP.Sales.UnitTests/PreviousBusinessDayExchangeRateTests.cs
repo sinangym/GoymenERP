@@ -11,6 +11,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// <c>P</c> official published with USD→TRY and EUR→TRY, <c>E</c> official published with EUR→TRY only,
 /// <c>X</c> official definite "no bulletin", <c>U</c> official attempt without a definite answer,
 /// <c>M</c> manual "no bulletin", <c>R</c> manual USD→TRY rate. A date that is not listed has no record.
+/// Manual records may only change rate values next to an official <c>P</c>; anything else is a manual conflict.
 /// </summary>
 public sealed class PreviousBusinessDayExchangeRateTests
 {
@@ -18,11 +19,12 @@ public sealed class PreviousBusinessDayExchangeRateTests
     private static readonly Guid Usd = Guid.Parse("10000000-0000-4000-8000-0000000000a2");
     private static readonly Guid Eur = Guid.Parse("10000000-0000-4000-8000-0000000000a3");
     private static readonly ExchangeRateManualEntry ManualEntry =
-        new(Guid.Parse("10000000-0000-4000-8000-0000000000b1"), "SENTETIK gerekçe");
+        new("sentetik-kullanici-1", "SENTETIK gerekçe");
     private const ExchangeRateBulletinSource Tcmb = ExchangeRateBulletinSource.Tcmb;
 
     private const string Unconfirmed = PreviousBusinessDayExchangeRateCodes.DayUnconfirmed;
     private const string Missing = PreviousBusinessDayExchangeRateCodes.CurrencyMissing;
+    private const string Conflict = PreviousBusinessDayExchangeRateCodes.ManualConflict;
 
     private const string Bayram = "2026-05-22=P;2026-05-23=X;2026-05-24=X;2026-05-25=X;2026-05-26=X;2026-05-27=X;"
         + "2026-05-28=X;2026-05-29=X;2026-05-30=X;2026-05-31=X";
@@ -78,8 +80,8 @@ public sealed class PreviousBusinessDayExchangeRateTests
         var result = PreviousBusinessDayExchangeRate.Resolve(UsdToTry(Day(checkDate)), Days(records));
 
         Assert.Equal(Day(checkDate), result.CheckDate);
-        Assert.Equal(Tcmb, result.Source);
-        Assert.Equal((expectedSkipped, 0), (result.SkippedDays, result.ManualNoBulletinDaysSkipped));
+        Assert.Equal((Tcmb, Usd, Try), (result.Source, result.SourceCurrencyId, result.TargetCurrencyId));
+        Assert.Equal(expectedSkipped, result.SkippedDays);
         if (expectedCode is null)
         {
             Assert.True(result.IsResolved, name);
@@ -100,47 +102,64 @@ public sealed class PreviousBusinessDayExchangeRateTests
         }
     }
 
-    public static TheoryData<string, string, string, bool, string, bool, int, int> ManualCases => new()
-    {
-        // name, D, records, ask EUR?, expected bulletin date, expected manual rate?, skipped, manual skipped
-        { "A manual 'no bulletin' over an official published day moves to an older rate",
-            "2026-10-26", "2026-10-22=P;2026-10-23=P+M;2026-10-24=X;2026-10-25=X", false, "2026-10-22", false, 3, 1 },
-        { "A manual 'no bulletin' settles an unconfirmed day",
-            "2026-10-26", "2026-10-23=P;2026-10-24=U+M;2026-10-25=X", false, "2026-10-23", false, 2, 1 },
-        { "A manual rate is used next to the official bulletin",
-            "2026-10-26", "2026-10-23=P+R;2026-10-24=X;2026-10-25=X", false, "2026-10-23", true, 2, 0 },
-        { "A manual rate for one pair keeps the official rate of another pair",
-            "2026-10-26", "2026-10-23=P+R;2026-10-24=X;2026-10-25=X", true, "2026-10-23", false, 2, 0 },
-        { "A manual rate on an unconfirmed day is that day's rate",
-            "2026-10-26", "2026-10-23=U+R;2026-10-24=X;2026-10-25=X", false, "2026-10-23", true, 2, 0 },
-    };
-
     [Theory]
-    [MemberData(nameof(ManualCases))]
-    public void A_manual_record_is_a_dec_fin_010_manual_change_next_to_the_official_one(
-        string name, string checkDate, string records, bool askEur, string expectedDate, bool expectManualRate, int skipped, int manualSkipped)
+    [InlineData(false, "2026-10-23", true)]
+    [InlineData(true, "2026-10-23", false)]
+    public void A_manual_rate_next_to_an_official_bulletin_replaces_only_the_pairs_it_carries(
+        bool askEur, string expectedDate, bool expectManualRate)
     {
         var currency = askEur ? Eur : Usd;
         var result = PreviousBusinessDayExchangeRate.Resolve(
-            new PreviousBusinessDayExchangeRateRequest(Day(checkDate), Tcmb, currency, Try), Days(records));
+            new PreviousBusinessDayExchangeRateRequest(Day("2026-10-26"), Tcmb, currency, Try),
+            Days("2026-10-22=P;2026-10-23=P+R;2026-10-24=X;2026-10-25=X"));
 
-        Assert.True(result.IsResolved, name);
+        Assert.True(result.IsResolved);
         var date = Day(expectedDate);
         var expectedRate = expectManualRate ? ManualUsdRateOf(date) : askEur ? EurRateOf(date) : UsdRateOf(date);
         Assert.Equal(date, result.BulletinDate);
         Assert.Equal(ExchangeRate.Of(currency, Try, expectedRate), result.Rate);
         Assert.Equal(expectManualRate ? ExchangeRateBulletinDayProvenance.Manual : ExchangeRateBulletinDayProvenance.Official,
             result.RateProvenance);
-        Assert.Equal((skipped, manualSkipped), (result.SkippedDays, result.ManualNoBulletinDaysSkipped));
+        Assert.Equal(2, result.SkippedDays);
+    }
+
+    public static TheoryData<string, string, string, string, int> ManualConflictCases => new()
+    {
+        // name, D, records, stoppedAt, skipped — a manual record never changes whether a day is a business day (SAT-D55)
+        { "A manual rate on an official 'no bulletin' day does not make it a rate day",
+            "2026-10-26", "2026-10-22=P;2026-10-23=P;2026-10-24=X+R;2026-10-25=X", "2026-10-24", 1 },
+        { "A manual rate on a day without an official record",
+            "2026-10-26", "2026-10-23=P;2026-10-24=X;2026-10-25=R", "2026-10-25", 0 },
+        { "A manual rate on an unconfirmed day",
+            "2026-10-26", "2026-10-23=U+R;2026-10-24=X;2026-10-25=X", "2026-10-23", 2 },
+        { "A manual 'no bulletin' on a day the source published",
+            "2026-10-26", "2026-10-22=P;2026-10-23=P+M;2026-10-24=X;2026-10-25=X", "2026-10-23", 2 },
+        { "A manual 'no bulletin' on a day without an official record",
+            "2026-10-26", "2026-10-22=P;2026-10-23=M;2026-10-24=X;2026-10-25=X", "2026-10-23", 2 },
+        { "A manual 'no bulletin' on an unconfirmed day",
+            "2026-10-26", "2026-10-22=P;2026-10-23=U+M;2026-10-24=X;2026-10-25=X", "2026-10-23", 2 },
+        { "A manual 'no bulletin' even where the source said the same",
+            "2026-10-26", "2026-10-23=P;2026-10-24=X+M;2026-10-25=X", "2026-10-24", 1 },
+    };
+
+    [Theory]
+    [MemberData(nameof(ManualConflictCases))]
+    public void A_manual_record_that_would_change_a_business_day_stops_the_walk(
+        string name, string checkDate, string records, string stoppedAt, int skipped)
+    {
+        var result = PreviousBusinessDayExchangeRate.Resolve(UsdToTry(Day(checkDate)), Days(records));
+        Assert.False(result.IsResolved, name);
+        Assert.Equal((Conflict, Day(stoppedAt), skipped), (result.Code, result.StoppedAt, result.SkippedDays));
+        Assert.Equal(((DateOnly?)null, (ExchangeRate?)null, (ExchangeRateBulletinDayProvenance?)null),
+            (result.BulletinDate, result.Rate, result.RateProvenance));
     }
 
     [Fact]
-    public void A_manual_rate_without_the_pair_on_an_unconfirmed_day_is_a_missing_pair()
+    public void Manual_records_on_d_or_after_are_never_walked()
     {
         var result = PreviousBusinessDayExchangeRate.Resolve(
-            new PreviousBusinessDayExchangeRateRequest(Day("2026-10-26"), Tcmb, Eur, Try),
-            Days("2026-10-22=P;2026-10-23=U+R;2026-10-24=X;2026-10-25=X"));
-        Assert.Equal((false, Missing, Day("2026-10-23")), (result.IsResolved, result.Code, result.StoppedAt));
+            UsdToTry(Day("2026-10-27")), Days("2026-10-26=P;2026-10-27=X+R;2026-10-28=M"));
+        Assert.Equal((Day("2026-10-26"), ExchangeRateBulletinDayProvenance.Official), (result.BulletinDate, result.RateProvenance));
     }
 
     [Fact]
@@ -152,8 +171,21 @@ public sealed class PreviousBusinessDayExchangeRateTests
         var official = ExchangeRateBulletinDay.ConfirmedNoBulletin(day, Tcmb);
         Assert.Equal((ExchangeRateBulletinDayProvenance.Official, (ExchangeRateManualEntry?)null), (official.Provenance, official.ManualEntry));
 
-        Assert.Throws<ArgumentException>(() => new ExchangeRateManualEntry(Guid.Empty, "gerekçe"));
-        Assert.Throws<ArgumentException>(() => new ExchangeRateManualEntry(ManualEntry.ActorUserId, "  "));
+        var trimmed = new ExchangeRateManualEntry("  sentetik-kullanici-1 ", "  SENTETIK gerekçe \n");
+        Assert.Equal(ManualEntry, trimmed);
+        Assert.Equal(("sentetik-kullanici-1", "SENTETIK gerekçe"), (trimmed.ActorId, trimmed.Reason));
+        Assert.Equal(ExchangeRateManualEntry.MaximumReasonLength,
+            new ExchangeRateManualEntry("a", " " + new string('g', ExchangeRateManualEntry.MaximumReasonLength) + " ").Reason.Length);
+
+        Assert.Throws<ArgumentException>(() => new ExchangeRateManualEntry("", "gerekçe"));
+        Assert.Throws<ArgumentException>(() => new ExchangeRateManualEntry("   ", "gerekçe"));
+        Assert.Throws<ArgumentException>(() => new ExchangeRateManualEntry(null!, "gerekçe"));
+        Assert.Throws<ArgumentException>(() =>
+            new ExchangeRateManualEntry(new string('a', ExchangeRateManualEntry.MaximumActorIdLength + 1), "gerekçe"));
+        Assert.Throws<ArgumentException>(() => new ExchangeRateManualEntry("a", "  "));
+        Assert.Throws<ArgumentException>(() => new ExchangeRateManualEntry("a", null!));
+        Assert.Throws<ArgumentException>(() =>
+            new ExchangeRateManualEntry("a", new string('g', ExchangeRateManualEntry.MaximumReasonLength + 1)));
         Assert.Throws<ArgumentNullException>(() => ExchangeRateBulletinDay.ManualNoBulletin(day, Tcmb, null!));
         Assert.Throws<ArgumentNullException>(() => ExchangeRateBulletinDay.ManualPublished(day, Tcmb, [ExchangeRate.Of(Usd, Try, 41m)], null!));
     }
@@ -175,11 +207,11 @@ public sealed class PreviousBusinessDayExchangeRateTests
     [Fact]
     public void The_answer_is_deterministic_whatever_the_record_order()
     {
-        var ordered = Days(Bayram + ";2026-05-26=M;2026-06-01=P;2026-05-22=R").ToArray();
+        var ordered = Days(Bayram + ";2026-06-01=P+M;2026-05-22=R").ToArray();
         var request = UsdToTry(Day("2026-06-01"));
         var expected = PreviousBusinessDayExchangeRate.Resolve(request, ordered);
-        Assert.Equal((Day("2026-05-22"), 9, 1, ExchangeRateBulletinDayProvenance.Manual),
-            (expected.BulletinDate, expected.SkippedDays, expected.ManualNoBulletinDaysSkipped, expected.RateProvenance));
+        Assert.Equal((Day("2026-05-22"), 9, ExchangeRateBulletinDayProvenance.Manual),
+            (expected.BulletinDate, expected.SkippedDays, expected.RateProvenance));
 
         var random = new Random(20261027);
         for (var attempt = 0; attempt < 20; attempt++)
@@ -237,6 +269,8 @@ public sealed class PreviousBusinessDayExchangeRateTests
 
         Assert.Throws<ArgumentOutOfRangeException>(() => ExchangeRateBulletinDay.ConfirmedNoBulletin(monday, (ExchangeRateBulletinSource)99));
         Assert.Throws<ArgumentException>(() => ExchangeRateBulletinDay.Published(monday, Tcmb, []));
+        Assert.Throws<ArgumentException>(() => ExchangeRateBulletinDay.Published(monday, Tcmb, [default(ExchangeRate)]));
+        Assert.Throws<ArgumentException>(() => ExchangeRateBulletinDay.ManualPublished(monday, Tcmb, [default(ExchangeRate)], ManualEntry));
         Assert.Throws<ArgumentException>(() => ExchangeRateBulletinDay.Published(monday, Tcmb,
             [ExchangeRate.Of(Usd, Try, 41m), ExchangeRate.Of(Usd, Try, 42m)]));
     }
