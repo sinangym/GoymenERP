@@ -47,6 +47,7 @@ import {
   decodeDeliverySchedules,
   decodeDeliveryProgress,
   decodeLoadingProgress,
+  decodeCustomerReturns,
   decodeCancellation,
   decodeCancellationImpact,
   decodeProblem,
@@ -56,6 +57,7 @@ import {
   salesDraftDeliverySchedulesPath,
   salesDraftDeliveryProgressPath,
   salesDraftLoadingProgressPath,
+  salesDraftCustomerReturnsPath,
   salesDraftCancellationImpactPath,
   salesDraftCancellationPath,
   salesDraftCommandPath,
@@ -75,6 +77,7 @@ import {
   type DeliveryProgress,
   type LoadingProgress,
   type LoadingProgressBinding,
+  type CustomerReturns,
   type CancellationImpact,
   type CancellationRead,
   type DraftCancelRequest,
@@ -291,6 +294,23 @@ export async function fetchDraftLoadingProgress(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const progress = decodeLoadingProgress(raw.body, bound)
   return progress === null ? { type: 'malformed' } : { type: 'ok-single', data: progress }
+}
+
+/**
+ * SAT-D8 / API-10: the approved customer-return total per line of `detail`, read-only under the draft read; the server
+ * reads it from the return owner (Logistics) afresh on every request. Data only when it describes exactly this detail;
+ * anything else is `malformed`, and a failed read is never turned into zeros.
+ */
+export async function fetchDraftCustomerReturns(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<CustomerReturns>> {
+  const raw = await request(salesDraftCustomerReturnsPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const returns = decodeCustomerReturns(raw.body, detail)
+  return returns === null ? { type: 'malformed' } : { type: 'ok-single', data: returns }
 }
 
 /** Partial-delivery remainder facts; owner quantities stay nullable when the Logistics read is unavailable. */
