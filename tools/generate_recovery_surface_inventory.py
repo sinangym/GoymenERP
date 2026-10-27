@@ -60,7 +60,7 @@ EXPECTED_DURABLE_STORE_COUNT = 21
 # lexical inventory while leaving its visible declaration counts unchanged.
 EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1074
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "3767ca6d1d87faf9b6ef88daa0314c922defb87cef61939bddcddef621159bea"
+    "0eddd2336a1967e707b40cf3940a9ef65beb409b49f03efc4f1dbdc0395bf356"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -155,7 +155,7 @@ AUDIT_SOURCE_ROOT = "src/backend/Modules/Audit/"
 AUDIT_LIVE_SOURCE_EXCLUDED_SUFFIXES = (".designer.cs", ".g.cs", ".generated.cs")
 EXPECTED_AUDIT_LIVE_SOURCE_FILE_COUNT = 21
 EXPECTED_AUDIT_LIVE_SOURCE_FINGERPRINT = (
-    "9e9c9d3a1380426e69aa0f883b0b0292fb84ac23c6a27af6a929cb6e3b56fc6d"
+    "26233e5d20ebb93d8cf67ef77ebe6745155833a1f7aeebfb648b5e4847d5dbc6"
 )
 EXPECTED_MESSAGE_DELIVERY_TABLES = (
     ("accounting", "Deliveries"),

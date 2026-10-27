@@ -243,7 +243,9 @@ public sealed class TechnicalPdfGeneratorTests
         Assert.DoesNotContain("/Subtype /Image", pdfSyntax, StringComparison.Ordinal);
         Assert.DoesNotContain("/JavaScript", pdfSyntax, StringComparison.Ordinal);
         Assert.DoesNotContain("/OpenAction", pdfSyntax, StringComparison.Ordinal);
-        Assert.DoesNotContain("/AA", pdfSyntax, StringComparison.Ordinal);
+        // The /AA (additional actions) key as a whole PDF name: the library-random font subset tag can begin
+        // with "AA" ("/AAPMMR+Noto…") and must not read as an action dictionary.
+        Assert.DoesNotMatch(@"/AA(?=[\s()<>\[\]{}/%]|$)", pdfSyntax);
         Assert.DoesNotContain("/Launch", pdfSyntax, StringComparison.Ordinal);
         Assert.DoesNotContain("/EmbeddedFiles", pdfSyntax, StringComparison.Ordinal);
         Assert.DoesNotContain("Göymen", page.Text, StringComparison.OrdinalIgnoreCase);
@@ -263,6 +265,45 @@ public sealed class TechnicalPdfGeneratorTests
         using var pdf = PdfDocument.Open(content);
 
         AssertNoHostIdentifiers(pdf, content, "ci");
+    }
+
+    [Fact]
+    public void Pdf_privacy_guard_does_not_mistake_library_random_ids_or_font_subset_tags_for_a_short_username()
+    {
+        // The two library-random values that collided with the CI user "ci" by chance, forced in place.
+        var content = RewriteSameLength(CreatePrivacyProbePdf(),
+            ("/ID\\[<([0-9A-F]{32})><([0-9A-F]{32})>\\]", "BDD7D90B4F43694CB8C9C12FC478797A"),
+            ("/([A-Z]{6})\\+Noto", "TKCIKZ"));
+        Assert.Contains("TKCIKZ+Noto", Encoding.Latin1.GetString(content), StringComparison.Ordinal);
+        using (var written = new MemoryStream(content, writable: false))
+        using (var reread = PdfSharp.Pdf.IO.PdfReader.Open(written, PdfSharp.Pdf.IO.PdfDocumentOpenMode.Import))
+        {
+            Assert.Contains("OCiL", reread.Internals.FirstDocumentID, StringComparison.Ordinal);
+        }
+        using var pdf = PdfDocument.Open(content);
+
+        AssertNoHostIdentifiers(pdf, content, "ci");
+    }
+
+    [Fact]
+    public void Additional_actions_check_reads_whole_names_not_a_font_subset_tag()
+    {
+        var tagged = Encoding.Latin1.GetString(RewriteSameLength(CreatePrivacyProbePdf(), ("/([A-Z]{6})\\+Noto", "AAPMMR")));
+        Assert.Contains("/AAPMMR+Noto", tagged, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"/AA(?=[\s()<>\[\]{}/%]|$)", tagged);
+        Assert.Matches(@"/AA(?=[\s()<>\[\]{}/%]|$)", "<</Type/Page/AA<</O 5 0 R>>>>");
+        Assert.Matches(@"/AA(?=[\s()<>\[\]{}/%]|$)", "<</AA 7 0 R>>");
+    }
+
+    [Fact]
+    public void Pdf_privacy_guard_still_rejects_host_information_after_the_font_subset_tag()
+    {
+        // Same-length: "Regular" -> "Regulci" keeps every xref offset valid.
+        var content = RewriteSameLength(CreatePrivacyProbePdf(), ("\\+Noto#20Sans#20Regul(ar)", "ci"));
+        using var pdf = PdfDocument.Open(content);
+
+        var refusal = Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => AssertNoHostIdentifiers(pdf, content, "ci"));
+        Assert.Contains("Noto Sans Regulci", refusal.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -526,13 +567,25 @@ public sealed class TechnicalPdfGeneratorTests
             .OfType<PdfSharp.Pdf.PdfDictionary>().Where(dictionary => dictionary.Stream is not null)
             .Select(dictionary => RawStreamIdentity(dictionary.Stream.Value)).ToHashSet();
         var streamSurfaces = InspectSupportedPrivacyPayloads(structure).ToArray();
+        // PDFsharp writes two library-random values that never carry host data: the trailer /ID pair (fresh
+        // GUID bytes) and the six-letter subset tag in front of the vendored font's name. A short identifier
+        // such as the CI user "ci" matched them by chance (2 of 150 generated documents), so exactly those
+        // values are left out. Every other string, name, comment and decoded payload is still searched, and
+        // the font name after the tag is still searched.
+        var libraryRandomIds = new HashSet<string>(StringComparer.Ordinal)
+        {
+            structure.Internals.FirstDocumentID,
+            structure.Internals.SecondDocumentID,
+        };
         // Inspect literal strings throughout the document, not only trailer /Info.
         // Structural names are not strings; font binary bytes remain exactly vendor-locked.
         var surfaces = pdf.GetPages().Select(page => page.Text)
             .Concat(DecodedMetadataValues(pdf.Information.DocumentInformationDictionary))
             .Concat(structure.Internals.GetAllObjects().SelectMany(DecodedObjectStrings))
             .Concat(streamSurfaces)
-            .Concat(DecodedSyntaxStrings(content, isDocument: true, reviewedRawStreams: reviewedRawStreams)).ToArray();
+            .Concat(DecodedSyntaxStrings(content, isDocument: true, reviewedRawStreams: reviewedRawStreams))
+            .Where(surface => !libraryRandomIds.Contains(surface))
+            .Select(WithoutFontSubsetTag).ToArray();
         foreach (var identifier in identifiers)
         {
             Assert.NotEmpty(identifier);
@@ -799,6 +852,11 @@ public sealed class TechnicalPdfGeneratorTests
     private static string RawStreamIdentity(ReadOnlySpan<byte> bytes) =>
         bytes.Length.ToString(CultureInfo.InvariantCulture) + ":" + Convert.ToHexString(SHA256.HashData(bytes));
 
+    private static readonly System.Text.RegularExpressions.Regex FontSubsetTag =
+        new("^(/?)[A-Z]{6}\\+(?=Noto ?Sans)", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static string WithoutFontSubsetTag(string surface) => FontSubsetTag.Replace(surface, "$1", 1);
+
     private static IEnumerable<string> DecodedMetadataValues(IToken? token)
     {
         switch (token)
@@ -924,6 +982,27 @@ public sealed class TechnicalPdfGeneratorTests
         using var output = new MemoryStream();
         document.Save(output, closeStream: false);
         return output.ToArray();
+    }
+
+    /// <summary>Overwrites every captured group of each pattern with a same-length value, so offsets stay valid.</summary>
+    private static byte[] RewriteSameLength(byte[] content, params (string Pattern, string Value)[] rewrites)
+    {
+        var rewritten = (byte[])content.Clone();
+        var text = Encoding.Latin1.GetString(content);
+        foreach (var (pattern, value) in rewrites)
+        {
+            var matches = System.Text.RegularExpressions.Regex.Matches(text, pattern);
+            Assert.NotEmpty(matches);
+            foreach (System.Text.RegularExpressions.Match match in matches)
+            {
+                foreach (var group in match.Groups.Cast<System.Text.RegularExpressions.Group>().Skip(1))
+                {
+                    Assert.Equal(value.Length, group.Length);
+                    Encoding.Latin1.GetBytes(value).CopyTo(rewritten, group.Index);
+                }
+            }
+        }
+        return rewritten;
     }
 
     private static PdfDocumentFileNameParts CreateFileNameParts() => new(
