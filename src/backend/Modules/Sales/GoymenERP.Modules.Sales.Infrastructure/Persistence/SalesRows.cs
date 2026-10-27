@@ -85,6 +85,13 @@ internal sealed class DraftRow : ISalesTenantRow
     public DateTimeOffset UpdatedAtUtc { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public string CorrelationId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// No 162: the quote this order was converted from and the quote revision whose price/quantity snapshot it carries; null
+    /// for an order created directly. Written once with the order (UX_Drafts_SourceQuoteId: one order per quote), never changed.
+    /// </summary>
+    public Guid? SourceQuoteId { get; set; }
+    public int? SourceQuoteRevision { get; set; }
 }
 
 /// <summary>One stored line with the Product and Settings owners' snapshots as answered. Append-only.</summary>

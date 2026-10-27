@@ -57,7 +57,8 @@ public sealed partial class SalesDraftService(
     IProductQuantityPriceReferenceReaderV1? priceReferences = null,
     ISalesOrderCustomerReturnReadPortV1? customerReturns = null,
     ISalesRequestStore? requests = null,
-    ISettingsSalesPolicyProviderV1? salesPolicies = null) : ISalesDraftService, ISalesRequestService
+    ISalesQuoteStore? quotes = null,
+    ISettingsSalesPolicyProviderV1? salesPolicies = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -97,6 +98,20 @@ public sealed partial class SalesDraftService(
             return await ReplayedAsync(scope, replay, cancellationToken);
         }
 
+        return await CreateDraftCoreAsync(scope, request, envelope, requestHash, SalesDraftCommands.CreateV1, priced,
+            build => store.StoreDraftAsync(envelope, requestHash, build, cancellationToken), cancellationToken);
+    }
+
+    /// <summary>
+    /// Steps 4–5 of a create, shared by the draft create and (No 162) the quote conversion: the owners, each answered for this
+    /// company and business date, the price fence again, the domain build and the ONE save through <paramref name="save"/>.
+    /// Terminal refusals are recorded under <paramref name="commandName"/> (ADR-011 §7); a lost same-key race answers the
+    /// winner (§8). The create's own behavior is unchanged: it calls this with its own command and store call.
+    /// </summary>
+    private async Task<SalesOrderDraftResponse> CreateDraftCoreAsync(Scope scope, CreateSalesOrderDraftRequest request,
+        SalesDraftWriteEnvelope envelope, string requestHash, string commandName, IReadOnlyList<SalesDraftFieldError> priced,
+        Func<Func<string, SalesOrderDraft>, Task<SalesDraftStoreResult>> save, CancellationToken cancellationToken)
+    {
         // 4. The owners, each answered for this company and business date. A stale product version
         // is recorded as the key's terminal result; if another caller of the same key wins that
         // record meanwhile, the winner's result is answered instead (ADR-011 §8; RaceWon).
@@ -106,11 +121,11 @@ public sealed partial class SalesDraftService(
         try
         {
             await RequireAccountAsync(scope, request, cancellationToken);
-            references = await ReadOwnerReferencesAsync(scope, request, envelope, requestHash, cancellationToken);
+            references = await ReadOwnerReferencesAsync(scope, request, envelope, requestHash, cancellationToken, commandName);
             money = await ReadMoneyProfileAsync(scope, request, cancellationToken);
             for (var index = 0; index < request.Lines.Count; index++)
             {
-                lineInputs.Add(await ReadLineAsync(scope, request, money, index, envelope, requestHash, cancellationToken));
+                lineInputs.Add(await ReadLineAsync(scope, request, money, index, envelope, requestHash, cancellationToken, commandName));
             }
         }
         catch (RaceWon won)
@@ -131,7 +146,7 @@ public sealed partial class SalesDraftService(
         SalesDraftStoreResult stored;
         try
         {
-            stored = await store.StoreDraftAsync(envelope, requestHash, documentNo =>
+            stored = await save(documentNo =>
             {
                 // Q9 cutover: only orders created after this deployment require customer acceptance.
                 var draft = SalesOrderDraft.Create(Guid.NewGuid(), scope.CompanyId, documentNo, header, money, now,
@@ -142,7 +157,7 @@ public sealed partial class SalesDraftService(
                 }
 
                 return draft;
-            }, cancellationToken);
+            });
         }
         catch (SalesRuleException exception)
         {
@@ -157,7 +172,7 @@ public sealed partial class SalesDraftService(
             // ADR-011 §8: the loser of a same-key race answers the winner's result, read afresh; only a
             // race that left nothing under this key (the number counter, a draft id) is the caller's
             // concurrent_change to retry.
-            var won = await FindReplayAsync(scope, envelope, requestHash, cancellationToken);
+            var won = await FindReplayAsync(scope, bindings.CreatePermission, envelope, requestHash, commandName, cancellationToken);
             if (won is null)
             {
                 throw Store(exception);
@@ -891,6 +906,13 @@ public sealed partial class SalesDraftService(
         {
             throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, [new("reason", exception.Code)]);
         }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteRequestNotApproved)
+        {
+            // No 160 (belt and braces): the order's source quote covers a request that is no longer approved. Not recorded,
+            // like the conversion's own refusal: the condition can change and the same key be retried.
+            throw new SalesDraftServiceException(409, SalesQuoteProblemCodesV1.RequestNotApproved,
+                [new("requestIds", SalesQuoteProblemCodesV1.RequestNotApproved)]);
+        }
         catch (SalesRuleException exception)
         {
             throw new SalesDraftServiceException(422, "validation_failed", [new("draft", exception.Code)]);
@@ -1161,7 +1183,7 @@ public sealed partial class SalesDraftService(
     /// the address or the person. Without a reference the port is not asked; without a port a reference is 503.
     /// </summary>
     private async Task<OwnerReferences> ReadOwnerReferencesAsync(Scope scope, CreateSalesOrderDraftRequest request,
-        SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken)
+        SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken, string commandName = SalesDraftCommands.CreateV1)
     {
         if (request.DeliveryAddress is null && request.Contact is null)
         {
@@ -1212,7 +1234,7 @@ public sealed partial class SalesDraftService(
         if (stale.Count > 0)
         {
             throw await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash,
-                new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale), cancellationToken);
+                new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale), cancellationToken, commandName);
         }
 
         return new OwnerReferences(deliveryAddress, contact);
@@ -1249,14 +1271,23 @@ public sealed partial class SalesDraftService(
         return new OwnerReference(requested.Id, matches[0].Version);
     }
 
-    private async Task<MoneyProfileSnapshot> ReadMoneyProfileAsync(Scope scope, CreateSalesOrderDraftRequest request,
+    private Task<MoneyProfileSnapshot> ReadMoneyProfileAsync(Scope scope, CreateSalesOrderDraftRequest request,
+        CancellationToken cancellationToken) =>
+        ReadMoneyProfileAsync(scope, bindings.CreatePermission, request.CurrencyId, request.BusinessDate, cancellationToken);
+
+    /// <summary>
+    /// The Settings money profile of the currency on the business date for the ORDER operation, measured under
+    /// <paramref name="permission"/> — the draft's create name, or (API-22) the quote's write name: a quote's prices become the
+    /// order's (No 162), so they are checked against the order's profile. The draft's rules, unchanged.
+    /// </summary>
+    private async Task<MoneyProfileSnapshot> ReadMoneyProfileAsync(Scope scope, string? permission, Guid currencyId, DateOnly businessDate,
         CancellationToken cancellationToken)
     {
         MoneyProfileV1 profile;
         try
         {
-            profile = await GuardedAsync(scope, bindings.CreatePermission,
-                () => settings.GetMoneyProfileAsync(request.CurrencyId, SalesMoneyOperations.OrderDraftV1, request.BusinessDate,
+            profile = await GuardedAsync(scope, permission,
+                () => settings.GetMoneyProfileAsync(currencyId, SalesMoneyOperations.OrderDraftV1, businessDate,
                     cancellationToken), cancellationToken);
         }
         catch (SettingsPrerequisiteException exception)
@@ -1265,7 +1296,7 @@ public sealed partial class SalesDraftService(
                 SalesDraftProblemCodesV1.UnsupportedCurrency);
         }
 
-        if (profile.CompanyId != scope.CompanyId || profile.CurrencyId != request.CurrencyId
+        if (profile.CompanyId != scope.CompanyId || profile.CurrencyId != currencyId
             || !string.Equals(profile.Operation, SalesMoneyOperations.OrderDraftV1, StringComparison.Ordinal)
             || profile.Profile.ProfileId == Guid.Empty || profile.Profile.Version <= 0 || profile.Scale < 0)
         {
@@ -1274,17 +1305,19 @@ public sealed partial class SalesDraftService(
 
         // Validity (active, in effect on the business date) is the domain's rule: sales_money_profile_not_in_effect.
         return new MoneyProfileSnapshot(profile.CompanyId, profile.CurrencyId, profile.Operation, profile.Profile.ProfileId,
-            profile.Profile.Version.ToString(CultureInfo.InvariantCulture), request.BusinessDate, profile.IsActive,
+            profile.Profile.Version.ToString(CultureInfo.InvariantCulture), businessDate, profile.IsActive,
             profile.EffectiveFrom, profile.EffectiveThrough, profile.Scale);
     }
 
     private async Task<SalesDraftLineInput> ReadLineAsync(Scope scope, CreateSalesOrderDraftRequest request, MoneyProfileSnapshot money,
-        int index, SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken)
+        int index, SalesDraftWriteEnvelope envelope, string requestHash, CancellationToken cancellationToken,
+        string commandName = SalesDraftCommands.CreateV1)
     {
         var line = request.Lines[index];
         var (product, orderUnit) = await ReadProductUnitAsync(scope, bindings.CreatePermission, index, line.ProductId,
             line.ExpectedProductVersion, line.OrderUnitId, request.BusinessDate,
-            refusal => TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash, refusal, cancellationToken), cancellationToken);
+            refusal => TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash, refusal, cancellationToken, commandName),
+            cancellationToken);
         var slices = line.RequestedDeliverySlices?
             .Select(slice => new DeliverySliceInput(slice.SliceId, slice.OrderUnitId, slice.Quantity, Decimal(slice.Quantity),
                 slice.RequestedDeliveryDate))

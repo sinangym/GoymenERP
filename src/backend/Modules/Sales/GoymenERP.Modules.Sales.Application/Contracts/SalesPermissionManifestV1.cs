@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 12;
+    public const int Version = 13;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -111,9 +111,20 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string RequestsApprove = "sales.requests.approve";
 
+    /// <summary>
+    /// API-22 / API-23 / API-24 (plan §3.2, S-01): recording, revising and losing a sales quote, and — together with
+    /// <see cref="DraftsCreate"/> — converting it into its order (No 162). Its own name: the draft and request names do NOT
+    /// confer it, and it confers none of them (a conversion still needs the draft create name, and a priced line the order's
+    /// own price write). Company-wide; not Critical; no role receives it here.
+    /// </summary>
+    public const string QuotesWrite = "sales.quotes.write";
+
+    /// <summary>API-22: GET /api/v1/sales/quotes and GET …/{id}. The quoted prices additionally need <see cref="OrdersPriceRead"/>.</summary>
+    public const string QuotesRead = "sales.quotes.read";
+
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel, OrdersQuantityWrite, OrdersForceClose,
-            RequestsWrite, RequestsRead, RequestsApprove }
+            RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

@@ -152,7 +152,10 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.requests.write", SalesPermissionManifestV1.RequestsWrite);
         Assert.Equal("sales.requests.read", SalesPermissionManifestV1.RequestsRead);
         Assert.Equal("sales.requests.approve", SalesPermissionManifestV1.RequestsApprove);
-        Assert.Equal((12, 14), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // API-22…24: the sales quote's own two names; the conversion additionally needs the draft create name.
+        Assert.Equal("sales.quotes.write", SalesPermissionManifestV1.QuotesWrite);
+        Assert.Equal("sales.quotes.read", SalesPermissionManifestV1.QuotesRead);
+        Assert.Equal((13, 16), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -169,6 +172,8 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.RequestsWrite,
                 SalesPermissionManifestV1.RequestsRead,
                 SalesPermissionManifestV1.RequestsApprove,
+                SalesPermissionManifestV1.QuotesWrite,
+                SalesPermissionManifestV1.QuotesRead,
             ],
             StringComparer.Ordinal);
         Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));
@@ -178,7 +183,8 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersCancel, SalesPermissionManifestV1.OrdersQuantityWrite,
                 SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord, SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove,
                 SalesPermissionManifestV1.OrdersForceClose,
-                SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsApprove));
+                SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsApprove,
+                SalesPermissionManifestV1.QuotesWrite, SalesPermissionManifestV1.QuotesRead));
     }
 
     private static string FindRepositoryRoot()
