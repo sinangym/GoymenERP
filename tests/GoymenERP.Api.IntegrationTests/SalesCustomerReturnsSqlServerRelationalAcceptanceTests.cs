@@ -24,8 +24,8 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using LogisticsQuantity = GoymenERP.Modules.Logistics.Domain.Quantities.Quantity;
-using LogisticsQuantityUnit = GoymenERP.Modules.Logistics.Domain.Quantities.QuantityUnit;
+using LogisticsQuantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Logistics.Domain.Quantities.LogisticsQuantityRefusals>;
+using LogisticsQuantityUnit = GoymenERP.BuildingBlocks.Quantities.QuantityUnit;
 
 namespace GoymenERP.Api.IntegrationTests;
 
