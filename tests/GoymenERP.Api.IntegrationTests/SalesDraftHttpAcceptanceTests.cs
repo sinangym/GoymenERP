@@ -96,11 +96,13 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             DetailRead = _ => Task.FromResult(detail),
         };
         var display = new SalesPartyDisplayV1(summary.PartyId, "CAR-000001", "Sentetik Musteri A.S.", "Sentetik Musteri");
+        var submitter = Guid.NewGuid();
         var readService = new StubDraftReadService
         {
             List = _ => Task.FromResult(new SalesOrderDraftReadListResponseV1(
                 [ReadSummary(summary, display)], null)),
-            Detail = _ => Task.FromResult(ReadDetail(detail, display)),
+            Detail = _ => Task.FromResult(ReadDetail(detail, display,
+                [new SalesUserDisplayV1(submitter, "SENTETIK Gonderen", false)])),
         };
         using var host = CreateHost(service, readService);
         using var client = CreateClient(host);
@@ -129,6 +131,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             using var legacyDocument = JsonDocument.Parse(legacyBody);
             var legacy = legacyDocument.RootElement;
             Assert.False(legacy.TryGetProperty("partyDisplay", out _));
+            Assert.False(legacy.TryGetProperty("userDisplays", out _));
             Assert.Equal(summary.PartyId, legacy.GetProperty("draft").GetProperty("partyId").GetGuid());
         }
 
@@ -164,6 +167,13 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             var read = await detailResponse.Content.ReadFromJsonAsync<JsonElement>();
             Assert.Equal(display.PartyId, read.GetProperty("partyDisplay").GetProperty("partyId").GetGuid());
             Assert.Equal(display.Code, read.GetProperty("partyDisplay").GetProperty("code").GetString());
+            // MOD-08: the enriched detail names the people it identifies, as the Identity directory shows them.
+            var person = Assert.Single(read.GetProperty("userDisplays").EnumerateArray().ToArray());
+            Assert.Equal(["displayName", "isActiveInCompany", "userId"],
+                person.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+            Assert.Equal((submitter, "SENTETIK Gonderen", false),
+                (person.GetProperty("userId").GetGuid(), person.GetProperty("displayName").GetString(),
+                    person.GetProperty("isActiveInCompany").GetBoolean()));
             var publishedLine = read.GetProperty("lines")[0];
             Assert.Equal("kg", publishedLine.GetProperty("orderUnitCode").GetString());
             Assert.Equal("Withheld", publishedLine.GetProperty("priceDisclosure").GetString());
@@ -351,10 +361,11 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
 
     private static SalesOrderDraftReadDetailViewV1 ReadDetail(
         SalesOrderDraftDetailView detail,
-        SalesPartyDisplayV1 display) => new(
+        SalesPartyDisplayV1 display,
+        IReadOnlyList<SalesUserDisplayV1>? users = null) => new(
         detail.Draft, detail.RequestedDeliveryDate, detail.Note, detail.Lines, detail.DeliveryAddress,
         detail.Contact, detail.Responsible, detail.PaymentTerms, detail.SourceStrategy, detail.Package,
-        detail.Approval, detail.CustomerAcceptance, detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display);
+        detail.Approval, detail.CustomerAcceptance, detail.IsOwnDraft, detail.IsOwnDecisionRestricted, display, users ?? []);
 
     private WebApplicationFactory<Program> CreateHost(
         ISalesDraftService service,

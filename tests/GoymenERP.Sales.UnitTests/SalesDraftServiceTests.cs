@@ -1501,6 +1501,108 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(1, world.PartyDisplays.Calls);
     }
 
+    // ---- MOD-08: the Identity user directory names the people the detail identifies ----------
+
+    [Fact]
+    public async Task Enriched_detail_names_each_approval_actor_once_through_the_Identity_directory()
+    {
+        var world = new World();
+        var submitter = Guid.Parse("c8000000-0000-4000-8000-000000000001");
+        world.User.Id = submitter.ToString("D");
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-users"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-users-submit"));
+        await world.Service().ApproveDraftAsync(created.Draft.Id, Command("3"), Metadata("k-users-approve"));
+
+        var detail = await world.ReadService().GetDraftDetailAsync(created.Draft.Id);
+
+        Assert.Equal((submitter.ToString("D"), submitter.ToString("D")), (detail.Approval.SubmittedBy, detail.Approval.DecidedBy));
+        Assert.Equal(1, world.UserDisplays.Calls);
+        Assert.Equal([submitter], world.UserDisplays.Asked);
+        Assert.Equal((Company, submitter.ToString("D")), (world.UserDisplays.CompanyId, world.UserDisplays.ActorId));
+        Assert.Equal([new SalesUserDisplayV1(submitter, $"Kisi {submitter:N}", true)], detail.UserDisplays);
+
+        // Another reader of the same record sees the same names; the ids are the record's, never the reader's.
+        var reader = Guid.Parse("c8000000-0000-4000-8000-000000000002");
+        world.User.Id = reader.ToString("D");
+        var again = await world.ReadService().GetDraftDetailAsync(created.Draft.Id);
+        Assert.Equal([submitter], world.UserDisplays.Asked);
+        Assert.Equal(reader.ToString("D"), world.UserDisplays.ActorId);
+        Assert.Equal(detail.UserDisplays, again.UserDisplays);
+    }
+
+    [Fact]
+    public async Task Enriched_detail_without_a_user_id_actor_asks_Identity_nothing()
+    {
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-no-users"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-no-users-submit"));
+
+        var detail = await world.ReadService().GetDraftDetailAsync(created.Draft.Id);
+
+        // The synthetic actor is not a canonical user id: it keeps its raw id and is not asked.
+        Assert.Equal(Actor, detail.Approval.SubmittedBy);
+        Assert.Empty(detail.UserDisplays);
+        Assert.Equal(0, world.UserDisplays.Calls);
+    }
+
+    [Fact]
+    public async Task A_person_the_Identity_directory_does_not_answer_keeps_the_raw_id_and_no_name()
+    {
+        var world = new World();
+        var submitter = Guid.NewGuid();
+        world.User.Id = submitter.ToString("D");
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-users-missing"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-users-missing-submit"));
+        world.UserDisplays.Fault = "missing";
+
+        var detail = await world.ReadService().GetDraftDetailAsync(created.Draft.Id);
+
+        Assert.Equal(submitter.ToString("D"), detail.Approval.SubmittedBy);
+        Assert.Empty(detail.UserDisplays);
+    }
+
+    [Theory]
+    [InlineData("denied", 403, "forbidden")]
+    [InlineData("unavailable", 503, SalesDraftProblemCodesV1.IdentityProviderUnavailable)]
+    [InlineData("duplicate", 503, SalesDraftProblemCodesV1.IdentityProviderUnavailable)]
+    [InlineData("mismatch", 503, SalesDraftProblemCodesV1.IdentityProviderUnavailable)]
+    [InlineData("malformed", 503, SalesDraftProblemCodesV1.IdentityProviderUnavailable)]
+    [InlineData("null", 503, SalesDraftProblemCodesV1.IdentityProviderUnavailable)]
+    [InlineData("throw", 503, SalesDraftProblemCodesV1.IdentityProviderUnavailable)]
+    public async Task Identity_directory_failures_refuse_the_entire_detail_without_a_partial_response(
+        string fault, int status, string code)
+    {
+        var world = new World();
+        world.User.Id = Guid.NewGuid().ToString("D");
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-users-fault"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-users-fault-submit"));
+        world.UserDisplays.Fault = fault;
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.ReadService().GetDraftDetailAsync(created.Draft.Id));
+
+        Assert.Equal((status, code), (refused.Status, refused.Code));
+        // The list names no person and never asks the directory.
+        await world.ReadService().GetDraftListAsync(new SalesOrderDraftListQuery());
+        Assert.Equal(1, world.UserDisplays.Calls);
+    }
+
+    [Fact]
+    public async Task Enriched_detail_refuses_data_when_Sales_authority_is_lost_during_the_Identity_read()
+    {
+        var world = new World();
+        world.User.Id = Guid.NewGuid().ToString("D");
+        var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-users-late"))).Detail;
+        await world.Service().SubmitDraftAsync(created.Draft.Id, Command("2"), Metadata("k-users-late-submit"));
+        world.UserDisplays.OnRead = () => world.Authority.Granted = false;
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.ReadService().GetDraftDetailAsync(created.Draft.Id));
+
+        Assert.Equal((403, "forbidden"), (refused.Status, refused.Code));
+        Assert.Equal(1, world.UserDisplays.Calls);
+    }
+
     // ---- synthetic world --------------------------------------------------------------------
 
     private sealed class World
@@ -1509,6 +1611,7 @@ public sealed partial class SalesDraftServiceTests
         public FixedAuthority Authority { get; } = new();
         public FakeAccounts Accounts { get; init; } = new();
         public FakePartyDisplays PartyDisplays { get; init; } = new();
+        public FakeUserDisplays UserDisplays { get; init; } = new();
         public FakeContactInformation ContactInformation { get; init; } = new();
         public FakeSettings Settings { get; init; } = new();
         public FakeProducts Products { get; init; } = new();
@@ -1544,7 +1647,7 @@ public sealed partial class SalesDraftServiceTests
         {
             var company = new CompanyContext();
             company.Set(Company);
-            return new SalesDraftReadServiceV1(Service(), PartyDisplays, company, User, Authority, Bindings);
+            return new SalesDraftReadServiceV1(Service(), PartyDisplays, UserDisplays, company, User, Authority, Bindings);
         }
 
         public void ResetOwnerCalls()
@@ -1639,6 +1742,42 @@ public sealed partial class SalesDraftServiceTests
                 _ => new SalesPartyAccountAnswerV1(SalesPartyAccountOutcomeV1.Found, new SalesPartyAccountV1(partyId, companyAccountId,
                     Fault == "other-company" ? Guid.NewGuid() : Company, Fault != "passive-party", Fault != "passive-account", "3", "2")),
             });
+        }
+    }
+
+    private sealed class FakeUserDisplays : ISalesUserDisplaySourceV1
+    {
+        public string Fault { get; set; } = "";
+        public Action? OnRead { get; set; }
+        public int Calls { get; private set; }
+        public Guid CompanyId { get; private set; }
+        public string ActorId { get; private set; } = "";
+        public IReadOnlyList<Guid> Asked { get; private set; } = [];
+
+        public Task<SalesUserDisplayBatchAnswerV1> GetAuthorizedBatchAsync(
+            SalesUserDisplayBatchRequestV1 request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            CompanyId = request.CompanyId;
+            ActorId = request.ActorId;
+            Asked = [.. request.UserIds];
+            OnRead?.Invoke();
+            if (Fault == "throw") throw new InvalidOperationException("synthetic provider failure");
+            if (Fault == "null") return Task.FromResult<SalesUserDisplayBatchAnswerV1>(null!);
+            if (Fault == "denied")
+                return Task.FromResult(new SalesUserDisplayBatchAnswerV1(SalesUserDisplayBatchOutcomeV1.Denied, []));
+            if (Fault == "unavailable")
+                return Task.FromResult(new SalesUserDisplayBatchAnswerV1(SalesUserDisplayBatchOutcomeV1.Unavailable, []));
+
+            var items = request.UserIds
+                .Select(id => new SalesUserDisplayV1(id, Fault == "malformed" ? " " : $"Kisi {id:N}", true))
+                .ToList();
+            if (Fault == "missing") items.Clear();
+            if (Fault == "duplicate" && items.Count != 0) items.Add(items[0]);
+            if (Fault == "mismatch" && items.Count != 0) items[0] = items[0] with { UserId = Guid.NewGuid() };
+            return Task.FromResult(new SalesUserDisplayBatchAnswerV1(SalesUserDisplayBatchOutcomeV1.Success, items));
         }
     }
 

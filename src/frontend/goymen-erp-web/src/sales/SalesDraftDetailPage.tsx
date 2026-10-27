@@ -32,6 +32,11 @@
  * an order that is or was approved (approved now, or a revision above Rev.0): Logistics serves only approved lines, so
  * a never-approved draft has nothing delivered. Facts only — no tolerance, completion or warning (OPEN-004 is open).
  *
+ * SAT-D8 / UI-70a — "Müşteri iadeleri" in the same "Gerçekleşme / İrsaliye" tab: per line the APPROVED customer-return total
+ * the server reads from Logistics (API-10). A physical return is the reverse leg of the shipment, and returns have no menu
+ * of their own (DEC-SAL-007); the return INVOICE (API-40 / UI-70b) belongs to "Faturalar". Mounted like the delivery
+ * status (an order that is or was approved); an unreadable answer shows no quantity, never a zero.
+ *
  * An approved order may consume Inventory's existing physical-allocation surface when the shell
  * publishes its write capability. Inventory remains the owner: create/release and every reopen are
  * read from its server truth; this page creates no stock movement or local allocation projection.
@@ -50,6 +55,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { fetchDraftDetail, sendDraftCommand } from './api'
 import { orderUnitCodes } from './unitNames'
+import { UnitName } from './UnitName'
 import {
   APPROVAL_STATE,
   CANCELLED_STATE,
@@ -65,6 +71,8 @@ import {
   type DraftStateCommand,
   type DraftStateCommandRequest,
   type OwnerReference,
+  type UserDisplay,
+  userDisplayFor,
 } from './contract'
 import { unplannedQuantity } from './deliveryPlan'
 import { contactLabel, formatBusinessDate, formatInstant } from './format'
@@ -107,6 +115,7 @@ import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
+import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftForceClose } from './SalesDraftForceClose'
@@ -122,6 +131,22 @@ import { SalesOrderDocumentsWorkspace } from './SalesOrderDocumentsWorkspace'
 import styles from './SalesDraftDetailPage.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
+
+/**
+ * MOD-08: a person the record names by id, shown by the Identity directory's name when the read carries one (a former
+ * member is marked as such); otherwise the raw id as before. Never a name invented on the screen.
+ */
+function ActorName({ displays, actorId }: { readonly displays: readonly UserDisplay[]; readonly actorId: string | null }) {
+  if (actorId === null) return <>{T.approval.notYet}</>
+  const person = userDisplayFor(displays, actorId)
+  if (person === null) return <>{actorId}</>
+  return (
+    <span title={actorId}>
+      {person.displayName}
+      {person.isActiveInCompany ? null : ` (${T.approval.formerMember})`}
+    </span>
+  )
+}
 
 /** The search parameter that keeps the open S-04 tab (Master §7.2 locked tabs). */
 const TAB_PARAM = 'sekme'
@@ -258,6 +283,15 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      customerReturns={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId
+          && (outcome.data.draft.approvalState === APPROVAL_STATE.approved || outcome.data.draft.revision !== REV_0) ? (
+          <SalesDraftCustomerReturns
+            key={`customer-returns:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            detail={outcome.data}
+          />
+        ) : null
+      }
       remainderChanges={
         namespace === null || companyId === null || shell.activeContext === null ? null : (
           <SalesDraftRemainderChangePanel
@@ -375,6 +409,7 @@ export function DraftView({
   deliverySchedule = null,
   deliveryScheduleHistory = null,
   deliveryProgress = null,
+  customerReturns = null,
   remainderChanges = null,
   linkedEffects = null,
   cancellation = null,
@@ -400,6 +435,11 @@ export function DraftView({
   readonly deliveryScheduleHistory?: React.ReactNode
   /** AT-024: delivered / remaining per line from Logistics' recorded deliveries (null: not mounted). */
   readonly deliveryProgress?: React.ReactNode
+  /**
+   * SAT-D8 / UI-70a: the approved customer returns per line (API-10, Logistics-owned), on the order — no separate menu
+   * (null: not mounted).
+   */
+  readonly customerReturns?: React.ReactNode
   /** AT-024: approved cancel/revise requests for a partly delivered line and their immutable decisions. */
   readonly remainderChanges?: React.ReactNode
   /** The owners' linked effects; without a bound company nothing is read and no number is shown. */
@@ -512,7 +552,9 @@ export function DraftView({
         <dl className={styles.facts}>
           <div>
             <dt>{T.approval.submittedBy}</dt>
-            <dd data-testid="sales-approval-submitted-by">{approval.submittedBy ?? T.approval.notYet}</dd>
+            <dd data-testid="sales-approval-submitted-by">
+              <ActorName displays={detail.userDisplays} actorId={approval.submittedBy} />
+            </dd>
           </div>
           <div>
             <dt>{T.approval.submittedAt}</dt>
@@ -520,7 +562,9 @@ export function DraftView({
           </div>
           <div>
             <dt>{withdrawn ? T.approval.withdrawnBy : T.approval.decidedBy}</dt>
-            <dd data-testid="sales-approval-decided-by">{approval.decidedBy ?? T.approval.notYet}</dd>
+            <dd data-testid="sales-approval-decided-by">
+              <ActorName displays={detail.userDisplays} actorId={approval.decidedBy} />
+            </dd>
           </div>
           <div>
             <dt>{withdrawn ? T.approval.withdrawnAt : T.approval.decidedAt}</dt>
@@ -545,7 +589,9 @@ export function DraftView({
           {customerAcceptance.acceptedBy === null ? null : (
             <div>
               <dt>{T.approval.customerAcceptedBy}</dt>
-              <dd>{customerAcceptance.acceptedBy}</dd>
+              <dd data-testid="sales-customer-accepted-by">
+                <ActorName displays={detail.userDisplays} actorId={customerAcceptance.acceptedBy} />
+              </dd>
             </div>
           )}
           {customerAcceptance.acceptedAtUtc === null ? null : (
@@ -609,6 +655,7 @@ export function DraftView({
             <>
               {everApproved ? null : <p className={styles.muted} data-testid="sales-realization-not-approved">{ORDER_TABS_TEXT.realizationNotApproved}</p>}
               {deliveryProgress}
+              {customerReturns}
               {remainderChanges}
             </>
           ),
@@ -973,11 +1020,6 @@ function commandNotice(attempt: CommandAttempt): string | null {
     default:
       return null
   }
-}
-
-function UnitName({ id, unitCodes }: { readonly id: string; readonly unitCodes: ReadonlyMap<string, string> }) {
-  const code = unitCodes.get(id)
-  return code === undefined ? <span className={styles.identifier}>{id}</span> : <>{code}</>
 }
 
 function LineView({ line, unitCodes }: { readonly line: DraftLine; readonly unitCodes: ReadonlyMap<string, string> }) {
