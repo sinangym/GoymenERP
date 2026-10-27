@@ -27,6 +27,7 @@ public static partial class SalesEndpoints
             [FromServices] ISalesDraftReadServiceV1 detailService,
             [FromServices] ISalesOrderPrintReadServiceV1 printService,
             [FromServices] IStringLocalizer<SalesOrderPdfComposer> texts,
+            [FromServices] ILogger<SalesOrderPdfComposer> logger,
             ICorrelationContext correlation,
             CancellationToken cancellationToken) =>
         {
@@ -49,11 +50,17 @@ public static partial class SalesEndpoints
 
             if (detail.Draft.Id != id || pricing is null)
             {
+                logger.LogWarning(
+                    "Sales order PDF read answered another record. DraftId={DraftId} CorrelationId={CorrelationId}",
+                    id, correlation.IsResolved ? correlation.CorrelationId : null);
                 return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
             if (!string.Equals(detail.Draft.Version, pricing.Version, StringComparison.Ordinal))
             {
+                logger.LogInformation(
+                    "Sales order PDF reads met two versions; answered as a concurrent change. DraftId={DraftId} CorrelationId={CorrelationId}",
+                    id, correlation.IsResolved ? correlation.CorrelationId : null);
                 return DraftProblem(StatusCodes.Status409Conflict, SalesDraftProblemCodesV1.ConcurrentChange, correlation);
             }
 
@@ -65,7 +72,11 @@ public static partial class SalesEndpoints
             }
             catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
             {
-                // An answer the composer cannot print faithfully (or that cannot be laid out uncut) is not printed.
+                // An answer the composer cannot print faithfully (or that cannot be laid out uncut) is not printed. The log
+                // carries the reason's type and message (no order content: the messages name rules, never values).
+                logger.LogWarning(
+                    "Sales order PDF was not rendered. DraftId={DraftId} Reason={Reason}: {Message} CorrelationId={CorrelationId}",
+                    id, exception.GetType().Name, exception.Message, correlation.IsResolved ? correlation.CorrelationId : null);
                 return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
             }
 
