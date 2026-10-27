@@ -14,7 +14,8 @@ import { EDITOR_ACTOR, GDC_COMPANY_ID, READER_ACTOR, WORK_CENTERS_ONLY_ACTOR, re
  * The ORG-03/ORG-04 read cases write nothing: everything they read is in the built-in organization seed (five
  * work centres across four locations of the GDC company), so the suite needs no fixture and no seed envelope.
  * The ORG master-edit cases (ORG-ME-*, at the end of this file) WRITE through the real screens as the disposable
- * org03-editor; they are declared last because the read cases count the seeded work centres exactly.
+ * org03-editor; they are declared last because the read cases count the seeded work centres exactly. The EK-46
+ * list/form cases (EK46-*, after them) check the 320 px list and a real two-session version conflict on a site.
  *
  * WHAT IT DOES NOT COVER, so nobody reads its green as more than it is: the MIXED case — some rows
  * openable, some not — is absent, because the browser-suite contract refuses a narrowly-scoped actor
@@ -877,4 +878,70 @@ test('ORG-ME-03 a reader without the writes is offered no create or edit control
   expect(refused.status()).toBe(403)
   const sites = await page.request.get(`${apiBaseUrl}${SITES_API}`, { headers: apiHeaders(EDITOR_ACTOR) })
   expect((await sites.json() as readonly { readonly code: string }[]).some((row) => row.code === 'ORG03-ME-DENIED')).toBe(false)
+})
+
+// ── EK-46 list/form standard (LF-08, LF-12 / AT-005) ───────────────────────────────────────────────────────
+// Kept last for the same reason as the ORG master-edit cases: EK46-02 writes. EK46-01 only reads.
+
+test('EK46-01 at 320 px the work-centre list causes no page-level horizontal scroll; only the table area scrolls', async ({ page }) => {
+  await signInAs(page, READER_ACTOR)
+  await page.setViewportSize({ width: 320, height: 800 })
+  const listed = page.waitForResponse(isWorkCentreListRead)
+  await page.goto(WORK_CENTRE_LIST_ROUTE)
+  // Not readListAnswer: the master-edit cases above have already added a work centre to the seeded five.
+  expect((await listed).status()).toBe(200)
+  await expect(page.getByRole('table')).toBeVisible({ timeout: 30_000 })
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow, 'page-level horizontal overflow at 320 px').toBeLessThanOrEqual(0)
+})
+
+test('EK46-02 a stale save shows the typed name next to the current record, keeps it, and saves on the fresh version with a new key', async ({ page }) => {
+  const marker = testedCommit.slice(0, 8).toUpperCase()
+  const seed = { code: `ORG03-EK46-${marker}`, name: 'SENTETIK org03 EK-46 tesisi', type: 'Warehouse', reason: 'SENTETIK org03: EK-46 kabul koşusu' }
+  const createdAnswer = await page.request.post(`${apiBaseUrl}${SITES_API}`, {
+    headers: commandHeaders(EDITOR_ACTOR, `org03-ek46-create-${marker}`), data: seed,
+  })
+  expect(createdAnswer.status()).toBe(201)
+  const created = await createdAnswer.json() as { readonly id: string; readonly version: number }
+
+  await signInAs(page, EDITOR_ACTOR)
+  await page.goto(LOCATION_LIST_ROUTE)
+  await expect(page.getByRole('heading', { level: 1, name: 'Organizasyon' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: `Tesisi düzenle: ${seed.code}`, exact: true }).click()
+  const siteEdit = page.getByRole('region', { name: `Tesisi düzenle: ${seed.code}` })
+  const mine = 'SENTETIK org03 EK-46 benim adım'
+  await fillMasterForm(siteEdit, { name: mine, reason: seed.reason })
+
+  // The second session saves first, through the API, on the version the form also holds.
+  const theirs = 'SENTETIK org03 EK-46 diğer oturum'
+  const otherSave = await page.request.put(`${apiBaseUrl}${SITES_API}/${created.id}`, {
+    headers: commandHeaders(EDITOR_ACTOR, `org03-ek46-other-${marker}`),
+    data: { code: seed.code, name: theirs, expectedVersion: created.version, reason: seed.reason },
+  })
+  expect(otherSave.status()).toBe(204)
+
+  const stale = page.waitForResponse((response) => isCall(response, 'PUT', `${SITES_API}/${created.id}`))
+  await siteEdit.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  const staleAnswer = await stale
+  expect(staleAnswer.status()).toBe(409)
+  const firstKey = staleAnswer.request().headers()['idempotency-key']
+  const alert = page.getByRole('alert').filter({ hasText: 'Kayıt bu sırada değişti' })
+  await expect(alert).toBeVisible({ timeout: 30_000 })
+  await alert.getByRole('button', { name: 'Güncel kaydı yükle', exact: true }).click()
+
+  const diff = page.getByRole('table', { name: 'Girdiğiniz değerler ile güncel kayıt' })
+  await expect(diff).toBeVisible({ timeout: 30_000 })
+  await expect(diff.getByRole('row').nth(1).getByRole('cell')).toHaveText(['Ad', mine, theirs])
+  await expect(siteEdit.getByLabel('Ad', { exact: true })).toHaveValue(mine)
+  await expect(siteEdit.getByLabel('Gerekçe', { exact: true })).toHaveValue(seed.reason)
+
+  const resaved = page.waitForResponse((response) => isCall(response, 'PUT', `${SITES_API}/${created.id}`))
+  await siteEdit.getByRole('button', { name: 'Kaydet', exact: true }).click()
+  const resavedAnswer = await resaved
+  expect(resavedAnswer.status()).toBe(204)
+  // The screen sends the version as decimal text (LF-09), the fresh one read back after the reload.
+  expect(resavedAnswer.request().postDataJSON()).toMatchObject({ name: mine, expectedVersion: String(created.version + 1) })
+  expect(resavedAnswer.request().headers()['idempotency-key']).not.toBe(firstKey)
+  await expect(page.getByRole('status').filter({ hasText: 'Değişiklik kaydedildi' })).toBeVisible({ timeout: 30_000 })
+  await expect(diff).toHaveCount(0)
 })
