@@ -21,6 +21,9 @@ public sealed class CounterpartyDbContext(
     public DbSet<PartyTaxIdentityChangeRequest> PartyTaxIdentityChangeRequests =>
         Set<PartyTaxIdentityChangeRequest>();
 
+    /// <summary>SAT-D57: each company's customer (price) group list.</summary>
+    public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
+
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -33,6 +36,7 @@ public sealed class CounterpartyDbContext(
         ConfigureParty(modelBuilder);
         ConfigureCompanyPartyAccount(modelBuilder);
         ConfigurePartyTaxIdentityChangeRequest(modelBuilder);
+        ConfigureCustomerGroup(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -209,6 +213,45 @@ public sealed class CounterpartyDbContext(
             .WithMany()
             .HasForeignKey(x => x.CompanyId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // SAT-D57: the account's customer group is one of THIS company's groups. The composite key makes a group of
+        // another company unassignable in the database too; a null group is not checked (no group = tier skipped).
+        entity.HasOne<CustomerGroup>()
+            .WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.CustomerGroupId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_CompanyPartyAccounts_CustomerGroups_CompanyId_CustomerGroupId");
+    }
+
+    private void ConfigureCustomerGroup(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<CustomerGroup>();
+        entity.ToTable("CustomerGroups", "counterparty", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_CustomerGroups_Name",
+                "LEN([Name]) > 0 AND [Name] = LTRIM(RTRIM([Name]))");
+            table.HasCheckConstraint(
+                "CK_CustomerGroups_Version",
+                "[Version] >= 1");
+        });
+        entity.HasKey(x => x.Id);
+        entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.Name).HasMaxLength(CustomerGroup.NameMaximumLength).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        // One name per company, active or passive: a passive group keeps its name, so reactivating it never collides.
+        entity.HasIndex(x => new { x.CompanyId, x.Name })
+            .IsUnique()
+            .HasDatabaseName("UX_CustomerGroups_CompanyId_Name");
+
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
     private static void ConfigureOrganizationCompanyReference(ModelBuilder modelBuilder)
@@ -277,6 +320,33 @@ public sealed class CounterpartyDbContext(
             {
                 throw new InvalidOperationException(
                     "Cari hesap yazması aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<CustomerGroup>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Müşteri grubu silinemez; pasif yapılır.");
+            }
+
+            if (entry.State == EntityState.Modified
+                && (entry.Property(x => x.Id).IsModified || entry.Property(x => x.CompanyId).IsModified))
+            {
+                throw new InvalidOperationException("Müşteri grubunun kimliği ve şirketi değiştirilemez.");
+            }
+
+            if (!companyContext.IsResolved
+                || entry.Entity.CompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Müşteri grubu yazması aktif şirket bağlamıyla eşleşmelidir.");
             }
         }
 

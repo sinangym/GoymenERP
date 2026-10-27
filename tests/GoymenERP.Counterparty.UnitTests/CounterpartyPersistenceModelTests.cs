@@ -178,10 +178,48 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20260910120000_AllowCounterpartyAccountNoRole",
             dbContext.Database.GetMigrations());
-        Assert.Equal(
+        Assert.Contains(
             "20260930150000_AddPartyTaxIdentity",
+            dbContext.Database.GetMigrations());
+        Assert.Equal(
+            "20261027202534_AddCounterpartyCustomerGroups",
             dbContext.Database.GetMigrations().Last());
         Assert.False(dbContext.Database.HasPendingModelChanges());
+    }
+
+    [Fact]
+    public void Customer_group_is_company_scoped_and_the_account_group_is_a_same_company_composite_key()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var group = dbContext.Model.FindEntityType(typeof(CustomerGroup))!;
+        Assert.Equal("counterparty", group.GetSchema());
+        Assert.Equal("CustomerGroups", group.GetTableName());
+        Assert.NotNull(group.GetDeclaredQueryFilters().SingleOrDefault());
+        var unique = Assert.Single(group.GetIndexes(), index => index.IsUnique);
+        Assert.Equal(["CompanyId", "Name"], unique.Properties.Select(property => property.Name));
+
+        var account = dbContext.Model.FindEntityType(typeof(CompanyPartyAccount))!;
+        var foreignKey = Assert.Single(account.GetForeignKeys(), key => key.PrincipalEntityType == group);
+        Assert.Equal(["CompanyId", "CustomerGroupId"], foreignKey.Properties.Select(property => property.Name));
+        Assert.Equal(["CompanyId", "Id"], foreignKey.PrincipalKey.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, foreignKey.DeleteBehavior);
+        Assert.False(foreignKey.IsRequired);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_a_group_delete_and_a_group_of_another_company_before_the_database_call()
+    {
+        var companyId = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(companyId));
+        var own = new CustomerGroup(Guid.NewGuid(), companyId, "Toptancı");
+        dbContext.CustomerGroups.Attach(own);
+        dbContext.CustomerGroups.Remove(own);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+
+        dbContext.ChangeTracker.Clear();
+        dbContext.CustomerGroups.Add(new CustomerGroup(Guid.NewGuid(), Guid.NewGuid(), "Perakendeci"));
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
     }
 
     [Fact]

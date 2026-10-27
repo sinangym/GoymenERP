@@ -1,7 +1,7 @@
 # Counterparty (Cari) module
 
-Only the AT-009 slice is described here; the earlier Cari slices are documented in `docs/features/CARI_*` and
-`docs/handoffs/CARI_*`.
+Only the AT-009 and SAT-D57 slices and the location-operator source are described here; the earlier Cari slices are
+documented in `docs/features/CARI_*` and `docs/handoffs/CARI_*`.
 
 ## Location operator eligibility source v1
 
@@ -40,3 +40,41 @@ any number or request exists.
 
 Screen: the Cari card's identity section (`src/frontend/goymen-erp-web/src/cari/CariTaxIdentityPanel.tsx`).
 Browser journey: `tests/e2e/cari-c02/specs/c02-tax-identity.spec.ts` (actors `c02-tax-maker`, `c02-tax-checker`).
+
+## SAT-D57 — customer (price) group on the Cari card (Sinan, 2026-10-27, `SINAN_KARARLARI_2026-10-27_SATIS_EK9.md`)
+
+**Owner.** Counterparty owns both the company's group list (`counterparty.CustomerGroups`) and the assignment
+(`CompanyPartyAccount.CustomerGroupId`). The decision puts the group on the Cari card, company-scoped; keeping the
+list in the same module lets the database itself refuse another company's group (composite foreign key
+`(CompanyId, CustomerGroupId) → CustomerGroups(CompanyId, Id)`), which a Settings-owned list could not do without a
+cross-module foreign key. Managing the list "from Ayarlar" is only the UX reading of the option text (EK9 says so); the
+screen is `/cari/musteri-gruplari` (see below), the data stays here.
+
+| Rule | Behaviour |
+|---|---|
+| List | `GET /api/v1/counterparties/customer-groups` → `{companyId, items[{id,name,isActive,version}], viewer{canManage}}`, the active company's groups only (passive ones included). **Nothing is seeded** — not in code, not in the migration: Sinan's examples (toptancı, perakendeci, imalatçı) are entered by the company's administrator. |
+| Create | `POST …/customer-groups` `{id, name}` → 204. The caller chooses the UUID, so a lost answer is retried with the same key and id. Name: trimmed, NFC, 1..100, no control characters (`400 validation_failed`); unique per company among active AND passive groups (`409 customer_group_name_taken`; index `UX_CustomerGroups_CompanyId_Name`). An id that already exists is `409 customer_group_exists`. |
+| Rename / passive | `PUT …/customer-groups/{id}/name` `{expectedVersion, name}`, `PUT …/customer-groups/{id}/active-state` `{expectedVersion, isActive}` → 204; the GROUP version as decimal text (`version_conflict`), `404 not_found` for an unknown or another company's group. A group is never deleted (write guard); deactivation is reversible. A same-value command is a fenced no-op without a version move or audit. |
+| Account read | `GET /api/v1/counterparties/{partyId}/company-account/customer-group` → `{partyId, accountId, companyId, version, accountIsActive, customerGroup|null, viewer{canAssign}}`; `customerGroup: null` = no group (the price chain's group tier is skipped for this account). |
+| Assign | `PUT …/{partyId}/company-account/customer-group` `{expectedVersion, customerGroupId}` → 204; the ACCOUNT version (shared with the other account commands); `customerGroupId` must be present — a group id or an explicit `null` to clear. A group that is not the active company's is `422 customer_group_not_found` (never named); a passive group is `409 customer_group_inactive` unless it already is the account's group (then a no-op). A passive group keeps its existing assignments. |
+
+Common to every command: company-wide permission (`counterparty.customer-groups.manage` for the list,
+`counterparty.accounts.customer-group.assign` for the account, plus `counterparty.parties.read`), measured first and
+re-measured before the write; one `Idempotency-Key` (stored 204/404/409/422 answers replay); correlation/causation on
+the stored execution and the audit; one audit event per real change (`counterparty.customer-group.created|renamed|
+active-state.changed.v1`, `counterparty.company-account.customer-group.changed.v1`). Both permission names are
+registered and Critical-free, **assigned to no role** (human gate).
+
+**Read port.** `ICounterpartyAccountCustomerGroupSourceV1.GetAuthorizedAsync(companyId, companyAccountId)` answers
+`Found` (with `CustomerGroupId` or null, the group's active flag and the account version), `NotFound`, `Denied` (context
+is not the requested company, or no company-wide `counterparty.parties.read`) or `Unavailable` (any owner failure).
+Consumers treat Denied/Unavailable as "could not be read" (SAT-D58 fail-closed), never as "no group". Counterparty does
+not reference Product or Sales; the price list's CustomerGroup scope consumes this port in its own slice.
+
+Migration `20261027202534_AddCounterpartyCustomerGroups` (generated with `dotnet ef`): rollback is refused with
+`51091` while any group or assignment exists; with an empty list it drops the table and the all-null column.
+
+Screens: the Cari card's account section (`src/frontend/goymen-erp-web/src/cari/CariCustomerGroupPanel.tsx`) and the
+company list `/cari/musteri-gruplari` (`CariCustomerGroupsPage.tsx`), linked from the Cari list and card and mounted
+under the Cari list capability (its read needs exactly `counterparty.parties.read`). Drawing it under the Ayarlar
+sidebar group needs its own server shell capability (a Cari owner-contract change) and is left to that step.
