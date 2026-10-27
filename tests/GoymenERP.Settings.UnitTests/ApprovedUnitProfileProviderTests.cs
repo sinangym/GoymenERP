@@ -69,17 +69,43 @@ public sealed class ApprovedUnitProfileProviderTests
     }
 
     [Fact]
-    public void The_approved_catalog_holds_exactly_the_one_approved_profile()
+    public void The_approved_catalog_holds_exactly_the_approved_profiles()
     {
-        // No fixture, example or second unit rides along with the approved data.
-        var entry = Assert.Single(ApprovedUnitProfileCatalog.Approved.Entries);
-        Assert.Same(ApprovedUnitProfileCatalog.GdcKilogramV1, entry);
-        Assert.False(string.IsNullOrWhiteSpace(entry.Source));
+        // No fixture, example or second unit rides along with the approved data: GDC kg (Ö1/Ö2) and
+        // GSP/GIN kg (SAT-D18), one per company.
+        var entries = ApprovedUnitProfileCatalog.Approved.Entries;
+        Assert.Equal(3, entries.Count);
+        Assert.Contains(ApprovedUnitProfileCatalog.GdcKilogramV1, entries);
+        Assert.Contains(ApprovedUnitProfileCatalog.GspKilogramV1, entries);
+        Assert.Contains(ApprovedUnitProfileCatalog.GinKilogramV1, entries);
+        Assert.All(entries, entry => Assert.False(string.IsNullOrWhiteSpace(entry.Source)));
+        Assert.All(entries, entry => Assert.Equal(Kg, entry.UnitId));
     }
 
     [Theory]
-    [InlineData("10000000-0000-0000-0000-000000000002")] // GSP: same group, no approved profile yet
-    [InlineData("10000000-0000-0000-0000-000000000003")] // GIN
+    [InlineData("10000000-0000-0000-0000-000000000002", "0002612c-0804-5b12-a3bc-d94d1e84f25a")] // GSP
+    [InlineData("10000000-0000-0000-0000-000000000003", "220904ee-a6ff-5cc4-9169-336c66328cd5")] // GIN
+    public async Task GSP_and_GIN_get_their_own_kg_profile_with_GDC_s_values_from_SAT_D18(string company, string profileId)
+    {
+        var companyId = Guid.Parse(company);
+        var extraApproval = new DateOnly(2026, 10, 26);
+
+        var profile = await Provider(companyId).GetUnitProfileAsync(Kg, extraApproval);
+        var before = await Provider(companyId).GetUnitProfileAsync(Kg, extraApproval.AddDays(-1));
+
+        Assert.Equal(companyId, profile.CompanyId);
+        Assert.Equal((Kg, "kg", "weight", true), (profile.UnitId, profile.UnitCode, profile.DimensionCode, profile.IsKilogram));
+        // UUIDv5 name "unit-profile:<company>:kg:v1" in the unit-profiles namespace.
+        Assert.Equal(new ProfileVersionV1(Guid.Parse(profileId), 1), profile.Profile);
+        Assert.Equal(3, profile.Scale);
+        Assert.True(profile.IsActive);
+        Assert.Equal(extraApproval, profile.EffectiveFrom);
+        Assert.Null(profile.EffectiveThrough);
+        // Before SAT-D18 the real window comes back, never GDC's earlier one.
+        Assert.Equal(extraApproval, before.EffectiveFrom);
+    }
+
+    [Theory]
     [InlineData("7d0c7c2e-2b0e-4d8e-9b2a-2f1f0c9a6e11")] // a company the catalog has never heard of
     public async Task A_company_without_an_approved_source_is_unavailable_not_given_GDC_s_profile(string company)
     {

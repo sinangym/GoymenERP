@@ -169,6 +169,10 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
         var refusal = await Assert.ThrowsAsync<SqlException>(() =>
             context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
         Assert.Equal(51064, refusal.Number);
+        // Later migrations with nothing to protect (No 30's force-closure table is empty here) rolled back before this
+        // guard refused; the guarded migration itself stays applied. Restore the current schema afterwards.
+        Assert.Equal(applied[..(migration + 1)], await context.Database.GetAppliedMigrationsAsync());
+        await context.Database.MigrateAsync();
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
