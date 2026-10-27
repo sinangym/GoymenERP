@@ -91,6 +91,8 @@ public sealed class SalesOrderGlobalSearchSourceTests
     [InlineData(1, 4, "Rejected")]
     [InlineData(1, 5, "Withdrawn")]
     [InlineData(2, 3, "Cancelled")]
+    // No 30 / SAT-D12: a force-closed order's terminal lifecycle wins the same way.
+    [InlineData(3, 3, "Closed")]
     public void The_state_is_the_owners_name_with_a_cancelled_lifecycle_winning(int state, int approval, string expected)
     {
         Assert.Equal(expected, SalesOrderGlobalSearchSource.StateName(state, approval));
@@ -99,7 +101,8 @@ public sealed class SalesOrderGlobalSearchSourceTests
     [Theory]
     [InlineData(1, 0)]
     [InlineData(1, 9)]
-    [InlineData(3, 1)]
+    // State 3 (Closed) is known since No 30; the first lifecycle value after it is not.
+    [InlineData(4, 1)]
     public void An_unknown_stored_state_fails_closed(int state, int approval)
     {
         Assert.Throws<InvalidOperationException>(() => SalesOrderGlobalSearchSource.StateName(state, approval));

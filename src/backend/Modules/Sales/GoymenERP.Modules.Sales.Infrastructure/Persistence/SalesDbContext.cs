@@ -99,6 +99,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>DEC-SAL-005 / AT-007: the recorded cancellation of an approved order (append-only, at most one per draft).</summary>
     internal DbSet<DraftCancellationRow> DraftCancellations => Set<DraftCancellationRow>();
 
+    /// <summary>No 30 / SAT-D12: the recorded force-closures (append-only, at most one per draft).</summary>
+    internal DbSet<DraftForceClosureRow> DraftForceClosures => Set<DraftForceClosureRow>();
+
     /// <summary>Partial delivery (user decision 2026-09-30): the requested remainder changes (append-only).</summary>
     internal DbSet<DraftRemainderChangeRow> DraftRemainderChanges => Set<DraftRemainderChangeRow>();
 
@@ -126,10 +129,23 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "AND [DeliveredQuantity] IS NULL AND ([Reason] IS NULL OR LEN([Reason]) > 0))";
 
     /// <summary>
-    /// CK_Drafts_State: the kind is Order; the lifecycle is Draft (1) or, since DEC-SAL-005, Cancelled (2) — and only an
-    /// APPROVED order (approval state 3) is ever cancelled; the revision is a counter.
+    /// CK_Drafts_State: the kind is Order; the lifecycle is Draft (1) or, since DEC-SAL-005, Cancelled (2) or, since No 30 /
+    /// SAT-D12, Closed (3) — and only an APPROVED order (approval state 3) is ever cancelled or closed; the revision is a counter.
     /// </summary>
-    internal const string StateConstraint = "[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)";
+    internal const string StateConstraint = "[Kind] = 1 AND [State] IN (1, 2, 3) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)";
+
+    /// <summary>The CK_Drafts_State before No 30 (Draft or Cancelled); the force-closure migration's Down restores it.</summary>
+    internal const string StateConstraintBeforeForceClose =
+        "[Kind] = 1 AND [State] IN (1, 2) AND [Revision] >= 0 AND ([State] = 1 OR [ApprovalState] = 3)";
+
+    /// <summary>
+    /// CK_DraftForceClosures_Identity: identities, the revision counter, the smallest version a closure can produce (create 1,
+    /// one line 2, submit 3, approve 4, close 5) and non-blank texts.
+    /// </summary>
+    internal const string ForceClosureIdentityConstraint =
+        "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+        + "AND [Revision] >= 0 AND [DraftVersion] >= 5 AND LEN([ClosedBy]) > 0 AND LEN([Reason]) > 0 "
+        + "AND LEN([ImpactToken]) > 0 AND LEN([CorrelationId]) > 0";
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -147,6 +163,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftRevisions(modelBuilder);
         ConfigureDraftDeliverySchedules(modelBuilder);
         ConfigureDraftCancellations(modelBuilder);
+        ConfigureDraftForceClosures(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -411,6 +428,31 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         cancellation.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // No 30 / SAT-D12: the recorded force-closure — append-only history beside the draft, at most one per draft; the impact the
+    // user confirmed and every line's closed remainder as JSON.
+    private void ConfigureDraftForceClosures(ModelBuilder modelBuilder)
+    {
+        var closure = modelBuilder.Entity<DraftForceClosureRow>();
+        closure.ToTable("DraftForceClosures", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DraftForceClosures_Identity", ForceClosureIdentityConstraint);
+            table.HasCheckConstraint("CK_DraftForceClosures_Impact", "ISJSON([ImpactJson]) = 1");
+            table.HasCheckConstraint("CK_DraftForceClosures_Lines", "ISJSON([LinesJson]) = 1");
+        });
+        closure.HasKey(x => new { x.CompanyId, x.DraftId });
+        closure.Property(x => x.ClosedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        closure.Property(x => x.Reason).HasMaxLength(SalesOrderDraft.MaximumForceCloseReasonLength).IsRequired();
+        closure.Property(x => x.ImpactToken).HasMaxLength(128).IsRequired();
+        closure.Property(x => x.ImpactJson).HasColumnType("nvarchar(max)").IsRequired();
+        closure.Property(x => x.LinesJson).HasColumnType("nvarchar(max)").IsRequired();
+        closure.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        closure.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        closure.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // Partial delivery (user decision 2026-09-30): the remainder changes and their decisions — append-only history beside the
     // draft. The line's approved quantity lives on the line row (the quantity revision's writable columns).
     private void ConfigureDraftRemainderChanges(ModelBuilder modelBuilder)
@@ -557,7 +599,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftNumberRow => [nameof(DraftNumberRow.Next), nameof(DraftNumberRow.UpdatedAtUtc)],
                     // SALES-A1: the header moves only along the approval axis (state, facts, time; the version is the token);
                     // K3 Head B: and its commercial revision number, which the archived history explains; DEC-SAL-005: and its
-                    // lifecycle State, Draft → Cancelled only (checked below), which the appended cancellation row explains.
+                    // lifecycle State, Draft → Cancelled only (checked below), which the appended cancellation row explains; No 30:
+                    // or Draft → Closed, which the appended force-closure row explains.
                     DraftRow =>
                     [
                         nameof(DraftRow.UpdatedAtUtc), nameof(DraftRow.ApprovalState), nameof(DraftRow.SubmittedBy), nameof(DraftRow.SubmittedAtUtc),
@@ -583,6 +626,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftDeliveryScheduleDateRow => [],
                     // DEC-SAL-005: a recorded cancellation is APPEND-ONLY — no column of it may change afterwards.
                     DraftCancellationRow => [],
+                    // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
+                    DraftForceClosureRow => [],
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.
                     DraftRemainderChangeRow => [],
                     DraftRemainderDecisionRow => [],
@@ -591,9 +636,10 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 if (entry.Entity is DraftRow)
                 {
                     var state = entry.Property(nameof(DraftRow.State));
-                    if (state.IsModified && !((int)state.OriginalValue! == (int)SalesDraftState.Draft && (int)state.CurrentValue! == (int)SalesDraftState.Cancelled))
+                    if (state.IsModified && !((int)state.OriginalValue! == (int)SalesDraftState.Draft
+                            && (int)state.CurrentValue! is (int)SalesDraftState.Cancelled or (int)SalesDraftState.Closed))
                     {
-                        throw new InvalidOperationException("Satış siparişinin yaşam döngüsü yalnız Taslak → İptal yönünde değişir.");
+                        throw new InvalidOperationException("Satış siparişinin yaşam döngüsü yalnız Taslak → İptal ya da Taslak → Kapalı yönünde değişir.");
                     }
 
                     var acceptedRevision = entry.Property(nameof(DraftRow.CustomerAcceptedRevision));

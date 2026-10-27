@@ -59,6 +59,8 @@ import { UnitName } from './UnitName'
 import {
   APPROVAL_STATE,
   CANCELLED_STATE,
+  CLOSED_STATE,
+  isTerminalState,
   OWNER_REFERENCE_FIELDS,
   REV_0,
   type ContactInformationOptions,
@@ -114,6 +116,7 @@ import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
 import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
+import { SalesDraftForceClose } from './SalesDraftForceClose'
 import { SalesDraftLinkedEffects, SalesDraftLinkedEffectsUnbound } from './SalesDraftLinkedEffects'
 import { INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY } from '../inventory/capabilities'
 import { SalesPartyDisplay } from './SalesDraftListPage'
@@ -305,7 +308,7 @@ export function SalesDraftDetailPage() {
         namespace !== null && companyId !== null ? (
           <SalesDraftAllocationPanel
             enabled={outcome.data.draft.approvalState === APPROVAL_STATE.approved
-              && outcome.data.draft.state !== CANCELLED_STATE
+              && !isTerminalState(outcome.data.draft.state)
               && hasCapability(shell, INVENTORY_PHYSICAL_ALLOCATION_WRITE_CAPABILITY)}
             canOpenLabelHistory={hasCapability(shell, CAPABILITY.inventoryStockPositionsList)}
             companyId={companyId}
@@ -331,6 +334,17 @@ export function SalesDraftDetailPage() {
         companyId === null ? null : (
           <SalesDraftCancellation
             key={`cancellation:${namespace ?? ''}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            shell={shell}
+            detail={outcome.data}
+            companyId={companyId}
+            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+          />
+        )
+      }
+      forceClose={
+        companyId === null ? null : (
+          <SalesDraftForceClose
+            key={`force-close:${namespace ?? ''}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
             shell={shell}
             detail={outcome.data}
             companyId={companyId}
@@ -381,6 +395,7 @@ export function DraftView({
   remainderChanges = null,
   linkedEffects = null,
   cancellation = null,
+  forceClose = null,
   documents = null,
   activeTab,
   onTabChange,
@@ -413,6 +428,8 @@ export function DraftView({
   readonly linkedEffects?: React.ReactNode
   /** DEC-SAL-005 / AT-007: the impact preview and cancel control, or the recorded cancellation of a cancelled order. */
   readonly cancellation?: React.ReactNode
+  /** No 30 / SAT-D12: the force-close preview and command, or the recorded closure of a closed order. */
+  readonly forceClose?: React.ReactNode
   /**
    * UI-11 / UI-71 (S-11): the "Sözleşme / Belgeler" workspace — the order's and the customer's Document Vault panels and
    * their timeline; null when no single company is bound.
@@ -433,6 +450,8 @@ export function DraftView({
   const everApproved = draft.approvalState === APPROVAL_STATE.approved || draft.revision !== REV_0
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   const cancelled = draft.state === CANCELLED_STATE
+  const closed = draft.state === CLOSED_STATE
+  const lifecycleText = cancelled ? T.stateCancelled : closed ? T.stateClosed : T.stateDraft
   return (
     <article className={styles.page} aria-labelledby="sales-detail-heading">
       {backLink}
@@ -443,9 +462,9 @@ export function DraftView({
           </h1>
           <p className={styles.muted}>{T.referenceNote}</p>
         </div>
-        <StatusIndicator tone={approvalTone(draft.approvalState, cancelled)} className={styles.badge}>
+        <StatusIndicator tone={approvalTone(draft.approvalState, cancelled || closed)} className={styles.badge}>
           <span data-testid="sales-draft-state">
-            {cancelled ? T.stateCancelled : T.stateDraft} · {APPROVAL_STATE_TEXT[draft.approvalState]}
+            {lifecycleText} · {APPROVAL_STATE_TEXT[draft.approvalState]}
           </span>
         </StatusIndicator>
       </header>
@@ -457,7 +476,7 @@ export function DraftView({
         </div>
         <div>
           <dt>{T.state}</dt>
-          <dd data-testid="sales-draft-lifecycle-state">{cancelled ? T.stateCancelled : T.stateDraft}</dd>
+          <dd data-testid="sales-draft-lifecycle-state">{lifecycleText}</dd>
         </div>
         <div>
           <dt>{T.approval.state}</dt>
@@ -559,13 +578,14 @@ export function DraftView({
           )}
         </dl>
         {linkedEffects ?? <SalesDraftLinkedEffectsUnbound />}
-        {draft.approvalState === APPROVAL_STATE.approved && !cancelled ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
+        {draft.approvalState === APPROVAL_STATE.approved && !cancelled && !closed ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
         {draft.approvalState === APPROVAL_STATE.rejected ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
         {withdrawn ? <p className={styles.muted}>{T.approval.withdrawnNote}</p> : null}
         {commands}
       </section>
 
       {cancellation}
+      {forceClose}
 
       <SalesOrderTabs
         active={tab}
@@ -818,7 +838,7 @@ function ApprovalCommands({
   // A commercial revision can return an approved order to Preparing. D2's easy withdrawal
   // must not be offered once approved history exists; the server remains the authority.
   const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'
-  const offerCustomerAcceptance = canAcceptCustomer && draft.state !== CANCELLED_STATE
+  const offerCustomerAcceptance = canAcceptCustomer && !isTerminalState(draft.state)
     && draft.approvalState === APPROVAL_STATE.approved && detail.customerAcceptance.required
     && !detail.customerAcceptance.isCurrentRevisionAccepted
   if (!offerSubmit && !offerDecision && !offerWithdraw && !offerCustomerAcceptance && !ownDecisionWithheld && attempt.phase === 'idle') return null

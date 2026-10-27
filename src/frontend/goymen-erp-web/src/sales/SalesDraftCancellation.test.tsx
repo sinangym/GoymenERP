@@ -254,7 +254,9 @@ describe('cancellation wire decoders', () => {
   it('reads the lifecycle Cancelled only beside an approved order, and a record exactly', () => {
     expect(decodeDraftSummary(detail('Approved', 'Cancelled').draft)?.state).toBe('Cancelled')
     expect(decodeDraftSummary(detail('Preparing', 'Cancelled').draft)).toBeNull()
-    expect(decodeDraftSummary(detail('Approved', 'Closed').draft)).toBeNull()
+    // No 30: Closed is a known terminal state now (beside Approved); a state this build does not know is still refused.
+    expect(decodeDraftSummary(detail('Approved', 'Closed').draft)?.state).toBe('Closed')
+    expect(decodeDraftSummary(detail('Approved', 'Archived').draft)).toBeNull()
     expect(decodeCancellation({ cancellation: null })).toEqual({ cancellation: null })
     expect(decodeCancellation(RECORD)?.cancellation?.reason).toBe('Müşteri vazgeçti')
     expect(decodeCancellation({ cancellation: { ...RECORD.cancellation, reason: '  ' } })).toBeNull()

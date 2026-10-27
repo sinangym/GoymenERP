@@ -11,7 +11,9 @@ namespace GoymenERP.Modules.Settings.Application;
 /// </summary>
 public sealed class UnavailableSettingsPrerequisiteProvider(
     ICompanyContext companyContext, ICurrentUser currentUser)
-    : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader, ISettingsManufacturingToleranceProviderV1
+    : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader, ISettingsMoneyCandidateReaderV2,
+        ISettingsManufacturingToleranceProviderV1,
+        ISettingsSalesPolicyProviderV1
 {
     /// <summary>
     /// No currency source exists, so there are no candidates to offer — which is an
@@ -20,6 +22,10 @@ public sealed class UnavailableSettingsPrerequisiteProvider(
     /// </summary>
     public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
         CancellationToken cancellationToken = default) =>
+        Unavailable<IReadOnlyList<MoneyCurrencyCandidateV1>>(cancellationToken);
+
+    public Task<IReadOnlyList<MoneyCurrencyCandidateV1>> GetMoneyCurrencyCandidatesAsync(
+        string operation, CancellationToken cancellationToken = default) =>
         Unavailable<IReadOnlyList<MoneyCurrencyCandidateV1>>(cancellationToken);
 
     public Task<UnitProfileV1> GetUnitProfileAsync(Guid unitId, DateOnly effectiveOn,
@@ -36,6 +42,18 @@ public sealed class UnavailableSettingsPrerequisiteProvider(
     public Task<ManufacturingToleranceProfileV1> GetManufacturingToleranceAsync(
         string process, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
         Unavailable<ManufacturingToleranceProfileV1>(cancellationToken);
+
+    public Task<SalesDeliveryTolerancePolicyV1> GetSalesDeliveryToleranceAsync(
+        DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+        Unavailable<SalesDeliveryTolerancePolicyV1>(cancellationToken);
+
+    public Task<SalesDiscountLimitPolicyV1> GetSalesDiscountLimitAsync(
+        Guid limitGroupId, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+        Unavailable<SalesDiscountLimitPolicyV1>(cancellationToken);
+
+    public Task<SalesApprovalAmountThresholdPolicyV1> GetSalesApprovalAmountThresholdAsync(
+        Guid currencyId, DateOnly effectiveOn, CancellationToken cancellationToken = default) =>
+        Unavailable<SalesApprovalAmountThresholdPolicyV1>(cancellationToken);
 
     private Task<T> Unavailable<T>(CancellationToken cancellationToken)
     {
