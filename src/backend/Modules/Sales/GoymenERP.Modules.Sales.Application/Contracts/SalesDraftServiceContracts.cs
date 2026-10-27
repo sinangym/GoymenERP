@@ -71,6 +71,9 @@ public static class SalesDraftProblemCodesV1
     /// <summary>503: the Cari account owner cannot answer.</summary>
     public const string CounterpartyProviderUnavailable = "counterparty_provider_unavailable";
 
+    /// <summary>503 (MOD-08): the Identity user directory cannot answer, or answered a malformed value. Code-less on the wire.</summary>
+    public const string IdentityProviderUnavailable = "identity_provider_unavailable";
+
     /// <summary>503: an owner answered a malformed value (another company, another unit, an empty identity).</summary>
     public const string ReferenceProviderInvalid = "reference_provider_invalid";
 

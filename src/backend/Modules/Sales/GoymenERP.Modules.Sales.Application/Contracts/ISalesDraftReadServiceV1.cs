@@ -24,6 +24,11 @@ public sealed record SalesOrderDraftReadSummaryViewV1(
     IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots,
     SalesPartyDisplayV1 PartyDisplay);
 
+/// <summary>
+/// The enriched detail. MOD-08 (additive): <c>UserDisplays</c> names, once each, the people the detail's approval and
+/// customer acceptance already identify by id, as the Identity owner shows them in the record's company. An id the owner
+/// does not answer (or one that is not a user id) has no entry and keeps its raw id.
+/// </summary>
 public sealed record SalesOrderDraftReadDetailViewV1(
     SalesOrderDraftSummaryView Draft, DateOnly? RequestedDeliveryDate, string? Note,
     IReadOnlyList<SalesOrderDraftLineDetail> Lines,
@@ -37,7 +42,8 @@ public sealed record SalesOrderDraftReadDetailViewV1(
     SalesDraftCustomerAcceptanceV1 CustomerAcceptance,
     bool IsOwnDraft,
     bool IsOwnDecisionRestricted,
-    SalesPartyDisplayV1 PartyDisplay);
+    SalesPartyDisplayV1 PartyDisplay,
+    IReadOnlyList<SalesUserDisplayV1> UserDisplays);
 
 public sealed record SalesOrderDraftReadListResponseV1(
     IReadOnlyList<SalesOrderDraftReadSummaryViewV1> Items,

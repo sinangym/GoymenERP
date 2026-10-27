@@ -62,6 +62,8 @@ import {
   type DraftStateCommand,
   type DraftStateCommandRequest,
   type OwnerReference,
+  type UserDisplay,
+  userDisplayFor,
 } from './contract'
 import { unplannedQuantity } from './deliveryPlan'
 import { contactLabel, formatBusinessDate, formatInstant } from './format'
@@ -115,6 +117,22 @@ import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import styles from './SalesDraftDetailPage.module.css'
 
 const orUnknown = (value: string | null) => value ?? T.unknown
+
+/**
+ * MOD-08: a person the record names by id, shown by the Identity directory's name when the read carries one (a former
+ * member is marked as such); otherwise the raw id as before. Never a name invented on the screen.
+ */
+function ActorName({ displays, actorId }: { readonly displays: readonly UserDisplay[]; readonly actorId: string | null }) {
+  if (actorId === null) return <>{T.approval.notYet}</>
+  const person = userDisplayFor(displays, actorId)
+  if (person === null) return <>{actorId}</>
+  return (
+    <span title={actorId}>
+      {person.displayName}
+      {person.isActiveInCompany ? null : ` (${T.approval.formerMember})`}
+    </span>
+  )
+}
 
 function approvalTone(state: DraftDetail['draft']['approvalState'], cancelled: boolean): StatusTone {
   if (cancelled) return 'neutral'
@@ -433,7 +451,9 @@ export function DraftView({
         <dl className={styles.facts}>
           <div>
             <dt>{T.approval.submittedBy}</dt>
-            <dd data-testid="sales-approval-submitted-by">{approval.submittedBy ?? T.approval.notYet}</dd>
+            <dd data-testid="sales-approval-submitted-by">
+              <ActorName displays={detail.userDisplays} actorId={approval.submittedBy} />
+            </dd>
           </div>
           <div>
             <dt>{T.approval.submittedAt}</dt>
@@ -441,7 +461,9 @@ export function DraftView({
           </div>
           <div>
             <dt>{withdrawn ? T.approval.withdrawnBy : T.approval.decidedBy}</dt>
-            <dd data-testid="sales-approval-decided-by">{approval.decidedBy ?? T.approval.notYet}</dd>
+            <dd data-testid="sales-approval-decided-by">
+              <ActorName displays={detail.userDisplays} actorId={approval.decidedBy} />
+            </dd>
           </div>
           <div>
             <dt>{withdrawn ? T.approval.withdrawnAt : T.approval.decidedAt}</dt>
@@ -466,7 +488,9 @@ export function DraftView({
           {customerAcceptance.acceptedBy === null ? null : (
             <div>
               <dt>{T.approval.customerAcceptedBy}</dt>
-              <dd>{customerAcceptance.acceptedBy}</dd>
+              <dd data-testid="sales-customer-accepted-by">
+                <ActorName displays={detail.userDisplays} actorId={customerAcceptance.acceptedBy} />
+              </dd>
             </div>
           )}
           {customerAcceptance.acceptedAtUtc === null ? null : (

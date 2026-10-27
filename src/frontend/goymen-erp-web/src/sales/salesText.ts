@@ -246,6 +246,8 @@ export const ORDER_DETAIL_TEXT = {
     customerAcceptedAt: 'Müşteri kabul zamanı',
     recordCustomerAcceptance: 'Müşteri kabulünü kaydet',
     notYet: 'Henüz yok',
+    /** MOD-08: beside the name of a person who is no longer an active member of the record's company. */
+    formerMember: 'artık bu şirkette aktif değil',
     noReason: 'Neden belirtilmedi',
     // DEC-SAL-001/005, Business 5737989917 item 4: the linked effects are read from their owners, never assumed.
     // Allocation is Inventory's server truth; a count is shown only after a successful read, never a default 0.

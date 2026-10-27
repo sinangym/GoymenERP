@@ -936,8 +936,21 @@ export interface DraftPageWithParty {
   readonly nextCursor: string | null
 }
 
+/**
+ * MOD-08: one person the detail already identifies by id (its approval submitter / decider, its customer acceptance
+ * recorder), as the Identity user directory shows them in the record's company. `isActiveInCompany` is false for a
+ * former member, whose name still stands for the fact they recorded. An id without an entry keeps its raw text.
+ */
+export interface UserDisplay {
+  readonly userId: string
+  readonly displayName: string
+  readonly isActiveInCompany: boolean
+}
+
 export interface DraftDetailWithParty extends DraftDetail {
   readonly partyDisplay: PartyDisplay
+  /** MOD-08 (additive): empty when the server names nobody, or answers without the member. */
+  readonly userDisplays: readonly UserDisplay[]
 }
 
 const PARTY_DISPLAY_KEYS = ['partyId', 'code', 'legalName', 'tradeName'] as const
@@ -992,17 +1005,62 @@ export function decodeDraftPageWithParty(value: unknown): DraftPageWithParty | n
   return { items, nextCursor: o.nextCursor }
 }
 
+const USER_DISPLAY_KEYS = ['userId', 'displayName', 'isActiveInCompany'] as const
+
+/** The actor ids the detail itself carries; a display may name only these. */
+function detailActorIds(detail: DraftDetail): Set<string> {
+  const ids = new Set<string>()
+  for (const id of [detail.approval.submittedBy, detail.approval.decidedBy, detail.customerAcceptance.acceptedBy]) {
+    if (id !== null) ids.add(id.toLowerCase())
+  }
+  return ids
+}
+
+/** Record-bound: each entry names one of the detail's own actor ids, once; a blank name is not a display. */
+function decodeUserDisplays(value: unknown, detail: DraftDetail): UserDisplay[] | null {
+  if (!Array.isArray(value)) return null
+  const allowed = detailActorIds(detail)
+  const seen = new Set<string>()
+  const items: UserDisplay[] = []
+  for (const entry of value) {
+    const o = exact(entry, USER_DISPLAY_KEYS)
+    if (
+      o === null ||
+      !isReferenceId(o.userId) ||
+      !allowed.has(o.userId.toLowerCase()) ||
+      seen.has(o.userId.toLowerCase()) ||
+      !isFilledText(o.displayName, 200) ||
+      typeof o.isActiveInCompany !== 'boolean'
+    ) {
+      return null
+    }
+    seen.add(o.userId.toLowerCase())
+    items.push({ userId: o.userId, displayName: o.displayName, isActiveInCompany: o.isActiveInCompany })
+  }
+  return items
+}
+
+/** The directory's entry for an actor id the detail carries, or null (the raw id is then shown as it is). */
+export function userDisplayFor(displays: readonly UserDisplay[], actorId: string | null): UserDisplay | null {
+  if (actorId === null) return null
+  const key = actorId.toLowerCase()
+  return displays.find((display) => display.userId.toLowerCase() === key) ?? null
+}
+
 /**
  * An enriched detail: the legacy detail rules unchanged (its `draft` is the legacy summary and must not carry a display
- * of its own), plus the top-level record-bound party display.
+ * of its own), plus the top-level record-bound party display and (MOD-08, additive) the record-bound user displays.
  */
 export function decodeDraftDetailWithParty(value: unknown, expectedId: string | null): DraftDetailWithParty | null {
   const split = withoutPartyDisplay(value)
   if (split === null) return null
-  const detail = decodeDraftDetail(split.rest, expectedId)
+  const { userDisplays: rawUserDisplays, ...rest } = split.rest
+  const detail = decodeDraftDetail(rest, expectedId)
   if (detail === null) return null
   const partyDisplay = decodePartyDisplay(split.partyDisplay, detail.draft.partyId)
-  return partyDisplay === null ? null : { ...detail, partyDisplay }
+  if (partyDisplay === null) return null
+  const userDisplays = Object.hasOwn(split.rest, 'userDisplays') ? decodeUserDisplays(rawUserDisplays, detail) : []
+  return userDisplays === null ? null : { ...detail, partyDisplay, userDisplays }
 }
 
 /* ── S-04 approved commercial revision history ───────────────────────────── */

@@ -299,6 +299,9 @@ builder.Services.AddSalesModule(
 // A Sales draft read may disclose only the code/name of the Cari record already linked to that
 // authorized Sales result. The adapter grants no generic Cari read and has no public lookup route.
 builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
+// MOD-08: the same read may name the people its approval and acceptance already identify by id, through Identity's
+// company-fenced user directory. The adapter has no route and passes only ids from the authorized record.
+builder.Services.AddScoped<ISalesUserDisplaySourceV1, SalesUserDisplayHost>();
 builder.Services.AddScoped<ISalesDraftReadServiceV1, SalesDraftReadServiceV1>();
 // STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
 // hands the derived command to Inventory's writer after fresh company-wide authority fences.
