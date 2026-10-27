@@ -226,6 +226,8 @@ export interface HarnessConfig {
   readonly onPriceFloorExceptionApproval?: (call: RecordedCall) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/line-pricing`; default: 404 (the pricing is shown as unreadable). */
   readonly onLinePricing?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** UI-11: GET `/documents?ownerKind=sales.order&ownerId=…` (read only once the "Sözleşme / Belgeler" tab is opened). */
+  readonly onDocuments?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** AT-018: GET `/sales/drafts/{id}/lines/{lineId}/price-references`. */
   readonly onPriceReferences?: (url: string, companyId: string | null) => Response | Promise<Response>
 }
@@ -326,6 +328,10 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (config.onList === undefined) throw new Error('unexpected list read')
         return asPartyDisplayRead(await config.onList(url, call.companyId), 'list', call)
+      }
+      if (call.method === 'GET' && url.includes('/documents?')) {
+        if (config.onDocuments === undefined) throw new Error('unexpected documents read')
+        return config.onDocuments(url, call.companyId)
       }
       if (call.method === 'GET' && url.includes('/logistics/dispatch-notes?')) {
         if (config.onDispatchNotes === undefined) throw new Error('unexpected dispatch-notes read')

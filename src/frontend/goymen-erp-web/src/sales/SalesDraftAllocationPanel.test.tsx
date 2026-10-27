@@ -67,7 +67,7 @@ function answer(body: unknown, status = 200, replayed = false) {
 function mount(enabled = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const view = render(<QueryClientProvider client={client}><SalesDraftAllocationPanel
-    enabled={enabled} companyId={COMPANY} namespace="ctx-a" routeEntryGeneration={1}
+    enabled={enabled} canOpenLabelHistory={false} companyId={COMPANY} namespace="ctx-a" routeEntryGeneration={1}
     salesOrderId={ORDER} lines={[line]} /></QueryClientProvider>)
   return { client, ...view }
 }
@@ -246,7 +246,7 @@ describe('Sales physical allocation consumer', () => {
     await waitFor(() => expect(within(card).getByText('Aktif')).toBeTruthy())
 
     first.rerender(<QueryClientProvider client={first.client}><SalesDraftAllocationPanel
-      enabled companyId={COMPANY} namespace="ctx-b" routeEntryGeneration={2}
+      enabled canOpenLabelHistory={false} companyId={COMPANY} namespace="ctx-b" routeEntryGeneration={2}
       salesOrderId={ORDER} lines={[line]} /></QueryClientProvider>)
 
     const remounted = await screen.findByTestId(`sales-allocation-line-${LINE}`)
@@ -278,7 +278,7 @@ describe('Sales physical allocation consumer', () => {
       productVersion: '8',
     }
     first.rerender(<QueryClientProvider client={first.client}><SalesDraftAllocationPanel
-      enabled companyId={COMPANY} namespace="ctx-a" routeEntryGeneration={1}
+      enabled canOpenLabelHistory={false} companyId={COMPANY} namespace="ctx-a" routeEntryGeneration={1}
       salesOrderId={ORDER} lines={[changedLine]} /></QueryClientProvider>)
 
     const remounted = await screen.findByTestId(`sales-allocation-line-${LINE}`)
