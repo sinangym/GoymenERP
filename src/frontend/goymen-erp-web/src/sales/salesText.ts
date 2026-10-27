@@ -6,6 +6,7 @@ import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalStat
 
 export const ORDER_DRAFT_TEXT = {
   heading: 'Yeni satış siparişi taslağı',
+  singleCompanyOnly: 'Taslak yalnız tek bir şirket seçiliyken oluşturulabilir.',
   field: {
     customer: 'Cari ve şirket hesabı',
     businessDate: 'Sipariş tarihi',
@@ -76,7 +77,7 @@ export const ORDER_DRAFT_TEXT = {
   errorSummaryUnresolved:
     'Şu alanları düzeltin. Önceki gönderimin sonucu hâlâ bilinmiyor; taslak kaydedilmiş olabilir.',
   referencesUnavailable:
-    'Cari hesabı, satışa uygun ürün, birim ve para birimi seçenekleri henüz yayımlanmadı. Seçenekler olmadan taslak oluşturulamaz.',
+    'Cari hesabı, satışa uygun ürün, birim ve para birimi seçenekleri şu anda okunamıyor. Seçenekler olmadan taslak oluşturulamaz.',
   /** Which reference source is missing and why, from the real answers — no source is guessed. */
   referencesMissing: (missing: readonly { readonly source: string; readonly reason: string }[]) =>
     'Sunulmayan kaynaklar: ' +
@@ -220,6 +221,8 @@ export const ORDER_LIST_TEXT = {
 } as const
 
 export const ORDER_DETAIL_TEXT = {
+  pageLabel: 'Satış siparişi',
+  stateSubject: 'satış siparişi',
   backToList: 'Sipariş taslakları',
   commercialStage: 'Ticari aşama',
   state: 'Durum',
@@ -278,8 +281,8 @@ export const ORDER_DETAIL_TEXT = {
       loadingUnavailable: 'Yükleme bilgisi şu anda okunamıyor; sayı gösterilmedi.',
       loadingMalformed: 'Yükleme yanıtı bu siparişle doğrulanamadı; sayı gösterilmedi.',
     },
-    approvedNote: 'Onaylı taslağın satırları değişmez; değişiklik yeni bir revizyonla gelir (SALES-A2).',
-    rejectedNote: 'Reddedilen taslak aynı revizyonla yeniden onaya gönderilebilir; düzeltme SALES-A2 ile gelir.',
+    approvedNote: 'Onaylı siparişin satırları doğrudan değişmez; değişiklik yeni bir revizyonla yapılır ve yeniden onaya gider.',
+    rejectedNote: 'Reddedilen sipariş düzeltilip yeniden onaya gönderilebilir.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -704,3 +707,27 @@ export const LINE_PRICING_TEXT = {
 export function partyDisplayText(party: { readonly code: string; readonly legalName: string; readonly tradeName: string | null }): string {
   return party.tradeName === null ? `${party.code} — ${party.legalName}` : `${party.code} — ${party.legalName} (${party.tradeName})`
 }
+
+/** AT-024: the partly delivered remainder panel (`SalesDraftRemainderChangePanel`). */
+export const REMAINDER_CHANGE_TEXT = {
+  heading: 'Kısmi teslimat kalanı',
+  note: 'Teslim edilen ve yüklenen bölüm korunur. Yalnız kalan miktar onayla iptal edilir veya revize edilir.',
+  unreadable: 'Lojistik miktarları şu anda okunamıyor; sıfır varsayılmadı ve değişiklik gönderilemez.',
+  empty: 'Kalan değişikliği kaydı yok.',
+  line: 'Sipariş satırı', kind: 'İşlem', cancel: 'Kalanı iptal et', revise: 'Kalan miktarı revize et',
+  quantity: 'Yeni sipariş miktarı', reason: 'Gerekçe', request: 'Onaya gönder',
+  approve: 'Onayla', reject: 'Reddet', decisionReason: 'Ret nedeni',
+  retry: 'Aynı işlemi tekrar dene', submitting: 'İşlem kaydediliyor…', completed: 'İşlem kaydedildi; güncel sipariş yeniden okunuyor.',
+  unknown: 'Sonuç alınamadı; kayıt yapılmış olabilir. Aynı anahtarla tekrar deneyin.',
+  failed: 'İşlem uygulanmadı.', invalid: 'Satır, miktar ve gerekçeyi kontrol edin.',
+  authorityLost: 'Bu işlem için güncel yetki bulunmuyor; kayıt gönderilmedi.',
+  /** The selected line's Logistics quantities; an unreadable one is named, never shown as zero. */
+  lineFacts: (line: {
+    readonly loaded: string | null
+    readonly shipped: string | null
+    readonly delivered: string | null
+    readonly minimumQuantity: string | null
+  }) =>
+    `Yüklenen: ${line.loaded ?? 'okunamadı'} · Sevk: ${line.shipped ?? 'okunamadı'} · Teslim: ${line.delivered ?? 'okunamadı'} · Alt sınır: ${line.minimumQuantity ?? 'okunamadı'}`,
+  stateUnavailable: 'Yalnız onaylı ve iptal edilmemiş siparişin kısmi teslimat kalanı değiştirilebilir.',
+} as const
