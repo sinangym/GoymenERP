@@ -2256,7 +2256,20 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1076, len(source_paths))
+        self.assertEqual(1088, len(source_paths))
+        for shared_value_object in (
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/Money.cs",
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/ExchangeRate.cs",
+            "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Quantities/Quantity.cs",
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/QuantityAliases.cs",
+            "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/QuantityAliases.cs",
+            "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Domain/QuantityAliases.cs",
+        ):
+            self.assertIn(shared_value_object, source_paths)
+        self.assertNotIn(
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/Quantities/Quantity.cs",
+            source_paths,
+        )
         self.assertIn(
             "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/"
             "Contracts/V1/ManufacturingToleranceProfileLifecycleV1.cs",

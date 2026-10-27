@@ -1,7 +1,8 @@
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
-using GoymenERP.Modules.Purchasing.Domain.Quantities;
+using GoymenERP.BuildingBlocks.Quantities;
+using Quantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Purchasing.Domain.Quantities.PurchasingQuantityRefusals>;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 namespace GoymenERP.Api.IntegrationTests;
