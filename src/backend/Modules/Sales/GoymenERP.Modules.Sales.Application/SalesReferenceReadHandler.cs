@@ -18,7 +18,8 @@ public sealed class SalesReferenceReadHandler(
     ISettingsPrerequisiteProvider settings, IProductSalesEligibilityV1? products,
     SalesReferenceReadBindings bindings,
     ISettingsMoneyCandidateReader? currencyCandidates = null,
-    ISalesPartyContactInformationPortV1? contactInformation = null) : ISalesReferenceReadService
+    ISalesPartyContactInformationPortV1? contactInformation = null,
+    ISettingsMoneyCandidateReaderV2? operationCurrencyCandidates = null) : ISalesReferenceReadService
 {
     private const int SearchRuneLimit = 200;
 
@@ -251,12 +252,16 @@ public sealed class SalesReferenceReadHandler(
         if (scope.Status != 200) return Failure<SalesCurrencyOptionsV1>(scope.Status);
         if (string.IsNullOrWhiteSpace(bindings.MoneyOperation))
             return Failure<SalesCurrencyOptionsV1>(503, "settings_operation_unavailable");
-        if (currencyCandidates is null)
+        if (currencyCandidates is null && operationCurrencyCandidates is null)
             return Failure<SalesCurrencyOptionsV1>(503, "settings_provider_unavailable");
         try
         {
-            var candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(
-                await currencyCandidates.GetMoneyCurrencyCandidatesAsync(cancellationToken));
+            // SAT-D18: the operation-aware read lists the currencies answering the Sales operation
+            // (GSP/GIN TRY is Sales-only and the operation-less read leaves it out); the operation-less
+            // read remains the fallback when only it is composed.
+            var candidates = MoneyCurrencyCandidatesV1.EnsureWellFormed(operationCurrencyCandidates is not null
+                ? await operationCurrencyCandidates.GetMoneyCurrencyCandidatesAsync(bindings.MoneyOperation, cancellationToken)
+                : await currencyCandidates!.GetMoneyCurrencyCandidatesAsync(cancellationToken));
             if (!await StillAuthorizedAsync(scope, bindings.CurrencyPermission, cancellationToken))
                 return Failure<SalesCurrencyOptionsV1>(403);
             var options = new List<SalesCurrencyReferenceV1>(candidates.Count);

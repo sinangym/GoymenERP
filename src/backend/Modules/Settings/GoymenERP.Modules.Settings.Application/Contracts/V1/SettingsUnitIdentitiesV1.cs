@@ -13,6 +13,6 @@ namespace GoymenERP.Modules.Settings.Application.Contracts.V1;
 /// </summary>
 public static class SettingsUnitIdentitiesV1
 {
-    /// <summary>Kilogram. The only unit with an approved profile today (GDC, Ö1/Ö2).</summary>
+    /// <summary>Kilogram. The only unit with an approved profile today (GDC, Ö1/Ö2; GSP and GIN, SAT-D18).</summary>
     public static readonly Guid Kilogram = Guid.Parse("c5ef643e-a6e8-51f3-89f2-8e68b00cb983");
 }

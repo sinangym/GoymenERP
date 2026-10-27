@@ -111,8 +111,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // it adds no OpenAPI-generation, network or hosted-service surface.
     // I01.2 adds two scoped in-process transfer outgoing-document adapters; it adds no OpenAPI-generation,
     // network or hosted-service surface.
+    // MOD-03 slice 1 adds one scoped in-process Settings Sales policy port registration (the approved
+    // provider); it adds no OpenAPI-generation, network, hosted-service or production-activation surface.
+    // SAT-D18 follow-up adds one scoped in-process operation-aware Settings candidate reader registration and
+    // passes it to the Sales reference read; no OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "961ef4535001dc72d922b4eaed00132205f482645a43601c8ccb27f083e47b17";
+        "4cf4cba980d368cebfef59ee0abed68a8e513bbe9a83783459af5e2c944ca6a6";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -215,8 +219,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // F-03 allocation read: +1 company/fresh-authority list/detail/reopen SQL fact.
             // D-05 approval inbox: the existing pending-approval fact is renamed and strengthened to public HTTP/DI.
             // FI04: +2 approved-source open-item read facts (real HTTP authority/redaction and SQL keyset/no-write).
+            // SAT-D18: +1 Sales-only GSP/GIN TRY profile keeps the bank-account path closed, kept ordinal-sorted.
             ["tools/relational_inventory/finance.txt"] =
-                "a56ebd84fde486ccab64354108945a6c1bd65cbc71dd9da33cfcd8afb690e1e1",
+                "cb46a8362f31ddcb5e5c04be5369ac91527135dae1d0da2af66904a0302b95e6",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
