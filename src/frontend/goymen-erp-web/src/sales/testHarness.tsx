@@ -211,6 +211,11 @@ export interface HarnessConfig {
    * harness last served for that draft — the owner's real zeros (a 404 when it served none).
    */
   readonly onCustomerReturns?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * DEC-SAL-001 / API-08: GET `/sales/drafts/{id}/status`; default: the seven axes of the detail this harness last served
+   * for that draft — nothing shipped, no tolerance asked, the three owner-less axes `NoSource` (a 404 when it served none).
+   */
+  readonly onStatus?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
@@ -327,6 +332,9 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/customer-returns$/.test(url)) {
           return config.onCustomerReturns?.(url, call.companyId) ?? nothingReturned(details.get(url.replace(/\/customer-returns$/, '')))
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/status$/.test(url)) {
+          return config.onStatus?.(url, call.companyId) ?? statusOf(details.get(url.replace(/\/status$/, '')))
+        }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
         }
@@ -403,6 +411,49 @@ function nothingReturned(detail: unknown): Response {
     lines: body.lines.map((line) => ({
       lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity, approvedReturned: '0',
     })),
+  })
+}
+
+/**
+ * DEC-SAL-001 / API-08: the default status — the served detail's own lifecycle (`Active` once approved or revised, SAT-D32),
+ * approval and acceptance; every line `NotStarted` against the current revision; source, invoicing and financial closure
+ * `NoSource`; never ready to close.
+ */
+export function statusOf(detail: unknown): Response {
+  const body = detail as {
+    draft?: { version?: unknown; revision?: string; state?: string; approvalState?: string }
+    customerAcceptance?: { required?: boolean; isCurrentRevisionAccepted?: boolean; acceptedRevision?: string | null }
+    lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string }[]
+  } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines) || body.customerAcceptance === undefined) {
+    return json({ status: 404 }, 404)
+  }
+  const { draft, customerAcceptance: acceptance } = body
+  const everApproved = draft.approvalState === 'Approved' || draft.revision !== 'Rev.0'
+  return json({
+    draftVersion: draft.version,
+    revision: draft.revision,
+    lifecycle: { state: draft.state === 'Draft' && everApproved ? 'Active' : draft.state },
+    internalApproval: { state: draft.approvalState },
+    customerAcceptance: {
+      state: !acceptance.required ? 'NotRequired' : acceptance.isCurrentRevisionAccepted ? 'Accepted' : 'Pending',
+      acceptedRevision: acceptance.acceptedRevision ?? null,
+    },
+    source: { state: 'NoSource' },
+    realization: {
+      state: 'NotStarted',
+      warning: false,
+      basisRevision: draft.revision,
+      tolerance: null,
+      lines: body.lines.map((line) => ({
+        lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, ordered: line.quantity, shipped: '0',
+        delivered: '0', state: 'NotStarted', direction: 'Under', deviation: line.quantity, band: null, warning: false,
+        approvedOverDelivery: false, closedRemainder: null, approvedReturned: '0',
+      })),
+    },
+    invoicing: { state: 'NoSource' },
+    financialClosure: { state: 'NoSource' },
+    readyToClose: false,
   })
 }
 

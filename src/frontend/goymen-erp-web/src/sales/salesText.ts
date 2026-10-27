@@ -2,6 +2,14 @@
  * User-facing Sales texts. Turkish, in one place, so they stay localizable.
  */
 
+import type {
+  AcceptanceAxisState,
+  LifecycleAxisState,
+  OwnerlessAxis,
+  OwnerlessAxisState,
+  RealizationBand,
+  RealizationState,
+} from './orderStatus'
 import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CancellationStatus, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
@@ -918,4 +926,129 @@ export const SALES_DOCUMENTS_TEXT = {
   orderHidden: 'Siparişin kendi belgeleri sizin için görüntülenemiyor; zaman çizgisi yalnız müşteri kartı belgelerini gösteriyor.',
   orderPanelHeading: 'Sipariş belgeleri',
   customerPanelHeading: 'Müşteri kartı belgeleri (sözleşmeler)',
+} as const
+
+/**
+ * DEC-SAL-001 / API-08 / UI-15: the order's seven status axes card on S-04. Every state the contract answers has its own
+ * text here; a state without a text is refused by the decoder, so no wire name ever reaches the screen. SAT-D29…D33: the
+ * realization ladder, the warning and approved-over-delivery marks, "Aktif" and "kapanmaya hazır", returns shown apart.
+ */
+export const ORDER_STATUS_TEXT = {
+  heading: 'Sipariş durumu',
+  note:
+    'Yaşam döngüsü, iç onay, müşteri onayı, kaynak, gerçekleşme, faturalama ve finansal kapanış ayrı eksenlerdir; ' +
+    'sipariş her açıldığında sahiplerinden yeniden okunur.',
+  subject: 'sipariş durumu',
+  axesLabel: 'Durum eksenleri',
+  unreadable: 'Durum okunamadığı için hiçbir eksen gösterilmiyor; hiçbir eksen tamamlanmış ya da başlamamış sayılmaz.',
+  serviceUnavailable:
+    'Durum servisi şu anda yanıt veremiyor (Satış kaydı ya da yetki tanımı okunamadı). Eksenler gösterilmiyor; biraz sonra yeniden deneyin.',
+  supportCode: (correlationId: string) => `Destek kodu: ${correlationId}`,
+  axis: {
+    lifecycle: 'Yaşam döngüsü',
+    internalApproval: 'İç onay',
+    customerAcceptance: 'Müşteri onayı',
+    source: 'Kaynak / tahsis',
+    realization: 'Gerçekleşme',
+    invoicing: 'Faturalama',
+    financialClosure: 'Finansal kapanış',
+  },
+  lifecycle: {
+    Draft: 'Taslak',
+    Active: 'Aktif',
+    Cancelled: 'İptal edildi',
+    Closed: 'Kapalı',
+  } satisfies Record<LifecycleAxisState, string>,
+  acceptance: {
+    NotRequired: 'Gerekmiyor (müşteri onayı kuralından önceki sipariş)',
+    Pending: 'Bekleniyor',
+    Accepted: 'Alındı',
+  } satisfies Record<AcceptanceAxisState, string>,
+  acceptedRevision: (revision: string) => `Son kayıtlı müşteri onayı: ${revision}`,
+  ownerless: { NoSource: 'Kaynağı henüz yok' } satisfies Record<OwnerlessAxisState, string>,
+  ownerlessNote: {
+    source: 'Kaynak stratejisi ve tahsis ekseninin sahibi modül henüz yok; eksen tamamlanmış ya da sıfır sayılmaz.',
+    invoicing: 'Satış faturalama modülü henüz yok; eksen tamamlanmış ya da sıfır sayılmaz.',
+    financialClosure: 'Finansal kapanış (tahsilat eşleştirme) modülü henüz yok; eksen tamamlanmış ya da sıfır sayılmaz.',
+  } satisfies Record<OwnerlessAxis, string>,
+  realization: {
+    NotStarted: 'Başlamadı',
+    Partial: 'Kısmi',
+    Completed: 'Tamamlandı',
+    OutsideTolerance: 'Tolerans dışı',
+    ClosedWithRemainder: 'Kalanla kapatıldı',
+    AwaitingApproval: 'Onay bekliyor',
+    PendingReapproval: 'Yeniden onay bekleniyor',
+    PolicyUnavailable: 'Tolerans politikası yok',
+    Unreadable: 'Okunamadı',
+  } satisfies Record<RealizationState, string>,
+  /** SAT-D29 / SAT-D31: "Tamamlandı + uyarı işareti". */
+  warningMark: 'Tolerans uyarısı',
+  /** SAT-D30: "Tamamlandı + onaylı fazla teslim". */
+  approvedOverDeliveryMark: 'Onaylı fazla teslim',
+  readyToClose: {
+    label: 'Kapanmaya hazır',
+    yes: 'Evet',
+    no: 'Hayır',
+    yesNote: 'Tüm eksenler tamamlandı. Sipariş kendiliğinden kapanmaz; kapatma kullanıcı işlemidir.',
+    noSourceNote: (axes: string) =>
+      `Henüz kaynağı olmayan eksenler var (${axes}). Kaynağı olmayan eksen tamamlanmış sayılmadığından bu modüller ` +
+      'gelene kadar sipariş kapanmaya hazır görünmez. Sipariş hiçbir durumda kendiliğinden kapanmaz.',
+    openNote: 'Tüm eksenler tamamlanmadı. Sipariş hiçbir durumda kendiliğinden kapanmaz; kapatma kullanıcı işlemidir.',
+  },
+  realizationHeading: 'Gerçekleşme ve teslim toleransı',
+  basis: 'Ölçüm esası',
+  basisEarlier: (basis: string, current: string) =>
+    `Yeni ticari revizyon (${current}) onay bekliyor; gerçekleşme son onaylı revizyonun (${basis}) miktarlarına göre ölçülüyor. ` +
+    'Onaylanmamış miktarlar esas alınmaz.',
+  pendingReapproval:
+    'Yeni ticari revizyon onay bekliyor ve son onaylı revizyonun miktarları birebir alınamadı. Esas miktar sütunu güncel ' +
+    '(henüz onaylanmamış) revizyonun sipariş miktarını gösterir; onaylı bir ölçüm esası olmadığı için gerçekleşme değerlendirilmedi.',
+  tolerance: 'Teslim toleransı',
+  toleranceBand: (warn: string, approval: string, block: string) => `Uyarı %${warn} · Onay %${approval} · Blok %${block}`,
+  toleranceProfile: 'Tolerans profili sürümü',
+  toleranceWindow: 'Profilin geçerliliği',
+  toleranceOpenEnded: 'süresiz',
+  toleranceEvaluatedOn: 'Değerlendirilen tarih (sipariş tarihi)',
+  toleranceNotNeeded: 'Henüz sevk ya da kapanış olmadığı için tolerans gerekmedi.',
+  policyUnavailable: (date: string) =>
+    `Sipariş tarihinde (${date}) geçerli, onaylı bir teslim toleransı Ayarlar'da bulunamadı; tolerans gerektiren satırlar ` +
+    'değerlendirilmedi. Varsayılan bir yüzde kullanılmaz.',
+  realizationUnreadable:
+    'Teslim kayıtları (Lojistik) okunamadı; miktar ve durum gösterilmiyor. Hiçbir satır başlamamış ya da tamamlanmış sayılmaz.',
+  warningNote:
+    'Uyarı bandındaki sapma tamamlandı sayılır ve tolerans uyarısıyla işaretlenir.',
+  awaitingApprovalNote:
+    'Fazla teslim onay bandında; fazla teslim onayı kaydedilene kadar satır "Onay bekliyor" görünür.',
+  outsideToleranceNote: 'Fazla teslim blok bandında; satır tolerans dışıdır.',
+  returnsNote: 'Onaylı müşteri iadeleri teslim edilen miktardan düşülmez; ayrı sütunda gösterilir.',
+  empty: 'Siparişte gerçekleşmesi ölçülecek satır yok.',
+  linesCaption: 'Satır bazında gerçekleşme (sipariş biriminde)',
+  column: {
+    lineNo: 'Satır',
+    product: 'Ürün',
+    ordered: 'Esas miktar',
+    shipped: 'Sevk edilen',
+    delivered: 'Teslim edilen',
+    deviation: 'Sapma',
+    band: 'Tolerans bandı',
+    state: 'Durum',
+    closedRemainder: 'Kapatılan kalan',
+    approvedReturned: 'Onaylı iade',
+    unit: 'Birim',
+  },
+  deviation: {
+    None: 'Sapma yok',
+    Under: (quantity: string) => `Eksik ${quantity}`,
+    Over: (quantity: string) => `Fazla ${quantity}`,
+  },
+  band: {
+    Within: 'Tolerans içinde',
+    Warn: 'Uyarı bandı',
+    Approval: 'Onay bandı',
+    Block: 'Blok bandı',
+  } satisfies Record<RealizationBand, string>,
+  notRead: 'Okunamadı',
+  notMeasured: 'Ölçülmedi',
+  notApplicable: 'Yok',
 } as const
