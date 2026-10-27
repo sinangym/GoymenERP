@@ -748,3 +748,40 @@ export const ORDER_TABS_TEXT = {
   invoicesEmpty: 'Satış faturası ekranı henüz hazır değil. Bu sipariş için fatura bilgisi burada gösterilecek.',
   documentsUnavailable: 'Belgeler yalnız tek bir şirket seçiliyken gösterilir.',
 } as const
+
+/**
+ * UI-71 — S-11 Satış İletişimi ve Sözleşmeler, drawn in the S-04 "Sözleşme / Belgeler" tab (the S-11 visual is that tab).
+ * The order's own documents and the customer's Cari-card documents (where contracts valid across orders are kept), with
+ * one timeline over both. Document categories, a contract record and a communication log have no backend source yet;
+ * nothing here pretends they exist.
+ */
+export const SALES_DOCUMENTS_TEXT = {
+  note:
+    'Siparişe özel belgeler siparişe, siparişler arasında geçerli sözleşme gibi müşteri belgeleri müşterinin cari kartına eklenir. Zaman çizgisi ikisini birlikte gösterir.',
+  timelineHeading: 'Belge zaman çizgisi',
+  timelineCaption: 'Sipariş ve müşteri kartı belgeleri, en yeni üstte',
+  filterLabel: 'Bağlı kayda göre göster',
+  filter: {
+    all: (count: number) => `Tümü (${count})`,
+    order: (count: number) => `Sipariş (${count})`,
+    customer: (count: number) => `Müşteri kartı (${count})`,
+  },
+  columnDate: 'Tarih',
+  columnFile: 'Belge',
+  columnRelation: 'Bağlı kayıt',
+  columnVersion: 'Sürüm',
+  columnType: 'Tür',
+  columnScan: 'Güvenlik taraması',
+  relationOrder: (documentNo: string) => `Sipariş ${documentNo}`,
+  relationCustomer: (party: string) => `Müşteri kartı ${party}`,
+  loading: 'Belgeler getiriliyor…',
+  readFailed: 'Belgelerin bir kısmı getirilemedi. Gösterilenler eksik olabilir.',
+  readAgain: 'Belgeleri yeniden getir',
+  forbidden: 'Bu siparişin belgelerini görüntüleme yetkiniz yok.',
+  empty: 'Bu siparişe ve müşterinin cari kartına henüz belge eklenmedi.',
+  filterEmpty: 'Bu seçimde gösterilecek belge yok.',
+  customerHidden: 'Müşterinin cari kartı belgeleri sizin için görüntülenemiyor; zaman çizgisi yalnız sipariş belgelerini gösteriyor.',
+  orderHidden: 'Siparişin kendi belgeleri sizin için görüntülenemiyor; zaman çizgisi yalnız müşteri kartı belgelerini gösteriyor.',
+  orderPanelHeading: 'Sipariş belgeleri',
+  customerPanelHeading: 'Müşteri kartı belgeleri (sözleşmeler)',
+} as const

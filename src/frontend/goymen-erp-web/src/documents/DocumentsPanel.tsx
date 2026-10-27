@@ -26,6 +26,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEven
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   appendDocumentVersion,
+  documentsQueryKey,
   downloadDocument,
   downloadDocumentVersion,
   fetchDocumentVersions,
@@ -91,15 +92,19 @@ export function DocumentsPanel({
   companyId,
   namespace,
   entryGeneration,
+  heading = TEXT.heading,
 }: {
   readonly ownerKind: OwnerKind
   readonly ownerId: string
   readonly companyId: string
   readonly namespace: string
   readonly entryGeneration: number
+  /** The panel's own heading; a screen holding two owners' panels names each one (S-11). */
+  readonly heading?: string
 }) {
   const queryClient = useQueryClient()
-  const queryKey = [namespace, entryGeneration, 'documents', ownerKind, ownerId] as const
+  const headingId = useId()
+  const queryKey = documentsQueryKey(namespace, entryGeneration, ownerKind, ownerId)
   const query = useQuery({
     queryKey,
     queryFn: ({ signal }) => fetchDocuments(ownerKind, ownerId, companyId, signal),
@@ -112,9 +117,9 @@ export function DocumentsPanel({
   if (outcome.type === 'fence-stale') return null
 
   return (
-    <section aria-labelledby="documents-heading" className={styles.block} data-section="documents">
-      <h2 id="documents-heading" className={styles.title}>
-        {TEXT.heading}
+    <section aria-labelledby={headingId} className={styles.block} data-section="documents">
+      <h2 id={headingId} className={styles.title}>
+        {heading}
       </h2>
       {outcome.type === 'ok-single' ? (
         <DocumentsBody
