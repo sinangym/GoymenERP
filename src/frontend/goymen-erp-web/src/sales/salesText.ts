@@ -10,6 +10,7 @@ import type {
   RealizationBand,
   RealizationState,
 } from './orderStatus'
+import type { LineTotalState, TaxState } from './orderTotals'
 import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CancellationStatus, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
@@ -1078,4 +1079,68 @@ export const ORDER_STATUS_TEXT = {
   notRead: 'Okunamadı',
   notMeasured: 'Ölçülmedi',
   notApplicable: 'Yok',
+} as const
+
+/** API-03 / UI-15: the order totals card (SAT-D11, delegation No 15). Every amount is the server's; the screen computes none. */
+export const ORDER_TOTALS_TEXT = {
+  heading: 'Sipariş toplamları',
+  note:
+    'Tutarlar sunucudaki tek hesaplayıcıdan gelir: satır tutarı miktar × net birim fiyattır ve satır bazında para birimi ölçeğine ' +
+    'yarı-yukarı yuvarlanır; belge toplamları satırların toplamıdır. Ekranda yeniden hesaplanmaz.',
+  subject: 'sipariş toplamları',
+  unreadable: 'Toplamlar okunamadığı için hiçbir tutar gösterilmiyor; hiçbir tutar sıfır sayılmaz.',
+  serviceUnavailable:
+    'Toplam servisi şu anda yanıt veremiyor (Satış kaydı ya da yetki tanımı okunamadı). Tutarlar gösterilmiyor; biraz sonra yeniden deneyin.',
+  forbidden: 'Sipariş toplamları fiyat bilgisidir; fiyatları görme yetkiniz olmadığı için gösterilmiyor.',
+  supportCode: (correlationId: string) => `Destek kodu: ${correlationId}`,
+  revision: (revision: string, version: string) => `${revision} · sürüm ${version}`,
+  revisionLabel: 'Hesaplanan revizyon',
+  currency: 'Para birimi',
+  currencyNote: 'Tutarlar siparişin kendi para biriminde; kur çevrimi yapılmaz.',
+  documentHeading: 'Belge toplamı',
+  linesCaption: 'Satır tutarları (sipariş biriminde)',
+  net: 'Net tutar (KDV hariç)',
+  vat: 'KDV',
+  withheld: 'Tevkif edilen KDV',
+  gross: 'KDV dahil toplam',
+  payable: 'Ödenecek tutar',
+  incomplete: (unpriced: number, unconvertible: number, outOfRange: number) =>
+    [
+      unpriced > 0 ? `${unpriced} satırın fiyatı yok` : null,
+      unconvertible > 0 ? `${unconvertible} satırın fiyat birimi sipariş biriminden farklı (birim çevrimi yapılmaz)` : null,
+      outOfRange > 0 ? `${outOfRange} satırın tutarı sistemin sayı sınırını aşıyor` : null,
+    ].filter((part) => part !== null).join('; ') +
+    '. Bu satırlar tutar taşımadığı için belge toplamı gösterilmiyor; kısmi toplam sipariş tutarı sanılmasın.',
+  documentOutOfRange:
+    'Satır tutarları hesaplandı ama belge toplamı sistemin sayı sınırını aşıyor; toplam gösterilmiyor (kesilmiş bir tutar gösterilmez).',
+  noLines: 'Siparişte satır yok; toplanacak tutar yok.',
+  taxNoSource:
+    "KDV ve tevkifat oranlarının kaynağı (Ayarlar'daki KDV/tevkifat tanımı) henüz yok. KDV, tevkifat, KDV dahil toplam ve " +
+    'ödenecek tutar gösterilmiyor; sıfır sayılmaz.',
+  taxPartial: 'Bazı satırların KDV oranı tanımlı olmadığı için belge KDV toplamı gösterilmiyor.',
+  column: {
+    lineNo: 'Satır',
+    product: 'Ürün',
+    quantity: 'Miktar',
+    netUnitPrice: 'Net birim fiyat',
+    netAmount: 'Net tutar',
+    vatPercent: 'KDV oranı',
+    vat: 'KDV',
+    withheld: 'Tevkifat',
+    payable: 'Ödenecek',
+    state: 'Durum',
+  },
+  lineState: {
+    Computed: 'Hesaplandı',
+    Unpriced: 'Fiyat yok',
+    PriceUnitNotOrderUnit: 'Fiyat birimi farklı',
+    AmountOutOfRange: 'Tutar sınır dışı',
+  } satisfies Record<LineTotalState, string>,
+  taxState: {
+    Computed: 'Hesaplandı',
+    NoSource: 'Kaynağı yok',
+    NotComputed: 'Hesaplanmadı',
+  } satisfies Record<TaxState, string>,
+  percent: (value: string) => `%${value}`,
+  notAvailable: 'Yok',
 } as const

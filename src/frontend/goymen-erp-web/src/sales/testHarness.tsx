@@ -216,6 +216,11 @@ export interface HarnessConfig {
    * for that draft — nothing shipped, no tolerance asked, the three owner-less axes `NoSource` (a 404 when it served none).
    */
   readonly onStatus?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * API-03: GET `/sales/drafts/{id}/totals`; default: the totals of the detail this harness last served for that draft as the
+   * fake server's own fixture (`totalsOf`) — tax `NoSource` (no VAT master), an unpriced line `Unpriced` (a 404 when it served none).
+   */
+  readonly onTotals?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
@@ -341,6 +346,9 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/status$/.test(url)) {
           return config.onStatus?.(url, call.companyId) ?? statusOf(details.get(url.replace(/\/status$/, '')))
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/totals$/.test(url)) {
+          return config.onTotals?.(url, call.companyId) ?? totalsOf(details.get(url.replace(/\/totals$/, '')))
+        }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
         }
@@ -460,6 +468,78 @@ export function statusOf(detail: unknown): Response {
     invoicing: { state: 'NoSource' },
     financialClosure: { state: 'NoSource' },
     readyToClose: false,
+  })
+}
+
+/** Exact decimal text → (digits, scale) for the fake server's fixture amounts; never a JS number. */
+function exactDecimal(text: string): { readonly digits: bigint; readonly scale: number } {
+  const [whole, fraction = ''] = text.split('.')
+  return { digits: BigInt(`${whole}${fraction}`), scale: fraction.length }
+}
+
+/**
+ * The FAKE SERVER's fixture amount for a priced line in its order unit: quantity × price × (100 − discount %) / 100, rounded
+ * half away from zero to 2 decimals. Test data only — the screen never computes an amount; this stands in for the backend.
+ */
+function fixtureAmount(quantity: string, price: string, discountPercent: string | null): { readonly net: string; readonly amount: string } {
+  const q = exactDecimal(quantity)
+  const p = exactDecimal(price)
+  const d = exactDecimal(discountPercent ?? '0')
+  // net unit price = p × (100 − d) / 100, at scale p.scale + d.scale + 2
+  const netDigits = p.digits * (100n * 10n ** BigInt(d.scale) - d.digits)
+  const netScale = p.scale + d.scale + 2
+  const product = q.digits * netDigits
+  const scale = q.scale + netScale
+  const divisor = 10n ** BigInt(scale - 2)
+  const rounded = (product * 2n + divisor) / (divisor * 2n)
+  const text = (digits: bigint, at: number) => {
+    const padded = digits.toString().padStart(at + 1, '0')
+    return at === 0 ? padded : `${padded.slice(0, -at)}.${padded.slice(-at)}`
+  }
+  const net = text(netDigits, netScale).replace(/\.?0+$/, '')
+  return { net: net === '' ? '0' : net, amount: text(rounded, 2) }
+}
+
+/**
+ * API-03: the default totals — every line of the served detail; a priced line in its order unit `Computed` (the fixture
+ * amount), an unpriced one `Unpriced`; tax `NoSource` (no VAT master exists). A detail with withheld prices is 403.
+ */
+export function totalsOf(detail: unknown): Response {
+  const body = detail as {
+    draft?: { version?: unknown; revision?: string; currencyId?: string }
+    lines?: { lineId: string; lineNo: number; orderUnitId: string; quantity: string; unitPrice: string | null; priceUnitId: string | null;
+      discountPercent: string | null; priceDisclosure: string }[]
+  } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  if (body.lines.some((line) => line.priceDisclosure !== 'Visible')) return json({ status: 403 }, 403)
+  const lines = body.lines.map((line) => {
+    const priced = line.unitPrice !== null && line.priceUnitId === line.orderUnitId
+    const fixture = priced ? fixtureAmount(line.quantity, line.unitPrice as string, line.discountPercent) : null
+    return {
+      lineId: line.lineId, lineNo: line.lineNo, orderUnitId: line.orderUnitId, quantity: line.quantity,
+      state: line.unitPrice === null ? 'Unpriced' : priced ? 'Computed' : 'PriceUnitNotOrderUnit',
+      netUnitPrice: fixture?.net ?? null, netAmount: fixture?.amount ?? null, taxState: priced ? 'NoSource' : 'NotComputed',
+      vatPercent: null, vatAmount: null, withholdingShare: null, withheldVatAmount: null, grossAmount: null, payableAmount: null,
+    }
+  })
+  const unpriced = lines.filter((line) => line.state === 'Unpriced').length
+  const unconvertible = lines.filter((line) => line.state === 'PriceUnitNotOrderUnit').length
+  const complete = lines.length > 0 && unpriced === 0 && unconvertible === 0
+  const cents = lines.reduce((sum, line) => sum + (line.netAmount === null ? 0n : BigInt(line.netAmount.replace('.', ''))), 0n)
+  const net = cents.toString().padStart(3, '0')
+  return json({
+    draftVersion: body.draft.version,
+    revision: body.draft.revision,
+    currencyId: body.draft.currencyId,
+    amountScale: 2,
+    taxState: 'NoSource',
+    totals: {
+      state: complete ? 'Computed' : 'Incomplete', unpricedLineCount: unpriced, priceUnitNotOrderUnitLineCount: unconvertible,
+      amountOutOfRangeLineCount: 0,
+      netAmount: complete ? `${net.slice(0, -2)}.${net.slice(-2)}` : null, taxState: complete ? 'NoSource' : 'NotComputed',
+      vatAmount: null, withheldVatAmount: null, grossAmount: null, payableAmount: null,
+    },
+    lines,
   })
 }
 

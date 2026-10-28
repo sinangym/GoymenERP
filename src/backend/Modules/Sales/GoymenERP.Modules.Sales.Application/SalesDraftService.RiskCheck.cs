@@ -19,13 +19,13 @@ namespace GoymenERP.Modules.Sales.Application;
 /// approved order of the same customer account (the store's <see cref="ISalesOrderDraftStore.ListOpenApprovedOrdersAsync"/>), per
 /// line the approved quantity − the delivery owner's shipped total, not below zero. The approved basis is the current lines while
 /// the current revision is approved, else the last approved revision's (never unapproved quantities). SAT-D46: the amount of what
-/// remains enters VAT-INCLUDED; the VAT-included order totals are API-03's, which does not exist yet, so a remainder above zero
-/// is "Unavailable" (<c>vat_inclusive_amount_unavailable</c>) — the VAT-excluded net is never substituted. Nothing left (or no
+/// remains enters VAT-INCLUDED; the VAT-included order totals are API-03's (<see cref="SalesOrderTotalsCalculator"/>), whose VAT
+/// is "NoSource" until the SAT-D73/D74/D82 rate sources exist (MOD-03), so a remainder above zero is "Unavailable" (<c>vat_inclusive_amount_unavailable</c>) — the VAT-excluded net is never substituted. Nothing left (or no
 /// open approved order) is a recorded zero. An unpriced line, a price in another unit, an unreadable delivery owner or more
 /// orders than one read takes are "Unavailable" first, with their own reasons.</item>
 /// <item><b>This order</b> (SAT-D48): the order-time check is gross risk + this order. An order whose current revision is
 /// approved is already in the remainder (adds nothing); a cancelled or closed order adds nothing; any other order adds its
-/// VAT-included total, which is API-03's — "Unavailable" until it exists.</item>
+/// VAT-included total, which is API-03's — "Unavailable" while API-03's VAT has no source.</item>
 /// <item><b>The decision</b> is <see cref="SalesCustomerRiskCalculator"/>'s alone, in the order's currency at its money scale.</item>
 /// <item><b>Amounts</b> are disclosed only with <c>sales.orders.price.read</c>; the states, sources, reasons and result always.</item>
 /// <item><b>Fences</b> (the draft read's): before anything is read, after the draft, after the order list, after each owner.</item>
@@ -307,7 +307,8 @@ public sealed partial class SalesDraftService
             anythingLeft |= remains;
         }
 
-        // SAT-D46: what remains enters VAT-included, from API-03's totals — which do not exist yet. Never the VAT-excluded net.
+        // SAT-D46: what remains enters VAT-included, from API-03's totals — whose VAT has no source yet (SAT-D73/D74/D82, MOD-03).
+        // Never the VAT-excluded net.
         return anythingLeft
             ? SalesRiskInput.Unavailable(SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable)
             : SalesRiskInput.Available([], SalesRiskTaxBasis.IncludingTax);
@@ -317,7 +318,8 @@ public sealed partial class SalesDraftService
     /// SAT-D48: this order as far as it is not already in the approved remainder. Cancelled or closed: nothing. Current revision
     /// approved: already in the remainder. Never approved: its whole VAT-included total (SAT-D46). A revision of an approved order
     /// awaiting re-approval: its new VAT-included remaining amount REPLACES the old approved remainder already counted, so only the
-    /// difference is added (DEC-FIN-007, no double count). Both need API-03's VAT-included totals — unavailable until then.
+    /// difference is added (DEC-FIN-007, no double count). Both need API-03's VAT-included totals — unavailable while its VAT has no
+    /// source.
     /// </summary>
     private static SalesRiskInput ThisOrder(SalesOrderDraft draft) =>
         draft.State != SalesDraftState.Draft || draft.ApprovalState == InternalApprovalState.Approved
