@@ -41,6 +41,13 @@ public sealed class CompanyPartyAccount
 
     public string? ContactInformationJson { get; private set; }
 
+    /// <summary>
+    /// SAT-D57: the company's customer (price) group this account is in, or none. A group of THIS company only (the
+    /// database's composite foreign key on CompanyId + CustomerGroupId); no group means the price chain's group tier is
+    /// skipped for this account.
+    /// </summary>
+    public Guid? CustomerGroupId { get; private set; }
+
     public bool IsActive { get; private set; } = true;
 
     public long Version { get; private set; } = 1;
@@ -115,6 +122,27 @@ public sealed class CompanyPartyAccount
         ContactInformationJson = json;
         UpdatedAtUtc = DateTimeOffset.UtcNow;
         Version = nextVersion;
+    }
+
+    /// <summary>
+    /// SAT-D57: assigns (or, with null, clears) the account's customer group. The caller has already proven that the
+    /// group belongs to this account's company and is active; false when the value is unchanged (no version move).
+    /// </summary>
+    public bool AssignCustomerGroup(Guid? customerGroupId)
+    {
+        if (customerGroupId == Guid.Empty)
+        {
+            throw new ArgumentException("Müşteri grubu kimliği boş olamaz.", nameof(customerGroupId));
+        }
+
+        if (CustomerGroupId == customerGroupId)
+        {
+            return false;
+        }
+
+        CustomerGroupId = customerGroupId;
+        Touch(DateTimeOffset.UtcNow);
+        return true;
     }
 
     internal void Touch(DateTimeOffset utcNow)

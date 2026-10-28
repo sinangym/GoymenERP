@@ -76,6 +76,8 @@ import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { Field } from '../ui/Field'
 import { Button } from '../ui/Button'
 import { StatusIndicator } from '../ui/StatusIndicator'
+import { CUSTOMER_GROUPS_ROUTE } from './customerGroupRoute'
+import { CUSTOMER_GROUP_TEXT } from './customerGroup'
 import styles from './CariListPage.module.css'
 
 /**
@@ -873,6 +875,10 @@ function CariList({ namespace }: { readonly namespace: string | null }) {
     <section aria-labelledby="cari-list-heading" className={styles.page}>
       <div className={styles.titleRow}>
         <h1 id="cari-list-heading" className={styles.title}>Cari Kartlar</h1>
+
+        {/* SAT-D57: the company's customer group list, under this same list capability (see
+            customerGroupRoute); before the create action, so the keyboard still walks from it to the filters. */}
+        <Link to={CUSTOMER_GROUPS_ROUTE}>{CUSTOMER_GROUP_TEXT.pageLink}</Link>
 
         {/**
           * K5 (Sinan, 20 Eylül 2026): creation is ONE authorised "Yeni …" action INSIDE the relevant

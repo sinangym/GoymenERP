@@ -704,7 +704,11 @@ public sealed class CounterpartyContactInformationSqlServerRelationalAcceptanceT
         var down = await Assert.ThrowsAsync<SqlException>(() =>
             migrator.MigrateAsync("20260910120000_AllowCounterpartyAccountNoRole"));
         Assert.Equal(51000, down.Number);
-        Assert.Equal(before, (await ReadAsync(client, PathFor(party))).GetRawText());
+        // The later, still-empty migrations (AT-009, SAT-D57) roll back first in their own transactions, so the
+        // runtime model cannot read the account until it is migrated forward again; the contact JSON itself stays.
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[CompanyPartyAccounts] WHERE [PartyId]=@Party AND [ContactInformationJson] IS NOT NULL;",
+            party));
         await migrator.MigrateAsync();
         Assert.Equal(before, (await ReadAsync(client, PathFor(party))).GetRawText());
     }
