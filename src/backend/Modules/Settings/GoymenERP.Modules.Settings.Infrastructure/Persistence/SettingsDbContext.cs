@@ -18,6 +18,8 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
 
     internal DbSet<SalesDiscountLimitVersionRow> SalesDiscountLimitVersions => Set<SalesDiscountLimitVersionRow>();
 
+    internal DbSet<SalesDiscountLimitWithdrawalRow> SalesDiscountLimitWithdrawals => Set<SalesDiscountLimitWithdrawalRow>();
+
     internal DbSet<SalesDiscountLimitMembershipRow> SalesDiscountLimitMemberships =>
         Set<SalesDiscountLimitMembershipRow>();
 
@@ -129,6 +131,30 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
             .OnDelete(DeleteBehavior.Restrict);
         limit.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
 
+        // SAT-D84: a not-yet-effective record's withdrawal (insert-only; the record row itself never changes).
+        var withdrawal = modelBuilder.Entity<SalesDiscountLimitWithdrawalRow>();
+        withdrawal.ToTable("SalesDiscountLimitWithdrawals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Version", "[LimitVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Replacement",
+                "[ReplacedByVersion] IS NULL OR [ReplacedByVersion] > [LimitVersion]");
+            table.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Recorded",
+                "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        withdrawal.HasKey(x => new { x.CompanyId, x.LimitGroupId, x.LimitVersion });
+        withdrawal.Property(x => x.WithdrawnBy).HasMaxLength(128);
+        withdrawal.Property(x => x.Reason).HasMaxLength(4000);
+        withdrawal.HasOne<SalesDiscountLimitVersionRow>()
+            .WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.LimitGroupId, x.LimitVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        withdrawal.HasOne<SalesDiscountLimitVersionRow>()
+            .WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.LimitGroupId, x.ReplacedByVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        withdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
         var membership = modelBuilder.Entity<SalesDiscountLimitMembershipRow>();
         membership.ToTable("SalesDiscountLimitMemberships", Schema, table =>
         {
@@ -177,7 +203,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
 
     /// <summary>
     /// Fail-closed write fence: Manufacturing tolerance policies stay read-only here (their approved command workflow is
-    /// separate); nothing is ever deleted; limit records and binding group rows are immutable once written; every Settings
+    /// separate); nothing is ever deleted; limit records, their withdrawals and binding group rows are immutable once written; every Settings
     /// row written belongs to this context's resolved company (a multi-company binding write uses one context per company).
     /// </summary>
     private void ApplyWriteGuards()
@@ -201,7 +227,8 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
             }
 
             if (entry.State == EntityState.Modified
-                && entry.Entity is SalesDiscountLimitVersionRow or SalesDiscountLimitMembershipGroupRow)
+                && entry.Entity is SalesDiscountLimitVersionRow or SalesDiscountLimitWithdrawalRow
+                    or SalesDiscountLimitMembershipGroupRow)
             {
                 throw new InvalidOperationException("İskonto limit kaydı ve grup bağı satırı değiştirilemez; yeni sürüm yazılır.");
             }
@@ -210,6 +237,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
             {
                 SalesDiscountLimitGroupRow row => row.CompanyId,
                 SalesDiscountLimitVersionRow row => row.CompanyId,
+                SalesDiscountLimitWithdrawalRow row => row.CompanyId,
                 SalesDiscountLimitMembershipRow row => row.CompanyId,
                 SalesDiscountLimitMembershipGroupRow row => row.CompanyId,
                 _ => (Guid?)null,

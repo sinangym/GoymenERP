@@ -27,6 +27,8 @@ public interface ISettingsSalesPolicyProviderV1
     /// The maximum discount percent of one limit group (SAT-D2). <paramref name="limitGroupId"/> is an
     /// opaque identity: SAT-D63 binds PERSONS to limit groups separate from roles (person → group, the Settings
     /// owner's record); it is never a role name. A limit is fixed or a linked group's limit + extra points (SAT-D62).
+    /// The answer is the record in force on <paramref name="effectiveOn"/> (SAT-D78: records may be scheduled ahead);
+    /// Sales asks for the day the order is entered or revised (SAT-D81), not the order's business date.
     /// <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/> means the group has no approved
     /// limit, which SAT-D2 defines as "every discount goes to approval" — never "no limit".
     /// </summary>

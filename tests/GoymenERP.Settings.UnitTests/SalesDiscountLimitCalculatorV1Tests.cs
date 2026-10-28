@@ -110,13 +110,158 @@ public sealed class SalesDiscountLimitCalculatorV1Tests
     [Fact]
     public void A_link_that_closes_a_cycle_over_the_current_records_is_detected_including_a_self_link()
     {
-        var links = new Dictionary<Guid, Guid?> { [Seller] = null, [Manager] = Seller, [Senior] = Manager };
+        var groups = Groups(
+            Group(Seller, true, Fixed(Seller, 1, 35m, Day)),
+            Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day)),
+            Group(Senior, true, Linked(Senior, 1, Manager, 2m, Day)));
 
-        Assert.True(SalesDiscountLimitCalculatorV1.WouldCreateCycle(links, Seller, Senior));
-        Assert.True(SalesDiscountLimitCalculatorV1.WouldCreateCycle(links, Seller, Seller));
-        Assert.True(SalesDiscountLimitCalculatorV1.WouldCreateCycle(links, Seller, Manager));
-        Assert.False(SalesDiscountLimitCalculatorV1.WouldCreateCycle(links, Senior, Seller));
-        Assert.False(SalesDiscountLimitCalculatorV1.WouldCreateCycle(links, Senior, Guid.NewGuid()));
+        Assert.True(SalesDiscountLimitCalculatorV1.CheckLink(groups, Seller, Senior, Day).CreatesCycle);
+        Assert.True(SalesDiscountLimitCalculatorV1.CheckLink(groups, Seller, Seller, Day).CreatesCycle);
+        Assert.True(SalesDiscountLimitCalculatorV1.CheckLink(groups, Seller, Manager, Day).CreatesCycle);
+        var fine = SalesDiscountLimitCalculatorV1.CheckLink(groups, Senior, Seller, Day);
+        Assert.False(fine.CreatesCycle);
+        Assert.Equal([Seller], fine.Chain);
+        Assert.False(SalesDiscountLimitCalculatorV1.CheckLink(groups, Senior, Guid.NewGuid(), Day).CreatesCycle);
+        Assert.Equal([Manager, Seller], SalesDiscountLimitCalculatorV1.CheckLink(groups, Senior, Manager, Day).Chain);
+    }
+
+    [Fact]
+    public void Sat_d78_a_future_record_is_not_in_force_before_its_date_and_applies_by_itself_from_it()
+    {
+        var groups = Groups(Group(Seller, true, Fixed(Seller, 1, 30m, Day), Fixed(Seller, 2, 35m, Day.AddDays(66))));
+
+        var before = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(65));
+        var on = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(66));
+        var after = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(400));
+
+        Assert.Equal((30m, 1L, (DateOnly?)Day.AddDays(65)), (before.Percent, before.Record!.Version, before.EffectiveThrough));
+        Assert.Equal((35m, 2L, (DateOnly?)Day.AddDays(66), (DateOnly?)null),
+            (on.Percent, on.Record!.Version, on.EffectiveFrom, on.EffectiveThrough));
+        Assert.Equal(35m, after.Percent);
+        Assert.Equal(1L, SalesDiscountLimitCalculatorV1.RecordInForce(groups[Seller], Day.AddDays(65))!.Version);
+        Assert.Equal(2L, SalesDiscountLimitCalculatorV1.RecordInForce(groups[Seller], Day.AddDays(66))!.Version);
+        Assert.Null(SalesDiscountLimitCalculatorV1.RecordInForce(groups[Seller], Day.AddDays(-1)));
+    }
+
+    [Fact]
+    public void Sat_d78_only_the_first_record_is_future_and_nothing_is_in_force_before_it()
+    {
+        var groups = Groups(Group(Seller, true, Fixed(Seller, 1, 30m, Day.AddDays(5))));
+
+        Assert.Equal(SalesDiscountLimitResolutionOutcomeV1.None, SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day).Outcome);
+        Assert.Equal(30m, SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(5)).Percent);
+    }
+
+    [Fact]
+    public void Sat_d78_the_linked_chain_is_resolved_on_the_asked_date_with_each_groups_record_of_that_date()
+    {
+        // Seller 30 % today and 35 % from day +10; the manager is seller + 3 from today and seller + 5 from day +20.
+        var groups = Groups(
+            Group(Seller, true, Fixed(Seller, 1, 30m, Day), Fixed(Seller, 2, 35m, Day.AddDays(10))),
+            Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day), Linked(Manager, 2, Seller, 5m, Day.AddDays(20))),
+            Group(Senior, true, Linked(Senior, 1, Manager, 1m, Day)));
+
+        var today = SalesDiscountLimitCalculatorV1.Resolve(groups, Senior, Day);
+        var sellerChanged = SalesDiscountLimitCalculatorV1.Resolve(groups, Senior, Day.AddDays(10));
+        var managerChanged = SalesDiscountLimitCalculatorV1.Resolve(groups, Senior, Day.AddDays(20));
+
+        Assert.Equal((34m, Day, (DateOnly?)Day.AddDays(9)), (today.Percent, today.EffectiveFrom, today.EffectiveThrough));
+        Assert.Equal((39m, Day.AddDays(10), (DateOnly?)Day.AddDays(19)),
+            (sellerChanged.Percent, sellerChanged.EffectiveFrom, sellerChanged.EffectiveThrough));
+        Assert.Equal((41m, Day.AddDays(20), (DateOnly?)null),
+            (managerChanged.Percent, managerChanged.EffectiveFrom, managerChanged.EffectiveThrough));
+    }
+
+    [Fact]
+    public void Sat_d79_a_linked_group_whose_linked_group_has_no_limit_until_a_future_date_is_none_until_then()
+    {
+        var groups = Groups(
+            Group(Seller, true, Fixed(Seller, 1, 30m, Day.AddDays(7))),
+            Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day)));
+
+        Assert.Equal(SalesDiscountLimitResolutionOutcomeV1.None, SalesDiscountLimitCalculatorV1.Resolve(groups, Manager, Day.AddDays(6)).Outcome);
+        Assert.Equal(33m, SalesDiscountLimitCalculatorV1.Resolve(groups, Manager, Day.AddDays(7)).Percent);
+    }
+
+    [Fact]
+    public void Sat_d78_a_link_is_checked_on_every_later_date_so_a_cycle_that_only_exists_in_the_future_is_detected()
+    {
+        // Today the manager is fixed; from day +30 it is scheduled to follow the seller. Linking the seller to the manager
+        // from today is fine until day +29 but closes seller → manager → seller from day +30.
+        var groups = Groups(
+            Group(Seller, true, Fixed(Seller, 1, 30m, Day)),
+            Group(Manager, true, Fixed(Manager, 1, 40m, Day), Linked(Manager, 2, Seller, 3m, Day.AddDays(30))));
+
+        var check = SalesDiscountLimitCalculatorV1.CheckLink(groups, Seller, Manager, Day);
+        Assert.True(check.CreatesCycle);
+
+        // Starting after the manager's scheduled change it is the same cycle; a link of another group is fine.
+        Assert.True(SalesDiscountLimitCalculatorV1.CheckLink(groups, Seller, Manager, Day.AddDays(40)).CreatesCycle);
+        var senior = SalesDiscountLimitCalculatorV1.CheckLink(groups, Senior, Manager, Day);
+        Assert.False(senior.CreatesCycle);
+        Assert.Equal([Manager, Seller], senior.Chain);
+    }
+
+    [Fact]
+    public void Sat_d78_the_scheduled_records_are_the_later_ones_with_a_same_day_correction_superseding()
+    {
+        var group = Group(Seller, true,
+            Fixed(Seller, 1, 30m, Day), Fixed(Seller, 2, 35m, Day.AddDays(10)), Fixed(Seller, 3, 36m, Day.AddDays(10)),
+            Fixed(Seller, 4, 40m, Day.AddDays(20)));
+
+        var scheduled = SalesDiscountLimitCalculatorV1.ScheduledAfter(group, Day);
+
+        Assert.Equal([3L, 4L], scheduled.Select(record => record.Version));
+        Assert.Equal([4L], SalesDiscountLimitCalculatorV1.ScheduledAfter(group, Day.AddDays(10)).Select(record => record.Version));
+        Assert.Empty(SalesDiscountLimitCalculatorV1.ScheduledAfter(group, Day.AddDays(20)));
+    }
+
+    [Fact]
+    public void Sat_d84_a_withdrawn_record_is_ignored_and_the_linked_chain_is_recalculated_without_it()
+    {
+        var withdrawn = Fixed(Seller, 2, 35m, Day.AddDays(10)) with { IsWithdrawn = true };
+        var groups = Groups(
+            Group(Seller, true, Fixed(Seller, 1, 30m, Day), withdrawn),
+            Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day)));
+
+        var seller = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(10));
+        var manager = SalesDiscountLimitCalculatorV1.Resolve(groups, Manager, Day.AddDays(10));
+
+        Assert.Equal((30m, 1L, (DateOnly?)null), (seller.Percent, seller.Record!.Version, seller.EffectiveThrough));
+        Assert.Equal((33m, (DateOnly?)null), (manager.Percent, manager.EffectiveThrough));
+        Assert.Empty(SalesDiscountLimitCalculatorV1.ScheduledAfter(groups[Seller], Day));
+        Assert.Equal(1L, SalesDiscountLimitCalculatorV1.LatestRecord(groups[Seller])!.Version);
+    }
+
+    [Fact]
+    public void Sat_d84_after_a_withdrawal_a_later_record_may_start_before_the_withdrawn_ones_date()
+    {
+        var groups = Groups(Group(Seller, true,
+            Fixed(Seller, 1, 30m, Day), Fixed(Seller, 2, 35m, Day.AddDays(10)) with { IsWithdrawn = true },
+            Fixed(Seller, 3, 32m, Day.AddDays(5))));
+
+        Assert.Equal((32m, 3L), (SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(20)).Percent,
+            SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(20)).Record!.Version));
+        Assert.Equal(30m, SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(4)).Percent);
+    }
+
+    [Fact]
+    public void Sat_d84_a_withdrawal_that_extends_an_earlier_link_into_a_cycle_is_detected()
+    {
+        // The manager follows the seller today and is fixed from day +10; the seller follows the manager from day +20.
+        // Withdrawing the manager's day +10 record would keep manager → seller → manager from day +20 on.
+        var groups = Groups(
+            Group(Manager, true, Linked(Manager, 1, Seller, 2m, Day), Fixed(Manager, 2, 40m, Day.AddDays(10))),
+            Group(Seller, true, Fixed(Seller, 1, 30m, Day), Linked(Seller, 2, Manager, 1m, Day.AddDays(20))));
+        Assert.False(SalesDiscountLimitCalculatorV1.CheckGroupLinks(groups, Manager, Day).CreatesCycle);
+
+        var manager = groups[Manager];
+        var afterWithdrawal = SalesDiscountLimitCalculatorV1.With(groups, manager with
+        {
+            Versions = [manager.Versions[0], manager.Versions[1] with { IsWithdrawn = true }],
+        });
+
+        Assert.True(SalesDiscountLimitCalculatorV1.CheckGroupLinks(afterWithdrawal, Manager, Day.AddDays(10)).CreatesCycle);
     }
 
     [Theory]

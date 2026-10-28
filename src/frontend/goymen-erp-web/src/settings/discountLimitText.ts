@@ -19,8 +19,10 @@ export const LIMIT_TEXT = {
   columnCode: 'Kod',
   columnName: 'Ad',
   columnStatus: 'Durum',
-  columnRecorded: 'Kayıtlı limit',
+  columnRecorded: 'Bugünkü kayıt',
   columnEffective: 'Bugün geçerli limit',
+  columnScheduled: 'Planlı değişiklikler',
+  noScheduled: 'Yok',
   columnActions: 'İşlemler',
   active: 'Etkin',
   passive: 'Pasif',
@@ -42,8 +44,21 @@ export const LIMIT_TEXT = {
   linkedGroupPlaceholder: 'Grup seçin',
   extraPointsLabel: 'Ek yüzde puan (0-100)',
   limitHelp:
-    'Değişiklik bugünden geçerli olur; daha önce kontrol edilmiş siparişlerin kaydı değişmez. Bağlı limit, bağlı grubun limitine ek puan eklenerek ' +
-    'hesaplanır ve %100 ile sınırlıdır; bağlı grubun limiti yoksa iskonto onaya gider.',
+    'Değişiklik seçilen tarihten itibaren kendiliğinden geçerli olur (bugün veya ileri bir tarih); daha önce kontrol edilmiş siparişlerin kaydı değişmez. ' +
+    'Bağlı limit, bağlı grubun o tarihteki limitine ek puan eklenerek hesaplanır ve %100 ile sınırlıdır; bağlı grubun limiti yoksa iskonto onaya gider.',
+  effectiveFromLabel: 'Geçerlilik başlangıcı',
+  effectiveFromHelp:
+    'Bugün veya ileri bir tarih. Planlı bir değişiklik varsa yeni kayıt o tarihten önce başlayamaz; planlı kaydı düzeltmek için aynı tarihi seçin.',
+  effectiveFromError: 'Tarih bugünden ve son planlı değişiklikten önce olamaz.',
+  scheduledListLabel: 'Planlı değişiklikler',
+  correctScheduled: 'Düzelt',
+  withdrawScheduled: 'Geri çek',
+  correctHeading: 'Planlı limiti düzelt',
+  withdrawHeading: 'Planlı limiti geri çek',
+  withdrawConfirm:
+    'Planlı kayıt yürürlüğe girmeden geri çekilir; o tarihten sonra da önceki limit geçerli kalır. Yürürlüğe girmiş kayıt geri çekilemez.',
+  correctHelp:
+    'Planlı kayıt geri çekilir ve yerine bu kayıt yazılır (tek işlem). Tarih boş bırakılamaz; yürürlüğe girmiş kayıt düzeltilemez, yeni kayıt girilir.',
   deactivateConfirm: 'Pasif grup limite katkı vermez ve yeniden değiştirilemez. Pasife almak istiyor musunuz?',
   save: 'Kaydet',
   cancel: 'Vazgeç',
@@ -101,7 +116,15 @@ export function refusalText(status: number, code: string | null, companyLabel: s
     case LIMIT_PROBLEM.linkedGroupInactive:
       return 'Pasif bir gruba bağlanılamaz.'
     case LIMIT_PROBLEM.linkCycle:
-      return 'Bu bağlantı gruplar arasında döngü oluşturur (örn. A→B→A); kaydedilmedi.'
+      return 'Bu bağlantı gruplar arasında döngü oluşturur (örn. A→B→A), bugün ya da planlı bir değişiklikten sonra; kaydedilmedi.'
+    case LIMIT_PROBLEM.effectiveFromPast:
+      return 'Geçerlilik başlangıcı bugünden önce olamaz.'
+    case LIMIT_PROBLEM.recordInEffect:
+      return 'Bu limit kaydı yürürlüğe girdi; değiştirilemez veya geri çekilemez. Yeni bir limit kaydı girin.'
+    case LIMIT_PROBLEM.recordWithdrawn:
+      return 'Bu limit kaydı daha önce geri çekildi.'
+    case LIMIT_PROBLEM.effectiveFromBeforeScheduled:
+      return 'Bu grubun daha ileri tarihli planlı bir limiti var; yeni kayıt o tarihten önce başlayamaz. Planlı kaydı düzeltmek için aynı tarihi seçin.'
     case LIMIT_PROBLEM.bindingCompaniesMismatch:
       return 'Şirket listeniz değişmiş; güncel hâli yüklendi, yeniden kaydedin.'
     case LIMIT_PROBLEM.bindingPersonNotMember:
@@ -129,4 +152,16 @@ export function definitionLabel(
 
 export function percentLabel(percent: string): string {
   return `%${percent}`
+}
+
+/** A business date (`yyyy-MM-dd`) as shown on screen: `dd.MM.yyyy`. Presentation only. */
+export function businessDateLabel(value: string): string {
+  const [year, month, day] = value.split('-')
+  return `${day}.${month}.${year}`
+}
+
+/** SAT-D78: one scheduled change, e.g. "01.01.2027 itibarıyla: Sabit %35 — o gün %35". */
+export function scheduledLabel(effectiveFrom: string, definition: string, effectivePercent: string | null): string {
+  const effective = effectivePercent === null ? 'o gün limit yok' : `o gün %${effectivePercent}`
+  return `${businessDateLabel(effectiveFrom)} itibarıyla: ${definition} — ${effective}`
 }

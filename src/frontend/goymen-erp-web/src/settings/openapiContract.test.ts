@@ -12,7 +12,9 @@ import {
   LIMIT_PROBLEM,
   bindingPath,
   groupDeactivationPath,
+  groupLimitCorrectionPath,
   groupLimitPath,
+  groupLimitWithdrawalPath,
   groupNamePath,
 } from './discountLimitContract'
 import { binding, groupList } from './testHarness'
@@ -76,6 +78,8 @@ describe('discount limit client ↔ canonical OpenAPI', () => {
     operation('put', groupNamePath(ID))
     operation('post', groupDeactivationPath(ID))
     operation('put', groupLimitPath(ID))
+    operation('post', groupLimitWithdrawalPath(ID))
+    operation('post', groupLimitCorrectionPath(ID))
     operation('get', `${DISCOUNT_LIMIT_PEOPLE_PATH}?q=a&limit=25`)
     operation('get', bindingPath(ID))
     operation('put', bindingPath(ID))
@@ -86,8 +90,22 @@ describe('discount limit client ↔ canonical OpenAPI', () => {
     expectFits({ expectedVersion: '1', name: 'A', reason: 'r' }, requestSchemaOf('put', groupNamePath(ID)))
     expectFits({ expectedVersion: '1', reason: 'r' }, requestSchemaOf('post', groupDeactivationPath(ID)))
     expectFits(
-      { expectedVersion: '1', kind: 'Fixed', percent: '1', linkedGroupId: null, extraPoints: null, reason: 'r' },
+      { expectedVersion: '1', kind: 'Fixed', percent: '1', linkedGroupId: null, extraPoints: null, reason: 'r', effectiveFrom: null },
       requestSchemaOf('put', groupLimitPath(ID)),
+    )
+    expectFits({ expectedVersion: '1', limitVersion: '2', reason: 'r' }, requestSchemaOf('post', groupLimitWithdrawalPath(ID)))
+    expectFits(
+      {
+        expectedVersion: '1',
+        limitVersion: '2',
+        kind: 'Fixed',
+        percent: '1',
+        linkedGroupId: null,
+        extraPoints: null,
+        reason: 'r',
+        effectiveFrom: null,
+      },
+      requestSchemaOf('post', groupLimitCorrectionPath(ID)),
     )
     expectFits({ groupCodes: [], companies: [], reason: 'r' }, requestSchemaOf('put', bindingPath(ID)))
     expectFits({ companyId: ID, expectedVersion: '0' }, 'SalesDiscountLimitBindingCompanyVersionV1')
@@ -100,6 +118,10 @@ describe('discount limit client ↔ canonical OpenAPI', () => {
       expectFits(group, 'SalesDiscountLimitGroupViewV1')
       expectFits(group.effectiveLimit, 'SalesDiscountLimitEffectiveViewV1')
       if (group.limit !== null) expectFits(group.limit, 'SalesDiscountLimitDefinitionViewV1')
+      for (const entry of group.scheduled) {
+        expectFits(entry, 'SalesDiscountLimitScheduledViewV1')
+        expectFits(entry.limit, 'SalesDiscountLimitDefinitionViewV1')
+      }
     }
 
     const view = binding()

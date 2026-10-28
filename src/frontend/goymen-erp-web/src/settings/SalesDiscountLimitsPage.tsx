@@ -32,24 +32,35 @@ import {
   fetchPeople,
   renameLimitGroup,
   setBinding,
+  correctGroupLimit,
   setGroupLimit,
+  withdrawGroupLimit,
   type CommandOutcome,
 } from './discountLimitApi'
 import {
   LIMIT_INPUT,
   LIMIT_KIND,
   LIMIT_PROBLEM,
+  isDateText,
   isPercentText,
   isValidCode,
   normalizeCode,
   type Binding,
+  type LimitDefinition,
   type LimitGroup,
   type LimitGroupList,
   type LimitKind,
   type Person,
   type PersonList,
 } from './discountLimitContract'
-import { LIMIT_TEXT, definitionLabel, percentLabel, refusalText } from './discountLimitText'
+import {
+  LIMIT_TEXT,
+  businessDateLabel,
+  definitionLabel,
+  percentLabel,
+  refusalText,
+  scheduledLabel,
+} from './discountLimitText'
 import { useCommandAttempt, type AttemptStatus } from './useCommandAttempt'
 import styles from './settings.module.css'
 
@@ -147,6 +158,8 @@ type Editor =
   | { readonly kind: 'rename'; readonly group: LimitGroup }
   | { readonly kind: 'limit'; readonly group: LimitGroup }
   | { readonly kind: 'deactivate'; readonly group: LimitGroup }
+  | { readonly kind: 'correct'; readonly group: LimitGroup; readonly record: LimitDefinition }
+  | { readonly kind: 'withdraw'; readonly group: LimitGroup; readonly record: LimitDefinition }
 
 function GroupsSection({
   list,
@@ -190,6 +203,7 @@ function GroupsSection({
               <th scope="col">{LIMIT_TEXT.columnStatus}</th>
               <th scope="col">{LIMIT_TEXT.columnRecorded}</th>
               <th scope="col">{LIMIT_TEXT.columnEffective}</th>
+              <th scope="col">{LIMIT_TEXT.columnScheduled}</th>
               <th scope="col">{LIMIT_TEXT.columnActions}</th>
             </tr>
           </thead>
@@ -213,6 +227,52 @@ function GroupsSection({
                   {group.effectiveLimit.state === 'Defined' && group.effectiveLimit.percent !== null
                     ? percentLabel(group.effectiveLimit.percent)
                     : LIMIT_TEXT.noLimit}
+                </td>
+                <td>
+                  {group.scheduled.length === 0 ? (
+                    LIMIT_TEXT.noScheduled
+                  ) : (
+                    <ul aria-label={`${LIMIT_TEXT.scheduledListLabel} — ${group.code}`} className={styles.plainList}>
+                      {group.scheduled.map((entry) => (
+                        <li key={entry.limit.limitVersion}>
+                          <span>
+                            {scheduledLabel(
+                              entry.limit.effectiveFrom,
+                              definitionLabel(
+                                entry.limit,
+                                entry.limit.linkedGroupId === null
+                                  ? null
+                                  : (byId.get(entry.limit.linkedGroupId)?.code ?? null),
+                              ),
+                              entry.effectiveLimit.state === 'Defined' ? entry.effectiveLimit.percent : null,
+                            )}
+                          </span>
+                          {group.isActive ? (
+                            <span className={styles.actions}>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                aria-label={`${LIMIT_TEXT.correctScheduled} — ${group.code} ${businessDateLabel(entry.limit.effectiveFrom)}`}
+                                onClick={() => setEditor({ kind: 'correct', group, record: entry.limit })}
+                              >
+                                {LIMIT_TEXT.correctScheduled}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="danger"
+                                aria-label={`${LIMIT_TEXT.withdrawScheduled} — ${group.code} ${businessDateLabel(entry.limit.effectiveFrom)}`}
+                                onClick={() => setEditor({ kind: 'withdraw', group, record: entry.limit })}
+                              >
+                                {LIMIT_TEXT.withdrawScheduled}
+                              </Button>
+                            </span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </td>
                 <td>
                   {group.isActive ? (
@@ -277,6 +337,29 @@ function GroupsSection({
           companyId={companyId}
           group={editor.group}
           groups={list.groups}
+          businessDate={list.businessDate}
+          onDone={close}
+          onConflict={conflict}
+        />
+      ) : null}
+      {editor.kind === 'correct' ? (
+        <LimitForm
+          key={`${editor.group.id}:${editor.record.limitVersion}`}
+          companyId={companyId}
+          group={editor.group}
+          groups={list.groups}
+          businessDate={list.businessDate}
+          correcting={editor.record}
+          onDone={close}
+          onConflict={conflict}
+        />
+      ) : null}
+      {editor.kind === 'withdraw' ? (
+        <WithdrawLimitForm
+          key={`${editor.group.id}:${editor.record.limitVersion}`}
+          companyId={companyId}
+          group={editor.group}
+          record={editor.record}
           onDone={close}
           onConflict={conflict}
         />
@@ -497,10 +580,27 @@ function LimitForm({
   companyId,
   group,
   groups,
+  businessDate,
+  correcting,
   onDone,
   onConflict,
-}: FormProps & { readonly group: LimitGroup; readonly groups: readonly LimitGroup[] }) {
-  const current = group.limit
+}: FormProps & {
+  readonly group: LimitGroup
+  readonly groups: readonly LimitGroup[]
+  readonly businessDate: string
+  /** SAT-D84: the scheduled record this form corrects (withdrawn + replaced); absent = a new record. */
+  readonly correcting?: LimitDefinition
+}) {
+  // A new record starts from the group's latest record (the last scheduled one, else the one in force) and can start no
+  // earlier than today or that record's date (SAT-D78). A correction starts from the corrected record and can start no
+  // earlier than today or the scheduled record before it (SAT-D84). The server enforces the same.
+  const scheduledBefore = correcting === undefined
+    ? group.scheduled
+    : group.scheduled.filter((entry) => entry.limit.effectiveFrom < correcting.effectiveFrom)
+  const previousScheduled = scheduledBefore.at(-1)?.limit ?? null
+  const current = correcting ?? previousScheduled ?? group.limit
+  const earliest = previousScheduled?.effectiveFrom ?? businessDate
+  const [effectiveFrom, setEffectiveFrom] = useState(correcting?.effectiveFrom ?? earliest)
   const [kind, setKind] = useState<LimitKind>(current?.kind ?? LIMIT_KIND.fixed)
   const [percent, setPercent] = useState(current?.percent ?? '')
   const [linkedGroupId, setLinkedGroupId] = useState(current?.linkedGroupId ?? '')
@@ -510,9 +610,13 @@ function LimitForm({
   const candidates = groups.filter((candidate) => candidate.isActive && candidate.id !== group.id)
   const percentError = kind === LIMIT_KIND.fixed && percent.trim().length > 0 && !isPercentText(percent.trim())
   const extraError = kind === LIMIT_KIND.linked && extraPoints.trim().length > 0 && !isPercentText(extraPoints.trim())
+  const dateError = !isDateText(effectiveFrom) || effectiveFrom < earliest
+  // Today (or, for a correction, the corrected record's own date) travels as "omitted"; another date travels as itself.
+  const effectiveFromBody = effectiveFrom === (correcting?.effectiveFrom ?? businessDate) ? null : effectiveFrom
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (dateError) return
     const body =
       kind === LIMIT_KIND.fixed
         ? {
@@ -522,6 +626,7 @@ function LimitForm({
             linkedGroupId: null,
             extraPoints: null,
             reason: reason.trim(),
+            effectiveFrom: effectiveFromBody,
           }
         : {
             expectedVersion: group.version,
@@ -530,10 +635,16 @@ function LimitForm({
             linkedGroupId: linkedGroupId.length > 0 ? linkedGroupId : null,
             extraPoints: extraPoints.trim(),
             reason: reason.trim(),
+            effectiveFrom: effectiveFromBody,
           }
-    const outcome = await attempt.run({ group: group.id, ...body }, (idempotencyKey) =>
-      setGroupLimit({ companyId, idempotencyKey }, group.id, body),
-    )
+    const outcome =
+      correcting === undefined
+        ? await attempt.run({ group: group.id, ...body }, (idempotencyKey) =>
+            setGroupLimit({ companyId, idempotencyKey }, group.id, body),
+          )
+        : await attempt.run({ group: group.id, limitVersion: correcting.limitVersion, ...body }, (idempotencyKey) =>
+            correctGroupLimit({ companyId, idempotencyKey }, group.id, { ...body, limitVersion: correcting.limitVersion }),
+          )
     if (outcome.type === 'applied') onDone(savedNotice(outcome))
     else if (isVersionConflict(outcome)) onConflict()
   }
@@ -541,9 +652,10 @@ function LimitForm({
   return (
     <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="limit-edit-heading">
       <h3 id="limit-edit-heading">
-        {LIMIT_TEXT.editLimit} — <code>{group.code}</code>
+        {correcting === undefined ? LIMIT_TEXT.editLimit : LIMIT_TEXT.correctHeading} — <code>{group.code}</code>
+        {correcting === undefined ? null : ` (${businessDateLabel(correcting.effectiveFrom)})`}
       </h3>
-      <p className={styles.muted}>{LIMIT_TEXT.limitHelp}</p>
+      <p className={styles.muted}>{correcting === undefined ? LIMIT_TEXT.limitHelp : LIMIT_TEXT.correctHelp}</p>
       <fieldset className={styles.fieldset}>
         <legend>{LIMIT_TEXT.kindLegend}</legend>
         <label className={styles.choice}>
@@ -610,11 +722,66 @@ function LimitForm({
           </Field>
         </>
       )}
+      <Field
+        label={LIMIT_TEXT.effectiveFromLabel}
+        help={`${LIMIT_TEXT.effectiveFromHelp} En erken: ${businessDateLabel(earliest)}.`}
+        error={dateError ? LIMIT_TEXT.effectiveFromError : undefined}
+      >
+        {(control) => (
+          <input
+            {...control}
+            type="date"
+            required
+            min={earliest}
+            value={effectiveFrom}
+            onChange={(event) => setEffectiveFrom(event.target.value)}
+          />
+        )}
+      </Field>
       <ReasonField value={reason} onChange={setReason} />
       <AttemptFooter
         status={attempt.status}
         hasPendingRetry={attempt.hasPendingRetry}
         submitLabel={LIMIT_TEXT.save}
+        onCancel={() => onDone(null)}
+        companyLabel={noCompanyLabel}
+      />
+    </form>
+  )
+}
+
+/** SAT-D84: withdraw a scheduled record before its date (reason required; the server refuses one already in force). */
+function WithdrawLimitForm({
+  companyId,
+  group,
+  record,
+  onDone,
+  onConflict,
+}: FormProps & { readonly group: LimitGroup; readonly record: LimitDefinition }) {
+  const [reason, setReason] = useState('')
+  const attempt = useCommandAttempt<true>()
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    const body = { expectedVersion: group.version, limitVersion: record.limitVersion, reason: reason.trim() }
+    const outcome = await attempt.run({ group: group.id, ...body }, (idempotencyKey) =>
+      withdrawGroupLimit({ companyId, idempotencyKey }, group.id, body),
+    )
+    if (outcome.type === 'applied') onDone(savedNotice(outcome))
+    else if (isVersionConflict(outcome)) onConflict()
+  }
+
+  return (
+    <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="limit-withdraw-heading">
+      <h3 id="limit-withdraw-heading">
+        {LIMIT_TEXT.withdrawHeading} — <code>{group.code}</code> ({businessDateLabel(record.effectiveFrom)})
+      </h3>
+      <p>{LIMIT_TEXT.withdrawConfirm}</p>
+      <ReasonField value={reason} onChange={setReason} />
+      <AttemptFooter
+        status={attempt.status}
+        hasPendingRetry={attempt.hasPendingRetry}
+        submitLabel={LIMIT_TEXT.withdrawScheduled}
         onCancel={() => onDone(null)}
         companyLabel={noCompanyLabel}
       />

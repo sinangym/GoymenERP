@@ -3,7 +3,10 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Settings.Application;
 
-/// <summary>One immutable limit record of a group (SAT-D36, SAT-D62).</summary>
+/// <summary>
+/// One immutable limit record of a group (SAT-D36, SAT-D62). <c>IsWithdrawn</c>: withdrawn before it took effect (SAT-D84);
+/// such a record is ignored everywhere.
+/// </summary>
 public sealed record SalesDiscountLimitVersionDataV1(
     Guid LimitGroupId,
     long Version,
@@ -12,13 +15,17 @@ public sealed record SalesDiscountLimitVersionDataV1(
     decimal? Percent,
     Guid? LinkedGroupId,
     decimal? ExtraPoints,
-    DateOnly EffectiveFrom);
+    DateOnly EffectiveFrom,
+    bool IsWithdrawn = false);
 
 /// <summary>A group and every limit record it has, in any order.</summary>
 public sealed record SalesDiscountLimitGroupDataV1(
     Guid Id,
     bool IsActive,
     IReadOnlyList<SalesDiscountLimitVersionDataV1> Versions);
+
+/// <summary>The result of <see cref="SalesDiscountLimitCalculatorV1.CheckLink"/>.</summary>
+public sealed record SalesDiscountLimitLinkCheckV1(bool CreatesCycle, IReadOnlyList<Guid> Chain);
 
 public enum SalesDiscountLimitResolutionOutcomeV1
 {
@@ -60,8 +67,11 @@ public sealed record SalesDiscountLimitResolutionV1(
 /// one). Before the first record nothing is in force.</item>
 /// <item><b>Fixed</b>: the percent. <b>Linked</b>: the linked group's limit on the same date + the extra points, capped at
 /// 100 (the discount itself is 0…100).</item>
-/// <item><b>None</b> (fail-closed, EK10/EK11 open item: "approval", not "0 + extra"): a passive group, no record in force, a
-/// linked group that is passive, unknown or has no limit itself.</item>
+/// <item><b>Future records</b> (SAT-D78): a record may start on a later business date; until then the previous record stays
+/// in force, and from that date on it applies by itself. A linked limit is computed on the asked date, so the linked
+/// group's own record of that date is used.</item>
+/// <item><b>None</b> (SAT-D79, fail-closed: "approval", not "0 + extra"): a passive group, no record in force, a linked
+/// group that is passive, unknown or has no limit itself.</item>
 /// <item><b>Invalid</b>: a cycle or a malformed record — the caller answers <c>settings_profile_invalid</c>.</item>
 /// </list>
 /// </summary>
@@ -105,8 +115,8 @@ public static class SalesDiscountLimitCalculatorV1
             return SalesDiscountLimitResolutionV1.None;
         }
 
-        var ordered = group.Versions.OrderBy(version => version.Version).ToArray();
-        var selected = ordered.LastOrDefault(version => version.EffectiveFrom <= on);
+        var ordered = Active(group).OrderBy(version => version.Version).ToArray();
+        var selected = RecordInForce(group, on);
         if (selected is null)
         {
             return SalesDiscountLimitResolutionV1.None;
@@ -142,26 +152,120 @@ public static class SalesDiscountLimitCalculatorV1
     }
 
     /// <summary>
-    /// True when linking <paramref name="groupId"/> to <paramref name="linkedGroupId"/> would close a cycle over the groups'
-    /// CURRENT (latest) records, which are the ones in force from today on (EK10: A→B→A is refused). A self-link is a cycle.
+    /// The record of <paramref name="group"/> in force on <paramref name="on"/>: the HIGHEST non-withdrawn version whose
+    /// <c>EffectiveFrom</c> is on or before the date (null before the first record). Activity is not considered.
     /// </summary>
-    public static bool WouldCreateCycle(IReadOnlyDictionary<Guid, Guid?> currentLinks, Guid groupId, Guid linkedGroupId)
+    public static SalesDiscountLimitVersionDataV1? RecordInForce(SalesDiscountLimitGroupDataV1 group, DateOnly on)
     {
-        ArgumentNullException.ThrowIfNull(currentLinks);
-        var seen = new HashSet<Guid>();
-        Guid? cursor = linkedGroupId;
-        while (cursor is { } current)
-        {
-            if (current == groupId || !seen.Add(current))
-            {
-                return true;
-            }
+        ArgumentNullException.ThrowIfNull(group);
+        return Active(group)
+            .Where(version => version.EffectiveFrom <= on)
+            .MaxBy(version => version.Version);
+    }
 
-            cursor = currentLinks.TryGetValue(current, out var next) ? next : null;
+    /// <summary>The group's latest non-withdrawn record (the end of its timeline), or null.</summary>
+    public static SalesDiscountLimitVersionDataV1? LatestRecord(SalesDiscountLimitGroupDataV1 group)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        return Active(group).MaxBy(version => version.Version);
+    }
+
+    /// <summary>
+    /// SAT-D78: the group's records that start AFTER <paramref name="after"/> and will take effect, earliest first. Of
+    /// several records starting on the same day only the highest version is listed (a same-day correction supersedes).
+    /// </summary>
+    public static IReadOnlyList<SalesDiscountLimitVersionDataV1> ScheduledAfter(SalesDiscountLimitGroupDataV1 group,
+        DateOnly after)
+    {
+        ArgumentNullException.ThrowIfNull(group);
+        return Active(group)
+            .Where(version => version.EffectiveFrom > after)
+            .GroupBy(version => version.EffectiveFrom)
+            .Select(sameDay => sameDay.MaxBy(version => version.Version)!)
+            .OrderBy(version => version.EffectiveFrom)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// EK10 + SAT-D78: checks a new linked record of <paramref name="groupId"/> → <paramref name="linkedGroupId"/> that
+    /// takes effect on <paramref name="effectiveFrom"/> (see <see cref="CheckGroupLinks"/>, with the new record added as
+    /// the group's highest version).
+    /// </summary>
+    public static SalesDiscountLimitLinkCheckV1 CheckLink(
+        IReadOnlyDictionary<Guid, SalesDiscountLimitGroupDataV1> groups,
+        Guid groupId,
+        Guid linkedGroupId,
+        DateOnly effectiveFrom)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        var group = groups.TryGetValue(groupId, out var existing)
+            ? existing
+            : new SalesDiscountLimitGroupDataV1(groupId, true, []);
+        var next = group.Versions.Count == 0 ? 1 : group.Versions.Max(version => version.Version) + 1;
+        var candidate = new SalesDiscountLimitVersionDataV1(groupId, next, Guid.NewGuid(), SalesDiscountLimitKindsV1.Linked,
+            null, linkedGroupId, MinimumPercent, effectiveFrom);
+        return CheckGroupLinks(With(groups, group with { Versions = [.. group.Versions, candidate] }), groupId, effectiveFrom);
+    }
+
+    /// <summary>
+    /// EK10 + SAT-D78 + SAT-D84: <paramref name="groups"/> is the store as it WOULD be after a change of
+    /// <paramref name="groupId"/>'s records that matters from <paramref name="from"/> on (a new record, a withdrawal, or a
+    /// correction = both). Because records can be scheduled ahead, the link graph is checked on EVERY date it can change from
+    /// then on (<paramref name="from"/> and every later record's date of any group): following the group's record in force
+    /// on each date must never come back to the group (A→B→A, a self link). Only links through the changed group can be
+    /// new, so this is the whole check. <c>Chain</c> is every other group reached on any of those dates (the rows the write
+    /// fences).
+    /// </summary>
+    public static SalesDiscountLimitLinkCheckV1 CheckGroupLinks(
+        IReadOnlyDictionary<Guid, SalesDiscountLimitGroupDataV1> groups,
+        Guid groupId,
+        DateOnly from)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        var dates = groups.Values
+            .SelectMany(Active)
+            .Select(version => version.EffectiveFrom)
+            .Where(date => date > from)
+            .Append(from)
+            .Distinct()
+            .Order();
+        var chain = new List<Guid>();
+        foreach (var date in dates)
+        {
+            var seen = new HashSet<Guid>();
+            Guid? cursor = groups.TryGetValue(groupId, out var own) ? RecordInForce(own, date)?.LinkedGroupId : null;
+            while (cursor is { } current)
+            {
+                if (current == groupId || !seen.Add(current))
+                {
+                    return new SalesDiscountLimitLinkCheckV1(true, chain);
+                }
+
+                if (!chain.Contains(current))
+                {
+                    chain.Add(current);
+                }
+
+                cursor = groups.TryGetValue(current, out var group) ? RecordInForce(group, date)?.LinkedGroupId : null;
+            }
         }
 
-        return false;
+        return new SalesDiscountLimitLinkCheckV1(false, chain);
     }
+
+    /// <summary>The groups with one group replaced (a hypothetical store for <see cref="CheckGroupLinks"/>).</summary>
+    public static IReadOnlyDictionary<Guid, SalesDiscountLimitGroupDataV1> With(
+        IReadOnlyDictionary<Guid, SalesDiscountLimitGroupDataV1> groups, SalesDiscountLimitGroupDataV1 group)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+        ArgumentNullException.ThrowIfNull(group);
+        var copy = groups.ToDictionary(pair => pair.Key, pair => pair.Value);
+        copy[group.Id] = group;
+        return copy;
+    }
+
+    private static IEnumerable<SalesDiscountLimitVersionDataV1> Active(SalesDiscountLimitGroupDataV1 group) =>
+        group.Versions.Where(version => !version.IsWithdrawn);
 
     /// <summary>
     /// Parses a percent or extra points given as lossless decimal text: digits with an optional '.' fraction of at most
@@ -214,8 +318,7 @@ public static class SalesDiscountLimitCalculatorV1
         {
             var version = ordered[index];
             if (version is null || version.LimitGroupId != group.Id || version.Version != index + 1
-                || version.ProfileId == Guid.Empty
-                || (index > 0 && version.EffectiveFrom < ordered[index - 1].EffectiveFrom))
+                || version.ProfileId == Guid.Empty)
             {
                 return false;
             }
@@ -230,6 +333,16 @@ public static class SalesDiscountLimitCalculatorV1
                 _ => false,
             };
             if (!valid)
+            {
+                return false;
+            }
+        }
+
+        // The non-withdrawn records form one timeline: a later version never starts before an earlier one.
+        var active = ordered.Where(version => !version.IsWithdrawn).ToArray();
+        for (var index = 1; index < active.Length; index++)
+        {
+            if (active[index].EffectiveFrom < active[index - 1].EffectiveFrom)
             {
                 return false;
             }

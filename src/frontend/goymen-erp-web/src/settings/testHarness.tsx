@@ -62,6 +62,7 @@ export function groupList(overrides: Record<string, unknown> = {}) {
           reason: 'SENTETIK',
         },
         effectiveLimit: { state: 'Defined', percent: '38' },
+        scheduled: [],
       },
       {
         id: GROUP_SELLER,
@@ -81,6 +82,23 @@ export function groupList(overrides: Record<string, unknown> = {}) {
           reason: 'SENTETIK',
         },
         effectiveLimit: { state: 'Defined', percent: '35' },
+        // SAT-D78: 40 % scheduled from 1 November.
+        scheduled: [
+          {
+            limit: {
+              limitVersion: '2',
+              kind: 'Fixed',
+              percent: '40',
+              linkedGroupId: null,
+              extraPoints: null,
+              effectiveFrom: '2026-11-01',
+              recordedBy: IDENTITY.userId,
+              recordedAtUtc: '2026-10-27T09:30:00+00:00',
+              reason: 'SENTETIK planlı',
+            },
+            effectiveLimit: { state: 'Defined', percent: '40' },
+          },
+        ],
       },
       {
         id: GROUP_OLD,
@@ -90,6 +108,7 @@ export function groupList(overrides: Record<string, unknown> = {}) {
         version: '3',
         limit: null,
         effectiveLimit: { state: 'None', percent: null },
+        scheduled: [],
       },
     ],
     ...overrides,

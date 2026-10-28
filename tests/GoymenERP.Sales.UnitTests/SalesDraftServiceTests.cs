@@ -1664,12 +1664,15 @@ public sealed partial class SalesDraftServiceTests
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
 
+        /// <summary>The service's clock (SAT-D81: the discount limit is read on its Europe/Istanbul business day).</summary>
+        public TimeProvider Clock { get; set; } = TimeProvider.System;
+
         public SalesDraftService Service()
         {
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
-                NoProducts ? null : Products, Store, Bindings, TimeProvider.System, NoContactInformation ? null : ContactInformation, Deliveries,
+                NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests), SalesPolicies,
                 DiscountLimitGroups, PartyRisk);
         }

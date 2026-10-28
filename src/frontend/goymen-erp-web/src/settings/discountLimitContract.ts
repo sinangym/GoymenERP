@@ -7,7 +7,9 @@
  *   POST /settings/sales-discount-limits/groups                      -> 201 SalesDiscountLimitGroupCreatedV1
  *   PUT  /settings/sales-discount-limits/groups/{groupId}/name       -> 204
  *   POST /settings/sales-discount-limits/groups/{groupId}/deactivation -> 204
- *   PUT  /settings/sales-discount-limits/groups/{groupId}/limit      -> 204
+ *   PUT  /settings/sales-discount-limits/groups/{groupId}/limit      -> 204 (SAT-D78: optional later effectiveFrom)
+ *   POST /settings/sales-discount-limits/groups/{groupId}/limit/withdrawal -> 204 (SAT-D84)
+ *   POST /settings/sales-discount-limits/groups/{groupId}/limit/correction -> 204 (SAT-D84)
  *   GET  /settings/sales-discount-limits/people?q=&limit=            -> SalesDiscountLimitPersonListV1
  *   GET  /settings/sales-discount-limits/bindings/{userId}           -> SalesDiscountLimitBindingViewV1
  *   PUT  /settings/sales-discount-limits/bindings/{userId}           -> 204
@@ -33,6 +35,16 @@ export function groupLimitPath(groupId: string): string {
   return `${DISCOUNT_LIMIT_GROUPS_PATH}/${encodeURIComponent(groupId)}/limit`
 }
 
+/** SAT-D84: withdraw a not-yet-effective record. */
+export function groupLimitWithdrawalPath(groupId: string): string {
+  return `${groupLimitPath(groupId)}/withdrawal`
+}
+
+/** SAT-D84: correct a not-yet-effective record (withdrawn + replaced in one save). */
+export function groupLimitCorrectionPath(groupId: string): string {
+  return `${groupLimitPath(groupId)}/correction`
+}
+
 export function bindingPath(userId: string): string {
   return `${DISCOUNT_LIMITS_PATH}/bindings/${encodeURIComponent(userId)}`
 }
@@ -51,6 +63,10 @@ export const LIMIT_PROBLEM = {
   linkedGroupNotFound: 'settings_discount_limit_linked_group_not_found',
   linkedGroupInactive: 'settings_discount_limit_linked_group_inactive',
   linkCycle: 'settings_discount_limit_link_cycle',
+  effectiveFromPast: 'settings_discount_limit_effective_from_past',
+  effectiveFromBeforeScheduled: 'settings_discount_limit_effective_from_before_scheduled',
+  recordInEffect: 'settings_discount_limit_record_in_effect',
+  recordWithdrawn: 'settings_discount_limit_record_withdrawn',
   bindingCompaniesMismatch: 'settings_discount_limit_binding_companies_mismatch',
   bindingPersonNotMember: 'settings_discount_limit_binding_person_not_member',
   bindingGroupNotFound: 'settings_discount_limit_binding_group_not_found',
@@ -90,14 +106,23 @@ export interface EffectiveLimit {
   readonly percent: string | null
 }
 
+/** SAT-D78: a record that starts after the list's business date and the limit on its first day. */
+export interface ScheduledLimit {
+  readonly limit: LimitDefinition
+  readonly effectiveLimit: EffectiveLimit
+}
+
 export interface LimitGroup {
   readonly id: string
   readonly code: string
   readonly name: string
   readonly isActive: boolean
   readonly version: string
+  /** The record in force on the list's business date (null when none is). */
   readonly limit: LimitDefinition | null
   readonly effectiveLimit: EffectiveLimit
+  /** SAT-D78: the later records, earliest first. */
+  readonly scheduled: readonly ScheduledLimit[]
 }
 
 export interface LimitGroupList {
@@ -163,6 +188,21 @@ export interface SetLimitBody {
   readonly linkedGroupId: string | null
   readonly extraPoints: string | null
   readonly reason: string
+  /** SAT-D78: the business date the record takes effect on; null = today (server's Europe/Istanbul business date). */
+  readonly effectiveFrom: string | null
+}
+
+/** SAT-D84: the record (`limitVersion`) of the group (`expectedVersion` = the group's version) to withdraw. */
+export interface WithdrawLimitBody {
+  readonly expectedVersion: string
+  readonly limitVersion: string
+  readonly reason: string
+}
+
+/** SAT-D84: the corrected limit of a scheduled record; `effectiveFrom` null = the corrected record's date. */
+export interface CorrectLimitBody extends Omit<SetLimitBody, 'effectiveFrom'> {
+  readonly limitVersion: string
+  readonly effectiveFrom: string | null
 }
 
 export interface SetBindingBody {
@@ -177,6 +217,14 @@ const POSITIVE_VERSION = /^[1-9][0-9]*$/
 const PERCENT_TEXT = /^[0-9]{1,3}(\.[0-9]{1,4})?$/
 const CODE = /^[A-Z0-9][A-Z0-9_-]{0,31}$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** A calendar date as `yyyy-MM-dd` that exists (2027-02-30 does not). */
+export function isDateText(value: unknown): value is string {
+  if (typeof value !== 'string' || !DATE.test(value)) return false
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+}
 
 export function isUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID.test(value)
@@ -236,25 +284,42 @@ function decodeEffective(raw: unknown): EffectiveLimit | null {
   return null
 }
 
-function decodeGroup(raw: unknown): LimitGroup | null {
+function decodeScheduled(raw: unknown, businessDate: string, previousDate: string | null): ScheduledLimit | null {
   if (!isRecord(raw)) return null
-  const { id, code, name, isActive, version, limit, effectiveLimit } = raw
+  const limit = decodeDefinition(raw.limit)
+  const effective = decodeEffective(raw.effectiveLimit)
+  if (limit === null || effective === null) return null
+  // Strictly later than the business date and than the previous scheduled entry (one entry per day, earliest first).
+  if (limit.effectiveFrom <= businessDate || (previousDate !== null && limit.effectiveFrom <= previousDate)) return null
+  return { limit, effectiveLimit: effective }
+}
+
+function decodeGroup(raw: unknown, businessDate: string): LimitGroup | null {
+  if (!isRecord(raw)) return null
+  const { id, code, name, isActive, version, limit, effectiveLimit, scheduled } = raw
   if (!isUuid(id) || typeof code !== 'string' || !isValidCode(code) || !isNonEmpty(name)) return null
   if (typeof isActive !== 'boolean' || typeof version !== 'string' || !POSITIVE_VERSION.test(version)) return null
   const definition = limit === null ? null : decodeDefinition(limit)
   if (limit !== null && definition === null) return null
+  if (definition !== null && definition.effectiveFrom > businessDate) return null
   const effective = decodeEffective(effectiveLimit)
-  if (effective === null) return null
-  return { id, code, name, isActive, version, limit: definition, effectiveLimit: effective }
+  if (effective === null || !Array.isArray(scheduled)) return null
+  const upcoming: ScheduledLimit[] = []
+  for (const entry of scheduled) {
+    const decoded = decodeScheduled(entry, businessDate, upcoming.at(-1)?.limit.effectiveFrom ?? null)
+    if (decoded === null) return null
+    upcoming.push(decoded)
+  }
+  return { id, code, name, isActive, version, limit: definition, effectiveLimit: effective, scheduled: upcoming }
 }
 
 /** The group list of the company the request named; a list for another company is not this answer. */
 export function decodeGroupList(raw: unknown, companyId: string): LimitGroupList | null {
   if (!isRecord(raw) || raw.companyId !== companyId) return null
-  if (typeof raw.businessDate !== 'string' || !DATE.test(raw.businessDate) || !Array.isArray(raw.groups)) return null
+  if (!isDateText(raw.businessDate) || !Array.isArray(raw.groups)) return null
   const groups: LimitGroup[] = []
   for (const entry of raw.groups) {
-    const group = decodeGroup(entry)
+    const group = decodeGroup(entry, raw.businessDate)
     if (group === null) return null
     groups.push(group)
   }

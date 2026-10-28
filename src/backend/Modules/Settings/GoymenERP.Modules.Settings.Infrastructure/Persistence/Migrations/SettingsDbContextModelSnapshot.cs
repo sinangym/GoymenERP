@@ -535,6 +535,49 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitWithdrawalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("LimitGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("LimitVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<long?>("ReplacedByVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("WithdrawnAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WithdrawnBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "LimitGroupId", "LimitVersion");
+
+                    b.HasIndex("CompanyId", "LimitGroupId", "ReplacedByVersion");
+
+                    b.ToTable("SalesDiscountLimitWithdrawals", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Recorded", "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Replacement", "[ReplacedByVersion] IS NULL OR [ReplacedByVersion] > [LimitVersion]");
+
+                            t.HasCheckConstraint("CK_SettingsDiscountLimitWithdrawals_Version", "[LimitVersion] > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitMembershipGroupRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitGroupRow", null)
@@ -561,6 +604,20 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitGroupRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "LinkedGroupId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitWithdrawalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "LimitGroupId", "LimitVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "LimitGroupId", "ReplacedByVersion")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 #pragma warning restore 612, 618

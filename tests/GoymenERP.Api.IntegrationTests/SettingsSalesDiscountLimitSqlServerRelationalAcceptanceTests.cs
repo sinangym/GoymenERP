@@ -227,6 +227,209 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task Sat_d84_a_scheduled_record_can_be_corrected_or_withdrawn_before_its_date_with_audit_and_chain_recalculation_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var (editorSubject, editor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Permission);
+        using var client = run.Client(editorSubject, CompanyA);
+        var today = run.Today;
+        var start = today.AddDays(10);
+        var seller = await run.CreateGroupAsync(client, "w-create-1", "SATICI", "Satıcı");
+        var manager = await run.CreateGroupAsync(client, "w-create-2", "MUDUR", "Müdür");
+        await run.SetLimitAsync(client, "w-limit-1", seller, "1", new("Fixed", "30", null, null));
+        await run.SetLimitAsync(client, "w-limit-2", seller, "2", new("Fixed", "35", null, null, start));
+        await run.SetLimitAsync(client, "w-limit-3", manager, "1", new("Linked", null, seller, "3"));
+        var withdrawal = $"{Groups}/{seller:D}/limit/withdrawal";
+        var correction = $"{Groups}/{seller:D}/limit/correction";
+
+        // Correct the scheduled record (v2 → 36 % on the same date): v2 is withdrawn and v3 written in one save.
+        await run.CommandAsync(client, HttpMethod.Post, correction, "w-correct",
+            new CorrectSalesDiscountLimitRequestV1("3", "2", "Fixed", "36", null, null, "SENTETIK düzeltme"),
+            HttpStatusCode.NoContent);
+        await using (var port = run.PolicyPort(CompanyA))
+        {
+            var corrected = await port.Value.GetSalesDiscountLimitAsync(seller, start);
+            Assert.Equal((36m, 3L), (corrected.MaximumDiscountPercent, corrected.Profile.Version));
+            Assert.Equal(39m, (await port.Value.GetSalesDiscountLimitAsync(manager, start)).MaximumDiscountPercent);
+            Assert.Equal(30m, (await port.Value.GetSalesDiscountLimitAsync(seller, today)).MaximumDiscountPercent);
+        }
+
+        var sellerView = (await run.JsonAsync(client, Groups)).GetProperty("groups").EnumerateArray()
+            .Single(group => group.GetProperty("code").GetString() == "SATICI");
+        var scheduled = Assert.Single(sellerView.GetProperty("scheduled").EnumerateArray());
+        Assert.Equal(("3", "36"), (scheduled.GetProperty("limit").GetProperty("limitVersion").GetString(),
+            scheduled.GetProperty("limit").GetProperty("percent").GetString()));
+
+        // The withdrawn record cannot be corrected or withdrawn again.
+        using (var again = await client.SendAsync(Json(HttpMethod.Post, withdrawal, "w-again",
+                   new WithdrawSalesDiscountLimitRequestV1("4", "2", "SENTETIK"))))
+        {
+            await AssertProblemAsync(again, HttpStatusCode.Conflict, SalesDiscountLimitProblemCodesV1.RecordWithdrawn);
+        }
+
+        // Withdraw the corrected record: the earlier record stays in force, and the linked manager limit follows it again.
+        await run.CommandAsync(client, HttpMethod.Post, withdrawal, "w-withdraw",
+            new WithdrawSalesDiscountLimitRequestV1("4", "3", "SENTETIK geri çekme"), HttpStatusCode.NoContent);
+        await run.CommandAsync(client, HttpMethod.Post, withdrawal, "w-withdraw",
+            new WithdrawSalesDiscountLimitRequestV1("4", "3", "SENTETIK geri çekme"), HttpStatusCode.NoContent, replayed: true);
+        await using (var port = run.PolicyPort(CompanyA))
+        {
+            var back = await port.Value.GetSalesDiscountLimitAsync(seller, start);
+            Assert.Equal((30m, 1L, (DateOnly?)null), (back.MaximumDiscountPercent, back.Profile.Version, back.EffectiveThrough));
+            Assert.Equal(33m, (await port.Value.GetSalesDiscountLimitAsync(manager, start)).MaximumDiscountPercent);
+        }
+
+        Assert.Empty((await run.JsonAsync(client, Groups)).GetProperty("groups").EnumerateArray()
+            .Single(group => group.GetProperty("code").GetString() == "SATICI").GetProperty("scheduled").EnumerateArray());
+
+        // A record in force (today's) is immutable: neither withdrawn nor corrected; a new record is entered instead.
+        using (var inEffect = await client.SendAsync(Json(HttpMethod.Post, withdrawal, "w-in-effect-1",
+                   new WithdrawSalesDiscountLimitRequestV1("5", "1", "SENTETIK"))))
+        {
+            await AssertProblemAsync(inEffect, HttpStatusCode.Conflict, SalesDiscountLimitProblemCodesV1.RecordInEffect);
+        }
+
+        using (var inEffect = await client.SendAsync(Json(HttpMethod.Post, correction, "w-in-effect-2",
+                   new CorrectSalesDiscountLimitRequestV1("5", "1", "Fixed", "20", null, null, "SENTETIK"))))
+        {
+            await AssertProblemAsync(inEffect, HttpStatusCode.Conflict, SalesDiscountLimitProblemCodesV1.RecordInEffect);
+        }
+
+        // Rows: records never change; two insert-only withdrawals (v2 replaced by v3, v3 withdrawn alone).
+        Assert.Equal(3, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[SalesDiscountLimitVersions] WHERE [LimitGroupId] = @id", ("@id", seller)));
+        Assert.Equal("2>3;3>-", await run.ScalarAsync<string>(
+            "SELECT STRING_AGG(CONCAT([LimitVersion], '>', COALESCE(CONVERT(nvarchar(20), [ReplacedByVersion]), '-')), ';') "
+            + "WITHIN GROUP (ORDER BY [LimitVersion]) FROM [settings].[SalesDiscountLimitWithdrawals] WHERE [LimitGroupId] = @id",
+            ("@id", seller)));
+
+        // Audit: one event each, the actor, the operation, the whole reason and what was replaced.
+        Assert.Equal(("settings.sales-discount-limit.corrected.v1", "CorrectLimit", editor, "SENTETIK düzeltme", "2", "3"), (
+            await run.ScalarAsync<string>("SELECT [EventType] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
+            await run.ScalarAsync<string>("SELECT [Operation] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
+            await run.ScalarAsync<string>("SELECT [ActorId] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
+            await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.reason') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
+            await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.replacesLimitVersion') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
+            await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.limitVersion') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'")));
+        Assert.Equal(("settings.sales-discount-limit.withdrawn.v1", "WithdrawLimit", "SENTETIK geri çekme", "3", 1), (
+            await run.ScalarAsync<string>("SELECT [EventType] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-withdraw'"),
+            await run.ScalarAsync<string>("SELECT [Operation] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-withdraw'"),
+            await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.reason') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-withdraw'"),
+            await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.withdrawnLimitVersion') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-withdraw'"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-withdraw'")));
+
+        // A withdrawal that would extend an earlier link into a cycle is refused: X follows Y today and is fixed from day
+        // +10; Y follows X from day +20. Withdrawing X's day +10 record would close X → Y → X from day +20.
+        var x = await run.CreateGroupAsync(client, "w-create-x", "X", "X");
+        var y = await run.CreateGroupAsync(client, "w-create-y", "Y", "Y");
+        await run.SetLimitAsync(client, "w-y-1", y, "1", new("Fixed", "20", null, null));
+        await run.SetLimitAsync(client, "w-x-1", x, "1", new("Linked", null, y, "1"));
+        await run.SetLimitAsync(client, "w-x-2", x, "2", new("Fixed", "25", null, null, start));
+        await run.SetLimitAsync(client, "w-y-2", y, "2", new("Linked", null, x, "1", today.AddDays(20)));
+        using (var cycle = await client.SendAsync(Json(HttpMethod.Post, $"{Groups}/{x:D}/limit/withdrawal", "w-cycle",
+                   new WithdrawSalesDiscountLimitRequestV1("3", "2", "SENTETIK"))))
+        {
+            await AssertProblemAsync(cycle, HttpStatusCode.UnprocessableEntity, SalesDiscountLimitProblemCodesV1.LinkCycle);
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Sat_d78_a_future_dated_limit_waits_for_its_date_and_the_linked_chain_resolves_per_date_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var (editorSubject, _) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Permission);
+        using var client = run.Client(editorSubject, CompanyA);
+        var today = run.Today;
+        var start = today.AddDays(30);
+        var seller = await run.CreateGroupAsync(client, "f-create-1", "SATICI", "Satıcı");
+        var manager = await run.CreateGroupAsync(client, "f-create-2", "MUDUR", "Müdür");
+        var senior = await run.CreateGroupAsync(client, "f-create-3", "KIDEMLI", "Kıdemli");
+
+        // Seller 30 % from today (date omitted), 35 % scheduled from day +30; manager = seller + 3 from today.
+        await run.SetLimitAsync(client, "f-limit-1", seller, "1", new("Fixed", "30", null, null));
+        await run.SetLimitAsync(client, "f-limit-2", seller, "2", new("Fixed", "35", null, null, start));
+        await run.SetLimitAsync(client, "f-limit-3", manager, "1", new("Linked", null, seller, "3"));
+
+        // The list shows the record in force today and the scheduled one with its limit on its first day.
+        var byCode = (await run.JsonAsync(client, Groups)).GetProperty("groups").EnumerateArray()
+            .ToDictionary(group => group.GetProperty("code").GetString()!);
+        var sellerView = byCode["SATICI"];
+        Assert.Equal(("30", "30", today.ToString("yyyy-MM-dd")), (sellerView.GetProperty("limit").GetProperty("percent").GetString(),
+            sellerView.GetProperty("effectiveLimit").GetProperty("percent").GetString(),
+            sellerView.GetProperty("limit").GetProperty("effectiveFrom").GetString()));
+        var scheduled = Assert.Single(sellerView.GetProperty("scheduled").EnumerateArray());
+        Assert.Equal(("35", start.ToString("yyyy-MM-dd"), "2", "35"), (
+            scheduled.GetProperty("limit").GetProperty("percent").GetString(),
+            scheduled.GetProperty("limit").GetProperty("effectiveFrom").GetString(),
+            scheduled.GetProperty("limit").GetProperty("limitVersion").GetString(),
+            scheduled.GetProperty("effectiveLimit").GetProperty("percent").GetString()));
+        Assert.Empty(byCode["MUDUR"].GetProperty("scheduled").EnumerateArray());
+        Assert.Equal("33", byCode["MUDUR"].GetProperty("effectiveLimit").GetProperty("percent").GetString());
+
+        // The policy port the Sales check reads: not yet in force the day before, in force by itself on its date, and the
+        // linked manager limit follows the seller's record of each date.
+        await using (var port = run.PolicyPort(CompanyA))
+        {
+            var before = await port.Value.GetSalesDiscountLimitAsync(seller, start.AddDays(-1));
+            var on = await port.Value.GetSalesDiscountLimitAsync(seller, start);
+            Assert.Equal((30m, 1L, (DateOnly?)start.AddDays(-1)), (before.MaximumDiscountPercent, before.Profile.Version,
+                before.EffectiveThrough));
+            Assert.Equal((35m, 2L, start, (DateOnly?)null), (on.MaximumDiscountPercent, on.Profile.Version, on.EffectiveFrom,
+                on.EffectiveThrough));
+            Assert.Equal(33m, (await port.Value.GetSalesDiscountLimitAsync(manager, start.AddDays(-1))).MaximumDiscountPercent);
+            var managerOn = await port.Value.GetSalesDiscountLimitAsync(manager, start);
+            Assert.Equal((38m, start), (managerOn.MaximumDiscountPercent, managerOn.EffectiveFrom));
+        }
+
+        // A past date is refused; so is a record that would start before the scheduled one (date omitted = today, or an
+        // earlier future date). Nothing is written.
+        using (var past = await client.SendAsync(Json(HttpMethod.Put, $"{Groups}/{seller:D}/limit", "f-past",
+                   new SetSalesDiscountLimitRequestV1("3", "Fixed", "20", null, null, "SENTETIK", today.AddDays(-1)))))
+        {
+            await AssertProblemAsync(past, HttpStatusCode.UnprocessableEntity, SalesDiscountLimitProblemCodesV1.EffectiveFromPast);
+        }
+
+        foreach (var (key, date) in new[] { ("f-before-1", (DateOnly?)null), ("f-before-2", start.AddDays(-1)) })
+        {
+            using var beforeScheduled = await client.SendAsync(Json(HttpMethod.Put, $"{Groups}/{seller:D}/limit", key,
+                new SetSalesDiscountLimitRequestV1("3", "Fixed", "20", null, null, "SENTETIK", date)));
+            await AssertProblemAsync(beforeScheduled, HttpStatusCode.UnprocessableEntity,
+                SalesDiscountLimitProblemCodesV1.EffectiveFromBeforeScheduled);
+        }
+
+        Assert.Equal((2L, 3L), (
+            await run.ScalarAsync<long>("SELECT COUNT_BIG(*) FROM [settings].[SalesDiscountLimitVersions] WHERE [LimitGroupId] = @id",
+                ("@id", seller)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [settings].[SalesDiscountLimitGroups] WHERE [Id] = @id", ("@id", seller))));
+
+        // A record on the scheduled date corrects it (the same-day record supersedes); the audit after-image carries the date.
+        await run.SetLimitAsync(client, "f-limit-4", seller, "3", new("Fixed", "36", null, null, start));
+        await using (var port = run.PolicyPort(CompanyA))
+        {
+            var corrected = await port.Value.GetSalesDiscountLimitAsync(seller, start);
+            Assert.Equal((36m, 3L), (corrected.MaximumDiscountPercent, corrected.Profile.Version));
+            Assert.Equal(39m, (await port.Value.GetSalesDiscountLimitAsync(manager, start)).MaximumDiscountPercent);
+        }
+
+        sellerView = (await run.JsonAsync(client, Groups)).GetProperty("groups").EnumerateArray()
+            .Single(group => group.GetProperty("code").GetString() == "SATICI");
+        Assert.Equal("36", Assert.Single(sellerView.GetProperty("scheduled").EnumerateArray())
+            .GetProperty("limit").GetProperty("percent").GetString());
+        Assert.Equal(start.ToString("yyyy-MM-dd"), await run.ScalarAsync<string>(
+            "SELECT JSON_VALUE([AfterJson], '$.effectiveFrom') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-f-limit-4'"));
+
+        // A cycle that only exists after a scheduled change is refused: the senior group is fixed now and scheduled to follow
+        // the seller from day +60, so the seller cannot follow the senior group from day +30 on.
+        await run.SetLimitAsync(client, "f-limit-5", senior, "1", new("Fixed", "40", null, null));
+        await run.SetLimitAsync(client, "f-limit-6", senior, "2", new("Linked", null, seller, "1", today.AddDays(60)));
+        using (var cycle = await client.SendAsync(Json(HttpMethod.Put, $"{Groups}/{seller:D}/limit", "f-cycle",
+                   new SetSalesDiscountLimitRequestV1("4", "Linked", null, senior, "1", "SENTETIK", start))))
+        {
+            await AssertProblemAsync(cycle, HttpStatusCode.UnprocessableEntity, SalesDiscountLimitProblemCodesV1.LinkCycle);
+        }
+    }
+
+    [SqlServerFact]
     public async Task A_binding_is_written_to_every_company_of_the_actor_all_or_nothing_and_feeds_the_sales_port_on_real_sql()
     {
         await using var run = await Run.StartAsync();
@@ -408,7 +611,8 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
         return body;
     }
 
-    private sealed record LimitInput(string Kind, string? Percent, Guid? LinkedGroupId, string? ExtraPoints);
+    private sealed record LimitInput(string Kind, string? Percent, Guid? LinkedGroupId, string? ExtraPoints,
+        DateOnly? EffectiveFrom = null);
 
     private sealed class PortScope<T>(SettingsDbContext database, T value) : IAsyncDisposable
     {
@@ -482,7 +686,7 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
         public Task SetLimitAsync(HttpClient client, string key, Guid group, string version, LimitInput limit) =>
             CommandAsync(client, HttpMethod.Put, $"{Groups}/{group:D}/limit", key,
                 new SetSalesDiscountLimitRequestV1(version, limit.Kind, limit.Percent, limit.LinkedGroupId, limit.ExtraPoints,
-                    $"SENTETIK limit {key}"),
+                    $"SENTETIK limit {key}", limit.EffectiveFrom),
                 HttpStatusCode.NoContent);
 
         public async Task CommandAsync(HttpClient client, HttpMethod method, string path, string key, object body,

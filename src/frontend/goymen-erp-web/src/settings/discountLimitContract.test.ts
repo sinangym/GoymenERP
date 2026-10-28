@@ -39,6 +39,23 @@ describe('discount limit decoders', () => {
     expect(decodeGroupList({ ...list, groups: [{ ...seller, effectiveLimit: { state: 'Defined', percent: '100.5' } }] }, COMPANY_A)).toBeNull()
   })
 
+  it('SAT-D78: keep the scheduled records only when they are later than the business date, one per day, earliest first', () => {
+    const list = groupList()
+    const [, seller] = list.groups as Record<string, unknown>[]
+    const [entry] = seller.scheduled as Record<string, unknown>[]
+    const at = (date: string) => ({ ...entry, limit: { ...(entry.limit as object), effectiveFrom: date } })
+    const decoded = decodeGroupList(list, COMPANY_A)
+    expect(decoded?.groups[1].scheduled.map((scheduled) => [scheduled.limit.effectiveFrom, scheduled.effectiveLimit.percent])).toEqual([
+      ['2026-11-01', '40'],
+    ])
+    expect(decodeGroupList({ ...list, groups: [{ ...seller, scheduled: undefined }] }, COMPANY_A)).toBeNull()
+    expect(decodeGroupList({ ...list, groups: [{ ...seller, scheduled: [at('2026-10-27')] }] }, COMPANY_A)).toBeNull()
+    expect(decodeGroupList({ ...list, groups: [{ ...seller, scheduled: [at('2026-12-01'), at('2026-11-01')] }] }, COMPANY_A)).toBeNull()
+    expect(decodeGroupList({ ...list, groups: [{ ...seller, scheduled: [at('2026-11-01'), at('2026-11-01')] }] }, COMPANY_A)).toBeNull()
+    expect(decodeGroupList({ ...list, groups: [{ ...seller, limit: { ...(seller.limit as object), effectiveFrom: '2026-11-01' } }] }, COMPANY_A)).toBeNull()
+    expect(decodeGroupList({ ...list, businessDate: '2026-02-30' }, COMPANY_A)).toBeNull()
+  })
+
   it('refuse a binding of another person, a version-0 company with groups and duplicate companies', () => {
     expect(decodeBinding(binding(), COMPANY_A)).toBeNull()
     const value = binding('0', '1')

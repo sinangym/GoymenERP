@@ -49,28 +49,30 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
             .OrderBy(group => group.Code)
             .ToListAsync(cancellationToken);
         var versions = await database.SalesDiscountLimitVersions.AsNoTracking().ToListAsync(cancellationToken);
-        var data = await SalesDiscountLimitReads.LoadGroupDataAsync(database, cancellationToken);
+        var withdrawals = await database.SalesDiscountLimitWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
         await RequireStillAsync(companyId, cancellationToken);
 
         var today = SettingsBusinessDate.Today(timeProvider);
-        var latest = versions
-            .GroupBy(version => version.LimitGroupId)
-            .ToDictionary(grouping => grouping.Key, grouping => grouping.MaxBy(version => version.Version)!);
+        var data = SalesDiscountLimitReads.ToGroupData(rows, versions, withdrawals);
+        var records = versions.ToDictionary(version => (version.LimitGroupId, version.Version));
         var views = rows.Select(row =>
         {
-            var record = latest.GetValueOrDefault(row.Id);
-            var resolution = SalesDiscountLimitCalculatorV1.Resolve(data, row.Id, today);
+            var group = data[row.Id];
+            var inForce = SalesDiscountLimitCalculatorV1.RecordInForce(group, today);
+            var scheduled = SalesDiscountLimitCalculatorV1.ScheduledAfter(group, today)
+                .Select(record => new SalesDiscountLimitScheduledViewV1(
+                    DefinitionView(records[(row.Id, record.Version)]),
+                    EffectiveView(SalesDiscountLimitCalculatorV1.Resolve(data, row.Id, record.EffectiveFrom))))
+                .ToArray();
             return new SalesDiscountLimitGroupViewV1(
                 row.Id,
                 row.Code,
                 row.Name,
                 row.IsActive,
                 Text(row.Version),
-                record is null ? null : DefinitionView(record),
-                resolution.Outcome == SalesDiscountLimitResolutionOutcomeV1.Defined
-                    ? new SalesDiscountLimitEffectiveViewV1(SalesDiscountLimitEffectiveStatesV1.Defined,
-                        SalesDiscountLimitCalculatorV1.Format(resolution.Percent!.Value))
-                    : new SalesDiscountLimitEffectiveViewV1(SalesDiscountLimitEffectiveStatesV1.None, null));
+                inForce is null ? null : DefinitionView(records[(row.Id, inForce.Version)]),
+                EffectiveView(SalesDiscountLimitCalculatorV1.Resolve(data, row.Id, today)),
+                scheduled);
         }).ToArray();
         return new SalesDiscountLimitGroupListV1(companyId, today, views);
     }
@@ -305,6 +307,10 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
         "settings.sales-discount-limit-group.renamed.v1" => "İskonto limit grubunun adı değiştirildi; gerekçe kayıt içeriğindedir",
         "settings.sales-discount-limit-group.deactivated.v1" => "İskonto limit grubu pasife alındı; gerekçe kayıt içeriğindedir",
         "settings.sales-discount-limit.recorded.v1" => "İskonto limit grubunun limiti kaydedildi; gerekçe kayıt içeriğindedir",
+        "settings.sales-discount-limit.withdrawn.v1" =>
+            "Yürürlüğe girmemiş iskonto limit kaydı geri çekildi; gerekçe kayıt içeriğindedir",
+        "settings.sales-discount-limit.corrected.v1" =>
+            "Yürürlüğe girmemiş iskonto limit kaydı düzeltildi; gerekçe kayıt içeriğindedir",
         "settings.sales-discount-limit-binding.changed.v1" => "Kişinin iskonto limit grubu bağı değiştirildi; gerekçe kayıt içeriğindedir",
         _ => throw new InvalidOperationException("Tanımsız Ayarlar audit olayı."),
     };
@@ -314,6 +320,12 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
             "Settings discount limit command completed. Command={Command} CompanyId={CompanyId} Subject={Subject} ActorId={ActorId} CorrelationId={CorrelationId} Status={Status} Code={Code} IsReplay={IsReplay}",
             command, metadata.CompanyId, subject, metadata.ActorId, metadata.CorrelationId, result.Answer.StatusCode,
             result.Answer.Code, result.IsReplay);
+
+    private static SalesDiscountLimitEffectiveViewV1 EffectiveView(SalesDiscountLimitResolutionV1 resolution) =>
+        resolution.Outcome == SalesDiscountLimitResolutionOutcomeV1.Defined
+            ? new SalesDiscountLimitEffectiveViewV1(SalesDiscountLimitEffectiveStatesV1.Defined,
+                SalesDiscountLimitCalculatorV1.Format(resolution.Percent!.Value))
+            : new SalesDiscountLimitEffectiveViewV1(SalesDiscountLimitEffectiveStatesV1.None, null);
 
     private static SalesDiscountLimitDefinitionViewV1 DefinitionView(SalesDiscountLimitVersionRow record) => new SalesDiscountLimitDefinitionViewV1(
         Text(record.Version),

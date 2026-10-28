@@ -137,7 +137,91 @@ describe('İskonto limitleri — groups', () => {
       linkedGroupId: GROUP_MANAGER,
       extraPoints: '2.5',
       reason: 'Deneme',
+      // SAT-D78: the seller already has a change scheduled for 1 November, so a new record starts no earlier.
+      effectiveFrom: '2026-11-01',
     })
+  })
+
+  it('SAT-D78: shows the scheduled change and sends a later effective date, refusing a past one before sending', async () => {
+    const recorded = installFetch({
+      respond: (url, init) => {
+        if (url.endsWith(`/groups/${GROUP_MANAGER}/limit`) && init?.method === 'PUT') return noContent()
+        if (url.endsWith('/groups')) return json(groupList())
+        return undefined
+      },
+    })
+    renderAt(LIMIT_PATH)
+    const user = userEvent.setup()
+    await screen.findByRole('table', { name: LIMIT_TEXT.groupsTableLabel })
+    const scheduled = screen.getByRole('list', { name: `${LIMIT_TEXT.scheduledListLabel} — SATIS-DESTEK` })
+    expect(scheduled.textContent).toContain('01.11.2026 itibarıyla: Sabit %40 — o gün %40')
+
+    await user.click(screen.getByRole('button', { name: `${LIMIT_TEXT.editLimit} — MUDUR` }))
+    const date = screen.getByLabelText(LIMIT_TEXT.effectiveFromLabel)
+    expect((date as HTMLInputElement).value).toBe('2026-10-27')
+    await user.clear(date)
+    await user.type(date, '2026-10-26')
+    await user.type(screen.getByLabelText(LIMIT_TEXT.reasonLabel), 'Geçmiş')
+    await user.click(screen.getByRole('button', { name: LIMIT_TEXT.save }))
+    expect(screen.getByText(LIMIT_TEXT.effectiveFromError)).toBeTruthy()
+    expect(commands(recorded)).toEqual([])
+
+    await user.clear(date)
+    await user.type(date, '2027-01-01')
+    await user.click(screen.getByRole('button', { name: LIMIT_TEXT.save }))
+    await waitFor(() => expect(commands(recorded)).toHaveLength(1))
+    expect(commands(recorded)[0].body).toEqual({
+      expectedVersion: '2',
+      kind: 'Linked',
+      percent: null,
+      linkedGroupId: GROUP_SELLER,
+      extraPoints: '3',
+      reason: 'Geçmiş',
+      effectiveFrom: '2027-01-01',
+    })
+  })
+
+  it('SAT-D84: corrects a scheduled record in place of it and withdraws one, naming a record already in force', async () => {
+    const recorded = installFetch({
+      respond: (url, init) => {
+        if (url.endsWith(`/groups/${GROUP_SELLER}/limit/correction`) && init?.method === 'POST') return noContent()
+        if (url.endsWith(`/groups/${GROUP_SELLER}/limit/withdrawal`) && init?.method === 'POST') {
+          return problem(409, { code: 'settings_discount_limit_record_in_effect' })
+        }
+        if (url.endsWith('/groups')) return json(groupList())
+        return undefined
+      },
+    })
+    renderAt(LIMIT_PATH)
+    const user = userEvent.setup()
+    await screen.findByRole('table', { name: LIMIT_TEXT.groupsTableLabel })
+
+    await user.click(screen.getByRole('button', { name: `${LIMIT_TEXT.correctScheduled} — SATIS-DESTEK 01.11.2026` }))
+    expect((screen.getByLabelText(LIMIT_TEXT.effectiveFromLabel) as HTMLInputElement).value).toBe('2026-11-01')
+    const percent = screen.getByLabelText(LIMIT_TEXT.percentLabel)
+    expect((percent as HTMLInputElement).value).toBe('40')
+    await user.clear(percent)
+    await user.type(percent, '42')
+    await user.type(screen.getByLabelText(LIMIT_TEXT.reasonLabel), 'Yanlış girildi')
+    await user.click(screen.getByRole('button', { name: LIMIT_TEXT.save }))
+    expect((await screen.findByRole('status')).textContent).toBe(LIMIT_TEXT.saved)
+    expect(commands(recorded)[0].body).toEqual({
+      expectedVersion: '2',
+      limitVersion: '2',
+      kind: 'Fixed',
+      percent: '42',
+      linkedGroupId: null,
+      extraPoints: null,
+      reason: 'Yanlış girildi',
+      effectiveFrom: null,
+    })
+
+    await user.click(await screen.findByRole('button', { name: `${LIMIT_TEXT.withdrawScheduled} — SATIS-DESTEK 01.11.2026` }))
+    await user.type(screen.getByLabelText(LIMIT_TEXT.reasonLabel), 'Vazgeçildi')
+    await user.click(screen.getByRole('button', { name: LIMIT_TEXT.withdrawScheduled }))
+    expect((await screen.findByRole('alert')).textContent).toContain('yürürlüğe girdi')
+    expect(commands(recorded)[1].body).toEqual({ expectedVersion: '2', limitVersion: '2', reason: 'Vazgeçildi' })
+    expect(commands(recorded)[1].headers['Idempotency-Key']).not.toBe(commands(recorded)[0].headers['Idempotency-Key'])
   })
 
   it('keeps the SAME Idempotency-Key for a retry after an unknown outcome, and a version conflict re-reads', async () => {

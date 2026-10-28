@@ -13,10 +13,11 @@ namespace GoymenERP.Api.Endpoints;
 /// <see cref="SettingsPermissionManifestV1.SalesDiscountLimitsManage"/> (company-wide, not Critical, granted to no role here),
 /// re-authorized by the service and, for the binding, in every company it reads or writes. Responses are private, no-store.
 /// <list type="bullet">
-/// <item><c>GET …/groups</c> — the company's groups (passive ones included), each with its latest limit record and the
-/// limit in force today.</item>
+/// <item><c>GET …/groups</c> — the company's groups (passive ones included), each with the record and the limit in force
+/// today and its scheduled records (SAT-D78).</item>
 /// <item><c>POST …/groups</c> (201 + id) · <c>PUT …/groups/{groupId}/name</c> · <c>POST …/groups/{groupId}/deactivation</c>
-/// · <c>PUT …/groups/{groupId}/limit</c> (204).</item>
+/// · <c>PUT …/groups/{groupId}/limit</c> (204; SAT-D78: optional later <c>effectiveFrom</c>) · SAT-D84
+/// <c>POST …/groups/{groupId}/limit/withdrawal</c> and <c>…/limit/correction</c> for a record not in force yet (204).</item>
 /// <item><c>GET …/people?q=&amp;limit=</c> — active people of the company (id + display name) for the binding editor.</item>
 /// <item><c>GET …/bindings/{userId}</c> / <c>PUT …/bindings/{userId}</c> — the person's groups in every company the actor
 /// can act in; the write goes to all of them in one transaction (SAT-D66 default).</item>
@@ -174,7 +175,82 @@ public static class SettingsEndpoints
             .ProducesErpUnprocessableEntity(
                 SalesDiscountLimitProblemCodesV1.LinkedGroupNotFound,
                 SalesDiscountLimitProblemCodesV1.LinkedGroupInactive,
+                SalesDiscountLimitProblemCodesV1.LinkCycle,
+                SalesDiscountLimitProblemCodesV1.EffectiveFromPast,
+                SalesDiscountLimitProblemCodesV1.EffectiveFromBeforeScheduled)
+            .ProducesErpServiceUnavailable(SalesDiscountLimitProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        // SAT-D84: a not-yet-effective record is withdrawn, or corrected (withdrawn + replaced), before its date.
+        group.MapPost("/groups/{groupId:guid}/limit/withdrawal", async (
+                Guid groupId,
+                WithdrawSalesDiscountLimitRequestV1 request,
+                ISettingsSalesDiscountLimitAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                metadata => service.WithdrawLimitAsync(groupId, request, metadata, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsPermissionManifestV1.SalesDiscountLimitsManage)
+            .RequiresNonEmptyGuidPathParameter("groupId")
+            .WithName("WithdrawSettingsSalesDiscountLimitV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity)
+            .Accepts<WithdrawSalesDiscountLimitRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(
+                SalesDiscountLimitProblemCodesV1.IdempotencyConflict,
+                SalesDiscountLimitProblemCodesV1.VersionConflict,
+                SalesDiscountLimitProblemCodesV1.GroupInactive,
+                SalesDiscountLimitProblemCodesV1.RecordInEffect,
+                SalesDiscountLimitProblemCodesV1.RecordWithdrawn)
+            .ProducesErpUnprocessableEntity(
                 SalesDiscountLimitProblemCodesV1.LinkCycle)
+            .ProducesErpServiceUnavailable(SalesDiscountLimitProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/groups/{groupId:guid}/limit/correction", async (
+                Guid groupId,
+                CorrectSalesDiscountLimitRequestV1 request,
+                ISettingsSalesDiscountLimitAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                metadata => service.CorrectLimitAsync(groupId, request, metadata, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsPermissionManifestV1.SalesDiscountLimitsManage)
+            .RequiresNonEmptyGuidPathParameter("groupId")
+            .WithName("CorrectSettingsSalesDiscountLimitV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity)
+            .Accepts<CorrectSalesDiscountLimitRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(
+                SalesDiscountLimitProblemCodesV1.IdempotencyConflict,
+                SalesDiscountLimitProblemCodesV1.VersionConflict,
+                SalesDiscountLimitProblemCodesV1.GroupInactive,
+                SalesDiscountLimitProblemCodesV1.RecordInEffect,
+                SalesDiscountLimitProblemCodesV1.RecordWithdrawn)
+            .ProducesErpUnprocessableEntity(
+                SalesDiscountLimitProblemCodesV1.LinkedGroupNotFound,
+                SalesDiscountLimitProblemCodesV1.LinkedGroupInactive,
+                SalesDiscountLimitProblemCodesV1.LinkCycle,
+                SalesDiscountLimitProblemCodesV1.EffectiveFromPast,
+                SalesDiscountLimitProblemCodesV1.EffectiveFromBeforeScheduled)
             .ProducesErpServiceUnavailable(SalesDiscountLimitProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 

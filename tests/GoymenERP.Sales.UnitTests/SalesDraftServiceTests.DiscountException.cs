@@ -123,6 +123,7 @@ public sealed partial class SalesDraftServiceTests
         string price, string? percent, string? amount, string? surcharge, bool requiresApproval)
     {
         var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m } }.AllowDiscountsUpTo(10m);
+        world.Clock = new IstanbulDayClock(Day);
         var policies = (FakeDiscountLimitPolicies)world.SalesPolicies!;
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         var lineId = created.Lines[0].LineId;
@@ -176,6 +177,7 @@ public sealed partial class SalesDraftServiceTests
             PriceReferences = new FakePriceReferences { Price = 12.50m },
             SalesPolicies = policies,
             DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA, DiscountGroupB]),
+            Clock = new IstanbulDayClock(Day),
         };
 
         async Task<SalesDraftDiscountLimitCheckV1> CheckAsync(string key, string percent)
@@ -208,6 +210,42 @@ public sealed partial class SalesDraftServiceTests
         policies.Limits.Clear();
         var none = await CheckAsync("none", "1");
         Assert.Equal(((string?)null, true), (none.LimitPercent, none.RequiresApproval));
+    }
+
+    [Fact]
+    public async Task Sat_d81_the_limit_is_read_on_the_day_the_order_is_entered_or_revised_never_on_its_later_business_date()
+    {
+        // Seller limit 5 % now; 30 % is scheduled (SAT-D78) from day +10. The order is dated day +20, i.e. after the scheduled
+        // change, but it is entered and revised today: today's 5 % applies and a 12 % discount goes to approval.
+        var policies = new FakeDiscountLimitPolicies
+        {
+            Limits = { [DiscountGroupA] = 5m },
+            ScheduledFrom = { [DiscountGroupA] = (Day.AddDays(10), 30m) },
+        };
+        var clock = new IstanbulDayClock(Day);
+        var world = new World
+        {
+            PriceReferences = new FakePriceReferences { Price = 12.50m },
+            SalesPolicies = policies,
+            DiscountLimitGroups = new FakeDiscountLimitGroups([DiscountGroupA]),
+            Clock = clock,
+        };
+        var created = (await world.Service().CreateDraftAsync(Request() with { BusinessDate = Day.AddDays(20) },
+            Metadata("k-create-d81"))).Detail;
+        var revised = await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            FromList(created.Lines[0].LineId, "12.50", "12")), Metadata("k-revise-d81"));
+
+        var today = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!;
+        Assert.Equal(("5", true), (today.LimitPercent, today.RequiresApproval));
+        Assert.Equal([(DiscountGroupA, Day)], policies.Asked);
+
+        // A commercial revision on the day the scheduled limit is in force is checked against it (30 %): no approval.
+        clock.Day = Day.AddDays(10);
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(revised.Detail.Draft.Version,
+            FromList(created.Lines[0].LineId, "12.50", "11")), Metadata("k-revise-d81-later"));
+        var later = Assert.Single((await world.Service().GetDraftLinePricingAsync(created.Draft.Id)).Lines).DiscountCheck!;
+        Assert.Equal(("30", false), (later.LimitPercent, later.RequiresApproval));
+        Assert.Equal((DiscountGroupA, Day.AddDays(10)), policies.Asked[^1]);
     }
 
     [Theory]
@@ -550,6 +588,9 @@ public sealed partial class SalesDraftServiceTests
         public Dictionary<Guid, string> Faults { get; } = [];
         public HashSet<Guid> Inactive { get; } = [];
         public HashSet<Guid> StartsAfterTheBusinessDate { get; } = [];
+
+        /// <summary>SAT-D78: a later record per group, in force from its date (the earlier limit holds until the day before).</summary>
+        public Dictionary<Guid, (DateOnly From, decimal Percent)> ScheduledFrom { get; } = [];
         public List<(Guid Group, DateOnly On)> Asked { get; } = [];
 
         public Task<SalesDiscountLimitPolicyV1> GetSalesDiscountLimitAsync(Guid limitGroupId, DateOnly effectiveOn,
@@ -567,6 +608,17 @@ public sealed partial class SalesDraftServiceTests
                     new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.SalesPolicyNotFound));
             }
 
+            if (ScheduledFrom.TryGetValue(limitGroupId, out var scheduled))
+            {
+                return Task.FromResult(effectiveOn >= scheduled.From
+                    ? new SalesDiscountLimitPolicyV1(Company, limitGroupId,
+                        new ProfileVersionV1(Guid.Parse("d15c0000-0000-4000-8000-000000000002"), 2), scheduled.Percent, true,
+                        scheduled.From, null)
+                    : new SalesDiscountLimitPolicyV1(Company, limitGroupId,
+                        new ProfileVersionV1(Guid.Parse("d15c0000-0000-4000-8000-000000000001"), 1), limit, true,
+                        effectiveOn.AddDays(-30), scheduled.From.AddDays(-1)));
+            }
+
             var from = StartsAfterTheBusinessDate.Contains(limitGroupId) ? effectiveOn.AddDays(1) : effectiveOn.AddDays(-30);
             return Task.FromResult(new SalesDiscountLimitPolicyV1(Company, limitGroupId,
                 new ProfileVersionV1(Guid.Parse("d15c0000-0000-4000-8000-000000000001"), 1), limit,
@@ -578,5 +630,13 @@ public sealed partial class SalesDraftServiceTests
 
         public Task<SalesApprovalAmountThresholdPolicyV1> GetSalesApprovalAmountThresholdAsync(Guid currencyId, DateOnly effectiveOn,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>SAT-D81: a clock at noon of a given Europe/Istanbul business day (09:00 UTC).</summary>
+    private sealed class IstanbulDayClock(DateOnly day) : TimeProvider
+    {
+        public DateOnly Day { get; set; } = day;
+
+        public override DateTimeOffset GetUtcNow() => new(Day.ToDateTime(new TimeOnly(9, 0)), TimeSpan.Zero);
     }
 }

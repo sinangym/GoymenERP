@@ -18,11 +18,14 @@ import {
   decodeGroupList,
   decodePeople,
   groupDeactivationPath,
+  groupLimitCorrectionPath,
   groupLimitPath,
+  groupLimitWithdrawalPath,
   groupNamePath,
   problemCodeOf,
   problemSubjectOf,
   type Binding,
+  type CorrectLimitBody,
   type CreateGroupBody,
   type DeactivateGroupBody,
   type LimitGroupCreated,
@@ -31,6 +34,7 @@ import {
   type RenameGroupBody,
   type SetBindingBody,
   type SetLimitBody,
+  type WithdrawLimitBody,
 } from './discountLimitContract'
 import type { ViewOutcome } from '../shell/uiState'
 
@@ -166,6 +170,19 @@ export function deactivateLimitGroup(
 
 export function setGroupLimit(context: CommandContext, groupId: string, body: SetLimitBody, signal?: AbortSignal) {
   return send<true>('PUT', groupLimitPath(groupId), context, body, 204, noBody, signal)
+}
+
+export function withdrawGroupLimit(
+  context: CommandContext,
+  groupId: string,
+  body: WithdrawLimitBody,
+  signal?: AbortSignal,
+) {
+  return send<true>('POST', groupLimitWithdrawalPath(groupId), context, body, 204, noBody, signal)
+}
+
+export function correctGroupLimit(context: CommandContext, groupId: string, body: CorrectLimitBody, signal?: AbortSignal) {
+  return send<true>('POST', groupLimitCorrectionPath(groupId), context, body, 204, noBody, signal)
 }
 
 export function setBinding(context: CommandContext, userId: string, body: SetBindingBody, signal?: AbortSignal) {

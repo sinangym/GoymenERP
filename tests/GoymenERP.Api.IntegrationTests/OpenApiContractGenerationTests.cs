@@ -1010,6 +1010,14 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SetSalesDiscountLimitRequestV1",
             ["path:groupId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("post", "/api/v1/settings/sales-discount-limits/groups/{groupId}/limit/withdrawal", "WithdrawSettingsSalesDiscountLimitV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/WithdrawSalesDiscountLimitRequestV1",
+            ["path:groupId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("post", "/api/v1/settings/sales-discount-limits/groups/{groupId}/limit/correction", "CorrectSettingsSalesDiscountLimitV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/CorrectSalesDiscountLimitRequestV1",
+            ["path:groupId:true:type:string;format:uuid;non-empty-uuid:true"]),
         new("get", "/api/v1/settings/sales-discount-limits/people", "SearchSettingsSalesDiscountLimitPeopleV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json"),
             ParameterValues:
@@ -1285,6 +1293,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["RenameSettingsSalesDiscountLimitGroupV1"] = "none",
             ["DeactivateSettingsSalesDiscountLimitGroupV1"] = "none",
             ["SetSettingsSalesDiscountLimitV1"] = "none",
+            ["WithdrawSettingsSalesDiscountLimitV1"] = "none",
+            ["CorrectSettingsSalesDiscountLimitV1"] = "none",
             ["SearchSettingsSalesDiscountLimitPeopleV1"] = "ref:SalesDiscountLimitPersonListV1",
             ["GetSettingsSalesDiscountLimitBindingV1"] = "ref:SalesDiscountLimitBindingViewV1",
             ["SetSettingsSalesDiscountLimitBindingV1"] = "none",
@@ -1534,6 +1544,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RenameSettingsSalesDiscountLimitGroupV1",
         "DeactivateSettingsSalesDiscountLimitGroupV1",
         "SetSettingsSalesDiscountLimitV1",
+        "WithdrawSettingsSalesDiscountLimitV1",
+        "CorrectSettingsSalesDiscountLimitV1",
         "SearchSettingsSalesDiscountLimitPeopleV1",
         "GetSettingsSalesDiscountLimitBindingV1",
         "SetSettingsSalesDiscountLimitBindingV1",
@@ -1663,6 +1675,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RenameSettingsSalesDiscountLimitGroupV1",
         "DeactivateSettingsSalesDiscountLimitGroupV1",
         "SetSettingsSalesDiscountLimitV1",
+        "WithdrawSettingsSalesDiscountLimitV1",
+        "CorrectSettingsSalesDiscountLimitV1",
         "SetSettingsSalesDiscountLimitBindingV1",
     ];
 
@@ -1883,6 +1897,20 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status409Conflict,
                     StatusCodes.Status422UnprocessableEntity,
                 ],
+                ["WithdrawSettingsSalesDiscountLimitV1"] =
+                [
+                    StatusCodes.Status204NoContent,
+                    StatusCodes.Status404NotFound,
+                    StatusCodes.Status409Conflict,
+                    StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["CorrectSettingsSalesDiscountLimitV1"] =
+                [
+                    StatusCodes.Status204NoContent,
+                    StatusCodes.Status404NotFound,
+                    StatusCodes.Status409Conflict,
+                    StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["SetSettingsSalesDiscountLimitBindingV1"] =
                     [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
             };
@@ -2055,6 +2083,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RenameSettingsSalesDiscountLimitGroupV1",
         "DeactivateSettingsSalesDiscountLimitGroupV1",
         "SetSettingsSalesDiscountLimitV1",
+        "WithdrawSettingsSalesDiscountLimitV1",
+        "CorrectSettingsSalesDiscountLimitV1",
         "SetSettingsSalesDiscountLimitBindingV1",
         "SearchSettingsSalesDiscountLimitPeopleV1",
     ];
@@ -2201,6 +2231,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RenameSettingsSalesDiscountLimitGroupV1:404",
         "DeactivateSettingsSalesDiscountLimitGroupV1:404",
         "SetSettingsSalesDiscountLimitV1:404",
+        "WithdrawSettingsSalesDiscountLimitV1:404",
+        "CorrectSettingsSalesDiscountLimitV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -2271,6 +2303,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RenameSettingsSalesDiscountLimitGroupV1:400",
         "DeactivateSettingsSalesDiscountLimitGroupV1:400",
         "SetSettingsSalesDiscountLimitV1:400",
+        "WithdrawSettingsSalesDiscountLimitV1:400",
+        "CorrectSettingsSalesDiscountLimitV1:400",
         "SetSettingsSalesDiscountLimitBindingV1:400",
     ];
 
@@ -2826,9 +2860,27 @@ public sealed partial class OpenApiContractGenerationTests
                 ["settings_discount_limit_group_inactive", "settings_discount_limit_idempotency_conflict",
                  "settings_discount_limit_version_conflict"],
             ["SetSettingsSalesDiscountLimitV1:422"] =
-                ["settings_discount_limit_link_cycle", "settings_discount_limit_linked_group_inactive",
+                ["settings_discount_limit_effective_from_before_scheduled", "settings_discount_limit_effective_from_past",
+                 "settings_discount_limit_link_cycle", "settings_discount_limit_linked_group_inactive",
                  "settings_discount_limit_linked_group_not_found"],
             ["SetSettingsSalesDiscountLimitV1:503"] = ["settings_provider_unavailable"],
+            ["WithdrawSettingsSalesDiscountLimitV1:400"] = ["settings_discount_limit_command_metadata_invalid", "settings_discount_limit_reason_required", "settings_discount_limit_reason_too_long", "settings_discount_limit_request_invalid"],
+            ["WithdrawSettingsSalesDiscountLimitV1:409"] =
+                ["settings_discount_limit_group_inactive", "settings_discount_limit_idempotency_conflict",
+                 "settings_discount_limit_record_in_effect", "settings_discount_limit_record_withdrawn",
+                 "settings_discount_limit_version_conflict"],
+            ["WithdrawSettingsSalesDiscountLimitV1:422"] = ["settings_discount_limit_link_cycle"],
+            ["WithdrawSettingsSalesDiscountLimitV1:503"] = ["settings_provider_unavailable"],
+            ["CorrectSettingsSalesDiscountLimitV1:400"] = ["settings_discount_limit_command_metadata_invalid", "settings_discount_limit_reason_required", "settings_discount_limit_reason_too_long", "settings_discount_limit_request_invalid"],
+            ["CorrectSettingsSalesDiscountLimitV1:409"] =
+                ["settings_discount_limit_group_inactive", "settings_discount_limit_idempotency_conflict",
+                 "settings_discount_limit_record_in_effect", "settings_discount_limit_record_withdrawn",
+                 "settings_discount_limit_version_conflict"],
+            ["CorrectSettingsSalesDiscountLimitV1:422"] =
+                ["settings_discount_limit_effective_from_before_scheduled", "settings_discount_limit_effective_from_past",
+                 "settings_discount_limit_link_cycle", "settings_discount_limit_linked_group_inactive",
+                 "settings_discount_limit_linked_group_not_found"],
+            ["CorrectSettingsSalesDiscountLimitV1:503"] = ["settings_provider_unavailable"],
             ["SearchSettingsSalesDiscountLimitPeopleV1:400"] = ["settings_discount_limit_request_invalid"],
             ["SearchSettingsSalesDiscountLimitPeopleV1:503"] = ["settings_provider_unavailable"],
             ["GetSettingsSalesDiscountLimitBindingV1:400"] = ["settings_discount_limit_request_invalid"],
@@ -5904,13 +5956,19 @@ public sealed partial class OpenApiContractGenerationTests
                     ("businessDate", "type:string;format:date"),
                     ("groups", "type:array;items:ref:SalesDiscountLimitGroupViewV1")),
                 ["SalesDiscountLimitGroupViewV1"] = ObjectSchema(
-                    ["id", "code", "name", "isActive", "version", "limit", "effectiveLimit"],
+                    ["id", "code", "name", "isActive", "version", "limit", "effectiveLimit", "scheduled"],
                     ("id", "type:string;format:uuid"),
                     ("code", "type:string"),
                     ("name", "type:string"),
                     ("isActive", "type:boolean"),
                     ("version", "type:string"),
                     ("limit", "oneOf:ref:SalesDiscountLimitDefinitionViewV1|type:null"),
+                    ("effectiveLimit", "ref:SalesDiscountLimitEffectiveViewV1"),
+                    ("scheduled", "type:array;items:ref:SalesDiscountLimitScheduledViewV1")),
+                // SAT-D78: a record that starts later, with the limit on its first day.
+                ["SalesDiscountLimitScheduledViewV1"] = ObjectSchema(
+                    ["limit", "effectiveLimit"],
+                    ("limit", "ref:SalesDiscountLimitDefinitionViewV1"),
                     ("effectiveLimit", "ref:SalesDiscountLimitEffectiveViewV1")),
                 ["SalesDiscountLimitDefinitionViewV1"] = ObjectSchema(
                     ["limitVersion", "kind", "percent", "linkedGroupId", "extraPoints", "effectiveFrom", "recordedBy", "recordedAtUtc", "reason"],
@@ -6794,7 +6852,23 @@ public sealed partial class OpenApiContractGenerationTests
                     ("percent", "type:null|string"),
                     ("linkedGroupId", "type:null|string;format:uuid"),
                     ("extraPoints", "type:null|string"),
+                    ("reason", "type:null|string"),
+                    ("effectiveFrom", "type:null|string;format:date")),
+                ["WithdrawSalesDiscountLimitRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "limitVersion", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("limitVersion", "type:null|string"),
                     ("reason", "type:null|string")),
+                ["CorrectSalesDiscountLimitRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "limitVersion", "kind", "percent", "linkedGroupId", "extraPoints", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("limitVersion", "type:null|string"),
+                    ("kind", "type:null|string"),
+                    ("percent", "type:null|string"),
+                    ("linkedGroupId", "type:null|string;format:uuid"),
+                    ("extraPoints", "type:null|string"),
+                    ("reason", "type:null|string"),
+                    ("effectiveFrom", "type:null|string;format:date")),
                 ["SetSalesDiscountLimitBindingRequestV1"] = ObjectSchema(
                     ["groupCodes", "companies", "reason"],
                     ("groupCodes", "type:array|null;items:type:string"),

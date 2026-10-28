@@ -300,8 +300,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Inventory material-label exact-code global search: +1 reviewed Platform SQL fact, kept ordinal-sorted.
             // SAT-D61…D70: +2 Settings discount limit SQL facts (groups/limits lifecycle; multi-company binding)
             // (b384d836… -> 765b00e2…).
+            // SAT-D78 / SAT-D84: +2 Settings discount limit SQL facts (future-dated records; withdraw/correct)
+            // (765b00e2… -> e68b1182…).
             ["tools/relational_inventory/platform.txt"] =
-                "765b00e2c3388f299f71fa893af17f58468c0ded5d739e2dfc3e8fbfba64bd0e",
+                "e68b11823817f70bf891b0ffa32633fdab29b6f7d0c67f4611bd7552709a3a0e",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -396,7 +398,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // sets (company inside every key and foreign key), the platform AuditEvent/CommandExecution mappings with
                 // the safe CompanyId filter, and the write fence (Manufacturing tolerance stays read-only, nothing is
                 // deleted, limit records and binding rows are immutable, every row in the context's company).
-                "ed5c5269036d131f923c067c636fe5f0dc7862d490e038cabf2f1f1ecf7a334e",
+                // Re-fingerprinted for SAT-D84: the company-filtered, insert-only limit withdrawal set (company inside its
+                // key and both foreign keys) joins the immutable rows of the write fence.
+                "fab206a200b147c6b44ba65362942e9917179e78aea3f6d5cbdc5d96ff69584f",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -1535,10 +1539,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                             ["Sql"] = 3
                         }),
                 // SAT-D61…D70: Down refuses (51095) while limit groups or bindings exist, before any drop (forward fix).
+                // Re-fingerprinted for SAT-D84: the same migration also creates (and Down drops) the withdrawal table; the
+                // one guard Sql is unchanged in behaviour (a withdrawal cannot exist without its group).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261027221309_AddSalesDiscountLimitGroups.cs"] =
                     new(
-                        "5bad962728397b7c026e75e23e06c2c0c191bf1e1fc5329192c8cd7629272c7d",
+                        "54a56ef67049ac6263c2f9d410f0401fc938c59ace113d184a0a259ecdbbb35c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

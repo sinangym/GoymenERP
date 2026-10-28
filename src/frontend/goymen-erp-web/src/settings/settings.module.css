@@ -104,3 +104,19 @@
   display: grid;
   gap: var(--goy-ds-space-3);
 }
+
+/* SAT-D78: the scheduled changes of a group, one per line inside its table cell. */
+.plainList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--goy-ds-space-1);
+}
+
+.plainList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-2);
+}

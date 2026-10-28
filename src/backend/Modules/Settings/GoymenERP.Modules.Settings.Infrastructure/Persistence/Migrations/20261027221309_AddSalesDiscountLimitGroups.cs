@@ -166,13 +166,55 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                 table: "SalesDiscountLimitVersions",
                 column: "ProfileId",
                 unique: true);
+
+            migrationBuilder.CreateTable(
+                name: "SalesDiscountLimitWithdrawals",
+                schema: "settings",
+                columns: table => new
+                {
+                    CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    LimitGroupId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    LimitVersion = table.Column<long>(type: "bigint", nullable: false),
+                    ReplacedByVersion = table.Column<long>(type: "bigint", nullable: true),
+                    WithdrawnAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    WithdrawnBy = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false),
+                    Reason = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_SalesDiscountLimitWithdrawals", x => new { x.CompanyId, x.LimitGroupId, x.LimitVersion });
+                    table.CheckConstraint("CK_SettingsDiscountLimitWithdrawals_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+                    table.CheckConstraint("CK_SettingsDiscountLimitWithdrawals_Recorded", "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                    table.CheckConstraint("CK_SettingsDiscountLimitWithdrawals_Replacement", "[ReplacedByVersion] IS NULL OR [ReplacedByVersion] > [LimitVersion]");
+                    table.CheckConstraint("CK_SettingsDiscountLimitWithdrawals_Version", "[LimitVersion] > 0");
+                    table.ForeignKey(
+                        name: "FK_SalesDiscountLimitWithdrawals_SalesDiscountLimitVersions_CompanyId_LimitGroupId_LimitVersion",
+                        columns: x => new { x.CompanyId, x.LimitGroupId, x.LimitVersion },
+                        principalSchema: "settings",
+                        principalTable: "SalesDiscountLimitVersions",
+                        principalColumns: new[] { "CompanyId", "LimitGroupId", "Version" },
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_SalesDiscountLimitWithdrawals_SalesDiscountLimitVersions_CompanyId_LimitGroupId_ReplacedByVersion",
+                        columns: x => new { x.CompanyId, x.LimitGroupId, x.ReplacedByVersion },
+                        principalSchema: "settings",
+                        principalTable: "SalesDiscountLimitVersions",
+                        principalColumns: new[] { "CompanyId", "LimitGroupId", "Version" },
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_SalesDiscountLimitWithdrawals_CompanyId_LimitGroupId_ReplacedByVersion",
+                schema: "settings",
+                table: "SalesDiscountLimitWithdrawals",
+                columns: new[] { "CompanyId", "LimitGroupId", "ReplacedByVersion" });
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             // SAT-D61…D70: a limit group, a limit record or a binding is policy data entered by an authorized person (with its
-            // audit trail); dropping it would silently return every affected discount to "no limit". While any row exists the
+            // audit trail); dropping it would silently return every affected discount to "no limit" (a SAT-D84 withdrawal exists only with its group). While any row exists the
             // rollback is refused with this migration's own error (51095, used by no other migration on main or an open
             // branch) before any operation; on an empty store the tables drop freely. Forward fix otherwise.
             migrationBuilder.Sql("""
@@ -180,6 +222,10 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     OR EXISTS (SELECT 1 FROM [settings].[SalesDiscountLimitMemberships])
                     THROW 51095, 'Settings discount limit groups or bindings exist; AddSalesDiscountLimitGroups is not rolled back (forward fix).', 1;
                 """);
+
+            migrationBuilder.DropTable(
+                name: "SalesDiscountLimitWithdrawals",
+                schema: "settings");
 
             migrationBuilder.DropTable(
                 name: "SalesDiscountLimitMembershipGroups",

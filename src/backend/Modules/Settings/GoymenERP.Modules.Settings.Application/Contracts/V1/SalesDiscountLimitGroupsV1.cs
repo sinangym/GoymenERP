@@ -59,6 +59,10 @@ public static class SalesDiscountLimitProblemCodesV1
     public const string LinkedGroupNotFound = "settings_discount_limit_linked_group_not_found";
     public const string LinkedGroupInactive = "settings_discount_limit_linked_group_inactive";
     public const string LinkCycle = "settings_discount_limit_link_cycle";
+    public const string EffectiveFromPast = "settings_discount_limit_effective_from_past";
+    public const string EffectiveFromBeforeScheduled = "settings_discount_limit_effective_from_before_scheduled";
+    public const string RecordInEffect = "settings_discount_limit_record_in_effect";
+    public const string RecordWithdrawn = "settings_discount_limit_record_withdrawn";
     public const string BindingCompaniesMismatch = "settings_discount_limit_binding_companies_mismatch";
     public const string BindingPersonNotMember = "settings_discount_limit_binding_person_not_member";
     public const string BindingGroupNotFound = "settings_discount_limit_binding_group_not_found";
@@ -78,7 +82,10 @@ public sealed record DeactivateSalesDiscountLimitGroupRequestV1(string? Expected
 /// <summary>
 /// Record the group's limit as a new immutable version (SAT-D36, SAT-D62): <c>Kind</c> <c>Fixed</c> with <c>Percent</c>
 /// (0…100), or <c>Linked</c> with <c>LinkedGroupId</c> (another group of the same company) and <c>ExtraPoints</c> (0…100).
-/// Percents travel as lossless decimal text.
+/// Percents travel as lossless decimal text. SAT-D78: <c>EffectiveFrom</c> is the business date the record takes effect
+/// on (omitted = today's Europe/Istanbul business date); it may be a later date and then applies by itself on that date.
+/// A date before today, or before the group's latest (possibly scheduled) record, is refused; a record on the same date as
+/// a scheduled one supersedes it, and a scheduled record can be withdrawn or corrected before its date (SAT-D84).
 /// </summary>
 public sealed record SetSalesDiscountLimitRequestV1(
     string? ExpectedVersion,
@@ -86,7 +93,29 @@ public sealed record SetSalesDiscountLimitRequestV1(
     string? Percent,
     Guid? LinkedGroupId,
     string? ExtraPoints,
-    string? Reason);
+    string? Reason,
+    DateOnly? EffectiveFrom = null);
+
+/// <summary>
+/// SAT-D84: withdraw the group's limit record <c>LimitVersion</c> (decimal text) BEFORE it takes effect. A record already
+/// in force (its date is today or earlier) never changes: a new record is entered instead. <c>ExpectedVersion</c> is the
+/// group's version.
+/// </summary>
+public sealed record WithdrawSalesDiscountLimitRequestV1(string? ExpectedVersion, string? LimitVersion, string? Reason);
+
+/// <summary>
+/// SAT-D84: correct a not-yet-effective record: it is withdrawn and the given limit is recorded in its place, in one save
+/// and one audit event. <c>EffectiveFrom</c> omitted = the corrected record's date; the same date rules as a new record.
+/// </summary>
+public sealed record CorrectSalesDiscountLimitRequestV1(
+    string? ExpectedVersion,
+    string? LimitVersion,
+    string? Kind,
+    string? Percent,
+    Guid? LinkedGroupId,
+    string? ExtraPoints,
+    string? Reason,
+    DateOnly? EffectiveFrom = null);
 
 /// <summary>One company of a binding write and the binding version the editor saw there ("0" = no binding yet).</summary>
 public sealed record SalesDiscountLimitBindingCompanyVersionV1(Guid CompanyId, string? ExpectedVersion);
@@ -101,7 +130,10 @@ public sealed record SetSalesDiscountLimitBindingRequestV1(
     IReadOnlyList<SalesDiscountLimitBindingCompanyVersionV1>? Companies,
     string? Reason);
 
-/// <summary>The company's limit groups (passive ones included) and each one's limit as stored and as in force today.</summary>
+/// <summary>
+/// The company's limit groups (passive ones included): each one's record and limit in force today and its scheduled
+/// (SAT-D78) records.
+/// </summary>
 public sealed record SalesDiscountLimitGroupListV1(
     Guid CompanyId,
     DateOnly BusinessDate,
@@ -114,9 +146,21 @@ public sealed record SalesDiscountLimitGroupViewV1(
     bool IsActive,
     string Version,
     SalesDiscountLimitDefinitionViewV1? Limit,
+    SalesDiscountLimitEffectiveViewV1 EffectiveLimit,
+    IReadOnlyList<SalesDiscountLimitScheduledViewV1> Scheduled);
+
+/// <summary>
+/// SAT-D78: a record that starts after <see cref="SalesDiscountLimitGroupListV1.BusinessDate"/>, with the limit the Sales
+/// check will read for the group on its first day (a linked limit uses the linked group's record of that day).
+/// </summary>
+public sealed record SalesDiscountLimitScheduledViewV1(
+    SalesDiscountLimitDefinitionViewV1 Limit,
     SalesDiscountLimitEffectiveViewV1 EffectiveLimit);
 
-/// <summary>The group's latest limit record (null when none was ever recorded).</summary>
+/// <summary>
+/// A limit record of the group: in <see cref="SalesDiscountLimitGroupViewV1.Limit"/> the one in force on the list's
+/// business date (null when none is), in a scheduled entry the one that starts later.
+/// </summary>
 public sealed record SalesDiscountLimitDefinitionViewV1(
     string LimitVersion,
     string Kind,
@@ -206,6 +250,12 @@ public interface ISettingsSalesDiscountLimitAdministrationV1
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 
     Task<SettingsCommandResultV1> SetLimitAsync(Guid groupId, SetSalesDiscountLimitRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<SettingsCommandResultV1> WithdrawLimitAsync(Guid groupId, WithdrawSalesDiscountLimitRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<SettingsCommandResultV1> CorrectLimitAsync(Guid groupId, CorrectSalesDiscountLimitRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 
     Task<SalesDiscountLimitPersonListV1> SearchPeopleAsync(string? query, int? limit,

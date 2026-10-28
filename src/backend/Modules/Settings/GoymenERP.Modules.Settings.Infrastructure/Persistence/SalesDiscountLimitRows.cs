@@ -42,6 +42,22 @@ internal sealed class SalesDiscountLimitVersionRow
 }
 
 /// <summary>
+/// SAT-D84: the withdrawal of a limit record BEFORE it took effect (insert-only, like the record itself: the record row
+/// stays as written). A withdrawn record is ignored by the calculator from then on. <see cref="ReplacedByVersion"/> names
+/// the record a correction wrote in the same save (null for a plain withdrawal).
+/// </summary>
+internal sealed class SalesDiscountLimitWithdrawalRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid LimitGroupId { get; set; }
+    public long LimitVersion { get; set; }
+    public long? ReplacedByVersion { get; set; }
+    public DateTimeOffset WithdrawnAtUtc { get; set; }
+    public string WithdrawnBy { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// SAT-D63 / SAT-D66: a person's binding in one company. The bound groups are the immutable
 /// <see cref="SalesDiscountLimitMembershipGroupRow"/> rows of <see cref="Version"/>; a change writes a new version.
 /// </summary>
