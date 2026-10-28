@@ -85,6 +85,7 @@ export function PriceListDetailPage() {
         <div><dt>{T.columns.currency}</dt><dd data-testid="price-list-currency">{view.currencyCode}</dd></div>
         <div><dt>{T.channel}</dt><dd>{view.channel === 'Sales' ? T.channelSales : view.channel}</dd></div>
         <div><dt>{T.vatBasis}</dt><dd>{view.vatBasis === 'ExcludingVat' ? T.vatExcluded : view.vatBasis}</dd></div>
+        <div><dt>{T.columns.scope}</dt><dd data-testid="price-list-scope">{view.scope.kind === 'Customer' ? T.scopeCustomer : T.scopeCompany}</dd></div>
         <div><dt>{T.columns.active}</dt><dd data-testid="price-list-active">{view.activeVersionNo === null ? T.none : T.versionTitle(view.activeVersionNo)}</dd></div>
         <div><dt>{T.version}</dt><dd data-testid="price-list-version">{view.version}</dd></div>
       </dl>

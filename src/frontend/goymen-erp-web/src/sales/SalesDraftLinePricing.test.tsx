@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT } from './salesText'
-import { decodeDraftLinePricing, decodeReference } from './linePricing'
+import { decodeDraftLinePricing, decodeLinePriceReferences, decodeReference } from './linePricing'
 import { recallPriceFloorApproval, resetPendingPriceFloorApprovals } from './pendingPriceFloorApprovals'
 import { ALL_SALES, COMPANY_A, HARNESS_USER_ID, KG, deferred, installFetch, json, renderSalesApp, type RecordedCall } from './testHarness'
 
@@ -30,8 +30,63 @@ function detail(version: string, line: Record<string, unknown> = {}): Body {
 const reference = {
   priceListId: LIST, priceListName: 'Yurt içi satış', versionNo: 2, validFrom: '2026-09-01', validThrough: null, currencyCode: 'TRY',
   priceUnitId: KG, unitPrice: '42000.50', floorUnitPrice: '40000', vatBasis: 'ExcludingVat',
-  lowerQuantity: '10', upperQuantity: '20',
+  lowerQuantity: '10', upperQuantity: '20', tier: 'Company',
 }
+
+/** MOD-02: the owner's chain answer for one resolved company-wide list (the shape the server sends beside the items). */
+const resolved = {
+  outcome: 'Resolved', effectiveOn: '2026-09-13', businessTimeZone: 'Europe/Istanbul', matchedTier: 'Company', priceListId: LIST, versionNo: 2,
+  tiers: [
+    { tier: 'Agreement', status: 'Unavailable', reason: 'agreement_sales_contract_missing' },
+    { tier: 'Customer', status: 'NoMatch', reason: null },
+    { tier: 'CustomerGroup', status: 'Unavailable', reason: 'customer_group_cari_field_missing' },
+    { tier: 'Company', status: 'Matched', reason: null },
+  ],
+  packageStandard: { status: 'Unavailable', reason: 'package_standard_owner_missing' },
+}
+
+describe('MOD-02 tier chain resolution (SAT-D9 / SAT-D10)', () => {
+  const body = (overrides: Record<string, unknown> = {}) =>
+    ({ lineId: LINE, currencyCode: 'TRY', on: '2026-09-13', items: [reference], resolution: resolved, ...overrides })
+  const noPrice = {
+    ...resolved, outcome: 'NoPrice', matchedTier: null, priceListId: null, versionNo: null,
+    tiers: resolved.tiers.map((tier) => tier.tier === 'Company' ? { ...tier, status: 'NoMatch' } : tier),
+  }
+
+  it('decodes a resolved tier, an explicit no-price and an ambiguous tier', () => {
+    expect(decodeLinePriceReferences(body(), LINE)?.resolution.matchedTier).toBe('Company')
+    const none = decodeLinePriceReferences(body({ items: [], resolution: noPrice }), LINE)
+    expect(none && [none.items.length, none.resolution.outcome, none.resolution.matchedTier]).toEqual([0, 'NoPrice', null])
+    const second = { ...reference, priceListId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+    const ambiguous = decodeLinePriceReferences(body({ items: [reference, second],
+      resolution: { ...resolved, outcome: 'Ambiguous', priceListId: null, versionNo: null } }), LINE)
+    expect(ambiguous?.items.map((item) => item.priceListId)).toEqual([LIST, second.priceListId])
+  })
+
+  it.each<[string, Record<string, unknown>]>([
+    ['no resolution member', { resolution: undefined }],
+    ['a price with no tier answering', { resolution: noPrice }],
+    ['no price but a resolved list', { items: [] }],
+    ['a resolved list that is not the item', { resolution: { ...resolved, versionNo: 3 } }],
+    ['an item of another tier', { items: [{ ...reference, tier: 'Customer' }] }],
+    ['an item without a tier', { items: [{ ...reference, tier: null }] }],
+    ['another business date', { resolution: { ...resolved, effectiveOn: '2026-09-14' } }],
+    ['a tier missing from the chain', { resolution: { ...resolved, tiers: resolved.tiers.slice(1) } }],
+    ['an unknown tier status', { resolution: { ...resolved, tiers: [{ ...resolved.tiers[0], status: 'Skipped' }, ...resolved.tiers.slice(1)] } }],
+    ['a package standard value', { resolution: { ...resolved, packageStandard: { status: 'Available', reason: 'x' } } }],
+  ])('refuses %s (fail closed: never painted as a price)', (_name, overrides) => {
+    const raw: Record<string, unknown> = body(overrides)
+    if ('resolution' in overrides && overrides.resolution === undefined) delete raw.resolution
+    expect(decodeLinePriceReferences(raw, LINE)).toBeNull()
+  })
+
+  it('accepts a line reference recorded before the chain (tier null) but never an unknown tier', () => {
+    expect(decodeReference({ ...reference, tier: null })?.tier).toBeNull()
+    expect(decodeReference({ ...reference, tier: 'Region' })).toBeNull()
+    const { tier: _tier, ...withoutTier } = reference
+    expect(decodeReference(withoutTier)).toBeNull()
+  })
+})
 
 describe('price tier wire bounds', () => {
   it.each([
@@ -304,7 +359,7 @@ describe('AT-018 list price on the order line', () => {
         ? pricing('3', { unitPrice: '42000.50', priceUnitId: KG, priceSource: 'Reference', priceReference: reference, discountPercent: '3',
           surchargePercent: '1.5', netUnitPrice: '41351.592275' })
         : pricing('2')),
-      onPriceReferences: () => json({ lineId: LINE, currencyCode: 'TRY', on: '2026-09-13', items: [reference] }),
+      onPriceReferences: () => json({ lineId: LINE, currencyCode: 'TRY', on: '2026-09-13', items: [reference], resolution: resolved }),
       onCommercialRevision: (call) => {
         posts.push(call)
         saved = true
@@ -317,10 +372,13 @@ describe('AT-018 list price on the order line', () => {
     const form = await screen.findByTestId('sales-price-revision-form')
     expect((await within(form).findByTestId('sales-price-reference-1')).textContent).toBe(`${P.reference}: ${P.noReference}`)
     await userEvent.click(await within(form).findByTestId('sales-price-fetch-1'))
+    expect((await within(form).findByTestId('sales-price-resolution-1')).textContent).toBe(P.resolvedTier(P.priceTier.Company))
     await userEvent.click(await within(form).findByRole('button', { name: P.useReference }))
     // The chosen list price is the reference AND the default price (the person may still type another).
     expect((within(form).getByLabelText(ORDER_DETAIL_TEXT.priceRevision.unitPrice) as HTMLInputElement).value).toBe('42000.50')
     expect(within(form).getByTestId('sales-price-reference-1').textContent).toContain('Yurt içi satış · Sürüm 2: 42000.50 TRY')
+    // MOD-02: the line names the tier its list price came from.
+    expect(within(form).getByTestId('sales-price-reference-1').textContent).toContain(P.tierSuffix(P.priceTier.Company))
     await userEvent.type(within(form).getByLabelText(ORDER_DETAIL_TEXT.priceRevision.discount), '3')
     await userEvent.type(within(form).getByLabelText(P.surchargeValue), '1.5')
     await userEvent.click(within(form).getByRole('button', { name: ORDER_DETAIL_TEXT.priceRevision.submit }))
@@ -339,6 +397,23 @@ describe('AT-018 list price on the order line', () => {
     expect(screen.getByTestId('sales-line-1-source').textContent).toBe(P.sourceReference)
     expect(screen.getByTestId('sales-line-1-discount-adjustment').textContent).toBe('%3')
     expect(screen.getByTestId('sales-line-1-surcharge').textContent).toBe('%1.5')
+  })
+
+  it('MOD-02: no tier pricing the line is said explicitly and offers nothing to use', async () => {
+    installFetch({
+      capabilities: [...ALL_SALES, SALES_PRICE_WRITE_CAPABILITY],
+      onDetail: () => json(detail('2')),
+      onLinePricing: () => json(pricing('2')),
+      onPriceReferences: () => json({ lineId: LINE, currencyCode: 'TRY', on: '2026-09-13', items: [],
+        resolution: { ...resolved, outcome: 'NoPrice', matchedTier: null, priceListId: null, versionNo: null,
+          tiers: resolved.tiers.map((tier) => tier.tier === 'Company' ? { ...tier, status: 'NoMatch' } : tier) } }),
+    })
+    renderSalesApp(path)
+    const form = await screen.findByTestId('sales-price-revision-form')
+    await userEvent.click(await within(form).findByTestId('sales-price-fetch-1'))
+    expect((await within(form).findByTestId('sales-price-resolution-1')).textContent).toBe(P.noReferences)
+    expect(within(form).queryByRole('button', { name: P.useReference })).toBeNull()
+    expect((within(form).getByLabelText(ORDER_DETAIL_TEXT.priceRevision.unitPrice) as HTMLInputElement).value).toBe('')
   })
 
   it('an overwritten price with amounts reads back as manual with the reference still visible', async () => {
@@ -361,7 +436,7 @@ describe('AT-018 list price on the order line', () => {
       capabilities: [...ALL_SALES, SALES_PRICE_WRITE_CAPABILITY],
       onDetail: () => json(detail('2')),
       onLinePricing: () => json(pricing('2')),
-      onPriceReferences: () => json({ lineId: LINE, currencyCode: 'TRY', on: '2026-09-13', items: [reference] }),
+      onPriceReferences: () => json({ lineId: LINE, currencyCode: 'TRY', on: '2026-09-13', items: [reference], resolution: resolved }),
       onCommercialRevision: () => json({ status: 422, title: 'x', code: 'validation_failed', correlationId: 'c',
         errors: [{ field: 'lines[0].unitPrice', code: 'sales_price_below_floor' }] }, 422),
     })

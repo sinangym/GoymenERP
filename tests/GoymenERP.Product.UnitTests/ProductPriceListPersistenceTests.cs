@@ -165,6 +165,77 @@ public sealed class ProductPriceListPersistenceTests
     }
 
     [Fact]
+    public async Task The_list_scope_is_held_by_the_database_fixed_after_creation_and_its_rollback_refuses_customer_lists()
+    {
+        using (var context = Context())
+        {
+            var lists = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PriceListRow))!;
+            var scope = lists.GetCheckConstraints().Single(check => check.Name == "CK_PriceLists_Scope").Sql;
+            Assert.Contains("([ScopeKind] = 1 AND [ScopePartyId] IS NULL AND [ScopeCompanyAccountId] IS NULL)", scope, StringComparison.Ordinal);
+            Assert.Contains("([ScopeKind] = 3 AND [ScopePartyId] IS NOT NULL", scope, StringComparison.Ordinal);
+            Assert.DoesNotContain("[ScopeKind] = 2", scope, StringComparison.Ordinal);
+            Assert.DoesNotContain("[ScopeKind] = 4", scope, StringComparison.Ordinal);
+            Assert.Equal(1, lists.FindProperty(nameof(PriceListRow.ScopeKind))!.GetDefaultValue());
+            Assert.Contains(lists.GetIndexes(), index => index.GetDatabaseName() == "IX_PriceLists_CompanyId_Scope");
+        }
+
+        await using (var context = Context())
+        {
+            var row = new PriceListRow { Id = Guid.NewGuid(), CompanyId = CompanyA, Name = "X", CurrencyCode = "TRY", Channel = 1, VatBasis = 1,
+                ScopeKind = 1, Version = 1, CreatedBy = "u", CorrelationId = "c", RowVersion = [1] };
+            context.Attach(row);
+            row.ScopeKind = 3;
+            row.ScopePartyId = Guid.NewGuid();
+            row.ScopeCompanyAccountId = Guid.NewGuid();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        }
+
+        var migration = File.ReadAllText(Directory.GetFiles(Path.Combine(RepositoryRoot(), "src", "backend", "Modules", "Product",
+            "GoymenERP.Modules.Product.Infrastructure", "PriceLists", "Migrations"), "*_AddPriceListScope.cs").Single());
+        var down = migration[migration.IndexOf("protected override void Down", StringComparison.Ordinal)..];
+        var refusal = down.IndexOf("THROW 51072", StringComparison.Ordinal);
+        Assert.True(refusal > 0);
+        Assert.True(refusal < down.IndexOf("DropColumn", StringComparison.Ordinal));
+        Assert.Contains("WHERE [ScopeKind] <> 1", down, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("company", null, null, 400, "scope.kind", ProductPriceListCodesV1.ValidationFailed)]
+    [InlineData("Group", null, null, 400, "scope.kind", ProductPriceListCodesV1.ValidationFailed)]
+    [InlineData("CustomerGroup", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", null, 422, "scope.kind", "price_list_scope_unavailable")]
+    // SAT-D58: an agreement price is the Sales contract's, never a Product list scope.
+    [InlineData("Agreement", null, null, 400, "scope.kind", ProductPriceListCodesV1.ValidationFailed)]
+    [InlineData("Customer", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", null, 422, "scope", "price_list_invalid_scope")]
+    [InlineData("Company", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", null, 422, "scope", "price_list_invalid_scope")]
+    public async Task A_scope_without_an_owner_master_or_without_its_identities_is_refused_before_any_read(string kind, string? party,
+        string? account, int status, string field, string code)
+    {
+        var authority = new FakeAuthority(granted: true);
+        var service = Service(new FakeUser("user-1"), authority, known: true);
+        var request = new CreatePriceListRequestV1(Guid.NewGuid(), Guid.NewGuid(), "Liste", "TRY", "Sales", "ExcludingVat", "2026-10-01", null,
+            [new PriceListLineRequestV1(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "12.5")],
+            new PriceListScopeRequestV1(kind, party is null ? null : Guid.Parse(party), account is null ? null : Guid.Parse(account)));
+
+        var exception = await Assert.ThrowsAsync<ProductPriceListException>(() => service.CreateAsync(request, Metadata()));
+
+        Assert.Equal((status, ProductPriceListCodesV1.ValidationFailed), (exception.Status, exception.Code));
+        Assert.Equal([new ProductPriceListFieldErrorV1(field, code)], exception.Errors);
+        Assert.Equal([ProductPriceListPermissionsV1.Write], authority.Asked);
+    }
+
+    [Fact]
+    public void A_company_wide_request_keeps_the_idempotency_text_it_had_before_the_scope_existed()
+    {
+        var request = new CreatePriceListRequestV1(Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"), Guid.Parse("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+            "Liste", "TRY", "Sales", "ExcludingVat", "2026-10-01", null, []);
+        var json = System.Text.Json.JsonSerializer.Serialize<object>(request, ProductPriceListWire.Json);
+        Assert.DoesNotContain("scope", json, StringComparison.Ordinal);
+        Assert.Contains("\"scope\":{\"kind\":\"Customer\"", System.Text.Json.JsonSerializer.Serialize<object>(
+            request with { Scope = new PriceListScopeRequestV1("Customer", Guid.NewGuid(), Guid.NewGuid()) }, ProductPriceListWire.Json),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Malformed_input_is_refused_after_the_fence_and_before_any_read()
     {
         var authority = new FakeAuthority(granted: true);

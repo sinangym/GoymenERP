@@ -400,6 +400,16 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<Guid?>("ScopeCompanyAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("ScopeKind")
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.Property<Guid?>("ScopePartyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -416,6 +426,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .IsUnique()
                         .HasDatabaseName("UX_PriceLists_CompanyId_Name");
 
+                    b.HasIndex("CompanyId", "ScopeKind", "ScopeCompanyAccountId")
+                        .HasDatabaseName("IX_PriceLists_CompanyId_Scope");
+
                     b.HasIndex("CompanyId", "UpdatedAtUtc", "Id")
                         .HasDatabaseName("IX_PriceLists_CompanyId_UpdatedAtUtc_Id");
 
@@ -428,6 +441,8 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                             t.HasCheckConstraint("CK_PriceLists_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000'");
 
                             t.HasCheckConstraint("CK_PriceLists_Name", "LEN([Name]) > 0");
+
+                            t.HasCheckConstraint("CK_PriceLists_Scope", "([ScopeKind] = 1 AND [ScopePartyId] IS NULL AND [ScopeCompanyAccountId] IS NULL) OR ([ScopeKind] = 3 AND [ScopePartyId] IS NOT NULL AND [ScopePartyId] <> '00000000-0000-0000-0000-000000000000' AND [ScopeCompanyAccountId] IS NOT NULL AND [ScopeCompanyAccountId] <> '00000000-0000-0000-0000-000000000000')");
 
                             t.HasCheckConstraint("CK_PriceLists_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
 

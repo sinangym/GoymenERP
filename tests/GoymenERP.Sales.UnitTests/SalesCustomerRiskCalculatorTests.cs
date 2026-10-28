@@ -5,11 +5,13 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// MOD-01 / API-06: the customer risk calculator (DEC-FIN-007; SAT-D46…D49, SAT-D53). Every amount is SYNTHETIC test data at
-/// scale 2; the limit is never a code value. The decision is made on gross risk + this order in the LIMIT's currency (SAT-D48,
-/// SAT-D53); a total equal to the limit is within it, one cent more is over (SAT-D49). Every unavailable path — a missing or
-/// unreadable part, another currency without a rate record (SAT-D47), more decimals than the scale, a negative amount, a
-/// tax-basis mismatch (SAT-D46), an undefined limit, an unknown local or limit currency — is "Unavailable", never "Within".
+/// MOD-01 / API-06: the customer risk calculator (DEC-FIN-007; SAT-D46…D49, SAT-D53, SAT-D80). Every amount is SYNTHETIC test
+/// data at scale 2; the limit is never a code value. The decision is made on gross risk + this order in the LIMIT's currency alone
+/// (SAT-D48, SAT-D53, SAT-D80); a total equal to the limit is within it, one cent more is over (SAT-D49). Every unavailable path
+/// of the limit-currency total — a missing or unreadable part, another currency without a rate record (SAT-D47), more decimals
+/// than the scale, a negative amount, a tax-basis mismatch (SAT-D46), an undefined limit, an unknown limit currency — is
+/// "Unavailable", never "Within". The local (TL) total is information only: when it cannot be made, its amounts stay null and the
+/// decision is still made (SAT-D80).
 /// </summary>
 public sealed class SalesCustomerRiskCalculatorTests
 {
@@ -152,12 +154,14 @@ public sealed class SalesCustomerRiskCalculatorTests
         Assert.Equal(1000m, usd.CreditLimit!.Value.Amount);
         Assert.Equal([new SalesRiskReason(SalesRiskComponents.OpenReceivables, SalesRiskReasonCodes.ExchangeRateUnavailable)], usd.Reasons);
 
-        // Everything in USD against a USD limit: decided in USD; the local (TL) totals are the ones that need the rate.
+        // Everything in USD against a USD limit: decided in USD (SAT-D80). Only the local (TL) total would need the rate, so it is
+        // left empty as information and lists no reason; the decision does not wait for it.
         var allUsd = Evaluate(In(Usd, 600m), In(Usd), In(Usd, 300m), In(Usd, 100m), Limit(1000m, Usd), limitCurrency: UsdLimit);
         Assert.Equal((Usd, 1000m), (allUsd.InLimitCurrency!.Currency.CurrencyId, allUsd.InLimitCurrency.GrossRiskWithThisOrder!.Value.Amount));
-        Assert.Null(allUsd.InLocalCurrency!.GrossRisk);
-        Assert.Equal(SalesRiskOutcome.Unavailable, allUsd.Outcome);
-        Assert.All(allUsd.Reasons, reason => Assert.Equal(SalesRiskReasonCodes.ExchangeRateUnavailable, reason.Code));
+        Assert.Equal((Try, (Money?)null, (Money?)null), (allUsd.InLocalCurrency!.Currency.CurrencyId, allUsd.InLocalCurrency.GrossRisk,
+            allUsd.InLocalCurrency.GrossRiskWithThisOrder));
+        Assert.Equal(SalesRiskOutcome.Within, allUsd.Outcome);
+        Assert.Empty(allUsd.Reasons);
 
         // A part with an amount in another currency: refused (listed once even though both totals met it).
         var mixed = SalesRiskInput.Available([new SalesRiskAmount(Try, 10m), new SalesRiskAmount(Usd, 1m)], SalesRiskTaxBasis.IncludingTax);
@@ -166,14 +170,74 @@ public sealed class SalesCustomerRiskCalculatorTests
         Assert.Null(evaluation.InLocalCurrency!.GrossRisk);
     }
 
-    [Fact]
-    public void An_unknown_local_or_limit_currency_is_unavailable_never_the_order_currency_in_its_place()
+    public static TheoryData<string, SalesRiskOutcome> UsdDecisions => new()
     {
+        // this order (USD) against a USD 1000.00 limit with USD 900.00 already at risk; the TL total cannot be made (no rate).
+        { "100.00", SalesRiskOutcome.Within },
+        { "100.01", SalesRiskOutcome.Over },
+    };
+
+    [Theory]
+    [MemberData(nameof(UsdDecisions))]
+    public void Only_the_limit_currency_total_decides_and_the_local_total_is_information_only(string thisOrder, SalesRiskOutcome expected)
+    {
+        // SAT-D80: the TL total needs a rate that does not exist — it stays empty, and the USD total still decides, both ways.
+        foreach (var local in new[] { Local, null })
+        {
+            var decided = SalesCustomerRiskCalculator.Evaluate(local, UsdLimit, In(Usd, 500m), In(Usd, 100m), In(Usd, 300m),
+                In(Usd, D(thisOrder)), Limit(1000m, Usd));
+
+            Assert.Equal(expected, decided.Outcome);
+            Assert.Empty(decided.Reasons);
+            Assert.Equal((900m, 900m + D(thisOrder)),
+                (decided.InLimitCurrency!.GrossRisk!.Value.Amount, decided.InLimitCurrency.GrossRiskWithThisOrder!.Value.Amount));
+            Assert.Equal(local is null, decided.InLocalCurrency is null);
+            Assert.Null(decided.InLocalCurrency?.GrossRisk);
+            Assert.Null(decided.InLocalCurrency?.GrossRiskWithThisOrder);
+        }
+
+        // The other way round the TL total is made but the USD one is not: fail-closed — the local total never decides, and
+        // the reasons are the limit-currency total's alone.
+        var undecided = Evaluate(Taxed(500m), Taxed(100m), Taxed(300m), Taxed(D(thisOrder)), Limit(1000m, Usd), limitCurrency: UsdLimit);
+        Assert.Equal(SalesRiskOutcome.Unavailable, undecided.Outcome);
+        Assert.Equal((900m, 900m + D(thisOrder)),
+            (undecided.InLocalCurrency!.GrossRisk!.Value.Amount, undecided.InLocalCurrency.GrossRiskWithThisOrder!.Value.Amount));
+        Assert.Equal(((Money?)null, (Money?)null), (undecided.InLimitCurrency!.GrossRisk, undecided.InLimitCurrency.GrossRiskWithThisOrder));
+        Assert.Equal(
+            [
+                new SalesRiskReason(SalesRiskComponents.OpenReceivables, SalesRiskReasonCodes.ExchangeRateUnavailable),
+                new SalesRiskReason(SalesRiskComponents.ShippedNotInvoiced, SalesRiskReasonCodes.ExchangeRateUnavailable),
+                new SalesRiskReason(SalesRiskComponents.ApprovedUnshippedRemainder, SalesRiskReasonCodes.ExchangeRateUnavailable),
+                new SalesRiskReason(SalesRiskComponents.ThisOrder, SalesRiskReasonCodes.ExchangeRateUnavailable),
+            ],
+            undecided.Reasons);
+    }
+
+    [Fact]
+    public void A_malformed_amount_is_a_reason_of_the_decision_even_when_the_limit_total_cannot_be_made()
+    {
+        // A negative amount is the answer's own fault, not the local total's: it is listed beside a missing limit (SAT-D80).
+        var evaluation = Evaluate(Taxed(), Taxed(-1m), Taxed(), Taxed(), SalesRiskInput.NoSource("credit_limit_owner_missing"),
+            limitCurrency: null);
+        Assert.Equal(SalesRiskOutcome.Unavailable, evaluation.Outcome);
+        Assert.Equal(
+            [
+                new SalesRiskReason(SalesRiskComponents.ShippedNotInvoiced, SalesRiskReasonCodes.AmountInvalid),
+                new SalesRiskReason(SalesRiskComponents.CreditLimit, "credit_limit_owner_missing"),
+            ],
+            evaluation.Reasons);
+        Assert.Null(evaluation.InLocalCurrency!.GrossRisk);
+    }
+
+    [Fact]
+    public void An_unknown_limit_currency_is_unavailable_never_the_order_currency_in_its_place_an_unknown_local_one_is_not_blocking()
+    {
+        // SAT-D80: no local currency (Settings could not answer TL) — no local total, and the decision is still the limit's.
         var noLocal = SalesCustomerRiskCalculator.Evaluate(null, Local, Taxed(1m), Taxed(), Taxed(), Taxed(), Limit(10m));
         Assert.Null(noLocal.InLocalCurrency);
         Assert.Equal(1m, noLocal.InLimitCurrency!.GrossRiskWithThisOrder!.Value.Amount);
-        Assert.Equal([new SalesRiskReason(SalesRiskComponents.Check, SalesRiskReasonCodes.LocalCurrencyUnavailable)], noLocal.Reasons);
-        Assert.Equal(SalesRiskOutcome.Unavailable, noLocal.Outcome);
+        Assert.Empty(noLocal.Reasons);
+        Assert.Equal(SalesRiskOutcome.Within, noLocal.Outcome);
 
         var noLimitScale = SalesCustomerRiskCalculator.Evaluate(Local, null, Taxed(1m), Taxed(), Taxed(), Taxed(), Limit(10m, Usd));
         Assert.Equal([new SalesRiskReason(SalesRiskComponents.CreditLimit, SalesRiskReasonCodes.LimitCurrencyUnavailable)], noLimitScale.Reasons);
