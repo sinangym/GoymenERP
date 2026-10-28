@@ -347,6 +347,10 @@ public static class SalesDraftApiV1
     // the SAT-D5 tolerance, invoicing, financial closure), read under the draft-read authority. The detail wire is unchanged.
     public const string StatusPath = "/api/v1/sales/drafts/{id}/status";
 
+    // API-03 / SAT-D11: the order's line and document totals (net, VAT, withholding, gross, payable) from the one backend
+    // calculator, under the draft read AND the price read. The detail wire is unchanged.
+    public const string TotalsPath = "/api/v1/sales/drafts/{id}/totals";
+
     // MOD-01 / API-06: the read-only customer risk check (DEC-FIN-007 gross risk against the credit limit), under the draft read.
     public const string RiskCheckPath = "/api/v1/sales/drafts/{id}/risk-check";
 

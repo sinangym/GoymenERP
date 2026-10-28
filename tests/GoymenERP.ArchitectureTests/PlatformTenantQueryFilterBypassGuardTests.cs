@@ -222,8 +222,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Contact information fresh authority: +5 late-revocation, replay, no-op and winner SQL facts.
             // GOY-UX-TEXT-FILTER-01: +1 same-address-row, pre-pagination address-filter SQL fact.
             // Location operator eligibility: +1 exact-party, supplier-only, company/actor-fenced read-only SQL fact.
+            // SAT-D57 customer group: +5 list lifecycle, account assignment/port, company fence, 403 and rollback facts.
             ["tools/relational_inventory/counterparty.txt"] =
-                "39d6ec80210580f12fde1a889187802d772815e9192407722b357dd4ce26fe2b",
+                "d8e2b013d2ef21db35516d57d168e0be2bdb4590bcfe2ba0707180dedb4c78b2",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
@@ -341,8 +342,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // efdb5edd… -> 87dc8166…).
             // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over MOD-07, kept ordinal-sorted
             // (87dc8166… -> d74f7c2d…).
+            // API-03 / SAT-D11: +2 SalesOrderTotalsSqlServerRelationalAcceptanceTests facts, merged over MOD-01 / API-06, kept
+            // ordinal-sorted (d74f7c2d… -> 0d7854cc…); +1 out-of-range totals fact after review B P2-1 (0d7854cc… -> 78eb83d7…).
+            // API-30 / API-31 / MOD-06: +2 SalesDispatchSqlServerRelationalAcceptanceTests facts, merged over API-03, kept ordinal-sorted
+            // (78eb83d7… -> 9587a78b…).
             ["tools/relational_inventory/sales.txt"] =
-                "d74f7c2d9ab604c9c30dfd9b489aa4cfae8a9d4ec78acd84df99ed95a22106f4",
+                "9587a78bfa744db2272177dcb113bd9353a3b1935a908c2ee5b413fadf741bc8",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1127,8 +1132,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // work list's progress reader, bindings and service registrations; token counts unchanged.
                     // Re-fingerprinted for I01.2: transfer outgoing-document store, proof source, existing-permission
                     // bindings and service registrations; provider branch and token counts are unchanged.
+                    // Re-fingerprinted for MOD-06 / API-30 / API-31: one scoped owner implementation of the two Sales-declared
+                    // dispatch reads and its two port registrations (DI-only); provider branch and token counts are unchanged.
                     new(
-                        "5d3890457ce92e019eb6721bb98dc68e21e0d4f5afd94e2f5e576226559d4b8b",
+                        "c695b524d0452fd6cd48bf16a356a28f30c1b5d0a65a341ef0afc9e48b6fd90d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1335,9 +1342,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // customer-finance risk-input port (DI-only, owner-registered); the provider branch and its token counts are unchanged.
                     // Re-fingerprinted for MOD-02 (SAT-D9): the draft service receives Product's V2 tier-chain reader instead
                     // of the V1 reader (DI-only); the provider branch and its database token counts are unchanged.
-                    // Re-fingerprinted for SAT-D63: COMMENT-ONLY, merged over MOD-02 (the limit-group source is now the Settings bindings).
+                    // Re-fingerprinted for API-30 / API-31: the dispatch read service's bindings, the Sales-own order reference reader
+                    // and the named service factory (DI-only, the owner ports optional); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D63: COMMENT-ONLY, merged over API-30/31 (the limit-group source is now the Settings bindings).
                     new(
-                        "61e84953e84f0c458978ff92d8e3d53b55001ba595bc2633d6ad3fdcff4f96f5",
+                        "298885521ae1f467596378f9bfbc0b8f6b044403acb1027b57fcdc2c583649b8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

@@ -125,7 +125,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13),
         // P01: Purchasing 1.3 publishes request list/create/detail/submit beside order list/create/detail/approve.
         (new[]
             {
@@ -134,7 +134,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14),
         // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens join the host set.
         (new[]
             {
@@ -143,7 +143,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13),
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
@@ -152,7 +152,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
                 typeof(InventoryShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17),
         // SY-01/SY-02: Identity's read-only users-and-permissions view joins the normal host.
         (new[]
             {
@@ -162,7 +162,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
                 typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10),
+                ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10),
         // AT-018 / AT-021: company-scoped Product price lists and Sales floor-approval join only the full normal host.
         (new[]
             {
@@ -173,7 +173,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
                 typeof(ProductPriceListShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsAndSalesPool),
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsAndSalesDispatch),
         // SAT-D61…D70: the Settings discount limit screen joins the full normal host.
         (new[]
             {
@@ -184,7 +184,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
                 typeof(ProductPriceListShellCapabilityProvider), typeof(SettingsShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesPoolAndSettingsV10),
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesDispatchAndSettingsV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

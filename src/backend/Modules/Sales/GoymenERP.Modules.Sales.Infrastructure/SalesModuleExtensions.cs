@@ -72,8 +72,25 @@ public static class SalesModuleExtensions
         // and loading consumers, over the same company-filtered store. Registered here, in the module
         // (no host file), so that a consumer module reads Sales only through this port.
         services.AddScoped<ISalesOrderLineReferencePortV1, SalesOrderLineReferencePort>();
+        // API-30 / API-31: the read-only dispatch list and invoice candidates over the Logistics dispatch owner's ports
+        // (registered by that module), the Sales store's own order references and the Cari party display (host adapter).
+        services.TryAddSingleton(new SalesDispatchReadBindings());
+        services.AddScoped<ISalesOrderDispatchReferenceReader, SalesOrderDispatchReferenceReader>();
+        services.AddScoped<ISalesDispatchReadService>(CreateDispatchReadService);
         return services;
     }
+
+    // Named for the same architecture guard as the draft service factory below: the company context is resolved, never registered.
+    // A missing owner port (Logistics or Cari not composed) stays null and the read answers 503, never an empty list.
+    private static SalesDispatchReadService CreateDispatchReadService(IServiceProvider serviceProvider) => new SalesDispatchReadService(
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<SalesDispatchReadBindings>(),
+        serviceProvider.GetRequiredService<ISalesOrderDispatchReferenceReader>(),
+        serviceProvider.GetService<ISalesPartyDisplaySourceV1>(),
+        serviceProvider.GetService<ISalesDispatchNoteReadPortV1>(),
+        serviceProvider.GetService<ISalesInvoiceableShipmentReadPortV1>());
 
     // Built in a named factory so that no registration statement of this module names the company
     // context: the host's scoped ICompanyContext is resolved here, never registered (architecture guard).

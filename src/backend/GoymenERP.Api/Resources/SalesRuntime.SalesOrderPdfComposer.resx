@@ -62,6 +62,6 @@
   <data name="Percent" xml:space="preserve"><value>%{0}</value></data>
   <data name="NotPriced" xml:space="preserve"><value>Fiyatsız</value></data>
   <data name="NoLines" xml:space="preserve"><value>Siparişte satır yok.</value></data>
-  <data name="TotalsNotAvailable" xml:space="preserve"><value>Sipariş toplamı, KDV ve genel toplam henüz hesaplanmıyor; bu belgede yer almaz. Satırlardaki değerler kayıtlı değerlerdir.</value></data>
+  <data name="TotalsNotAvailable" xml:space="preserve"><value>Sipariş toplamları bu belgede yer almaz; KDV ve KDV dahil toplam, KDV kaynağı tanımlanana kadar hesaplanamaz. Satırlardaki değerler kayıtlı değerlerdir.</value></data>
   <data name="PricesNotShown" xml:space="preserve"><value>Fiyat bilgileri bu belgede yer almaz.</value></data>
 </root>

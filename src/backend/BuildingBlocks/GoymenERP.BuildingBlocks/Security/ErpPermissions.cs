@@ -41,6 +41,18 @@ public static class ErpPermissions
     public const string CounterpartyPartiesTaxIdentityApprove = "counterparty.parties.tax-identity.approve";
 
     /// <summary>
+    /// SAT-D57 (Sinan, 2026-10-27): manage the company's customer (price) group list (create, rename, deactivate,
+    /// reactivate) and assign a group to a Cari card's company account — the Counterparty owner's names
+    /// (CounterpartyCustomerGroupPermissionsV1). Registered, not granted: no role, seed or user receives them here.
+    /// Company-wide only, as every Counterparty name. Not Critical: no source makes a group list or its assignment a
+    /// grant-time dual-control duty.
+    /// </summary>
+    public const string CounterpartyCustomerGroupsManage = "counterparty.customer-groups.manage";
+
+    /// <inheritdoc cref="CounterpartyCustomerGroupsManage"/>
+    public const string CounterpartyAccountsCustomerGroupAssign = "counterparty.accounts.customer-group.assign";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -475,6 +487,14 @@ public static class ErpPermissions
     public const string SalesQuotesRead = "sales.quotes.read";
 
     /// <summary>
+    /// API-31 (plan §3.3, S-08 "Faturaya Hazır"; DEC-SAL-006, AT-055): read the posted sales shipment shares grouped for a later
+    /// invoice (Sales owner name SalesPermissionManifestV1.InvoicesRead, same string). Its own name: no order, price or other Sales
+    /// name confers it and it confers none of them. Registered, not granted: no seeded role and no real user receives it; the grant
+    /// is a human gate. Company-wide only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesInvoicesRead = "sales.invoices.read";
+
+    /// <summary>
     /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
     /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
     /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
@@ -688,6 +708,8 @@ public static class ErpPermissions
             CounterpartyAccountsStatusUpdate,
             CounterpartyPartiesTaxIdentityUpdate,
             CounterpartyPartiesTaxIdentityApprove,
+            CounterpartyCustomerGroupsManage,
+            CounterpartyAccountsCustomerGroupAssign,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -709,6 +731,7 @@ public static class ErpPermissions
             SalesRequestsApprove,
             SalesQuotesWrite,
             SalesQuotesRead,
+            SalesInvoicesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -817,6 +840,8 @@ public static class ErpPermissions
             CounterpartyAccountsStatusUpdate,
             CounterpartyPartiesTaxIdentityUpdate,
             CounterpartyPartiesTaxIdentityApprove,
+            CounterpartyCustomerGroupsManage,
+            CounterpartyAccountsCustomerGroupAssign,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -838,6 +863,7 @@ public static class ErpPermissions
             SalesRequestsApprove,
             SalesQuotesWrite,
             SalesQuotesRead,
+            SalesInvoicesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

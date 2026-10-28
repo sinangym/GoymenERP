@@ -31,6 +31,8 @@ import { settingsRoutes } from '../settings/settingsRoutes'
 import { searchRoutes } from '../search/searchRoutes'
 import { workRoutes } from '../work/workRoutes'
 import { StateBlock } from './StateBlock'
+import { CariCustomerGroupsPage } from '../cari/CariCustomerGroupsPage'
+import { CUSTOMER_GROUPS_ROUTE } from '../cari/customerGroupRoute'
 
 export const shellRoutes: RouteObject[] = [
   {
@@ -86,6 +88,20 @@ export const shellRoutes: RouteObject[] = [
         element: (
           <CapabilityRoute capability={CAPABILITY.cariAccountsContactUpdate}>
             <CariContactEditPage />
+          </CapabilityRoute>
+        ),
+      },
+      {
+        /**
+         * SAT-D57 — the selected company's customer group list. A STATIC segment ahead of `/cari/:partyId`, like
+         * `yeni`, so it is never read as a party id. Gated on the Cari LIST capability: its read requires exactly
+         * `counterparty.parties.read` company-wide, the list's own permission; the commands are re-authorized by the
+         * API (`counterparty.customer-groups.manage`) and offered only where the read's `viewer` says so.
+         */
+        path: CUSTOMER_GROUPS_ROUTE.slice(1),
+        element: (
+          <CapabilityRoute capability={CAPABILITY.cariPartiesList}>
+            <CariCustomerGroupsPage />
           </CapabilityRoute>
         ),
       },

@@ -71,6 +71,12 @@ public static class LogisticsModuleExtensions
             provider.GetRequiredService<LogisticsCustomerReturnStore>());
         services.AddScoped<ILogisticsCustomerReturnSourceReadV1, LogisticsCustomerReturnSourceReader>();
         services.AddScoped<ISalesOrderCustomerReturnReadPortV1, LogisticsSalesOrderCustomerReturnReadPort>();
+        // MOD-06 / API-30 / API-31: Logistics answers the Sales-declared dispatch-note list and posted-share reads over its own
+        // company-filtered tables; the owner's module registers them, as the customer-return read above.
+        services.AddScoped<LogisticsSalesDispatchReadPorts>();
+        services.AddScoped<ISalesDispatchNoteReadPortV1>(provider => provider.GetRequiredService<LogisticsSalesDispatchReadPorts>());
+        services.AddScoped<ISalesInvoiceableShipmentReadPortV1>(provider =>
+            provider.GetRequiredService<LogisticsSalesDispatchReadPorts>());
         services.TryAddSingleton(new LogisticsCustomerReturnBindingsV1(
             LogisticsPermissionManifestV1.CustomerReturnsRequest,
             LogisticsPermissionManifestV1.CustomerReturnsDecision,
