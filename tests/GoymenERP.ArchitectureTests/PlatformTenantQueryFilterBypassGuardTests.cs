@@ -339,8 +339,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ordinal-sorted (d74f7c2d… -> 0d7854cc…); +1 out-of-range totals fact after review B P2-1 (0d7854cc… -> 78eb83d7…).
             // API-30 / API-31 / MOD-06: +2 SalesDispatchSqlServerRelationalAcceptanceTests facts, merged over API-03, kept ordinal-sorted
             // (78eb83d7… -> 9587a78b…).
+            // SAT-D24/D44, SAT-D25 (+2) and SAT-D71/D72 (+1) SalesQuoteSqlServerRelationalAcceptanceTests facts merged over API-03 and
+            // API-30 / API-31, kept ordinal-sorted (9587a78b… -> 2b0ee4d9…).
             ["tools/relational_inventory/sales.txt"] =
-                "9587a78bfa744db2272177dcb113bd9353a3b1935a908c2ee5b413fadf741bc8",
+                "2b0ee4d9bc7d3f9cef20fe80b14e91cf60650a5793faf275854c36ef9b60e719",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1327,8 +1329,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // of the V1 reader (DI-only); the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for API-30 / API-31: the dispatch read service's bindings, the Sales-own order reference reader
                     // and the named service factory (DI-only, the owner ports optional); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D25 / SAT-D39 merged over API-30 / API-31: the draft service also receives the optional
+                    // Settings quote policy port (DI-only); the provider branch and its token counts are unchanged.
                     new(
-                        "14a11d1eb6ea8b1ce21976fcfb9916a93a6ea55365e1d42a6e70302e116185fe",
+                        "491c6b8d3dcddc5cf09fdf7e666bafc7f90e41076b6b095ff16bb6161dda94d1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
