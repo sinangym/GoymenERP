@@ -327,6 +327,9 @@ public static class SalesDraftApiV1
     // the SAT-D5 tolerance, invoicing, financial closure), read under the draft-read authority. The detail wire is unchanged.
     public const string StatusPath = "/api/v1/sales/drafts/{id}/status";
 
+    // MOD-01 / API-06: the read-only customer risk check (DEC-FIN-007 gross risk against the credit limit), under the draft read.
+    public const string RiskCheckPath = "/api/v1/sales/drafts/{id}/risk-check";
+
     // MOD-07: the order's current revision as a PDF attachment (application/pdf), under the draft-read authority; prices only
     // under the price read (otherwise the price-less variant). Rendered on request, stored nowhere.
     public const string OrderPdfPath = "/api/v1/sales/drafts/{id}/pdf";

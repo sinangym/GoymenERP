@@ -960,6 +960,164 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
             ("@command", ReversalProposalService.ApproveCommand)));
     }
 
+    /// <summary>
+    /// MOD-01 / SAT-D52 on real SQL: the Sales risk-input port answers the customer's open receivables LESS its unallocated recorded
+    /// payments, all written through the real Finance owner services — an official invoice installment admitted, two receipts
+    /// recorded, one of them partly allocated to the installment, the other reversed by another checker. A reversed payment is
+    /// never deducted; another company sees none of it. The read writes nothing.
+    /// </summary>
+    [SqlServerFact]
+    public async Task The_sales_risk_port_deducts_unallocated_recorded_payments_and_never_a_reversed_one_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        var installment = new ApprovedFinanceOpenItemSourceRow(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+            FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument, owners.Party, owners.Account, Currency, "1000.00",
+            new DateOnly(2026, 10, 31));
+        var reference = new FinanceOpenItemSourceReference(Guid.NewGuid(), "official-file-v1", new string('d', 64));
+        await using (var admission = run.OpenItemSourceService(CompanyA, owners,
+            new ApprovedFinanceOpenItemSourceBatch(reference.BatchId, CompanyA, reference.BatchVersion, reference.BatchChecksum, [installment])))
+        {
+            Assert.Equal(CommandOutcome.Succeeded,
+                (await admission.Service.AdmitAsync(admission.Context, Key("risk-installment"), reference, CancellationToken.None)).Outcome);
+        }
+
+        async Task<(Guid Id, string Version)> RecordAsync(string amount, string key)
+        {
+            var draft = await run.SaveDraftAsync(owners, amount);
+            await using var recording = run.Service(CompanyA, owners);
+            var recorded = await recording.Service.RecordAsync(recording.Context, Key(key), new RecordRequest(draft.Id, draft.Version),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, recorded.Outcome);
+            return (draft.Id, recorded.Resource!.Source.Version);
+        }
+
+        var kept = await RecordAsync("300.00", "risk-receipt-kept");
+        var reversed = await RecordAsync("100.00", "risk-receipt-reversed");
+
+        // 120.00 of the kept receipt is allocated to the installment: 880.00 stays open, 180.00 of the receipt is unallocated.
+        var openItemVersion = (await run.ScalarAsync<long>("SELECT Version FROM finance.OpenItems WHERE Id = @id",
+            ("@id", installment.OpenItemId))).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        await using (var allocation = run.AllocationService(CompanyA, Guid.NewGuid().ToString("D"), new SyntheticPermissions()))
+        {
+            var allocated = await allocation.Service.CreateAsync(allocation.Context, Key("risk-allocation"),
+                new CreateFinanceAllocationRequest(Guid.NewGuid(), kept.Id, kept.Version, installment.OpenItemId, openItemVersion,
+                    "120.00", "SENTETIK kısmi eşleştirme"), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, allocated.Outcome);
+        }
+
+        // The other receipt is reversed by another checker: not a payment any more.
+        ReversalProposalCommandResult proposed;
+        await using (var maker = run.ReversalService(CompanyA, run.Actor))
+        {
+            proposed = await maker.Service.ProposeAsync(maker.Context, Key("risk-reverse-propose"),
+                new ProposeReversalRequest(reversed.Id, reversed.Version, OccurredOn.AddDays(2), "SENTETIK-yanlis-tahsilat"),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, proposed.Outcome);
+        }
+
+        await using (var checker = run.ReversalService(CompanyA, Guid.NewGuid().ToString("D")))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await checker.Service.ApproveAsync(checker.Context, Key("risk-reverse-approve"),
+                new ApproveReversalRequest(proposed.Resource!.Id, proposed.Resource.Version), CancellationToken.None)).Outcome);
+        }
+
+        var before = await run.ScalarAsync<string>(
+            "SELECT CONCAT((SELECT COUNT_BIG(*) FROM finance.Commands), ':', (SELECT COUNT_BIG(*) FROM audit.AuditEvents))");
+        await using (var a = run.Context(CompanyA))
+        {
+            var company = new CompanyContext();
+            company.Set(CompanyA);
+            var answer = await new FinanceSalesPartyRiskReadPortV1(a, company).ReadPartyRiskAsync(owners.Party, owners.Account);
+            // 880.00 open − 180.00 unallocated = 700.00 (the reversed 100.00 is never deducted).
+            Assert.Equal((GoymenERP.Modules.Sales.Application.Contracts.SalesPartyRiskFigureStateV1.Available, true),
+                (answer.OpenReceivables.State, answer.OpenReceivables.IncludesTax));
+            Assert.Equal([new GoymenERP.Modules.Sales.Application.Contracts.SalesPartyRiskAmountV1(Currency, 700m)],
+                answer.OpenReceivables.Amounts);
+        }
+
+        await using (var b = run.Context(CompanyB))
+        {
+            var company = new CompanyContext();
+            company.Set(CompanyB);
+            var foreign = await new FinanceSalesPartyRiskReadPortV1(b, company).ReadPartyRiskAsync(owners.Party, owners.Account);
+            Assert.Empty(foreign.OpenReceivables.Amounts);
+        }
+
+        Assert.Equal(before, await run.ScalarAsync<string>(
+            "SELECT CONCAT((SELECT COUNT_BIG(*) FROM finance.Commands), ':', (SELECT COUNT_BIG(*) FROM audit.AuditEvents))"));
+    }
+
+    /// <summary>
+    /// MOD-01 / SAT-D52, review A P2-1 on real SQL: a customer's advance (a recorded receipt, not allocated) is deducted from its
+    /// open receivables until the advance is refunded through a real R47 manual bank payment (draft → another actor's approval
+    /// → record with the bank result); then nothing is deducted any more — the receivable is never shown too small.
+    /// </summary>
+    [SqlServerFact]
+    public async Task A_refunded_advance_is_no_longer_deducted_from_the_sales_risk_receivables_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var owners = Owners.For(CompanyA);
+        await run.SeedApprovedBankAccountAsync(owners);
+        var installment = new ApprovedFinanceOpenItemSourceRow(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "invoice-v1",
+            FinanceOpenItemSourceKinds.OfficialInvoiceInstallmentDocument, owners.Party, owners.Account, Currency, "1000.00",
+            new DateOnly(2026, 10, 31));
+        var reference = new FinanceOpenItemSourceReference(Guid.NewGuid(), "official-file-v1", new string('e', 64));
+        await using (var admission = run.OpenItemSourceService(CompanyA, owners,
+            new ApprovedFinanceOpenItemSourceBatch(reference.BatchId, CompanyA, reference.BatchVersion, reference.BatchChecksum, [installment])))
+        {
+            Assert.Equal(CommandOutcome.Succeeded,
+                (await admission.Service.AdmitAsync(admission.Context, Key("refund-installment"), reference, CancellationToken.None)).Outcome);
+        }
+
+        // The advance: 100.00 recorded, allocated to nothing.
+        var advance = await run.SaveDraftAsync(owners, "100.00");
+        await using (var recording = run.Service(CompanyA, owners))
+        {
+            Assert.Equal(CommandOutcome.Succeeded, (await recording.Service.RecordAsync(recording.Context, Key("refund-advance"),
+                new RecordRequest(advance.Id, advance.Version), CancellationToken.None)).Outcome);
+        }
+
+        async Task<IReadOnlyList<GoymenERP.Modules.Sales.Application.Contracts.SalesPartyRiskAmountV1>> ReceivablesAsync()
+        {
+            await using var context = run.Context(CompanyA);
+            var company = new CompanyContext();
+            company.Set(CompanyA);
+            var answer = await new FinanceSalesPartyRiskReadPortV1(context, company).ReadPartyRiskAsync(owners.Party, owners.Account);
+            Assert.Equal(GoymenERP.Modules.Sales.Application.Contracts.SalesPartyRiskFigureStateV1.Available, answer.OpenReceivables.State);
+            return answer.OpenReceivables.Amounts;
+        }
+
+        Assert.Equal([new GoymenERP.Modules.Sales.Application.Contracts.SalesPartyRiskAmountV1(Currency, 900m)], await ReceivablesAsync());
+
+        // The advance is refunded to the customer: a real R47 payment, maker → another checker → recorded with the bank result.
+        ManualBankPaymentCommandResult draft;
+        await using (var maker = run.PaymentService(CompanyA, owners, "SENTETIK-payment-maker"))
+        {
+            draft = await maker.Service.DraftSaveAsync(maker.Context, Key("refund-draft"), new ManualBankPaymentDraftSaveRequest(null, null,
+                new ManualBankPaymentPreparation(owners.Party, owners.Account, owners.Bank, new MoneyText("100.00", Currency),
+                    new ProfileReference(ProfileId.ToString("D"), "1"), OccurredOn, null, null, "SENTETIK avans iadesi"), null),
+                CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, draft.Outcome);
+        }
+
+        ManualBankPaymentCommandResult approved;
+        await using (var checker = run.PaymentService(CompanyA, owners, "SENTETIK-payment-checker"))
+        {
+            approved = await checker.Service.ApproveAsync(checker.Context, Key("refund-approve"),
+                new ApproveManualBankPaymentRequest(draft.Resource!.Id, draft.Resource.Version), CancellationToken.None);
+            Assert.Equal(CommandOutcome.Succeeded, approved.Outcome);
+            Assert.Equal(CommandOutcome.Succeeded, (await checker.Service.RecordAsync(checker.Context, Key("refund-record"),
+                new RecordManualBankPaymentRequest(approved.Resource!.Id, approved.Resource.Version, BankResultConfirmed: true),
+                CancellationToken.None)).Outcome);
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents WHERE PartyId = @p",
+            ("@p", owners.Party)));
+        // The refund nets the advance off: the whole 1000.00 is owed again, never 900.00.
+        Assert.Equal([new GoymenERP.Modules.Sales.Application.Contracts.SalesPartyRiskAmountV1(Currency, 1000m)], await ReceivablesAsync());
+    }
+
     [SqlServerFact]
     public async Task Synthetic_approved_source_admits_once_and_native_cutover_reuses_immutable_identity()
     {
@@ -1290,6 +1448,14 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
         public static Owners For(Guid company) => new Owners(company, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
     }
 
+    private sealed class PaymentServiceScope(FinanceDbContext dbContext, ManualBankPaymentService service, FinanceContext context)
+        : IAsyncDisposable
+    {
+        public IManualBankPaymentService Service => service;
+        public FinanceContext Context => context;
+        public ValueTask DisposeAsync() => dbContext.DisposeAsync();
+    }
+
     private sealed record SavedDraft(Guid Id, string Version);
 
     private sealed record SavedOpenItem(Guid Id, string Version);
@@ -1442,6 +1608,55 @@ public sealed class FinanceRecordSqlServerRelationalAcceptanceTests
                 TimeProvider.System);
             return new OpenItemSourceServiceScope(
                 dbContext, service, new FinanceContext(company, Actor, $"f03-{Guid.NewGuid():N}", null));
+        }
+
+        /// <summary>An APPROVED, money-movement-eligible bank account of the owners' company, written through Finance's own context.</summary>
+        public async Task SeedApprovedBankAccountAsync(Owners owners)
+        {
+            await using var dbContext = Context(owners.Company);
+            dbContext.BankAccounts.Add(new BankAccountRow
+            {
+                Id = owners.Bank,
+                CompanyId = owners.Company,
+                CurrencyId = Currency,
+                DisplayName = "SENTETIK banka",
+                BankName = "SENTETIK",
+                AccountType = "Vadesiz",
+                Iban = "TR330006100519786457841326",
+                MoneyMovementEligible = true,
+                Status = 2,
+                Version = 2,
+                ProposedBy = "SENTETIK-bank-maker",
+                ProposedAtUtc = DateTimeOffset.UtcNow,
+                ApprovedBy = "SENTETIK-bank-checker",
+                ApprovedAtUtc = DateTimeOffset.UtcNow,
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+            });
+            await dbContext.SaveChangesAsync();
+        }
+
+        /// <summary>The real R47 manual bank payment service over real SQL, with the synthetic owners of this class.</summary>
+        public PaymentServiceScope PaymentService(Guid company, Owners owners, string actor)
+        {
+            var companyContext = new CompanyContext();
+            companyContext.Set(company);
+            var collector = new AuditEventCollector();
+            var dbContext = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>()
+                .UseSqlServer(Factory.DatabaseConnectionString,
+                    sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", FinanceDbContext.Schema))
+                .AddInterceptors(new AuditSaveChangesInterceptor(collector, companyContext))
+                .Options, companyContext);
+            var service = new ManualBankPaymentService(dbContext, companyContext, new FixedCurrentUser(actor, company),
+                new SyntheticPermissions(), new SyntheticParty(owners), new UnavailableManualBankPaymentDocumentValidationPort(),
+                new SyntheticSettings(company), new SyntheticOpenPeriodRule(), collector,
+                new ManualBankPaymentBinding(FinanceMoneyOperations.ManualBankPaymentV1),
+                new ManualBankPaymentAuditEnvelopes(
+                    new FinanceAuditEnvelope(ManualBankPaymentService.DraftCommand, ["SENTETIK-FINANCE"], "Web"),
+                    new FinanceAuditEnvelope(ManualBankPaymentService.ApproveCommand, ["SENTETIK-FINANCE"], "Web"),
+                    new FinanceAuditEnvelope(ManualBankPaymentService.RecordCommand, ["SENTETIK-FINANCE"], "Web")),
+                TimeProvider.System);
+            return new PaymentServiceScope(dbContext, service,
+                new FinanceContext(company, actor, $"r47-refund-{Guid.NewGuid():N}", null));
         }
 
         public async Task<SavedOpenItem> SeedOpenItemAsync(
