@@ -409,6 +409,7 @@ public static partial class SalesEndpoints
         MapDraftDetail(drafts);
         MapDraftRevisions(drafts);
         MapDraftLinePricing(drafts);
+        MapDraftTotals(drafts);
         MapOrderPdf(drafts);
         MapPriceFloorExceptionApproval(drafts);
         MapDiscountExceptionApproval(drafts);
@@ -1309,6 +1310,36 @@ public static partial class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftRevisionsV1")
             .Produces<SalesOrderDraftRevisionsResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// API-03 / SAT-D11: the order's line and document totals from the one backend calculator. The service measures the draft
+    /// read AND the price read (403 without it, nothing disclosed); another company's draft is a code-less 404.
+    /// </summary>
+    private static void MapDraftTotals(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/totals", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftTotalsAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftTotalsV1")
+            .Produces<SalesOrderDraftTotalsResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

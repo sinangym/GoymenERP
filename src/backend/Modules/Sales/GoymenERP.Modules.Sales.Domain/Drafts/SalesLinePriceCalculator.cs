@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using GoymenERP.BuildingBlocks.Monetary;
 
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
 
@@ -118,6 +119,79 @@ public static class SalesLinePriceCalculator
     public static string? NetUnitPriceText(CommercialDraftFields commercial) =>
         NetUnitPrice(commercial) is { } net ? Format(net) : null;
 
+    /// <summary>
+    /// SAT-D11 / SAT-D76 / delegation No 15 (API-03): the line amount — <paramref name="quantity"/> × the EXACT net unit price,
+    /// multiplied without any intermediate rounding and rounded ONCE, half away from zero, to <paramref name="scale"/> (the money
+    /// profile's amount scale; the caller passes it, no scale is chosen here). SAT-D76: the net unit price itself is never
+    /// rounded. Null without a price. The quantity is in the price unit; converting another unit is not this calculator's job.
+    /// </summary>
+    public static decimal? LineAmount(CommercialDraftFields commercial, decimal quantity, int scale)
+    {
+        ArgumentNullException.ThrowIfNull(commercial);
+        RequireScale(scale);
+        return ExactNet(commercial) is { } net
+            ? ToDecimal(net.Multiply(ExactDecimal.Parse(Format(quantity))).RoundAwayFromZero(scale))
+            : null;
+    }
+
+    /// <summary>
+    /// Delegation No 15 (API-03): <paramref name="percent"/> % of <paramref name="amount"/>, exact, rounded ONCE half away from
+    /// zero to <paramref name="scale"/> — the line VAT from the line amount and the VAT rate.
+    /// </summary>
+    public static decimal RoundedPercentOf(decimal amount, decimal percent, int scale)
+    {
+        RequireScale(scale);
+        return ToDecimal(ExactDecimal.Parse(Format(amount)).Multiply(ExactDecimal.Parse(Format(percent))).DivideBy100()
+            .RoundAwayFromZero(scale));
+    }
+
+    /// <summary>
+    /// Delegation No 15 / SAT-D75 (API-03): <paramref name="amount"/> × <paramref name="share"/>, exact, rounded ONCE half away
+    /// from zero to <paramref name="scale"/> — the withheld VAT (tevkifat) as a share of the ALREADY ROUNDED line VAT (SAT-D75,
+    /// research-based and reversible).
+    /// </summary>
+    public static decimal RoundedShareOf(decimal amount, decimal share, int scale)
+    {
+        RequireScale(scale);
+        return ToDecimal(ExactDecimal.Parse(Format(amount)).Multiply(ExactDecimal.Parse(Format(share))).RoundAwayFromZero(scale));
+    }
+
+    /// <summary>
+    /// API-03 (review B P2-3): the EXACT sum of <paramref name="amounts"/> minus the exact sum of <paramref name="subtracted"/>.
+    /// System.Decimal's own <c>+</c> / <c>-</c> silently round once a result needs more than its 28–29 significant digits (it
+    /// throws only beyond its magnitude); here the arithmetic is exact and a result that System.Decimal cannot hold EXACTLY —
+    /// too large, or more digits than it carries — is an <see cref="OverflowException"/>, never a rounded amount. The totals
+    /// calculator maps that to <c>AmountOutOfRange</c>. Amounts are non-negative order amounts; a negative result is refused too.
+    /// </summary>
+    public static decimal ExactSum(IEnumerable<decimal> amounts, IEnumerable<decimal>? subtracted = null)
+    {
+        ArgumentNullException.ThrowIfNull(amounts);
+        var total = ExactDecimal.Zero;
+        foreach (var amount in amounts)
+        {
+            total = total.Add(ExactDecimal.Parse(Format(amount)));
+        }
+
+        foreach (var amount in subtracted ?? [])
+        {
+            total = total.Subtract(ExactDecimal.Parse(Format(amount)));
+        }
+
+        return ToDecimal(total);
+    }
+
+    private static void RequireScale(int scale)
+    {
+        if (scale is < 0 or > Money.MaximumScale)
+        {
+            throw new ArgumentOutOfRangeException(nameof(scale), $"Tutar ölçeği 0 ile {Money.MaximumScale} arasında olmalıdır.");
+        }
+    }
+
+    private static decimal ToDecimal(ExactDecimal value) => value.TryToDecimal(out var result)
+        ? result
+        : throw new OverflowException("The exact amount is not representable by System.Decimal.");
+
     public static string Format(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
 
     public static decimal Parse(string text) => TryParseExact(text, out var parsed)
@@ -196,6 +270,24 @@ public static class SalesLinePriceCalculator
         public ExactDecimal DivideBy100() => Create(Mantissa, checked(Scale + 2));
 
         public int CompareTo(ExactDecimal other) => Subtract(other).Mantissa.Sign;
+
+        /// <summary>SAT-D11: half away from zero (never the banker's rule) to <paramref name="scale"/> decimals, on the exact value.</summary>
+        public ExactDecimal RoundAwayFromZero(int scale)
+        {
+            if (Scale <= scale)
+            {
+                return this;
+            }
+
+            var divisor = BigInteger.Pow(10, Scale - scale);
+            var quotient = BigInteger.DivRem(BigInteger.Abs(Mantissa), divisor, out var remainder);
+            if (remainder * 2 >= divisor)
+            {
+                quotient += 1;
+            }
+
+            return Create(Mantissa.Sign < 0 ? -quotient : quotient, scale);
+        }
 
         public bool TryToDecimal(out decimal value) => TryParseExact(ToText(), out value);
 

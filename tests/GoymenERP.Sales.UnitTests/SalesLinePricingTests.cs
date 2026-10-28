@@ -66,6 +66,28 @@ public sealed class SalesLinePricingTests
     }
 
     [Fact]
+    public void API_03_totals_of_a_restored_line_are_the_same_with_the_MOD_02_tier_and_with_the_tier_omitted()
+    {
+        // MOD-02 writes "tier" only when present; a line priced before the chain has no member at all. The totals calculator
+        // reads the price, unit and adjustments — never the tier — so both restored lines total exactly the same (SAT-D11/D76).
+        var withTier = new CommercialDraftFields("100", Unit, null, Reference("100") with { Tier = "Customer" }, "2.50", "1.5");
+        var withoutTier = withTier with { Reference = Reference("100") };
+        var withoutJson = SalesLinePricingJson.Serialize(withoutTier)!;
+        Assert.DoesNotContain("\"tier\"", withoutJson, StringComparison.Ordinal);
+        var lines = new[]
+        {
+            SalesLinePricingJson.Restore("100", Unit, null, SalesLinePricingJson.Serialize(withTier)!),
+            SalesLinePricingJson.Restore("100", Unit, null, withoutJson),
+        }.Select((commercial, index) => new SalesTotalsLineInput(Guid.NewGuid(), index + 1, Unit, 3.5m, commercial)).ToArray();
+
+        var totals = SalesOrderTotalsCalculator.Calculate(lines, Guid.Parse("55555555-5555-4555-8555-555555555555"), 2);
+
+        // (100 − 2.50) × 1.015 = 98.9625 (never rounded); × 3.5 = 346.36875 → 346.37.
+        Assert.All(totals.Lines, line => Assert.Equal((98.9625m, 346.37m), (line.NetUnitPrice, line.NetAmount!.Value.Amount)));
+        Assert.Equal(692.74m, totals.Document.NetAmount!.Value.Amount);
+    }
+
+    [Fact]
     public void MOD_02_the_source_tier_round_trips_and_a_line_priced_before_the_chain_restores_without_one()
     {
         var tiered = new CommercialDraftFields("100", Unit, null, Reference("100") with { Tier = "Customer" });
