@@ -24,9 +24,13 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.TaxIdentityChangeNotPending,
             CounterpartyProblemCodesV1.TaxIdentityChangeStale,
             CounterpartyProblemCodesV1.TaxIdentitySelfDecision,
+            CounterpartyProblemCodesV1.CustomerGroupExists,
+            CounterpartyProblemCodesV1.CustomerGroupNameTaken,
+            CounterpartyProblemCodesV1.CustomerGroupNotFound,
+            CounterpartyProblemCodesV1.CustomerGroupInactive,
         };
 
-        Assert.Equal(15, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(19, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.All(codes, code => Assert.Matches("^[a-z]+(?:_[a-z]+)*$", code));
     }
 
@@ -52,6 +56,10 @@ public sealed class CounterpartyProblemCodesV1Tests
         CounterpartyProblemCodesV1.TaxIdentityChangeNotPending)]
     [InlineData(CounterpartyCommandResult.TaxIdentityChangeStale, CounterpartyProblemCodesV1.TaxIdentityChangeStale)]
     [InlineData(CounterpartyCommandResult.TaxIdentitySelfDecision, CounterpartyProblemCodesV1.TaxIdentitySelfDecision)]
+    [InlineData(CounterpartyCommandResult.CustomerGroupExists, CounterpartyProblemCodesV1.CustomerGroupExists)]
+    [InlineData(CounterpartyCommandResult.CustomerGroupNameTaken, CounterpartyProblemCodesV1.CustomerGroupNameTaken)]
+    [InlineData(CounterpartyCommandResult.CustomerGroupNotFound, CounterpartyProblemCodesV1.CustomerGroupNotFound)]
+    [InlineData(CounterpartyCommandResult.CustomerGroupInactive, CounterpartyProblemCodesV1.CustomerGroupInactive)]
     public void RequiredForProblem_MapsEveryPersistedTerminalFailure(
         CounterpartyCommandResult result,
         string expectedCode)

@@ -31,6 +31,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
     private const string OptionalRolesMigration = "20260910120000_AllowCounterpartyAccountNoRole";
     private const string ContactInformationMigration = "20260912003000_AddCompanyAccountContactInformation";
     private const string TaxIdentityMigration = "20260930150000_AddPartyTaxIdentity";
+    private const string CustomerGroupMigration = "20261027202534_AddCounterpartyCustomerGroups";
     private const PartyRole AllRoles =
         PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
 
@@ -309,6 +310,8 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             Assert.Equal(4, await MigrationCountAsync(connection));
             await MigrateAsync(factory.DatabaseConnectionString, TaxIdentityMigration);
             Assert.Equal(5, await MigrationCountAsync(connection));
+            await MigrateAsync(factory.DatabaseConnectionString, CustomerGroupMigration);
+            Assert.Equal(6, await MigrationCountAsync(connection));
             await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
 
             // A safe down must restore 1..15 without rewriting any identities, timestamps,
@@ -326,6 +329,8 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             Assert.Equal(4, await MigrationCountAsync(connection));
             await MigrateAsync(factory.DatabaseConnectionString, TaxIdentityMigration);
             Assert.Equal(5, await MigrationCountAsync(connection));
+            await MigrateAsync(factory.DatabaseConnectionString, CustomerGroupMigration);
+            Assert.Equal(6, await MigrationCountAsync(connection));
             await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
             await AssertLegacyReplaysAsync(factory, connection, legacy, currentModelSnapshot);
             await CreateReceiptAsync(
@@ -409,6 +414,8 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
             Assert.Equal(4, await MigrationCountAsync(connection));
             await MigrateAsync(factory.DatabaseConnectionString, TaxIdentityMigration);
             Assert.Equal(5, await MigrationCountAsync(connection));
+            await MigrateAsync(factory.DatabaseConnectionString, CustomerGroupMigration);
+            Assert.Equal(6, await MigrationCountAsync(connection));
             Assert.Equal(currentModelSnapshot, await ReadSnapshotAsync(connection));
             await AssertReplayAsync(source, created, CreateJson("SQL Blocked Down Roleless Fixture", "0"));
             await AssertReplayAsync(target, linked, LinkJson("0"));

@@ -111,6 +111,7 @@ public static partial class ErpOpenApiContract
             options.AddSchemaTransformer((schema, context, _) =>
             {
                 ApplyContactInformationSchema(schema, context.JsonTypeInfo.Type);
+                ApplyCustomerGroupSchema(schema, context.JsonTypeInfo.Type);
                 if (context.JsonTypeInfo.Type == typeof(SalesDraftLineCommercialV1))
                 {
                     schema.Required ??= new HashSet<string>();

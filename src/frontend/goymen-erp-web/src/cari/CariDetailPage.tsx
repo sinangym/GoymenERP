@@ -31,6 +31,7 @@ import { CARI_CONTROL_CAPABILITY, targetIsActive } from './accountStatusContract
 import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStatusControl'
 import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
+import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
 import {
   armTaxIdentityDiscard,
   forgetTaxIdentityAttempt,
@@ -423,6 +424,16 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
           * to fail is worse than no button. The API re-authorizes the read and the basic
           * update on every request regardless — this only decides what is offered.
           */}
+        {/* SAT-D57: the account's customer (price) group in the selected company. Its own side read. */}
+        {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId ? (
+          <CariCustomerGroupPanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
+            canOpenGroupList={hasCapability(shell, CAPABILITY.cariPartiesList)}
+          />
+        ) : null}
         {canEditContact ? (
           <Link className={styles.action} to={`/cari/${encodeURIComponent(detail.id)}/bilgiler`}>
             {CARD.editContact}

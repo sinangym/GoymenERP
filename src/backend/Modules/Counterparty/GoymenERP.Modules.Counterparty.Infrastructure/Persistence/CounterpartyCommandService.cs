@@ -315,15 +315,20 @@ internal sealed partial class CounterpartyCommandService(
                 return ResolveExistingExecution(winner, requestHash, metadata);
             }
 
-            var currentVersion = concurrencyContext is PartyConcurrencyContext
-                ? await ReadFencedPartyVersionAsync(metadata.CompanyId, concurrencyContext.PartyId, cancellationToken)
-                : await dbContext.CompanyPartyAccounts
+            var currentVersion = concurrencyContext switch
+            {
+                PartyConcurrencyContext => await ReadFencedPartyVersionAsync(
+                    metadata.CompanyId, concurrencyContext.PartyId, cancellationToken),
+                CustomerGroupConcurrencyContext => await ReadCustomerGroupVersionAsync(
+                    metadata.CompanyId, concurrencyContext.PartyId, cancellationToken),
+                _ => await dbContext.CompanyPartyAccounts
                     .AsNoTracking()
                     .Where(x =>
                         x.CompanyId == metadata.CompanyId
                         && x.PartyId == concurrencyContext.PartyId)
                     .Select(x => (long?)x.Version)
-                    .SingleOrDefaultAsync(cancellationToken);
+                    .SingleOrDefaultAsync(cancellationToken),
+            };
             var terminalResponse = currentVersion.HasValue
                 ? Responses.VersionConflict(
                     concurrencyContext.ExpectedVersion,
@@ -642,6 +647,11 @@ internal sealed partial class CounterpartyCommandService(
     private sealed record PartyConcurrencyContext(
         Guid PartyId,
         long ExpectedVersion) : ConcurrencyContext(PartyId, ExpectedVersion);
+
+    /// <summary>A SAT-D57 group command: fenced on the group's version (the id rides in <c>PartyId</c>).</summary>
+    private sealed record CustomerGroupConcurrencyContext(
+        Guid CustomerGroupId,
+        long ExpectedVersion) : ConcurrencyContext(CustomerGroupId, ExpectedVersion);
 
     private static class Responses
     {
