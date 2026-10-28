@@ -144,13 +144,15 @@ function Body({
         </div>
       ) : null}
 
-      <h2 className={styles.title}>{T.listHeading}</h2>
+      <h2 id="customer-groups-list-heading" className={styles.title}>
+        {T.listHeading}
+      </h2>
       {list.items.length === 0 ? (
         <p data-state="empty">
           {T.empty} {canManage ? T.emptyCanManage : null}
         </p>
       ) : (
-        <table className={styles.table}>
+        <table className={styles.table} aria-labelledby="customer-groups-list-heading">
           <thead>
             <tr>
               <th scope="col">{T.columnName}</th>
