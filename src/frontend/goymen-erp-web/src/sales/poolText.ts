@@ -286,7 +286,8 @@ const POOL_PROBLEM_TEXT: Record<PoolProblemCode, string> = {
   [POOL_PROBLEM_CODE.requestWithoutLines]: 'Talep en az bir satır ister.',
   [POOL_PROBLEM_CODE.quoteRequestUnknown]: 'Seçilen taleplerden biri bu şirkette bulunamadı.',
   [POOL_PROBLEM_CODE.quoteRequestCustomerMismatch]: 'Seçilen taleplerden biri başka bir cariye ait.',
-  [POOL_PROBLEM_CODE.quoteRequestUnavailable]: 'Seçilen taleplerden biri reddedilmiş ya da başka bir teklifle karşılanıyor.',
+  [POOL_PROBLEM_CODE.quoteRequestUnavailable]:
+    'Seçilen taleplerden biri reddedilmiş ya da açık ya da siparişi süren başka bir teklifle karşılanıyor. Siparişi iptal edilen teklifin talebi yeni teklife açıktır.',
   [POOL_PROBLEM_CODE.quoteRequestNotApproved]:
     'Teklifin karşıladığı taleplerden biri henüz onaylı değil; onaysız talepten sipariş açılmaz. Talep onaylandıktan sonra tekrar deneyin.',
   [POOL_PROBLEM_CODE.quoteRequestsInvalid]: 'Talep listesi tekrarsız ve sınır içinde olmalıdır.',

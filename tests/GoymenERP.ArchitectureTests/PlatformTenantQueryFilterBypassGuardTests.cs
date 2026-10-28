@@ -335,8 +335,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over MOD-07, kept ordinal-sorted
             // (87dc8166… -> d74f7c2d…).
             // SAT-D24/D44, SAT-D25: +2 SalesQuoteSqlServerRelationalAcceptanceTests facts, ordinal-sorted (d74f7c2d… -> 1014c327…).
+            // SAT-D71/D72 (EK12): +1 SalesQuoteSqlServerRelationalAcceptanceTests fact, ordinal-sorted (1014c327… -> 1de636c9…).
             ["tools/relational_inventory/sales.txt"] =
-                "1014c3273fb6049fc36178baffbe61170f5604c95afe9944d4640f3d4e2499d2",
+                "1de636c974a8812a4e9ecfa7713b5ea9edd95e80f9e265e701edf919fcda01da",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1355,8 +1356,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for MOD-01 / API-06 (merged over API-12): one untracked read of a customer's open approved
                     // orders through the same filtered context (explicit company predicate too, rebuilt through the domain); no write,
                     // connection, command, raw SQL or filter-bypass API; SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D72 (EK12): the cancellation's one save also deactivates its source quote's active
+                    // request links (tracked through the same filtered context, IsActive 1 -> 0 only); no connection, command, raw
+                    // SQL or filter-bypass API; SqlClient count unchanged.
                     new(
-                        "45545d4b2219b5ef1b893f6bf9de2eadf4b2c9ce6acca2da3a9d8d1c53fb7342",
+                        "8102573a0ed7a42ca9952cff9263abd594c4fb77ddb1f6eeb9ef36bf3f282d6a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1

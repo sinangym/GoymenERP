@@ -42,6 +42,7 @@ import {
   type PoolFormValues,
 } from './poolForm'
 import { POOL_TEXT, QUOTE_STATE_TEXT } from './poolText'
+import { problemCodeText } from './salesText'
 import { SALES_POOL_ROUTE, salesRequestScreenPath, useSalesPoolCapability } from './poolCapabilities'
 import { SALES_CAPABILITY, salesDetailPath } from './capabilities'
 import { poolNotice, usePoolAttempt } from './poolAttempt'
@@ -700,6 +701,9 @@ function ConversionForm({ detail, onReread }: { readonly detail: SalesQuoteDetai
         else onReread()
       }
       if (next.phase === 'failed' && next.failure === 'conflict') onReread()
+      // SAT-D71: the server refuses an order date before ITS business day; the reason is shown on the date field itself.
+      const dateError = next.phase === 'failed' ? next.problem?.errors.find((item) => item.field === 'businessDate') : undefined
+      if (dateError !== undefined) setError(problemCodeText(dateError.code) ?? POOL_TEXT.validation.dateInvalid)
     },
   )
   const notice = poolNotice(attempt.state, {

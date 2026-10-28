@@ -243,8 +243,11 @@ public sealed partial class SalesDraftServiceTests
         var world = new World { Clock = QuoteClock() };
         var id = (await world.Service().CreateQuoteAsync(QuoteOf(), Metadata("q-1"))).Detail.Quote.Id;
         world.Clock = new MutableClock(new DateTimeOffset(2026, 10, 25, 9, 0, 0, TimeSpan.Zero));
-        await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("1", Day), Metadata("q-convert")));
+        // SAT-D71: the order opens on the server's day (2026-10-25); the expired quote is refused before the order is built.
+        var orderDay = new DateOnly(2026, 10, 25);
+        var expired = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("1", orderDay), Metadata("q-convert")));
+        Assert.Equal((409, SalesQuoteProblemCodesV1.Expired), (expired.Status, expired.Code));
 
         // Authority first: without the approval's own name (the quote write and order names do not confer it) — 403, nothing read.
         world.Authority.Denied.Add(SalesPermissionManifestV1.QuotesExpiredConversionApprove);
@@ -285,9 +288,9 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((409, SalesDraftProblemCodesV1.VersionConflict), (stale.Status, stale.Code));
 
         // The refused conversion key was not burned: it converts now, with the approved quote's version.
-        var converted = await world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("2", Day), Metadata("q-convert"));
+        var converted = await world.Service().ConvertQuoteAsync(id, new SalesQuoteConversionRequest("2", orderDay), Metadata("q-convert"));
         Assert.Equal("Converted", (await world.Service().GetQuoteDetailAsync(id)).Quote.State);
-        Assert.Equal(Day, converted.Detail.Draft.BusinessDate);
+        Assert.Equal(orderDay, converted.Detail.Draft.BusinessDate);
     }
 
     [Fact]
@@ -549,8 +552,14 @@ public sealed partial class SalesDraftServiceTests
         public Task<SalesQuotePage> ListQuotesAsync(int pageSize, string? cursor, SalesQuoteState? state, CancellationToken cancellationToken = default) =>
             Task.FromResult(new SalesQuotePage([.. quotes.Where(quote => state is null || quote.State == state).Take(pageSize)], null));
 
+        /// <summary>
+        /// The real store's active links: a lost quote releases its requests, and (SAT-D72) so does a converted quote whose order
+        /// was cancelled — the store deactivates those links in the cancellation's own save.
+        /// </summary>
         public Task<bool> IsRequestQuotedAsync(Guid requestId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(quotes.Any(quote => !lostQuotes.Contains(quote.Id) && quote.RequestIds.Contains(requestId)));
+            Task.FromResult(quotes.Any(quote => !lostQuotes.Contains(quote.Id) && quote.RequestIds.Contains(requestId)
+                && !(quote.Conversion is { } conversion
+                     && drafts.FindDraftAsync(conversion.DraftId, cancellationToken).GetAwaiter().GetResult()?.State == SalesDraftState.Cancelled)));
 
         public async Task<SalesDraftStoreResult> StoreConvertedDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash, Guid quoteId,
             long expectedQuoteVersion, Func<string, SalesOrderDraft> build, CancellationToken cancellationToken = default)

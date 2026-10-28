@@ -1653,7 +1653,7 @@ public sealed partial class SalesDraftServiceTests
         /// <summary>SAT-D25 / SAT-D39: the Settings quote policy port; null = not composed.</summary>
         public ISettingsSalesQuotePolicyProviderV1? QuotePolicies { get; set; }
         /// <summary>The server clock of the service and of the in-memory quote store (SAT-D24: the business day comes from it).</summary>
-        public TimeProvider Clock { get; set; } = TimeProvider.System;
+        public TimeProvider Clock { get; set; } = QuoteClock(); // SAT-D71: a fixed server day (Day, Europe/Istanbul) — orders open on or after it.
 
         /// <summary>
         /// SAT-D2: a SENTETIK approved limit of <paramref name="percent"/> for one limit group of every actor, for the tests

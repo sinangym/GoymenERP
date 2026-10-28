@@ -61,6 +61,13 @@ public static class SalesDraftProblemCodesV1
     /// <summary>503 (AT-018): the Product price-list owner is not composed in this host; never an assumed "no price".</summary>
     public const string PriceListProviderUnavailable = "price_list_provider_unavailable";
 
+    /// <summary>
+    /// 422 (SAT-D71): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at a draft create and at
+    /// a quote conversion alike; today or a later date is accepted. Field <c>businessDate</c>. Not recorded: nothing is read or
+    /// written, and the same key may be retried with a valid date. An unresolvable zone is 503, never a UTC guess.
+    /// </summary>
+    public const string BusinessDateBeforeBusinessDay = "sales_business_date_before_business_day";
+
     /// <summary>422 (contract delta, card decision 3): an owner reference without an owner port is refused, never stored unvalidated.</summary>
     public const string OwnerReferenceUnavailable = "owner_reference_unavailable";
 

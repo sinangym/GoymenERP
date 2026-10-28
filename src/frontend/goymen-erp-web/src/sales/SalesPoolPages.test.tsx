@@ -10,6 +10,8 @@ import userEvent from '@testing-library/user-event'
 import { SALES_POOL_CAPABILITY } from './poolCapabilities'
 import { SALES_POOL_CAPABILITY_ID } from './capabilities'
 import { POOL_TEXT } from './poolText'
+import { PROBLEM_CODE_TEXT } from './salesText'
+import { SALES_PROBLEM_CODE } from './contract'
 import { resetPendingPoolAttempts } from './pendingPoolAttempts'
 import {
   ALL_POOL,
@@ -457,6 +459,27 @@ describe('Teklif detayı', () => {
     await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.convert }))
     expect((await screen.findByTestId('pool-quote-convert-notice')).textContent).toContain('geçerlilik süresi dolmuş')
     await waitFor(() => expect(reads).toBe(2))
+  })
+
+  it('SAT-D71: an order date before the server business day is refused on the date field in Turkish and nothing re-reads', async () => {
+    const user = userEvent.setup()
+    let reads = 0
+    installPoolFetch((call) => {
+      if (call.method === 'POST')
+        return json({ status: 422, title: 'x', code: 'validation_failed', errors: [{ field: 'businessDate', code: 'sales_business_date_before_business_day' }] }, 422)
+      reads += 1
+      return json(quoteDetail())
+    })
+    renderPool(`/satis/teklifler/${QUOTE_ID}`)
+    await user.click(await screen.findByRole('button', { name: POOL_TEXT.quoteDetail.convert, expanded: false }))
+    fireEvent.change(screen.getByLabelText(POOL_TEXT.quoteDetail.convertDate), { target: { value: '2026-10-01' } })
+    const form = screen.getByRole('form', { name: POOL_TEXT.quoteDetail.convertHeading })
+    await user.click(within(form).getByRole('button', { name: POOL_TEXT.quoteDetail.convert }))
+    const message = PROBLEM_CODE_TEXT[SALES_PROBLEM_CODE.businessDateBeforeBusinessDay]
+    expect(await within(form).findByText(message)).toBeTruthy()
+    expect(message).toContain('Sipariş tarihi bugünden önce olamaz')
+    expect(screen.getByLabelText(POOL_TEXT.quoteDetail.convertDate).getAttribute('aria-invalid')).toBe('true')
+    expect(reads).toBe(1)
   })
 
   it('a loss takes a reason from the Settings list, asks for the explanation the reason needs and sends both', async () => {

@@ -903,6 +903,38 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
             Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, body.GetProperty("code").GetString());
         }
 
+        // SAT-D71 through the host: the quote is approved now, but an order date before the HOST's business day is refused —
+        // 422 validation_failed naming businessDate with its stable code, nothing recorded; a direct order create the same.
+        var hostYesterday = SalesBusinessDay.DateOf(DateTimeOffset.UtcNow).AddDays(-1);
+        using (var backDated = await converterClient.SendAsync(Command(quoteId, "conversion", "SENTETIK-before-today",
+                   $"{{\"expectedVersion\":\"2\",\"businessDate\":\"{hostYesterday:yyyy-MM-dd}\"}}")))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, backDated.StatusCode);
+            var body = await backDated.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(("validation_failed", "businessDate", SalesDraftProblemCodesV1.BusinessDateBeforeBusinessDay),
+                (body.GetProperty("code").GetString(), body.GetProperty("errors")[0].GetProperty("field").GetString(),
+                    body.GetProperty("errors")[0].GetProperty("code").GetString()));
+        }
+
+        using (var direct = new HttpRequestMessage(HttpMethod.Post, SalesDraftApiV1.DraftPath)
+               {
+                   Content = new StringContent($"{{\"kind\":\"Order\",\"partyId\":\"{party:D}\",\"companyAccountId\":\"{account:D}\","
+                       + $"\"businessDate\":\"{hostYesterday:yyyy-MM-dd}\",\"currencyId\":\"{Currency:D}\",\"lines\":[{{\"lineId\":\"{Guid.NewGuid():D}\","
+                       + $"\"productId\":\"{Product:D}\",\"expectedProductVersion\":\"7\",\"orderUnitId\":\"{KgUnit:D}\",\"quantity\":\"1\"}}]}}",
+                       Encoding.UTF8, "application/json"),
+               })
+        {
+            direct.Headers.Add("Idempotency-Key", "SENTETIK-direct-before-today");
+            direct.Headers.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
+            using var refused = await converterClient.SendAsync(direct);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+            Assert.Equal(SalesDraftProblemCodesV1.BusinessDateBeforeBusinessDay,
+                (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors")[0].GetProperty("code").GetString());
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash IN (@c, @d)",
+            ("@c", SalesStore.IdempotencyKeyHash("SENTETIK-before-today")), ("@d", SalesStore.IdempotencyKeyHash("SENTETIK-direct-before-today"))));
+
         // The approval is the manager's (the route's actor), recorded once.
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM sales.QuoteExpiryApprovals WHERE QuoteId = @q AND Revision = 0 AND ApprovedBy <> @a AND Note = N'SENTETIK onay'",
@@ -944,6 +976,118 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
 
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Quotes WHERE Id = @q AND State = 3 AND LossReasonId = @r",
             ("@q", lostId), ("@r", OtherReason)));
+    }
+
+    [SqlServerFact]
+    public async Task A_cancelled_converted_order_releases_its_request_for_a_new_quote_and_an_order_date_before_the_servers_day_is_refused_on_real_sql()
+    {
+        // SAT-D71 / SAT-D72 (SINAN_KARARLARI_2026-10-28_SATIS_EK12) over the real store on the server clock's business day (Day).
+        await using var run = await Run.StartAsync();
+        var party = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        var request = await run.RequestAsync(party, account);
+        await run.ApproveRequestAsync(request, "d-approve-request");
+        Guid first;
+        await using (var scope = run.Store(CompanyA))
+        {
+            first = (await run.Service(scope, run.Actor).CreateQuoteAsync(CreateQuote(party, account, [request], "12.50"), run.Metadata("d-quote-1")))
+                .Detail.Quote.Id;
+        }
+
+        // SAT-D71: an order date before the server's day is refused at the conversion and at a direct create — 422 on
+        // businessDate, before any owner is asked; nothing is written or recorded, so the conversion's key is not burned.
+        await using (var scope = run.Store(CompanyA))
+        {
+            var service = run.Service(scope, run.Actor);
+            var converting = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+                service.ConvertQuoteAsync(first, new SalesQuoteConversionRequest("1", Day.AddDays(-1)), run.Metadata("d-convert-1")));
+            var creating = await Assert.ThrowsAsync<SalesDraftServiceException>(() => service.CreateDraftAsync(new CreateSalesOrderDraftRequest(
+                "Order", party, account, Day.AddDays(-1), Currency, [new SalesOrderDraftLineRequest(Guid.NewGuid(), Product, "7", KgUnit, "1")]),
+                run.Metadata("d-direct-past")));
+            foreach (var refused in new[] { converting, creating })
+            {
+                Assert.Equal((422, "validation_failed", "businessDate", SalesDraftProblemCodesV1.BusinessDateBeforeBusinessDay),
+                    (refused.Status, refused.Code, Assert.Single(refused.Errors).Field, refused.Errors[0].Code));
+            }
+        }
+
+        Assert.Equal((0, 0), (await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE IdempotencyKeyHash IN (@c, @d)",
+                ("@c", SalesStore.IdempotencyKeyHash("d-convert-1")), ("@d", SalesStore.IdempotencyKeyHash("d-direct-past")))));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Quotes WHERE Id = @q AND State = 1 AND Version = 1", ("@q", first)));
+
+        // Today (the server's day) is accepted under the same key.
+        SalesOrderDraftDetailView order;
+        await using (var scope = run.Store(CompanyA))
+        {
+            order = (await run.Service(scope, run.Actor).ConvertQuoteAsync(first, new SalesQuoteConversionRequest("1", Day), run.Metadata("d-convert-1"))).Detail;
+            // While the order lives the request is covered: no second quote (No 163).
+            var covered = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+                run.Service(scope, run.Actor).CreateQuoteAsync(CreateQuote(party, account, [request], "11"), run.Metadata("d-quote-early")));
+            Assert.Equal((422, SalesQuoteProblemCodesV1.RequestUnavailable), (covered.Status, covered.Code));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE Id = @d AND BusinessDate = @b", ("@d", order.Draft.Id), ("@b", Day.ToDateTime(TimeOnly.MinValue))));
+
+        // The order is approved (SAT-D43's discount check first) and then cancelled through its own command.
+        await using (var scope = run.Store(CompanyA))
+        {
+            var checkedOrder = await run.Service(scope, Approver).ApproveDiscountExceptionsAsync(order.Draft.Id,
+                new SalesDraftDiscountExceptionApprovalRequest(order.Draft.Version,
+                    [.. order.Lines.Select(line => new SalesDraftDiscountExceptionApprovalLineV1(line.LineId, "SENTETIK liste dışı fiyat"))]),
+                run.Metadata("d-discount-check"));
+            var submitted = await run.Service(scope, run.Actor).SubmitDraftAsync(order.Draft.Id,
+                new SalesDraftStateCommandRequest(checkedOrder.Detail.Draft.Version), run.Metadata("d-submit"));
+            var approved = await run.Service(scope, Approver).ApproveDraftAsync(order.Draft.Id,
+                new SalesDraftStateCommandRequest(submitted.Detail.Draft.Version), run.Metadata("d-approve-order"));
+            var service = run.Service(scope, run.Actor);
+            var impact = await service.GetCancellationImpactAsync(order.Draft.Id);
+            await service.CancelDraftAsync(order.Draft.Id, new SalesDraftCancelRequest(approved.Detail.Draft.Version, "SENTETIK iptal", impact.ImpactToken),
+                run.Metadata("d-cancel"));
+        }
+
+        // SAT-D72, in the cancellation's own save: the source quote's link is released; the quote stays Converted with its
+        // (cancelled) order; the request stays Approved.
+        Assert.Equal((1, 0, 1), (await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE Id = @d AND State = 2", ("@d", order.Draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.QuoteRequests WHERE QuoteId = @q AND IsActive = 1", ("@q", first)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.QuoteRequests WHERE QuoteId = @q AND RequestId = @r AND IsActive = 0",
+                ("@q", first), ("@r", request))));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Quotes WHERE Id = @q AND State = 2 AND ConvertedDraftId = @d",
+            ("@q", first), ("@d", order.Draft.Id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Requests WHERE Id = @r AND State = 2", ("@r", request)));
+
+        // A NEW quote covers the request and converts again (a later order date is accepted); the first quote never converts twice.
+        Guid second;
+        SalesOrderDraftResponse reordered;
+        await using (var scope = run.Store(CompanyA))
+        {
+            var service = run.Service(scope, run.Actor);
+            second = (await service.CreateQuoteAsync(CreateQuote(party, account, [request], "11"), run.Metadata("d-quote-2"))).Detail.Quote.Id;
+            reordered = await service.ConvertQuoteAsync(second, new SalesQuoteConversionRequest("1", Day.AddDays(3)), run.Metadata("d-convert-2"));
+            var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+                service.ConvertQuoteAsync(first, new SalesQuoteConversionRequest("2", Day), run.Metadata("d-convert-1-again")));
+            Assert.Equal((409, SalesDraftProblemCodesV1.StateConflict), (again.Status, again.Code));
+        }
+
+        Assert.Equal((1, 1, 1), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE SourceQuoteId = @q AND State = 2", ("@q", first)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE SourceQuoteId = @q AND Id = @d AND State = 1 AND BusinessDate = @b",
+                ("@q", second), ("@d", reordered.Detail.Draft.Id), ("@b", Day.AddDays(3).ToDateTime(TimeOnly.MinValue))),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.QuoteRequests WHERE RequestId = @r AND IsActive = 1 AND QuoteId = @q",
+                ("@r", request), ("@q", second))));
+
+        // No 161 again: the new, live order blocks the request's rejection (SAT-D23 unchanged).
+        await using (var scope = run.Store(CompanyA))
+        {
+            var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+                run.Service(scope, Approver).RejectRequestAsync(request, new("2", "SENTETIK vazgeçildi"), run.Metadata("d-reject")));
+            Assert.Equal((409, SalesRequestProblemCodesV1.HasOrder), (refused.Status, refused.Code));
+        }
+
+        // The released link cannot come back by itself: the write guard and the active-request index still hold.
+        var reactivated = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE sales.QuoteRequests SET IsActive = 1 WHERE QuoteId = @q AND RequestId = @r", ("@q", first), ("@r", request)));
+        Assert.Contains("UX_QuoteRequests_ActiveRequest", reactivated.Message, StringComparison.Ordinal);
     }
 
     private static readonly Guid PriceReason = Guid.Parse("6b1d2c3b-4a59-4687-9a0b-1c2d3e4f5ca1");
