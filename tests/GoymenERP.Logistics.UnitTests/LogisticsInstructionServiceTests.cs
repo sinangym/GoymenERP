@@ -639,6 +639,9 @@ public sealed partial class LogisticsInstructionServiceTests
         public string Fault { get; set; } = "";
         public int Calls { get; set; }
 
+        /// <summary>The approved commercial revision the owner answers (SAT-D103: it may grow while an instruction stands).</summary>
+        public int Revision { get; set; }
+
         /// <summary>LOG-4b: the price-free picker page the Sales owner answers; "other-company" answers a foreign row, "throws" an outage.</summary>
         public Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
         {
@@ -691,7 +694,7 @@ public sealed partial class LogisticsInstructionServiceTests
                         Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit,
                         // The generic approved line must cover the pre-existing weighbridge fixtures (up to 24,000 kg).
                         // The dedicated revised case remains deliberately capped at 2 kg.
-                        Fault == "remainder-revised" ? "2" : "100000", 0,
+                        Fault == "remainder-revised" ? "2" : "100000", Revision,
                         Fault == "limit-version-race" && Calls > 1 ? 8 : 7,
                         Fault == "remainder-cancelled" ? SalesRemainderChangeNamesV1.Cancelled
                             : Fault is "remainder-revised" or "load-limit-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open,

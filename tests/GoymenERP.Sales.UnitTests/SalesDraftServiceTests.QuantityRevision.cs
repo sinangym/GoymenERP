@@ -9,9 +9,10 @@ namespace GoymenERP.Sales.UnitTests;
 /// <summary>
 /// DEC-SAL-002 / AT-023 over SYNTHETIC owners: the quantity revision of an approved order archives Rev.0 with the reason and
 /// re-enters approval at Rev.1 under its own name; the existing approve flow approves Rev.1; the history stays readable; the
-/// line port answers NotApproved while Rev.1 is pending and the NEW quantity once approved; any active allocation or loading
-/// line of the order blocks (fail-closed, the cancellation's rule) and an unreadable owner is 503; a stale version, a wrong
-/// state and a blocked revision are the key's terminal 409s; the same key replays with no second effect.
+/// line port answers the LAST APPROVED Rev.0 while Rev.1 is pending (SAT-D103 — here Rev.0 was never accepted by the
+/// customer, so it stays NotApproved; the accepted case is SalesDraftServiceTests.Reapproval) and the NEW quantity once
+/// approved; allocations and loading instructions no longer block (SAT-D104) and an unreadable loading owner is 503; a stale
+/// version and a wrong state are the key's terminal 409s; the same key replays with no second effect.
 /// </summary>
 public sealed partial class SalesDraftServiceTests
 {
@@ -38,21 +39,21 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("Draft", "Preparing", "5", "Rev.1", "2"), (revised.Detail.Draft.State, revised.Detail.Draft.ApprovalState,
             revised.Detail.Draft.Version, revised.Detail.Draft.Revision, revised.Detail.Lines[0].Quantity));
         Assert.Equal(new SalesDraftApprovalV1(null, null, null, null, null), revised.Detail.Approval);
-        // The fences: before the replay, after the draft read, after each owner, the last one — all under the quantity name
-        // (the price read is asked for the answer only).
-        Assert.Equal([QuantityPermission, QuantityPermission, QuantityPermission, QuantityPermission, QuantityPermission, QuantityPermission,
+        // The fences: before the replay, after the draft read, after the loading owner, the last one — all under the quantity
+        // name (the price read is asked for the answer only). SAT-D104: the allocation owner is no longer asked.
+        Assert.Equal([QuantityPermission, QuantityPermission, QuantityPermission, QuantityPermission, QuantityPermission,
                 PriceReadPermission],
             world.Authority.Measured);
-        Assert.Equal([approved.Draft.Id], allocations.Asked);
+        Assert.Empty(allocations.Asked);
         Assert.Equal([approved.Draft.Id], loadings.Asked);
         var transition = world.Store.Transitions[^1];
         Assert.Equal((SalesDraftCommands.ReviseQuantityV1, QuantityPermission, "sales.order-draft.quantity-revised.v1", "ReviseQuantity", 4L, 5L, "Web"),
             (transition.Command, transition.Envelope.PermissionCode, transition.Audit.EventType, transition.Audit.Operation,
                 transition.VersionBefore, transition.VersionAfter, transition.Envelope.SourceChannel));
 
-        // While Rev.1 is pending the consumers see no approved figures.
+        // While Rev.1 is pending the consumers see no unapproved figures (Rev.0 was not accepted by the customer here).
         var pending = await port.GetApprovedLineAsync(approved.Draft.Id, line.LineId);
-        Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "Preparing"), (pending.Outcome, pending.ApprovalState));
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "CustomerAcceptancePending"), (pending.Outcome, pending.ApprovalState));
         Assert.Empty((await port.ListApprovedLinesAsync(10, null)).Items);
 
         // The same key and content: the stored result, replayed — the owners are not asked, nothing is revised twice.
@@ -60,7 +61,7 @@ public sealed partial class SalesDraftServiceTests
             new SalesDraftQuantityRevisionRequest("4", "  SENTETIK müşteri 2 kg istedi  ", [new SalesDraftLineQuantityV1(line.LineId, "2")]),
             Metadata("k-quantity", correlation: "retry"));
         Assert.Equal((true, "synthetic-correlation", "5", "Rev.1"), (replay.IsReplay, replay.OriginalCorrelationId, replay.Detail.Draft.Version, replay.Detail.Draft.Revision));
-        Assert.Equal((1, 1), (allocations.Asked.Count, loadings.Asked.Count));
+        Assert.Equal((0, 1), (allocations.Asked.Count, loadings.Asked.Count));
         Assert.Single(world.Store.Archived);
         var other = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseQuantityAsync(approved.Draft.Id,
             new SalesDraftQuantityRevisionRequest("4", "başka", [new SalesDraftLineQuantityV1(line.LineId, "2")]), Metadata("k-quantity")));
@@ -82,42 +83,6 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal("2", Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items).QuantityText);
     }
 
-    [Fact]
-    public async Task An_active_allocation_or_a_loading_line_blocks_the_revision_with_the_key_recorded_and_nothing_changes()
-    {
-        var world = new World();
-        var approved = await ApprovedAsync(world);
-        var line = approved.Lines[0].LineId;
-        var (allocations, loadings) = Owners(world);
-        allocations.Answer = order => new(Company, order, [new(line, 1, 0.5m)]);
-        loadings.Answer = order => new(Company, order, [new(line, KgUnit, 1, 0.5m, 0m, 0m, 0m)]);
-
-        var blocked = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseQuantityAsync(approved.Draft.Id,
-            new SalesDraftQuantityRevisionRequest("4", "neden", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity-1")));
-        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionBlocked), Status(blocked));
-        Assert.Equal(
-            [
-                new SalesDraftFieldError(SalesCancellationImpactSourcesV1.ActiveAllocations, SalesCancellationImpactStatusesV1.Present),
-                new SalesDraftFieldError(SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, SalesCancellationImpactStatusesV1.Present),
-            ],
-            blocked.Errors);
-        var refusal = Assert.Single(world.Store.Refusals);
-        Assert.Equal((QuantityPermission, (Guid?)approved.Draft.Id), (refusal.Envelope.PermissionCode, refusal.DraftId));
-        var replayed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseQuantityAsync(approved.Draft.Id,
-            new SalesDraftQuantityRevisionRequest("4", "neden", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity-1", correlation: "retry")));
-        Assert.Equal((409, SalesDraftProblemCodesV1.RevisionBlocked, true), (replayed.Status, replayed.Code, replayed.IsReplay));
-        var detail = await world.Service().GetDraftDetailAsync(approved.Draft.Id);
-        Assert.Equal(("Approved", "Rev.0", "4", "1.25"), (detail.Draft.ApprovalState, detail.Draft.Revision, detail.Draft.Version, detail.Lines[0].Quantity));
-        Assert.Empty(world.Store.Archived);
-
-        // The allocation released and the instruction resolved IN THEIR OWNERS: the revision goes through under a new key.
-        allocations.Answer = order => new(Company, order, []);
-        loadings.Answer = order => new(Company, order, []);
-        var revised = await world.Service().ReviseQuantityAsync(approved.Draft.Id,
-            new SalesDraftQuantityRevisionRequest("4", "neden", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity-2"));
-        Assert.Equal("Rev.1", revised.Detail.Draft.Revision);
-    }
-
     [Theory]
     [InlineData("not-composed")]
     [InlineData("malformed")]
@@ -126,9 +91,9 @@ public sealed partial class SalesDraftServiceTests
         var world = new World();
         var approved = await ApprovedAsync(world);
         var line = approved.Lines[0].LineId;
-        var (allocations, _) = Owners(world);
+        var (_, loadings) = Owners(world);
         if (fault == "not-composed") world.Loadings = null;
-        else allocations.Answer = order => new(Guid.NewGuid(), order, []);
+        else loadings.Answer = order => new(Guid.NewGuid(), order, []);
 
         var unavailable = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseQuantityAsync(approved.Draft.Id,
             new SalesDraftQuantityRevisionRequest("4", "neden", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity")));

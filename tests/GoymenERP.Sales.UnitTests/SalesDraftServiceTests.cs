@@ -2221,6 +2221,14 @@ public sealed partial class SalesDraftServiceTests
             return Task.FromResult(new SalesDraftPage([.. drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
         }
 
+        public Task<SalesDraftPage> ListShippableDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
+        {
+            if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            var drafts = _drafts.Where(draft => draft.State == SalesDraftState.Draft
+                && (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count > 0));
+            return Task.FromResult(new SalesDraftPage([.. drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
+        }
+
         /// <summary>MOD-01 / API-06: every call's (party, account, take).</summary>
         public List<(Guid PartyId, Guid CompanyAccountId, int Take)> OpenApprovedOrderReads { get; } = [];
 

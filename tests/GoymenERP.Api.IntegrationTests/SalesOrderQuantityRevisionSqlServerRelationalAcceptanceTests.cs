@@ -15,6 +15,7 @@ using GoymenERP.Modules.Logistics.Application.Contracts;
 using GoymenERP.Modules.Logistics.Domain.Loading;
 using GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -32,11 +33,13 @@ namespace GoymenERP.Api.IntegrationTests;
 /// DEC-SAL-002 / AT-023 against a REAL SQL Server and the REAL host composition: an approved order's quantity revision
 /// through the real route is ONE save — the archived Rev.0 (its approval facts, the line as approved and the reason), the
 /// header at Rev.1 back in Preparing with version 5, the line's new quantity, the attempt and the audit event with
-/// SourceChannel Web; the line port answers the order NotApproved while Rev.1 waits; the existing submit/approve routes
+/// SourceChannel Web; while Rev.1 waits the line port answers the LAST APPROVED Rev.0 for physical shipping (SAT-D103:
+/// its quantity, the cap — an increase is not shipped before its approval, SAT-D104); the existing submit/approve routes
 /// approve Rev.1 and the port then answers the NEW quantity at Rev.1; the revisions route still shows Rev.0 with its reason.
-/// A loading line of the order (Logistics, the real owner port) blocks the revision as the key's recorded refusal and a
-/// stale version is terminal; another company sees nothing; the migration refuses to roll back over a recorded reason
-/// (51057). The draft is stored and approved through the real Sales store from ISOLATED SYNTHETIC owner snapshots (the
+/// SAT-D104 / SAT-D111: a loading instruction of the order (Logistics, the real owner port) no longer blocks the revision; a
+/// decrease below the shipped (or, fail-closed, the loaded) quantity is refused unrecorded; a pending decrease caps shipping at
+/// the requested quantity and a rejection restores the last approved one; a stale version is terminal; another company sees
+/// nothing; the migration refuses to roll back over a recorded reason (51057). The draft is stored and approved through the real Sales store from ISOLATED SYNTHETIC owner snapshots (the
 /// AT-024 / DEC-SAL-005 precedent); every grant is a fresh synthetic role. Needs the central registration of
 /// <c>sales.orders.quantity.write</c> (until then the route answers 503 by design). SENTETIK / NOT_ENV.
 /// </summary>
@@ -56,6 +59,9 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Submitted = new SalesDraftStateAudit("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new SalesDraftStateAudit("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit Revised = new SalesDraftStateAudit("sales.order-draft.quantity-revised.v1", "ReviseQuantity", "SENTETIK miktar revizyonu");
+    private static readonly LogisticsMutationAudit Issued = new("logistics.loading-instruction.issued.v1", "Issue", "SENTETIK yayımlandı");
+    private static readonly LogisticsMutationAudit LoadedAudit = new("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "SENTETIK yüklendi");
+    private static readonly LogisticsMutationAudit ShippedAudit = new("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "SENTETIK sevk edildi");
 
     [SqlServerFact]
     public async Task An_approved_orders_quantity_revision_archives_rev0_with_its_reason_in_one_save_and_rev1_is_approved_through_the_real_routes_on_real_sql()
@@ -101,10 +107,14 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-quantity.v1' AND [Outcome] = 1 AND [DraftId] = @id",
             ("@id", draft.Id)));
 
-        // While Rev.1 waits for approval the consumers see no approved figures.
+        // SAT-D103 / SAT-D104: while Rev.1 waits for approval shipping goes on under Rev.0 — its quantity is the cap; the
+        // increase to 7.5 reaches no consumer before its approval.
         var pending = await run.LineAsync(CompanyA, draft.Id, orderLine.Id);
-        Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "Preparing"), (pending.Outcome, pending.ApprovalState));
-        Assert.DoesNotContain(await run.ApprovedLinesAsync(CompanyA), item => item.OrderId == draft.Id);
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, "6", "6", SalesOrderLineRevisionBasisV1.LastApprovedRevision, "Preparing"),
+            (pending.Outcome, pending.Line!.Revision, pending.Line.QuantityText, pending.Line.ShippingCapQuantityText, pending.Line.RevisionBasis,
+                pending.Line.PendingApprovalState));
+        var listed = Assert.Single(await run.ApprovedLinesAsync(CompanyA), item => item.OrderId == draft.Id);
+        Assert.Equal((0, "6", "6"), (listed.Revision, listed.QuantityText, listed.ShippingCapQuantityText));
 
         // The same key and content: the stored result replayed — no second archive, event or attempt.
         var afterRevision = await run.EffectsAsync(draft.Id);
@@ -139,52 +149,155 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
 
         // Downstream reads the APPROVED revision: Rev.1 and the new quantity.
         var answer = await run.LineAsync(CompanyA, draft.Id, orderLine.Id);
-        Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, "7.5", 1), (answer.Outcome, answer.Line!.QuantityText, answer.Line.Revision));
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, "7.5", 1, SalesOrderLineRevisionBasisV1.CurrentRevision, "7.5"),
+            (answer.Outcome, answer.Line!.QuantityText, answer.Line.Revision, answer.Line.RevisionBasis, answer.Line.ShippingCapQuantityText));
     }
 
     [SqlServerFact]
-    public async Task A_loading_line_of_the_order_blocks_the_revision_as_the_keys_recorded_refusal_and_a_stale_version_is_terminal_on_real_sql()
+    public async Task A_loading_instruction_no_longer_blocks_a_decrease_which_never_goes_below_the_shipped_or_loaded_quantity_and_caps_shipping_until_the_decision_on_real_sql()
     {
         await using var run = await Run.StartAsync();
         var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
         var orderLine = Assert.Single(draft.Lines);
-        await run.InstructedAsync(CompanyA, draft, "k");
-        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersQuantityWrite);
+        // Real Logistics records: 6 kg instructed under Rev.0, 5 loaded, 4 shipped.
+        await run.ShippedAsync(CompanyA, draft, "k", loaded: 5m, shipped: 4m);
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.DraftsCreate,
+            SalesPermissionManifestV1.OrdersApprove, SalesPermissionManifestV1.OrdersQuantityWrite);
         using var client = run.Client(subject, CompanyA);
-        var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/quantity-revision";
+        var draftPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
+        var path = $"{draftPath}/quantity-revision";
 
-        using (var blocked = await client.SendAsync(Revise(path, "SENTETIK-blocked", "4", "neden", orderLine.Id, "4")))
+        // Below the shipped 4 and below the loaded 5: refused on the line, unrecorded (the floor moves with Logistics).
+        foreach (var (key, quantity, code) in new[]
+                 {
+                     ("SENTETIK-below-shipped", "3", SalesRuleCodes.RevisionBelowShipped),
+                     ("SENTETIK-below-loaded", "4.5", SalesRuleCodes.RevisionBelowLoaded),
+                 })
         {
-            Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
-            var problem = await blocked.Content.ReadFromJsonAsync<JsonElement>();
-            Assert.Equal(SalesDraftProblemCodesV1.RevisionBlocked, problem.GetProperty("code").GetString());
-            Assert.Equal(SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote, problem.GetProperty("errors")[0].GetProperty("field").GetString());
+            using var refused = await client.SendAsync(Revise(path, key, "4", "neden", orderLine.Id, quantity));
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+            var error = (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors")[0];
+            Assert.Equal(("lines[0].quantity", code), (error.GetProperty("field").GetString(), error.GetProperty("code").GetString()));
         }
 
-        using (var replayed = await client.SendAsync(Revise(path, "SENTETIK-blocked", "4", "neden", orderLine.Id, "4")))
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-quantity.v1' AND [DraftId] = @id",
+            ("@id", draft.Id)));
+
+        // At the loaded quantity: recorded although the instruction stands (SAT-D104 replaces the old block); Sales released
+        // nothing of Logistics.
+        using (var revised = await client.SendAsync(Revise(path, "SENTETIK-down", "4", "SENTETIK müşteri 5 kg istedi", orderLine.Id, "5")))
         {
-            Assert.Equal(HttpStatusCode.Conflict, replayed.StatusCode);
-            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal(HttpStatusCode.OK, revised.StatusCode);
         }
 
-        using (var stale = await client.SendAsync(Revise(path, "SENTETIK-stale", "3", "neden", orderLine.Id, "4")))
+        Assert.Equal((1, 1, 5L), (
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [logistics].[LoadingInstructionLines] WHERE [SourceOrderId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+
+        // SAT-D111: the pending decrease caps shipping at min(6, 5) = 5; the identity stays Rev.0's.
+        await run.AssertShippingAsync(CompanyA, draft.Id, orderLine.Id, "Preparing", "5", 5);
+        // The loading facts still read although the instruction (6, made under Rev.0) stands above the requested 5.
+        var progress = (await run.JsonAsync(client, $"{draftPath}/loading-progress")).GetProperty("lines")[0];
+        Assert.Equal(("5", "6", "5", "4"), (progress.GetProperty("ordered").GetString(), progress.GetProperty("instructed").GetString(),
+            progress.GetProperty("loaded").GetString(), progress.GetProperty("shipped").GetString()));
+
+        using (var submitted = await client.SendAsync(State($"{draftPath}/submission", "SENTETIK-down-submit", "5")))
+        {
+            Assert.Equal(HttpStatusCode.OK, submitted.StatusCode);
+        }
+
+        await run.AssertShippingAsync(CompanyA, draft.Id, orderLine.Id, "PendingApproval", "5", 6);
+        using (var rejected = await client.SendAsync(State($"{draftPath}/rejection", "SENTETIK-down-reject", "6")))
+        {
+            Assert.Equal(HttpStatusCode.OK, rejected.StatusCode);
+        }
+
+        // Rejected: shipping goes on up to the last approved 6 again; invoicing opens at Rev.0's prices.
+        await run.AssertShippingAsync(CompanyA, draft.Id, orderLine.Id, "Rejected", "6", 7);
+        var invoicing = (await run.JsonAsync(client, $"{draftPath}/status")).GetProperty("invoicing");
+        Assert.Equal(("NoSource", "Open", "Rev.0"), (invoicing.GetProperty("state").GetString(), invoicing.GetProperty("gate").GetString(),
+            invoicing.GetProperty("priceBasisRevision").GetString()));
+
+        // A stale version is still the key's terminal 409, recorded and replayed.
+        using (var stale = await client.SendAsync(Revise(path, "SENTETIK-stale", "3", "neden", orderLine.Id, "5.5")))
         {
             Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
             Assert.Equal(SalesDraftProblemCodesV1.VersionConflict, (await stale.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         }
 
-        Assert.Equal(2, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-quantity.v1' AND [Outcome] = 2 AND [DraftId] = @id",
-            ("@id", draft.Id)));
-        Assert.Equal((0, 4L, 0, "6"), (
-            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", draft.Id)),
-            await run.ScalarAsync<string>("SELECT [QuantityText] FROM [sales].[DraftLines] WHERE [DraftId] = @id", ("@id", draft.Id))));
-        // Sales released nothing of Logistics, and the order is still an approved demand at Rev.0.
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [logistics].[LoadingInstructionLines] WHERE [SourceOrderId] = @id", ("@id", draft.Id)));
-        var answer = await run.LineAsync(CompanyA, draft.Id, orderLine.Id);
-        Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, "6", 0), (answer.Outcome, answer.Line!.QuantityText, answer.Line.Revision));
+        using (var replayed = await client.SendAsync(Revise(path, "SENTETIK-stale", "3", "neden", orderLine.Id, "5.5")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, replayed.StatusCode);
+            Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
+        }
+    }
+
+    [SqlServerFact]
+    public async Task A_price_revision_keeps_shipping_on_the_last_approved_revision_while_invoicing_waits_and_a_rejection_keeps_the_old_price_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
+        var orderLine = Assert.Single(draft.Lines);
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.DraftsCreate,
+            SalesPermissionManifestV1.OrdersApprove, SalesPermissionManifestV1.OrdersPriceWrite, SalesPermissionManifestV1.OrdersPriceRead,
+            SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
+        using var client = run.Client(subject, CompanyA);
+        var draftPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
+        Assert.Equal("Open", (await run.JsonAsync(client, $"{draftPath}/status")).GetProperty("invoicing").GetProperty("gate").GetString());
+
+        // A manual price on the approved order: Rev.1 back in preparation (K3 commercial revision through the real route).
+        using (var revised = await client.SendAsync(Post($"{draftPath}/commercial-revision", "SENTETIK-price",
+                   new SalesDraftCommercialRevisionRequest("4", [new SalesDraftLineCommercialV1(orderLine.Id, "100", KgUnit)]))))
+        {
+            Assert.Equal(HttpStatusCode.OK, revised.StatusCode);
+        }
+
+        // Shipping goes on under Rev.0 (the port carries no price member at all); invoicing waits for the decision.
+        await run.AssertShippingAsync(CompanyA, draft.Id, orderLine.Id, "Preparing", "6", 5);
+        var waiting = (await run.JsonAsync(client, $"{draftPath}/status")).GetProperty("invoicing");
+        Assert.Equal(("NoSource", "AwaitingReapproval", JsonValueKind.Null), (waiting.GetProperty("state").GetString(),
+            waiting.GetProperty("gate").GetString(), waiting.GetProperty("priceBasisRevision").ValueKind));
+
+        // SAT-D43/D45: the manual price is approved (self-approvable without a list price), submitted and REJECTED.
+        using (var approved = await client.SendAsync(Post($"{draftPath}/discount-exception-approval", "SENTETIK-discount",
+                   new SalesDraftDiscountExceptionApprovalRequest("5", [new SalesDraftDiscountExceptionApprovalLineV1(orderLine.Id, "SENTETIK liste dışı fiyat")]))))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        }
+
+        using (var submitted = await client.SendAsync(State($"{draftPath}/submission", "SENTETIK-price-submit", "6")))
+        {
+            Assert.Equal(HttpStatusCode.OK, submitted.StatusCode);
+        }
+
+        await run.AssertShippingAsync(CompanyA, draft.Id, orderLine.Id, "PendingApproval", "6", 7);
+        using (var rejected = await client.SendAsync(State($"{draftPath}/rejection", "SENTETIK-price-reject", "7")))
+        {
+            Assert.Equal(HttpStatusCode.OK, rejected.StatusCode);
+        }
+
+        // Rejected: shipping still under Rev.0 and the invoice uses Rev.0's (last approved) prices.
+        await run.AssertShippingAsync(CompanyA, draft.Id, orderLine.Id, "Rejected", "6", 8);
+        var open = (await run.JsonAsync(client, $"{draftPath}/status")).GetProperty("invoicing");
+        Assert.Equal(("Open", "Rev.0"), (open.GetProperty("gate").GetString(), open.GetProperty("priceBasisRevision").GetString()));
+
+        // Resubmitted and approved: every consumer moves to Rev.1, the invoice to the new price.
+        using (var resubmitted = await client.SendAsync(State($"{draftPath}/submission", "SENTETIK-price-resubmit", "8")))
+        {
+            Assert.Equal(HttpStatusCode.OK, resubmitted.StatusCode);
+        }
+
+        using (var approvedRev1 = await client.SendAsync(State($"{draftPath}/approval", "SENTETIK-price-approve", "9")))
+        {
+            Assert.Equal(HttpStatusCode.OK, approvedRev1.StatusCode);
+        }
+
+        var current = await run.LineAsync(CompanyA, draft.Id, orderLine.Id);
+        Assert.Equal((1, SalesOrderLineRevisionBasisV1.CurrentRevision, (string?)null), (current.Line!.Revision, current.Line.RevisionBasis,
+            current.Line.PendingApprovalState));
+        Assert.Equal("Rev.1", (await run.JsonAsync(client, $"{draftPath}/status")).GetProperty("invoicing").GetProperty("priceBasisRevision").GetString());
     }
 
     [SqlServerFact]
@@ -258,6 +371,17 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
             Content = new StringContent(JsonSerializer.Serialize(
                 new SalesDraftQuantityRevisionRequest(expectedVersion, reason, [new SalesDraftLineQuantityV1(lineId, quantity)]), SalesDraftJson.Options),
                 Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("Idempotency-Key", key);
+        request.Headers.Add("X-Correlation-Id", $"SENTETIK-{Guid.NewGuid():N}");
+        return request;
+    }
+
+    private static HttpRequestMessage Post<T>(string path, string key, T body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
         };
         request.Headers.Add("Idempotency-Key", key);
         request.Headers.Add("X-Correlation-Id", $"SENTETIK-{Guid.NewGuid():N}");
@@ -349,18 +473,50 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
             return approved!.Draft;
         }
 
-        /// <summary>An instruction of <paramref name="company"/> for the draft's one line (6 kg), created through the real Logistics store: instructed only.</summary>
-        public async Task InstructedAsync(Guid company, SalesOrderDraft draft, string keyPrefix)
+        /// <summary>
+        /// An instruction of <paramref name="company"/> for the draft's one line (6 kg instructed) created, issued, loaded
+        /// <paramref name="loaded"/> kg and shipped <paramref name="shipped"/> kg through the real Logistics store.
+        /// </summary>
+        public async Task ShippedAsync(Guid company, SalesOrderDraft draft, string keyPrefix, decimal loaded, decimal shipped)
         {
             var orderLine = Assert.Single(draft.Lines);
             await using var scope = LogisticsStore(company);
-            await scope.Store.StoreInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-create"), Hash($"{keyPrefix}-l-create"), Day, () =>
+            var stored = (await scope.Store.StoreInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-create"), Hash($"{keyPrefix}-l-create"), Day, () =>
             {
                 var instruction = LoadingInstruction.Create(Guid.NewGuid(), company, draft.Header.PartyId, draft.Header.CompanyAccountId, T0);
                 instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(draft.Id, orderLine.Id, draft.Revision),
                     orderLine.Product.ProductId, KgUnit, null, Kg(6m), T0);
                 return instruction;
-            });
+            })).Instruction.Instruction;
+            var lineId = Assert.Single(stored.Lines).Id;
+            var issued = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-issue"), Hash($"{keyPrefix}-l-issue"),
+                LogisticsCommands.IssueV1, stored.Id, (instruction, now) => instruction.Issue(stored.Version, now), Issued))!.Instruction.Instruction;
+            var loadedInstruction = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-load"), Hash($"{keyPrefix}-l-load"),
+                LogisticsCommands.RecordLoadV1, stored.Id, (instruction, now) => instruction.RecordLoad(issued.Version, Guid.NewGuid(), lineId, Kg(loaded),
+                    MeasurementKind.Measured, now), LoadedAudit))!.Instruction.Instruction;
+            await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship"), Hash($"{keyPrefix}-l-ship"),
+                LogisticsCommands.RecordShipmentV1, stored.Id, (instruction, now) => instruction.MarkShipped(loadedInstruction.Version, Guid.NewGuid(), lineId,
+                    Kg(shipped), now), ShippedAudit);
+        }
+
+        /// <summary>
+        /// SAT-D103: the Sales line port answers the LAST APPROVED Rev.0 (6 kg) with <paramref name="cap"/> and the pending state,
+        /// on the direct read, the loading read (the loading limit) and the picker list.
+        /// </summary>
+        public async Task AssertShippingAsync(Guid company, Guid orderId, Guid lineId, string pendingState, string cap, long version)
+        {
+            await using var scope = SalesStore(company);
+            var context = new CompanyContext();
+            context.Set(company);
+            var port = new SalesOrderLineReferencePort(scope.Store, context);
+            var answer = await port.GetApprovedLineForLoadingAsync(orderId, lineId, Day);
+            Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, "6", cap, SalesOrderLineRevisionBasisV1.LastApprovedRevision, pendingState, version),
+                (answer.Outcome, answer.Line!.Revision, answer.Line.QuantityText, answer.Line.ShippingCapQuantityText, answer.Line.RevisionBasis,
+                    answer.Line.PendingApprovalState, answer.Line.Version));
+            Assert.Equal((cap, SalesOrderLineLoadingLimitSourcesV1.ReapprovalShippingCap, version),
+                (answer.Line.LoadingLimit!.MaximumAggregateQuantityText, answer.Line.LoadingLimit.SourceOwner, answer.Line.LoadingLimit.SalesOrderVersion));
+            var listed = Assert.Single((await port.ListApprovedLinesAsync(100, null)).Items, item => item.OrderId == orderId);
+            Assert.Equal((0, "6", cap, pendingState), (listed.Revision, listed.QuantityText, listed.ShippingCapQuantityText, listed.PendingApprovalState));
         }
 
         public async Task<JsonElement> JsonAsync(HttpClient client, string path)

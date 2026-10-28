@@ -27,6 +27,25 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task Shipment_goes_on_when_the_sales_owner_answers_a_newer_approved_revision_but_never_an_older_one()
+    {
+        // SAT-D103 / SAT-D104 (EK13): the instruction was made under Rev.0; the Sales order was revised and approved at Rev.1
+        // (same line, customer, product and unit) — the loaded quantity still ships.
+        var (world, runner, id, line) = await LoadedWorldAsync();
+        world.OrderLines.Revision = 1;
+        var shipped = await world.Service(runner).RecordShipmentAsync(id, line, Shipment(), Metadata("ship-newer"));
+        Assert.Equal("2", shipped.Detail.Lines[0].Shipped);
+
+        // An answer BELOW the instruction's revision cannot come from the owner: refused, no stock exit staged.
+        var (older, olderRunner, olderId, olderLine) = await LoadedWorldAsync(revision: 2);
+        older.OrderLines.Revision = 1;
+        var refused = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            older.Service(olderRunner).RecordShipmentAsync(olderId, olderLine, Shipment(), Metadata("ship-older")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineState), (refused.Status, refused.Code));
+        Assert.Empty(olderRunner.Stock.Requests);
+    }
+
+    [Fact]
     public async Task Delivery_and_reopen_preserve_exact_source_and_replay_never_produces_another_stock_exit()
     {
         var (world, runner, id, line) = await LoadedWorldAsync();
@@ -287,10 +306,11 @@ public sealed partial class LogisticsInstructionServiceTests
 
     private static RecordShipmentRequest Shipment() => new("4", Guid.NewGuid(), Allocation, "7", "11", Guid.NewGuid(), "2", EventTime);
 
-    private static async Task<(World World, FakeRealizationRunner Runner, Guid Id, Guid Line)> LoadedWorldAsync()
+    private static async Task<(World World, FakeRealizationRunner Runner, Guid Id, Guid Line)> LoadedWorldAsync(int revision = 0)
     {
         // Registered synthetic names keep this owner suite independent of the separate central registration patch.
         var world = new World { Bindings = new(CreatePermission, ReadPermission, CreatePermission, CreatePermission, ReadPermission) };
+        world.OrderLines.Revision = revision;
         var runner = new FakeRealizationRunner();
         var created = await world.Service().CreateInstructionAsync(Request(quantity: "10"), Metadata("create"));
         var id = created.Detail.Instruction.Id;

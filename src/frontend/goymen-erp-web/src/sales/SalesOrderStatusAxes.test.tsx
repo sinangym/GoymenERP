@@ -93,10 +93,14 @@ describe('S-04 order status axes (DEC-SAL-001 / API-08 / UI-15)', () => {
     expect(within(list).getByRole('listitem', { name: `${T.axis.lifecycle} ${T.lifecycle.Active}` })).toBeTruthy()
     expect(within(list).getByRole('listitem', { name: `${T.axis.internalApproval} ${APPROVAL_STATE_TEXT.Approved}` })).toBeTruthy()
     expect(within(list).getByRole('listitem', { name: `${T.axis.customerAcceptance} ${T.acceptance.NotRequired}` })).toBeTruthy()
-    for (const axis of ['source', 'invoicing', 'financialClosure'] as const) {
+    for (const axis of ['source', 'financialClosure'] as const) {
       const item = within(list).getByRole('listitem', { name: `${T.axis[axis]} ${T.ownerless.NoSource}` })
       expect(item.textContent).toContain(T.ownerlessNote[axis])
     }
+    // SAT-D103: the invoicing axis has no owner yet, but Sales's gate is open at the approved revision's prices.
+    const invoicing = within(list).getByRole('listitem', { name: `${T.axis.invoicing} ${T.ownerless.NoSource} ${T.invoicingGate.Open}` })
+    expect(invoicing.textContent).toContain(T.ownerlessNote.invoicing)
+    expect(within(invoicing).getByTestId('sales-status-invoicing-gate-note').textContent).toBe(T.invoicingGateNote.Open('Rev.0'))
     // SAT-D29: the realization axis reads "Kısmi" here and carries the warning mark of its completed line.
     expect(within(list).getByRole('listitem', { name: `${T.axis.realization} ${T.realization.Partial} ${T.warningMark}` })).toBeTruthy()
 
@@ -105,6 +109,24 @@ describe('S-04 order status axes (DEC-SAL-001 / API-08 / UI-15)', () => {
     expect(reads[0]).toMatchObject({ method: 'GET', companyId: COMPANY_A, idempotencyKey: null, body: null })
     expect(reads[0].url).toContain(`/sales/drafts/${DRAFT}/status`)
     expect(section.getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('says invoicing waits while a newer revision awaits re-approval, and shipping goes on under the last approved one (SAT-D103)', async () => {
+    const pending = status()
+    pending.revision = 'Rev.1'
+    pending.internalApproval.state = 'PendingApproval'
+    pending.realization.basisRevision = 'Rev.0'
+    pending.invoicing = { state: 'NoSource', gate: 'AwaitingReapproval', priceBasisRevision: null }
+    installFetch({ onDetail: () => json(detail('PendingApproval', 'Rev.1')), onStatus: () => json(pending) })
+    renderSalesApp(PATH)
+
+    const section = await loaded()
+    const gate = within(section).getByTestId('sales-status-invoicing-gate')
+    expect(gate.getAttribute('data-gate')).toBe('AwaitingReapproval')
+    expect(gate.textContent).toBe(T.invoicingGate.AwaitingReapproval)
+    expect(within(section).getByTestId('sales-status-invoicing-gate-note').textContent).toBe(T.invoicingGateNote.AwaitingReapproval(''))
+    expect(T.invoicingGateNote.AwaitingReapproval('')).toContain('fiziksel sevkiyat son onaylı revizyonla sürer')
+    expect(T.invoicingGateNote.AwaitingReapproval('')).toContain('faturası onay gelene kadar bekler')
   })
 
   it('shows "kapanmaya hazır: Hayır" and says why: the owner-less axes have no source yet (SAT-D32)', async () => {
@@ -208,6 +230,7 @@ describe('S-04 order status axes (DEC-SAL-001 / API-08 / UI-15)', () => {
     const pending = status()
     pending.revision = 'Rev.1'
     pending.internalApproval.state = 'PendingApproval'
+    pending.invoicing = { state: 'NoSource', gate: 'AwaitingReapproval', priceBasisRevision: null }
     Object.assign(pending.realization, { state: 'PendingReapproval', warning: false, basisRevision: null, tolerance: null })
     for (const line of pending.realization.lines) {
       Object.assign(line, {
@@ -232,6 +255,7 @@ describe('S-04 order status axes (DEC-SAL-001 / API-08 / UI-15)', () => {
     const earlier = status()
     earlier.revision = 'Rev.1'
     earlier.internalApproval.state = 'PendingApproval'
+    earlier.invoicing = { state: 'NoSource', gate: 'AwaitingReapproval', priceBasisRevision: null }
     earlier.realization.lines[1].ordered = '20'
     earlier.realization.lines[1].deviation = '20'
     installFetch({ onDetail: () => json(detail('PendingApproval', 'Rev.1')), onStatus: () => json(earlier) })

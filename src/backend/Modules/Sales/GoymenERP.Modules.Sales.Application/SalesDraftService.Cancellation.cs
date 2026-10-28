@@ -410,13 +410,38 @@ public sealed partial class SalesDraftService
         // The Logistics producer caps the aggregate instructed quantity through the Sales-owned approved-order limit.
         // Validate the fully aggregated answer as well: two individually plausible owner rows must not jointly exceed
         // the canonical Sales quantity. An absent Logistics row remains a valid zero; a positive-count row cannot be zero.
-        if (result.Any(pair => pair.Value.Instructed > lines[pair.Key].Quantity.Value
+        // SAT-D104 (EK13): a quantity revision no longer waits for the instructions to be resolved, so an instruction made
+        // under an earlier APPROVED quantity may stand above a decreased one — the bound is the largest quantity the line was
+        // ever approved or now requests (every cap Logistics could have been answered is at most that).
+        if (result.Any(pair => pair.Value.Instructed > InstructedBound(draft, lines[pair.Key])
             || ((pair.Value.Count == 0) != (pair.Value.Instructed == 0m))))
         {
             return null;
         }
 
         return new LoadingImpact(result, includeDispatchNoteCandidates ? answer.ActiveApprovedDispatchNoteCount : 0);
+    }
+
+    /// <summary>
+    /// The most Logistics may have instructed for <paramref name="line"/>: its current quantity or, when larger, the quantity
+    /// any archived approved revision held for it (SAT-D104). An archived quantity that does not read is ignored here — the
+    /// bound only widens for a value that reads exactly.
+    /// </summary>
+    private static decimal InstructedBound(SalesOrderDraft draft, SalesOrderDraftLine line)
+    {
+        var bound = line.Quantity.Value;
+        foreach (var revision in draft.ArchivedRevisions)
+        {
+            var archived = revision.Lines.FirstOrDefault(candidate => candidate.LineId == line.Id);
+            if (archived is not null && archived.OrderUnitId == line.OrderUnit.UnitId
+                && decimal.TryParse(archived.QuantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var approved)
+                && approved > bound)
+            {
+                bound = approved;
+            }
+        }
+
+        return bound;
     }
 
     private static bool FitsScale(decimal value, QuantityUnit unit)

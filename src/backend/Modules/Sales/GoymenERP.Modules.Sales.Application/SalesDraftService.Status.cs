@@ -20,7 +20,8 @@ namespace GoymenERP.Modules.Sales.Application;
 /// refused, inactive, out-of-window, other-company or malformed policy is <c>PolicyUnavailable</c> — never a default; an
 /// owner that is not composed, fails or answers a malformed value is <c>Unreadable</c> — never zero.</item>
 /// <item><b>No source yet</b>: source/allocation strategy (MOD-05, API-11), invoicing (S5) and financial closure (MOD-04)
-/// have no owner module on main: <c>NoSource</c>, never complete or zero.</item>
+/// have no owner module on main: <c>NoSource</c>, never complete or zero. The invoicing axis carries the Sales-owned SAT-D103
+/// gate (<see cref="InvoicingGate"/>) for the S5 invoicing owner to obey.</item>
 /// <item><b>Fences</b> (the draft read's): before anything is read, after the draft read, after the delivery owner and after the
 /// Settings answer. Another company's draft is 404 (tenant filter) and no owner is asked for it.</item>
 /// </list>
@@ -57,7 +58,9 @@ public sealed partial class SalesDraftService
         var noSource = new SalesDraftStatusAxisV1(SalesDraftStatusAxisStatesV1.NoSource);
         var lifecycle = Lifecycle(draft);
         var acceptance = CustomerAcceptanceAxis(draft);
-        var (source, invoicing, financialClosure) = (noSource, noSource, noSource);
+        var (source, financialClosure) = (noSource, noSource);
+        var (gate, priceBasis) = InvoicingGate(draft);
+        var invoicing = new SalesDraftInvoicingAxisV1(SalesDraftStatusAxisStatesV1.NoSource, gate, priceBasis);
         // SAT-D32 "kapanmaya hazır": ALL seven axes complete ("tüm eksenler tamamlansa"). An axis that is NoSource, Unreadable or
         // PolicyUnavailable is never complete, so while source (MOD-05), invoicing (S5) and financial closure (MOD-04) have no
         // owner the flag is always false. A flag only — closing stays the user's action and nothing is closed here.
@@ -65,7 +68,7 @@ public sealed partial class SalesDraftService
             && draft.ApprovalState == InternalApprovalState.Approved
             && acceptance.State is SalesDraftStatusAxisStatesV1.Accepted or SalesDraftStatusAxisStatesV1.NotRequired
             && realization.State == SalesDraftStatusAxisStatesV1.Completed
-            && IsComplete(source) && IsComplete(invoicing) && IsComplete(financialClosure);
+            && IsComplete(source) && IsComplete(new SalesDraftStatusAxisV1(invoicing.State)) && IsComplete(financialClosure);
         return new SalesOrderDraftStatusResponse(
             draft.Version.ToString(CultureInfo.InvariantCulture),
             SalesDraftApiV1.RevisionText(draft.Revision),
@@ -78,6 +81,23 @@ public sealed partial class SalesDraftService
             financialClosure,
             readyToClose);
     }
+
+    /// <summary>
+    /// SAT-D103 (EK13): the order's invoicing gate. The current revision approved → <c>Open</c> at that revision. A newer
+    /// revision in <c>Preparing</c> / <c>PendingApproval</c> after an approved one was archived → <c>AwaitingReapproval</c>
+    /// (invoicing waits for the decision; no price basis). That newer revision <c>Rejected</c> → <c>Open</c> at the LAST
+    /// APPROVED revision ("red gelirse son onaylı fiyatla"). Anything else (never approved, withdrawn) → <c>NotApproved</c>.
+    /// The lifecycle, the customer acceptance and the shipments are the invoicing owner's own preconditions (S5 API-32).
+    /// </summary>
+    private static (string Gate, string? PriceBasisRevision) InvoicingGate(SalesOrderDraft draft) => draft.ApprovalState switch
+    {
+        InternalApprovalState.Approved => (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(draft.Revision)),
+        InternalApprovalState.Preparing or InternalApprovalState.PendingApproval when draft.ArchivedRevisions.Count > 0 =>
+            (SalesDraftInvoicingGatesV1.AwaitingReapproval, null),
+        InternalApprovalState.Rejected when draft.ArchivedRevisions.Count > 0 =>
+            (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(draft.ArchivedRevisions[^1].Revision)),
+        _ => (SalesDraftInvoicingGatesV1.NotApproved, null),
+    };
 
     /// <summary>
     /// Whether an owner-less axis (source, invoicing, financial closure) is complete. None of their owners exists, so no complete

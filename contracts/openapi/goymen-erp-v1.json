@@ -90614,6 +90614,28 @@
           }
         }
       },
+      "SalesDraftInvoicingAxisV1": {
+        "required": [
+          "state",
+          "gate",
+          "priceBasisRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "gate": {
+            "type": "string"
+          },
+          "priceBasisRevision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SalesDraftLineCommercialV1": {
         "required": [
           "lineId",
@@ -93165,7 +93187,7 @@
             "$ref": "#/components/schemas/SalesDraftRealizationAxisV1"
           },
           "invoicing": {
-            "$ref": "#/components/schemas/SalesDraftStatusAxisV1"
+            "$ref": "#/components/schemas/SalesDraftInvoicingAxisV1"
           },
           "financialClosure": {
             "$ref": "#/components/schemas/SalesDraftStatusAxisV1"

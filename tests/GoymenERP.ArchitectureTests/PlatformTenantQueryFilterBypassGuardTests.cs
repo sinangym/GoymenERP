@@ -335,8 +335,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (87dc8166… -> d74f7c2d…).
             // API-03 / SAT-D11: +2 SalesOrderTotalsSqlServerRelationalAcceptanceTests facts, merged over MOD-01 / API-06, kept
             // ordinal-sorted (d74f7c2d… -> 0d7854cc…); +1 out-of-range totals fact after review B P2-1 (0d7854cc… -> 78eb83d7…).
+            // SAT-D103 / SAT-D104 / SAT-D111 (EK13): the quantity revision's "a loading line blocks" fact is replaced by the
+            // shipped/loaded floor and re-approval cap fact, +1 price re-approval fact, kept ordinal-sorted (78eb83d7… -> 3534812f…).
             ["tools/relational_inventory/sales.txt"] =
-                "78eb83d735e98263882363181edda16a4856a1b39a21fa11fc842fb9cee896ef",
+                "3534812f23132d752c9a562444c81d1d2f2c14dc6dee38e32df11e783ebe809f",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

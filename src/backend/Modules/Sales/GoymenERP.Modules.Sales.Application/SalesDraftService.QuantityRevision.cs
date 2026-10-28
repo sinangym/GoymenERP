@@ -16,16 +16,24 @@ namespace GoymenERP.Modules.Sales.Application;
 /// second approved money profile and a restated price, and a party or product change re-binds the account, the address,
 /// the contact and the product snapshot — each its own decision, never guessed (README "Quantity revision").</item>
 /// <item><b>Re-approval:</b> an APPROVED order is archived first (its approval facts, its lines as they were and the reason)
-/// and goes on as the next revision, back in <c>Preparing</c>; the existing submit/approve flow approves it. Until then the
-/// Sales line port answers the order's lines <c>NotApproved</c>, so no owner acts on unapproved figures.</item>
-/// <item><b>Fail-closed downstream:</b> the owners that can link a record to an order line are read afresh through their
-/// ports (Inventory's ACTIVE allocations, Logistics' loading-instruction lines — the cancellation's ports). Any such record
-/// refuses the revision (409 <c>sales_revision_blocked</c>, recorded), an owner that cannot answer is 503 (not recorded):
-/// Sales releases nothing — the user resolves the owner's record in its own screen first, the cancellation's rule.</item>
+/// and goes on as the next revision, back in <c>Preparing</c>; the existing submit/approve flow approves it. SAT-D103 /
+/// SAT-D104 / SAT-D111 (EK13): until then physical shipping goes on under the LAST APPROVED revision — the Sales line port
+/// answers that revision with the shipping cap (the last approved quantity; an increase ships only after its approval; a
+/// decrease waiting for approval caps at the requested quantity; a rejection restores the last approved quantity) — and the
+/// new values reach no consumer.</item>
+/// <item><b>The floor (SAT-D104):</b> Logistics' recorded totals of every line are read afresh through the loading port
+/// (<see cref="ISalesOrderLoadingReadPortV1"/>, the cancellation's port): a line may not go below what is already SHIPPED
+/// (<c>sales_revision_below_shipped</c>) nor — the fail-closed reading of SAT-D111, NEEDS-SINAN — below what is loaded and
+/// not yet shipped (<c>sales_revision_below_loaded</c>); both are a 422 on <c>lines[i].quantity</c>, not recorded (the floor
+/// moves with Logistics). An owner that cannot answer is 503 (not recorded): no quantity changes on an unread floor. An
+/// active allocation or a loading instruction NO LONGER blocks the revision (SAT-D104 replaces that reading); an active
+/// allocation above a decreased quantity is the allocation owner's (Inventory) concern — Sales releases nothing, the S-04
+/// form says so.</item>
 /// <item><b>Ordering</b> (the cancellation's): fence → version shape → the key's replay (§4/§7; asks no owner) → the store
 /// reads the draft → fence → the domain's own preconditions (version, state, reason: a stale or wrong-state command asks no
-/// owner) → each owner (fence after each) → blockers → last fence → ONE save. Nothing is measured after the commit (S03).
-/// Residual race (declared): no transaction spans Sales and the owners.</item>
+/// owner) → the loading owner (fence after it) → the floor → last fence → ONE save. Nothing is measured after the commit
+/// (S03). Residual race (declared): no transaction spans Sales and Logistics — a load committed between the floor read and
+/// the save is not seen by this save; the port's cap then refuses any further load above the requested quantity.</item>
 /// </list>
 /// </summary>
 public sealed partial class SalesDraftService
@@ -79,16 +87,9 @@ public sealed partial class SalesDraftService
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
                     // The domain's own preconditions first: a stale, cancelled, pending or withdrawn draft asks no owner.
                     draft.RequireQuantityRevisable(expectedVersion, request.Reason);
-                    var links = await ReadRevisionLinksAsync(scope, permission, draft, writeCancellationToken);
-                    if (links.Unreadable)
-                    {
-                        throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
-                    }
-
-                    if (links.Blockers.Count > 0)
-                    {
-                        throw new RevisionBlocked(links.Blockers);
-                    }
+                    var loading = await ReadLoadingAsync(scope, permission, draft, writeCancellationToken)
+                        ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+                    RequireRevisionFloor(draft, inputs, loading);
 
                     // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
@@ -103,12 +104,6 @@ public sealed partial class SalesDraftService
         {
             throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.StateConflict,
                 [new("approvalState", exception.Code)]), cancellationToken, commandName, draftId);
-        }
-        catch (RevisionBlocked blocked)
-        {
-            throw await TerminalAsync(scope, permission, envelope, requestHash, new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.RevisionBlocked,
-                [.. blocked.Sources.Select(source => new SalesDraftFieldError(source, SalesCancellationImpactStatusesV1.Present))]),
-                cancellationToken, commandName, draftId);
         }
         catch (SalesRuleException exception) when (exception.Code is SalesRuleCodes.RevisionReasonRequired or SalesRuleCodes.RevisionReasonTooLong)
         {
@@ -172,40 +167,38 @@ public sealed partial class SalesDraftService
         return index < 0 ? "lines" : $"lines[{index}].quantity";
     }
 
-    private sealed class RevisionBlocked(IReadOnlyList<string> sources) : Exception
-    {
-        public IReadOnlyList<string> Sources { get; } = sources;
-    }
-
-    private sealed record RevisionLinks(IReadOnlyList<string> Blockers, bool Unreadable);
-
     /// <summary>
-    /// The owners' links to the order, read afresh through the cancellation's ports under the quantity name (measured after
-    /// each): an active allocation or ANY loading-instruction line of ANY line of the order blocks — the whole order re-enters
-    /// approval, and a record keyed on the approved revision would otherwise stand beside figures nobody approved. An owner
-    /// not composed, failing or malformed is unreadable (never an assumed "none").
+    /// SAT-D104 (and the fail-closed SAT-D111 reading): every named line's new quantity against Logistics' recorded totals of
+    /// that line in its order unit (absent = nothing recorded = 0). Below the shipped total → <c>sales_revision_below_shipped</c>;
+    /// below the loaded (not yet shipped) total → <c>sales_revision_below_loaded</c>; refused on that line, before anything changes.
+    /// An unknown line is left to the domain's own <c>sales_revision_lines_mismatch</c>.
     /// </summary>
-    private async Task<RevisionLinks> ReadRevisionLinksAsync(Scope scope, string? permission, SalesOrderDraft draft,
-        CancellationToken cancellationToken)
+    private static void RequireRevisionFloor(SalesOrderDraft draft, IReadOnlyList<LineQuantityInput> inputs, IReadOnlyDictionary<Guid, LineLoading> loading)
     {
-        var allocationsByLine = await ReadAllocationsAsync(scope, permission, draft, cancellationToken);
-        var loadingByLine = await ReadLoadingAsync(scope, permission, draft, cancellationToken);
-        if (allocationsByLine is null || loadingByLine is null)
+        foreach (var input in inputs)
         {
-            return new RevisionLinks([], Unreadable: true);
-        }
+            if (input is null || draft.Lines.All(line => line.Id != input.LineId))
+            {
+                continue;
+            }
 
-        var blockers = new List<string>(2);
-        if (allocationsByLine.Values.Any(line => line.Count > 0))
-        {
-            blockers.Add(SalesCancellationImpactSourcesV1.ActiveAllocations);
-        }
+            var recorded = loading.GetValueOrDefault(input.LineId);
+            if (recorded is null)
+            {
+                continue;
+            }
 
-        if (loadingByLine.Values.Any(line => line.Count > 0 || line.Instructed > 0m))
-        {
-            blockers.Add(SalesCancellationImpactSourcesV1.LoadingWithoutDispatchNote);
-        }
+            if (input.Quantity < recorded.Shipped)
+            {
+                throw new SalesRuleException(SalesRuleCodes.RevisionBelowShipped,
+                    "Yeni miktar bu satırda sevk edilmiş miktarın altında; sevk edilmiş miktarın altına inilmez.", input.LineId);
+            }
 
-        return new RevisionLinks(blockers, Unreadable: false);
+            if (input.Quantity < recorded.Loaded)
+            {
+                throw new SalesRuleException(SalesRuleCodes.RevisionBelowLoaded,
+                    "Yeni miktar bu satırda yüklenmiş miktarın altında; önce Lojistik'te yükleme düzeltilir.", input.LineId);
+            }
+        }
     }
 }

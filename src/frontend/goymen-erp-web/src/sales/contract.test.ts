@@ -699,6 +699,14 @@ describe('decodeLoadingProgress', () => {
     expect(salesDraftLoadingProgressPath('abc')).toBe('/sales/drafts/abc/loading-progress')
   })
 
+  it('above Rev.0 accepts an instruction made under an earlier approved quantity above the current one (SAT-D104), nothing else', () => {
+    const above = first({ ordered: '10', loadingInstructionLines: 1, instructed: '12', loaded: '6.5', shipped: '4', delivered: '1.25' })
+    expect(decodeLoadingProgress(answer([above, second()]), BOUND)).toBeNull()
+    expect(decodeLoadingProgress(answer([above, second()]), { ...BOUND, revised: true })?.lines[0].instructed).toBe('12')
+    // The rest of the owner chain still holds on a revised order.
+    expect(decodeLoadingProgress(answer([first({ loaded: '9', shipped: '9.5' }), second()]), { ...BOUND, revised: true })).toBeNull()
+  })
+
   it('reads every line once with its exact text, in the detail\'s order', () => {
     expect(decodeLoadingProgress(answer(), BOUND)).toEqual({ draftVersion: BOUND.draftVersion, lines: [first(), second()] })
     // The answer's own order is not the contract; the detail's is what the screen shows.

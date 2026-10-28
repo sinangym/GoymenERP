@@ -13,6 +13,10 @@
  *    `NotStarted` line is `Under` by exactly `ordered`; `warning` only on a `Completed` warn-band line (SAT-D29/D31);
  *    `approvedOverDelivery` only on a `Completed` over-delivery (SAT-D30);
  *  - the tolerance (SAT-D5) was asked for the order's business date (SAT-D29) and is inside its own window;
+ *  - the invoicing axis carries the Sales-owned SAT-D103 gate (EK13): `Open` at the approved revision whose prices an invoice
+ *    uses (the current one once approved; the last approved one — always the previous revision — after a rejection),
+ *    `AwaitingReapproval` while a newer revision waits for its decision (shipping goes on, invoicing waits), `NotApproved`
+ *    before any approval; the gate is bound to the detail's approval state and revision;
  *  - `readyToClose` (SAT-D32) is true only when ALL seven axes are complete. `NoSource`, `Unreadable` and
  *    `PolicyUnavailable` are never complete, so a `true` beside any of them is a contradiction and refused.
  *
@@ -20,7 +24,7 @@
  * caller fails closed.
  */
 
-import { APPROVAL_STATE, CANCELLED_STATE, CLOSED_STATE, DRAFT_STATE, salesDraftDetailPath, type ApprovalState, type DraftDetail } from './contract'
+import { APPROVAL_STATE, CANCELLED_STATE, CLOSED_STATE, DRAFT_STATE, REV_0, salesDraftDetailPath, type ApprovalState, type DraftDetail } from './contract'
 import { isDateOnly, isReferenceId } from './wirePrimitives'
 
 /** API-08: the seven axes of one order (GET, under the draft read). */
@@ -60,6 +64,15 @@ export type AcceptanceAxisState = (typeof ACCEPTANCE_AXIS_STATES)[number]
  */
 export const OWNERLESS_AXIS_STATES = [STATUS_AXIS_STATE.noSource] as const
 export type OwnerlessAxisState = (typeof OWNERLESS_AXIS_STATES)[number]
+
+/** SAT-D103 (EK13): `SalesDraftInvoicingGatesV1` — the Sales-owned gate the (future) invoicing owner obeys. */
+export const INVOICING_GATE = {
+  notApproved: 'NotApproved',
+  open: 'Open',
+  awaitingReapproval: 'AwaitingReapproval',
+} as const
+export const INVOICING_GATES = [INVOICING_GATE.notApproved, INVOICING_GATE.open, INVOICING_GATE.awaitingReapproval] as const
+export type InvoicingGate = (typeof INVOICING_GATES)[number]
 
 /** The realization axis and its lines (SAT-D5, SAT-D15–D17, SAT-D29–D31). */
 export const REALIZATION_STATES = [
@@ -131,6 +144,8 @@ export interface OrderStatus {
   readonly source: OwnerlessAxisState
   readonly realization: RealizationAxis
   readonly invoicing: OwnerlessAxisState
+  /** SAT-D103: the invoicing gate and the revision whose approved prices an invoice uses (null unless the gate is `Open`). */
+  readonly invoicingGate: { readonly gate: InvoicingGate; readonly priceBasisRevision: string | null }
   readonly financialClosure: OwnerlessAxisState
   readonly readyToClose: boolean
 }
@@ -305,6 +320,38 @@ function decodeRealization(value: unknown, detail: DraftDetail): RealizationAxis
   return { state, warning: o.warning, basisRevision: o.basisRevision, tolerance, lines }
 }
 
+/**
+ * "Rev.N" → "Rev.(N−1)"; null for Rev.0 or anything that is not a revision. A revision is archived only when an approved
+ * revision is revised, so above Rev.0 the previous revision is the last approved one.
+ */
+export function previousRevision(revision: string): string | null {
+  if (!isRevision(revision) || revision === REV_0) return null
+  const number = Number(revision.slice(4))
+  return Number.isSafeInteger(number) ? `Rev.${number - 1}` : null
+}
+
+/**
+ * SAT-D103: the invoicing axis `{state, gate, priceBasisRevision}`, bound to the detail. A revision is archived only when an
+ * approved revision is revised, so a detail above Rev.0 that is not approved always has an approved previous revision:
+ * Preparing/PendingApproval → `AwaitingReapproval` (no basis), Rejected → `Open` at that previous revision. Approved →
+ * `Open` at the current revision; anything else → `NotApproved` (no basis).
+ */
+function decodeInvoicing(value: unknown, detail: DraftDetail): { state: OwnerlessAxisState; gate: InvoicingGate; priceBasisRevision: string | null } | null {
+  const o = exact(value, ['state', 'gate', 'priceBasisRevision'])
+  if (o === null || !oneOf(OWNERLESS_AXIS_STATES, o.state) || !oneOf(INVOICING_GATES, o.gate)) return null
+  if (!(o.priceBasisRevision === null || isRevision(o.priceBasisRevision))) return null
+  const { approvalState, revision } = detail.draft
+  const revised = revision !== REV_0
+  const expected: { gate: InvoicingGate; basis: string | null } =
+    approvalState === APPROVAL_STATE.approved ? { gate: INVOICING_GATE.open, basis: revision }
+      : revised && (approvalState === APPROVAL_STATE.preparing || approvalState === APPROVAL_STATE.pendingApproval)
+        ? { gate: INVOICING_GATE.awaitingReapproval, basis: null }
+        : revised && approvalState === APPROVAL_STATE.rejected ? { gate: INVOICING_GATE.open, basis: previousRevision(revision) }
+          : { gate: INVOICING_GATE.notApproved, basis: null }
+  if (o.gate !== expected.gate || o.priceBasisRevision !== expected.basis) return null
+  return { state: o.state, gate: o.gate, priceBasisRevision: o.priceBasisRevision }
+}
+
 function decodeOwnerless(value: unknown): OwnerlessAxisState | null {
   const o = exact(value, ['state'])
   return o !== null && oneOf(OWNERLESS_AXIS_STATES, o.state) ? o.state : null
@@ -346,10 +393,11 @@ export function decodeOrderStatus(value: unknown, detail: DraftDetail): OrderSta
   ) return null
 
   const source = decodeOwnerless(o.source)
-  const invoicing = decodeOwnerless(o.invoicing)
+  const invoicingAxis = decodeInvoicing(o.invoicing, detail)
+  const invoicing = invoicingAxis?.state ?? null
   const financialClosure = decodeOwnerless(o.financialClosure)
   const realization = decodeRealization(o.realization, detail)
-  if (source === null || invoicing === null || financialClosure === null || realization === null) return null
+  if (source === null || invoicingAxis === null || invoicing === null || financialClosure === null || realization === null) return null
 
   // SAT-D32: "kapanmaya hazır" only when every axis is complete — never beside an axis that cannot be.
   if (o.readyToClose && [source, invoicing, financialClosure, realization.state].some((s) => NEVER_COMPLETE.includes(s))) return null
@@ -363,6 +411,7 @@ export function decodeOrderStatus(value: unknown, detail: DraftDetail): OrderSta
     source,
     realization,
     invoicing,
+    invoicingGate: { gate: invoicingAxis.gate, priceBasisRevision: invoicingAxis.priceBasisRevision },
     financialClosure,
     readyToClose: o.readyToClose,
   }

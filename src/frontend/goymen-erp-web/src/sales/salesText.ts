@@ -4,6 +4,7 @@
 
 import type {
   AcceptanceAxisState,
+  InvoicingGate,
   LifecycleAxisState,
   OwnerlessAxis,
   OwnerlessAxisState,
@@ -349,6 +350,14 @@ export const ORDER_DETAIL_TEXT = {
     },
     approvedNote: 'Onaylı siparişin satırları doğrudan değişmez; değişiklik yeni bir revizyonla yapılır ve yeniden onaya gider.',
     rejectedNote: 'Reddedilen sipariş düzeltilip yeniden onaya gönderilebilir.',
+    /** SAT-D103 / SAT-D104 / SAT-D111 (EK13): a newer revision of an approved order waits for its decision. */
+    reapprovalNote: (lastApproved: string) =>
+      `Yeni revizyon onay bekliyor. Bu sürede fiziksel sevkiyat son onaylı revizyonla (${lastApproved}) sürer: artan miktar ` +
+      'ancak onaydan sonra sevk edilir, azaltılan miktarda sevk yeni miktarda durur. Siparişin faturası onay gelene kadar ' +
+      'bekler. Yeni değerler onaydan önce Lojistik, Stok ve faturaya gitmez.',
+    reapprovalRejectedNote: (lastApproved: string) =>
+      `Revizyon reddedildi. Sevkiyat ve fatura son onaylı revizyonla (${lastApproved}; miktar ve fiyat) sürer. Revizyon ` +
+      'düzeltilip yeniden onaya gönderilebilir.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -382,7 +391,9 @@ export const ORDER_DETAIL_TEXT = {
   priceRevision: {
     heading: 'Fiyat ve iskonto revizyonu',
     description: 'Her satırın fiyatını ve iskonto yüzdesini birlikte kaydedin. Boş fiyat ücretsiz anlamına gelmez.',
-    approvedWarning: 'Onaylı fiyat değişikliği önceki onayı silmez; eski revizyon arşivlenir ve sipariş yeniden onaya girer.',
+    approvedWarning:
+      'Onaylı fiyat değişikliği önceki onayı silmez; eski revizyon arşivlenir ve sipariş yeniden onaya girer. Yeniden onay ' +
+      'sürerken sevkiyat son onaylı revizyonla sürer, fatura onayı bekler; reddedilirse son onaylı fiyatla faturalanır.',
     withheld: 'Fiyatları görme yetkisi olmadan mevcut ticari değerler güvenle değiştirilemez.',
     stateUnavailable: 'Onay bekleyen, geri çekilmiş veya iptal edilmiş siparişte fiyat revizyonu yapılamaz.',
     pricingUnavailable: 'Güncel satır fiyatları eksiksiz okunmadan yeni fiyat revizyonu kaydedilemez.',
@@ -418,9 +429,12 @@ export const ORDER_DETAIL_TEXT = {
     description:
       'Satır miktarlarını gerekçeyle değiştirin. Birim, ürün, fiyat ve termin dilimleri bu revizyonda değişmez; yeni miktar planlanan dilimlerin toplamından küçük olamaz.',
     approvedWarning:
-      'Onaylı siparişte miktar değişikliği önceki onayı silmez; mevcut revizyon gerekçesiyle arşivlenir ve sipariş yeni revizyonla yeniden onaya girer.',
+      'Onaylı siparişte miktar değişikliği önceki onayı silmez; mevcut revizyon gerekçesiyle arşivlenir ve sipariş yeni revizyonla ' +
+      'yeniden onaya girer. Onay beklerken sevkiyat son onaylı miktara kadar sürer: artış ancak onaydan sonra sevk edilir, ' +
+      'azaltmada sevk yeni miktarda durur; reddedilirse son onaylı miktar geçerli kalır. Fatura onay gelene kadar bekler.',
     linkedWarning:
-      'Siparişe bağlı tahsis ya da yükleme kaydı varken miktar değiştirilemez; önce o kayıtlar kendi ekranlarında kapatılmalıdır.',
+      'Bağlı tahsis ya da yükleme talimatı revizyonu engellemez. Yeni miktar sevk edilmiş miktarın, azaltmada yüklenmiş ' +
+      'miktarın altına inemez. Azaltılan miktarın üstünde kalan aktif tahsis Stok ekranında düzenlenir; Satış tahsisi serbest bırakmaz.',
     stateUnavailable: 'Onay bekleyen, geri çekilmiş veya iptal edilmiş siparişte miktar revizyonu yapılamaz.',
     quantity: (unitId: string) => `Yeni miktar (sipariş birimi ${unitId})`,
     current: (quantity: string) => `Mevcut: ${quantity}`,
@@ -442,6 +456,11 @@ export const ORDER_DETAIL_TEXT = {
     validation: 'Miktar revizyonu uygulanmadı; satır miktarlarını ve gerekçeyi kontrol edin.',
     unavailable: 'Bağlı kayıt sahiplerine (stok, sevkiyat) şu anda ulaşılamıyor; miktar değiştirilmedi. Daha sonra tekrar deneyin.',
     unexpected: 'Miktar revizyonu uygulanmadı. Beklenmeyen bir yanıt alındı.',
+    /** SAT-D104 (and the fail-closed SAT-D111 reading): the line floor refusals on `lines[i].quantity`. */
+    belowShipped: (lineNo: number | null) =>
+      `${lineNo === null ? 'Bir' : `${lineNo}.`} satırda yeni miktar sevk edilmiş miktarın altında; sevk edilmiş miktarın altına inilmez.`,
+    belowLoaded: (lineNo: number | null) =>
+      `${lineNo === null ? 'Bir' : `${lineNo}.`} satırda yeni miktar yüklenmiş miktarın altında; önce Lojistik ekranında yükleme düzeltilmelidir.`,
     blockedSource: (source: string) =>
       source === 'inventory.active-allocations' ? 'Aktif stok tahsisi var.'
         : source === 'logistics.loading-without-dispatch-note' ? 'Yükleme talimatı satırı var.'
@@ -994,6 +1013,20 @@ export const ORDER_STATUS_TEXT = {
   } satisfies Record<AcceptanceAxisState, string>,
   acceptedRevision: (revision: string) => `Son kayıtlı müşteri onayı: ${revision}`,
   ownerless: { NoSource: 'Kaynağı henüz yok' } satisfies Record<OwnerlessAxisState, string>,
+  /** SAT-D103 (EK13): the Sales-owned invoicing gate. */
+  invoicingGate: {
+    NotApproved: 'Faturaya kapalı (onaylı revizyon yok)',
+    Open: 'Faturaya açık',
+    AwaitingReapproval: 'Fatura yeniden onayı bekliyor',
+  } satisfies Record<InvoicingGate, string>,
+  invoicingGateNote: {
+    NotApproved: () => 'Sipariş henüz onaylanmadığı için faturalanamaz.',
+    Open: (revision: string) => `Fatura ${revision} revizyonunun onaylı fiyatlarıyla hazırlanır.`,
+    AwaitingReapproval: () =>
+      'Yeni revizyon (fiyat, iskonto, kur ya da miktar değişikliği) onay bekliyor. Bu sürede fiziksel sevkiyat son onaylı ' +
+      'revizyonla sürer; siparişin faturası onay gelene kadar bekler. Onaylanırsa yeni fiyatla, reddedilirse son onaylı ' +
+      'fiyatla faturalanır.',
+  } as Readonly<Record<InvoicingGate, (revision: string) => string>>,
   ownerlessNote: {
     source: 'Kaynak stratejisi ve tahsis ekseninin sahibi modül henüz yok; eksen tamamlanmış ya da sıfır sayılmaz.',
     invoicing: 'Satış faturalama modülü henüz yok; eksen tamamlanmış ya da sıfır sayılmaz.',

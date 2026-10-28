@@ -160,8 +160,13 @@ public sealed partial class LogisticsInstructionService
             throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
         }
 
+        // SAT-D103 / SAT-D104 (EK13): physical shipping goes on across a Sales re-approval. The Sales owner answers only an
+        // APPROVED revision — during a re-approval the last approved one (never the pending values), after the approval the
+        // new one — and revisions only grow, so an instruction made under an earlier approved revision of the SAME line,
+        // customer, product and unit still ships; the quantity caps stay the Sales loading limit's (checked at every load). An
+        // answer BELOW the instruction's revision cannot come from the owner and is refused.
         if (approved.PartyId != stored.Instruction.CustomerPartyId || approved.CompanyAccountId != stored.Instruction.CompanyAccountId
-            || approved.ProductId != line.ProductId || approved.OrderUnitId != line.UnitId || approved.Revision != line.Source.Revision)
+            || approved.ProductId != line.ProductId || approved.OrderUnitId != line.UnitId || approved.Revision < line.Source.Revision)
         {
             throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState);
         }

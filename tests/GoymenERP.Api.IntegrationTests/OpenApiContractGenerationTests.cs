@@ -3818,7 +3818,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("customerAcceptance", "ref:SalesDraftCustomerAcceptanceAxisV1"),
                     ("source", "ref:SalesDraftStatusAxisV1"),
                     ("realization", "ref:SalesDraftRealizationAxisV1"),
-                    ("invoicing", "ref:SalesDraftStatusAxisV1"),
+                    ("invoicing", "ref:SalesDraftInvoicingAxisV1"),
                     ("financialClosure", "ref:SalesDraftStatusAxisV1"),
                     ("readyToClose", "type:boolean")),
                 ["SalesOrderDraftTotalsResponse"] = ObjectSchema(
@@ -3899,6 +3899,12 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SalesDraftStatusAxisV1"] = ObjectSchema(
                     ["state"],
                     ("state", "type:string")),
+                // SAT-D103 (EK13): the invoicing axis carries the Sales-owned gate and the price-basis revision.
+                ["SalesDraftInvoicingAxisV1"] = ObjectSchema(
+                    ["state", "gate", "priceBasisRevision"],
+                    ("state", "type:string"),
+                    ("gate", "type:string"),
+                    ("priceBasisRevision", "type:null|string")),
                 ["SalesDraftCustomerAcceptanceAxisV1"] = ObjectSchema(
                     ["state", "acceptedRevision"],
                     ("state", "type:string"),
