@@ -46,6 +46,27 @@ public sealed partial class LogisticsInstructionServiceTests
     }
 
     [Fact]
+    public async Task Shipment_above_the_sales_owners_current_cap_is_refused_with_no_stock_exit_and_within_it_ships()
+    {
+        // K3-REVIEW-A P1-1 (b): 5 was loaded under the earlier cap; Sales now answers a cap of 4 (a decrease waiting for, or
+        // just given, approval). 2 more already shipped on another instruction of the line: 2 + 3 > 4 is refused.
+        var (world, runner, id, line) = await LoadedWorldAsync();
+        world.OrderLines.ShippingCap = "4";
+        world.Store.ExtraShipped = 2m;
+        var refused = await Assert.ThrowsAsync<LogisticsInstructionServiceException>(() =>
+            world.Service(runner).RecordShipmentAsync(id, line, Shipment() with { Quantity = "3" }, Metadata("ship-over-cap")));
+        Assert.Equal((409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, "sales_shipping_cap_exceeded"),
+            (refused.Status, refused.Code, Assert.Single(refused.Errors).Code));
+        Assert.Empty(runner.Stock.Requests);
+        Assert.Equal(0, runner.Commits);
+
+        // Within the cap (2 + 2 = 4) the shipment goes through.
+        var shipped = await world.Service(runner).RecordShipmentAsync(id, line, Shipment(), Metadata("ship-within-cap"));
+        Assert.Equal("2", shipped.Detail.Lines[0].Shipped);
+        Assert.Single(runner.Stock.Requests);
+    }
+
+    [Fact]
     public async Task Delivery_and_reopen_preserve_exact_source_and_replay_never_produces_another_stock_exit()
     {
         var (world, runner, id, line) = await LoadedWorldAsync();

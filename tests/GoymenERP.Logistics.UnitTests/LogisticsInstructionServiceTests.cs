@@ -642,6 +642,26 @@ public sealed partial class LogisticsInstructionServiceTests
         /// <summary>The approved commercial revision the owner answers (SAT-D103: it may grow while an instruction stands).</summary>
         public int Revision { get; set; }
 
+        /// <summary>SAT-D111: when set, the loading read answers this owner-resolved limit (the current shipping cap).</summary>
+        public string? ShippingCap { get; set; }
+
+        public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
+            CancellationToken cancellationToken = default)
+        {
+            var answer = GetApprovedLineAsync(orderId, lineId, cancellationToken).Result;
+            return Task.FromResult(ShippingCap is { } cap && answer.Line is { } line && line.LoadingLimit is null
+                ? answer with
+                {
+                    Line = line with
+                    {
+                        LoadingLimit = new SalesOrderLineLoadingLimitV1(line.CompanyId, orderId, lineId, line.OrderUnitId, line.Version, cap,
+                            SalesOrderLineLoadingLimitSourcesV1.ReapprovalShippingCap, lineId.ToString("D"), "7", effectiveOn),
+                        ShippingCapQuantityText = cap,
+                    },
+                }
+                : answer);
+        }
+
         /// <summary>LOG-4b: the price-free picker page the Sales owner answers; "other-company" answers a foreign row, "throws" an outage.</summary>
         public Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
         {
@@ -850,6 +870,14 @@ public sealed partial class LogisticsInstructionServiceTests
 
         public Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_instructions.SingleOrDefault(candidate => candidate.Instruction.Id == instructionId));
+
+        /// <summary>SAT-D111 (K3-REVIEW-A P1-1 b): the shipped total of every stored instruction line of the Sales line, plus a planted extra.</summary>
+        public decimal ExtraShipped { get; set; }
+
+        public Task<decimal> SumShippedForOrderLineAsync(Guid orderId, Guid orderLineId, Guid unitId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ExtraShipped + _instructions.SelectMany(stored => stored.Instruction.Lines)
+                .Where(line => line.Source.OrderId == orderId && line.Source.LineId == orderLineId && line.UnitId == unitId)
+                .Sum(line => line.ShippedQuantity.Value));
 
         public Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
             CancellationToken cancellationToken = default) =>

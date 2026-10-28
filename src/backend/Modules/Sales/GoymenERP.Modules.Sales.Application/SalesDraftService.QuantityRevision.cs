@@ -33,7 +33,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// reads the draft → fence → the domain's own preconditions (version, state, reason: a stale or wrong-state command asks no
 /// owner) → the loading owner (fence after it) → the floor → last fence → ONE save. Nothing is measured after the commit
 /// (S03). Residual race (declared): no transaction spans Sales and Logistics — a load committed between the floor read and
-/// the save is not seen by this save; the port's cap then refuses any further load above the requested quantity.</item>
+/// the save is not seen by this save; the port's cap then refuses any further load above the requested quantity, the
+/// submission and the approval read the floor again, and Logistics' shipment-time cap (K3-REVIEW-A P1-1 b) never ships the
+/// line above the current Sales limit.</item>
 /// </list>
 /// </summary>
 public sealed partial class SalesDraftService
@@ -217,7 +219,8 @@ public sealed partial class SalesDraftService
     /// <c>lines[i].quantity</c> (i = the line's position in line order), NOT recorded (the floor moves with Logistics); the
     /// owner not composed or unreadable → 503 (not recorded). A stale version, another lifecycle or another approval state
     /// asks no owner: the domain refuses those itself (the key's terminal 409). Residual race (declared, README): a load
-    /// committed in Logistics between this read and the Sales save is not seen — a window of the command's own duration.
+    /// committed in Logistics between this read and the Sales save is not seen — a window of the command's own duration, closed
+    /// on the shipping side by Logistics' shipment-time cap.
     /// </summary>
     private async Task RequireReapprovalFloorAsync(Scope scope, string? permission, SalesOrderDraft current, long expectedVersion,
         string commandName, CancellationToken cancellationToken)
