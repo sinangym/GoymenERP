@@ -77,6 +77,8 @@ export const DISPATCH_TEXT = {
     invoiceable: 'Fatura ölçütleri tamam.',
     sharesCaption: (index: number) => `Grup ${index} sevk payları`,
     dispatch: 'İrsaliye',
+    eDispatchNumber: 'e-İrsaliye no',
+    eDispatchNumberMissing: 'e-İrsaliye no girilmedi',
     approvedAt: 'Onay zamanı',
     truncated: 'Liste kısaltıldı: daha fazla sevk payı var. Bir müşteriye daraltın; gruplar eksik olabilir.',
     onlyCustomer: 'Yalnız bu müşteri',

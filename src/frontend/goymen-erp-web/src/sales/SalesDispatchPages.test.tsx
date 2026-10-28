@@ -153,6 +153,11 @@ describe('S-08 Faturaya Hazır', () => {
     expect(within(within(foreign).getByRole('list', { name: T.candidates.incomplete })).getAllByRole('listitem')).toHaveLength(2)
     const shares = within(group).getByRole('table', { name: T.candidates.sharesCaption(1) })
     expect(within(shares).getByText('IRS-000002 / 1')).toBeTruthy()
+    // SAT-D107: a share without its e-İrsaliye number shows a warning (never a block); one with it shows the number.
+    expect(within(shares).getByTestId('sales-invoice-share-f9f9f9f9-0000-4000-8000-000000000001-e-dispatch-missing').textContent).toBe(
+      T.candidates.eDispatchNumberMissing,
+    )
+    expect(within(shares).getByText('GYM2026000000003')).toBeTruthy()
     expect(within(shares).getByText('1.5 kg')).toBeTruthy()
     expect(screen.getByText(T.common.noAmounts)).toBeTruthy()
     expect(screen.queryByRole('button', { name: /fatura/i })).toBeNull()

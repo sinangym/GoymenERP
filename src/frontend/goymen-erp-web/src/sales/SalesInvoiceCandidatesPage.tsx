@@ -24,6 +24,7 @@ import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome, type RemoteViewState } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { DataTable, type DataTableColumn } from '../ui/DataTable'
+import { StatusIndicator } from '../ui/StatusIndicator'
 import styles from './SalesPool.module.css'
 
 const T = DISPATCH_TEXT.candidates
@@ -138,6 +139,17 @@ function CandidateGroup({ group, index, filtered }: { readonly group: InvoiceCan
       cell: (share) => `${share.dispatchSystemNumber} / ${share.dispatchLineNo}`,
     },
     { key: 'approvedAt', header: T.approvedAt, cell: (share) => formatInstant(share.approvedAtUtc) },
+    {
+      // SAT-D107: the official e-İrsaliye number is entered later; until then a warning, never a block.
+      key: 'eDispatchNumber',
+      header: T.eDispatchNumber,
+      cell: (share) =>
+        share.eDispatchNumber ?? (
+          <StatusIndicator tone="warning">
+            <span data-testid={`sales-invoice-share-${share.shipmentId}-e-dispatch-missing`}>{T.eDispatchNumberMissing}</span>
+          </StatusIndicator>
+        ),
+    },
     {
       key: 'order',
       header: C.order,
