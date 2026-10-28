@@ -2258,10 +2258,10 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1156, len(source_paths))
+        self.assertEqual(1157, len(source_paths))
         # SAT-D61…D70: the Settings discount limit groups, limits and bindings (contracts, calculator, rows, reads,
         # policy provider, binding reader, administration, shell provider), their routes and host adapters, and the
-        # AddSalesDiscountLimitGroups migration.
+        # AddSalesDiscountLimitGroups migration (SAT-D78/D84: the limit timeline and its withdrawals).
         settings = "src/backend/Modules/Settings/"
         for sat_d61_source in (
             settings + "GoymenERP.Modules.Settings.Application/Contracts/V1/SalesDiscountLimitGroupsV1.cs",
@@ -2276,6 +2276,8 @@ internal {{declaration}} : IDocumentObjectStoreV1
             "SettingsSalesDiscountLimitAdministration.Bindings.cs",
             settings + "GoymenERP.Modules.Settings.Infrastructure/Persistence/"
             "SettingsSalesDiscountLimitAdministration.Groups.cs",
+            settings + "GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+            "SettingsSalesDiscountLimitAdministration.Limits.cs",
             settings + "GoymenERP.Modules.Settings.Infrastructure/Shell/SettingsShellCapabilityProvider.cs",
             settings + "GoymenERP.Modules.Settings.Infrastructure/Persistence/Migrations/"
             "20261027221309_AddSalesDiscountLimitGroups.cs",
