@@ -60,6 +60,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     [InlineData(SalesPermissionManifestV1.RequestsWrite, ErpPermissions.SalesRequestsWrite)]
     [InlineData(SalesPermissionManifestV1.RequestsRead, ErpPermissions.SalesRequestsRead)]
     [InlineData(SalesPermissionManifestV1.RequestsApprove, ErpPermissions.SalesRequestsApprove)]
+    // API-31 (plan §3.3, S-08): the invoice candidates' own read name, company-wide, not Critical, granted to no role.
+    [InlineData(SalesPermissionManifestV1.InvoicesRead, ErpPermissions.SalesInvoicesRead)]
     // API-22…24: the sales quote's record (create / revise / loss / conversion with the order create name) and read names.
     // Each its own name, company-wide and not Critical, registered without any grant (the reason is on ErpPermissions.SalesQuotesWrite).
     [InlineData(SalesPermissionManifestV1.QuotesWrite, ErpPermissions.SalesQuotesWrite)]
@@ -119,8 +121,9 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         var sales = registry.Registrations.Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId).ToArray();
         // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, AT-021 floor-exception approval,
         // DEC-SAL-003 delivery-schedule, DEC-SAL-005 cancel, DEC-SAL-002 quantity-revision, Q9 customer-acceptance and
-        // No 30 force-close controls; Sales 1.8 (UI-20) adds the six S-01 request/quote screens and their three controls.
-        Assert.Equal(20, sales.Length);
+        // No 30 force-close controls; Sales 1.8 (UI-20) adds the six S-01 request/quote screens and their three controls; Sales 1.9
+        // (UI-60 / UI-61) the S-07 dispatch list and the S-08 invoice candidates.
+        Assert.Equal(22, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.RequestDetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.RequestApproveCapabilityId)
                 .Declaration.ParentCapabilityId);

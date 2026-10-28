@@ -5,7 +5,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 
 /// <summary>
 /// Publishes the three Sales draft screens of #260 (S-02 list, S-03 create, S-04 detail) — and, since shell contract 1.8,
-/// the six S-01 request / quote pool screens of UI-20 with their controls — to the
+/// the six S-01 request / quote pool screens of UI-20 with their controls, and since 1.9 the S-07 dispatch list and the S-08
+/// invoice candidates (UI-60 / UI-61) — to the
 /// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
@@ -23,7 +24,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.8";
+    public const string OwnerContractVersion = "1.9";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -118,6 +119,22 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     public const string QuoteDetailScreenId = "S-01-QUOTE-DETAIL";
     public const string QuoteWriteCapabilityId = "sales.quotes.write";
     public const string QuoteConvertCapabilityId = "sales.quotes.convert";
+
+    /// <summary>
+    /// UI-60 / S-07 "Sevkiyat / İrsaliyeler" and UI-61 / S-08 "Faturaya Hazır" (shell contract 1.9; plan §3.3 API-30 / API-31):
+    /// two read-only list screens under the Sales menu, each its own grant. The dispatch list needs the order read
+    /// <see cref="SalesPermissionManifestV1.DraftsRead"/> (plan §3.3); the invoice candidates need their own
+    /// <see cref="SalesPermissionManifestV1.InvoicesRead"/>, which no other Sales name confers. Neither has a control: there is no
+    /// invoice command in this version (SAT-D7: the official invoice is issued in the external program).
+    /// </summary>
+    public const string DispatchListCapabilityId = "sales.dispatches.list";
+    public const string DispatchListRouteId = "sales.dispatches.list";
+    public const string DispatchListRoutePath = "/satis/sevkiyatlar";
+    public const string DispatchListScreenId = "S-07";
+    public const string InvoiceCandidateListCapabilityId = "sales.invoice-candidates.list";
+    public const string InvoiceCandidateListRouteId = "sales.invoice-candidates.list";
+    public const string InvoiceCandidateListRoutePath = "/satis/faturaya-hazir";
+    public const string InvoiceCandidateListScreenId = "S-08";
 
     public string Owner => OwnerId;
 
@@ -215,8 +232,33 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         },
         .. RequestDeclarations(),
         .. QuoteDeclarations(),
+        .. DispatchDeclarations(),
         ];
     }
+
+    private static ShellCapabilityDeclaration[] DispatchDeclarations() =>
+    [
+        new ShellCapabilityDeclaration(
+            DispatchListCapabilityId,
+            DispatchListRouteId,
+            DispatchListRoutePath,
+            DispatchListScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.DraftsRead],
+            ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(
+            InvoiceCandidateListCapabilityId,
+            InvoiceCandidateListRouteId,
+            InvoiceCandidateListRoutePath,
+            InvoiceCandidateListScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.InvoicesRead],
+            ImplementationAvailable: true),
+    ];
 
     private static ShellCapabilityDeclaration[] RequestDeclarations()
     {

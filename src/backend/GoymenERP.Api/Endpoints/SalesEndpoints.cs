@@ -251,6 +251,8 @@ public static partial class SalesEndpoints
         MapRequestEndpoints(endpoints);
         // API-22…24 (plan §3.2, S-01): the sales quote routes.
         MapQuoteEndpoints(endpoints);
+        // API-30 / API-31 (plan §3.3, S-07 / S-08): the read-only dispatch list and invoice candidates.
+        MapDispatchEndpoints(endpoints);
         return endpoints;
     }
 
