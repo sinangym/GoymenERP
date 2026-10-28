@@ -1,6 +1,8 @@
+using GoymenERP.BuildingBlocks.Monetary;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Sales.UnitTests;
 
@@ -177,31 +179,31 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
-    public async Task Candidates_are_grouped_by_the_decided_key_parts_and_the_unresolved_parts_are_named_never_assumed()
+    public async Task Candidates_are_grouped_by_the_SAT_D101_key_with_vade_eksik_and_the_rate_of_the_shipment_day()
     {
         var dispatch = new DispatchWorld();
-        // Two orders of one customer in one currency without payment terms: one group (company + customer + currency).
-        var first = dispatch.AddOrder("SO-2026-000001", Party, Account, Currency, (KgUnit, true), (DispatchPieceUnit, false));
-        var second = dispatch.AddOrder("SO-2026-000002", Party, Account, Currency, (KgUnit, true));
-        // The same customer in another currency, and the same currency under payment terms: each its own group.
-        var otherCurrency = dispatch.AddOrder("SO-2026-000003", Party, Account, DispatchOtherCurrency, (KgUnit, true));
-        var withTerms = dispatch.AddOrder("SO-2026-000004", Party, Account, Currency, (KgUnit, true)) with
-        {
-            PaymentTermsId = Guid.Parse("70707070-7070-4707-8707-707070707070"),
-            PaymentTermsVersion = "3",
-        };
-        dispatch.Orders.Replace(withTerms);
+        var lira = SettingsCurrencyIdentitiesV1.TurkishLira;
+        // Two Turkish-lira orders of one customer: one group across orders and notes, shipped on different days (no rate in TL).
+        var first = dispatch.AddOrder("SO-2026-000001", Party, Account, lira, (KgUnit, true), (DispatchPieceUnit, false));
+        var second = dispatch.AddOrder("SO-2026-000002", Party, Account, lira, (KgUnit, true));
+        // A foreign-currency order of the same customer shipped on two Istanbul days: the rate value has no record, so the two
+        // shipment days never merge (SAT-D101: grouped by the rate day, its value unresolved).
+        var foreign = dispatch.AddOrder("SO-2026-000003", Party, Account, DispatchOtherCurrency, (KgUnit, true));
         // Another customer: its own group.
-        var otherCustomer = dispatch.AddOrder("SO-2026-000005", DispatchOtherParty, DispatchOtherAccount, Currency, (KgUnit, true));
+        var otherCustomer = dispatch.AddOrder("SO-2026-000005", DispatchOtherParty, DispatchOtherAccount, lira, (KgUnit, true));
         var noteA = Guid.NewGuid();
         var noteB = Guid.NewGuid();
+        var nextDay = Shipped.AddDays(1);
+        // 22:30 UTC on 20 October is 21 October in Europe/Istanbul (SAT-D10): the shipment day is the Istanbul day.
+        var lateEvening = new DateTimeOffset(2026, 10, 20, 22, 30, 0, TimeSpan.Zero);
         dispatch.Shipments.Answer = _ => new(SalesDispatchReadOutcomeV1.Found, Company,
             [
                 dispatch.Share(noteA, 1, first, 0, 1.250m),
                 dispatch.Share(noteA, 2, first, 1, 4m),
-                dispatch.Share(noteB, 1, second, 0, 0.750m),
-                dispatch.Share(noteB, 2, otherCurrency, 0, 2m),
-                dispatch.Share(noteB, 3, withTerms, 0, 5m),
+                dispatch.Share(noteB, 1, second, 0, 0.750m, nextDay),
+                dispatch.Share(noteB, 2, foreign, 0, 2m),
+                dispatch.Share(noteB, 3, foreign, 0, 5m, lateEvening),
+                dispatch.Share(noteB, 4, foreign, 0, 1m, nextDay),
                 dispatch.Share(Guid.NewGuid(), 1, otherCustomer, 0, 1m),
             ],
             HasMore: true, SalesInvoicedStateSourceV1.NoSource);
@@ -212,12 +214,12 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(SalesInvoicedStateView.NoSource, answer.InvoicedState);
         Assert.Equal(4, answer.Groups.Count);
         var main = answer.Groups[0];
-        Assert.Equal(new SalesInvoiceGroupKeyView(Company, Party, Account, Currency, null), main.Key);
-        Assert.Equal(
-            [SalesInvoiceGroupKeyPart.PaymentTerms, SalesInvoiceGroupKeyPart.Tax, SalesInvoiceGroupKeyPart.ExchangeRate,
-                SalesInvoiceGroupKeyPart.EDocument],
-            main.UnresolvedKeyParts);
-        Assert.False(main.Complete);
+        Assert.Equal(new SalesInvoiceGroupKeyView(Company, Party, Account, lira,
+            new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.NotApplicable, null, null, null, null), null, null), main.Key);
+        // No due-date source: "vade eksik", never invoiceable; the invoice type is the only unresolved part of a TL group.
+        Assert.True(main.DueDateMissing);
+        Assert.Equal([SalesInvoiceGroupKeyPart.InvoiceType], main.UnresolvedKeyParts);
+        Assert.False(main.Invoiceable);
         Assert.Equal(2, main.DispatchNoteCount);
         Assert.Equal(["SO-2026-000001", "SO-2026-000001", "SO-2026-000002"], main.Shares.Select(share => share.SalesOrderDocumentNo));
         // Units are never added together: kilograms and pieces are separate exact totals.
@@ -225,11 +227,22 @@ public sealed partial class SalesDraftServiceTests
             main.QuantityTotals);
         Assert.All(main.Shares, share => Assert.Equal(SalesInvoicedStateView.NoSource, share.Invoicing));
 
-        Assert.Equal(DispatchOtherCurrency, answer.Groups[1].Key.CurrencyId);
-        var terms = answer.Groups[2];
-        Assert.Equal(new SalesInvoiceGroupReferenceView(withTerms.PaymentTermsId!.Value, "3"), terms.Key.PaymentTerms);
-        Assert.Equal([SalesInvoiceGroupKeyPart.Tax, SalesInvoiceGroupKeyPart.ExchangeRate, SalesInvoiceGroupKeyPart.EDocument],
-            terms.UnresolvedKeyParts);
+        // The foreign-currency order: one group per shipment day (the late-evening shipment is 21 October in Istanbul and meets the
+        // next-day one), each with its rate value unresolved by the SAT-D54/D55 resolver's own code.
+        var day20 = answer.Groups[1];
+        var day21 = answer.Groups[2];
+        Assert.Equal((DispatchOtherCurrency, SalesInvoiceRateStateView.Unresolved, new DateOnly(2026, 10, 20)),
+            (day20.Key.CurrencyId, day20.Key.ExchangeRate.State, day20.Key.ExchangeRate.ShipmentDate));
+        Assert.Equal(PreviousBusinessDayExchangeRateCodes.DayUnconfirmed, day20.Key.ExchangeRate.ReasonCode);
+        Assert.Equal((new DateOnly(2026, 10, 21), 2), (day21.Key.ExchangeRate.ShipmentDate, day21.Shares.Count));
+        Assert.Equal([new DateOnly(2026, 10, 21), new DateOnly(2026, 10, 21)], day21.Shares.Select(share => share.ShipmentDate));
+        Assert.All([day20, day21], group =>
+        {
+            Assert.Equal([SalesInvoiceGroupKeyPart.ExchangeRate, SalesInvoiceGroupKeyPart.InvoiceType], group.UnresolvedKeyParts);
+            Assert.Null(group.Key.ExchangeRate.Rate);
+            Assert.True(group.DueDateMissing);
+            Assert.False(group.Invoiceable);
+        });
         Assert.Equal((DispatchOtherParty, DispatchOtherAccount, $"CAR-{DispatchOtherParty:N}"),
             (answer.Groups[3].Key.PartyId, answer.Groups[3].Customer.CompanyAccountId, answer.Groups[3].Customer.Code));
         // The owner is asked with the technical bound; the invoice read name is measured at every fence.
@@ -238,6 +251,8 @@ public sealed partial class SalesDraftServiceTests
         Assert.DoesNotContain(typeof(SalesInvoiceCandidateGroupView).GetProperties().Concat(typeof(SalesInvoiceCandidateShareView).GetProperties()),
             property => property.Name.Contains("Price", StringComparison.Ordinal) || property.Name.Contains("Amount", StringComparison.Ordinal)
                 || property.Name.Contains("Tax", StringComparison.Ordinal));
+        // SAT-D102: the e-document status is the customer's (Cari card), never a key part of its own.
+        Assert.Equal(["ExchangeRate", "InvoiceType"], Enum.GetNames<SalesInvoiceGroupKeyPart>());
     }
 
     [Fact]
@@ -341,7 +356,7 @@ public sealed partial class SalesDraftServiceTests
         public SalesOrderDispatchReference AddOrder(string documentNo, Guid party, Guid account, Guid currency,
             params (Guid Unit, bool Kilogram)[] lines)
         {
-            var order = new SalesOrderDispatchReference(Guid.NewGuid(), Company, documentNo, party, account, currency, null, null,
+            var order = new SalesOrderDispatchReference(Guid.NewGuid(), Company, documentNo, party, account, currency,
                 [.. lines.Select((line, index) => new SalesOrderDispatchLineReference(Guid.NewGuid(), index + 1, Guid.NewGuid(),
                     $"P-{index + 1}", $"Ürün {index + 1}", line.Unit, line.Kilogram ? "kg" : "adet", line.Kilogram))]);
             Orders.Replace(order);
@@ -355,8 +370,10 @@ public sealed partial class SalesDraftServiceTests
                 [.. lines.Select((line, index) => new SalesDispatchShareV1(index + 1, order.OrderId, order.Lines[line.Line].LineId,
                     Guid.NewGuid(), Shipped, order.Lines[line.Line].ProductId, order.Lines[line.Line].OrderUnitId, line.Quantity))]);
 
-        public SalesInvoiceableShipmentV1 Share(Guid noteId, int lineNo, SalesOrderDispatchReference order, int line, decimal quantity) =>
-            new(noteId, "IRS-000001", null, Approved, order.PartyId, order.CompanyAccountId, lineNo, Guid.NewGuid(), Shipped, order.OrderId,
+        public SalesInvoiceableShipmentV1 Share(Guid noteId, int lineNo, SalesOrderDispatchReference order, int line, decimal quantity,
+            DateTimeOffset? shippedAt = null) =>
+            new(noteId, "IRS-000001", null, Approved, order.PartyId, order.CompanyAccountId, lineNo, Guid.NewGuid(), shippedAt ?? Shipped,
+                order.OrderId,
                 order.Lines[line].LineId, order.Lines[line].ProductId, order.Lines[line].OrderUnitId, quantity);
     }
 

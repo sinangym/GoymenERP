@@ -5,8 +5,16 @@
         "companyId": "99999999-9999-9999-9999-999999999999",
         "partyId": "33333333-3333-4333-8333-333333333333",
         "companyAccountId": "44444444-4444-4444-8444-444444444444",
-        "currencyId": "55555555-5555-4555-8555-555555555555",
-        "paymentTerms": null
+        "currencyId": "9e60dcf0-f4bd-5bca-b464-f9a2db98e31a",
+        "exchangeRate": {
+          "state": "NotApplicable",
+          "shipmentDate": null,
+          "bulletinDate": null,
+          "rate": null,
+          "reasonCode": null
+        },
+        "dueDate": null,
+        "invoiceType": null
       },
       "customer": {
         "partyId": "33333333-3333-4333-8333-333333333333",
@@ -15,11 +23,18 @@
         "legalName": "SENTETIK Sevk Müşterisi A.Ş.",
         "tradeName": "SENTETIK Sevk"
       },
-      "unresolvedKeyParts": ["PaymentTerms", "Tax", "ExchangeRate", "EDocument"],
-      "complete": false,
+      "dueDateMissing": true,
+      "unresolvedKeyParts": [
+        "InvoiceType"
+      ],
+      "invoiceable": false,
       "dispatchNoteCount": 2,
       "quantityTotals": [
-        { "unitId": "66666666-6666-4666-8666-666666666666", "unitCode": "kg", "quantity": "4.5" }
+        {
+          "unitId": "66666666-6666-4666-8666-666666666666",
+          "unitCode": "kg",
+          "quantity": "4.5"
+        }
       ],
       "shares": [
         {
@@ -30,6 +45,7 @@
           "dispatchLineNo": 1,
           "shipmentId": "f9f9f9f9-0000-4000-8000-000000000001",
           "shippedAtUtc": "2026-10-20T07:30:00Z",
+          "shipmentDate": "2026-10-20",
           "salesOrderId": "c3c3c3c3-0000-4000-8000-000000000001",
           "salesOrderDocumentNo": "SO-2026-000007",
           "salesOrderLineId": "c3c3c3c3-0000-4000-8000-0000000000a1",
@@ -50,6 +66,7 @@
           "dispatchLineNo": 1,
           "shipmentId": "f9f9f9f9-0000-4000-8000-000000000003",
           "shippedAtUtc": "2026-10-21T07:30:00Z",
+          "shipmentDate": "2026-10-21",
           "salesOrderId": "c3c3c3c3-0000-4000-8000-000000000002",
           "salesOrderDocumentNo": "SO-2026-000008",
           "salesOrderLineId": "c3c3c3c3-0000-4000-8000-0000000000b1",
@@ -60,6 +77,67 @@
           "unitId": "66666666-6666-4666-8666-666666666666",
           "unitCode": "kg",
           "quantity": "1.5",
+          "invoicing": "NoSource"
+        }
+      ]
+    },
+    {
+      "key": {
+        "companyId": "99999999-9999-9999-9999-999999999999",
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "currencyId": "56565656-5656-4565-8565-565656565656",
+        "exchangeRate": {
+          "state": "Unresolved",
+          "shipmentDate": "2026-10-22",
+          "bulletinDate": null,
+          "rate": null,
+          "reasonCode": "exchange_rate_day_unconfirmed"
+        },
+        "dueDate": null,
+        "invoiceType": null
+      },
+      "customer": {
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "code": "CAR-000101",
+        "legalName": "SENTETIK Sevk Müşterisi A.Ş.",
+        "tradeName": "SENTETIK Sevk"
+      },
+      "dueDateMissing": true,
+      "unresolvedKeyParts": [
+        "ExchangeRate",
+        "InvoiceType"
+      ],
+      "invoiceable": false,
+      "dispatchNoteCount": 1,
+      "quantityTotals": [
+        {
+          "unitId": "66666666-6666-4666-8666-666666666666",
+          "unitCode": "kg",
+          "quantity": "2"
+        }
+      ],
+      "shares": [
+        {
+          "dispatchNoteId": "d7d7d7d7-0000-4000-8000-000000000004",
+          "dispatchSystemNumber": "IRS-000004",
+          "eDispatchNumber": null,
+          "approvedAtUtc": "2026-10-22T09:00:00Z",
+          "dispatchLineNo": 1,
+          "shipmentId": "f9f9f9f9-0000-4000-8000-000000000004",
+          "shippedAtUtc": "2026-10-22T07:30:00Z",
+          "shipmentDate": "2026-10-22",
+          "salesOrderId": "c3c3c3c3-0000-4000-8000-000000000003",
+          "salesOrderDocumentNo": "SO-2026-000009",
+          "salesOrderLineId": "c3c3c3c3-0000-4000-8000-0000000000c1",
+          "salesOrderLineNo": 1,
+          "productId": "99999999-9999-4999-8999-999999999999",
+          "productCode": "GDC-001",
+          "productName": "Sentetik bant",
+          "unitId": "66666666-6666-4666-8666-666666666666",
+          "unitCode": "kg",
+          "quantity": "2",
           "invoicing": "NoSource"
         }
       ]

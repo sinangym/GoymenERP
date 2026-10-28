@@ -12,13 +12,8 @@ export const DISPATCH_STATE_TEXT: Readonly<Record<DispatchState, string>> = {
 }
 
 export const GROUP_KEY_PART_TEXT: Readonly<Record<GroupKeyPart, string>> = {
-  Company: 'Şirket',
-  Customer: 'Müşteri',
-  Currency: 'Para birimi',
-  Tax: 'Vergi',
-  ExchangeRate: 'Kur',
-  PaymentTerms: 'Vade / ticari koşul',
-  EDocument: 'E-belge uyumu',
+  ExchangeRate: 'Kur değeri (sevk gününden önceki iş günü TCMB kuru)',
+  InvoiceType: 'Fatura tipi (SATIŞ / TEVKİFAT / İSTİSNA / İHRAÇ KAYITLI)',
 }
 
 export const DISPATCH_TEXT = {
@@ -61,18 +56,25 @@ export const DISPATCH_TEXT = {
   candidates: {
     heading: 'Faturaya Hazır',
     intro:
-      'Onaylı irsaliyelerin sevk payları, aynı şirket, müşteri, para birimi ve (varsa) vade koşuluna göre en büyük uyumlu grup olarak önerilir. Grubu bölmek ve kısmi miktar seçmek fatura taslağında yapılacak.',
+      'Onaylı irsaliyelerin sevk payları; aynı şirket ve cari hesapta para birimi, kur (sevk gününden önceki iş günü TCMB kuru; TL siparişte yok) ve vade tarihi aynı olanlar müşteri başına en büyük uyumlu grup olarak önerilir. Grubu bölmek ve kısmi miktar seçmek fatura taslağında yapılacak.',
     subject: 'faturaya hazır sevk payları',
     group: (index: number) => `Grup ${index}`,
     customer: 'Müşteri',
     currency: 'Para birimi',
-    paymentTerms: 'Vade / ticari koşul',
-    paymentTermsNone: 'Siparişte vade koşulu yok',
+    exchangeRate: 'Kur',
+    rateNotApplicable: 'TL sipariş — kur uygulanmaz',
+    rateUnresolved: (shipmentDate: string) => `${shipmentDate} sevk gününden önceki iş günü TCMB kuru — kur kaydı henüz yok`,
+    rateResolved: (bulletinDate: string, rate: string) => `${rate} (${bulletinDate} TCMB)`,
+    dueDate: 'Vade tarihi',
+    dueDateMissing: 'Vade eksik — siparişte vade bilgisi yok; bu grup faturalanamaz.',
+    invoiceType: 'Fatura tipi',
+    sourceMissing: 'Kaynak yok',
     noteCount: 'İrsaliye sayısı',
     totals: 'Toplam miktar (birim başına)',
     incomplete: 'Gruplama tamamlanmadı — şu ölçütlerin kaynağı henüz yok:',
     incompleteHint: 'Bu ölçütler tamamlanmadan grup tek faturaya alınabilir sayılmaz.',
-    complete: 'Gruplama ölçütleri tamam.',
+    notInvoiceable: 'Faturalanamaz',
+    invoiceable: 'Fatura ölçütleri tamam.',
     sharesCaption: (index: number) => `Grup ${index} sevk payları`,
     dispatch: 'İrsaliye',
     approvedAt: 'Onay zamanı',

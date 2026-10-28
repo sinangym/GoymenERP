@@ -84,7 +84,10 @@ describe('API-30 / API-31 client ↔ canonical OpenAPI', () => {
     }
     expect(schema('SalesDispatchNoteStateView').enum).toEqual(['Draft', 'Approved', 'Cancelled'])
     expect(schema('SalesInvoicedStateView').enum).toEqual(['NoSource'])
-    expect(schema('SalesInvoiceGroupKeyPart').enum).toEqual(['Company', 'Customer', 'Currency', 'Tax', 'ExchangeRate', 'PaymentTerms', 'EDocument'])
+    // SAT-D101 / SAT-D102: only the rate value and the invoice type can be unresolved; no e-document part.
+    expect(schema('SalesInvoiceGroupKeyPart').enum).toEqual(['ExchangeRate', 'InvoiceType'])
+    expect(schema('SalesInvoiceRateStateView').enum).toEqual(['NotApplicable', 'Unresolved', 'Resolved'])
+    for (const group of candidatesResponse.groups) expectFits(group.key.exchangeRate, 'SalesInvoiceGroupRateView')
     // No money member on either read.
     for (const name of ['SalesDispatchLineView', 'SalesInvoiceCandidateShareView', 'SalesInvoiceCandidateGroupView']) {
       expect(Object.keys(schema(name).properties ?? {}).filter((key) => /price|amount|total(?!s)|tax|vat/i.test(key))).toEqual([])
@@ -135,8 +138,17 @@ describe('dispatch list decoder', () => {
 describe('invoice candidates decoder', () => {
   it('reads the example groups under their company', () => {
     const candidates = decodeInvoiceCandidates(candidatesResponse, COMPANY)
-    expect(candidates?.groups).toHaveLength(1)
-    expect(candidates?.groups[0].unresolvedKeyParts).toEqual(['PaymentTerms', 'Tax', 'ExchangeRate', 'EDocument'])
+    expect(candidates?.groups).toHaveLength(2)
+    // A TL group: no rate, "vade eksik", only the invoice type unresolved, never invoiceable.
+    expect(candidates?.groups[0].key.exchangeRate.state).toBe('NotApplicable')
+    expect(candidates?.groups[0].dueDateMissing).toBe(true)
+    expect(candidates?.groups[0].unresolvedKeyParts).toEqual(['InvoiceType'])
+    expect(candidates?.groups[0].invoiceable).toBe(false)
+    // A foreign-currency group of one shipment day: the rate value unresolved with the resolver's reason.
+    expect(candidates?.groups[1].key.exchangeRate).toEqual({
+      state: 'Unresolved', shipmentDate: '2026-10-22', bulletinDate: null, rate: null, reasonCode: 'exchange_rate_day_unconfirmed',
+    })
+    expect(candidates?.groups[1].unresolvedKeyParts).toEqual(['ExchangeRate', 'InvoiceType'])
     expect(candidates?.groups[0].quantityTotals).toEqual([
       { unitId: '66666666-6666-4666-8666-666666666666', unitCode: 'kg', quantity: '4.5' },
     ])
@@ -144,10 +156,25 @@ describe('invoice candidates decoder', () => {
     expect(decodeInvoiceCandidates(candidatesResponse, '11111111-1111-4111-8111-111111111111')).toBeNull()
   })
 
-  it('refuses a complete flag that disagrees with the unresolved parts, an unknown part and a repeated shipment', () => {
-    const disagreeing = clone(candidatesResponse) as Wire
-    firstGroup(disagreeing).complete = true
-    expect(decodeInvoiceCandidates(disagreeing, COMPANY)).toBeNull()
+  it('refuses flags that disagree with the key, a removed part, an unknown part and a repeated shipment', () => {
+    const invoiceable = clone(candidatesResponse) as Wire
+    firstGroup(invoiceable).invoiceable = true
+    expect(decodeInvoiceCandidates(invoiceable, COMPANY)).toBeNull()
+    const dueDate = clone(candidatesResponse) as Wire
+    firstGroup(dueDate).dueDateMissing = false
+    expect(decodeInvoiceCandidates(dueDate, COMPANY)).toBeNull()
+    const rateAgainstTl = clone(candidatesResponse) as Wire
+    firstGroup(rateAgainstTl).unresolvedKeyParts = ['ExchangeRate', 'InvoiceType']
+    expect(decodeInvoiceCandidates(rateAgainstTl, COMPANY)).toBeNull()
+    const eDocument = clone(candidatesResponse) as Wire
+    firstGroup(eDocument).unresolvedKeyParts = ['InvoiceType', 'EDocument']
+    expect(decodeInvoiceCandidates(eDocument, COMPANY)).toBeNull()
+    const rateWithoutReason = clone(candidatesResponse) as Wire
+    ;(((rateWithoutReason.groups as Wire[])[1].key as Wire).exchangeRate as Wire).reasonCode = null
+    expect(decodeInvoiceCandidates(rateWithoutReason, COMPANY)).toBeNull()
+    const otherDay = clone(candidatesResponse) as Wire
+    ;(((otherDay.groups as Wire[])[1].shares as Wire[])[0]).shipmentDate = '2026-10-23'
+    expect(decodeInvoiceCandidates(otherDay, COMPANY)).toBeNull()
     const unknownPart = clone(candidatesResponse) as Wire
     firstGroup(unknownPart).unresolvedKeyParts = ['Vat']
     expect(decodeInvoiceCandidates(unknownPart, COMPANY)).toBeNull()

@@ -138,15 +138,19 @@ describe('S-08 Faturaya Hazır', () => {
     renderPool('/satis/faturaya-hazir')
     const group = await screen.findByRole('region', { name: T.candidates.group(1) })
     expect(within(group).getByText('CAR-000101 — SENTETIK Sevk Müşterisi A.Ş.')).toBeTruthy()
-    expect(within(group).getByText(T.candidates.paymentTermsNone)).toBeTruthy()
+    expect(within(group).getByText(T.candidates.rateNotApplicable)).toBeTruthy()
     expect(within(within(group).getByRole('list', { name: T.candidates.totals })).getByText('4.5 kg')).toBeTruthy()
+    // SAT-D101: no due-date source — "vade eksik", not invoiceable; the invoice type is the only unresolved part (SAT-D102: no
+    // e-document part).
+    expect(within(group).getByTestId('sales-invoice-group-1-due-date-missing').textContent).toBe(T.candidates.dueDateMissing)
     const incomplete = within(group).getByTestId('sales-invoice-group-1-incomplete')
-    expect(within(incomplete).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
-      'Vade / ticari koşul',
-      'Vergi',
-      'Kur',
-      'E-belge uyumu',
-    ])
+    expect(within(incomplete).getByText(T.candidates.notInvoiceable)).toBeTruthy()
+    expect(within(within(incomplete).getByRole('list', { name: T.candidates.incomplete })).getAllByRole('listitem').map((item) => item.textContent))
+      .toEqual(['Fatura tipi (SATIŞ / TEVKİFAT / İSTİSNA / İHRAÇ KAYITLI)'])
+    // The foreign-currency group of one shipment day: its rate value is unresolved.
+    const foreign = screen.getByRole('region', { name: T.candidates.group(2) })
+    expect(within(foreign).getByText(/sevk gününden önceki iş günü TCMB kuru — kur kaydı henüz yok/)).toBeTruthy()
+    expect(within(within(foreign).getByRole('list', { name: T.candidates.incomplete })).getAllByRole('listitem')).toHaveLength(2)
     const shares = within(group).getByRole('table', { name: T.candidates.sharesCaption(1) })
     expect(within(shares).getByText('IRS-000002 / 1')).toBeTruthy()
     expect(within(shares).getByText('1.5 kg')).toBeTruthy()

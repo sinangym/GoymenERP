@@ -114,42 +114,67 @@ public sealed record SalesDispatchListResponse(
     string? NextCursor);
 
 /// <summary>
-/// DEC-SAL-006: the parts of the invoice grouping key. The decision names company, customer, currency, tax, exchange rate,
-/// payment terms / commercial conditions and e-document compatibility; a part is <c>resolved</c> only when its owner answers it.
+/// SAT-D101: the parts of the invoice candidate key whose owner does not answer yet. Only these two can be unresolved; company,
+/// customer (which also covers the customer's e-Fatura / e-Arşiv status, SAT-D102) and currency are always read, and a missing
+/// due date is its own "vade eksik" group (<see cref="SalesInvoiceCandidateGroupView.DueDateMissing"/>), never an unresolved part.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<SalesInvoiceGroupKeyPart>))]
 public enum SalesInvoiceGroupKeyPart
 {
-    Company = 1,
-    Customer = 2,
-    Currency = 3,
-    Tax = 4,
-    ExchangeRate = 5,
-    PaymentTerms = 6,
-    EDocument = 7,
+    /// <summary>The rate VALUE of the share's rate day (no rate record yet); the group is still split by the shipment day.</summary>
+    ExchangeRate = 1,
+
+    /// <summary>The UBL-TR invoice type (SATIS / TEVKIFAT / ISTISNA / IHRACKAYITLI) — no source until the line tax decision (SAT-D93).</summary>
+    InvoiceType = 2,
 }
 
-/// <summary>An owner reference at the version the order recorded it (e.g. the payment terms), or null when the order holds none.</summary>
-public sealed record SalesInvoiceGroupReferenceView(Guid Id, string Version);
+/// <summary>Whether the invoice rate applies to a group and how far it is known (SAT-D90, SAT-D101).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesInvoiceRateStateView>))]
+public enum SalesInvoiceRateStateView
+{
+    /// <summary>A Turkish-lira order: no rate (SAT-D101 (b) "TL siparişte yok sayılır").</summary>
+    NotApplicable = 0,
+
+    /// <summary>The rate of the business day before the shipment day could not be resolved (no rate record): grouped by that day.</summary>
+    Unresolved = 1,
+
+    /// <summary>The previous-business-day TCMB rate (SAT-D54/D55 resolver) is known: grouped by its bulletin day and value.</summary>
+    Resolved = 2,
+}
 
 /// <summary>
-/// The resolved part of a group's DEC-SAL-006 key: company, customer (party + company account) and the order currency are always
-/// read; the payment terms reference only when the order holds one. Tax, exchange rate and e-document compatibility have no owner
-/// on main: they are listed in <see cref="SalesInvoiceCandidateGroupView.UnresolvedKeyParts"/>, never assumed equal.
+/// SAT-D90 / SAT-D101 (b): the invoice rate of a group — the TCMB (DEC-FIN-010) rate of the business day before the SHIPMENT day
+/// (Europe/Istanbul, SAT-D10), resolved by the SAT-D54/D55 resolver. <c>shipmentDate</c> is set while the value is unresolved (the
+/// group never merges two shipment days then); <c>bulletinDate</c> and <c>rate</c> once resolved (the group is the rate day and
+/// value); <c>reasonCode</c> is the resolver's stable reason when unresolved. All null for a Turkish-lira order.
+/// </summary>
+public sealed record SalesInvoiceGroupRateView(
+    SalesInvoiceRateStateView State,
+    DateOnly? ShipmentDate,
+    DateOnly? BulletinDate,
+    string? Rate,
+    string? ReasonCode);
+
+/// <summary>
+/// SAT-D101: a group's candidate key — (company, customer account, currency, rate day/value, due date, invoice type). The customer
+/// covers the e-Fatura / e-Arşiv status (SAT-D102). <c>dueDate</c> is null while the order has no due-date source (no vade model,
+/// API-04) — the group is then "vade eksik" and not invoiceable; <c>invoiceType</c> is null until its source exists.
 /// </summary>
 public sealed record SalesInvoiceGroupKeyView(
     Guid CompanyId,
     Guid PartyId,
     Guid CompanyAccountId,
     Guid CurrencyId,
-    SalesInvoiceGroupReferenceView? PaymentTerms);
+    SalesInvoiceGroupRateView ExchangeRate,
+    DateOnly? DueDate,
+    string? InvoiceType);
 
 /// <summary>One unit's total of a group's shipped quantities (units are never added together; Ö2 text) with the order unit's code.</summary>
 public sealed record SalesInvoiceQuantityTotalView(Guid UnitId, string UnitCode, string Quantity);
 
 /// <summary>
 /// One posted share an invoice may take: the approved note (system number, optional e-İrsaliye number, approval time), its line,
-/// the shipment and its time, the Sales order line (document number, line number, product as recorded), the unit and the exact
+/// the shipment, its time and its Europe/Istanbul shipment day (the rate day's reference, SAT-D90), the Sales order line (document number, line number, product as recorded), the unit and the exact
 /// shipped quantity; <c>invoicing</c> stays <see cref="SalesInvoicedStateView.NoSource"/> until an invoice owner exists. No price.
 /// </summary>
 public sealed record SalesInvoiceCandidateShareView(
@@ -160,6 +185,7 @@ public sealed record SalesInvoiceCandidateShareView(
     int DispatchLineNo,
     Guid ShipmentId,
     DateTimeOffset ShippedAtUtc,
+    DateOnly ShipmentDate,
     Guid SalesOrderId,
     string SalesOrderDocumentNo,
     Guid SalesOrderLineId,
@@ -173,17 +199,17 @@ public sealed record SalesInvoiceCandidateShareView(
     SalesInvoicedStateView Invoicing);
 
 /// <summary>
-/// API-31: one candidate group — every share with the same resolved key, i.e. the largest compatible group per customer (Sinan's
-/// S5 answer of 2026-10-28: the default proposal; splitting a group and taking partial quantities belong to the invoice draft,
-/// API-32). <c>complete</c> is true only when no key part is
-/// unresolved; until the tax, rate and e-document owners exist it is false, so a group is a preparation view, never a claim that
-/// its shares may share one invoice.
+/// API-31: one candidate group — every share with the same SAT-D101 key, i.e. the largest compatible group per customer (SAT-D87;
+/// splitting a group and taking partial quantities belong to the invoice draft, API-32). <c>dueDateMissing</c> marks a "vade eksik"
+/// group (no due-date source): it is never invoiceable (fail-closed). <c>invoiceable</c> is true only when the due date is known and
+/// no key part is unresolved — today never, so a group is a preparation view, never a claim that its shares may share one invoice.
 /// </summary>
 public sealed record SalesInvoiceCandidateGroupView(
     SalesInvoiceGroupKeyView Key,
     SalesDispatchCustomerView Customer,
+    bool DueDateMissing,
     IReadOnlyList<SalesInvoiceGroupKeyPart> UnresolvedKeyParts,
-    bool Complete,
+    bool Invoiceable,
     int DispatchNoteCount,
     IReadOnlyList<SalesInvoiceQuantityTotalView> QuantityTotals,
     IReadOnlyList<SalesInvoiceCandidateShareView> Shares);
@@ -208,8 +234,7 @@ public interface ISalesDispatchReadService
 }
 
 /// <summary>
-/// The Sales-own read of the order facts a dispatch share needs (document number, customer, currency, payment terms reference,
-/// and per line its number, product and order unit). Implemented over the Sales store's company-filtered tables; an unknown or
+/// The Sales-own read of the order facts a dispatch share needs (document number, customer, currency, and per line its number, product and order unit). Implemented over the Sales store's company-filtered tables; an unknown or
 /// another company's order is simply absent from the answer.
 /// </summary>
 public interface ISalesOrderDispatchReferenceReader
@@ -226,8 +251,6 @@ public sealed record SalesOrderDispatchReference(
     Guid PartyId,
     Guid CompanyAccountId,
     Guid CurrencyId,
-    Guid? PaymentTermsId,
-    string? PaymentTermsVersion,
     IReadOnlyList<SalesOrderDispatchLineReference> Lines);
 
 /// <summary>One order line's number, product (as recorded on the line) and order unit (id, code, dimension).</summary>

@@ -16,7 +16,7 @@ import type { InvoiceCandidateGroup, InvoiceCandidateShare } from './dispatchCon
 import { DISPATCH_TEXT, GROUP_KEY_PART_TEXT } from './dispatchText'
 import { SALES_ROUTE } from './capabilities'
 import { DispatchCustomerCell, DispatchOrderCell, DispatchTabs } from './SalesDispatchShared'
-import { formatInstant } from './format'
+import { formatBusinessDate, formatInstant } from './format'
 import { isReferenceId } from './wirePrimitives'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString } from '../shell/shellState'
@@ -112,7 +112,21 @@ function InvoiceCandidates({ namespace }: { readonly namespace: string | null })
 }
 
 const groupKey = (group: InvoiceCandidateGroup) =>
-  [group.key.companyAccountId, group.key.currencyId, group.key.paymentTerms?.id ?? '-', group.key.paymentTerms?.version ?? '-'].join('|')
+  [
+    group.key.companyAccountId,
+    group.key.currencyId,
+    group.key.exchangeRate.state,
+    group.key.exchangeRate.shipmentDate ?? group.key.exchangeRate.bulletinDate ?? '-',
+    group.key.exchangeRate.rate ?? '-',
+    group.key.dueDate ?? '-',
+    group.key.invoiceType ?? '-',
+  ].join('|')
+
+function rateText(rate: InvoiceCandidateGroup['key']['exchangeRate']): string {
+  if (rate.state === 'NotApplicable') return T.rateNotApplicable
+  if (rate.state === 'Resolved') return T.rateResolved(formatBusinessDate(rate.bulletinDate ?? ''), rate.rate ?? '')
+  return T.rateUnresolved(formatBusinessDate(rate.shipmentDate ?? ''))
+}
 
 function CandidateGroup({ group, index, filtered }: { readonly group: InvoiceCandidateGroup; readonly index: number; readonly filtered: boolean }) {
   const headingId = `sales-invoice-group-${index}`
@@ -168,8 +182,12 @@ function CandidateGroup({ group, index, filtered }: { readonly group: InvoiceCan
         <dd>
           <span className={styles.identifier}>{group.key.currencyId}</span>
         </dd>
-        <dt>{T.paymentTerms}</dt>
-        <dd>{group.key.paymentTerms === null ? T.paymentTermsNone : <span className={styles.identifier}>{group.key.paymentTerms.id}</span>}</dd>
+        <dt>{T.exchangeRate}</dt>
+        <dd>{rateText(group.key.exchangeRate)}</dd>
+        <dt>{T.dueDate}</dt>
+        <dd>{group.key.dueDate === null ? T.sourceMissing : formatBusinessDate(group.key.dueDate)}</dd>
+        <dt>{T.invoiceType}</dt>
+        <dd>{group.key.invoiceType ?? T.sourceMissing}</dd>
         <dt>{T.noteCount}</dt>
         <dd>{group.dispatchNoteCount}</dd>
         <dt>{T.totals}</dt>
@@ -183,17 +201,25 @@ function CandidateGroup({ group, index, filtered }: { readonly group: InvoiceCan
           </ul>
         </dd>
       </dl>
-      {group.complete ? (
-        <p className={styles.muted}>{T.complete}</p>
+      {group.invoiceable ? (
+        <p className={styles.muted}>{T.invoiceable}</p>
       ) : (
         <div className={styles.notice} role="note" data-testid={`sales-invoice-group-${index}-incomplete`}>
-          <p>{T.incomplete}</p>
-          <ul>
-            {group.unresolvedKeyParts.map((part) => (
-              <li key={part}>{GROUP_KEY_PART_TEXT[part]}</li>
-            ))}
-          </ul>
-          <p>{T.incompleteHint}</p>
+          <p>
+            <strong>{T.notInvoiceable}</strong>
+          </p>
+          {group.dueDateMissing ? <p data-testid={`sales-invoice-group-${index}-due-date-missing`}>{T.dueDateMissing}</p> : null}
+          {group.unresolvedKeyParts.length > 0 ? (
+            <>
+              <p>{T.incomplete}</p>
+              <ul aria-label={T.incomplete}>
+                {group.unresolvedKeyParts.map((part) => (
+                  <li key={part}>{GROUP_KEY_PART_TEXT[part]}</li>
+                ))}
+              </ul>
+              <p>{T.incompleteHint}</p>
+            </>
+          ) : null}
         </div>
       )}
       <DataTable

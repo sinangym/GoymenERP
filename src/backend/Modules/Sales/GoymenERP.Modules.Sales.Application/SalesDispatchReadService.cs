@@ -1,13 +1,16 @@
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Monetary;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Sales.Application;
 
 /// <summary>
 /// API-30 (S-07 "Sevkiyat / İrsaliyeler") and API-31 (S-08 "Faturaya Hazır") — Satış hazırlık planı v1 §3.3, MOD-06; SAT-D7
-/// (manual first version: ERP prepares, the official document is issued elsewhere), DEC-SAL-006 (grouping key), AT-025 (sales
+/// (manual first version: ERP prepares, the official document is issued elsewhere), DEC-SAL-006 read by SAT-D101 / SAT-D102
+/// (grouping key) and SAT-D90 (rate of the shipment day), AT-025 (sales
 /// and purchase documents never mix), AT-055 (a shipment is on one note). Read-only in every module.
 /// <list type="bullet">
 /// <item><b>Fences</b>: the route's own name (API-30 <c>sales.drafts.read</c>, API-31 <c>sales.invoices.read</c>) is measured
@@ -198,21 +201,23 @@ public sealed class SalesDispatchReadService(
         var customers = await ReadCustomersAsync(scope, permission, answer.Shares.Select(share => share.CustomerPartyId), cancellationToken);
         await RequireStillAsync(scope, permission, cancellationToken);
 
-        // DEC-SAL-006: the decided key parts this version can read — company (the scope), customer (party + account) and the
-        // order's currency, plus the order's payment-terms reference when it holds one. Shares meet in a group only when all of
-        // them are equal; an unread part never merges anything that a read part separates.
+        // SAT-D101 (DEC-SAL-006 as Sinan reads it): one candidate per (company, customer account, currency, rate day/value, due
+        // date, invoice type) — the largest compatible group per customer (SAT-D87). The customer covers the e-Fatura / e-Arşiv
+        // status (SAT-D102). A part without a source never merges what it might separate: an unresolved rate value keeps the
+        // shipment days apart, a missing due date makes the group "vade eksik" (not invoiceable), the invoice type stays unresolved.
         var groups = new List<(SalesInvoiceGroupKeyView Key, List<(SalesInvoiceableShipmentV1 Share, SalesInvoiceCandidateShareView View, bool Kilogram)> Shares)>();
         var index = new Dictionary<SalesInvoiceGroupKeyView, int>();
         foreach (var share in answer.Shares)
         {
             var (order, orderLine, quantity) = MatchShare(references, share.CustomerPartyId, share.CompanyAccountId, share.SalesOrderId,
                 share.SalesOrderLineId, share.ProductId, share.UnitId, share.Quantity);
+            var shipmentDate = BusinessDateOf(share.ShippedAtUtc);
+            // No due-date source: the order holds no vade model yet (API-04), so DueDate is null and the group is "vade eksik".
+            // No invoice-type source until the line tax decision (SAT-D93) exists.
             var key = new SalesInvoiceGroupKeyView(scope.CompanyId, order.PartyId, order.CompanyAccountId, order.CurrencyId,
-                order.PaymentTermsId is { } termsId && order.PaymentTermsVersion is { } termsVersion
-                    ? new SalesInvoiceGroupReferenceView(termsId, termsVersion)
-                    : null);
+                InvoiceRate(order.CurrencyId, shipmentDate), DueDate: null, InvoiceType: null);
             var view = new SalesInvoiceCandidateShareView(share.DispatchNoteId, share.SystemNumber, share.EDispatchNumber,
-                share.ApprovedAtUtc, share.NoteLineNo, share.ShipmentId, share.ShippedAtUtc, order.OrderId, order.DocumentNo,
+                share.ApprovedAtUtc, share.NoteLineNo, share.ShipmentId, share.ShippedAtUtc, shipmentDate, order.OrderId, order.DocumentNo,
                 orderLine.LineId, orderLine.LineNo, orderLine.ProductId, orderLine.ProductCode, orderLine.ProductName, orderLine.OrderUnitId,
                 orderLine.OrderUnitCode, quantity, SalesInvoicedStateView.NoSource);
             if (!index.TryGetValue(key, out var position))
@@ -235,15 +240,17 @@ public sealed class SalesDispatchReadService(
         List<(SalesInvoiceableShipmentV1 Share, SalesInvoiceCandidateShareView View, bool Kilogram)> shares,
         IReadOnlyDictionary<Guid, SalesPartyDisplayV1> customers)
     {
-        // Tax (SAT-D73/D74: product VAT class + Settings table, buyer withholding), the single invoice rate (No 26, fixed on the
-        // invoice draft, API-32) and e-document compatibility have no owner on main: listed as unresolved, never assumed equal.
-        var unresolved = new List<SalesInvoiceGroupKeyPart>(4);
-        if (key.PaymentTerms is null)
+        var dueDateMissing = key.DueDate is null;
+        var unresolved = new List<SalesInvoiceGroupKeyPart>(2);
+        if (key.ExchangeRate.State == SalesInvoiceRateStateView.Unresolved)
         {
-            unresolved.Add(SalesInvoiceGroupKeyPart.PaymentTerms);
+            unresolved.Add(SalesInvoiceGroupKeyPart.ExchangeRate);
         }
 
-        unresolved.AddRange([SalesInvoiceGroupKeyPart.Tax, SalesInvoiceGroupKeyPart.ExchangeRate, SalesInvoiceGroupKeyPart.EDocument]);
+        if (key.InvoiceType is null)
+        {
+            unresolved.Add(SalesInvoiceGroupKeyPart.InvoiceType);
+        }
 
         var totals = shares
             .GroupBy(item => item.Share.UnitId)
@@ -266,12 +273,57 @@ public sealed class SalesDispatchReadService(
             })
             .ToArray();
 
-        return new SalesInvoiceCandidateGroupView(key, Customer(customers, key.PartyId, key.CompanyAccountId), unresolved,
-            Complete: unresolved.Count == 0,
+        return new SalesInvoiceCandidateGroupView(key, Customer(customers, key.PartyId, key.CompanyAccountId), dueDateMissing, unresolved,
+            Invoiceable: !dueDateMissing && unresolved.Count == 0,
             shares.Select(item => item.Share.DispatchNoteId).Distinct().Count(),
             totals,
             [.. shares.Select(item => item.View)]);
     }
+
+    /// <summary>
+    /// SAT-D90 / SAT-D101 (b): the invoice rate of a share — none for a Turkish-lira order; otherwise the DEC-FIN-010 (TCMB) rate of
+    /// the business day before the shipment day, resolved by the SAT-D54/D55 resolver against the TRY pair. No rate-record owner
+    /// exists on main, so the resolver walks no record and answers unavailable (its own stable code): the value is unresolved and
+    /// the group keeps the shipment day (never merging two shipment days whose rate days are unknown). When a record owner exists,
+    /// its records replace the empty set and a resolved rate groups by its bulletin day and value.
+    /// </summary>
+    private static SalesInvoiceGroupRateView InvoiceRate(Guid currencyId, DateOnly shipmentDate)
+    {
+        if (currencyId == SettingsCurrencyIdentitiesV1.TurkishLira)
+        {
+            return new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.NotApplicable, null, null, null, null);
+        }
+
+        var result = PreviousBusinessDayExchangeRate.Resolve(
+            new PreviousBusinessDayExchangeRateRequest(shipmentDate, ExchangeRateBulletinSource.Tcmb, currencyId,
+                SettingsCurrencyIdentitiesV1.TurkishLira),
+            []);
+        return result is { IsResolved: true, BulletinDate: { } bulletinDate, Rate: { } rate }
+            ? new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Resolved, null, bulletinDate,
+                rate.Rate.ToString(CultureInfo.InvariantCulture), null)
+            : new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Unresolved, shipmentDate, null, null, result.Code);
+    }
+
+    /// <summary>SAT-D10: the Europe/Istanbul calendar day of an instant; without the zone nothing is guessed (503, never UTC).</summary>
+    private static DateOnly BusinessDateOf(DateTimeOffset instant)
+    {
+        var zone = BusinessZone.Value ?? throw new SalesDraftServiceException(503, "service_unavailable");
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, zone).DateTime);
+    }
+
+    private const string BusinessTimeZoneId = "Europe/Istanbul";
+
+    private static readonly Lazy<TimeZoneInfo?> BusinessZone = new(() =>
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(BusinessTimeZoneId);
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            return null;
+        }
+    }, LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
     /// Matches one owner share to the Sales order it names: the order must be this company's, the note's customer must be the

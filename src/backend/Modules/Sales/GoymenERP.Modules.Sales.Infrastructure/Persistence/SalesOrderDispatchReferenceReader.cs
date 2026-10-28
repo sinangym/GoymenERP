@@ -6,7 +6,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 
 /// <summary>
 /// API-30 / API-31: the Sales-own batch read of the order facts a dispatch share is shown with — the order header (document
-/// number, customer, currency, payment terms reference) and each line's number, product and order unit, all as the Sales store
+/// number, customer, currency) and each line's number, product and order unit, all as the Sales store
 /// holds them now. Two untracked statements over the company-filtered draft tables (the second keyed by company + draft), so
 /// another company's order is invisible; nothing is created and no other module's table is read. No resolved company is an
 /// <see cref="InvalidOperationException"/> before any read (the consumer has measured its own name first).
@@ -41,8 +41,6 @@ internal sealed class SalesOrderDispatchReferenceReader(SalesDbContext dbContext
                 row.PartyId,
                 row.CompanyAccountId,
                 row.CurrencyId,
-                row.PaymentTermsId,
-                row.PaymentTermsVersion,
             })
             .ToListAsync(cancellationToken);
         if (headers.Count == 0)
@@ -68,7 +66,7 @@ internal sealed class SalesOrderDispatchReferenceReader(SalesDbContext dbContext
             .ToListAsync(cancellationToken);
 
         return [.. headers.OrderBy(row => row.Id).Select(row => new SalesOrderDispatchReference(row.Id, row.CompanyId, row.DocumentNo,
-            row.PartyId, row.CompanyAccountId, row.CurrencyId, row.PaymentTermsId, row.PaymentTermsVersion,
+            row.PartyId, row.CompanyAccountId, row.CurrencyId,
             [.. lines.Where(line => line.DraftId == row.Id).OrderBy(line => line.LineNo)
                 .Select(line => new SalesOrderDispatchLineReference(line.LineId, line.LineNo, line.ProductId, line.ProductCode,
                     line.ProductName, line.OrderUnitId, line.OrderUnitCode, line.OrderUnitIsKilogram))]))];

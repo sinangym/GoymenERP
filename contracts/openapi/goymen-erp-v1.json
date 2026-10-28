@@ -92335,8 +92335,9 @@
         "required": [
           "key",
           "customer",
+          "dueDateMissing",
           "unresolvedKeyParts",
-          "complete",
+          "invoiceable",
           "dispatchNoteCount",
           "quantityTotals",
           "shares"
@@ -92349,13 +92350,16 @@
           "customer": {
             "$ref": "#/components/schemas/SalesDispatchCustomerView"
           },
+          "dueDateMissing": {
+            "type": "boolean"
+          },
           "unresolvedKeyParts": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SalesInvoiceGroupKeyPart"
             }
           },
-          "complete": {
+          "invoiceable": {
             "type": "boolean"
           },
           "dispatchNoteCount": {
@@ -92389,6 +92393,7 @@
           "dispatchLineNo",
           "shipmentId",
           "shippedAtUtc",
+          "shipmentDate",
           "salesOrderId",
           "salesOrderDocumentNo",
           "salesOrderLineId",
@@ -92435,6 +92440,10 @@
           "shippedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "shipmentDate": {
+            "type": "string",
+            "format": "date"
           },
           "salesOrderId": {
             "type": "string",
@@ -92509,13 +92518,8 @@
       },
       "SalesInvoiceGroupKeyPart": {
         "enum": [
-          "Company",
-          "Customer",
-          "Currency",
-          "Tax",
           "ExchangeRate",
-          "PaymentTerms",
-          "EDocument"
+          "InvoiceType"
         ]
       },
       "SalesInvoiceGroupKeyView": {
@@ -92524,7 +92528,9 @@
           "partyId",
           "companyAccountId",
           "currencyId",
-          "paymentTerms"
+          "exchangeRate",
+          "dueDate",
+          "invoiceType"
         ],
         "type": "object",
         "properties": {
@@ -92544,31 +92550,62 @@
             "type": "string",
             "format": "uuid"
           },
-          "paymentTerms": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/SalesInvoiceGroupReferenceView"
-              }
+          "exchangeRate": {
+            "$ref": "#/components/schemas/SalesInvoiceGroupRateView"
+          },
+          "dueDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "invoiceType": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }
       },
-      "SalesInvoiceGroupReferenceView": {
+      "SalesInvoiceGroupRateView": {
         "required": [
-          "id",
-          "version"
+          "state",
+          "shipmentDate",
+          "bulletinDate",
+          "rate",
+          "reasonCode"
         ],
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
+          "state": {
+            "$ref": "#/components/schemas/SalesInvoiceRateStateView"
           },
-          "version": {
-            "type": "string"
+          "shipmentDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "bulletinDate": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          },
+          "rate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reasonCode": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -92591,6 +92628,13 @@
             "type": "string"
           }
         }
+      },
+      "SalesInvoiceRateStateView": {
+        "enum": [
+          "NotApplicable",
+          "Unresolved",
+          "Resolved"
+        ]
       },
       "SalesOrderDispatchNoteLineView": {
         "required": [

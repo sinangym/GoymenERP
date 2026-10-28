@@ -52,7 +52,8 @@ public sealed class SalesDispatchSqlServerRelationalAcceptanceTests
     private static readonly DateOnly From = new(2026, 9, 1);
     private static readonly DateTimeOffset T0 = new(2026, 10, 20, 9, 0, 0, TimeSpan.Zero);
     private static readonly Guid KgUnit = SettingsUnitIdentitiesV1.Kilogram;
-    private static readonly Guid Currency = Guid.Parse("9c3f4e5d-6c7b-48a9-9c2d-3e4f5a6b7d21");
+    // Turkish-lira orders: no invoice rate applies (SAT-D101), so the group never depends on the day the test runs.
+    private static readonly Guid Currency = SettingsCurrencyIdentitiesV1.TurkishLira;
     private static readonly Guid MoneyProfile = Guid.Parse("9c3f4e5d-6c7b-48a9-9c2d-3e4f5a6b7d22");
     private static readonly Guid KgProfile = Guid.Parse("9c3f4e5d-6c7b-48a9-9c2d-3e4f5a6b7d23");
     private static readonly Guid Product = Guid.Parse("9c3f4e5d-6c7b-48a9-9c2d-3e4f5a6b7d24");
@@ -149,15 +150,17 @@ public sealed class SalesDispatchSqlServerRelationalAcceptanceTests
 
             Assert.False(candidates.GetProperty("truncated").GetBoolean());
             Assert.Equal("NoSource", candidates.GetProperty("invoicedState").GetString());
-            // One group: one company, one customer, one currency, no payment terms on either order.
+            // One group (SAT-D101): one company, one customer account, one currency (TL: no rate), no due date, no invoice type.
             var group = Assert.Single(candidates.GetProperty("groups").EnumerateArray());
             var key = group.GetProperty("key");
-            Assert.Equal((CompanyA, customer.PartyId, customer.AccountId, Currency, JsonValueKind.Null),
+            Assert.Equal((CompanyA, customer.PartyId, customer.AccountId, Currency, "NotApplicable", JsonValueKind.Null, JsonValueKind.Null),
                 (key.GetProperty("companyId").GetGuid(), key.GetProperty("partyId").GetGuid(), key.GetProperty("companyAccountId").GetGuid(),
-                    key.GetProperty("currencyId").GetGuid(), key.GetProperty("paymentTerms").ValueKind));
-            Assert.Equal(["PaymentTerms", "Tax", "ExchangeRate", "EDocument"],
-                group.GetProperty("unresolvedKeyParts").EnumerateArray().Select(part => part.GetString()));
-            Assert.False(group.GetProperty("complete").GetBoolean());
+                    key.GetProperty("currencyId").GetGuid(), key.GetProperty("exchangeRate").GetProperty("state").GetString(),
+                    key.GetProperty("dueDate").ValueKind, key.GetProperty("invoiceType").ValueKind));
+            // SAT-D101: no due-date source — "vade eksik", never invoiceable; the invoice type has no source; SAT-D102: no e-document part.
+            Assert.True(group.GetProperty("dueDateMissing").GetBoolean());
+            Assert.Equal(["InvoiceType"], group.GetProperty("unresolvedKeyParts").EnumerateArray().Select(part => part.GetString()));
+            Assert.False(group.GetProperty("invoiceable").GetBoolean());
             Assert.Equal(2, group.GetProperty("dispatchNoteCount").GetInt32());
             // Only the approved, not released lines, each shipment once: N2's 3 kg and N4's 1.5 kg (N3's released line is not a share).
             var shares = group.GetProperty("shares").EnumerateArray().ToArray();
