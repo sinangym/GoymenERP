@@ -60588,7 +60588,9 @@
               "logistics_duplicate_share_id",
               "logistics_instruction_state",
               "logistics_line_blocked",
+              "logistics_order_line_aggregate_limit_exceeded",
               "logistics_shipment_exceeds_loaded",
+              "order_line_state",
               "same_key_payload_mismatch",
               "version_conflict"
             ]
