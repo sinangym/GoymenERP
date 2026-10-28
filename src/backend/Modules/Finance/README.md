@@ -376,3 +376,28 @@ A READ of one party account's recorded Finance facts (`IPartyLedgerService`, `Pa
   risk view) and
   HTTP on SQL: `FinanceCustomerInstrumentApiSqlServerRelationalAcceptanceTests`; browser: fin01 `FIN01-06`.
 - None of this is browser evidence (except fin01).
+
+## MOD-01: the Sales customer risk-input port
+
+`FinanceSalesPartyRiskReadPortV1` answers the Sales-declared `ISalesPartyRiskReadPortV1` (registered in
+`AddFinanceServices`; Finance.Infrastructure references Sales.Application for the port contract only, the Logistics AT-024
+shape). It reads Finance's own company-filtered rows, untracked, and writes nothing; it carries no authority (the Sales risk
+read measures `sales.drafts.read` and discloses amounts only with `sales.orders.price.read`).
+
+- **Open receivables:** the outstanding amount of every OPEN open item of the party's company account, summed per currency as
+  exact decimal text and handed over as `decimal` only when it round-trips exactly. The admitted items are approved official
+  invoice installments, so the figure includes taxes. A row that does not parse, or another source kind, makes the figure
+  `Unavailable` — never a partial sum.
+- **Unallocated payments (SAT-D52):** deducted per currency from the open receivables of the SAME currency, down to zero and
+  never below (a larger advance does not reduce other stages or currencies; EK7 open item). A payment is a recorded bank/POS
+  receipt (`MoneyEventKinds.ManualBankReceiptRecorded`) or a collected cheque/note (`CustomerInstrumentCollected`); its
+  unallocated part is `FinanceSourceAllocationStateRow.UnallocatedAmountText`, or the whole amount without a state row. A payment
+  with an APPROVED reversal is excluded (the reversal event itself is not a payment). An uncollected cheque or DBS has no money
+  event and never counts (DEC-FIN-008/016). Recorded R47 outgoing payments to the same account (`OutgoingMoneyEventRow`,
+  e.g. a refunded advance) are netted off that unallocated credit per currency, down to zero (review A P2-1; a supplier payment
+  to a party that is both can only make the deduction smaller). Any payment, state or outgoing row Finance cannot read → the
+  receivables are `Unavailable` (no partial deduction). No customer named (empty party or account) → `Unavailable`
+  (`finance_customer_unidentified`), never a recorded zero. Allocation (matching) continues separately; this read touches nothing.
+- **Credit limit / collateral:** Finance owns them (SAT-D51; the Cari card only shows them), but no master exists on main
+  (W4-RISK); both are `NoSource`. The collateral haircut is `OPEN-010` (open) and is not applied here: collateral is a net-risk
+  input and never enters the gross risk.

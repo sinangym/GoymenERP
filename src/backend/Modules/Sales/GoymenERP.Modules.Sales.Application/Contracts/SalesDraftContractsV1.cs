@@ -331,6 +331,9 @@ public static class SalesDraftApiV1
     // calculator, under the draft read AND the price read. The detail wire is unchanged.
     public const string TotalsPath = "/api/v1/sales/drafts/{id}/totals";
 
+    // MOD-01 / API-06: the read-only customer risk check (DEC-FIN-007 gross risk against the credit limit), under the draft read.
+    public const string RiskCheckPath = "/api/v1/sales/drafts/{id}/risk-check";
+
     // MOD-07: the order's current revision as a PDF attachment (application/pdf), under the draft-read authority; prices only
     // under the price read (otherwise the price-less variant). Rendered on request, stored nowhere.
     public const string OrderPdfPath = "/api/v1/sales/drafts/{id}/pdf";

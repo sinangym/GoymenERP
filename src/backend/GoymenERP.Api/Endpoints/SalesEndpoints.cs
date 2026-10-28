@@ -419,6 +419,7 @@ public static partial class SalesEndpoints
         MapLoadingProgress(drafts);
         MapCustomerReturns(drafts);
         MapStatus(drafts);
+        MapRiskCheck(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
@@ -976,6 +977,39 @@ public static partial class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftStatusV1")
             .Produces<SalesOrderDraftStatusResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// MOD-01 / API-06: the read-only customer risk check under <c>sales.drafts.read</c> — DEC-FIN-007 gross risk (open receivables
+    /// from the customer-finance owner's port, shipped-not-invoiced "NoSource" until S5, the approved-unshipped remainder of the
+    /// customer's open orders) against the credit limit, decided by the one backend calculator; any part whose owner cannot answer
+    /// makes the result "Unavailable", never "Within". Amounts only with <c>sales.orders.price.read</c>. Another company's draft is
+    /// 404; the read writes nothing in any module.
+    /// </summary>
+    private static void MapRiskCheck(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/risk-check", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftRiskCheckAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftRiskCheckV1")
+            .Produces<SalesOrderDraftRiskCheckResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
