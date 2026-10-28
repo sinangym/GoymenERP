@@ -23,7 +23,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// new values reach no consumer.</item>
 /// <item><b>The floor (SAT-D104):</b> Logistics' recorded totals of every line are read afresh through the loading port
 /// (<see cref="ISalesOrderLoadingReadPortV1"/>, the cancellation's port): a line may not go below what is already SHIPPED
-/// (<c>sales_revision_below_shipped</c>) nor — the fail-closed reading of SAT-D111, NEEDS-SINAN — below what is loaded and
+/// (<c>sales_revision_below_shipped</c>) nor — SAT-D112 (EK14): the loaded total is the floor — below what is loaded and
 /// not yet shipped (<c>sales_revision_below_loaded</c>); both are a 422 on <c>lines[i].quantity</c>, not recorded (the floor
 /// moves with Logistics). An owner that cannot answer is 503 (not recorded): no quantity changes on an unread floor. An
 /// active allocation or a loading instruction NO LONGER blocks the revision (SAT-D104 replaces that reading); an active
@@ -177,7 +177,15 @@ public sealed partial class SalesDraftService
     {
         foreach (var input in inputs)
         {
-            if (input is null || draft.Lines.All(line => line.Id != input.LineId))
+            var line = input is null ? null : draft.Lines.FirstOrDefault(candidate => candidate.Id == input.LineId);
+            if (input is null || line is null)
+            {
+                continue;
+            }
+
+            // K3-REVIEW-B P3-5: a quantity the domain refuses on its own (zero or below, above the Ö2 scale) answers with the
+            // domain's code, never the floor's.
+            if (input.Quantity <= 0m || !FitsScale(input.Quantity, line.Quantity.Unit))
             {
                 continue;
             }
@@ -199,6 +207,45 @@ public sealed partial class SalesDraftService
                 throw new SalesRuleException(SalesRuleCodes.RevisionBelowLoaded,
                     "Yeni miktar bu satırda yüklenmiş miktarın altında; önce Lojistik'te yükleme düzeltilir.", input.LineId);
             }
+        }
+    }
+
+    /// <summary>
+    /// SAT-D111 / SAT-D112 (EK13 / EK14), K3-REVIEW-B P1-1: on an order with an archived approved revision, the submission
+    /// (from Preparing / Rejected) and the approval (from PendingApproval) read Logistics' totals afresh and refuse current
+    /// quantities below the shipped or loaded total exactly like the quantity revision — 422 <c>validation_failed</c> on
+    /// <c>lines[i].quantity</c> (i = the line's position in line order), NOT recorded (the floor moves with Logistics); the
+    /// owner not composed or unreadable → 503 (not recorded). A stale version, another lifecycle or another approval state
+    /// asks no owner: the domain refuses those itself (the key's terminal 409). Residual race (declared, README): a load
+    /// committed in Logistics between this read and the Sales save is not seen — a window of the command's own duration.
+    /// </summary>
+    private async Task RequireReapprovalFloorAsync(Scope scope, string? permission, SalesOrderDraft current, long expectedVersion,
+        string commandName, CancellationToken cancellationToken)
+    {
+        if (current.ArchivedRevisions.Count == 0 || current.State != SalesDraftState.Draft || current.Version != expectedVersion)
+        {
+            return;
+        }
+
+        var due = commandName == SalesDraftCommands.SubmitV1
+            ? current.ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.Rejected
+            : current.ApprovalState == InternalApprovalState.PendingApproval;
+        if (!due)
+        {
+            return;
+        }
+
+        var loading = await ReadLoadingAsync(scope, permission, current, cancellationToken)
+            ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.RevisionImpactUnavailable);
+        var lines = current.Lines.OrderBy(line => line.LineNo).ToArray();
+        try
+        {
+            RequireRevisionFloor(current, [.. lines.Select(line => new LineQuantityInput(line.Id, line.QuantityText, line.Quantity.Value))], loading);
+        }
+        catch (SalesRuleException exception) when (exception.LineId is { } lineId)
+        {
+            var index = Array.FindIndex(lines, line => line.Id == lineId);
+            throw new SalesDraftServiceException(422, "validation_failed", [new($"lines[{index}].quantity", exception.Code)]);
         }
     }
 }

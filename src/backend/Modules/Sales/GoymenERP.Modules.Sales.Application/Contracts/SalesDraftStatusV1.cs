@@ -61,8 +61,10 @@ public static class SalesDraftInvoicingGatesV1
     public const string NotApproved = "NotApproved";
 
     /// <summary>
-    /// An approved revision is the price basis (<c>priceBasisRevision</c>): the current revision once approved, or — after the
-    /// newer revision was REJECTED — the last approved revision ("red gelirse son onaylı fiyatla faturalanır").
+    /// An approved (and, when required, customer-accepted — SAT-D114) revision is the price basis (<c>priceBasisRevision</c>):
+    /// the current revision once approved, or — after the newer revision was REJECTED — the last approved revision ("red
+    /// gelirse son onaylı fiyatla faturalanır"). The gate is the approval gate only: the lifecycle (a cancelled or closed
+    /// order) and the shipments are the invoicing owner's own preconditions (S5 API-32).
     /// </summary>
     public const string Open = "Open";
 
@@ -71,6 +73,13 @@ public static class SalesDraftInvoicingGatesV1
     /// approved revision, but the order's invoicing WAITS until the decision ("faturası onay gelene kadar bekler").
     /// </summary>
     public const string AwaitingReapproval = "AwaitingReapproval";
+
+    /// <summary>
+    /// SAT-D114 (EK14, PR #858): customer acceptance is required and the revision invoicing would use is internally approved
+    /// but not accepted by the customer — invoicing WAITS (already shipped goods included; "approval" in SAT-D103 means the
+    /// internal approval AND the customer acceptance when it is required). No price basis.
+    /// </summary>
+    public const string AwaitingCustomerAcceptance = "AwaitingCustomerAcceptance";
 }
 
 /// <summary>

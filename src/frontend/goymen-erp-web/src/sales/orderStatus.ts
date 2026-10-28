@@ -70,8 +70,12 @@ export const INVOICING_GATE = {
   notApproved: 'NotApproved',
   open: 'Open',
   awaitingReapproval: 'AwaitingReapproval',
+  /** SAT-D114 (EK14): the basis revision is internally approved but not accepted by the customer (acceptance required). */
+  awaitingCustomerAcceptance: 'AwaitingCustomerAcceptance',
 } as const
-export const INVOICING_GATES = [INVOICING_GATE.notApproved, INVOICING_GATE.open, INVOICING_GATE.awaitingReapproval] as const
+export const INVOICING_GATES = [
+  INVOICING_GATE.notApproved, INVOICING_GATE.open, INVOICING_GATE.awaitingReapproval, INVOICING_GATE.awaitingCustomerAcceptance,
+] as const
 export type InvoicingGate = (typeof INVOICING_GATES)[number]
 
 /** The realization axis and its lines (SAT-D5, SAT-D15–D17, SAT-D29–D31). */
@@ -331,7 +335,8 @@ export function previousRevision(revision: string): string | null {
 }
 
 /**
- * SAT-D103: the invoicing axis `{state, gate, priceBasisRevision}`, bound to the detail. A revision is archived only when an
+ * SAT-D103 / SAT-D114: the invoicing axis `{state, gate, priceBasisRevision}`, bound to the detail (and its customer
+ * acceptance facts: a basis the customer has not accepted, when acceptance is required, is `AwaitingCustomerAcceptance`). A revision is archived only when an
  * approved revision is revised, so a detail above Rev.0 that is not approved always has an approved previous revision:
  * Preparing/PendingApproval → `AwaitingReapproval` (no basis), Rejected → `Open` at that previous revision. Approved →
  * `Open` at the current revision; anything else → `NotApproved` (no basis).
@@ -341,12 +346,18 @@ function decodeInvoicing(value: unknown, detail: DraftDetail): { state: Ownerles
   if (o === null || !oneOf(OWNERLESS_AXIS_STATES, o.state) || !oneOf(INVOICING_GATES, o.gate)) return null
   if (!(o.priceBasisRevision === null || isRevision(o.priceBasisRevision))) return null
   const { approvalState, revision } = detail.draft
+  const { required, isCurrentRevisionAccepted, acceptedRevision } = detail.customerAcceptance
   const revised = revision !== REV_0
+  const lastApproved = previousRevision(revision)
+  // SAT-D114: when acceptance is required, a basis the customer has not accepted is no basis.
+  const waitingCustomer = { gate: INVOICING_GATE.awaitingCustomerAcceptance, basis: null }
   const expected: { gate: InvoicingGate; basis: string | null } =
-    approvalState === APPROVAL_STATE.approved ? { gate: INVOICING_GATE.open, basis: revision }
+    approvalState === APPROVAL_STATE.approved
+      ? (required && !isCurrentRevisionAccepted ? waitingCustomer : { gate: INVOICING_GATE.open, basis: revision })
       : revised && (approvalState === APPROVAL_STATE.preparing || approvalState === APPROVAL_STATE.pendingApproval)
         ? { gate: INVOICING_GATE.awaitingReapproval, basis: null }
-        : revised && approvalState === APPROVAL_STATE.rejected ? { gate: INVOICING_GATE.open, basis: previousRevision(revision) }
+        : revised && approvalState === APPROVAL_STATE.rejected
+          ? (required && acceptedRevision !== lastApproved ? waitingCustomer : { gate: INVOICING_GATE.open, basis: lastApproved })
           : { gate: INVOICING_GATE.notApproved, basis: null }
   if (o.gate !== expected.gate || o.priceBasisRevision !== expected.basis) return null
   return { state: o.state, gate: o.gate, priceBasisRevision: o.priceBasisRevision }

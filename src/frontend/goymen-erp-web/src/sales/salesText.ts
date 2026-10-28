@@ -354,10 +354,16 @@ export const ORDER_DETAIL_TEXT = {
     reapprovalNote: (lastApproved: string) =>
       `Yeni revizyon onay bekliyor. Bu sürede fiziksel sevkiyat son onaylı revizyonla (${lastApproved}) sürer: artan miktar ` +
       'ancak onaydan sonra sevk edilir, azaltılan miktarda sevk yeni miktarda durur. Siparişin faturası onay gelene kadar ' +
-      'bekler. Yeni değerler onaydan önce Lojistik, Stok ve faturaya gitmez.',
+      'bekler. Yeni değerler onaydan önce Lojistik, Stok ve faturaya gitmez. İstisnalar: müşteri onayı gereken siparişte ' +
+      'son onaylı revizyon müşteri tarafından onaylanmamışsa sevk edilmez; yeni revizyonda eklenen satırlar onaydan önce sevk edilmez.',
     reapprovalRejectedNote: (lastApproved: string) =>
       `Revizyon reddedildi. Sevkiyat ve fatura son onaylı revizyonla (${lastApproved}; miktar ve fiyat) sürer. Revizyon ` +
-      'düzeltilip yeniden onaya gönderilebilir.',
+      'düzeltilip yeniden onaya gönderilebilir; yeniden düzenlenen azaltmada sevk yeni miktarda durur. Müşteri onayı ' +
+      'gereken siparişte son onaylı revizyon müşteri tarafından onaylanmamışsa sevk ve fatura beklemede kalır.',
+    /** SAT-D111 / SAT-D112: the submission / approval of a revised order measures the quantities against Logistics again. */
+    belowShipped: 'Bir satırın sipariş miktarı Lojistik\'te sevk edilmiş miktarın altında; miktar sevk edilenin altına inemez.',
+    belowLoaded:
+      'Bir satırın sipariş miktarı Lojistik\'te yüklenmiş miktarın altında; önce miktar revize edilmeli ya da yükleme düzeltilmelidir.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -1018,6 +1024,7 @@ export const ORDER_STATUS_TEXT = {
     NotApproved: 'Faturaya kapalı (onaylı revizyon yok)',
     Open: 'Faturaya açık',
     AwaitingReapproval: 'Fatura yeniden onayı bekliyor',
+    AwaitingCustomerAcceptance: 'Fatura müşteri onayını bekliyor',
   } satisfies Record<InvoicingGate, string>,
   invoicingGateNote: {
     NotApproved: () => 'Sipariş henüz onaylanmadığı için faturalanamaz.',
@@ -1026,6 +1033,9 @@ export const ORDER_STATUS_TEXT = {
       'Yeni revizyon (fiyat, iskonto, kur ya da miktar değişikliği) onay bekliyor. Bu sürede fiziksel sevkiyat son onaylı ' +
       'revizyonla sürer; siparişin faturası onay gelene kadar bekler. Onaylanırsa yeni fiyatla, reddedilirse son onaylı ' +
       'fiyatla faturalanır.',
+    AwaitingCustomerAcceptance: () =>
+      'Faturanın esas alacağı revizyon iç onaylı ama müşteri onayı henüz kaydedilmedi. Müşteri onayı gelene kadar sipariş ' +
+      'faturalanmaz (sevk edilmiş mallar dahil).',
   } as Readonly<Record<InvoicingGate, (revision: string) => string>>,
   ownerlessNote: {
     source: 'Kaynak stratejisi ve tahsis ekseninin sahibi modül henüz yok; eksen tamamlanmış ya da sıfır sayılmaz.',

@@ -84,8 +84,9 @@ public sealed record SalesApprovedLineReferenceV1(
     string? ShippingCapQuantityText = null);
 
 /// <summary>
-/// SAT-D103 (EK13, contract delta): which commercial revision a line answer stands for. The Sales owner always sets it; a
-/// consumer that does not know a value refuses the answer (fail-closed).
+/// SAT-D103 (EK13, contract delta): which commercial revision a line answer stands for. The Sales owner always sets it. It is
+/// informational for the consumers of today (Logistics, Inventory): they do not read it and need not, because
+/// <c>Revision</c>, <c>QuantityText</c> and the loading limit already carry the last approved identity and the shipping cap.
 /// </summary>
 public static class SalesOrderLineRevisionBasisV1
 {

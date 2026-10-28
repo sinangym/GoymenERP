@@ -174,6 +174,9 @@ describe('S-04 quantity revision (DEC-SAL-002, AT-023)', () => {
     expect(note.textContent).toBe(ORDER_DETAIL_TEXT.approval.reapprovalNote('Rev.0'))
     expect(note.textContent).toContain('fiziksel sevkiyat son onaylı revizyonla (Rev.0) sürer')
     expect(note.textContent).toContain('faturası onay gelene kadar bekler')
+    // K3-REVIEW-B P3-4: the two exceptions are named.
+    expect(note.textContent).toContain('müşteri tarafından onaylanmamışsa sevk edilmez')
+    expect(note.textContent).toContain('eklenen satırlar onaydan önce sevk edilmez')
     expect(screen.queryByTestId('sales-reapproval-rejected-note')).toBeNull()
     cleanup()
 

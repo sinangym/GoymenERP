@@ -143,6 +143,25 @@ describe('S-04 commands', () => {
     expect(screen.queryByRole('button', { name: T.approval.submit })).toBeNull()
   })
 
+  it('a submission refused below the shipped or loaded total says so (SAT-D111 / SAT-D112) and changes nothing', async () => {
+    installFetch({
+      capabilities: ALL_SALES,
+      onDetail: () => json(detail('Preparing')),
+      onCommand: () => json({
+        status: 422, title: 'Unprocessable', code: 'validation_failed', correlationId: 'c-floor',
+        errors: [{ field: 'lines[0].quantity', code: 'sales_revision_below_loaded' }],
+      }, 422),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    await userEvent.click(screen.getByRole('button', { name: T.approval.submit }))
+
+    const alert = await screen.findByText((text) => text.includes(T.approval.belowLoaded))
+    expect(alert.textContent).toContain(T.approval.validation)
+    expect(alert.textContent).not.toContain(T.approval.belowShipped)
+    expect(screen.getByTestId('sales-draft-approval-state').textContent).toBe('Hazırlanıyor')
+  })
+
   it('rejects with the typed reason and tells a replayed answer apart by the header', async () => {
     const fetch = installFetch({
       capabilities: ALL_SALES_WITH_APPROVE,

@@ -76,7 +76,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
     /// after an approved one was archived — the LAST APPROVED revision (its number and quantity) for physical shipping. The cap
     /// (SAT-D104 / SAT-D111): an increase is never shipped before its approval (the cap stays the last approved quantity); a
     /// decrease waiting for approval caps at min(last approved, requested); after a rejection the cap is the last approved
-    /// quantity again. A line the archived revision does not hold (added in the newer revision) or holds differently (product,
+    /// quantity again — until the rejected revision is changed again, when it caps like a pending decrease. A line the archived revision does not hold (added in the newer revision) or holds differently (product,
     /// unit, an unreadable quantity), and a last approved revision the customer did not accept while acceptance is required,
     /// are refused with the pending state — never repaired.</item>
     /// <item>Any other state (a draft never approved, withdrawn): refused with the approval state.</item>
@@ -119,8 +119,13 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
         }
 
         // SAT-D111: a decrease waiting for approval stops shipping at the requested quantity; a rejection restores the last
-        // approved one. SAT-D104: an increase never raises the cap before its approval.
-        var cap = draft.ApprovalState != InternalApprovalState.Rejected && line.Quantity.Value < approvedQuantity
+        // approved one. SAT-D104: an increase never raises the cap before its approval. K3-REVIEW-B P1-1 (second path): a
+        // rejected revision CHANGED after its rejection (any recorded change later than the decision) is a decrease being
+        // prepared again, so it caps like a pending one (fail-closed); only the rejected revision as it was decided restores
+        // the last approved quantity.
+        var restoredByRejection = draft.ApprovalState == InternalApprovalState.Rejected
+            && draft.Approval.DecidedAtUtc is { } decidedAt && draft.UpdatedAtUtc <= decidedAt;
+        var cap = !restoredByRejection && line.Quantity.Value < approvedQuantity
             ? line.QuantityText
             : archived.QuantityText;
         return new LineStanding(null, lastApproved.Revision, archived.QuantityText, cap, SalesOrderLineRevisionBasisV1.LastApprovedRevision,

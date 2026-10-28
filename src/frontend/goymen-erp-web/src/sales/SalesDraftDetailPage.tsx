@@ -1072,7 +1072,12 @@ function commandNotice(attempt: CommandAttempt): string | null {
                 : attempt.failure === 'validation'
                   ? T.approval.validation
                   : T.approval.unexpected
-      const text = codeText === null ? base : `${base} ${codeText}`
+      // SAT-D111 / SAT-D112: a submission or approval of a revised order refused below the shipped or loaded total.
+      const floor = (attempt.problem?.errors ?? []).map((error) =>
+        error.code === 'sales_revision_below_shipped' ? T.approval.belowShipped
+          : error.code === 'sales_revision_below_loaded' ? T.approval.belowLoaded : null).filter((part) => part !== null)
+      const withCode = codeText === null ? base : `${base} ${codeText}`
+      const text = floor.length === 0 ? withCode : `${withCode} ${floor.join(' ')}`
       return attempt.unresolvedSince === undefined ? text : `${text} ${T.approval.refusedAfterUnknown}`
     }
     default:

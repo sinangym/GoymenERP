@@ -87,17 +87,27 @@ public sealed partial class SalesDraftService
     /// revision in <c>Preparing</c> / <c>PendingApproval</c> after an approved one was archived → <c>AwaitingReapproval</c>
     /// (invoicing waits for the decision; no price basis). That newer revision <c>Rejected</c> → <c>Open</c> at the LAST
     /// APPROVED revision ("red gelirse son onaylı fiyatla"). Anything else (never approved, withdrawn) → <c>NotApproved</c>.
+    /// SAT-D114 (EK14): when customer acceptance is required, a basis revision the customer has not accepted is no basis —
+    /// <c>AwaitingCustomerAcceptance</c>, no price basis (approved but not accepted; or rejected after an unaccepted one).
     /// The lifecycle, the customer acceptance and the shipments are the invoicing owner's own preconditions (S5 API-32).
     /// </summary>
     private static (string Gate, string? PriceBasisRevision) InvoicingGate(SalesOrderDraft draft) => draft.ApprovalState switch
     {
+        // SAT-D114 (EK14): an internally approved revision the customer has not accepted (acceptance required) is no basis.
+        InternalApprovalState.Approved when !draft.IsCustomerAccepted => (SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, null),
         InternalApprovalState.Approved => (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(draft.Revision)),
         InternalApprovalState.Preparing or InternalApprovalState.PendingApproval when draft.ArchivedRevisions.Count > 0 =>
             (SalesDraftInvoicingGatesV1.AwaitingReapproval, null),
+        InternalApprovalState.Rejected when draft.ArchivedRevisions.Count > 0 && !LastApprovedAccepted(draft) =>
+            (SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, null),
         InternalApprovalState.Rejected when draft.ArchivedRevisions.Count > 0 =>
             (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(draft.ArchivedRevisions[^1].Revision)),
         _ => (SalesDraftInvoicingGatesV1.NotApproved, null),
     };
+
+    /// <summary>The last approved (archived) revision was accepted by the customer, or acceptance is not required (pre-Q9).</summary>
+    private static bool LastApprovedAccepted(SalesOrderDraft draft) =>
+        !draft.CustomerAcceptanceRequired || draft.CustomerAcceptance?.Revision == draft.ArchivedRevisions[^1].Revision;
 
     /// <summary>
     /// Whether an owner-less axis (source, invoicing, financial closure) is complete. None of their owners exists, so no complete

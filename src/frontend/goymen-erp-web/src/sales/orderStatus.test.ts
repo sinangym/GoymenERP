@@ -152,6 +152,34 @@ describe('decodeOrderStatus', () => {
     expect(decodeOrderStatus(never, preparing)?.invoicingGate).toEqual({ gate: 'NotApproved', priceBasisRevision: null })
   })
 
+  it('reads the SAT-D114 gate: an approved revision the customer has not accepted keeps invoicing waiting, with no basis', () => {
+    const notAccepted = decodeDetail({
+      ...detailBody(),
+      customerAcceptance: { required: true, acceptedRevision: null, acceptedBy: null, acceptedAtUtc: null, isCurrentRevisionAccepted: false },
+    })
+    const waiting = status()
+    waiting.customerAcceptance = { state: 'Pending', acceptedRevision: null }
+    waiting.invoicing = { state: 'NoSource', gate: 'AwaitingCustomerAcceptance', priceBasisRevision: null }
+    expect(decodeOrderStatus(waiting, notAccepted)?.invoicingGate).toEqual({ gate: 'AwaitingCustomerAcceptance', priceBasisRevision: null })
+    // Open at an unaccepted revision is a contradiction and refused.
+    expect(decodeOrderStatus({ ...waiting, invoicing: { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.0' } }, notAccepted)).toBeNull()
+
+    // Rejected after an unaccepted last approved revision: still waiting for the customer, never Open at it.
+    const rejectedUnaccepted = decodeDetail({
+      ...detailBody({ approvalState: 'Rejected', revision: 'Rev.2' }),
+      approval: { ...APPROVED, rejectionReason: 'SENTETIK' },
+      customerAcceptance: { required: true, acceptedRevision: 'Rev.0', acceptedBy: 'musteri', acceptedAtUtc: '2026-09-19T10:00:00Z', isCurrentRevisionAccepted: false },
+    })
+    const rejected = status()
+    Object.assign(rejected, { revision: 'Rev.2' })
+    rejected.internalApproval.state = 'Rejected'
+    rejected.customerAcceptance = { state: 'Pending', acceptedRevision: 'Rev.0' }
+    rejected.realization.basisRevision = 'Rev.1'
+    rejected.invoicing = { state: 'NoSource', gate: 'AwaitingCustomerAcceptance', priceBasisRevision: null }
+    expect(decodeOrderStatus(rejected, rejectedUnaccepted)?.invoicingGate.gate).toBe('AwaitingCustomerAcceptance')
+    expect(decodeOrderStatus({ ...rejected, invoicing: { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.1' } }, rejectedUnaccepted)).toBeNull()
+  })
+
   it('reads PendingReapproval, Unreadable and PolicyUnavailable in their one shape', () => {
     const unjudged = (state: string, basis: string | null): Body => {
       const body = status()

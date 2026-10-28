@@ -194,9 +194,9 @@ public static class SalesRuleCodes
     /// </summary>
     public const string RevisionBelowShipped = "sales_revision_below_shipped";
     /// <summary>
-    /// SAT-D111 fail-closed reading (NEEDS-SINAN in the slice): a decrease may not take a line below what is LOADED but not yet
-    /// shipped — Logistics' shipment does not re-check the Sales cap, so such a load could still ship above the new quantity.
-    /// Refused on that line; the user unloads in Logistics first.
+    /// SAT-D112 (EK14): a decrease may not take a line below its LOADED total (shipped + waiting on the vehicle, Logistics'
+    /// cumulative loaded) — Logistics' shipment does not re-check the Sales cap, so such a load could still ship above the new
+    /// quantity. Refused on that line, at the revision and again at the re-approval's submission and approval.
     /// </summary>
     public const string RevisionBelowLoaded = "sales_revision_below_loaded";
     /// <summary>The revised quantity equals the current one: an approval is not asked for nothing.</summary>

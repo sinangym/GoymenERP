@@ -1234,6 +1234,8 @@ public sealed partial class SalesDraftServiceTests
             Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, ApprovePermission, PricePermission,
                 PriceReadPermission, SchedulePermission, CancelPermission, QuantityPermission, ApprovePermission),
         }.AllowDiscountsUpTo(10m);
+        // SAT-D111/D112: the resubmission of a revised order reads Logistics' floor — the owners answer nothing here.
+        Owners(world);
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         Assert.Equal((true, (string?)null, false), (created.CustomerAcceptance.Required,
             created.CustomerAcceptance.AcceptedRevision, created.CustomerAcceptance.IsCurrentRevisionAccepted));

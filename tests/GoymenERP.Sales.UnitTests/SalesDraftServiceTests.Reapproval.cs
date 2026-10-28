@@ -19,6 +19,7 @@ public sealed partial class SalesDraftServiceTests
     public async Task A_price_revision_keeps_shipping_on_the_last_approved_revision_and_invoicing_waits_until_the_decision()
     {
         var world = new World().AllowDiscountsUpTo(10m);
+        Owners(world);
         var (approved, line) = await AcceptedApprovedAsync(world);
         var port = LinePort(world);
         var current = await port.GetApprovedLineAsync(approved.Id, line);
@@ -55,6 +56,11 @@ public sealed partial class SalesDraftServiceTests
         // Resubmitted and approved: every consumer moves to Rev.1 (the new price applies to the invoice).
         await world.Service().SubmitDraftAsync(approved.Id, Command("9"), Metadata("k-price-resubmit"));
         await world.Service().ApproveDraftAsync(approved.Id, Command("10"), Metadata("k-price-approve"));
+        // SAT-D114 (EK14): internally approved but the customer has not accepted Rev.1 yet — invoicing waits, no price basis,
+        // and (SAT-D113) shipping does not go on under the new revision either.
+        Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, (string?)null), await GateAsync(world, approved.Id));
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "CustomerAcceptancePending"),
+            ((await port.GetApprovedLineAsync(approved.Id, line)).Outcome, (await port.GetApprovedLineAsync(approved.Id, line)).ApprovalState));
         await world.Service().RecordCustomerAcceptanceAsync(approved.Id, Command("11"), Metadata("k-price-accept"));
         var after = await port.GetApprovedLineAsync(approved.Id, line);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 1, SalesOrderLineRevisionBasisV1.CurrentRevision, (string?)null),
@@ -164,8 +170,88 @@ public sealed partial class SalesDraftServiceTests
         var answer = await port.GetApprovedLineAsync(approved.Draft.Id, line);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "CustomerAcceptancePending"), (answer.Outcome, answer.ApprovalState));
         Assert.Empty((await port.ListApprovedLinesAsync(10, null)).Items);
-        // The invoicing gate is the re-approval's alone (the acceptance is the invoicing owner's own precondition).
         Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingReapproval, (string?)null), await GateAsync(world, approved.Draft.Id));
+
+        // SAT-D114: rejected after an UNACCEPTED last approved revision — no accepted basis to invoice at.
+        await world.Service().SubmitDraftAsync(approved.Draft.Id, Command("5"), Metadata("k-unaccepted-submit"));
+        await world.Service().RejectDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-unaccepted-reject"));
+        Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, (string?)null), await GateAsync(world, approved.Draft.Id));
+    }
+
+    [Fact]
+    public async Task An_approved_revision_the_customer_has_not_accepted_keeps_invoicing_waiting()
+    {
+        var world = new World();
+        var approved = await ApprovedAsync(world);
+        // SAT-D114 (EK14): customer acceptance is required here and not recorded — invoicing waits, no price basis.
+        Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, (string?)null), await GateAsync(world, approved.Draft.Id));
+        await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("4"), Metadata("k-accept"));
+        Assert.Equal((SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.Rev0), await GateAsync(world, approved.Draft.Id));
+    }
+
+    [Fact]
+    public async Task A_rejected_decrease_resubmitted_after_loading_up_to_the_restored_cap_is_refused_at_submission_and_approval()
+    {
+        var world = new World();
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        var (_, loadings) = Owners(world);
+        var port = LinePort(world);
+
+        // Rev.1 decreases 1.25 → 1 (nothing loaded), is submitted and REJECTED: the cap is the last approved 1.25 again.
+        await world.Service().ReviseQuantityAsync(approved.Id,
+            new SalesDraftQuantityRevisionRequest("5", "SENTETIK azaltma", [new SalesDraftLineQuantityV1(line, "1")]), Metadata("k-p1-down"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-p1-submit"));
+        await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-p1-reject"));
+        await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.25", "8");
+
+        // Logistics loads up to the restored cap; the SAME reduced Rev.1 resubmitted is refused below the loaded total (SAT-D112),
+        // a 422 on the line, not recorded, nothing changes.
+        loadings.Answer = order => new(Company, order, [new(line, KgUnit, 1, 1.25m, 1.25m, 0m, 0m)]);
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().SubmitDraftAsync(approved.Id, Command("8"), Metadata("k-p1-resubmit")));
+        Assert.Equal((422, "validation_failed", "lines[0].quantity", SalesRuleCodes.RevisionBelowLoaded),
+            (refused.Status, refused.Code, refused.Errors[0].Field, refused.Errors[0].Code));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Equal(("Rejected", "8"), ((await world.Service().GetDraftDetailAsync(approved.Id)).Draft.ApprovalState,
+            (await world.Service().GetDraftDetailAsync(approved.Id)).Draft.Version));
+
+        // The load reduced in Logistics: the submission passes; a load committed before the approval is caught there too.
+        loadings.Answer = order => new(Company, order, [new(line, KgUnit, 1, 1.25m, 1m, 0.5m, 0m)]);
+        await world.Service().SubmitDraftAsync(approved.Id, Command("8"), Metadata("k-p1-resubmit-2"));
+        loadings.Answer = order => new(Company, order, [new(line, KgUnit, 1, 1.25m, 1.1m, 1.05m, 0m)]);
+        var atApproval = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(approved.Id, Command("9"), Metadata("k-p1-approve")));
+        Assert.Equal((422, "lines[0].quantity", SalesRuleCodes.RevisionBelowShipped),
+            (atApproval.Status, atApproval.Errors[0].Field, atApproval.Errors[0].Code));
+        // An unreadable owner is 503 at the approval, never an assumed zero; nothing is recorded.
+        loadings.Answer = order => new(Guid.NewGuid(), order, []);
+        Assert.Equal((503, SalesDraftProblemCodesV1.RevisionImpactUnavailable), Status(await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(approved.Id, Command("9"), Metadata("k-p1-approve-2")))));
+        Assert.Empty(world.Store.Refusals);
+
+        loadings.Answer = order => new(Company, order, [new(line, KgUnit, 1, 1.25m, 1m, 1m, 0m)]);
+        var approvedRev1 = await world.Service().ApproveDraftAsync(approved.Id, Command("9"), Metadata("k-p1-approve-3"));
+        Assert.Equal(("Approved", "Rev.1", "1"), (approvedRev1.Detail.Draft.ApprovalState, approvedRev1.Detail.Draft.Revision,
+            approvedRev1.Detail.Lines[0].Quantity));
+    }
+
+    [Fact]
+    public async Task A_rejected_revision_changed_again_caps_shipping_like_a_pending_decrease()
+    {
+        var world = new World();
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        Owners(world);
+        var port = LinePort(world);
+        await world.Service().ReviseQuantityAsync(approved.Id,
+            new SalesDraftQuantityRevisionRequest("5", "SENTETIK azaltma", [new SalesDraftLineQuantityV1(line, "1.2")]), Metadata("k-re-1"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-re-submit"));
+        await world.Service().RejectDraftAsync(approved.Id, Command("7"), Metadata("k-re-reject"));
+        await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.25", "8");
+
+        // Changed again while Rejected (K3-REVIEW-B P1-1, second path): a decrease being prepared again caps at min(1.25, 1.1).
+        await world.Service().ReviseQuantityAsync(approved.Id,
+            new SalesDraftQuantityRevisionRequest("8", "SENTETIK yeni azaltma", [new SalesDraftLineQuantityV1(line, "1.1")]), Metadata("k-re-2"));
+        await AssertLastApprovedAsync(port, approved.Id, line, "Rejected", "1.25", "1.1", "9");
     }
 
     [Fact]

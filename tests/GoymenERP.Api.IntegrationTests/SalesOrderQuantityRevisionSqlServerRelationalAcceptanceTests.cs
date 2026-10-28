@@ -235,6 +235,74 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task A_rejected_decrease_resubmitted_after_loading_up_to_the_restored_cap_is_refused_and_passes_once_it_respects_the_loaded_total_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k", "6");
+        var orderLine = Assert.Single(draft.Lines);
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.DraftsCreate,
+            SalesPermissionManifestV1.OrdersApprove, SalesPermissionManifestV1.OrdersQuantityWrite);
+        using var client = run.Client(subject, CompanyA);
+        var draftPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
+
+        // Rev.1 decreases 6 → 4 with nothing loaded, is submitted and REJECTED: the cap is the last approved 6 again.
+        using (var revised = await client.SendAsync(Revise($"{draftPath}/quantity-revision", "SENTETIK-p1-down", "4", "SENTETIK azaltma", orderLine.Id, "4")))
+        {
+            Assert.Equal(HttpStatusCode.OK, revised.StatusCode);
+        }
+
+        using (var submitted = await client.SendAsync(State($"{draftPath}/submission", "SENTETIK-p1-submit", "5")))
+        {
+            Assert.Equal(HttpStatusCode.OK, submitted.StatusCode);
+        }
+
+        using (var rejected = await client.SendAsync(State($"{draftPath}/rejection", "SENTETIK-p1-reject", "6")))
+        {
+            Assert.Equal(HttpStatusCode.OK, rejected.StatusCode);
+        }
+
+        await run.AssertShippingAsync(CompanyA, draft.Id, orderLine.Id, "Rejected", "6", 7);
+
+        // Real Logistics loads 5 under the restored cap (instructed 6, nothing shipped).
+        await run.ShippedAsync(CompanyA, draft, "k", loaded: 5m, shipped: 0m);
+
+        // The SAME reduced Rev.1 (4) resubmitted: refused below the loaded total (SAT-D112), unrecorded, nothing moves.
+        var attemptsBefore = await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.submit.v1' AND [DraftId] = @id", ("@id", draft.Id));
+        using (var refused = await client.SendAsync(State($"{draftPath}/submission", "SENTETIK-p1-resubmit", "7")))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, refused.StatusCode);
+            var error = (await refused.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors")[0];
+            Assert.Equal(("lines[0].quantity", SalesRuleCodes.RevisionBelowLoaded), (error.GetProperty("field").GetString(), error.GetProperty("code").GetString()));
+        }
+
+        Assert.Equal((attemptsBefore, 7L, (int)InternalApprovalState.Rejected), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.submit.v1' AND [DraftId] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [ApprovalState] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id))));
+
+        // Edited again while Rejected to the loaded total: a decrease being prepared again caps like a pending one (min 6, 5).
+        using (var corrected = await client.SendAsync(Revise($"{draftPath}/quantity-revision", "SENTETIK-p1-fix", "7", "SENTETIK yüklenen kadar", orderLine.Id, "5")))
+        {
+            Assert.Equal(HttpStatusCode.OK, corrected.StatusCode);
+        }
+
+        await run.AssertShippingAsync(CompanyA, draft.Id, orderLine.Id, "Rejected", "5", 8);
+        using (var resubmitted = await client.SendAsync(State($"{draftPath}/submission", "SENTETIK-p1-resubmit-2", "8")))
+        {
+            Assert.Equal(HttpStatusCode.OK, resubmitted.StatusCode);
+        }
+
+        using (var approved = await client.SendAsync(State($"{draftPath}/approval", "SENTETIK-p1-approve", "9")))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        }
+
+        var answer = await run.LineAsync(CompanyA, draft.Id, orderLine.Id);
+        Assert.Equal((1, "5", SalesOrderLineRevisionBasisV1.CurrentRevision), (answer.Line!.Revision, answer.Line.QuantityText, answer.Line.RevisionBasis));
+    }
+
+    [SqlServerFact]
     public async Task A_price_revision_keeps_shipping_on_the_last_approved_revision_while_invoicing_waits_and_a_rejection_keeps_the_old_price_on_real_sql()
     {
         await using var run = await Run.StartAsync();
@@ -494,9 +562,12 @@ public sealed class SalesOrderQuantityRevisionSqlServerRelationalAcceptanceTests
             var loadedInstruction = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-load"), Hash($"{keyPrefix}-l-load"),
                 LogisticsCommands.RecordLoadV1, stored.Id, (instruction, now) => instruction.RecordLoad(issued.Version, Guid.NewGuid(), lineId, Kg(loaded),
                     MeasurementKind.Measured, now), LoadedAudit))!.Instruction.Instruction;
-            await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship"), Hash($"{keyPrefix}-l-ship"),
-                LogisticsCommands.RecordShipmentV1, stored.Id, (instruction, now) => instruction.MarkShipped(loadedInstruction.Version, Guid.NewGuid(), lineId,
-                    Kg(shipped), now), ShippedAudit);
+            if (shipped > 0m)
+            {
+                await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship"), Hash($"{keyPrefix}-l-ship"),
+                    LogisticsCommands.RecordShipmentV1, stored.Id, (instruction, now) => instruction.MarkShipped(loadedInstruction.Version, Guid.NewGuid(), lineId,
+                        Kg(shipped), now), ShippedAudit);
+            }
         }
 
         /// <summary>
