@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Numerics;
+using GoymenERP.BuildingBlocks.Monetary;
 
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
 
@@ -157,9 +158,9 @@ public static class SalesLinePriceCalculator
 
     private static void RequireScale(int scale)
     {
-        if (scale is < 0 or > 28)
+        if (scale is < 0 or > Money.MaximumScale)
         {
-            throw new ArgumentOutOfRangeException(nameof(scale), "Tutar ölçeği 0 ile 28 arasında olmalıdır.");
+            throw new ArgumentOutOfRangeException(nameof(scale), $"Tutar ölçeği 0 ile {Money.MaximumScale} arasında olmalıdır.");
         }
     }
 

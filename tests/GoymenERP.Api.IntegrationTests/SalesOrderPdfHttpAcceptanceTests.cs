@@ -55,7 +55,7 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         Assert.Contains("0.25 TRY", text, StringComparison.Ordinal);
         Assert.Contains("12.125 TRY / kg", text, StringComparison.Ordinal);
         Assert.Contains("Para birimiTRY", text, StringComparison.Ordinal);
-        Assert.Contains("Sipariş toplamı, KDV ve genel toplam henüz hesaplanmıyor", text, StringComparison.Ordinal);
+        Assert.Contains("Sipariş toplamları bu belgede yer almaz", text, StringComparison.Ordinal);
         Assert.Contains("SO-2026-000123 · Rev.1 · Bilgi amaçlı teknik çıktıdır; resmî belge değildir.", text, StringComparison.Ordinal);
         Assert.Contains("Sayfa 1 / 1", text, StringComparison.Ordinal);
         // Nothing is computed: 4 kg × 12.125 = 48.5 is no line amount or total of this document.

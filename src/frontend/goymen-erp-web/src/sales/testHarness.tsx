@@ -524,7 +524,7 @@ export function totalsOf(detail: unknown): Response {
   })
   const unpriced = lines.filter((line) => line.state === 'Unpriced').length
   const unconvertible = lines.filter((line) => line.state === 'PriceUnitNotOrderUnit').length
-  const complete = unpriced === 0 && unconvertible === 0
+  const complete = lines.length > 0 && unpriced === 0 && unconvertible === 0
   const cents = lines.reduce((sum, line) => sum + (line.netAmount === null ? 0n : BigInt(line.netAmount.replace('.', ''))), 0n)
   const net = cents.toString().padStart(3, '0')
   return json({
@@ -535,6 +535,7 @@ export function totalsOf(detail: unknown): Response {
     taxState: 'NoSource',
     totals: {
       state: complete ? 'Computed' : 'Incomplete', unpricedLineCount: unpriced, priceUnitNotOrderUnitLineCount: unconvertible,
+      amountOutOfRangeLineCount: 0,
       netAmount: complete ? `${net.slice(0, -2)}.${net.slice(-2)}` : null, taxState: complete ? 'NoSource' : 'NotComputed',
       vatAmount: null, withheldVatAmount: null, grossAmount: null, payableAmount: null,
     },

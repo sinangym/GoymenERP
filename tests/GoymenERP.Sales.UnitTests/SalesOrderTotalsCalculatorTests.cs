@@ -186,6 +186,61 @@ public sealed class SalesOrderTotalsCalculatorTests
     }
 
     [Fact]
+    public void An_order_without_lines_is_incomplete_with_no_sum_never_a_computed_zero()
+    {
+        // Review B P2-2 / mutation m2: no line is nothing to total — never "Computed 0.00".
+        var totals = SalesOrderTotalsCalculator.Calculate([], Try, 2, _ => SalesLineTaxRate.Of(20m, null));
+        Assert.Empty(totals.Lines);
+        Assert.Equal((SalesDocumentTotalState.Incomplete, false, 0, 0, 0, SalesTaxState.NotComputed), (totals.Document.State,
+            totals.Document.IsComplete, totals.Document.UnpricedLineCount, totals.Document.PriceUnitNotOrderUnitLineCount,
+            totals.Document.AmountOutOfRangeLineCount, totals.Document.TaxState));
+        Assert.Null(totals.Document.NetAmount);
+        Assert.Null(totals.Document.VatAmount);
+    }
+
+    [Fact]
+    public void A_line_amount_beyond_the_decimal_range_is_out_of_range_and_the_document_incomplete_never_an_exception()
+    {
+        // Review B P2-1: 999999999999999.999 × 100000000000000 ≈ 1e29 > System.Decimal's maximum (≈ 7.9e28).
+        var totals = SalesOrderTotalsCalculator.Calculate(
+            [Line(L1, 1, "999999999999999.999", "100000000000000"), Line(L2, 2, "1", "10")], Try, 2, _ => SalesLineTaxRate.Of(20m, null));
+        var outOfRange = totals.Lines[0];
+        Assert.Equal((SalesLineTotalState.AmountOutOfRange, SalesTaxState.NotComputed), (outOfRange.State, outOfRange.TaxState));
+        Assert.Null(outOfRange.NetUnitPrice);
+        Assert.Null(outOfRange.NetAmount);
+        Assert.Null(outOfRange.VatAmount);
+        Assert.Equal("10.00", Text(totals.Lines[1].NetAmount));
+        Assert.Equal((SalesDocumentTotalState.Incomplete, 0, 0, 1), (totals.Document.State, totals.Document.UnpricedLineCount,
+            totals.Document.PriceUnitNotOrderUnitLineCount, totals.Document.AmountOutOfRangeLineCount));
+        Assert.Null(totals.Document.NetAmount);
+    }
+
+    [Fact]
+    public void A_gross_beyond_the_decimal_range_takes_the_whole_line_out_of_range()
+    {
+        // net 70000000000000000000000000000 fits; + 20 % VAT = 8.4e28 does not: no part of the line is shown.
+        var line = Assert.Single(SalesOrderTotalsCalculator.Calculate(
+            [Line(L1, 1, "700000000000000", "100000000000000")], Try, 0, _ => SalesLineTaxRate.Of(20m, null)).Lines);
+        Assert.Equal(SalesLineTotalState.AmountOutOfRange, line.State);
+        Assert.Null(line.NetAmount);
+        Assert.Null(line.GrossAmount);
+    }
+
+    [Fact]
+    public void A_document_sum_beyond_the_decimal_range_is_out_of_range_with_every_line_still_shown()
+    {
+        // Each line 5e28 fits; their sum 1e29 does not.
+        var totals = SalesOrderTotalsCalculator.Calculate(
+            [Line(L1, 1, "500000000000000", "100000000000000"), Line(L2, 2, "500000000000000", "100000000000000")], Try, 0);
+        Assert.All(totals.Lines, line => Assert.Equal(("Computed", "50000000000000000000000000000"),
+            (line.State.ToString(), Text(line.NetAmount))));
+        Assert.Equal((SalesDocumentTotalState.AmountOutOfRange, 0, 0, 0, SalesTaxState.NotComputed), (totals.Document.State,
+            totals.Document.UnpricedLineCount, totals.Document.PriceUnitNotOrderUnitLineCount, totals.Document.AmountOutOfRangeLineCount,
+            totals.Document.TaxState));
+        Assert.Null(totals.Document.NetAmount);
+    }
+
+    [Fact]
     public void A_zero_price_is_a_computed_zero_unlike_an_absent_price()
     {
         var totals = SalesOrderTotalsCalculator.Calculate([Line(L1, 1, "5", "0")], Try, 2, _ => SalesLineTaxRate.Of(20m, 0.5m));

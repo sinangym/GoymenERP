@@ -1398,7 +1398,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         var service = new StubDraftService
         {
             Totals = _ => Task.FromResult(new SalesOrderDraftTotalsResponse("4", "Rev.1", currencyId, 2, "NoSource",
-                new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, null, "NotComputed", null, null, null, null),
+                new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "NotComputed", null, null, null, null),
                 [
                     new SalesDraftLineTotalV1(lineId, 1, unitId, "12.5", "Computed", "11.475", "143.44", "NoSource",
                         null, null, null, null, null, null),
@@ -1422,7 +1422,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 body.GetProperty("revision").GetString(), body.GetProperty("currencyId").GetString(),
                 body.GetProperty("amountScale").GetInt32(), body.GetProperty("taxState").GetString()));
             var totals = body.GetProperty("totals");
-            Assert.Equal(["state", "unpricedLineCount", "priceUnitNotOrderUnitLineCount", "netAmount", "taxState", "vatAmount",
+            Assert.Equal(["state", "unpricedLineCount", "priceUnitNotOrderUnitLineCount", "amountOutOfRangeLineCount", "netAmount", "taxState", "vatAmount",
                 "withheldVatAmount", "grossAmount", "payableAmount"], totals.EnumerateObject().Select(member => member.Name));
             Assert.Equal(("Incomplete", 1, JsonValueKind.Null, "NotComputed"), (totals.GetProperty("state").GetString(),
                 totals.GetProperty("unpricedLineCount").GetInt32(), totals.GetProperty("netAmount").ValueKind,

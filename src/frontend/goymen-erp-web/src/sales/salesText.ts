@@ -1104,12 +1104,16 @@ export const ORDER_TOTALS_TEXT = {
   withheld: 'Tevkif edilen KDV',
   gross: 'KDV dahil toplam',
   payable: 'Ödenecek tutar',
-  incomplete: (unpriced: number, unconvertible: number) =>
+  incomplete: (unpriced: number, unconvertible: number, outOfRange: number) =>
     [
       unpriced > 0 ? `${unpriced} satırın fiyatı yok` : null,
       unconvertible > 0 ? `${unconvertible} satırın fiyat birimi sipariş biriminden farklı (birim çevrimi yapılmaz)` : null,
+      outOfRange > 0 ? `${outOfRange} satırın tutarı sistemin sayı sınırını aşıyor` : null,
     ].filter((part) => part !== null).join('; ') +
     '. Bu satırlar tutar taşımadığı için belge toplamı gösterilmiyor; kısmi toplam sipariş tutarı sanılmasın.',
+  documentOutOfRange:
+    'Satır tutarları hesaplandı ama belge toplamı sistemin sayı sınırını aşıyor; toplam gösterilmiyor (kesilmiş bir tutar gösterilmez).',
+  noLines: 'Siparişte satır yok; toplanacak tutar yok.',
   taxNoSource:
     "KDV ve tevkifat oranlarının kaynağı (Ayarlar'daki KDV/tevkifat tanımı) henüz yok. KDV, tevkifat, KDV dahil toplam ve " +
     'ödenecek tutar gösterilmiyor; sıfır sayılmaz.',
@@ -1130,6 +1134,7 @@ export const ORDER_TOTALS_TEXT = {
     Computed: 'Hesaplandı',
     Unpriced: 'Fiyat yok',
     PriceUnitNotOrderUnit: 'Fiyat birimi farklı',
+    AmountOutOfRange: 'Tutar sınır dışı',
   } satisfies Record<LineTotalState, string>,
   taxState: {
     Computed: 'Hesaplandı',

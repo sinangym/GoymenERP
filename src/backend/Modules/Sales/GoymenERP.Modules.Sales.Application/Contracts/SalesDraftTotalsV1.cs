@@ -19,7 +19,16 @@ public static class SalesDraftTotalsStatesV1
     /// <summary>Line: priced in another unit than its order unit; no conversion contract exists, so no amount is computed.</summary>
     public const string PriceUnitNotOrderUnit = "PriceUnitNotOrderUnit";
 
-    /// <summary>Document: at least one line has no amount; no sum is shown (a partial sum would understate the order).</summary>
+    /// <summary>
+    /// Line: its exact amount does not fit the technical decimal range of a stored amount; document: a sum does not. Nothing of
+    /// it is computed — fail-closed, never a truncated amount and never a 500.
+    /// </summary>
+    public const string AmountOutOfRange = "AmountOutOfRange";
+
+    /// <summary>
+    /// Document: at least one line has no amount, or the order has no line: no sum is shown (a partial sum would understate the
+    /// order; no line is nothing to total, never a computed 0).
+    /// </summary>
     public const string Incomplete = "Incomplete";
 
     /// <summary>Tax: no VAT master answered (MOD-03 not on main) — no VAT, withholding, gross or payable amount.</summary>
@@ -46,7 +55,7 @@ public sealed record SalesOrderDraftTotalsResponse(
 
 /// <summary>
 /// One line: its quantity in the order unit (the detail's text), <c>state</c> (<c>Computed</c> / <c>Unpriced</c> /
-/// <c>PriceUnitNotOrderUnit</c>), the exact net unit price (never rounded), the net amount (quantity × net unit price, rounded
+/// <c>PriceUnitNotOrderUnit</c> / <c>AmountOutOfRange</c>), the exact net unit price (never rounded), the net amount (quantity × net unit price, rounded
 /// once half away from zero), and — when <c>taxState</c> is <c>Computed</c> — the VAT rate and amount, the withheld share and
 /// amount (zero where withholding does not apply), gross (KDV dahil) and payable (gross − withheld VAT).
 /// </summary>
@@ -67,13 +76,15 @@ public sealed record SalesDraftLineTotalV1(
     string? PayableAmount);
 
 /// <summary>
-/// The document: sums of the line amounts. <c>state</c> <c>Computed</c> or <c>Incomplete</c> (with the counts of lines that have
-/// no amount, by reason); the tax sums only when <c>taxState</c> is <c>Computed</c>.
+/// The document: sums of the line amounts. <c>state</c> <c>Computed</c>, <c>Incomplete</c> (with the counts of lines that have
+/// no amount, by reason; all zero when the order has no line) or <c>AmountOutOfRange</c> (every line has an amount but a sum
+/// does not fit); the net only when <c>Computed</c>, the tax sums only when <c>taxState</c> is <c>Computed</c>.
 /// </summary>
 public sealed record SalesDraftDocumentTotalsV1(
     string State,
     int UnpricedLineCount,
     int PriceUnitNotOrderUnitLineCount,
+    int AmountOutOfRangeLineCount,
     string? NetAmount,
     string TaxState,
     string? VatAmount,

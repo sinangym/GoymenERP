@@ -88135,6 +88135,7 @@
           "state",
           "unpricedLineCount",
           "priceUnitNotOrderUnitLineCount",
+          "amountOutOfRangeLineCount",
           "netAmount",
           "taxState",
           "vatAmount",
@@ -88156,6 +88157,14 @@
             "format": "int32"
           },
           "priceUnitNotOrderUnitLineCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "amountOutOfRangeLineCount": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
               "integer",

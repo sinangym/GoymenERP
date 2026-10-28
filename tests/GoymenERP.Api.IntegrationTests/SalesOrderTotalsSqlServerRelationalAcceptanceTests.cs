@@ -96,6 +96,7 @@ public sealed class SalesOrderTotalsSqlServerRelationalAcceptanceTests
         }
 
         var document = totals.GetProperty("totals");
+        Assert.Equal(0, document.GetProperty("amountOutOfRangeLineCount").GetInt32());
         Assert.Equal(("Computed", 0, 0, "238.22", "NoSource"), (document.GetProperty("state").GetString(),
             document.GetProperty("unpricedLineCount").GetInt32(), document.GetProperty("priceUnitNotOrderUnitLineCount").GetInt32(),
             document.GetProperty("netAmount").GetString(), document.GetProperty("taxState").GetString()));
@@ -139,6 +140,33 @@ public sealed class SalesOrderTotalsSqlServerRelationalAcceptanceTests
         var document = totals.GetProperty("totals");
         Assert.Equal(("Incomplete", 1, JsonValueKind.Null, "NotComputed"), (document.GetProperty("state").GetString(),
             document.GetProperty("unpricedLineCount").GetInt32(), document.GetProperty("netAmount").ValueKind,
+            document.GetProperty("taxState").GetString()));
+    }
+
+    [SqlServerFact]
+    public async Task An_amount_beyond_the_decimal_range_is_answered_as_a_line_state_through_the_real_route_never_a_500_on_real_sql()
+    {
+        // Review B P2-1: 999999999999999.999 kg (decimal(18,3)) at 100000000000000 is accepted and stored; its exact amount
+        // (≈ 1e29) does not fit System.Decimal. The real route answers 200 with the line AmountOutOfRange and the document
+        // Incomplete — no amount, never a 500.
+        await using var run = await Run.StartAsync();
+        var draft = await run.PricedDraftAsync(CompanyA, "o",
+            ("999999999999999.999", new CommercialDraftFields("100000000000000", KgUnit, null)),
+            ("2", new CommercialDraftFields("10", KgUnit, null)));
+        var subject = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersPriceRead);
+        using var client = run.Client(subject, CompanyA);
+
+        using var response = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draft.Id:D}/totals");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var totals = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var lines = totals.GetProperty("lines").EnumerateArray().ToList();
+        Assert.Equal((draft.Lines[0].Id.ToString("D"), "999999999999999.999", "AmountOutOfRange", null, null, "NotComputed"), Line(lines[0]));
+        Assert.Equal((draft.Lines[1].Id.ToString("D"), "2", "Computed", "10", "20.00", "NoSource"), Line(lines[1]));
+        var document = totals.GetProperty("totals");
+        Assert.Equal(("Incomplete", 0, 0, 1, JsonValueKind.Null, "NotComputed"), (document.GetProperty("state").GetString(),
+            document.GetProperty("unpricedLineCount").GetInt32(), document.GetProperty("priceUnitNotOrderUnitLineCount").GetInt32(),
+            document.GetProperty("amountOutOfRangeLineCount").GetInt32(), document.GetProperty("netAmount").ValueKind,
             document.GetProperty("taxState").GetString()));
     }
 

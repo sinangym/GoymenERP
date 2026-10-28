@@ -8,6 +8,7 @@
     "state": "Incomplete",
     "unpricedLineCount": 1,
     "priceUnitNotOrderUnitLineCount": 0,
+    "amountOutOfRangeLineCount": 0,
     "netAmount": null,
     "taxState": "NotComputed",
     "vatAmount": null,

@@ -12,7 +12,7 @@ import detailResponseRaw from './examples/detail-response.json?raw'
 import totalsResponseRaw from './examples/totals-response.json?raw'
 import { SALES_CAPABILITY } from './capabilities'
 import { decodeDraftDetail, type DraftDetail } from './contract'
-import { decodeOrderTotals } from './orderTotals'
+import { cardOutcome, decodeOrderTotals, NO_LINES } from './orderTotals'
 import { ORDER_TOTALS_TEXT as T } from './salesText'
 import { OrderTotalsCard } from './SalesOrderTotalsCard'
 import { ALL_SALES, COMPANY_A, installFetch, json, renderSalesApp } from './testHarness'
@@ -94,7 +94,7 @@ describe('S-04 order totals (API-03 / UI-15)', () => {
       const amount = within(section).getByTestId(`sales-totals-${id}`)
       expect([amount.textContent, amount.getAttribute('data-computed')]).toEqual([T.notAvailable, 'false'])
     }
-    expect(within(section).getByTestId('sales-totals-note-incomplete').textContent).toBe(T.incomplete(1, 0))
+    expect(within(section).getByTestId('sales-totals-note-incomplete').textContent).toBe(T.incomplete(1, 0, 0))
     expect(within(section).getByTestId('sales-totals-note-tax-no-source').textContent).toBe(T.taxNoSource)
     expect(within(section).getByTestId('sales-totals-revision').textContent).toBe(T.revision('Rev.0', '4'))
 
@@ -262,7 +262,64 @@ describe('OrderTotalsCard outcomes', () => {
     render(<OrderTotalsCard detail={draftDetail} currency="TRY" outcome={{ type: 'ok-single', data: decoded }} onRetry={() => undefined} />)
 
     expect(screen.getByTestId('sales-totals-line-2-state').textContent).toContain(T.lineState.PriceUnitNotOrderUnit)
-    expect(screen.getByTestId('sales-totals-note-incomplete').textContent).toBe(T.incomplete(0, 1))
+    expect(screen.getByTestId('sales-totals-note-incomplete').textContent).toBe(T.incomplete(0, 1, 0))
+  })
+
+  it('shows a neutral "no lines" state for an order without lines — never the forbidden text (review B P2-2)', () => {
+    const empty = { ...draftDetail, lines: [] }
+    const ok = { type: 'ok-single' as const, data: decodeOrderTotals(totals(), draftDetail)! }
+    // The container's decision: no lines → the neutral state whatever was read; withheld prices → forbidden; else the read.
+    expect(cardOutcome(empty, undefined)).toBe(NO_LINES)
+    expect(cardOutcome(empty, ok)).toBe(NO_LINES)
+    expect(cardOutcome(decodeDraftDetail(detail('Withheld'), DRAFT) as DraftDetail, ok)).toEqual({ type: 'http', status: 403 })
+    expect(cardOutcome(draftDetail, ok)).toBe(ok)
+    render(<OrderTotalsCard detail={empty} currency="TRY" outcome={cardOutcome(empty, undefined)} onRetry={() => undefined} />)
+
+    const section = screen.getByRole('region', { name: T.heading })
+    expect(within(section).getByRole('status').textContent).toBe(T.noLines)
+    expect(within(section).queryByTestId('sales-totals-forbidden')).toBeNull()
+    expect(within(section).queryByText(T.forbidden)).toBeNull()
+    expect(within(section).queryByRole('table')).toBeNull()
+    expect(section.getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('shows the server’s zero-line answer neutrally too (a direct read of an order without lines)', () => {
+    const empty = { ...draftDetail, lines: [] }
+    const body = totals()
+    body.lines = []
+    body.totals = { ...body.totals, unpricedLineCount: 0 }
+    const decoded = decodeOrderTotals(body, empty)
+    if (decoded === null) throw new Error('the zero-line answer does not decode')
+    render(<OrderTotalsCard detail={empty} currency="TRY" outcome={{ type: 'ok-single', data: decoded }} onRetry={() => undefined} />)
+
+    expect(screen.getByTestId('sales-totals-note-no-lines').textContent).toBe(T.noLines)
+    expect(screen.queryByTestId('sales-totals-note-incomplete')).toBeNull()
+    expect(screen.getByTestId('sales-totals-net').textContent).toBe(T.notAvailable)
+  })
+
+  it('names a line beyond the decimal range and never shows a truncated amount (review B P2-1)', () => {
+    const body = totals()
+    Object.assign(body.lines[0], { state: 'AmountOutOfRange', netUnitPrice: null, netAmount: null, taxState: 'NotComputed' })
+    body.totals = { ...body.totals, amountOutOfRangeLineCount: 1 }
+    const decoded = decodeOrderTotals(body, draftDetail)
+    if (decoded === null) throw new Error('the answer does not decode')
+    render(<OrderTotalsCard detail={draftDetail} currency="TRY" outcome={{ type: 'ok-single', data: decoded }} onRetry={() => undefined} />)
+
+    expect(screen.getByTestId('sales-totals-line-1-state').textContent).toContain(T.lineState.AmountOutOfRange)
+    expect(screen.getByTestId('sales-totals-line-1-net').textContent).toBe(T.notAvailable)
+    expect(screen.getByTestId('sales-totals-note-incomplete').textContent).toBe(T.incomplete(1, 0, 1))
+  })
+
+  it('says the document sum is beyond the decimal range while every line amount is still shown', () => {
+    const body = complete()
+    body.totals = { ...body.totals, state: 'AmountOutOfRange', netAmount: null, taxState: 'NotComputed' }
+    const decoded = decodeOrderTotals(body, draftDetail)
+    if (decoded === null) throw new Error('the answer does not decode')
+    render(<OrderTotalsCard detail={draftDetail} currency="TRY" outcome={{ type: 'ok-single', data: decoded }} onRetry={() => undefined} />)
+
+    expect(screen.getByTestId('sales-totals-note-document-out-of-range').textContent).toBe(T.documentOutOfRange)
+    expect(screen.getByTestId('sales-totals-net').textContent).toBe(T.notAvailable)
+    expect(screen.getByTestId('sales-totals-line-2-net').textContent).toBe('200.00')
   })
 
   it.each([

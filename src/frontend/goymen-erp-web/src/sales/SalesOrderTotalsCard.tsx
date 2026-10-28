@@ -7,15 +7,16 @@
  * The screen never adds, multiplies or rounds an amount (AGENTS.md: "Fiyat/formül/toleransı ekran içinde yeniden yazma"):
  * every number is the server calculator's text. A value the server could not compute is shown as a word with its reason —
  * an unpriced line, a line priced in another unit, an incomplete document, a VAT master that does not exist yet — never as
- * zero. A caller who may not see prices (any line `Withheld`) is not asked: the card says why nothing is shown. A failed,
- * forbidden or foreign answer shows no amount at all.
+ * zero. A caller who may not see prices (any line `Withheld`) is not asked: the card says why nothing is shown. An order
+ * without lines is not asked either — there is nothing to total, and no line says whether prices are disclosed — and the card
+ * says so neutrally (never "forbidden"). A failed, forbidden or foreign answer shows no amount at all.
  */
 import { useContext, useId, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDraftTotals } from './api'
 import { SALES_CAPABILITY } from './capabilities'
 import { decodeProblem, type DraftDetail } from './contract'
-import { TOTALS_STATE, type LineTotal, type OrderTotals, type TaxState } from './orderTotals'
+import { cardOutcome, NO_LINES, TOTALS_STATE, type LineTotal, type OrderTotals, type TaxState } from './orderTotals'
 import { SalesCurrencySourceContext } from './referenceSource'
 import { ORDER_TOTALS_TEXT as T } from './salesText'
 import { orderUnitCodes } from './unitNames'
@@ -39,7 +40,8 @@ export function SalesOrderTotalsCard({ detail }: { readonly detail: DraftDetail 
   // The API still measures both afresh on every call.
   const canRead = namespace !== null && companyId !== null && companyId === detail.draft.companyId
     && hasCapability(shell, SALES_CAPABILITY.draftsDetail)
-  const pricesDisclosed = detail.lines.length > 0 && detail.lines.every((line) => line.priceDisclosure === 'Visible')
+  const hasLines = detail.lines.length > 0
+  const pricesDisclosed = hasLines && detail.lines.every((line) => line.priceDisclosure === 'Visible')
   const boundary = useAuthBoundary()
   // The currencies reference is the create form's read (sales.drafts.create): without it the currency's identity is shown.
   const useCurrencies = useContext(SalesCurrencySourceContext)
@@ -69,7 +71,7 @@ export function SalesOrderTotalsCard({ detail }: { readonly detail: DraftDetail 
     <OrderTotalsCard
       detail={detail}
       currency={currencyCode ?? detail.draft.currencyId}
-      outcome={pricesDisclosed ? query.data : { type: 'http', status: 403 }}
+      outcome={cardOutcome(detail, query.data)}
       onRetry={() => void query.refetch()}
     />
   )
@@ -85,12 +87,14 @@ export function OrderTotalsCard({
   readonly detail: DraftDetail
   /** The draft currency's code when readable to this caller, else its identity. */
   readonly currency: string
-  readonly outcome: ViewOutcome<OrderTotals> | undefined
+  readonly outcome: ViewOutcome<OrderTotals> | typeof NO_LINES | undefined
   readonly onRetry: () => void
 }) {
   const headingId = useId()
   let body
-  if (outcome?.type === 'ok-single') {
+  if (outcome?.type === 'no-lines') {
+    body = <p className={pages.muted} role="status" data-testid="sales-totals-no-lines">{T.noLines}</p>
+  } else if (outcome?.type === 'ok-single') {
     body = <TotalsBody detail={detail} currency={currency} totals={outcome.data} />
   } else if (outcome?.type === 'http' && outcome.status === 403) {
     body = <p className={pages.muted} role="status" data-testid="sales-totals-forbidden">{T.forbidden}</p>
@@ -125,7 +129,9 @@ export function OrderTotalsCard({
 
 /* ── Presentation of decoded totals ───────────────────────────────────────── */
 
-const LINE_TONE: Record<LineTotal['state'], StatusTone> = { Computed: 'success', Unpriced: 'warning', PriceUnitNotOrderUnit: 'warning' }
+const LINE_TONE: Record<LineTotal['state'], StatusTone> = {
+  Computed: 'success', Unpriced: 'warning', PriceUnitNotOrderUnit: 'warning', AmountOutOfRange: 'warning',
+}
 const TAX_TONE: Record<TaxState, StatusTone> = { Computed: 'success', NoSource: 'neutral', NotComputed: 'neutral' }
 
 function TotalsBody({ detail, currency, totals }: { readonly detail: DraftDetail; readonly currency: string; readonly totals: OrderTotals }) {
@@ -138,8 +144,13 @@ function TotalsBody({ detail, currency, totals }: { readonly detail: DraftDetail
   const document = totals.totals
   const taxed = document.tax !== null
   const notes: { readonly key: string; readonly text: string }[] = []
-  if (document.state === TOTALS_STATE.incomplete) {
-    notes.push({ key: 'incomplete', text: T.incomplete(document.unpricedLineCount, document.priceUnitNotOrderUnitLineCount) })
+  if (document.state === TOTALS_STATE.incomplete && totals.lines.length === 0) {
+    notes.push({ key: 'no-lines', text: T.noLines })
+  } else if (document.state === TOTALS_STATE.incomplete) {
+    notes.push({ key: 'incomplete', text: T.incomplete(document.unpricedLineCount, document.priceUnitNotOrderUnitLineCount,
+      document.amountOutOfRangeLineCount) })
+  } else if (document.state === TOTALS_STATE.amountOutOfRange) {
+    notes.push({ key: 'document-out-of-range', text: T.documentOutOfRange })
   }
   if (totals.taxState === TOTALS_STATE.noSource) notes.push({ key: 'tax-no-source', text: T.taxNoSource })
   else if (document.state === TOTALS_STATE.computed && !taxed) notes.push({ key: 'tax-partial', text: T.taxPartial })

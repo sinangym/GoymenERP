@@ -33,6 +33,14 @@ const detail = decodeDraftDetail(detailBody(), DRAFT) as DraftDetail
 
 const totals = (): Body => JSON.parse(totalsResponseRaw) as Body
 
+/** Both lines priced: the document net is the server's sum; the tax has no source. */
+function complete(): Body {
+  const body = totals()
+  body.lines[1] = { ...body.lines[0], lineId: LINE_2, lineNo: 2, quantity: '2', netUnitPrice: '100', netAmount: '200.00' }
+  body.totals = { ...body.totals, state: 'Computed', unpricedLineCount: 0, netAmount: '214.34', taxState: 'NoSource' }
+  return body
+}
+
 /** A complete, tax-computed answer (SENTETIK rates; no VAT master exists on main). */
 function taxed(): Body {
   const body = totals()
@@ -46,8 +54,8 @@ function taxed(): Body {
       : { taxState: 'Computed', vatPercent: '20', vatAmount: '40.00', withholdingShare: '0.5', withheldVatAmount: '20.00', grossAmount: '240.00', payableAmount: '220.00' })
   }
   body.totals = {
-    state: 'Computed', unpricedLineCount: 0, priceUnitNotOrderUnitLineCount: 0, netAmount: '214.34', taxState: 'Computed',
-    vatAmount: '42.87', withheldVatAmount: '20.00', grossAmount: '257.21', payableAmount: '237.21',
+    state: 'Computed', unpricedLineCount: 0, priceUnitNotOrderUnitLineCount: 0, amountOutOfRangeLineCount: 0, netAmount: '214.34',
+    taxState: 'Computed', vatAmount: '42.87', withheldVatAmount: '20.00', grossAmount: '257.21', payableAmount: '237.21',
   }
   return body
 }
@@ -62,7 +70,7 @@ describe('decodeOrderTotals', () => {
     const decoded = decodeOrderTotals(totals(), detail)
     expect(decoded).toMatchObject({
       draftVersion: '4', revision: 'Rev.0', currencyId: CURRENCY, amountScale: 2, taxState: 'NoSource',
-      totals: { state: 'Incomplete', unpricedLineCount: 1, priceUnitNotOrderUnitLineCount: 0, netAmount: null, taxState: 'NotComputed', tax: null },
+      totals: { state: 'Incomplete', unpricedLineCount: 1, priceUnitNotOrderUnitLineCount: 0, amountOutOfRangeLineCount: 0, netAmount: null, taxState: 'NotComputed', tax: null },
     })
     expect(decoded?.lines.map((line) => [line.lineNo, line.state, line.netUnitPrice, line.netAmount, line.taxState, line.tax])).toEqual([
       [1, 'Computed', '11.475', '14.34', 'NoSource', null],
@@ -73,7 +81,8 @@ describe('decodeOrderTotals', () => {
   it('reads a tax-computed answer with VAT, withholding, gross and payable per line and on the document', () => {
     const decoded = decodeOrderTotals(taxed(), detail)
     expect(decoded?.totals).toEqual({
-      state: 'Computed', unpricedLineCount: 0, priceUnitNotOrderUnitLineCount: 0, netAmount: '214.34', taxState: 'Computed',
+      state: 'Computed', unpricedLineCount: 0, priceUnitNotOrderUnitLineCount: 0, amountOutOfRangeLineCount: 0, netAmount: '214.34',
+      taxState: 'Computed',
       tax: { vatAmount: '42.87', withheldVatAmount: '20.00', grossAmount: '257.21', payableAmount: '237.21' },
     })
     expect(decoded?.lines[1]).toMatchObject({ vatPercent: '20', withholdingShare: '0.5', tax: { withheldVatAmount: '20.00', payableAmount: '220.00' } })
@@ -87,6 +96,33 @@ describe('decodeOrderTotals', () => {
     const decoded = decodeOrderTotals(body, detail)
     expect(decoded?.lines.map((line) => line.lineId)).toEqual([LINE_1, LINE_2])
     expect(decoded?.currencyId).toBe(CURRENCY)
+  })
+
+  it('reads an order without lines as Incomplete with every count 0 — the backend’s answer, never a computed 0', () => {
+    const empty = { ...detail, lines: [] }
+    const body = totals()
+    body.lines = []
+    body.totals = { ...body.totals, unpricedLineCount: 0 }
+    expect(decodeOrderTotals(body, empty)?.totals).toMatchObject({ state: 'Incomplete', unpricedLineCount: 0, netAmount: null })
+    // A "complete" zero-line document (mutation m2) is refused.
+    expect(decodeOrderTotals({ ...body, totals: { ...body.totals, state: 'Computed', netAmount: '0.00', taxState: 'NoSource' } }, empty))
+      .toBeNull()
+  })
+
+  it('reads a line beyond the decimal range as AmountOutOfRange with no amount, and the document as Incomplete', () => {
+    const body = totals()
+    Object.assign(body.lines[0], { state: 'AmountOutOfRange', netUnitPrice: null, netAmount: null, taxState: 'NotComputed' })
+    body.totals = { ...body.totals, amountOutOfRangeLineCount: 1 }
+    const decoded = decodeOrderTotals(body, detail)
+    expect(decoded?.lines[0]).toMatchObject({ state: 'AmountOutOfRange', netAmount: null, tax: null })
+    expect(decoded?.totals).toMatchObject({ state: 'Incomplete', unpricedLineCount: 1, amountOutOfRangeLineCount: 1 })
+  })
+
+  it('reads a document sum beyond the decimal range as AmountOutOfRange with no net, every line still shown', () => {
+    const body = complete()
+    body.totals = { ...body.totals, state: 'AmountOutOfRange', netAmount: null, taxState: 'NotComputed' }
+    expect(decodeOrderTotals(body, detail)?.totals).toMatchObject({ state: 'AmountOutOfRange', netAmount: null, tax: null })
+    expect(decodeOrderTotals({ ...body, totals: { ...body.totals, netAmount: '214.34' } }, detail)).toBeNull()
   })
 
   const refusals: readonly [string, (body: Body) => void][] = [
@@ -116,6 +152,9 @@ describe('decodeOrderTotals', () => {
     ['an incomplete document with a partial sum', (b) => { b.totals.netAmount = '14.34' }],
     ['an incomplete document called computed', (b) => { b.totals.state = 'Computed' }],
     ['a wrong unpriced count', (b) => { b.totals.unpricedLineCount = 0 }],
+    ['a wrong out-of-range count', (b) => { b.totals.amountOutOfRangeLineCount = 1 }],
+    ['an out-of-range line with an amount', (b) => { Object.assign(b.lines[0], { state: 'AmountOutOfRange', taxState: 'NotComputed' }) }],
+    ['an incomplete document called out of range', (b) => { b.totals.state = 'AmountOutOfRange' }],
     ['an amount scale out of range', (b) => { b.amountScale = 29 }],
   ]
   it.each(refusals)('refuses %s', (_, mutate) => {
@@ -165,7 +204,7 @@ describe('API-03 OpenAPI pin', () => {
 
   it.each([
     ['SalesOrderDraftTotalsResponse', ['amountScale', 'currencyId', 'draftVersion', 'lines', 'revision', 'taxState', 'totals']],
-    ['SalesDraftDocumentTotalsV1', ['grossAmount', 'netAmount', 'payableAmount', 'priceUnitNotOrderUnitLineCount', 'state', 'taxState',
+    ['SalesDraftDocumentTotalsV1', ['amountOutOfRangeLineCount', 'grossAmount', 'netAmount', 'payableAmount', 'priceUnitNotOrderUnitLineCount', 'state', 'taxState',
       'unpricedLineCount', 'vatAmount', 'withheldVatAmount']],
     ['SalesDraftLineTotalV1', ['grossAmount', 'lineId', 'lineNo', 'netAmount', 'netUnitPrice', 'orderUnitId', 'payableAmount', 'quantity',
       'state', 'taxState', 'vatAmount', 'vatPercent', 'withheldVatAmount', 'withholdingShare']],

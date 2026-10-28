@@ -33,7 +33,7 @@ public sealed partial class SalesDraftServiceTests
                 new SalesDraftLineTotalV1(second, 2, KgUnit, "2.25", "Computed", "99.5", "223.88", "NoSource", null, null, null, null, null, null),
             ],
             totals.Lines);
-        Assert.Equal(new SalesDraftDocumentTotalsV1("Computed", 0, 0, "238.22", "NoSource", null, null, null, null), totals.Totals);
+        Assert.Equal(new SalesDraftDocumentTotalsV1("Computed", 0, 0, 0, "238.22", "NoSource", null, null, null, null), totals.Totals);
         // The draft read, the price read BEFORE the draft is read, the draft read's fence after it, the price read last.
         Assert.Equal([ReadPermission, PriceReadPermission, ReadPermission, PriceReadPermission], world.Authority.Measured);
         Assert.Equal((attempts, envelopes), (world.Store.Attempts, world.Store.Envelopes.Count));
@@ -50,7 +50,44 @@ public sealed partial class SalesDraftServiceTests
 
         var line = Assert.Single(totals.Lines);
         Assert.Equal(("Unpriced", null, null, "NotComputed"), (line.State, line.NetUnitPrice, line.NetAmount, line.TaxState));
-        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, null, "NotComputed", null, null, null, null), totals.Totals);
+        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "NotComputed", null, null, null, null), totals.Totals);
+    }
+
+    [Fact]
+    public async Task An_amount_beyond_the_decimal_range_is_a_line_state_and_an_incomplete_document_never_an_exception()
+    {
+        // Review B P2-1: the domain accepts 999999999999999.999 kg (decimal(18,3)) at a price of 100000000000000; the exact
+        // product (≈ 1e29) does not fit System.Decimal. The read answers it as a state — no amount, never a 500.
+        var world = new World();
+        var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("999999999999999.999", null),
+            Metadata("k-totals-overflow"))).Detail;
+        var lineId = created.Lines[0].LineId;
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            new SalesDraftLineCommercialV1(lineId, "100000000000000", KgUnit, null)), Metadata("k-totals-overflow-price"));
+
+        var totals = await world.Service().GetDraftTotalsAsync(created.Draft.Id);
+
+        Assert.Equal(new SalesDraftLineTotalV1(lineId, 1, KgUnit, "999999999999999.999", "AmountOutOfRange", null, null, "NotComputed",
+            null, null, null, null, null, null), Assert.Single(totals.Lines));
+        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 0, 0, 1, null, "NotComputed", null, null, null, null), totals.Totals);
+    }
+
+    [Fact]
+    public async Task The_risk_check_of_the_same_out_of_range_order_answers_its_unavailable_path_never_an_exception()
+    {
+        // Review B P2-1, second half: the risk read never multiplies an order amount (SAT-D46: its VAT-included amount is API-03's,
+        // whose VAT has no source), so the out-of-range order is "Unavailable" there too — no OverflowException, no 500.
+        var world = new World { PartyRisk = new FakePartyRisk(FinanceLike([new(Lira, 100m)])) };
+        var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("999999999999999.999", null),
+            Metadata("k-risk-overflow"))).Detail;
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            new SalesDraftLineCommercialV1(created.Lines[0].LineId, "100000000000000", KgUnit, null)), Metadata("k-risk-overflow-price"));
+
+        var check = await world.Service().GetDraftRiskCheckAsync(created.Draft.Id);
+
+        Assert.Equal("Unavailable", check.Result);
+        Assert.Equal(("ThisOrder", "Unavailable", SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
+            (check.ThisOrder.Kind, check.ThisOrder.State, check.ThisOrder.ReasonCode));
     }
 
     [Fact]

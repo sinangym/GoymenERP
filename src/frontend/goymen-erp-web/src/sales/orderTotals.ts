@@ -10,15 +10,17 @@
  *  - the answer is bound to the detail on screen: the same version, commercial revision and currency, and every line of
  *    that detail exactly once with its own number, order unit and quantity;
  *  - every amount is plain decimal text with exactly `amountScale` decimals (the server pads to the profile's scale);
- *  - one shape per state: a `Computed` line has a net unit price and a net amount, an `Unpriced` / `PriceUnitNotOrderUnit`
- *    line has neither and its tax is `NotComputed`; the document is `Computed` exactly when every line is, with its net, and
- *    `Incomplete` with the counts of the lines that have no amount and no net; VAT, withholding, gross and payable exist
+ *  - one shape per state: a `Computed` line has a net unit price and a net amount, an `Unpriced` / `PriceUnitNotOrderUnit` /
+ *    `AmountOutOfRange` line has neither and its tax is `NotComputed`; the document is `Incomplete` (no net) when a line has
+ *    no amount or there is no line at all, with the counts of the lines that have none; otherwise `Computed` with its net, or
+ *    `AmountOutOfRange` (a sum beyond the decimal range: no net); VAT, withholding, gross and payable exist
  *    exactly when the tax is `Computed`, and `NoSource` (no VAT master) carries none of them — never zero.
  *
  * Decimal text stays text. A decoder returns null for anything it cannot vouch for; the caller fails closed.
  */
 
 import { salesDraftDetailPath, type DraftDetail } from './contract'
+import type { ViewOutcome } from '../shell/uiState'
 import { isReferenceId } from './wirePrimitives'
 
 /** API-03: the order's totals (GET, under the draft read AND the price read). */
@@ -29,15 +31,18 @@ export const TOTALS_STATE = {
   computed: 'Computed',
   unpriced: 'Unpriced',
   priceUnitNotOrderUnit: 'PriceUnitNotOrderUnit',
+  amountOutOfRange: 'AmountOutOfRange',
   incomplete: 'Incomplete',
   noSource: 'NoSource',
   notComputed: 'NotComputed',
 } as const
 
-export const LINE_TOTAL_STATES = [TOTALS_STATE.computed, TOTALS_STATE.unpriced, TOTALS_STATE.priceUnitNotOrderUnit] as const
+export const LINE_TOTAL_STATES = [
+  TOTALS_STATE.computed, TOTALS_STATE.unpriced, TOTALS_STATE.priceUnitNotOrderUnit, TOTALS_STATE.amountOutOfRange,
+] as const
 export type LineTotalState = (typeof LINE_TOTAL_STATES)[number]
 
-export const DOCUMENT_TOTAL_STATES = [TOTALS_STATE.computed, TOTALS_STATE.incomplete] as const
+export const DOCUMENT_TOTAL_STATES = [TOTALS_STATE.computed, TOTALS_STATE.incomplete, TOTALS_STATE.amountOutOfRange] as const
 export type DocumentTotalState = (typeof DOCUMENT_TOTAL_STATES)[number]
 
 export const TAX_STATES = [TOTALS_STATE.computed, TOTALS_STATE.noSource, TOTALS_STATE.notComputed] as const
@@ -69,6 +74,7 @@ export interface DocumentTotal {
   readonly state: DocumentTotalState
   readonly unpricedLineCount: number
   readonly priceUnitNotOrderUnitLineCount: number
+  readonly amountOutOfRangeLineCount: number
   readonly netAmount: string | null
   readonly taxState: TaxState
   readonly tax: TaxAmounts | null
@@ -98,6 +104,7 @@ const DECIMAL = /^(0|[1-9][0-9]*)(?:\.([0-9]+))?$/
 const isDecimal = (v: unknown): v is string => typeof v === 'string' && v.length <= 64 && DECIMAL.test(v)
 const oneOf = <T extends string>(values: readonly T[], v: unknown): v is T => typeof v === 'string' && (values as readonly string[]).includes(v)
 const isCount = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0
+/** Mirrors the backend's `Money.MaximumScale` — System.Decimal's own technical limit, not a business policy. */
 const MAX_AMOUNT_SCALE = 28
 
 /** An amount padded to exactly `scale` decimals (no sign: totals of an order are never negative). */
@@ -148,19 +155,22 @@ function decodeLine(value: unknown, scale: number): LineTotal | null {
   }
 }
 
-const DOCUMENT_KEYS = ['state', 'unpricedLineCount', 'priceUnitNotOrderUnitLineCount', 'netAmount', 'taxState', 'vatAmount',
-  'withheldVatAmount', 'grossAmount', 'payableAmount'] as const
+const DOCUMENT_KEYS = ['state', 'unpricedLineCount', 'priceUnitNotOrderUnitLineCount', 'amountOutOfRangeLineCount', 'netAmount',
+  'taxState', 'vatAmount', 'withheldVatAmount', 'grossAmount', 'payableAmount'] as const
 
 function decodeDocument(value: unknown, scale: number, lines: readonly LineTotal[]): DocumentTotal | null {
   const o = exact(value, DOCUMENT_KEYS)
   if (o === null || !oneOf(DOCUMENT_TOTAL_STATES, o.state) || !isCount(o.unpricedLineCount)
-    || !isCount(o.priceUnitNotOrderUnitLineCount) || !oneOf(TAX_STATES, o.taxState)) return null
+    || !isCount(o.priceUnitNotOrderUnitLineCount) || !isCount(o.amountOutOfRangeLineCount) || !oneOf(TAX_STATES, o.taxState)) return null
   const unpriced = lines.filter((line) => line.state === TOTALS_STATE.unpriced).length
   const unconvertible = lines.filter((line) => line.state === TOTALS_STATE.priceUnitNotOrderUnit).length
-  if (o.unpricedLineCount !== unpriced || o.priceUnitNotOrderUnitLineCount !== unconvertible) return null
-  const complete = unpriced === 0 && unconvertible === 0
-  if (complete !== (o.state === TOTALS_STATE.computed)) return null
-  if (complete) {
+  const outOfRange = lines.filter((line) => line.state === TOTALS_STATE.amountOutOfRange).length
+  if (o.unpricedLineCount !== unpriced || o.priceUnitNotOrderUnitLineCount !== unconvertible
+    || o.amountOutOfRangeLineCount !== outOfRange) return null
+  // No line is nothing to total (the backend's rule): Incomplete with every count 0, never a computed 0.
+  const everyLineHasAmount = lines.length > 0 && unpriced === 0 && unconvertible === 0 && outOfRange === 0
+  if (everyLineHasAmount === (o.state === TOTALS_STATE.incomplete)) return null
+  if (o.state === TOTALS_STATE.computed) {
     if (!isAmount(o.netAmount, scale) || o.taxState === TOTALS_STATE.notComputed) return null
     // The document tax is computed only when every line's is (the sums are the lines').
     const everyLineTaxed = lines.every((line) => line.taxState === TOTALS_STATE.computed)
@@ -172,7 +182,7 @@ function decodeDocument(value: unknown, scale: number, lines: readonly LineTotal
   if (tax === undefined) return null
   return {
     state: o.state, unpricedLineCount: o.unpricedLineCount, priceUnitNotOrderUnitLineCount: o.priceUnitNotOrderUnitLineCount,
-    netAmount: o.netAmount as string | null, taxState: o.taxState, tax,
+    amountOutOfRangeLineCount: o.amountOutOfRangeLineCount, netAmount: o.netAmount as string | null, taxState: o.taxState, tax,
   }
 }
 
@@ -211,4 +221,21 @@ export function decodeOrderTotals(value: unknown, detail: DraftDetail): OrderTot
     draftVersion: o.draftVersion, revision: o.revision, currencyId: detail.draft.currencyId, amountScale: scale, taxState: o.taxState,
     totals, lines,
   }
+}
+
+/** An order without lines: nothing is read and nothing is totalled (the backend answers it `Incomplete` with every count 0). */
+export const NO_LINES = { type: 'no-lines' } as const
+
+/**
+ * What the card shows for `detail`: an order without lines is the neutral "no lines" state (nothing to total, and no line
+ * says whether prices are disclosed — never "forbidden"); withheld prices are the forbidden state without a read; otherwise
+ * the read's outcome. The S-04 detail decoder refuses a zero-line detail today (`lineCount` ≥ 1), so the first branch is the
+ * card's own guard, kept in step with the backend's zero-line rule.
+ */
+export function cardOutcome(
+  detail: DraftDetail,
+  read: ViewOutcome<OrderTotals> | undefined,
+): ViewOutcome<OrderTotals> | typeof NO_LINES | undefined {
+  if (detail.lines.length === 0) return NO_LINES
+  return detail.lines.every((line) => line.priceDisclosure === 'Visible') ? read : { type: 'http', status: 403 }
 }

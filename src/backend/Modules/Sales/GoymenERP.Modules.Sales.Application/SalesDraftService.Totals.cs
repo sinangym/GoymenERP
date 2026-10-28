@@ -60,9 +60,10 @@ public sealed partial class SalesDraftService
             totals.AmountScale,
             TaxStateText(totals.TaxState),
             new SalesDraftDocumentTotalsV1(
-                document.IsComplete ? SalesDraftTotalsStatesV1.Computed : SalesDraftTotalsStatesV1.Incomplete,
+                DocumentStateText(document.State),
                 document.UnpricedLineCount,
                 document.PriceUnitNotOrderUnitLineCount,
+                document.AmountOutOfRangeLineCount,
                 Amount(document.NetAmount),
                 TaxStateText(document.TaxState),
                 Amount(document.VatAmount),
@@ -96,7 +97,16 @@ public sealed partial class SalesDraftService
         SalesLineTotalState.Computed => SalesDraftTotalsStatesV1.Computed,
         SalesLineTotalState.Unpriced => SalesDraftTotalsStatesV1.Unpriced,
         SalesLineTotalState.PriceUnitNotOrderUnit => SalesDraftTotalsStatesV1.PriceUnitNotOrderUnit,
+        SalesLineTotalState.AmountOutOfRange => SalesDraftTotalsStatesV1.AmountOutOfRange,
         _ => throw new InvalidOperationException($"Unknown line total state {state}."),
+    };
+
+    private static string DocumentStateText(SalesDocumentTotalState state) => state switch
+    {
+        SalesDocumentTotalState.Computed => SalesDraftTotalsStatesV1.Computed,
+        SalesDocumentTotalState.Incomplete => SalesDraftTotalsStatesV1.Incomplete,
+        SalesDocumentTotalState.AmountOutOfRange => SalesDraftTotalsStatesV1.AmountOutOfRange,
+        _ => throw new InvalidOperationException($"Unknown document total state {state}."),
     };
 
     private static string TaxStateText(SalesTaxState state) => state switch
