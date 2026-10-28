@@ -117,8 +117,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // passes it to the Sales reference read; no OpenAPI-generation, network or hosted-service surface changes.
     // MOD-08 adds one scoped in-process Sales-to-Identity user display adapter beside the Sales-Cari display host,
     // with its comment (4cf4cba9… -> cae283bd…); it adds no OpenAPI-generation, network or hosted-service surface.
+    // SAT-D27 adds the reference reads' alternative request/quote write names and the sales-owner eligibility name to the
+    // existing SalesReferenceReadBindings singleton, passes the optional ISalesOwnerCandidateSourceV1 to the Sales reference
+    // read factory, and registers one scoped in-process SalesOwnerCandidateHost, with comments (cae283bd… -> 2eae99cc…), then
+    // a COMMENT-ONLY edit saying the sales-owner picker opens on the order create name alone (2eae99cc… -> 13f02f10…); no
+    // OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "cae283bdee5fc266d1d45a773f9be8028088868523d30ac848e8cd071715c307";
+        "13f02f10dd4cdd0a1a245c41326bfddfbc2f3454265be791f9d4c0d621ef08fb";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -158,8 +163,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Re-fingerprinted for #391: two linked Compile items (the browser-suite runner's BrowserSuiteHost.cs
     // and its closed seed-output validator, both for BrowserSuiteHostEnvelopeTests), after the module SQL
     // acceptance ProjectReferences. Publish target and discovery contract unchanged.
+    // Re-fingerprinted for MOD-07: the PdfPig test package (the sales order PDF's text is read back from its bytes, as
+    // the PDF component's own tests do). Publish target and discovery contract unchanged.
     private const string ReviewedSqlServerRcsiIntegrationProjectFingerprint =
-        "042bd595603757b528ba7dca7bf77ecf6b2ec7ce75cb5d219c038504878fe7c3";
+        "82a6bb89fa2bacd24c30c92fd71f3927fbfff42c2d640630d3b76d1b7babbd05";
     private const string SqlServerRcsiRelationalAcceptancePath =
         "tests/GoymenERP.Api.IntegrationTests/"
         + "SqlServerRcsiReadinessSqlServerRelationalAcceptanceTests.cs";
@@ -222,15 +229,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // D-05 approval inbox: the existing pending-approval fact is renamed and strengthened to public HTTP/DI.
             // FI04: +2 approved-source open-item read facts (real HTTP authority/redaction and SQL keyset/no-write).
             // SAT-D18: +1 Sales-only GSP/GIN TRY profile keeps the bank-account path closed, kept ordinal-sorted.
+            // MOD-01 / SAT-D52: +2 Sales risk-port facts (unallocated payments deducted, reversed ones never; a refunded advance
+            // no longer deducted — review A P2-1), ordinal-sorted (cb46a836… -> 7dc420a3…).
             ["tools/relational_inventory/finance.txt"] =
-                "cb46a8362f31ddcb5e5c04be5369ac91527135dae1d0da2af66904a0302b95e6",
+                "7dc420a35ef402dcddf4461a5818301cfffcacb923b354db076a158789bbd156",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
             // BLG-03: +1 IdentityAuditReadFreshAuthoritySqlServerRelationalAcceptanceTests fact (a521143a… -> 9a5ea313…).
             // MOD-08: +1 IdentityUserDirectorySqlServerRelationalAcceptanceTests fact (9a5ea313… -> b2ba31aa…).
+            // SAT-D27 (1): +1 sales-owner picker holder-filter SQL fact, ordinal-sorted (b2ba31aa… -> 12e280b9…).
             ["tools/relational_inventory/identity.txt"] =
-                "b2ba31aa0066ac18800af3ec6333efcaaa8f49d68e897bee9bed0c063714d92b",
+                "12e280b982af6d86c6eabf1db09d4d636029bc5c1c4046e386ec13ebe4999815",
 
             // inventory
             // AT-037: +3 stock-count SQL facts (d709faf1… -> 4e783c62…).
@@ -317,8 +327,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // API-22…24: +5 sales quote SQL facts; merged over DEC-SAL-001 / API-08's +2 SalesOrderStatusSqlServerRelationalAcceptanceTests
             // facts, kept ordinal-sorted (a9873855… -> 06afeb99…).
             // SAT-D2 / API-12: +2 SalesDiscountExceptionSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (06afeb99… -> b1a5335a…).
+            // UI-20 shell 1.8: +1 S-01 pool capability SQL fact, ordinal-sorted (b1a5335a… -> efdb5edd…).
+            // MOD-07: +1 SalesOrderPdfSqlServerRelationalAcceptanceTests fact, kept ordinal-sorted (merged over UI-20 shell 1.8:
+            // efdb5edd… -> 87dc8166…).
+            // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over MOD-07, kept ordinal-sorted
+            // (87dc8166… -> d74f7c2d…).
             ["tools/relational_inventory/sales.txt"] =
-                "b1a5335a853c8b2e04cd8858ae0c5a6f686724b08788ea2b376b30646834d26d",
+                "d74f7c2d9ab604c9c30dfd9b489aa4cfae8a9d4ec78acd84df99ed95a22106f4",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -907,12 +922,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
                 // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
                 // branch and its token counts are unchanged. Re-fingerprinted for the party ledger: one read-service
-                // registration (no writer); the provider branch and its token counts are unchanged.
+                // registration (no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for
+                // MOD-01: one read-port registration (the Sales-declared ISalesPartyRiskReadPortV1 over Finance's own open
+                // items, no writer); the provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "4bf369041ce89baefb00c125957b02b3fd7bf811b77dbadf03f32f91ce7e671c",
+                        "5a5f1c4239042ad6e4ad501ccda884f63f5ffb7bee6a9ba366ab96b9d71b7135",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1290,10 +1307,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // policy port are DI-only seams; the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for SAT-D2 / API-12: the draft service also receives the optional limit-group source
                     // (DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for MOD-07 (merged over SAT-D2 / API-12): the sales order PDF's print read is a DI-only
+                    // seam over the same SalesDraftService; the provider branch and its database token counts are unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06 (merged over MOD-07): the draft service also receives the optional
+                    // customer-finance risk-input port (DI-only, owner-registered); the provider branch and its token counts are unchanged.
                     // Re-fingerprinted for MOD-02 (SAT-D9): the draft service receives Product's V2 tier-chain reader instead
                     // of the V1 reader (DI-only); the provider branch and its database token counts are unchanged.
                     new(
-                        "21e1abceb95de846f20282ee2497e9b6f1c41613b1e9df1affb6089c3267709f",
+                        "9720ee36186551f79e120b614555f8c284233246d790b6204e8db492a036229f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1325,8 +1346,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D2 / API-12: the discount-exception approval shares the commercial line save and
                     // the replay-result path; no connection, command or raw SQL; SqlClient count unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06 (merged over API-12): one untracked read of a customer's open approved
+                    // orders through the same filtered context (explicit company predicate too, rebuilt through the domain); no write,
+                    // connection, command, raw SQL or filter-bypass API; SqlClient count unchanged.
                     new(
-                        "92bf806fa5047eacc4ed5b7b33c13b661fa101de55f36a36e9cb462bcd39144c",
+                        "45545d4b2219b5ef1b893f6bf9de2eadf4b2c9ce6acca2da3a9d8d1c53fb7342",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1

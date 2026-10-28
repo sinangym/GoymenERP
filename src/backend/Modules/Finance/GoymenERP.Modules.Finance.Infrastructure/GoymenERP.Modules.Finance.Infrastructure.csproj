@@ -11,5 +11,7 @@
     <ProjectReference Include="../../../BuildingBlocks/GoymenERP.BuildingBlocks/GoymenERP.BuildingBlocks.csproj" />
     <ProjectReference Include="../../Audit/GoymenERP.Modules.Audit.Infrastructure/GoymenERP.Modules.Audit.Infrastructure.csproj" />
     <ProjectReference Include="../GoymenERP.Modules.Finance.Contracts/GoymenERP.Modules.Finance.Contracts.csproj" />
+    <!-- MOD-01: Finance answers the Sales-declared ISalesPartyRiskReadPortV1 (the Logistics AT-024 shape). -->
+    <ProjectReference Include="../../Sales/GoymenERP.Modules.Sales.Application/GoymenERP.Modules.Sales.Application.csproj" />
   </ItemGroup>
 </Project>

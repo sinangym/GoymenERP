@@ -24,6 +24,8 @@ public static partial class SalesEndpoints
     // SALES-A2a: the two list reads of the create form's selects.
     public const string ContactInformationPath = "/api/v1/sales/references/contact-information";
     public const string CurrenciesPath = "/api/v1/sales/references/currencies";
+    // SAT-D27 (1): the satış sorumlusu picker.
+    public const string SalesOwnersPath = "/api/v1/sales/references/sales-owners";
     public const string DraftsPath = SalesDraftApiV1.DraftPath;
     public const string DraftReadContractHeader = "X-ERP-Sales-Read-Contract";
     public const string DraftReadContractVersion = "record-party-display-v1";
@@ -45,6 +47,8 @@ public static partial class SalesEndpoints
         new(["partyId", "companyAccountId"], StringComparer.Ordinal);
     private static readonly HashSet<string> CurrenciesQueryNames =
         new(["effectiveOn"], StringComparer.Ordinal);
+    private static readonly HashSet<string> SalesOwnersQueryNames =
+        new(["q", "limit"], StringComparer.Ordinal);
 
     public static IEndpointRouteBuilder MapSalesEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -204,6 +208,39 @@ public static partial class SalesEndpoints
         })
             .WithName("GetSalesCurrencyReferencesV1")
             .Produces<SalesCurrencyOptionsV1>()
+            .ProducesErpBadRequest("validation_failed")
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        // SAT-D27 (1): the company's active people who hold the order create name, for the satış sorumlusu picker. A LIST read
+        // on the accounts route's binding ALONE (the order create name; SAT-D27 (2)'s request / quote write names do not open
+        // it); the Identity owner measures both the membership and the held name. An empty list is a 200 answer; a missing
+        // owner is 503, never "everyone".
+        group.MapGet("/sales-owners", async (
+            [FromQuery] string? q,
+            [FromQuery] int? limit,
+            HttpContext httpContext,
+            ISalesReferenceReadService service,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            var effectiveLimit = limit ?? SalesOwnerPickerLimitsV1.DefaultLimit;
+            var fragment = q?.Trim();
+            if (!HasOnlySingleQuery(httpContext.Request.Query, SalesOwnersQueryNames, Array.Empty<string>())
+                || effectiveLimit is < 1 or > SalesOwnerPickerLimitsV1.MaximumLimit
+                || fragment is { Length: > SalesOwnerPickerLimitsV1.MaximumQueryLength })
+            {
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed");
+            }
+
+            return ToHttpResult(await service.GetSalesOwnersAsync(
+                new(string.IsNullOrEmpty(fragment) ? null : fragment, effectiveLimit), cancellationToken),
+                [400, 401, 403, 503],
+                ["validation_failed"]);
+        })
+            .WithName("GetSalesOwnerReferencesV1")
+            .Produces<SalesOwnerOptionsV1>()
             .ProducesErpBadRequest("validation_failed")
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpServiceUnavailable()
@@ -370,6 +407,7 @@ public static partial class SalesEndpoints
         MapDraftDetail(drafts);
         MapDraftRevisions(drafts);
         MapDraftLinePricing(drafts);
+        MapOrderPdf(drafts);
         MapPriceFloorExceptionApproval(drafts);
         MapDiscountExceptionApproval(drafts);
         MapCommercialRevisionCommand(drafts);
@@ -380,6 +418,7 @@ public static partial class SalesEndpoints
         MapLoadingProgress(drafts);
         MapCustomerReturns(drafts);
         MapStatus(drafts);
+        MapRiskCheck(drafts);
         MapCancellationImpact(drafts);
         MapCancelCommand(drafts);
         MapCancellation(drafts);
@@ -937,6 +976,39 @@ public static partial class SalesEndpoints
         })
             .WithName("GetSalesOrderDraftStatusV1")
             .Produces<SalesOrderDraftStatusResponse>()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+    }
+
+    /// <summary>
+    /// MOD-01 / API-06: the read-only customer risk check under <c>sales.drafts.read</c> — DEC-FIN-007 gross risk (open receivables
+    /// from the customer-finance owner's port, shipped-not-invoiced "NoSource" until S5, the approved-unshipped remainder of the
+    /// customer's open orders) against the credit limit, decided by the one backend calculator; any part whose owner cannot answer
+    /// makes the result "Unavailable", never "Within". Amounts only with <c>sales.orders.price.read</c>. Another company's draft is
+    /// 404; the read writes nothing in any module.
+    /// </summary>
+    private static void MapRiskCheck(RouteGroupBuilder drafts)
+    {
+        drafts.MapGet("/{id:guid}/risk-check", async (
+            Guid id,
+            HttpContext httpContext,
+            [FromServices] ISalesDraftService service,
+            ICorrelationContext correlation,
+            CancellationToken cancellationToken) =>
+        {
+            SetPrivateNoStore(httpContext.Response);
+            try
+            {
+                return Results.Json(await service.GetDraftRiskCheckAsync(id, cancellationToken), SalesDraftJson.Options);
+            }
+            catch (SalesDraftServiceException exception)
+            {
+                return DraftProblem(exception, correlation);
+            }
+        })
+            .WithName("GetSalesOrderDraftRiskCheckV1")
+            .Produces<SalesOrderDraftRiskCheckResponse>()
             .ProducesErpCodeLessNotFound()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

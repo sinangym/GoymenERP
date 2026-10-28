@@ -64,6 +64,8 @@ public static class SalesModuleExtensions
         // API-20 / API-21: the request use cases share the draft service's fence and owner reads (one scoped instance).
         services.AddScoped<ISalesRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesQuoteService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        // MOD-07: the sales order PDF's price facts share the draft service's fence and its price-read decision.
+        services.AddScoped<ISalesOrderPrintReadServiceV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesOrderDraftPendingApprovalReadServiceV1,
             SalesOrderDraftPendingApprovalReadServiceV1>();
         // SALES-A1: the Sales-owned line reference port (Business 5737989917 = B) for the allocation
@@ -115,7 +117,10 @@ public static class SalesModuleExtensions
         // SAT-D2 / SAT-D34: the actor's discount limit groups (the Identity owner's role mapping, not registered yet). Without
         // groups no limit is defined: every line below its list price goes to approval; with groups but no Settings source,
         // such a line is 503, never checked against a guessed limit.
-        serviceProvider.GetService<ISalesDiscountLimitGroupSourceV1>());
+        serviceProvider.GetService<ISalesDiscountLimitGroupSourceV1>(),
+        // MOD-01 / API-06: the customer-finance owner's risk-input port, registered by that owner's module (Finance); until it
+        // is, open receivables, the credit limit and collateral are "Unavailable" and the risk check is never "Within".
+        serviceProvider.GetService<ISalesPartyRiskReadPortV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

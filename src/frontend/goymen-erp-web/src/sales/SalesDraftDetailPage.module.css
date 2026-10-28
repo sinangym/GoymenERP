@@ -39,6 +39,13 @@
   overflow-wrap: anywhere;
 }
 
+.headerAside {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  justify-items: end;
+  min-width: 0;
+}
+
 .badge {
   max-width: 100%;
   padding: var(--goy-ds-space-1) var(--goy-ds-space-2);
@@ -251,6 +258,10 @@
 
   .badge {
     justify-self: start;
+  }
+
+  .headerAside {
+    justify-items: start;
   }
 
   .partyFact,

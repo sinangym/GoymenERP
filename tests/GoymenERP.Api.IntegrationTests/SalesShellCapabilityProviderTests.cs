@@ -56,6 +56,22 @@ public sealed class SalesShellCapabilityProviderTests
                 // DEC-SAL-002: the quantity-revision CONTROL of the detail.
                 ("sales.orders.quantity.write", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersQuantityWrite}", "sales.drafts.detail"),
+                // UI-20 (shell contract 1.8): the S-01 quote screens and their two controls — revision/loss on the quote write
+                // name, conversion on the quote write name AND the order create name (the two names the command measures).
+                ("sales.quotes.convert", "/satis/teklifler/:quoteId",
+                    $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesWrite}+{SalesPermissionManifestV1.DraftsCreate}",
+                    "sales.quotes.detail"),
+                ("sales.quotes.create", "/satis/teklifler/yeni", SalesPermissionManifestV1.QuotesWrite, null),
+                ("sales.quotes.detail", "/satis/teklifler/:quoteId", SalesPermissionManifestV1.QuotesRead, null),
+                ("sales.quotes.list", "/satis/teklifler", SalesPermissionManifestV1.QuotesRead, null),
+                ("sales.quotes.write", "/satis/teklifler/:quoteId",
+                    $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesWrite}", "sales.quotes.detail"),
+                // UI-20: the S-01 request screens and the SAT-D22 single-approver decision control of the detail.
+                ("sales.requests.approve", "/satis/talepler/:requestId",
+                    $"{SalesPermissionManifestV1.RequestsRead}+{SalesPermissionManifestV1.RequestsApprove}", "sales.requests.detail"),
+                ("sales.requests.create", "/satis/talepler/yeni", SalesPermissionManifestV1.RequestsWrite, null),
+                ("sales.requests.detail", "/satis/talepler/:requestId", SalesPermissionManifestV1.RequestsRead, null),
+                ("sales.requests.list", "/satis/talepler", SalesPermissionManifestV1.RequestsRead, null),
             ],
             registry.Registrations.Select(registration => (registration.Declaration.CapabilityId,
                 registration.Declaration.RoutePath, string.Join('+', registration.Declaration.RequiredPermissions),

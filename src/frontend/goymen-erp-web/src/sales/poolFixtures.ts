@@ -2,9 +2,9 @@
  * TEST SUPPORT ONLY — the S-01 pool fixtures (wire bodies shaped exactly like #824/#828's OpenAPI schemas) and the stubbed
  * fetch; ./poolTestHarness.tsx renders the screens in the real shell.
  *
- * The capability ids below are TEST ids (`test.pool.*`): the backend publishes none for these screens (NEEDS-CAPABILITY),
- * so the tests provide their own map through `SalesPoolCapabilityContext` and the stubbed shell grants those strings.
- * Nothing here is a production id.
+ * The capability ids below are TEST ids (`test.pool.*`), kept apart from the published ones (`SALES_POOL_CAPABILITY_ID`)
+ * so each screen test grants exactly the controls it exercises through `SalesPoolCapabilityContext`. Nothing here is a
+ * production id; the production map is pinned in ./SalesPoolPages.test.tsx.
  */
 
 import { vi } from 'vitest'

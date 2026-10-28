@@ -699,6 +699,11 @@ public sealed class SalesReferenceHttpAcceptanceTests(GoymenErpApiFactory factor
         public Task<SalesReferenceReadResult<SalesCurrencyOptionsV1>> GetCurrenciesAsync(
             SalesCurrencyListQueryV1 query, CancellationToken cancellationToken = default)
         { CurrencyQueries.Add(query); return Task.FromResult(Currencies); }
+        public SalesReferenceReadResult<SalesOwnerOptionsV1> SalesOwners { get; set; } = new(403, null, null);
+        public List<SalesOwnerQueryV1> OwnerQueries { get; } = [];
+        public Task<SalesReferenceReadResult<SalesOwnerOptionsV1>> GetSalesOwnersAsync(
+            SalesOwnerQueryV1 query, CancellationToken cancellationToken = default)
+        { OwnerQueries.Add(query); return Task.FromResult(SalesOwners); }
     }
 
     /// <summary>SALES-A2a: the Cari owner's contact-information read, answered as configured; the command is never reached.</summary>

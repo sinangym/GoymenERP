@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <data name="DocumentType" xml:space="preserve"><value>Satış Siparişi</value></data>
+  <data name="DocumentTypeWithoutPrices" xml:space="preserve"><value>Satış Siparişi Fiyatsız</value></data>
+  <data name="TitleOrder" xml:space="preserve"><value>Satış Siparişi {0}</value></data>
+  <data name="TitleQuote" xml:space="preserve"><value>Satış Teklifi {0}</value></data>
+  <data name="Footer" xml:space="preserve"><value>{0} · {1} · Bilgi amaçlı teknik çıktıdır; resmî belge değildir.</value></data>
+  <data name="DraftWatermark" xml:space="preserve"><value>TASLAK</value></data>
+  <data name="PageLabel" xml:space="preserve"><value>Sayfa {0} / {1}</value></data>
+  <data name="HeadingOrder" xml:space="preserve"><value>Sipariş bilgileri</value></data>
+  <data name="HeadingApproval" xml:space="preserve"><value>Onay bilgileri</value></data>
+  <data name="HeadingLines" xml:space="preserve"><value>Sipariş satırları</value></data>
+  <data name="HeadingTotals" xml:space="preserve"><value>Toplamlar</value></data>
+  <data name="FieldDocumentNo" xml:space="preserve"><value>Belge no</value></data>
+  <data name="FieldRevision" xml:space="preserve"><value>Revizyon</value></data>
+  <data name="FieldState" xml:space="preserve"><value>Durum</value></data>
+  <data name="FieldCommercialStage" xml:space="preserve"><value>Ticari aşama</value></data>
+  <data name="FieldBusinessDate" xml:space="preserve"><value>İş tarihi</value></data>
+  <data name="FieldCustomer" xml:space="preserve"><value>Müşteri</value></data>
+  <data name="FieldRequestedDeliveryDate" xml:space="preserve"><value>İstenen teslim tarihi</value></data>
+  <data name="FieldCurrency" xml:space="preserve"><value>Para birimi</value></data>
+  <data name="FieldNote" xml:space="preserve"><value>Not</value></data>
+  <data name="FieldSubmittedBy" xml:space="preserve"><value>Onaya gönderen</value></data>
+  <data name="FieldDecidedBy" xml:space="preserve"><value>Karar veren</value></data>
+  <data name="FieldCustomerAcceptance" xml:space="preserve"><value>Müşteri kabulü</value></data>
+  <data name="ActorAt" xml:space="preserve"><value>{0} · {1}</value></data>
+  <data name="InstantIstanbul" xml:space="preserve"><value>{0} (İstanbul saati)</value></data>
+  <data name="CustomerWithTradeName" xml:space="preserve"><value>{0} — {1} ({2})</value></data>
+  <data name="Customer" xml:space="preserve"><value>{0} — {1}</value></data>
+  <data name="StateWithApproval" xml:space="preserve"><value>{0} · {1}</value></data>
+  <data name="LifecycleDraft" xml:space="preserve"><value>Taslak</value></data>
+  <data name="LifecycleCancelled" xml:space="preserve"><value>İptal edildi</value></data>
+  <data name="LifecycleClosed" xml:space="preserve"><value>Kapalı</value></data>
+  <data name="ApprovalPreparing" xml:space="preserve"><value>Hazırlanıyor</value></data>
+  <data name="ApprovalPendingApproval" xml:space="preserve"><value>Onay bekliyor</value></data>
+  <data name="ApprovalApproved" xml:space="preserve"><value>Onaylı</value></data>
+  <data name="ApprovalRejected" xml:space="preserve"><value>Reddedildi</value></data>
+  <data name="ApprovalWithdrawn" xml:space="preserve"><value>Geri çekildi</value></data>
+  <data name="StageQuote" xml:space="preserve"><value>Teklif</value></data>
+  <data name="StageOrder" xml:space="preserve"><value>Sipariş</value></data>
+  <data name="AcceptanceNotRequired" xml:space="preserve"><value>Gerekmiyor</value></data>
+  <data name="AcceptancePending" xml:space="preserve"><value>Bekleniyor</value></data>
+  <data name="AcceptanceRecorded" xml:space="preserve"><value>{0} kabul edildi · {1}</value></data>
+  <data name="NotGiven" xml:space="preserve"><value>Belirtilmedi</value></data>
+  <data name="None" xml:space="preserve"><value>—</value></data>
+  <data name="ColumnLineNo" xml:space="preserve"><value>Sıra</value></data>
+  <data name="ColumnProductCode" xml:space="preserve"><value>Ürün kodu</value></data>
+  <data name="ColumnProductName" xml:space="preserve"><value>Ürün adı</value></data>
+  <data name="ColumnQuantity" xml:space="preserve"><value>Miktar</value></data>
+  <data name="ColumnUnit" xml:space="preserve"><value>Birim</value></data>
+  <data name="ColumnDelivery" xml:space="preserve"><value>Termin</value></data>
+  <data name="ColumnUnitPrice" xml:space="preserve"><value>Birim fiyat</value></data>
+  <data name="ColumnDiscount" xml:space="preserve"><value>İskonto</value></data>
+  <data name="ColumnSurcharge" xml:space="preserve"><value>Vade farkı</value></data>
+  <data name="ColumnNetUnitPrice" xml:space="preserve"><value>Net birim fiyat</value></data>
+  <data name="ColumnLineNote" xml:space="preserve"><value>Satır notu</value></data>
+  <data name="SliceDelivery" xml:space="preserve"><value>{0}: {1}</value></data>
+  <data name="Price" xml:space="preserve"><value>{0} {1} / {2}</value></data>
+  <data name="Amount" xml:space="preserve"><value>{0} {1}</value></data>
+  <data name="Percent" xml:space="preserve"><value>%{0}</value></data>
+  <data name="NotPriced" xml:space="preserve"><value>Fiyatsız</value></data>
+  <data name="NoLines" xml:space="preserve"><value>Siparişte satır yok.</value></data>
+  <data name="TotalsNotAvailable" xml:space="preserve"><value>Sipariş toplamı, KDV ve genel toplam henüz hesaplanmıyor; bu belgede yer almaz. Satırlardaki değerler kayıtlı değerlerdir.</value></data>
+  <data name="PricesNotShown" xml:space="preserve"><value>Fiyat bilgileri bu belgede yer almaz.</value></data>
+</root>
