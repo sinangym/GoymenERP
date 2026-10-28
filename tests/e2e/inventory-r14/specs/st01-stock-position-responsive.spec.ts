@@ -15,7 +15,8 @@ const OPENINGS = '/api/v1/inventory/opening-counts'
 const PRODUCTS = '/api/v1/products'
 const LOCATIONS = '/api/v1/organization/locations?page=1&pageSize=100'
 const STOCK_DISPLAY_HEADER = 'X-ERP-Inventory-Stock-Display'
-const STOCK_DISPLAY_VERSION = '3.0'
+const STOCK_DISPLAY_VERSION = '4.0'
+const LEGACY_STOCK_DISPLAY_VERSIONS = ['1.0', '2.0', '3.0'] as const
 const COUNTERPARTIES = '/api/v1/counterparties'
 /** The Cari owner's negotiated client contract (`CounterpartyClientContract`), required on every Cari read. */
 const CARI_CONTRACT_HEADER = 'X-ERP-Counterparty-Contract'
@@ -37,7 +38,21 @@ type Position = {
   readonly blockedPhysicalKg: string
   readonly activeAllocationKg: string
   readonly availableKg: string
-  readonly productDisplay: { readonly identity: { readonly code: string; readonly name: string } | null }
+  readonly productDisplay: {
+    readonly identity: { readonly code: string; readonly name: string } | null
+    readonly technical: {
+      readonly family: { readonly familyId: string; readonly familyCode: string; readonly sourceRevision: string }
+      readonly template: {
+        readonly templateId: string
+        readonly templateVersion: string
+        readonly templateCode: string
+        readonly sourceRevision: string
+      }
+      readonly thicknessMm: number | string
+      readonly widthMm: number | string
+      readonly lengthMm: number | string | null
+    } | null
+  }
   readonly locationDisplay: {
     readonly locationId: string
     readonly locationCode: string
@@ -55,6 +70,11 @@ type OwnerDisplay = {
   readonly tradeName: string | null
 }
 type PositionPage = { readonly items: readonly Position[]; readonly nextCursor: string | null }
+
+function expectSingle<T>(items: readonly T[]): T {
+  expect(items).toHaveLength(1)
+  return items[0]
+}
 
 function headers(actor: string): Record<string, string> {
   return { 'X-Development-User': actor, 'X-Company-Id': companyId }
@@ -88,11 +108,20 @@ function stockCard(page: Page, labelId: string): Locator {
 function trNumber(value: string): string {
   const [whole, fraction] = value.split('.')
   const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  return fraction === undefined ? grouped : `${grouped},${fraction}`
+  const trimmed = fraction?.replace(/0+$/, '')
+  return trimmed === undefined || trimmed === '' ? grouped : `${grouped},${trimmed}`
 }
 
 function amountOf(position: Position): readonly string[] {
   return [position.physicalKg, position.blockedPhysicalKg, position.activeAllocationKg, position.availableKg]
+}
+
+function dimensionOf(position: Position): string {
+  const technical = position.productDisplay.technical
+  if (technical === null) return '—'
+  const values = [technical.thicknessMm, technical.widthMm,
+    ...(technical.lengthMm === null ? [] : [technical.lengthMm])]
+  return values.map((value) => trNumber(String(value))).join(' × ')
 }
 
 /** Measures text ink and hit testing, not DOM existence or the hover title. Scrolls a non-pinned cell into reach. */
@@ -193,11 +222,16 @@ async function desktopInk(row: Locator, header: string, expected: string, spanTe
   if (spanText && expected === productName) expect(measured?.lines).toBeGreaterThan(1)
 }
 
-async function assertDesktopPosition(page: Page, position: Position): Promise<void> {
+async function assertDesktopPosition(
+  page: Page,
+  position: Position,
+  identity: { readonly code: string; readonly name: string } = { code: productCode, name: productName },
+): Promise<void> {
   const row = stockRow(page, position.labelId)
   await expect(row).toBeVisible()
-  await desktopInk(row, 'Ürün', productCode, true)
-  await desktopInk(row, 'Ürün', productName, true)
+  await desktopInk(row, 'Ürün', identity.code, true)
+  await desktopInk(row, 'Ürün', identity.name, true)
+  await desktopInk(row, 'Ölçü (mm)', dimensionOf(position))
   await desktopInk(row, 'Lokasyon', position.locationDisplay.locationCode, true)
   await desktopInk(row, 'Lokasyon', position.locationDisplay.locationName, true)
   for (const [index, label] of QUANTITIES.entries()) {
@@ -206,7 +240,11 @@ async function assertDesktopPosition(page: Page, position: Position): Promise<vo
 }
 
 /** The phone cards have no pinned columns; every ink fragment must fit within its visible card and be hit-testable. */
-async function assertMobilePosition(page: Page, position: Position): Promise<void> {
+async function assertMobilePosition(
+  page: Page,
+  position: Position,
+  identity: { readonly code: string; readonly name: string } = { code: productCode, name: productName },
+): Promise<void> {
   const card = stockCard(page, position.labelId)
   await expect(card).toBeVisible()
   const measured = await card.evaluate((element, input) => {
@@ -216,12 +254,15 @@ async function assertMobilePosition(page: Page, position: Position): Promise<voi
     const code = spans.find((node) => node.textContent === input.code)
     const locationCode = spans.find((node) => node.textContent === input.locationCode)
     const locationName = spans.find((node) => node.textContent === input.locationName)
+    const dimensionFact = [...element.querySelectorAll('dl:first-of-type > div')]
+      .find((node) => node.querySelector('dt')?.textContent?.trim() === 'Ölçü (mm)')
+    const dimension = dimensionFact?.querySelector('dd') ?? null
     const facts = [...element.querySelectorAll('dl:last-of-type > div')]
     const amounts = input.labels.map((label) => {
       const fact = facts.find((node) => node.querySelector('dt')?.textContent?.trim() === label)
       return fact?.querySelector('dd') ?? null
     })
-    if (!name || !code || !locationCode || !locationName || amounts.some((node) => node === null)) return null
+    if (!name || !code || !locationCode || !locationName || !dimension || amounts.some((node) => node === null)) return null
     const cardRect = element.getBoundingClientRect()
     const inspect = (node: Element) => {
       const range = document.createRange()
@@ -242,23 +283,26 @@ async function assertMobilePosition(page: Page, position: Position): Promise<voi
     return {
       name: inspect(name), code: inspect(code),
       locationCode: inspect(locationCode), locationName: inspect(locationName),
+      dimension: inspect(dimension),
       amounts: amounts.map((node) => inspect(node as Element)),
     }
   }, {
-    name: productName, code: productCode,
+    name: identity.name, code: identity.code,
     locationCode: position.locationDisplay.locationCode,
     locationName: position.locationDisplay.locationName,
+    dimension: dimensionOf(position),
     labels: QUANTITIES,
   })
   expect(measured).not.toBeNull()
-  expect(measured?.code).toMatchObject({ text: productCode, reachable: true, noEllipsis: true })
-  expect(measured?.name).toMatchObject({ text: productName, reachable: true, noEllipsis: true })
+  expect(measured?.code).toMatchObject({ text: identity.code, reachable: true, noEllipsis: true })
+  expect(measured?.name).toMatchObject({ text: identity.name, reachable: true, noEllipsis: true })
   expect(measured?.locationCode).toMatchObject({
     text: position.locationDisplay.locationCode, reachable: true, noEllipsis: true,
   })
   expect(measured?.locationName).toMatchObject({
     text: position.locationDisplay.locationName, reachable: true, noEllipsis: true,
   })
+  expect(measured?.dimension).toMatchObject({ text: dimensionOf(position), reachable: true, noEllipsis: true })
   expect(measured?.name.lines).toBeGreaterThan(1)
   for (const [index, value] of amountOf(position).entries()) {
     expect(measured?.amounts[index]).toMatchObject({ text: trNumber(value), reachable: true, noEllipsis: true })
@@ -443,6 +487,12 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
     expect(position.ownerId).toBe(companyId)
     expect(Object.prototype.hasOwnProperty.call(position, 'ownerDisplay')).toBe(true)
     expect(position.ownerDisplay).toBeNull()
+    expect(position.productDisplay.technical).not.toBeNull()
+    expect(Object.prototype.hasOwnProperty.call(position.productDisplay.technical!, 'lengthMm')).toBe(true)
+    expect(position.productDisplay.technical!.lengthMm).toBeNull()
+    // A Product card without a nominal piece length stays two-dimensional. Inventory never substitutes a lot/label
+    // observation, quantity or zero as a third dimension.
+    expect(dimensionOf(position).split(' × ')).toHaveLength(2)
   }
   const extreme = all.find((item) => item.labelId === lines[0].labelId)
   const normal = all.find((item) => item.labelId === lines[1].labelId)
@@ -450,6 +500,24 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
     productDisplay: { identity: { code: productCode, name: productName } } })
   expect(normal).toMatchObject({ productId, physicalKg: NORMAL, blockedPhysicalKg: '0', activeAllocationKg: '0', availableKg: NORMAL,
     productDisplay: { identity: { code: productCode, name: productName } } })
+
+  // V4 publishes an explicit null for this accepted legacy slit-coil card. V1/V2/V3 keep their exact older
+  // technical object and never gain a length key merely because the UI opted into V4 elsewhere.
+  for (const version of LEGACY_STOCK_DISPLAY_VERSIONS) {
+    const legacyAnswer = await page.request.get(
+      `${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(PREFIX)}&limit=25`, {
+        headers: { ...headers(counterActor), [STOCK_DISPLAY_HEADER]: version },
+      })
+    expect(legacyAnswer.status()).toBe(200)
+    const legacy = await legacyAnswer.json() as {
+      readonly items: readonly { readonly productDisplay: { readonly technical: Record<string, unknown> | null } }[]
+    }
+    expect(legacy.items).toHaveLength(25)
+    for (const item of legacy.items) {
+      expect(item.productDisplay.technical).not.toBeNull()
+      expect(Object.prototype.hasOwnProperty.call(item.productDisplay.technical!, 'lengthMm')).toBe(false)
+    }
+  }
   await expect(page.getByRole('table', { name: 'Stok / Malzeme Pozisyonu' }).locator('tbody tr')).toHaveCount(LABEL_COUNT)
 
   for (const width of [1440, 1366, 1024]) {
@@ -519,6 +587,223 @@ test('ST-01 shows long genuine Product and exact stock quantities at desktop and
   expect(foreign.status()).toBe(403)
   expect(stockDisplayVersions.length).toBeGreaterThan(0)
   expect(stockDisplayVersions.every((version) => version === STOCK_DISPLAY_VERSION)).toBe(true)
+})
+
+test('ST-01 keeps a real cut-sheet nominal length exact in V4 and readable at desktop and phone widths', async ({ page }) => {
+  test.setTimeout(240_000)
+  const lengthPrefix = `SYNLENGTH4-${randomUUID().slice(0, 8).toUpperCase()}`
+  const productFixtureActor = recorderActor
+  const sourceCardAnswer = await page.request.get(`${env.apiBaseUrl}${PRODUCTS}/${productId}`, {
+    headers: headers(productFixtureActor),
+  })
+  expect(sourceCardAnswer.status()).toBe(200)
+  const sourceCard = await sourceCardAnswer.json() as {
+    readonly product: { readonly groupId: string }
+    readonly references: {
+      readonly attributes: Readonly<Record<string, unknown>> | null
+      readonly units: Readonly<Record<string, string | null>> | null
+    }
+  }
+  expect(sourceCard.references.attributes).not.toBeNull()
+  expect(sourceCard.references.units).not.toBeNull()
+
+  // Discover the accepted family/template/dictionaries from Product's real company-scoped catalogue. No family,
+  // template, unit or dictionary identity is invented by this Inventory acceptance.
+  const optionsAnswer = await page.request.get(
+    `${env.apiBaseUrl}${PRODUCTS}/reference-options?groupId=${sourceCard.product.groupId}`, {
+      headers: headers(productFixtureActor),
+    })
+  expect(optionsAnswer.status()).toBe(200)
+  const options = await optionsAnswer.json() as {
+    readonly familyFacts: readonly {
+      readonly id: string
+      readonly code: string
+      readonly cins: string
+      readonly tur: string
+      readonly tip: string
+      readonly templateId: string | null
+      readonly templateVersion: string | null
+    }[]
+    readonly templates: readonly {
+      readonly id: string
+      readonly version: string
+      readonly fields: readonly {
+        readonly key: string
+        readonly role: string | null
+        readonly required: boolean
+      }[]
+    }[]
+    readonly dictionaries: readonly {
+      readonly name: string
+      readonly entries: readonly { readonly code: string; readonly status: string }[]
+    }[]
+  }
+  const cutSheetFamilies = options.familyFacts.filter((family) => family.cins === 'Sac'
+    && family.tur === 'Sıcak Haddelenmiş' && family.tip === 'Kesilmiş Sac/Levha')
+  expect(cutSheetFamilies).toHaveLength(1)
+  const cutSheet = cutSheetFamilies[0]
+  expect(cutSheet).toMatchObject({ code: 'hr-cut-sheet-plate', templateId: expect.any(String), templateVersion: '1' })
+  const cutSheetTemplate = options.templates.find((template) => template.id === cutSheet.templateId
+    && template.version === cutSheet.templateVersion)
+  expect(cutSheetTemplate?.fields.filter((field) => field.role === 'thickness'
+    || field.role === 'width' || field.role === 'length').map((field) => [field.key, field.role, field.required]))
+    .toEqual([
+      ['thickness-mm', 'thickness', true],
+      ['width-mm', 'width', true],
+      ['length-mm', 'length', true],
+    ])
+  expect(options.dictionaries.find((dictionary) => dictionary.name === 'gdc-steel-grades')
+    ?.entries.find((entry) => entry.code === 'S235JR')).toMatchObject({ status: 'approved' })
+  expect(options.dictionaries.find((dictionary) => dictionary.name === 'gdc-coatings')
+    ?.entries.find((entry) => entry.code === 'uncoated')).toMatchObject({ status: 'approved' })
+
+  const cutSheetName = `SENTETIK ${lengthPrefix} S235JR 3 × 248 × 2500,125 mm uzun Türkçe levha Ürünü`
+  const productAnswer = await page.request.post(`${env.apiBaseUrl}${PRODUCTS}`, {
+    headers: {
+      ...headers(productFixtureActor), 'Content-Type': 'application/json',
+      'Idempotency-Key': `st01-length-product-${randomUUID()}`,
+    },
+    data: {
+      name: cutSheetName,
+      groupId: sourceCard.product.groupId,
+      familyId: cutSheet.id,
+      references: {
+        templateId: cutSheet.templateId,
+        templateVersion: cutSheet.templateVersion,
+        attributes: {
+          'thickness-mm': 3,
+          'width-mm': 248,
+          'length-mm': 2500.125,
+          'steel-grade': 'S235JR',
+          coating: 'uncoated',
+        },
+        units: sourceCard.references.units,
+      },
+    },
+  })
+  expect(productAnswer.status()).toBe(201)
+  const draft = await productAnswer.json() as {
+    readonly card: {
+      readonly product: { readonly id: string; readonly code: string; readonly version: string }
+      readonly references: { readonly attributes: Readonly<Record<string, unknown>> }
+    }
+  }
+  expect(draft.card.references.attributes['length-mm']).toBe(2500.125)
+  const activationAnswer = await page.request.post(
+    `${env.apiBaseUrl}${PRODUCTS}/${draft.card.product.id}/activation`, {
+      headers: {
+        ...headers(productFixtureActor), 'Content-Type': 'application/json',
+        'Idempotency-Key': `st01-length-activate-${randomUUID()}`,
+      },
+      data: { expectedVersion: draft.card.product.version },
+    })
+  expect(activationAnswer.status()).toBe(200)
+  const active = await activationAnswer.json() as {
+    readonly card: {
+      readonly product: { readonly id: string; readonly code: string; readonly version: string; readonly lifecycle: string }
+      readonly references: { readonly attributes: Readonly<Record<string, unknown>> }
+    }
+  }
+  expect(active.card.product.lifecycle).toBe('Active')
+  expect(active.card.references.attributes['length-mm']).toBe(2500.125)
+
+  const labelId = randomUUID()
+  const labelCode = `${lengthPrefix}-L0`
+  const openingAnswer = await page.request.post(`${env.apiBaseUrl}${OPENINGS}`, {
+    headers: {
+      ...headers(recorderActor), 'Content-Type': 'application/json',
+      'Idempotency-Key': `st01-length-opening-${randomUUID()}`,
+    },
+    data: {
+      countId: randomUUID(), locationId, countedOn: '2026-09-18',
+      sheetReference: `SENTETIK browser-suite:r14 P03.2 ${lengthPrefix}`,
+      lines: [{
+        lineId: randomUUID(), labelId, labelCode, lotId: randomUUID(),
+        heatNumber: `${lengthPrefix}-HEAT`, coilNumber: null,
+        productId: active.card.product.id, productVersion: active.card.product.version, quantityKg: '25',
+      }],
+    },
+  })
+  expect(openingAnswer.status()).toBe(201)
+
+  const v4Answer = await page.request.get(
+    `${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(lengthPrefix)}&limit=25`, {
+      headers: { ...headers(recorderActor), [STOCK_DISPLAY_HEADER]: STOCK_DISPLAY_VERSION },
+    })
+  expect(v4Answer.status()).toBe(200)
+  const v4Page = await v4Answer.json() as PositionPage
+  const v4Position = expectSingle(v4Page.items)
+  expect(v4Position).toMatchObject({ labelId, productId: active.card.product.id })
+  expect(Object.keys(v4Position.productDisplay.technical!).sort()).toEqual([
+    'family', 'lengthMm', 'template', 'thicknessMm', 'widthMm',
+  ])
+  expect(String(v4Position.productDisplay.technical?.thicknessMm)).toBe('3')
+  expect(String(v4Position.productDisplay.technical?.widthMm)).toBe('248')
+  expect(String(v4Position.productDisplay.technical?.lengthMm)).toBe('2500.125')
+  expect(dimensionOf(v4Position)).toBe('3 × 248 × 2.500,125')
+
+  // Older opt-ins remain real and strict: they answer the same row without the V4-only length key.
+  for (const version of LEGACY_STOCK_DISPLAY_VERSIONS) {
+    const legacyAnswer = await page.request.get(
+      `${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(lengthPrefix)}&limit=25`, {
+        headers: { ...headers(recorderActor), [STOCK_DISPLAY_HEADER]: version },
+      })
+    expect(legacyAnswer.status()).toBe(200)
+    const legacy = await legacyAnswer.json() as {
+      readonly items: readonly { readonly productDisplay: { readonly technical: Record<string, unknown> | null } }[]
+    }
+    const legacyPosition = expectSingle(legacy.items)
+    expect(legacyPosition.productDisplay.technical).not.toBeNull()
+    expect(Object.prototype.hasOwnProperty.call(legacyPosition.productDisplay.technical!, 'lengthMm')).toBe(false)
+  }
+  const unsupported = await page.request.get(
+    `${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(lengthPrefix)}&limit=25`, {
+      headers: { ...headers(recorderActor), [STOCK_DISPLAY_HEADER]: '5.0' },
+    })
+  expect(unsupported.status()).toBe(400)
+
+  const requestedVersions: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (request.method() === 'GET' && url.pathname === POSITIONS && url.searchParams.get('q') === lengthPrefix) {
+      requestedVersions.push(request.headers()[STOCK_DISPLAY_HEADER.toLowerCase()] ?? '')
+    }
+  })
+  await page.setExtraHTTPHeaders({ 'X-Development-User': recorderActor })
+  await page.goto('/')
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: width === 1440 ? 900 : 844 })
+    const uiPage = await openList(page, lengthPrefix)
+    const row = expectSingle(uiPage.items)
+    expect(row.labelId).toBe(labelId)
+    if (width === 1440) await assertDesktopPosition(page, row, { code: draft.card.product.code, name: cutSheetName })
+    else await assertMobilePosition(page, row, { code: draft.card.product.code, name: cutSheetName })
+    await expectNoPageOverflow(page, `the V4 nominal-length stock view at ${width}px`)
+
+    const container = width === 1440 ? stockRow(page, labelId) : stockCard(page, labelId)
+    const toggle = container.getByRole('button', { name: `${labelCode} işlemleri`, exact: true })
+    await toggle.focus()
+    await expect(toggle).toBeFocused()
+    await toggle.press('Enter')
+    await expect(container.getByRole('list', { name: `${labelCode} için işlemler`, exact: true })).toBeVisible()
+    await toggle.press('Escape')
+    await expect(container.getByRole('list', { name: `${labelCode} için işlemler`, exact: true })).toHaveCount(0)
+    await expect(toggle).toBeFocused()
+  }
+  expect(requestedVersions).toHaveLength(3)
+  expect(requestedVersions.every((version) => version === STOCK_DISPLAY_VERSION)).toBe(true)
+
+  const denied = await page.request.get(
+    `${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(lengthPrefix)}&limit=25`, {
+      headers: { ...headers(deniedActor), [STOCK_DISPLAY_HEADER]: STOCK_DISPLAY_VERSION },
+    })
+  expect(denied.status()).toBe(403)
+  const foreign = await page.request.get(
+    `${env.apiBaseUrl}${POSITIONS}?q=${encodeURIComponent(lengthPrefix)}&limit=25`, {
+      headers: { ...headers(counterActor), 'X-Company-Id': otherCompanyId,
+        [STOCK_DISPLAY_HEADER]: STOCK_DISPLAY_VERSION },
+    })
+  expect(foreign.status()).toBe(403)
 })
 
 test('ST-01 applies genuine Product family and nominal dimension filters before public pagination and through the real UI', async ({ page }) => {
