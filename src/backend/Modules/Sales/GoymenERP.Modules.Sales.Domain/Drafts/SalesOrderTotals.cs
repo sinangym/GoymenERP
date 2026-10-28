@@ -56,8 +56,9 @@ public enum SalesLineTotalState
     PriceUnitNotOrderUnit = 3,
 
     /// <summary>
-    /// The line's exact amount (net, VAT, gross or payable) does not fit System.Decimal — the technical limit of every stored
-    /// amount — so nothing of the line is computed: fail-closed, never a wrong or truncated amount (and never a 500).
+    /// The line's exact amount (net, VAT, gross or payable) cannot be held EXACTLY by System.Decimal — too large, or more
+    /// significant digits than its 28–29 — the technical limit of every stored amount; so nothing of the line is computed:
+    /// fail-closed, never a wrong, truncated or silently rounded amount (and never a 500).
     /// </summary>
     AmountOutOfRange = 4,
 }
@@ -74,7 +75,10 @@ public enum SalesDocumentTotalState
     /// </summary>
     Incomplete = 2,
 
-    /// <summary>Every line has an amount but a document sum does not fit System.Decimal: no sum is shown (fail-closed).</summary>
+    /// <summary>
+    /// Every line has an amount but a document sum cannot be held exactly by System.Decimal (too large, or more significant
+    /// digits than it carries): no sum is shown (fail-closed), never a silently rounded one.
+    /// </summary>
     AmountOutOfRange = 3,
 }
 
@@ -227,13 +231,16 @@ public static class SalesOrderTotalsCalculator
             var withheld = rate.WithholdingShare is { } share
                 ? Money.Of(SalesLinePriceCalculator.RoundedShareOf(vat.Amount, share, scale), currencyId, scale)
                 : Money.Zero(currencyId, scale);
-            var gross = net.Add(vat);
+            // Review B P2-3: gross and payable are exact (System.Decimal's + / - would silently round past 28–29 digits).
+            var gross = Money.Of(SalesLinePriceCalculator.ExactSum([net.Amount, vat.Amount]), currencyId, scale);
+            var payable = Money.Of(SalesLinePriceCalculator.ExactSum([gross.Amount], [withheld.Amount]), currencyId, scale);
             return new SalesLineTotal(line.LineId, line.LineNo, SalesLineTotalState.Computed, netUnitPrice, net,
-                SalesTaxState.Computed, rate, vat, withheld, gross, gross.Subtract(withheld));
+                SalesTaxState.Computed, rate, vat, withheld, gross, payable);
         }
         catch (OverflowException)
         {
-            // The exact value is beyond System.Decimal: the line has no amount (never a truncated one, never a 500).
+            // The exact value is beyond System.Decimal (too large, or more digits than it holds exactly): the line has no amount
+            // (never a truncated or silently rounded one, never a 500).
             return Uncomputed(line, SalesLineTotalState.AmountOutOfRange);
         }
     }
@@ -269,7 +276,8 @@ public static class SalesOrderTotalsCalculator
         }
         catch (OverflowException)
         {
-            // Every line fits but a sum does not: no sum is shown (fail-closed), never a truncated one.
+            // Every line fits but a sum does not fit EXACTLY (too large, or more digits than System.Decimal holds): no sum is shown
+            // (fail-closed), never a truncated or silently rounded one (review B P2-3).
             return Uncomputed(SalesDocumentTotalState.AmountOutOfRange, 0, 0, 0);
         }
     }
@@ -277,6 +285,7 @@ public static class SalesOrderTotalsCalculator
     private static SalesDocumentTotal Uncomputed(SalesDocumentTotalState state, int unpriced, int unconvertible, int outOfRange) =>
         new(state, unpriced, unconvertible, outOfRange, null, SalesTaxState.NotComputed, null, null, null, null);
 
+    /// <summary>The exact sum (review B P2-3: never System.Decimal's silently rounding <c>+</c>); not exactly representable → overflow.</summary>
     private static Money Sum(IEnumerable<Money> amounts, Guid currencyId, int scale) =>
-        amounts.Aggregate(Money.Zero(currencyId, scale), (total, amount) => total.Add(amount));
+        Money.Of(SalesLinePriceCalculator.ExactSum(amounts.Select(amount => amount.Amount)), currencyId, scale);
 }

@@ -156,6 +156,30 @@ public static class SalesLinePriceCalculator
         return ToDecimal(ExactDecimal.Parse(Format(amount)).Multiply(ExactDecimal.Parse(Format(share))).RoundAwayFromZero(scale));
     }
 
+    /// <summary>
+    /// API-03 (review B P2-3): the EXACT sum of <paramref name="amounts"/> minus the exact sum of <paramref name="subtracted"/>.
+    /// System.Decimal's own <c>+</c> / <c>-</c> silently round once a result needs more than its 28–29 significant digits (it
+    /// throws only beyond its magnitude); here the arithmetic is exact and a result that System.Decimal cannot hold EXACTLY —
+    /// too large, or more digits than it carries — is an <see cref="OverflowException"/>, never a rounded amount. The totals
+    /// calculator maps that to <c>AmountOutOfRange</c>. Amounts are non-negative order amounts; a negative result is refused too.
+    /// </summary>
+    public static decimal ExactSum(IEnumerable<decimal> amounts, IEnumerable<decimal>? subtracted = null)
+    {
+        ArgumentNullException.ThrowIfNull(amounts);
+        var total = ExactDecimal.Zero;
+        foreach (var amount in amounts)
+        {
+            total = total.Add(ExactDecimal.Parse(Format(amount)));
+        }
+
+        foreach (var amount in subtracted ?? [])
+        {
+            total = total.Subtract(ExactDecimal.Parse(Format(amount)));
+        }
+
+        return ToDecimal(total);
+    }
+
     private static void RequireScale(int scale)
     {
         if (scale is < 0 or > Money.MaximumScale)

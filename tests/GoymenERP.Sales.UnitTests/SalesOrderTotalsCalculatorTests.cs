@@ -241,6 +241,45 @@ public sealed class SalesOrderTotalsCalculatorTests
     }
 
     [Fact]
+    public void A_document_sum_with_more_digits_than_decimal_holds_is_out_of_range_never_silently_rounded()
+    {
+        // Review B P2-3 repro: each line 1 × 600000000000000000000000000.01 fits (29 significant digits); the exact sum
+        // 1200000000000000000000000000.02 needs 30, and System.Decimal's + would answer …0.00 without any exception.
+        var totals = SalesOrderTotalsCalculator.Calculate(
+            [Line(L1, 1, "1", "600000000000000000000000000.01"), Line(L2, 2, "1", "600000000000000000000000000.01")], Try, 2);
+        Assert.All(totals.Lines, line => Assert.Equal((SalesLineTotalState.Computed, "600000000000000000000000000.01"),
+            (line.State, Text(line.NetAmount))));
+        Assert.Equal((SalesDocumentTotalState.AmountOutOfRange, SalesTaxState.NotComputed),
+            (totals.Document.State, totals.Document.TaxState));
+        Assert.Null(totals.Document.NetAmount);
+    }
+
+    [Fact]
+    public void A_line_gross_with_more_digits_than_decimal_holds_takes_the_line_out_of_range_never_silently_rounded()
+    {
+        // Review B P2-3, line level: net 700000000000000000000000000.01 fits; VAT 20 % = 140000000000000000000000000.00; the exact
+        // gross 840000000000000000000000000.01 needs 29 digits beyond System.Decimal's mantissa, so its + would round to …0.0.
+        var line = Assert.Single(SalesOrderTotalsCalculator.Calculate(
+            [Line(L1, 1, "1", "700000000000000000000000000.01")], Try, 2, _ => SalesLineTaxRate.Of(20m, null)).Lines);
+        Assert.Equal((SalesLineTotalState.AmountOutOfRange, SalesTaxState.NotComputed), (line.State, line.TaxState));
+        Assert.Null(line.NetAmount);
+        Assert.Null(line.GrossAmount);
+        Assert.Null(line.PayableAmount);
+    }
+
+    [Fact]
+    public void The_exact_sum_is_exact_or_an_overflow_never_a_rounded_decimal()
+    {
+        Assert.Equal(441.94m, SalesLinePriceCalculator.ExactSum([143.44m, 298.50m]));
+        Assert.Equal(500.48m, SalesLinePriceCalculator.ExactSum([530.33m], [29.85m]));
+        // decimal's own + rounds this silently; the exact sum refuses it.
+        Assert.Equal(1200000000000000000000000000.00m, 600000000000000000000000000.01m + 600000000000000000000000000.01m);
+        Assert.Throws<OverflowException>(() => SalesLinePriceCalculator.ExactSum(
+            [600000000000000000000000000.01m, 600000000000000000000000000.01m]));
+        Assert.Throws<OverflowException>(() => SalesLinePriceCalculator.ExactSum([decimal.MaxValue, 1m]));
+    }
+
+    [Fact]
     public void A_zero_price_is_a_computed_zero_unlike_an_absent_price()
     {
         var totals = SalesOrderTotalsCalculator.Calculate([Line(L1, 1, "5", "0")], Try, 2, _ => SalesLineTaxRate.Of(20m, 0.5m));

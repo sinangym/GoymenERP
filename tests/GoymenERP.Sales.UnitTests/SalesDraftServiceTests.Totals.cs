@@ -73,6 +73,27 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_document_sum_with_more_digits_than_decimal_holds_is_out_of_range_never_a_silently_rounded_total()
+    {
+        // Review B P2-3 repro through the service: two lines of 1 × 600000000000000000000000000.01. Each line is exact; the
+        // document sum 1200000000000000000000000000.02 is not representable exactly — AmountOutOfRange, never …0.00 "Computed".
+        var world = new World();
+        var request = Request(lines: 2);
+        request = request with { Lines = [.. request.Lines.Select(line => line with { Quantity = "1", RequestedDeliverySlices = null })] };
+        var created = (await world.Service().CreateDraftAsync(request, Metadata("k-totals-digits"))).Detail;
+        await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
+            new SalesDraftLineCommercialV1(created.Lines[0].LineId, "600000000000000000000000000.01", KgUnit, null),
+            new SalesDraftLineCommercialV1(created.Lines[1].LineId, "600000000000000000000000000.01", KgUnit, null)),
+            Metadata("k-totals-digits-price"));
+
+        var totals = await world.Service().GetDraftTotalsAsync(created.Draft.Id);
+
+        Assert.All(totals.Lines, line => Assert.Equal(("Computed", "600000000000000000000000000.01"), (line.State, line.NetAmount)));
+        Assert.Equal(new SalesDraftDocumentTotalsV1("AmountOutOfRange", 0, 0, 0, null, "NotComputed", null, null, null, null),
+            totals.Totals);
+    }
+
+    [Fact]
     public async Task The_risk_check_of_the_same_out_of_range_order_answers_its_unavailable_path_never_an_exception()
     {
         // Review B P2-1, second half: the risk read never multiplies an order amount (SAT-D46: its VAT-included amount is API-03's,

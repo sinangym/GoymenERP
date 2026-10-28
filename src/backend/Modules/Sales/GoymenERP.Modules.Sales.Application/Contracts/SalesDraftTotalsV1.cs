@@ -20,8 +20,9 @@ public static class SalesDraftTotalsStatesV1
     public const string PriceUnitNotOrderUnit = "PriceUnitNotOrderUnit";
 
     /// <summary>
-    /// Line: its exact amount does not fit the technical decimal range of a stored amount; document: a sum does not. Nothing of
-    /// it is computed — fail-closed, never a truncated amount and never a 500.
+    /// Line: its exact amount cannot be held exactly in the technical decimal range of a stored amount (too large, or more
+    /// significant digits than it carries); document: a sum cannot. Nothing of it is computed — fail-closed, never a truncated or
+    /// silently rounded amount and never a 500.
     /// </summary>
     public const string AmountOutOfRange = "AmountOutOfRange";
 

@@ -319,7 +319,7 @@ public sealed partial class SalesDraftService
     /// approved: already in the remainder. Never approved: its whole VAT-included total (SAT-D46). A revision of an approved order
     /// awaiting re-approval: its new VAT-included remaining amount REPLACES the old approved remainder already counted, so only the
     /// difference is added (DEC-FIN-007, no double count). Both need API-03's VAT-included totals — unavailable while its VAT has no
-/// source.
+    /// source.
     /// </summary>
     private static SalesRiskInput ThisOrder(SalesOrderDraft draft) =>
         draft.State != SalesDraftState.Draft || draft.ApprovalState == InternalApprovalState.Approved
