@@ -2258,7 +2258,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1146, len(source_paths))
+        self.assertEqual(1151, len(source_paths))
         # SAT-D57: the Cari customer (price) group, its contracts, read port, service, endpoints, OpenAPI schema
         # hook and the AddCounterpartyCustomerGroups migration.
         for sat_d57_source in (
@@ -2312,6 +2312,19 @@ internal {{declaration}} : IDocumentObjectStoreV1
             "Drafts/SalesRealization.cs",
         ):
             self.assertIn(api08_source, source_paths)
+        for mod01_api06_source in (
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/"
+            "Contracts/ISalesPartyRiskReadPortV1.cs",
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/"
+            "Contracts/SalesDraftRiskCheckV1.cs",
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/"
+            "SalesDraftService.RiskCheck.cs",
+            "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Domain/"
+            "Drafts/SalesCustomerRisk.cs",
+            "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
+            "FinanceSalesPartyRiskReadPortV1.cs",
+        ):
+            self.assertIn(mod01_api06_source, source_paths)
         self.assertIn(
             "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/"
             "Contracts/V1/ManufacturingToleranceProfileLifecycleV1.cs",
