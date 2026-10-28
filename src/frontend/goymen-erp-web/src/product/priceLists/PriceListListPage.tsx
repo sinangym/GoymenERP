@@ -84,6 +84,7 @@ export function PriceListListPage() {
                 <tr>
                   <th scope="col">{T.columns.name}</th>
                   <th scope="col">{T.columns.currency}</th>
+                  <th scope="col">{T.columns.scope}</th>
                   <th scope="col">{T.columns.active}</th>
                   <th scope="col">{T.columns.draft}</th>
                   <th scope="col" className={styles.numeric}>{T.columns.versions}</th>
@@ -98,6 +99,7 @@ export function PriceListListPage() {
                         : item.name}
                     </td>
                     <td>{item.currencyCode}</td>
+                    <td>{item.scope.kind === 'Customer' ? T.scopeCustomer : T.scopeCompany}</td>
                     <td>{item.activeVersionNo === null || item.activeValidFrom === null ? T.none
                       : T.activeFrom(item.activeVersionNo, formatDate(item.activeValidFrom))}</td>
                     <td>{item.draftVersionNo === null ? T.none : T.draftVersion(item.draftVersionNo)}</td>

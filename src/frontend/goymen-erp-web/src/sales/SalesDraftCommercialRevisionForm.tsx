@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { fetchLinePriceReferences, sendDraftCommercialRevision } from './api'
 import { buildCommercialRevisionRequest, commercialRowsFromFreshPricing, type AdjustmentKind, type CommercialRevisionRow } from './commercialRevision'
 import { APPROVAL_STATE, isTerminalState, SALES_PROBLEM_CODE, type DraftCommercialRevisionRequest, type DraftDetail, type DraftMutation } from './contract'
-import type { LinePriceReference } from './linePricing'
+import type { LinePriceReference, LinePriceResolution } from './linePricing'
 import {
   abandon,
   applyOutcome,
@@ -30,7 +30,7 @@ const scopeOf = (draftId: string) => `sales.draft.commercial-revision:${draftId}
 /** A line's list-price candidates as read from the Product owner (through Sales), per line. */
 type ReferenceChoices =
   | { readonly phase: 'loading' }
-  | { readonly phase: 'ready'; readonly items: readonly LinePriceReference[]; readonly currencyCode: string }
+  | { readonly phase: 'ready'; readonly items: readonly LinePriceReference[]; readonly currencyCode: string; readonly resolution: LinePriceResolution }
   | { readonly phase: 'failed' }
 
 export function SalesDraftCommercialRevisionForm({
@@ -141,7 +141,7 @@ export function SalesDraftCommercialRevisionForm({
     setChoices((current) => ({
       ...current,
       [lineId]: outcome.type === 'ok-single'
-        ? { phase: 'ready', items: outcome.data.items, currencyCode: outcome.data.currencyCode }
+        ? { phase: 'ready', items: outcome.data.items, currencyCode: outcome.data.currencyCode, resolution: outcome.data.resolution }
         : { phase: 'failed' },
     }))
   }
@@ -185,7 +185,8 @@ export function SalesDraftCommercialRevisionForm({
               {P.reference}: {row.reference === null ? P.noReference
                 : P.referenceText(row.reference.priceListName, row.reference.versionNo, row.reference.unitPrice, row.reference.currencyCode)
                   + (row.reference.floorUnitPrice === null ? '' : ` (${P.floorText(row.reference.floorUnitPrice)})`)
-                  + ` (${P.tierText(row.reference.lowerQuantity, row.reference.upperQuantity)})`}
+                  + ` (${P.tierText(row.reference.lowerQuantity, row.reference.upperQuantity)})`
+                  + (row.reference.tier === null ? '' : P.tierSuffix(P.priceTier[row.reference.tier] ?? row.reference.tier))}
             </p>
             <div className={styles.actions}>
               <Button type="button" variant="secondary" onClick={() => void loadReferences(row.lineId)}
@@ -197,7 +198,15 @@ export function SalesDraftCommercialRevisionForm({
               )}
             </div>
             {choice?.phase === 'failed' ? <p className={styles.notice}>{P.referencesUnavailable}</p> : null}
-            {choice?.phase === 'ready' && choice.items.length === 0 ? <p className={styles.muted}>{P.noReferences}</p> : null}
+            {choice?.phase === 'ready' && choice.resolution.outcome === 'NoPrice'
+              ? <p className={styles.muted} data-testid={`sales-price-resolution-${row.lineNo}`}>{P.noReferences}</p> : null}
+            {choice?.phase === 'ready' && choice.resolution.matchedTier !== null ? (
+              <p className={styles.muted} data-testid={`sales-price-resolution-${row.lineNo}`}>
+                {choice.resolution.outcome === 'Ambiguous'
+                  ? P.ambiguousTier(P.priceTier[choice.resolution.matchedTier] ?? choice.resolution.matchedTier)
+                  : P.resolvedTier(P.priceTier[choice.resolution.matchedTier] ?? choice.resolution.matchedTier)}
+              </p>
+            ) : null}
             {choice?.phase === 'ready' && choice.items.length > 0 ? (
               <ul data-testid={`sales-price-choices-${row.lineNo}`}>
                 {choice.items.map((item) => (

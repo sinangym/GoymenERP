@@ -116,11 +116,12 @@ public sealed record CommercialDraftFields(string? UnitPrice, Guid? PriceUnitId,
 /// <summary>
 /// AT-018 / AT-021: the Product price list price a line was priced from, copied at the revision (a later version of the list
 /// never changes it): the list, its version and validity, the currency and VAT basis, the price unit, the list price and the
-/// optional floor, all as exact text.
+/// optional floor, all as exact text. MOD-02 (SAT-D9): <paramref name="Tier"/> is the tier of the chain the list answered at
+/// (<c>Customer</c> / <c>Company</c> …); null on a line priced before the chain existed.
 /// </summary>
 public sealed record PriceReferenceSnapshot(Guid PriceListId, string PriceListName, int VersionNo, DateOnly ValidFrom, DateOnly? ValidThrough,
     string CurrencyCode, Guid PriceUnitId, string UnitPrice, string? FloorUnitPrice, string VatBasis,
-    string LowerQuantity, string? UpperQuantity);
+    string LowerQuantity, string? UpperQuantity, string? Tier = null);
 
 /// <summary>
 /// The reasoned maker-checker exception for one exact below-floor commercial snapshot. Pending has no approver facts;

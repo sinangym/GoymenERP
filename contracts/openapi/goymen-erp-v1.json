@@ -76809,6 +76809,16 @@
             "items": {
               "$ref": "#/components/schemas/PriceListLineRequestV1"
             }
+          },
+          "scope": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PriceListScopeRequestV1"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -86350,6 +86360,59 @@
           }
         }
       },
+      "PriceListScopeRequestV1": {
+        "required": [
+          "kind"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "companyAccountId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PriceListScopeViewV1": {
+        "required": [
+          "kind",
+          "partyId",
+          "companyAccountId"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "companyAccountId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "PriceListSummaryV1": {
         "required": [
           "id",
@@ -86362,7 +86425,8 @@
           "activeValidFrom",
           "draftVersionNo",
           "versionCount",
-          "updatedAtUtc"
+          "updatedAtUtc",
+          "scope"
         ],
         "type": "object",
         "properties": {
@@ -86420,6 +86484,9 @@
           "updatedAtUtc": {
             "type": "string",
             "format": "date-time"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PriceListScopeViewV1"
           }
         }
       },
@@ -86506,7 +86573,8 @@
           "updatedAtUtc",
           "activeVersionNo",
           "draftVersionNo",
-          "versions"
+          "versions",
+          "scope"
         ],
         "type": "object",
         "properties": {
@@ -86560,6 +86628,9 @@
             "items": {
               "$ref": "#/components/schemas/PriceListVersionViewV1"
             }
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PriceListScopeViewV1"
           }
         }
       },
@@ -92061,6 +92132,21 @@
           }
         }
       },
+      "SalesDraftPackageStandardV1": {
+        "required": [
+          "status",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "SalesDraftPriceFloorExceptionApprovalLineV1": {
         "required": [
           "lineId",
@@ -92220,6 +92306,90 @@
             "type": "string"
           },
           "upperQuantity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "tier": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SalesDraftPriceResolutionV1": {
+        "required": [
+          "outcome",
+          "effectiveOn",
+          "businessTimeZone",
+          "matchedTier",
+          "priceListId",
+          "versionNo",
+          "tiers",
+          "packageStandard"
+        ],
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string"
+          },
+          "effectiveOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "businessTimeZone": {
+            "type": "string"
+          },
+          "matchedTier": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "priceListId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "versionNo": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "tiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesDraftPriceTierEvaluationV1"
+            }
+          },
+          "packageStandard": {
+            "$ref": "#/components/schemas/SalesDraftPackageStandardV1"
+          }
+        }
+      },
+      "SalesDraftPriceTierEvaluationV1": {
+        "required": [
+          "tier",
+          "status",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "tier": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
             "type": [
               "null",
               "string"
@@ -93443,7 +93613,8 @@
           "lineId",
           "currencyCode",
           "on",
-          "items"
+          "items",
+          "resolution"
         ],
         "type": "object",
         "properties": {
@@ -93463,6 +93634,9 @@
             "items": {
               "$ref": "#/components/schemas/SalesDraftPriceReferenceV1"
             }
+          },
+          "resolution": {
+            "$ref": "#/components/schemas/SalesDraftPriceResolutionV1"
           }
         }
       },

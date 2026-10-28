@@ -1639,8 +1639,8 @@ public sealed partial class SalesDraftServiceTests
         public ISalesOrderAllocationReadPortV1? Allocations { get; set; }
         /// <summary>DEC-SAL-005: the loading owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderLoadingReadPortV1? Loadings { get; set; }
-        /// <summary>AT-018: the Product price-list reference read; null = not composed.</summary>
-        public IProductQuantityPriceReferenceReaderV1? PriceReferences { get; set; }
+        /// <summary>AT-018 / MOD-02: the Product price tier chain; null = not composed.</summary>
+        public IProductQuantityPriceReferenceReaderV2? PriceReferences { get; set; }
         /// <summary>SAT-D8 / API-10: the customer-return owner's read port (Logistics); null = not composed.</summary>
         public ISalesOrderCustomerReturnReadPortV1? CustomerReturns { get; set; }
         /// <summary>SAT-D2 / API-12: the Settings Sales policy port; null = not composed.</summary>
