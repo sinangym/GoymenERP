@@ -354,8 +354,8 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyCustomer
                     keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
             }
 
-            // A passive group keeps its existing assignments but is never newly assigned. Re-sending the account's
-            // current (now passive) group is a no-op below, not a new assignment.
+            // SAT-D77: a passive group keeps its existing assignments (and their price) but is never newly assigned.
+            // Re-sending the account's current (now passive) group is a no-op below, not a new assignment.
             if (!group.IsActive && account.CustomerGroupId != groupId)
             {
                 return await CompleteCommandAsync(AssignCustomerGroupCommandName,

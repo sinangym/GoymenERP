@@ -3,7 +3,8 @@ namespace GoymenERP.Modules.Counterparty.Domain.Accounts;
 /// <summary>
 /// SAT-D57 (Sinan, 2026-10-27): a company's customer (price) group — the list a Cari account's group is chosen from.
 /// The list belongs to ONE company and to the Counterparty module that owns the account it is assigned on; it is never
-/// a shared party field. A group is never deleted: it is deactivated (passive) and may be reactivated. No value is
+/// a shared party field. A group is never deleted: it is deactivated (passive) and may be reactivated; a passive group
+/// keeps its existing assignments and their price and only refuses new ones (SAT-D77). No value is
 /// seeded: the company's own administrator creates the list (Sinan's initial examples — toptancı, perakendeci,
 /// imalatçı — are entered by a person, never by code or migration).
 /// </summary>

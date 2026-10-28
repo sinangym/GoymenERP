@@ -5,8 +5,11 @@ namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 /// chain's group tier (MOD-02), read by consumers through this versioned port, never from the Counterparty tables.
 /// <list type="bullet">
 /// <item><b>Found</b> with <c>CustomerGroupId = null</c>: the account has no group; the group tier is skipped.</item>
-/// <item><b>Found</b> with a group: its id and its active flag (a passive group's existing assignment is reported as
-/// such; what a consumer does with a passive group is the consumer's rule, not chosen here).</item>
+/// <item><b>Found</b> with a group: its id and its active flag. A PASSIVE group's existing assignment is a usable
+/// Found group: under SAT-D77 (Sinan, 2026-10-28, EK12) an account already in a group that is later made passive keeps
+/// getting that group's price; passive only closes the group to NEW assignments, which the assign command enforces.
+/// <c>CustomerGroupIsActive = false</c> is therefore information, never a reason to skip the tier or to answer
+/// "could not be read".</item>
 /// <item><b>NotFound</b>: no such account in the requested company.</item>
 /// <item><b>Denied</b>: the server context is not the requested company, the actor is not authenticated, or the actor
 /// lacks the company-wide <c>counterparty.parties.read</c>.</item>
@@ -35,7 +38,10 @@ public sealed record CounterpartyAccountCustomerGroupAnswerV1(
     CounterpartyAccountCustomerGroupOutcomeV1 Outcome,
     CounterpartyAccountCustomerGroupV1? Account);
 
-/// <summary>Owner facts only. <c>CustomerGroupIsActive</c> is null exactly when <c>CustomerGroupId</c> is null.</summary>
+/// <summary>
+/// Owner facts only. <c>CustomerGroupIsActive</c> is null exactly when <c>CustomerGroupId</c> is null; false marks a
+/// passive group whose existing assignment still prices (SAT-D77).
+/// </summary>
 public sealed record CounterpartyAccountCustomerGroupV1(
     Guid CompanyId,
     Guid CompanyAccountId,

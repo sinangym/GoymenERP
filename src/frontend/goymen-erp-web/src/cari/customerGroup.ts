@@ -9,7 +9,7 @@
  *
  *  - The group list is the selected COMPANY's own; nothing is seeded. A group is never deleted — it is made passive.
  *  - The group sits on the company's ACCOUNT, not on the party; no group means the price chain's group tier is skipped.
- *  - A passive group keeps its existing assignment but is never offered for a new one.
+ *  - A passive group keeps its existing assignment — and its price (SAT-D77) — but is never offered for a new one.
  *
  * The decoders are strict: an unknown shape is `null`, never a partly trusted object. Every user-facing word lives in
  * `CUSTOMER_GROUP_TEXT` below.
@@ -193,7 +193,7 @@ export const CUSTOMER_GROUP_TEXT = {
   renameButtonLabel: (name: string) => `“${name}” grubunu yeniden adlandır`,
   created: 'Grup eklendi.',
   renamed: 'Grup adı güncellendi.',
-  deactivated: 'Grup pasif yapıldı. Mevcut atamaları korunur; yeni bir cariye atanamaz.',
+  deactivated: 'Grup pasif yapıldı. Bağlı cariler bu grubun fiyatını almaya devam eder; grup yeni bir cariye atanamaz.',
   reactivated: 'Grup yeniden etkinleştirildi.',
   readOnlyNote: 'Grupları değiştirme yetkiniz yok; listeyi yalnız görüntüleyebilirsiniz.',
   // Cari card (the account's group)

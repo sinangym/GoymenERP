@@ -9,7 +9,8 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 /// <summary>
 /// SAT-D57: the Counterparty owner's read of a company account's customer group (<see
 /// cref="ICounterpartyAccountCustomerGroupSourceV1"/>). Fail-closed: a context that is not the requested company, a
-/// missing company-wide <c>counterparty.parties.read</c>, or any failure of the owner read is never "no group".
+/// missing company-wide <c>counterparty.parties.read</c>, or any failure of the owner read is never "no group". A
+/// passive group's existing assignment is answered Found with its id (SAT-D77: it keeps pricing).
 /// </summary>
 public sealed class CounterpartyAccountCustomerGroupSourceV1(
     CounterpartyDbContext dbContext,

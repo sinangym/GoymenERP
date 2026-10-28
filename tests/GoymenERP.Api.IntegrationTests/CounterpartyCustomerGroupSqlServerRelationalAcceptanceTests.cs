@@ -191,15 +191,20 @@ public sealed class CounterpartyCustomerGroupSqlServerRelationalAcceptanceTests
             await AssertProblemAsync(stale, HttpStatusCode.Conflict, "version_conflict");
         }
 
-        // A passive group keeps its existing assignment and is reported as passive…
+        // SAT-D77: a passive group keeps its existing assignment — and its price. The card shows it marked passive and
+        // the consumer port answers it as a usable Found group (its id, not "no group" and not "could not be read").
         await SetActiveAsync(admin, retail, "1", false);
         var kept = await ReadAsync(admin, path);
         Assert.Equal(retail, kept.GetProperty("customerGroup").GetProperty("id").GetGuid());
         Assert.False(kept.GetProperty("customerGroup").GetProperty("isActive").GetBoolean());
-        Assert.Equal(CounterpartyAccountCustomerGroupOutcomeV1.Found, (await test.ReadPortAsync(accountId)).Outcome);
-        Assert.False((await test.ReadPortAsync(accountId)).Account!.CustomerGroupIsActive);
+        Assert.Equal("2", kept.GetProperty("version").GetString());
+        var passivePort = await test.ReadPortAsync(accountId);
+        Assert.Equal(CounterpartyAccountCustomerGroupOutcomeV1.Found, passivePort.Outcome);
+        Assert.Equal(retail, passivePort.Account!.CustomerGroupId);
+        Assert.False(passivePort.Account.CustomerGroupIsActive);
+        Assert.Equal("2", passivePort.Account.AccountVersion);
 
-        // …re-sending it is a no-op, but it is never newly assigned.
+        // …re-sending it is a no-op, but a passive group is never NEWLY assigned (SAT-D57/SAT-D77).
         NewKey(admin);
         using (var same = await PutAsync(admin, path, Body(new { expectedVersion = "2", customerGroupId = retail })))
         {

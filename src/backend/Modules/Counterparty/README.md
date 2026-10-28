@@ -56,7 +56,7 @@ screen is `/cari/musteri-gruplari` (see below), the data stays here.
 | Create | `POST …/customer-groups` `{id, name}` → 204. The caller chooses the UUID, so a lost answer is retried with the same key and id. Name: trimmed, NFC, 1..100, no control characters (`400 validation_failed`); unique per company among active AND passive groups (`409 customer_group_name_taken`; index `UX_CustomerGroups_CompanyId_Name`). An id that already exists is `409 customer_group_exists`. |
 | Rename / passive | `PUT …/customer-groups/{id}/name` `{expectedVersion, name}`, `PUT …/customer-groups/{id}/active-state` `{expectedVersion, isActive}` → 204; the GROUP version as decimal text (`version_conflict`), `404 not_found` for an unknown or another company's group. A group is never deleted (write guard); deactivation is reversible. A same-value command is a fenced no-op without a version move or audit. |
 | Account read | `GET /api/v1/counterparties/{partyId}/company-account/customer-group` → `{partyId, accountId, companyId, version, accountIsActive, customerGroup|null, viewer{canAssign}}`; `customerGroup: null` = no group (the price chain's group tier is skipped for this account). |
-| Assign | `PUT …/{partyId}/company-account/customer-group` `{expectedVersion, customerGroupId}` → 204; the ACCOUNT version (shared with the other account commands); `customerGroupId` must be present — a group id or an explicit `null` to clear. A group that is not the active company's is `422 customer_group_not_found` (never named); a passive group is `409 customer_group_inactive` unless it already is the account's group (then a no-op). A passive group keeps its existing assignments. |
+| Assign | `PUT …/{partyId}/company-account/customer-group` `{expectedVersion, customerGroupId}` → 204; the ACCOUNT version (shared with the other account commands); `customerGroupId` must be present — a group id or an explicit `null` to clear. A group that is not the active company's is `422 customer_group_not_found` (never named); a passive group is `409 customer_group_inactive` unless it already is the account's group (then a no-op). A passive group keeps its existing assignments **and their price** (SAT-D77, Sinan 2026-10-28, EK12 #853): passive only closes the group to new assignments. |
 
 Common to every command: company-wide permission (`counterparty.customer-groups.manage` for the list,
 `counterparty.accounts.customer-group.assign` for the account, plus `counterparty.parties.read`), measured first and
@@ -68,7 +68,9 @@ registered and Critical-free, **assigned to no role** (human gate).
 **Read port.** `ICounterpartyAccountCustomerGroupSourceV1.GetAuthorizedAsync(companyId, companyAccountId)` answers
 `Found` (with `CustomerGroupId` or null, the group's active flag and the account version), `NotFound`, `Denied` (context
 is not the requested company, or no company-wide `counterparty.parties.read`) or `Unavailable` (any owner failure).
-Consumers treat Denied/Unavailable as "could not be read" (SAT-D58 fail-closed), never as "no group". Counterparty does
+Consumers treat Denied/Unavailable as "could not be read" (SAT-D58 fail-closed), never as "no group". A passive group's
+existing assignment is a usable `Found` group (SAT-D77): its price still applies; `CustomerGroupIsActive = false` is
+information only. Counterparty does
 not reference Product or Sales; the price list's CustomerGroup scope consumes this port in its own slice.
 
 Migration `20261027202534_AddCounterpartyCustomerGroups` (generated with `dotnet ef`): rollback is refused with
