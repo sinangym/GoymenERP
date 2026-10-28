@@ -314,6 +314,15 @@ public interface ISalesOrderDraftStore
     /// </summary>
     Task<SalesDraftPage> ListDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default,
         InternalApprovalState? approvalState = null);
+
+    /// <summary>
+    /// MOD-01 / API-06: the company's orders of one customer account whose APPROVED commitment is still open — lifecycle
+    /// <see cref="SalesDraftState.Draft"/> (neither cancelled nor closed) and either the current revision approved or an earlier
+    /// approved revision archived (a revision awaiting re-approval) — oldest first, at most <paramref name="take"/> (the caller
+    /// asks one more than it reads, to refuse rather than truncate). Read-only; another company's orders are invisible.
+    /// </summary>
+    Task<IReadOnlyList<SalesOrderDraft>> ListOpenApprovedOrdersAsync(Guid partyId, Guid companyAccountId, int take,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
