@@ -67,7 +67,7 @@ public sealed class SalesShellCapabilityProviderTests
                     "sales.quotes.detail"),
                 ("sales.quotes.create", "/satis/teklifler/yeni", SalesPermissionManifestV1.QuotesWrite, null),
                 ("sales.quotes.detail", "/satis/teklifler/:quoteId", SalesPermissionManifestV1.QuotesRead, null),
-                // SAT-D24 / SAT-D44 (1.9): the expired-quote approval CONTROL (read + its own name).
+                // SAT-D24 / SAT-D44 (1.10): the expired-quote approval CONTROL (read + its own name).
                 ("sales.quotes.expired-conversion.approve", "/satis/teklifler/:quoteId",
                     $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesExpiredConversionApprove}", "sales.quotes.detail"),
                 ("sales.quotes.list", "/satis/teklifler", SalesPermissionManifestV1.QuotesRead, null),

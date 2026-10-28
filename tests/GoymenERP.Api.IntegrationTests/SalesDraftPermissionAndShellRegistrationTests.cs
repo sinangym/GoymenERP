@@ -125,8 +125,9 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         // Three screens plus the SALES-A1 approve, SALES-P commercial-revision, AT-021 floor-exception approval,
         // DEC-SAL-003 delivery-schedule, DEC-SAL-005 cancel, DEC-SAL-002 quantity-revision, Q9 customer-acceptance and
         // No 30 force-close controls; Sales 1.8 (UI-20) adds the six S-01 request/quote screens and their three controls; Sales 1.9
-        // (UI-60 / UI-61) the S-07 dispatch list and the S-08 invoice candidates.
-        Assert.Equal(22, sales.Length);
+        // (UI-60 / UI-61) the S-07 dispatch list and the S-08 invoice candidates; Sales 1.10 (SAT-D24 / SAT-D44) the expired-quote
+        // approval control.
+        Assert.Equal(23, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.RequestDetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.RequestApproveCapabilityId)
                 .Declaration.ParentCapabilityId);
