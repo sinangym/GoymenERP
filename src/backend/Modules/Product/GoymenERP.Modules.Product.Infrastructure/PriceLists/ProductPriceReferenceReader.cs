@@ -9,9 +9,13 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// context company's Sales-channel lists that price the product on the date, through the store's company filter. The
 /// port carries no authority (the Logistics D6 pattern): Sales measures its own price name before asking. No company
 /// context is refused before any read. Nothing is created, cached or copied.
+/// <para>
+/// MOD-02: the V1 readers answer company-wide lists only (what they always meant: ASSUMPTION-PRL-4's scope); a
+/// customer-specific list is answered by <see cref="IProductQuantityPriceReferenceReaderV2"/>'s tier chain alone.
+/// </para>
 /// </summary>
 internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, ICompanyContext companyContext)
-    : IProductPriceReferenceReaderV1, IProductQuantityPriceReferenceReaderV1
+    : IProductPriceReferenceReaderV1, IProductQuantityPriceReferenceReaderV1, IProductQuantityPriceReferenceReaderV2
 {
     public async Task<IReadOnlyList<ProductPriceReferenceV1>> SearchAsync(Guid productId, IReadOnlyCollection<Guid> priceUnitIds,
         string currencyCode, DateOnly on, CancellationToken cancellationToken = default)
@@ -25,6 +29,7 @@ internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, I
 
         var lists = await store.FindListsPricingAsync(productId, currencyCode, cancellationToken);
         var references = new List<ProductPriceReferenceV1>();
+        lists = [.. lists.Where(IsCompanyWide)];
         foreach (var list in lists.OrderBy(list => list.Name, StringComparer.CurrentCulture).ThenBy(list => list.Id))
         {
             if (list.ResolveOn(on) is not { } version)
@@ -49,7 +54,8 @@ internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, I
     {
         RequireCompany();
         var list = await store.LoadAsync(priceListId, cancellationToken);
-        if (list is null || list.Channel != PriceListChannel.Sales || list.ResolveOn(on) is not { } version || version.VersionNo != versionNo)
+        if (list is null || !IsCompanyWide(list) || list.Channel != PriceListChannel.Sales || list.ResolveOn(on) is not { } version
+            || version.VersionNo != versionNo)
         {
             return null;
         }
@@ -67,7 +73,7 @@ internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, I
         }
 
         var lists = await store.FindListsPricingAsync(productId, currencyCode, cancellationToken);
-        return [.. lists.OrderBy(list => list.Name, StringComparer.CurrentCulture).ThenBy(list => list.Id)
+        return [.. lists.Where(IsCompanyWide).OrderBy(list => list.Name, StringComparer.CurrentCulture).ThenBy(list => list.Id)
             .Select(list => (List: list, Version: list.ResolveOn(on)))
             .Where(pair => pair.Version is not null)
             .Select(pair => (pair.List, Version: pair.Version!, Line: pair.Version!.LineFor(productId, priceUnitId, quantity)))
@@ -85,7 +91,7 @@ internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, I
         }
 
         var list = await store.LoadAsync(priceListId, cancellationToken);
-        if (list is null || list.Channel != PriceListChannel.Sales || list.ResolveOn(on) is not { } version
+        if (list is null || !IsCompanyWide(list) || list.Channel != PriceListChannel.Sales || list.ResolveOn(on) is not { } version
             || version.VersionNo != versionNo)
         {
             return null;
@@ -94,12 +100,64 @@ internal sealed class ProductPriceReferenceReader(ProductPriceListStore store, I
         return version.LineFor(productId, priceUnitId, quantity) is { } line ? Reference(list, version, line) : null;
     }
 
-    private void RequireCompany()
+    /// <summary>
+    /// MOD-02 (SAT-D9 / SAT-D10): the tier chain for one line on its business date. The store loads the company-wide lists
+    /// and — only when a customer is given — that customer's own lists, under the company filter; the chain
+    /// (<see cref="PriceTierChain"/>) decides. Invalid input answers NoPrice (never a default); no company is refused.
+    /// </summary>
+    public async Task<ProductPriceResolutionV2> ResolveAsync(ProductPriceResolutionRequestV2 request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var companyId = RequireCompany();
+        IReadOnlyList<PriceList> lists = [];
+        var customer = request.Customer is { PartyId: var party, CompanyAccountId: var account } && party != Guid.Empty && account != Guid.Empty
+            ? new PriceTierCustomer(party, account)
+            : null;
+        if (request.ProductId != Guid.Empty && request.PriceUnitId != Guid.Empty && request.Quantity > 0m
+            && !string.IsNullOrWhiteSpace(request.CurrencyCode))
+        {
+            lists = await store.FindListsPricingAsync(request.ProductId, request.CurrencyCode, cancellationToken, customer?.CompanyAccountId);
+        }
+
+        // The answer is for the company captured before the read; a changed context releases nothing.
+        if (RequireCompany() != companyId)
+        {
+            throw new InvalidOperationException("Fiyat referansı okunurken şirket bağlamı değişti.");
+        }
+
+        var chain = PriceTierChain.Resolve(lists, companyId, request.ProductId, request.PriceUnitId, request.Quantity,
+            request.CurrencyCode ?? string.Empty, request.On, customer);
+        var candidates = chain.Candidates.Select(candidate => ReferenceV2(candidate)).ToList();
+        return new ProductPriceResolutionV2(
+            (ProductPriceResolutionOutcomeV2)(int)chain.Outcome,
+            chain.On,
+            PriceListBusinessDay.TimeZoneId,
+            chain.MatchedTier is { } tier ? (ProductPriceTierV2)(int)tier : null,
+            chain.Outcome == PriceTierChainOutcome.Resolved ? candidates[0] : null,
+            candidates,
+            [.. chain.Tiers.Select(evaluation => new ProductPriceTierEvaluationV2((ProductPriceTierV2)(int)evaluation.Tier,
+                (ProductPriceTierStatusV2)(int)evaluation.Status, evaluation.Reason))],
+            // No package-standard master exists (master §7.3 / U-07): nothing to snapshot, nothing invented.
+            new ProductPackageStandardSnapshotV2(ProductPackageStandardStatusV2.Unavailable,
+                ProductPriceResolutionReasonsV2.PackageStandardOwnerMissing));
+    }
+
+    private static bool IsCompanyWide(PriceList list) => list.Scope.Kind == PriceListScopeKind.Company;
+
+    private static ProductPriceReferenceV2 ReferenceV2(PriceTierCandidate candidate) =>
+        new((ProductPriceTierV2)(int)candidate.Tier, candidate.List.Id, candidate.List.Name, candidate.Version.Id,
+            candidate.Version.VersionNo, candidate.Version.ValidFrom, candidate.Version.ValidThrough, candidate.Line.ProductId,
+            candidate.Line.PriceUnitId, candidate.List.CurrencyCode, candidate.List.Channel.ToString(), candidate.List.VatBasis.ToString(),
+            candidate.Line.UnitPrice, candidate.Line.FloorUnitPrice, candidate.Line.LowerQuantity, candidate.Line.UpperQuantity);
+
+    private Guid RequireCompany()
     {
         if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty)
         {
             throw new InvalidOperationException("Fiyat referansı şirket bağlamı olmadan okunmaz.");
         }
+
+        return companyContext.CompanyId;
     }
 
     private static ProductPriceReferenceV1 Reference(PriceList list, PriceListVersion version, PriceListLine line) =>

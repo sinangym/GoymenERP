@@ -43,6 +43,11 @@ export interface PriceListVersion {
   readonly lines: readonly PriceListLine[]
 }
 
+/** MOD-02 (SAT-D9): a company-wide list names nobody; a customer-specific list names the Cari party and its company account. */
+export type PriceListScope =
+  | { readonly kind: 'Company'; readonly partyId: null; readonly companyAccountId: null }
+  | { readonly kind: 'Customer'; readonly partyId: string; readonly companyAccountId: string }
+
 export interface PriceListView {
   readonly id: string
   readonly name: string
@@ -55,6 +60,7 @@ export interface PriceListView {
   readonly activeVersionNo: number | null
   readonly draftVersionNo: number | null
   readonly versions: readonly PriceListVersion[]
+  readonly scope: PriceListScope
 }
 
 export interface PriceListSummary {
@@ -69,6 +75,7 @@ export interface PriceListSummary {
   readonly draftVersionNo: number | null
   readonly versionCount: number
   readonly updatedAtUtc: string
+  readonly scope: PriceListScope
 }
 
 export interface PriceListPage {
@@ -178,6 +185,14 @@ function quantityAtoms(value: string): bigint {
   return (BigInt(integer) * 1000n) + BigInt(fraction.padEnd(3, '0'))
 }
 
+function decodeScope(value: unknown): PriceListScope | null {
+  if (!isObject(value)) return null
+  const { kind, partyId, companyAccountId } = value
+  if (kind === 'Company' && partyId === null && companyAccountId === null) return { kind, partyId, companyAccountId }
+  if (kind === 'Customer' && isNonEmptyText(partyId) && isNonEmptyText(companyAccountId)) return { kind, partyId, companyAccountId }
+  return null
+}
+
 function decodeLine(value: unknown): PriceListLine | null {
   if (!isObject(value)) return null
   const { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice, lowerQuantity, upperQuantity } = value
@@ -213,6 +228,8 @@ function decodeVersion(value: unknown): PriceListVersion | null {
 export function decodePriceListView(value: unknown): PriceListView | null {
   if (!isObject(value)) return null
   const { id, name, currencyCode, channel, vatBasis, version, createdAtUtc, updatedAtUtc, activeVersionNo, draftVersionNo, versions } = value
+  const scope = decodeScope(value.scope)
+  if (scope === null) return null
   if (!isText(id) || !isText(name) || !isText(currencyCode) || !isText(channel) || !isText(vatBasis)
     || !isText(version) || !VERSION.test(version) || !isText(createdAtUtc) || !isText(updatedAtUtc)
     || !isNullablePositiveCount(activeVersionNo) || !isNullablePositiveCount(draftVersionNo)
@@ -231,18 +248,20 @@ export function decodePriceListView(value: unknown): PriceListView | null {
     || (activeVersionNo === null ? active.length !== 0 : active.length !== 1 || active[0].versionNo !== activeVersionNo)) return null
   return {
     id, name, currencyCode, channel, vatBasis, version, createdAtUtc, updatedAtUtc, activeVersionNo, draftVersionNo,
-    versions: typedVersions,
+    versions: typedVersions, scope,
   }
 }
 
 function decodeSummary(value: unknown): PriceListSummary | null {
   if (!isObject(value)) return null
   const { id, name, currencyCode, channel, vatBasis, version, activeVersionNo, activeValidFrom, draftVersionNo, versionCount, updatedAtUtc } = value
+  const scope = decodeScope(value.scope)
+  if (scope === null) return null
   if (!isText(id) || !isText(name) || !isText(currencyCode) || !isText(channel) || !isText(vatBasis) || !isText(version)
     || !isNullablePositiveCount(activeVersionNo) || !(activeValidFrom === null || isDate(activeValidFrom))
     || !isNullablePositiveCount(draftVersionNo) || !isPositiveCount(versionCount) || !isText(updatedAtUtc)) return null
   if ((activeVersionNo === null) !== (activeValidFrom === null)) return null
-  return { id, name, currencyCode, channel, vatBasis, version, activeVersionNo, activeValidFrom, draftVersionNo, versionCount, updatedAtUtc }
+  return { id, name, currencyCode, channel, vatBasis, version, activeVersionNo, activeValidFrom, draftVersionNo, versionCount, updatedAtUtc, scope }
 }
 
 export function decodePriceListPage(value: unknown): PriceListPage | null {
@@ -324,11 +343,13 @@ export function formatDate(text: string): string {
   return `${day}.${month}.${year}`
 }
 
-/** Today's calendar date on the device, as the wire date. */
+/** SAT-D10: the price business day is the Europe/Istanbul calendar day, whatever the device's own zone. */
+export const PRICE_BUSINESS_TIME_ZONE = 'Europe/Istanbul'
+
+/** Today's Europe/Istanbul calendar date, as the wire date (the server's "today" for publication and status). */
 export function todayText(now: Date = new Date()): string {
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${now.getFullYear()}-${month}-${day}`
+  return new Intl.DateTimeFormat('en-CA', { timeZone: PRICE_BUSINESS_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(now)
 }
 
 export function isWireDate(text: string): boolean {

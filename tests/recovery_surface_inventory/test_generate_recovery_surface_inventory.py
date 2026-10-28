@@ -2258,7 +2258,20 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1151, len(source_paths))
+        self.assertEqual(1149, len(source_paths))
+        # MOD-02 (SAT-D9 / SAT-D10): the Product price tier chain, its contracts, the Cari customer port adapter
+        # and the AddPriceListScope migration.
+        for mod02_source in (
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/PriceLists/PriceListScope.cs",
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/PriceLists/PriceListBusinessDay.cs",
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/PriceLists/PriceTierChain.cs",
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Application/Contracts/"
+            "ProductPriceResolutionContractsV2.cs",
+            "src/backend/GoymenERP.Api/ProductRuntime/CounterpartyProductPriceListCustomerPortV1.cs",
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/Migrations/"
+            "20261027123034_AddPriceListScope.cs",
+        ):
+            self.assertIn(mod02_source, source_paths)
         # SAT-D57: the Cari customer (price) group, its contracts, read port, service, endpoints, OpenAPI schema
         # hook and the AddCounterpartyCustomerGroups migration.
         for sat_d57_source in (

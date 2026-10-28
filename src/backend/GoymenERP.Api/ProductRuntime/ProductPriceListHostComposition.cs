@@ -28,6 +28,8 @@ public static class ProductPriceListHostComposition
 
         if (runtime.IsEnabled)
         {
+            // MOD-02: a customer-specific list asks the Cari owner through this adapter (registered before the service resolves it).
+            services.TryAddScoped<IProductPriceListCustomerPortV1, CounterpartyProductPriceListCustomerPortV1>();
             return services.AddProductPriceLists(configuration, configureDbContext);
         }
 

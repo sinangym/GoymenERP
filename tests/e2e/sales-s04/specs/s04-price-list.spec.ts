@@ -34,7 +34,8 @@ const { apiBaseUrl, testedCommit, seed } = env
 const { preparerActor, approverActor, readerActor, companyId, realPartyId, realCompanyAccountId, productId, productVersion, productUnitId, productCode } = seed
 
 const RUN = testedCommit.slice(0, 12)
-const TODAY = new Date().toISOString().slice(0, 10)
+// SAT-D10: the price business day is the Europe/Istanbul calendar day (a UTC date is a day behind from 21:00Z).
+const TODAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul' }).format(new Date())
 const LIST_NAME = `SENTETIK s04 fiyat listesi ${RUN}`
 const DRAFTS_PATH = '/api/v1/sales/drafts'
 const CURRENCIES_PATH = '/api/v1/sales/references/currencies'
