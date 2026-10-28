@@ -1,14 +1,20 @@
 # Sinan Kararları — 2026-10-28 (Satış S5: irsaliye ve fatura, KDV/tevkifat satır kararı)
 
-Bu belge önceki karar dosyalarını silmez; SAT-D85…SAT-D100'ü ekler. S5 dalgasının (API-30…37, MOD-04, MOD-06, UI-60…65;
+Bu belge önceki karar dosyalarını silmez; SAT-D85…SAT-D102'yi ekler. S5 dalgasının (API-30…37, MOD-04, MOD-06, UI-60…65;
 `docs/delivery/SATIS_HAZIRLIK_PLANI_v1.md`) açık sorularını cevaplar. SAT-D7 (elle akış: ERP taslak hazırlar, dışa aktarır,
-resmî belge dış programda kesilir, sonra eşleştirilir), DEC-FIN-001/002/003/005, DEC-SAL-006/008, No 25/26 ve DEC-FIN-010
-aynen geçerlidir. SAT-D93, SAT-D73/D74'ü (EK12) müşteri durumu, belge ve satır düzeyi değişiklik boyutlarıyla genişletir.
+resmî belge dış programda kesilir, sonra eşleştirilir), DEC-FIN-001/002/003/005 ve DEC-SAL-008 aynen geçerlidir.
+**Bilinçli istisna ve değişiklikler:** DEC-SAL-006'daki "Miktar irsaliye netidir" kuralı, SAT-D94 (2) önce-fatura (depo teslim)
+akışı için Sinan'ın açık istisnasıyla değişir (o akışta fatura miktarı sipariş miktarıdır); SAT-D94 (1) akışında ve ek
+faturalarda DEC-SAL-006 aynen geçerlidir. SAT-D90 ve SAT-D101 fatura kurunu **sevk tarihine** bağlar (DEC-FIN-010'un "fatura
+günü" okumasını Sinan'ın kararıyla değiştirir; bkz. araştırma notu). SAT-D93, SAT-D73/D74'ü (EK12) müşteri durumu, belge ve
+satır düzeyi değişiklik boyutlarıyla genişletir. `KARAR_SICILI.md`'deki DEC-SAL-006 satırına bu istisnanın referansı ayrı
+bir sicil güncellemesiyle eklenir.
 
 **Kaynak:** Sinan'ın 28 Ekim 2026 Claude Code cloud oturumundaki (oturum `session_01SPADrzecggx3apH2gfNW7b`) seçmeli soru
-cevapları (üç tur ve bir araştırma sonrası tur). Sinan'a seçeneğin adı **ve açıklaması** birlikte gösterildi; birkaç soruda
-Sinan kendi metnini yazdı, o metin aynen verilir. Sinan iki konuda "araştır" dedi; araştırma notu aşağıdadır ve bağlayıcı
-değildir.
+cevapları (üç tur, bir araştırma sonrası tur ve #856/#855 review'larının açtığı bir tur). Sinan'a seçeneğin adı **ve açıklaması** birlikte gösterildi; birkaç soruda
+Sinan kendi metnini yazdı, o metin aynen verilir. Sinan dört konuda "araştır" dedi; araştırma notu aşağıdadır ve bağlayıcı
+değildir. Aynı gün içinde iki soruda (kur tarihi, KDV/tevkifat değişikliğinin onayı) Sinan'ın sonraki turdaki cevabı öncekinin
+yerine geçer; ikisi de tabloda verilir.
 
 ## Soru ve cevaplar
 
@@ -30,6 +36,10 @@ değildir.
 | Depo teslimde faturası kesilmiş ama henüz sevk edilmemiş mal stokta nasıl görünsün? | Kendi metni: "Müşteriye rezerve edilmemiş ürünler içinde sipariş miktarı ve tutarı üzerinden de fatura kesilebilir, stoktaki ürün müşteri siparişene rezerv edilince o zaten müşteri rezervi şeklinde görülecektir" | — (seçenekler: "Müşteri emaneti (Önerilen)", "Rezerv", "Stoktan düşülsün") |
 | Depo teslimde faturadan AZ sevk edilirse (kalan teslim edilmezse) hangi belgeyle kapatılsın? | Kendi metni: "Mali müşavir karar versin(önerilen) ama alıcının iade faturası kesilebileceği gibi eksik kalan miktar için daha sonra irsaliye düzenlenerek ek malda gönderilebilri buna mali müşavir ve satışçı ve müdür farkedip üçüde durumu yönetebilmeli" | — (seçenekler: "Mali müşavir karar versin (Önerilen)", "Fiyat farkı/iptal faturası", "Alıcının iade faturası") |
 | İhraç kayıtlı satış (KDV'nin tahsil edilmediği, ihracatçıya teslim) hangi şirketlerde olacak? (Yalnız imalatçı yapabilir) | Kendi metni: "3 firmada yapabilir" | — (seçenekler: "Yalnız imalatçı şirketler", "Hiçbiri", "Mali müşavirle teyit") |
+| Faturaya hazır sevkiyatlar gruplanırken, siparişte vade bilgisi henüz yoksa (vade ekranı gelene kadar) aynı müşterinin farklı siparişleri nasıl önerilsin? | Kendi metni: "Aynı müşterilerin farklı siparişlerinden tek irsaliye çıkabilir, irsaliyede zaten fiyat ve vade bilgisine ihtiyaç olmadığı için farklı siparişlerin irsaliyeleri birleştirilerekte kesilebilir ama faturada aynı müşterinin aynı irsaliye veya farklı irsaliye farketmeksizin faturası kesilirken siparişin kur birimi ve kuru aynı olanlar ve vade tarihi aynı olan siparişlerin irsaliye satırları birleştirilerek fatura kesilebilir aksi takdirde ayrı faturalandırılması gerekir, söylediklerimi araştır ve mantıklı bir algoritma geliştirmen lazım" | — (seçenekler: "Tek grup, 'vade eksik' işaretli (Önerilen)", "Sipariş başına ayrı grup", "Hiç önerilmesin") |
+| Gruplamadaki 'e-belge uyumu' neyi kapsasın? | Kendi metni: "Bunu tam olarak anlamadım, müşterinin e faturası mı e arşiv mi olduğu bilgisinide zaten cari kart açılırken kontrol etmek gerekir" | — (seçenekler: "e-Fatura/e-Arşiv + senaryo (Önerilen)", "Yalnız e-Fatura/e-Arşiv", "Senaryo + e-İrsaliye no şartı") |
+| Döviz siparişlerde fatura kuru gruplamayı nasıl etkilesin? | Kendi metni: "Faturanın kur bilgisi sevk tarihini baz alacak zaten, sevk tarihinden bir önceki iş günü tcmb kuru demiştik, fatura kuru sevk tarihinden belirlenecek yani faturanın kesildiği değil sevkiyatın yapıldığı günün kuru baz alınarak bir önceki iş günü olarak" | — (seçenekler: "Kur faturada tek kez (Önerilen)", "Sevk tarihine göre ayrı", "Anlaşma kuru varsa ayrı") |
+| Satırda KDV/tevkifat değişikliği Muhasebe onayı beklerken ne olsun? | Kendi metni: "Burda onaya gerek yok aslında ilk başta normal sipariş onayını veren kişi onaylasa olur," | — (seçenekler: "Sipariş onaya gidemez (Önerilen)", "Yeni değer hemen geçerli", "Eski değerle devam") |
 
 ## Araştırma notu (bağlayıcı değil; mali müşavir/YMM teyidi gerekir)
 
@@ -43,37 +53,53 @@ açılamadı; bulguların çoğu ikincil kaynaklara dayanır.
   teşvik belgesi (KDVK 13/d, yalnız belge kapsamındaki makine-teçhizat; tipik çelik ürünü genelde kapsam dışı); KDVK Geçici 37
   (teşvik belgeli yatırımın inşaat işlerine ilişkin teslimler, alıcının vergi dairesinden aldığı istisna belgesiyle KDV'siz);
   diplomatik istisna. İstisnalı teslimde tevkifat da uygulanmaz.
-- **Demir-çelik tevkifatı** (KDV GUT I/C-2.1.3.3.8): oran 5/10 (2022'den beri); belirlenmiş alıcılar ve KDV mükellefi
+- **Demir-çelik tevkifatı** (KDV GUT I/C-2.1.3.3.8): kaynaklara göre oran 5/10 (2022'den beri); belirlenmiş alıcılar ve KDV mükellefi
   alıcılar uygular; nihai tüketicide uygulanmaz. Hurda teslimlerinde oranlar kaynaklarda tutarsızdır (teyit gerekir).
 - **Tevkifat tutar sınırı:** kısmi tevkifat KDV dahil bedel VUK 232 fatura sınırını aşarsa uygulanır (2026 için 12.000 TL,
   ikincil kaynak); sınır işlem bütünü üzerinden değerlendirilir, fatura bölünerek aşılmaz.
-- **Önce fatura, sonra irsaliye:** VUK teslimden önce fatura düzenlemeyi yasaklamaz; KDVK 10/b gereği vergiyi doğuran olay
+- **Önce fatura, sonra irsaliye:** kaynaklara göre VUK teslimden önce fatura düzenlemeyi yasaklamaz; KDVK 10/b gereği vergiyi doğuran olay
   faturadaki miktar için fatura tarihinde doğar. Her sevk için ayrıca irsaliye gerekir ve irsaliye/fatura birbirine bağlanır.
   Fazla sevk edilen miktar için teslimden itibaren 7 gün içinde ek fatura gerekir; eksik sevkte KDVK 35 kapsamında matrah
   düzeltmesi yapılır (belge biçimi mali müşavir kararıdır).
 - **Dış program:** Mikro'nun Excel içe aktarma şablonu açık kaynaklarda bulunamadı; e-Mikro GİB lisanslı özel entegratör
-  olduğundan UBL-TR 1.2.1 XML'i kabul etmesi beklenir (teyit edilmedi).
+  olduğundan UBL-TR (kaynaklara göre güncel sürüm 1.2.1) XML'i kabul etmesi beklenir (teyit edilmedi).
+- **Dövizli faturada kur:** kaynaklara göre KDVK 26 gereği döviz, **vergiyi doğuran olayın** (mal tesliminde teslim; KDVK 10/b
+  ile fatura teslimden önceyse fatura) meydana geldiği andaki cari kurla TL'ye çevrilir; taraflar kur belirlememişse **TCMB döviz
+  alış kuru** esas alınır. Sinan'ın kararı (sevk tarihinden önceki iş günü TCMB kuru, DEC-FIN-010'daki satış kuru) ile bu
+  kaynaklar arasındaki fark (alış/satış kuru, "o gün"/"önceki iş günü") **mali müşavir teyidine** bırakılır; karar değiştirilmez.
+- **Kaynaklar (ikincil):** [PwC fatura sınırı](https://www.pwc.com.tr/tr/hizmetlerimiz/vergi/vergi-portali/pratik-bilgiler/hadler-ve-tutarlar/fatura-duzenleme-siniri.html),
+  [50 Seri No'lu KDV GUT (İSMMMO)](https://www.ismmmo.org.tr/dosya/4644/Mevzuat-Dosya/12022024-50-SERI-NOLU-KDV-G-TB.pdf),
+  [Demir-çelik tevkifatı](https://www.muhasebetr.com/yazarlarimiz/vedaterdem/0256/),
+  [İhraç kayıtlı teslim](https://alomaliye.com/2019/05/16/ihrac-kayitli-satislar-1/),
+  [13/d teşvik istisnası](https://kpmgvergi.com/blog/tesvik-belgeli-yatirimlarda-kdv-istisnasina-bir-bakis/1300),
+  [Geçici 37](https://www.alomaliye.com/2026/03/11/kdv-kanununun-gecici-37-maddesi-kapsami-kdv-istisna-belgeleri/),
+  [Teslimden önce fatura](https://www.hukukihaber.net/mal-veya-hizmet-teslim-edilmeden-once-faturalandirilmasi),
+  [Dövizli teslimde kur (KPMG)](https://kpmgvergi.com/blog/ikili-kur-sisteminde-dovizli-mal-teslimlerinde-hangi-kur-esas-alinmali/1258),
+  [KDV açısından kur farkları](https://www.alomaliye.com/2002/09/26/kdv-uygulamasi-acisindan-kur-farklarinin-durumu/),
+  [Netsis UBL-TR 1.2 geçişi](https://docs.logo.com.tr/download/attachments/50680048/Netsis_e-fatura_UBL-TR_v1.2_Gecisi.pdf?api=v2).
 
 ## Kararlar
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| SAT-D85 | Açık kalemi kim oluşturur | ERP'de başlayan faturada açık kalem, resmî fatura ERP taslağıyla **eşleştirilince** ERP tarafından, **resmî faturanın tutarıyla** ve tek kayıt olarak oluşur (Finance'taki ortak kaynak kimliğiyle; ikinci açık kalem üretilmez). Finance CSV içe aktarımı yalnız ERP'de başlamayan faturalar için kalır (DEC-FIN-002/003/005) | API-35/36, MOD-04 |
+| SAT-D85 | Açık kalemi kim oluşturur | ERP'de başlayan faturada açık kalem, resmî fatura ERP taslağıyla **eşleştirilince** ERP tarafından, **resmî faturanın tutarıyla** oluşur; **mükerrer açık kalem üretilmez** (Finance'taki ortak `official.invoice-installment.v1` kaynak kimliği; taksitli vadede DEC-SAL-008 gereği her taksit için bir açık kalem). ERP'de başlamış bir faturanın CSV ile tekrar içe aktarımı fatura no/ETTN ile reddedilir. Finance CSV içe aktarımı yalnız ERP'de başlamayan faturalar için kalır (DEC-FIN-002/003/005) | API-35/36, MOD-04 |
 | SAT-D86 | Vade | Vade, siparişin vade modelinden (DEC-SAL-008 anlık görüntüsü) ve **resmî fatura tarihinden** ERP tarafından hesaplanır; resmî faturadaki vade farklıysa Kontrol Merkezi'ne düşer | API-36, API-37, MOD-04 |
 | SAT-D87 | Varsayılan gruplama | Faturaya hazır kayıtlar DEC-SAL-006 uyum anahtarlarına göre **müşteri başına en büyük uyumlu grup** olarak önerilir; kullanıcı grubu bölebilir ve kısmi miktar seçebilir | API-31, UI-61/63 |
 | SAT-D88 | Fatura taslağı onayı | Fatura taslağını **Muhasebe** onaylar; **hazırlayan onaylayamaz** (P6 aynen). İzin adı uygulama PR'ında manifest'e eklenir, hiçbir role atanmaz | API-33 |
 | SAT-D89 | Eşleştirme toleransı | Fatura no, ETTN, müşteri ve para birimi **tam** eşleşmelidir. Tutar, KDV ve tevkifatta Ayarlar'daki **kuruş toleransı** (varsayılan 0) kadar fark kabul edilir; fazlası onaya gider; **resmî değer esastır**. EK12'de S5'e bırakılan tevkifat kuruş farkı sorusunu kapatır | API-35, Ayarlar |
-| SAT-D90 | Kur tarihi | Resmî fatura tarihi taslaktan farklıysa TL karşılığı için kur, **resmî fatura tarihinden önceki iş gününün TCMB kuruyla** yeniden bulunur (DEC-FIN-010, SAT-D54/D55) ve fark işaretlenir | API-35/36 |
-| SAT-D91 | Dışa aktarım biçimi | Fatura taslağı **Excel**, **UBL-TR (1.2.1) XML** ve dış programın **kendi içe aktarma şablonu** biçimlerinde dışa aktarılır. Dış program **Mikro** ve **e-Mikro portal**dır. Mikro şablonu için örnek şablon dosyası gereklidir; gelene kadar Excel ve UBL-TR XML üretilir | API-34 |
+| SAT-D90 | Kur tarihi | Faturanın kuru **sevk tarihine** göre belirlenir: **sevkiyatın yapıldığı günden önceki iş gününün TCMB kuru** (SAT-D54/D55 algoritması, DEC-FIN-010 kur türü). Faturanın kesildiği gün esas alınmaz. Sinan'ın aynı gün ilk turda seçtiği "resmî tarihe göre yeniden" cevabının **yerine geçer**. Resmî faturadaki kur farklıysa fark Kontrol Merkezi'nde işaretlenir. **Yorum (geri alınabilir):** SAT-D94 (2) önce-fatura akışında sevkten önce kesilen faturanın kuru, KDVK 10/b gereği vergiyi doğuran olay fatura tarihinde doğduğu için **fatura tarihinden önceki iş günü** kurudur; ek faturalar kendi sevk tarihine göre kurlanır | API-31/32/35/36 |
+| SAT-D91 | Dışa aktarım biçimi | Fatura taslağı **Excel**, **UBL-TR XML** (sürüm araştırmaya göre 1.2.1) ve dış programın **kendi içe aktarma şablonu** biçimlerinde dışa aktarılır. Dış program **Mikro** ve **e-Mikro portal**dır. Mikro şablonu için örnek şablon dosyası gereklidir; gelene kadar Excel ve UBL-TR XML üretilir | API-34 |
 | SAT-D92 | Siparişten yüksek fatura fiyatı | Faturadaki birim fiyat sipariş fiyatından **yüksekse** sipariş **revizyonu** gerekir (DEC-SAL-002); revizyon onaylanana kadar fatura ilerlemez. Düşük fiyat No 25 gereği uyarı ve fark kaydıdır | API-32/33 |
-| SAT-D93 | KDV/tevkifat satır kararı | KDV oranı, istisna ve tevkifat **sipariş oluşturulurken satır bazında** belirlenir ve satırda **değiştirilebilir**. Belirlemede ürün/hizmet türü (SAT-D82 KDV sınıfı, SAT-D74 tevkifat kodu), **müşterinin durumu** (KDV mükellefi, nihai tüketici, belirlenmiş alıcı, istisnalı) ve **müşterinin sunduğu belge** (istisna belgesi, yatırım teşvik belgesi, ihracat, ihraç kayıtlı) birlikte dikkate alınır. Satırdaki değişikliğin onayı SAT-D97'dedir. Oran, kod ve belge kuralları kodla sabitlenmez; Ayarlar/Cari/Ürün kayıtlarında efektif tarihli tutulur. SAT-D73/D74'ü bu boyutlarla genişletir. **Araştırmaya dayalı, geri alınabilir:** tevkifat tutar sınırı (VUK 232 fatura sınırı) Ayarlar'da efektif tarihli tutulur ve işlem (sipariş) bütünü üzerinden değerlendirilir | Sipariş satırı fiyatlama, API-03, API-32, Ayarlar, Cari kartı, Ürün kartı |
-| SAT-D94 | Faturalanabilirlik ve iki akış | (1) **Önce irsaliye:** malzeme sevk edilip irsaliyesi kesilince fatura düzenlenebilir. (2) **Önce fatura (depo teslim):** siparişe istinaden toplu tek fatura düzenlenebilir; sonra bu faturaya istinaden irsaliyeler kesilir. Bir faturaya bağlanan irsaliyelerin toplamı fatura miktarını **aşarsa, aşan miktar için ek fatura** kesilir. Fatura–irsaliye bağı bu iki akışı taşıyacak biçimde kurulur | API-31/32, MOD-06, UI-61/63 |
+| SAT-D93 | KDV/tevkifat satır kararı | KDV oranı, istisna ve tevkifat **sipariş oluşturulurken satır bazında** belirlenir ve satırda **değiştirilebilir**. Belirlemede ürün/hizmet türü (SAT-D82 KDV sınıfı, SAT-D74 tevkifat kodu), **müşterinin durumu** (KDV mükellefi, nihai tüketici, belirlenmiş alıcı, istisnalı) ve **müşterinin sunduğu belge** (istisna belgesi, yatırım teşvik belgesi, ihracat, ihraç kayıtlı) birlikte dikkate alınır. Satırdaki değişikliğin onayı SAT-D97'dedir. Oran, kod ve belge kuralları kodla sabitlenmez; Ayarlar/Cari/Ürün kayıtlarında efektif tarihli tutulur. SAT-D73/D74'ü bu boyutlarla genişletir. **Araştırmaya dayalı, geri alınabilir:** tevkifat tutar sınırı (VUK 232 fatura sınırı) Ayarlar'da efektif tarihli tutulur ve işlem (sipariş) bütünü üzerinden değerlendirilir; gruplama/bölme sınırı aşmanın yolu olarak kullanılamaz | Sipariş satırı fiyatlama, API-03, API-32, Ayarlar, Cari kartı, Ürün kartı |
+| SAT-D94 | Faturalanabilirlik ve iki akış | (1) **Önce irsaliye:** malzeme sevk edilip irsaliyesi kesilince fatura düzenlenebilir. (2) **Önce fatura (depo teslim):** siparişe istinaden toplu tek fatura düzenlenebilir; sonra bu faturaya istinaden irsaliyeler kesilir. Bir faturaya bağlanan irsaliyelerin toplamı fatura miktarını **aşarsa, aşan miktar için ek fatura** kesilir. Fatura–irsaliye bağı bu iki akışı taşıyacak biçimde kurulur. AT-055 ("aynı sevk iki kez bağlanamaz") **miktar/pay düzeyinde** okunur: bir sevk payı en fazla bir kez faturalanır; önce-fatura akışında faturaya bağlanmış (tüketilmiş) paylar "faturaya hazır" adaylarında yeniden görünmez. Faturalanan miktarın kaydını **Satış** tutar (Lojistik `ApprovedDispatchInvoiceSourceV1` kalan faturalanabilir miktar taşımaz) | API-31/32, MOD-06, UI-61/63 |
 | SAT-D95 | Faturalanmamış sevk gecikmesi | Faturalanmamış sevkiyat, **sevk tarihinden itibaren Ayarlar'daki gün sayısı** (başlangıç 7, VUK 231/5) sonra gecikmiş sayılır ve Kontrol Merkezi'nde görünür | API-37, Ayarlar |
-| SAT-D96 | Resmî fatura iptali/reddi | ERP'de **"resmî belge iptal" komutu** açık kalemi **ters kayıtla** kapatır ve ilgili sevk paylarını yeniden faturalanabilir yapar (silme yok). Fiyat farkı faturası S6'dadır | API-35/36, MOD-04 |
-| SAT-D97 | KDV/tevkifat değişikliğinin onayı | Satırda sistemin bulduğu KDV/tevkifat/istisnayı satışçı **gerekçeyle** değiştirir; değişiklik **Muhasebe onayıyla** geçerli olur (audit) | Sipariş satırı, API-12 benzeri onay deseni |
-| SAT-D98 | Depo teslimde stok | Depo teslim faturası **rezerve edilmemiş ürünler için de sipariş miktarı ve tutarı üzerinden** kesilebilir; fatura stok hareketi yapmaz. Ürün siparişe rezerve edildiğinde zaten **müşteri rezervi** olarak görünür (mevcut tahsis/rezerv). Ayrı "emanet" lokasyonu açılmaz | API-32, Stok tahsisi |
-| SAT-D99 | Depo teslimde eksik sevk | Fatura miktarından az sevk edilen kalan, ERP'de **"faturalanmış, sevk edilmemiş" bakiye** olarak görünür. Kapatma yolu (alıcının iade faturası **veya** kalan miktarın sonradan irsaliyeyle sevki) **mali müşavirle** belirlenir; bakiye **mali müşavir (Muhasebe), satışçı ve Müdür** tarafından görülür ve yönetilir | API-37, UI-64/65, S6 iade |
-| SAT-D100 | İhraç kayıtlı satış | İhraç kayıtlı satış **üç şirkette de** yapılabilir (Sinan'ın kararı). Araştırma notuna göre yasal koşul (satıcının imalatçı olması, 3 aylık ihracat süresi) mali müşavir sorumluluğundadır; ERP 3 aylık süreyi izler ve uyarır | Sipariş satırı, API-32, API-37 |
+| SAT-D96 | Resmî fatura iptali/reddi | Resmî belge dış programda iptal edilir (SAT-D7); ERP'deki **"resmî belge iptal" komutu** bu iptali kaydeder, açık kalemi **ters kayıtla** kapatır ve ilgili sevk paylarını yeniden faturalanabilir yapar (silme yok). Fiyat farkı faturası S6'dadır | API-35/36, MOD-04 |
+| SAT-D97 | KDV/tevkifat değişikliğinin onayı | Satırda sistemin bulduğu KDV/tevkifat/istisnayı satışçı **gerekçeyle** değiştirir (audit); **ayrı bir Muhasebe onayı yoktur**: değişiklik, siparişi onaylayan kişinin **normal sipariş onayıyla** birlikte onaylanmış olur. Sinan'ın aynı gün ilk turda seçtiği "Muhasebe onaylasın" cevabının **yerine geçer** | Sipariş satırı, sipariş onayı |
+| SAT-D98 | Depo teslimde stok | Depo teslim faturası **rezerve edilmemiş ürünler için de sipariş miktarı ve tutarı üzerinden** kesilebilir. Ürün siparişe rezerve edildiğinde zaten **müşteri rezervi** olarak görünür (mevcut tahsis/rezerv). **Yorum (geri alınabilir, seçilmeyen seçeneklerden çıkarım):** fatura stok hareketi yapmaz ve ayrı "emanet" lokasyonu açılmaz | API-32, Stok tahsisi |
+| SAT-D99 | Depo teslimde eksik sevk | Fatura miktarından az sevk edilen kalan, ERP'de **"faturalanmış, sevk edilmemiş" bakiye** olarak görünür. Kapatma yolu (alıcının iade faturası **veya** kalan miktarın sonradan irsaliyeyle sevki) **mali müşavirle** belirlenir; bakiye **mali müşavir, satışçı ve Müdür** tarafından görülür ve yönetilir. **Yorum:** mali müşavir sistemde Muhasebe personasıyla temsil edilir; dışarıdan bir mali müşavire sistem erişimi verilmesi ayrı bir insan kapısıdır | API-37, UI-64/65, S6 iade |
+| SAT-D100 | İhraç kayıtlı satış | İhraç kayıtlı satış **üç şirkette de** yapılabilir (Sinan'ın kararı). Araştırma notuna göre yasal koşul (satıcının imalatçı olması, 3 aylık ihracat süresi) mali müşavir sorumluluğundadır. **Öneri (geri alınabilir):** ERP ihracat süresini (Ayarlar'da, kaynaklara göre 3 ay) izler ve uyarır | Sipariş satırı, API-32, API-37 |
+| SAT-D101 | Fatura birleştirme algoritması | **İrsaliye:** aynı müşterinin farklı siparişlerinden tek irsaliye kesilebilir (irsaliye fiyat ve vade taşımaz). **Fatura:** aynı müşterinin (aynı şirket ve cari hesap) irsaliye satırları — aynı veya farklı irsaliyeden olması fark etmeksizin — yalnız şu üçü **aynıysa** tek faturada birleşir: (a) siparişin **para birimi**, (b) **kur** (SAT-D90: sevk tarihinden önceki iş günü TCMB kuru; TL siparişte yok sayılır), (c) **vade tarihi**. Biri farklıysa ayrı fatura gerekir. **Algoritma (öneri, geri alınabilir):** faturaya hazır her pay için anahtar = (şirket, cari hesap, para birimi, kur günü/değeri, vade tarihi, fatura tipi); aynı anahtardaki paylar tek fatura önerisi olur (SAT-D87 en büyük uyumlu grup), kullanıcı bölebilir. **Vade tarihi** siparişin vade modelinden hesaplanır; vade başlangıcı fatura tarihine bağlı modelde öneri tarihi olarak bugün alınır ve aynı vade koşulundaki siparişler aynı vade tarihini verir. Vade kaynağı yoksa pay "vade eksik" işaretli ayrı grupta kalır ve faturalanamaz (fail-closed). **Fatura tipi** (SATIS/TEVKIFAT/ISTISNA/IHRACKAYITLI) UBL-TR'de fatura başına tek olduğu için araştırmaya dayalı olarak anahtara eklenir | API-31, API-32, UI-61/63 |
+| SAT-D102 | e-Belge uyumu | Müşterinin **e-Fatura / e-Arşiv** durumu **cari kart açılırken** kontrol edilir ve Cari kartında tutulur; müşteri başına tek olduğundan gruplamada ayrı bir boyut değildir (müşteri anahtarı onu kapsar). DEC-SAL-006'daki "e-belge uyumu" bu okumayla karşılanır | Cari kartı (takip işi), API-31/32 |
 
 ## Uygulama notları
 
@@ -94,8 +120,19 @@ açılamadı; bulguların çoğu ikincil kaynaklara dayanır.
 - Mikro içe aktarma şablonunun örnek dosyası bekleniyor (SAT-D91).
 - Araştırma notundaki oran ve sınırlar (5/10, 12.000 TL, istisna/tevkifat kodları) mali müşavir/YMM tarafından teyit
   edilmelidir; teyit edilene kadar Ayarlar değeri yoksa ilgili alan "kaynak yok" kalır.
-- `OPEN-016` (e-belge sağlayıcı ve entegrasyon), `OPEN-012` (kur saati), `OPEN-013` (yeni `sales.invoices.*` izinlerinin
-  grant'i ve Muhasebe personası), `OPEN-018/021` (saklama), `OPEN-019` (şablon/logo) açık kalır; bu belge hiçbirini kapatmaz.
+- `OPEN-016` (e-belge sağlayıcı ve entegrasyon), `OPEN-012` (kur saati), `OPEN-018/021` (saklama), `OPEN-019` (şablon/logo)
+  açık kalır; bu belge hiçbirini kapatmaz. Yeni `sales.invoices.*` izinlerinin ve Muhasebe personasının verilmesi insan
+  kapısıdır (AGENTS.md); `sales.invoices.read` iznini kimin alacağı sorulmadı.
+- SAT-D89 toleransını aşan farkı **kimin onaylayacağı** sorulmadı (öneri: SAT-D88 fatura onaycısı).
+- SAT-D94 (1)'deki "irsaliyesi kesilince" ifadesinin onaylı ERP irsaliyesini mi, e-İrsaliye numarasını mı kastettiği sorulmadı;
+  uygulama onaylı ERP irsaliyesini esas alır, e-İrsaliye numarası zorunlu tutulmaz (geri alınabilir).
+- Önce-fatura akışında riskin (SAT-D46/D50) **çift sayılmaması** (faturalanmış ama sevk edilmemiş tutarın hem açık alacak hem
+  sevk edilmemiş kalan olarak sayılması) uygulamada ele alınmalıdır; kural sorulmadı.
+- Onaylı bir siparişte KDV/tevkifat değişikliğinin DEC-SAL-002 revizyonu gerektirip gerektirmediği sorulmadı (öneri: evet).
+- Faturalanmış ama rezerve edilmemiş miktarın serbest stokta görünüp başka siparişe tahsis edilebilmesi (SAT-D98) ve
+  faturalanıp sevk edilmemiş malın stok değerlemesi/mülkiyeti mali müşavir konusudur; sorulmadı.
+- Kurun alış/satış türü ve "o gün"/"önceki iş günü" farkı (araştırma notu) mali müşavirle teyit edilmelidir.
+- Cari kartında e-Fatura/e-Arşiv durumu ve GİB mükellef kontrolü (SAT-D102) takip işidir.
 
 ## Sınırlar
 
