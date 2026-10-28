@@ -231,8 +231,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // D-05 approval inbox: the existing pending-approval fact is renamed and strengthened to public HTTP/DI.
             // FI04: +2 approved-source open-item read facts (real HTTP authority/redaction and SQL keyset/no-write).
             // SAT-D18: +1 Sales-only GSP/GIN TRY profile keeps the bank-account path closed, kept ordinal-sorted.
+            // MOD-01 / SAT-D52: +2 Sales risk-port facts (unallocated payments deducted, reversed ones never; a refunded advance
+            // no longer deducted — review A P2-1), ordinal-sorted (cb46a836… -> 7dc420a3…).
             ["tools/relational_inventory/finance.txt"] =
-                "cb46a8362f31ddcb5e5c04be5369ac91527135dae1d0da2af66904a0302b95e6",
+                "7dc420a35ef402dcddf4461a5818301cfffcacb923b354db076a158789bbd156",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
@@ -330,9 +332,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // UI-20 shell 1.8: +1 S-01 pool capability SQL fact, ordinal-sorted (b1a5335a… -> efdb5edd…).
             // MOD-07: +1 SalesOrderPdfSqlServerRelationalAcceptanceTests fact, kept ordinal-sorted (merged over UI-20 shell 1.8:
             // efdb5edd… -> 87dc8166…).
-            // SAT-D24/D44, SAT-D25: +2 SalesQuoteSqlServerRelationalAcceptanceTests facts, ordinal-sorted (87dc8166… -> 241f500f…).
+            // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over MOD-07, kept ordinal-sorted
+            // (87dc8166… -> d74f7c2d…).
+            // SAT-D24/D44, SAT-D25: +2 SalesQuoteSqlServerRelationalAcceptanceTests facts, ordinal-sorted (d74f7c2d… -> 1014c327…).
             ["tools/relational_inventory/sales.txt"] =
-                "241f500ff714196887697ca4229922183d3b16e7d1605ab93a0cb2d864e45744",
+                "1014c3273fb6049fc36178baffbe61170f5604c95afe9944d4640f3d4e2499d2",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -924,12 +928,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // FIN-T04a (#305): the Finance initializer's one provider branch, as Organization.
                 // Re-fingerprinted for DEC-FIN-016: the customer-instrument service registration; the provider
                 // branch and its token counts are unchanged. Re-fingerprinted for the party ledger: one read-service
-                // registration (no writer); the provider branch and its token counts are unchanged.
+                // registration (no writer); the provider branch and its token counts are unchanged. Re-fingerprinted for
+                // MOD-01: one read-port registration (the Sales-declared ISalesPartyRiskReadPortV1 over Finance's own open
+                // items, no writer); the provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Finance/"
                  + "GoymenERP.Modules.Finance.Infrastructure/"
                  + "FinanceModuleExtensions.cs"] =
                     new(
-                        "4bf369041ce89baefb00c125957b02b3fd7bf811b77dbadf03f32f91ce7e671c",
+                        "5a5f1c4239042ad6e4ad501ccda884f63f5ffb7bee6a9ba366ab96b9d71b7135",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1309,10 +1315,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // (DI-only); the provider branch and its token counts are unchanged.
                     // Re-fingerprinted for MOD-07 (merged over SAT-D2 / API-12): the sales order PDF's print read is a DI-only
                     // seam over the same SalesDraftService; the provider branch and its database token counts are unchanged.
-                    // Re-fingerprinted for SAT-D25 / SAT-D39: the draft service also receives the optional Settings quote policy
-                    // port (DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06 (merged over MOD-07): the draft service also receives the optional
+                    // customer-finance risk-input port (DI-only, owner-registered); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for SAT-D25 / SAT-D39 (merged over MOD-01 / API-06): the draft service also receives the optional
+                    // Settings quote policy port (DI-only); the provider branch and its token counts are unchanged.
                     new(
-                        "d626880dee4db459377b4461af0a680fee3c96d7e40d5fbc43ab338d06250f26",
+                        "e9e014f4eb360bef1a36edd6bcff55e4dc64ebfc16c9e7f02cb8360630132986",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1344,8 +1352,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D2 / API-12: the discount-exception approval shares the commercial line save and
                     // the replay-result path; no connection, command or raw SQL; SqlClient count unchanged.
+                    // Re-fingerprinted for MOD-01 / API-06 (merged over API-12): one untracked read of a customer's open approved
+                    // orders through the same filtered context (explicit company predicate too, rebuilt through the domain); no write,
+                    // connection, command, raw SQL or filter-bypass API; SqlClient count unchanged.
                     new(
-                        "92bf806fa5047eacc4ed5b7b33c13b661fa101de55f36a36e9cb462bcd39144c",
+                        "45545d4b2219b5ef1b893f6bf9de2eadf4b2c9ce6acca2da3a9d8d1c53fb7342",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1

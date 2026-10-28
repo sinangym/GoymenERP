@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure.Persistence;
+using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
@@ -84,6 +85,9 @@ public static class FinanceModuleExtensions
         services.AddScoped<IFinanceAllocationService>(CreateAllocationService);
         services.AddScoped<IFinanceAllocationReadService, FinanceAllocationReadService>();
         services.AddScoped<IFinanceOpenItemReadServiceV1, FinanceOpenItemReadService>();
+        // MOD-01: the Sales-declared customer risk-input port, answered from Finance's own open items (credit limit and
+        // collateral have no master yet: NoSource). It carries no authority; the Sales risk read measures its own.
+        services.AddScoped<ISalesPartyRiskReadPortV1, FinanceSalesPartyRiskReadPortV1>();
         // DEC-FIN-016 first release: the customer cheque / note portfolio, on the same owners and period rule.
         services.AddScoped<ICustomerInstrumentService>(CreateCustomerInstrumentService);
         // The first-release party ledger (cari hesap ekstresi): a read over the recorded facts above, no writer.

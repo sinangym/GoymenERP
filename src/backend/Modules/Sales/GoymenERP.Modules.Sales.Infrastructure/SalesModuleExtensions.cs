@@ -118,6 +118,9 @@ public static class SalesModuleExtensions
         // groups no limit is defined: every line below its list price goes to approval; with groups but no Settings source,
         // such a line is 503, never checked against a guessed limit.
         serviceProvider.GetService<ISalesDiscountLimitGroupSourceV1>(),
+        // MOD-01 / API-06: the customer-finance owner's risk-input port, registered by that owner's module (Finance); until it
+        // is, open receivables, the credit limit and collateral are "Unavailable" and the risk check is never "Within".
+        serviceProvider.GetService<ISalesPartyRiskReadPortV1>(),
         // SAT-D25 / SAT-D39: the Settings quote policy port (loss reason list, default validity), registered by the host from the
         // Settings owner; until it is, a loss is 503 (never a guessed reason) and no validity is suggested (503 on the read).
         serviceProvider.GetService<ISettingsSalesQuotePolicyProviderV1>());
