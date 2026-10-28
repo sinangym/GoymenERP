@@ -11,6 +11,7 @@ using GoymenERP.Modules.Identity.Domain.Users;
 using GoymenERP.Modules.Identity.Infrastructure.Persistence;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Infrastructure.Persistence;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.Data.SqlClient;
@@ -476,12 +477,18 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
     private const string FixedAddressVersion = "5";
     private const string FixedContactVersion = "2";
 
+    /// <summary>
+    /// SAT-D71: the real host refuses an order dated before ITS business day (Europe/Istanbul of the host clock), so the bodies
+    /// name the host's next business day — fixed once for the class, so a body is the same bytes on every ask.
+    /// </summary>
+    private static readonly DateOnly OrderDay = SalesBusinessDay.DateOf(DateTimeOffset.UtcNow).AddDays(1);
+
     /// <summary>A fixed #257 body (the same bytes each time it is asked for the same product, party and references).</summary>
     private static string Json(Guid productId, Guid? partyId = null, SalesDraftOwnerReferenceV1? deliveryAddress = null,
         SalesDraftOwnerReferenceV1? contact = null, SalesDraftOwnerReferenceV1? responsible = null)
     {
         var line = new SalesOrderDraftLineRequest(FixedLine, productId, "7", FixedUnit, "1.25");
-        var request = new CreateSalesOrderDraftRequest("Order", partyId ?? FixedParty, FixedAccount, new DateOnly(2026, 9, 18), FixedCurrency, [line],
+        var request = new CreateSalesOrderDraftRequest("Order", partyId ?? FixedParty, FixedAccount, OrderDay, FixedCurrency, [line],
             DeliveryAddress: deliveryAddress, Contact: contact, Responsible: responsible);
         return JsonSerializer.Serialize(request, SalesDraftJson.Options);
     }
@@ -575,7 +582,7 @@ public sealed class SalesDraftApiSqlServerRelationalAcceptanceTests
     {
         var line = new SalesOrderDraftLineRequest(Guid.NewGuid(), Guid.NewGuid(), "1", Guid.NewGuid(), "1.25", unitPrice,
             unitPrice is null ? null : Guid.NewGuid());
-        var request = new CreateSalesOrderDraftRequest("Order", Guid.NewGuid(), Guid.NewGuid(), new DateOnly(2026, 9, 18), Guid.NewGuid(), [line]);
+        var request = new CreateSalesOrderDraftRequest("Order", Guid.NewGuid(), Guid.NewGuid(), OrderDay, Guid.NewGuid(), [line]);
         return new StringContent(JsonSerializer.Serialize(request, SalesDraftJson.Options), Encoding.UTF8, "application/json");
     }
 
