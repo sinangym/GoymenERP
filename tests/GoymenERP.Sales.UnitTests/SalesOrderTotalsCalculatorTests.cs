@@ -4,10 +4,10 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// API-03 / SAT-D11 / delegation No 15: golden cases of the one totals calculator. Line amount = quantity × exact net unit price,
-/// rounded ONCE half away from zero to the money profile's amount scale; VAT and withholding per line, rounded the same way;
-/// document totals are the sums of the rounded lines. Rates are SENTETIK inputs (no VAT master exists; nothing here is a rate
-/// decision).
+/// API-03 / SAT-D11 / SAT-D75 / SAT-D76 / delegation No 15: golden cases of the one totals calculator. Line amount = quantity ×
+/// the exact, never rounded net unit price (SAT-D76), rounded ONCE half away from zero to the money profile's amount scale; VAT
+/// per line, rounded the same way; withholding = the ROUNDED line VAT × the share, rounded again (SAT-D75); document totals are
+/// the sums of the rounded lines. Rates are SENTETIK inputs (SAT-D73/D74 sources do not exist; nothing here is a rate value).
 /// </summary>
 public sealed class SalesOrderTotalsCalculatorTests
 {
@@ -70,7 +70,7 @@ public sealed class SalesOrderTotalsCalculatorTests
     [InlineData("0.001", "4", "0.00")]
     // The net unit price is never rounded before the multiplication: 3 × (10 − 33.333333 %) = 3 × 6.6666667 = 20.0000001.
     [InlineData("3", "10", "20.00", "33.333333")]
-    public void The_line_amount_is_rounded_once_half_away_from_zero_from_the_exact_net(string quantity, string price, string net,
+    public void SAT_D76_the_line_amount_is_rounded_once_half_away_from_zero_from_the_never_rounded_net_unit_price(string quantity, string price, string net,
         string? discountPercent = null)
     {
         var line = Assert.Single(SalesOrderTotalsCalculator.Calculate([Line(L1, 1, quantity, price, discountPercent: discountPercent)],
@@ -79,7 +79,7 @@ public sealed class SalesOrderTotalsCalculatorTests
     }
 
     [Fact]
-    public void Vat_and_withholding_midpoints_round_away_from_zero_per_line()
+    public void SAT_D75_vat_and_withholding_midpoints_round_away_from_zero_per_line_withholding_from_the_rounded_vat()
     {
         // net 0.25 × 10 % = 0.025 → 0.03; net 1.25 × 20 % = 0.25, withheld 5/10 = 0.125 → 0.13.
         var rates = new Dictionary<Guid, SalesLineTaxRate> { [L1] = SalesLineTaxRate.Of(10m, null), [L2] = SalesLineTaxRate.Of(20m, 0.5m) };
@@ -87,6 +87,32 @@ public sealed class SalesOrderTotalsCalculatorTests
         Assert.Equal("0.03", Text(totals.Lines[0].VatAmount));
         Assert.Equal(("0.25", "0.13", "1.37"), (Text(totals.Lines[1].VatAmount), Text(totals.Lines[1].WithheldVatAmount),
             Text(totals.Lines[1].PayableAmount)));
+    }
+
+    [Fact]
+    public void SAT_D75_withholding_is_taken_from_the_rounded_line_vat_not_the_unrounded_one()
+    {
+        // net 0.13 × 18 % = 0.0234 → VAT 0.02 (SAT-D75 base). Withheld 9/10: 0.02 × 0.9 = 0.018 → 0.02.
+        // From the UNROUNDED VAT it would be 0.0234 × 0.9 = 0.02106 → 0.02 too, so a second case tells them apart:
+        // net 0.65 × 10 % = 0.065 → VAT 0.07; withheld 5/10 of 0.07 = 0.035 → 0.04 (from the unrounded 0.065: 0.0325 → 0.03).
+        var rates = new Dictionary<Guid, SalesLineTaxRate>
+        {
+            [L1] = SalesLineTaxRate.Of(18m, 0.9m),
+            [L2] = SalesLineTaxRate.Of(10m, 0.5m),
+        };
+        var totals = SalesOrderTotalsCalculator.Calculate([Line(L1, 1, "1", "0.13"), Line(L2, 2, "1", "0.65")], Try, 2, id => rates[id]);
+        Assert.Equal(("0.02", "0.02"), (Text(totals.Lines[0].VatAmount), Text(totals.Lines[0].WithheldVatAmount)));
+        Assert.Equal(("0.07", "0.04", "0.68"), (Text(totals.Lines[1].VatAmount), Text(totals.Lines[1].WithheldVatAmount),
+            Text(totals.Lines[1].PayableAmount)));
+    }
+
+    [Fact]
+    public void SAT_D76_the_net_unit_price_is_reported_unrounded_beside_the_rounded_line_amount()
+    {
+        // 12.50 − 10 % + 2 % vade farkı = 11.475 (three decimals, kept); 1 × 11.475 = 11.475 → 11.48.
+        var line = Assert.Single(SalesOrderTotalsCalculator.Calculate(
+            [Line(L1, 1, "1", "12.50", discountPercent: "10", surchargePercent: "2")], Try, 2).Lines);
+        Assert.Equal((11.475m, "11.48"), (line.NetUnitPrice, Text(line.NetAmount)));
     }
 
     [Fact]

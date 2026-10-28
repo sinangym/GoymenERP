@@ -15,9 +15,10 @@ namespace GoymenERP.Modules.Sales.Application;
 /// before the draft is read (no draft is touched for a caller who may not see its prices) and again after it, as the final
 /// await; the draft read is re-measured after the store read (the fence of every Sales read).</item>
 /// <item><b>Company:</b> another company's draft is null under the tenant filter: 404, never 403.</item>
-/// <item><b>Tax:</b> no VAT master exists on main (MOD-03 "KDV/tevkifat masterı"; No 15 keeps the rates as versioned master
-/// data, never a code constant), so every line's and the document's tax is <c>NoSource</c> and no VAT, withholding, gross or
-/// payable amount is shown — the net amounts that CAN be computed are. Nothing is defaulted.</item>
+/// <item><b>Tax:</b> the rate sources are decided but do not exist on main — SAT-D73 (VAT: product card + Settings exception by
+/// transaction/customer type), SAT-D74 (withholding: product withholding code + buyer subject to withholding, rates in Settings);
+/// No 15 keeps them as versioned data, never a code constant. So every line's and the document's tax is <c>NoSource</c> and no
+/// VAT, withholding, gross or payable amount is shown — the net amounts that CAN be computed are. Nothing is defaulted.</item>
 /// </list>
 /// </summary>
 public sealed partial class SalesDraftService

@@ -3,10 +3,20 @@ using GoymenERP.BuildingBlocks.Monetary;
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
 
 /// <summary>
-/// One line's VAT rate and, when VAT withholding (tevkifat) applies to it, the withheld share of that VAT — as the versioned
-/// VAT master answers them (delegation No 15: "Tevkifat uygulanabilirliği, oranı ve yürürlük tarihi sürümlü KDV masterında veri
-/// olarak tutulur … kodda sabit oran yoktur"). Never a code constant: the master is the Settings owner's (MOD-03) and does not
-/// exist yet, so today no rate reaches <see cref="SalesOrderTotalsCalculator"/> and the tax is <see cref="SalesTaxState.NoSource"/>.
+/// One line's VAT rate and, when VAT withholding (tevkifat) applies to it, the withheld share of that VAT — data, never a code
+/// constant (delegation No 15: "Tevkifat uygulanabilirliği, oranı ve yürürlük tarihi sürümlü KDV masterında veri olarak tutulur
+/// … kodda sabit oran yoktur"). The source shape is decided (<c>SINAN_KARARLARI_2026-10-28_SATIS_EK12.md</c>):
+/// <list type="bullet">
+/// <item><b>SAT-D73 — <see cref="VatPercent"/>:</b> the line's product card VAT rate (Product owner), replaced by a Settings
+/// exception defined per transaction / customer type (e.g. export) when one applies to the order.</item>
+/// <item><b>SAT-D74 — <see cref="WithholdingShare"/>:</b> present only when the product carries a withholding code (e.g.
+/// demir-çelik 2/10) AND the buyer is subject to withholding (Counterparty owner); the share for that code is the Settings
+/// rate. Otherwise null (no withholding).</item>
+/// </list>
+/// None of these sources exists on main yet (product card VAT/withholding fields, the Settings exception and rate records, the
+/// buyer flag — MOD-03), so today no rate reaches <see cref="SalesOrderTotalsCalculator"/> and the tax is
+/// <see cref="SalesTaxState.NoSource"/> (SAT-D73/D74: "kaynak yokken … 'kaynak yok' kalır"). The caller resolves the rate per line
+/// for the order's business date and passes it in; this record only carries it.
 /// </summary>
 /// <param name="VatPercent">The VAT rate in percent, 0..100.</param>
 /// <param name="WithholdingShare">The withheld share of the line VAT, 0 &lt; share ≤ 1 (e.g. 0.5 for 5/10); null = no withholding.</param>
@@ -110,11 +120,13 @@ public sealed record SalesOrderTotals(
 /// calculator'ı kullanır"). Per line, in order:
 /// <list type="number">
 /// <item><b>Net amount</b> = quantity × the exact net unit price (<see cref="SalesLinePriceCalculator"/>: base − discount +
-/// maturity surcharge, never rounded), rounded ONCE half away from zero to the amount scale (SAT-D11: "satır tutarı 2 ondalık
-/// yarı-yukarı"; the 2 is the Settings money profile's amount scale, Ö2 — not a code constant).</item>
-/// <item><b>VAT</b> = net amount × VAT rate / 100, rounded per line the same way (No 15).</item>
-/// <item><b>Withheld VAT</b> (tevkifat, only where the master says it applies) = line VAT × withheld share, rounded per line
-/// (No 15); zero where it does not apply.</item>
+/// maturity surcharge), rounded ONCE half away from zero to the amount scale (SAT-D11: "satır tutarı 2 ondalık yarı-yukarı";
+/// the 2 is the Settings money profile's amount scale, Ö2 — not a code constant). SAT-D76: the net unit price itself is NOT
+/// rounded; only the line amount is.</item>
+/// <item><b>VAT</b> = net amount × VAT rate / 100 (rate per SAT-D73), rounded per line the same way (No 15).</item>
+/// <item><b>Withheld VAT</b> (tevkifat, only where SAT-D74 says it applies) = the ROUNDED line VAT × the withheld share, and
+/// that result rounded per line (SAT-D75 — research-based and reversible; matches the line-based e-Fatura practice; a kuruş
+/// difference to the official invoice shows in invoice matching, S5); zero where withholding does not apply.</item>
 /// <item><b>Gross</b> (KDV dahil, SAT-D46) = net + VAT; <b>payable</b> (Ödenecek Tutar, No 15 / UBL-TR PayableAmount) = gross −
 /// withheld VAT.</item>
 /// </list>

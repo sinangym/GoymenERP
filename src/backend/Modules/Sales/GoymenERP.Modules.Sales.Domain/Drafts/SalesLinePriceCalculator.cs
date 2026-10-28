@@ -119,10 +119,10 @@ public static class SalesLinePriceCalculator
         NetUnitPrice(commercial) is { } net ? Format(net) : null;
 
     /// <summary>
-    /// SAT-D11 / delegation No 15 (API-03): the line amount — <paramref name="quantity"/> × the EXACT net unit price, multiplied
-    /// without any intermediate rounding and rounded ONCE, half away from zero, to <paramref name="scale"/> (the money profile's
-    /// amount scale; the caller passes it, no scale is chosen here). The net unit price itself is never rounded. Null without a
-    /// price. The quantity is in the price unit; converting another unit is not this calculator's job.
+    /// SAT-D11 / SAT-D76 / delegation No 15 (API-03): the line amount — <paramref name="quantity"/> × the EXACT net unit price,
+    /// multiplied without any intermediate rounding and rounded ONCE, half away from zero, to <paramref name="scale"/> (the money
+    /// profile's amount scale; the caller passes it, no scale is chosen here). SAT-D76: the net unit price itself is never
+    /// rounded. Null without a price. The quantity is in the price unit; converting another unit is not this calculator's job.
     /// </summary>
     public static decimal? LineAmount(CommercialDraftFields commercial, decimal quantity, int scale)
     {
@@ -145,8 +145,9 @@ public static class SalesLinePriceCalculator
     }
 
     /// <summary>
-    /// Delegation No 15 (API-03): <paramref name="amount"/> × <paramref name="share"/>, exact, rounded ONCE half away from zero
-    /// to <paramref name="scale"/> — the withheld VAT (tevkifat) as a share of the line VAT.
+    /// Delegation No 15 / SAT-D75 (API-03): <paramref name="amount"/> × <paramref name="share"/>, exact, rounded ONCE half away
+    /// from zero to <paramref name="scale"/> — the withheld VAT (tevkifat) as a share of the ALREADY ROUNDED line VAT (SAT-D75,
+    /// research-based and reversible).
     /// </summary>
     public static decimal RoundedShareOf(decimal amount, decimal share, int scale)
     {
