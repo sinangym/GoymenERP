@@ -1314,7 +1314,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for MOD-02 (SAT-D9): the draft service receives Product's V2 tier-chain reader instead
                     // of the V1 reader (DI-only); the provider branch and its database token counts are unchanged.
                     new(
-                        "9720ee36186551f79e120b614555f8c284233246d790b6204e8db492a036229f",
+                        "c985fd067f4c7c09012cfb3a2ae562fb7ced11d14abb26368a93fcd29fe83e59",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
