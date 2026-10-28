@@ -49,7 +49,8 @@ function PricingFacts({ line }: { readonly line: LinePricing }) {
             : `${T.referenceText(reference.priceListName, reference.versionNo, reference.unitPrice, reference.currencyCode)}`
               + (reference.floorUnitPrice === null ? '' : ` (${T.floorText(reference.floorUnitPrice)})`)
               + ` (${T.tierText(reference.lowerQuantity, reference.upperQuantity)})`
-              + ` (${T.vatExclusive})`}
+              + ` (${T.vatExclusive})`
+              + (reference.tier === null ? '' : T.tierSuffix(T.priceTier[reference.tier] ?? reference.tier))}
         </dd>
       </div>
       <div>

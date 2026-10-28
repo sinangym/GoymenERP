@@ -3959,20 +3959,24 @@ public sealed partial class OpenApiContractGenerationTests
                     ("validThrough", "type:null|string"), ("createdAtUtc", "type:string;format:date-time"),
                     ("createdBy", "type:string"), ("publishedAtUtc", "type:null|string;format:date-time"),
                     ("publishedBy", "type:null|string"), ("lines", "type:array;items:ref:PriceListLineViewV1")),
+                // MOD-02 (SAT-D9): whose price a list is — Company (no party/account) or Customer (both).
+                ["PriceListScopeViewV1"] = ObjectSchema(
+                    ["kind", "partyId", "companyAccountId"], ("kind", "type:string"),
+                    ("partyId", "type:null|string;format:uuid"), ("companyAccountId", "type:null|string;format:uuid")),
                 ["PriceListViewV1"] = ObjectSchema(
-                    ["id", "name", "currencyCode", "channel", "vatBasis", "version", "createdAtUtc", "updatedAtUtc", "activeVersionNo", "draftVersionNo", "versions"],
+                    ["id", "name", "currencyCode", "channel", "vatBasis", "version", "createdAtUtc", "updatedAtUtc", "activeVersionNo", "draftVersionNo", "versions", "scope"],
                     ("id", "type:string;format:uuid"), ("name", "type:string"), ("currencyCode", "type:string"),
                     ("channel", "type:string"), ("vatBasis", "type:string"), ("version", "type:string"),
                     ("createdAtUtc", "type:string;format:date-time"), ("updatedAtUtc", "type:string;format:date-time"),
                     ("activeVersionNo", "type:integer|null|string;format:int32"), ("draftVersionNo", "type:integer|null|string;format:int32"),
-                    ("versions", "type:array;items:ref:PriceListVersionViewV1")),
+                    ("versions", "type:array;items:ref:PriceListVersionViewV1"), ("scope", "ref:PriceListScopeViewV1")),
                 ["PriceListSummaryV1"] = ObjectSchema(
-                    ["id", "name", "currencyCode", "channel", "vatBasis", "version", "activeVersionNo", "activeValidFrom", "draftVersionNo", "versionCount", "updatedAtUtc"],
+                    ["id", "name", "currencyCode", "channel", "vatBasis", "version", "activeVersionNo", "activeValidFrom", "draftVersionNo", "versionCount", "updatedAtUtc", "scope"],
                     ("id", "type:string;format:uuid"), ("name", "type:string"), ("currencyCode", "type:string"),
                     ("channel", "type:string"), ("vatBasis", "type:string"), ("version", "type:string"),
                     ("activeVersionNo", "type:integer|null|string;format:int32"), ("activeValidFrom", "type:null|string"),
                     ("draftVersionNo", "type:integer|null|string;format:int32"), ("versionCount", "type:integer|string;format:int32"),
-                    ("updatedAtUtc", "type:string;format:date-time")),
+                    ("updatedAtUtc", "type:string;format:date-time"), ("scope", "ref:PriceListScopeViewV1")),
                 ["PriceListPageV1"] = ObjectSchema(
                     ["items", "nextCursor"], ("items", "type:array;items:ref:PriceListSummaryV1"), ("nextCursor", "type:null|string")),
                 ["PriceListResultV1"] = ObjectSchema(
@@ -3992,7 +3996,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("validThrough", "type:null|string;format:date"), ("currencyCode", "type:string"),
                     ("priceUnitId", "type:string;format:uuid"), ("unitPrice", "type:string"),
                     ("floorUnitPrice", "type:null|string"), ("vatBasis", "type:string"),
-                    ("lowerQuantity", "type:string"), ("upperQuantity", "type:null|string")),
+                    ("lowerQuantity", "type:string"), ("upperQuantity", "type:null|string"), ("tier", "type:null|string")),
                 ["SalesDraftPriceFloorExceptionV1"] = ObjectSchema(
                     ["requestedBy", "requestedAtUtc", "approvedBy", "approvedAtUtc", "reason"], ("requestedBy", "type:string"),
                     ("requestedAtUtc", "type:string;format:date-time"), ("approvedBy", "type:null|string"),
@@ -4016,9 +4020,20 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SalesOrderDraftLinePricingResponse"] = ObjectSchema(
                     ["version", "lines"], ("version", "type:string"), ("lines", "type:array;items:ref:SalesDraftLinePricingV1")),
                 ["SalesOrderDraftPriceReferencesResponse"] = ObjectSchema(
-                    ["lineId", "currencyCode", "on", "items"], ("lineId", "type:string;format:uuid"),
+                    ["lineId", "currencyCode", "on", "items", "resolution"], ("lineId", "type:string;format:uuid"),
                     ("currencyCode", "type:string"), ("on", "type:string;format:date"),
-                    ("items", "type:array;items:ref:SalesDraftPriceReferenceV1")),
+                    ("items", "type:array;items:ref:SalesDraftPriceReferenceV1"), ("resolution", "ref:SalesDraftPriceResolutionV1")),
+                // MOD-02 (SAT-D9 / SAT-D10): the Product tier chain's answer for the line.
+                ["SalesDraftPriceResolutionV1"] = ObjectSchema(
+                    ["outcome", "effectiveOn", "businessTimeZone", "matchedTier", "priceListId", "versionNo", "tiers", "packageStandard"],
+                    ("outcome", "type:string"), ("effectiveOn", "type:string;format:date"), ("businessTimeZone", "type:string"),
+                    ("matchedTier", "type:null|string"), ("priceListId", "type:null|string;format:uuid"),
+                    ("versionNo", "type:integer|null|string;format:int32"),
+                    ("tiers", "type:array;items:ref:SalesDraftPriceTierEvaluationV1"), ("packageStandard", "ref:SalesDraftPackageStandardV1")),
+                ["SalesDraftPriceTierEvaluationV1"] = ObjectSchema(
+                    ["tier", "status", "reason"], ("tier", "type:string"), ("status", "type:string"), ("reason", "type:null|string")),
+                ["SalesDraftPackageStandardV1"] = ObjectSchema(
+                    ["status", "reason"], ("status", "type:string"), ("reason", "type:string")),
                 ["SalesOrderDraftDetailView"] = ObjectSchema(
                     ["draft", "requestedDeliveryDate", "note", "lines", "deliveryAddress", "contact", "responsible", "paymentTerms", "sourceStrategy", "package", "approval", "customerAcceptance", "isOwnDraft", "isOwnDecisionRestricted"],
                     ("draft", "ref:SalesOrderDraftSummaryView"),
@@ -6193,7 +6208,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ("priceListId", "type:string;format:uuid"), ("versionId", "type:string;format:uuid"),
                     ("name", "type:string"), ("currencyCode", "type:string"), ("channel", "type:string"),
                     ("vatBasis", "type:string"), ("validFrom", "type:string"), ("validThrough", "type:null|string"),
-                    ("lines", "type:array;items:ref:PriceListLineRequestV1")),
+                    ("lines", "type:array;items:ref:PriceListLineRequestV1"), ("scope", "oneOf:ref:PriceListScopeRequestV1|type:null")),
+                ["PriceListScopeRequestV1"] = ObjectSchema(
+                    ["kind"], ("kind", "type:string"), ("partyId", "type:null|string;format:uuid"),
+                    ("companyAccountId", "type:null|string;format:uuid")),
                 ["RevisePriceListDraftRequestV1"] = ObjectSchema(
                     ["expectedVersion", "name", "validFrom", "validThrough", "lines"], ("expectedVersion", "type:string"),
                     ("name", "type:string"), ("validFrom", "type:string"), ("validThrough", "type:null|string"),

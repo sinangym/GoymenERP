@@ -25,7 +25,7 @@ const WITH_FLOOR = [...ALL_SALES, SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY
 const reference = {
   priceListId: LIST, priceListName: 'Yurt içi satış', versionNo: 2, validFrom: '2026-09-01', validThrough: null, currencyCode: 'TRY',
   priceUnitId: KG, unitPrice: '42000.50', floorUnitPrice: '40000', vatBasis: 'ExcludingVat',
-  lowerQuantity: '10', upperQuantity: '20',
+  lowerQuantity: '10', upperQuantity: '20', tier: 'Company',
 }
 
 function detail(version: string): Body {
