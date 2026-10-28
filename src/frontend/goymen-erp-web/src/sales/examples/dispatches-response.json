@@ -1,0 +1,77 @@
+{
+  "items": [
+    {
+      "id": "d7d7d7d7-0000-4000-8000-000000000002",
+      "companyId": "99999999-9999-9999-9999-999999999999",
+      "instructionId": "e8e8e8e8-0000-4000-8000-000000000001",
+      "state": "Approved",
+      "systemNumber": "IRS-000002",
+      "eDispatchNumber": "GYM2026000000002",
+      "customer": {
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "code": "CAR-000101",
+        "legalName": "SENTETIK Sevk Müşterisi A.Ş.",
+        "tradeName": null
+      },
+      "createdAtUtc": "2026-10-20T08:00:00Z",
+      "approvedAtUtc": "2026-10-20T09:00:00Z",
+      "cancelledAtUtc": null,
+      "invoicing": "NoSource",
+      "lines": [
+        {
+          "lineNo": 1,
+          "salesOrderId": "c3c3c3c3-0000-4000-8000-000000000001",
+          "salesOrderDocumentNo": "SO-2026-000007",
+          "salesOrderLineId": "c3c3c3c3-0000-4000-8000-0000000000a1",
+          "salesOrderLineNo": 1,
+          "shipmentId": "f9f9f9f9-0000-4000-8000-000000000001",
+          "shippedAtUtc": "2026-10-20T07:30:00Z",
+          "productId": "99999999-9999-4999-8999-999999999999",
+          "productCode": "GDC-001",
+          "productName": "Sentetik bant",
+          "unitId": "66666666-6666-4666-8666-666666666666",
+          "unitCode": "kg",
+          "quantity": "1250.5"
+        }
+      ]
+    },
+    {
+      "id": "d7d7d7d7-0000-4000-8000-000000000001",
+      "companyId": "99999999-9999-9999-9999-999999999999",
+      "instructionId": "e8e8e8e8-0000-4000-8000-000000000001",
+      "state": "Draft",
+      "systemNumber": null,
+      "eDispatchNumber": null,
+      "customer": {
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "code": "CAR-000101",
+        "legalName": "SENTETIK Sevk Müşterisi A.Ş.",
+        "tradeName": null
+      },
+      "createdAtUtc": "2026-10-19T08:00:00Z",
+      "approvedAtUtc": null,
+      "cancelledAtUtc": null,
+      "invoicing": "NoSource",
+      "lines": [
+        {
+          "lineNo": 1,
+          "salesOrderId": "c3c3c3c3-0000-4000-8000-000000000001",
+          "salesOrderDocumentNo": "SO-2026-000007",
+          "salesOrderLineId": "c3c3c3c3-0000-4000-8000-0000000000a2",
+          "salesOrderLineNo": 2,
+          "shipmentId": "f9f9f9f9-0000-4000-8000-000000000002",
+          "shippedAtUtc": "2026-10-19T07:30:00Z",
+          "productId": "99999999-9999-4999-8999-999999999999",
+          "productCode": "GDC-002",
+          "productName": "Sentetik profil",
+          "unitId": "68686868-6868-4686-8686-686868686868",
+          "unitCode": "adet",
+          "quantity": "40"
+        }
+      ]
+    }
+  ],
+  "nextCursor": "c2FsZXMtZGlzcGF0Y2gtY3Vyc29y"
+}

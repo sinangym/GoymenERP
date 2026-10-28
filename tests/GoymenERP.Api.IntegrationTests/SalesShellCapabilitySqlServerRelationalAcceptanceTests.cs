@@ -45,18 +45,28 @@ public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
                 Assert.Empty(SalesOnly(await ReadAsync(ungranted)));
             }
 
-            // Read alone: the list and the detail, not the create screen.
+            // Read alone: the list and the detail (and, Sales 1.9, the S-07 dispatch list on the same read), not the create screen.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead, AccessScopeType.Company, CompanyA);
             using (var reader = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
             {
-                Assert.Equal(new[] { "sales.drafts.detail", "sales.drafts.list" }, SalesOnly(await ReadAsync(reader)));
+                Assert.Equal(new[] { "sales.dispatches.list", "sales.drafts.detail", "sales.drafts.list" }, SalesOnly(await ReadAsync(reader)));
             }
 
-            // Read + create: all three.
+            // Read + create: all three order screens; the S-08 invoice candidates still need their own name.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsCreate, AccessScopeType.Company, CompanyA);
             using (var maker = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
             {
-                Assert.Equal(new[] { "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list" }, SalesOnly(await ReadAsync(maker)));
+                Assert.Equal(new[] { "sales.dispatches.list", "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list" },
+                    SalesOnly(await ReadAsync(maker)));
+            }
+
+            // + sales.invoices.read (API-31): exactly the S-08 list joins; no other screen or control.
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.InvoicesRead, AccessScopeType.Company, CompanyA);
+            using (var invoicer = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
+            {
+                Assert.Equal(
+                    new[] { "sales.dispatches.list", "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list", "sales.invoice-candidates.list" },
+                    SalesOnly(await ReadAsync(invoicer)));
             }
 
             // The grant is company A's. The same actor gets a non-Sales assignment in company B, so the

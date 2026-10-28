@@ -333,8 +333,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // efdb5edd… -> 87dc8166…).
             // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over MOD-07, kept ordinal-sorted
             // (87dc8166… -> d74f7c2d…).
+            // API-30 / API-31 / MOD-06: +2 SalesDispatchSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (d74f7c2d… -> 898eec26…).
             ["tools/relational_inventory/sales.txt"] =
-                "d74f7c2d9ab604c9c30dfd9b489aa4cfae8a9d4ec78acd84df99ed95a22106f4",
+                "898eec26aad5485c3051038bd3f805dffd774847b9a277f1fdf47601c31b6abb",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1106,8 +1107,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // work list's progress reader, bindings and service registrations; token counts unchanged.
                     // Re-fingerprinted for I01.2: transfer outgoing-document store, proof source, existing-permission
                     // bindings and service registrations; provider branch and token counts are unchanged.
+                    // Re-fingerprinted for MOD-06 / API-30 / API-31: one scoped owner implementation of the two Sales-declared
+                    // dispatch reads and its two port registrations (DI-only); provider branch and token counts are unchanged.
                     new(
-                        "5d3890457ce92e019eb6721bb98dc68e21e0d4f5afd94e2f5e576226559d4b8b",
+                        "c695b524d0452fd6cd48bf16a356a28f30c1b5d0a65a341ef0afc9e48b6fd90d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1314,8 +1317,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // customer-finance risk-input port (DI-only, owner-registered); the provider branch and its token counts are unchanged.
                     // Re-fingerprinted for MOD-02 (SAT-D9): the draft service receives Product's V2 tier-chain reader instead
                     // of the V1 reader (DI-only); the provider branch and its database token counts are unchanged.
+                    // Re-fingerprinted for API-30 / API-31: the dispatch read service's bindings, the Sales-own order reference reader
+                    // and the named service factory (DI-only, the owner ports optional); provider branch and token counts unchanged.
                     new(
-                        "c985fd067f4c7c09012cfb3a2ae562fb7ced11d14abb26368a93fcd29fe83e59",
+                        "14a11d1eb6ea8b1ce21976fcfb9916a93a6ea55365e1d42a6e70302e116185fe",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

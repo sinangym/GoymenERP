@@ -35,6 +35,11 @@ describe('shell ↔ Sales lane capability ids', () => {
   })
 
   it('agrees with the lane on every route, value by value', () => {
+    // UI-60 / UI-61 (Sales shell 1.9): the two static lists of the dispatch/invoice flow.
+    expect(CAPABILITY.salesDispatchesList).toBe(SALES_CAPABILITY.dispatchesList)
+    expect(CAPABILITY.salesInvoiceCandidatesList).toBe(SALES_CAPABILITY.invoiceCandidatesList)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesDispatchesList]).toBe(SALES_ROUTE.dispatches)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesInvoiceCandidatesList]).toBe(SALES_ROUTE.invoiceCandidates)
     expect(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList]).toBe(SALES_ROUTE.list)
     expect(CAPABILITY_ROUTE[CAPABILITY.salesDraftsCreate]).toBe(SALES_ROUTE.create)
     expect(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail]).toBe(SALES_ROUTE.detail)
@@ -55,5 +60,15 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDraftsDetail]).toBe('')
     expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesDraftsList)
     expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesDraftsCreate)
+  })
+
+  it('names S-07 and S-08 under the Sales menu, each drawn only where its own capability is granted', () => {
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesDispatchesList]).toBe('Sevkiyat / İrsaliyeler')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesInvoiceCandidatesList]).toBe('Faturaya Hazır')
+    expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesDispatchesList)
+    expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesInvoiceCandidatesList)
+    // Neither static route is ever read as a draft id.
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.dispatches)).toBeNull()
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.invoiceCandidates)).toBeNull()
   })
 })
