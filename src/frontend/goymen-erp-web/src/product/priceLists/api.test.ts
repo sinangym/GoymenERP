@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchPriceList, fetchPriceLists, sendPriceListCommand } from './api'
+import { decodePriceListView, todayText } from './contract'
 
 const COMPANY = '11111111-1111-4111-8111-111111111111'
 const LIST = '22222222-2222-4222-8222-222222222222'
@@ -17,7 +18,7 @@ function view(id = LIST) {
   return {
     id, name: 'Liste', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat', version: '1',
     createdAtUtc: '2026-10-02T00:00:00Z', updatedAtUtc: '2026-10-02T00:00:00Z', activeVersionNo: null,
-    draftVersionNo: 1, versions: [version()],
+    draftVersionNo: 1, versions: [version()], scope: { kind: 'Company', partyId: null, companyAccountId: null },
   }
 }
 
@@ -25,7 +26,7 @@ function summary(overrides: Record<string, unknown> = {}) {
   return {
     id: LIST, name: 'Liste', currencyCode: 'TRY', channel: 'Sales', vatBasis: 'ExcludingVat', version: '1',
     activeVersionNo: 1, activeValidFrom: '2026-10-02', draftVersionNo: null, versionCount: 1,
-    updatedAtUtc: '2026-10-02T00:00:00Z', ...overrides,
+    updatedAtUtc: '2026-10-02T00:00:00Z', scope: { kind: 'Company', partyId: null, companyAccountId: null }, ...overrides,
   }
 }
 
@@ -111,5 +112,23 @@ describe('price-list response identity', () => {
       kind: 'publish', priceListId: LIST, payload: { expectedVersion: '1', versionNo: 1 },
     }, COMPANY, 'same-key')
     expect(outcome).toEqual({ type: 'unknown', reason: 'malformed-response' })
+  })
+})
+
+describe('MOD-02 / SAT-D10 business day and scope', () => {
+  it('takes today as the Europe/Istanbul calendar day around midnight UTC', () => {
+    expect(todayText(new Date('2026-10-31T20:59:59Z'))).toBe('2026-10-31')
+    expect(todayText(new Date('2026-10-31T21:00:00Z'))).toBe('2026-11-01')
+  })
+
+  it('decodes a company-wide and a customer-specific scope and refuses a half-named or unknown one', () => {
+    expect(decodePriceListView(view())?.scope.kind).toBe('Company')
+    const customer = { kind: 'Customer', partyId: 'p-1', companyAccountId: 'a-1' }
+    expect(decodePriceListView({ ...view(), scope: customer })?.scope).toEqual(customer)
+    expect(decodePriceListView({ ...view(), scope: { kind: 'Customer', partyId: 'p-1', companyAccountId: null } })).toBeNull()
+    expect(decodePriceListView({ ...view(), scope: { kind: 'Company', partyId: 'p-1', companyAccountId: null } })).toBeNull()
+    expect(decodePriceListView({ ...view(), scope: { kind: 'CustomerGroup', partyId: null, companyAccountId: null } })).toBeNull()
+    const { scope: _scope, ...withoutScope } = view()
+    expect(decodePriceListView(withoutScope)).toBeNull()
   })
 })

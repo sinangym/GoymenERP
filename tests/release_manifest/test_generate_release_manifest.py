@@ -81,7 +81,7 @@ class ReleaseManifestTests(unittest.TestCase):
     def test_recovery_inventory_is_reproduced_and_bound_to_exact_blobs(self) -> None:
         recovery = self.manifest["recoveryInventory"]
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 100, "durableStores": 23},
+            {"dbContexts": 18, "migrations": 101, "durableStores": 23},
             recovery["counts"],
         )
         self.assertEqual(

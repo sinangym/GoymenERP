@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 
 namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
@@ -18,7 +19,26 @@ internal static class SalesLinePricingJson
         RespectRequiredConstructorParameters = true,
         RespectNullableAnnotations = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+        // MOD-02: the reference's SAT-D9 tier is omitted when absent (as DiscountCheck is), so a line written before the
+        // tier chain keeps its exact JSON and is never rewritten with "tier": null.
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver { Modifiers = { OmitAbsentTier } },
     };
+
+    private static void OmitAbsentTier(JsonTypeInfo typeInfo)
+    {
+        if (typeInfo.Type != typeof(PriceReferenceSnapshot))
+        {
+            return;
+        }
+
+        foreach (var property in typeInfo.Properties)
+        {
+            if (property.Name == "tier")
+            {
+                property.ShouldSerialize = static (_, value) => value is not null;
+            }
+        }
+    }
 
     public static string? Serialize(CommercialDraftFields commercial)
     {

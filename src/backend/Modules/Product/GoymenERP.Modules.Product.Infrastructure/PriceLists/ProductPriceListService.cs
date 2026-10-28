@@ -41,6 +41,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
     private readonly TimeProvider timeProvider;
     private readonly ISettingsUnitIdentityCatalogV1? unitCatalog;
     private readonly Func<string, bool> isKnownPermission;
+    private readonly IProductPriceListCustomerPortV1? customers;
 
     internal ProductPriceListService(
         ICompanyContext companyContext,
@@ -49,7 +50,8 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         ProductPriceListStore store,
         TimeProvider timeProvider,
         ISettingsUnitIdentityCatalogV1? unitCatalog,
-        Func<string, bool> isKnownPermission)
+        Func<string, bool> isKnownPermission,
+        IProductPriceListCustomerPortV1? customers = null)
     {
         this.companyContext = companyContext ?? throw new ArgumentNullException(nameof(companyContext));
         this.currentUser = currentUser ?? throw new ArgumentNullException(nameof(currentUser));
@@ -58,6 +60,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         this.unitCatalog = unitCatalog;
         this.isKnownPermission = isKnownPermission ?? throw new ArgumentNullException(nameof(isKnownPermission));
+        this.customers = customers;
     }
 
     // ---- reads ---------------------------------------------------------------------------------------
@@ -137,6 +140,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         var lines = RequireLines(request.Lines);
         var channel = request.Channel == "Sales" ? PriceListChannel.Sales : (PriceListChannel)0;
         var vatBasis = request.VatBasis == "ExcludingVat" ? PriceListVatBasis.ExcludingVat : (PriceListVatBasis)0;
+        var listScope = RequireScope(request.Scope);
         var requestHash = RequestHash(ProductPriceListCommandsV1.CreateV1, request.PriceListId, request);
 
         if (await ReplayAsync(envelope, requestHash, ProductPriceListCommandsV1.CreateV1, permission, scope, cancellationToken) is { } replay)
@@ -145,7 +149,8 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         }
 
         var list = Rule(() => PriceList.Create(request.PriceListId, scope.CompanyId, request.Name, request.CurrencyCode, channel, vatBasis,
-            request.VersionId, validFrom, validThrough, lines, scope.ActorId, timeProvider.GetUtcNow()));
+            request.VersionId, validFrom, validThrough, lines, scope.ActorId, timeProvider.GetUtcNow(), listScope));
+        await RequireCustomerAsync(list.Scope, permission, scope, cancellationToken);
         await RequireProductsAsync(list.Versions[0].Lines, permission, scope, cancellationToken);
         var nameExists = await store.NameExistsAsync(list.Name, null, cancellationToken);
         // Both answers are company business data. Fence before the false answer can enter the mutation path as well
@@ -274,7 +279,8 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
                     await RequireProductsAsync(draft.Lines, permission, scope, cancellationToken);
                 }
 
-                list.Publish(expectedVersion, request.VersionNo, DateOnly.FromDateTime(now.UtcDateTime), scope.ActorId, now);
+                // SAT-D10: "today" for the no-backdating rule is the Europe/Istanbul business day of the commit instant.
+                list.Publish(expectedVersion, request.VersionNo, PriceListBusinessDay.DateOf(now), scope.ActorId, now);
             }, cancellationToken);
     }
 
@@ -426,6 +432,75 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         }
     }
 
+    /// <summary>
+    /// MOD-02: a customer-specific list names a real customer — the Cari owner's party whose account in THIS company is the one
+    /// named, both active. No registered owner port is 503 (a setup gap, never a pass); the owner's refusal of the read is 403.
+    /// A company-wide list asks nothing.
+    /// </summary>
+    private async Task RequireCustomerAsync(PriceListScope listScope, string permission, Scope scope, CancellationToken cancellationToken)
+    {
+        if (listScope.Kind != PriceListScopeKind.Customer)
+        {
+            return;
+        }
+
+        var port = customers ?? throw new ProductPriceListException(503, ProductPriceListCodesV1.CustomerProviderUnavailable);
+        var partyId = listScope.PartyId!.Value;
+        var accountId = listScope.CompanyAccountId!.Value;
+        ProductPriceListCustomerAnswerV1 answer;
+        try
+        {
+            answer = await port.GetAuthorizedAsync(partyId, accountId, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new ProductPriceListException(503, ProductPriceListCodesV1.CustomerProviderUnavailable, null, exception);
+        }
+
+        // The owner's answer is the company's business data: fence before it decides anything.
+        await RequireStillAsync(permission, scope, cancellationToken);
+        switch (answer?.Outcome)
+        {
+            case ProductPriceListCustomerOutcomeV1.Found when answer.Customer is { } customer:
+                if (customer.PartyId != partyId || customer.CompanyAccountId != accountId || customer.CompanyId != scope.CompanyId)
+                {
+                    throw new ProductPriceListException(503, ProductPriceListCodesV1.CustomerProviderUnavailable);
+                }
+
+                if (!customer.PartyIsActive || !customer.AccountIsActive)
+                {
+                    throw new ProductPriceListException(422, ProductPriceListCodesV1.ValidationFailed,
+                        [new("scope.companyAccountId", ProductPriceListCodesV1.CustomerNotActive)]);
+                }
+
+                return;
+            case ProductPriceListCustomerOutcomeV1.NotFound:
+                throw new ProductPriceListException(422, ProductPriceListCodesV1.ValidationFailed,
+                    [new("scope.companyAccountId", ProductPriceListCodesV1.CustomerInvalid)]);
+            case ProductPriceListCustomerOutcomeV1.Denied:
+                throw Forbidden();
+            default:
+                throw new ProductPriceListException(503, ProductPriceListCodesV1.CustomerProviderUnavailable);
+        }
+    }
+
+    /// <summary>The wire scope → the domain's; omitted is company-wide. A shape error is 400, a domain refusal 422.</summary>
+    private static PriceListScope RequireScope(PriceListScopeRequestV1? request)
+    {
+        if (request is null)
+        {
+            return PriceListScope.Company;
+        }
+
+        if (!Enum.TryParse<PriceListScopeKind>(request.Kind, ignoreCase: false, out var kind) || !Enum.IsDefined(kind)
+            || !string.Equals(kind.ToString(), request.Kind, StringComparison.Ordinal))
+        {
+            throw new ProductPriceListException(400, ProductPriceListCodesV1.ValidationFailed, [new("scope.kind", ProductPriceListCodesV1.ValidationFailed)]);
+        }
+
+        return Rule(() => PriceListScope.From(kind, request.PartyId, request.CompanyAccountId));
+    }
+
     /// <summary>Every line's product: an Active, sellable card, priced in its own stock or sales unit. All refusals together.</summary>
     private async Task RequireProductsAsync(IReadOnlyList<PriceListLine> lines, string permission, Scope scope,
         CancellationToken cancellationToken)
@@ -566,7 +641,13 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
 
     // ---- views -------------------------------------------------------------------------------------
 
-    private DateOnly Today() => DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+    /// <summary>SAT-D10: the Europe/Istanbul business day of now (status, active version).</summary>
+    private DateOnly Today() => PriceListBusinessDay.DateOf(timeProvider.GetUtcNow());
+
+    private static PriceListScopeViewV1 ScopeView(PriceListScope scope) =>
+        scope.Kind == PriceListScopeKind.Company
+            ? PriceListScopeViewV1.Company
+            : new PriceListScopeViewV1(scope.Kind.ToString(), scope.PartyId, scope.CompanyAccountId);
 
     private async Task<PriceListViewV1> ViewAsync(PriceList list, CancellationToken cancellationToken)
     {
@@ -586,7 +667,8 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
                     line.PriceUnitId, ProductPriceListWire.FormatPrice(line.UnitPrice),
                     line.FloorUnitPrice is { } floor ? ProductPriceListWire.FormatPrice(floor) : null,
                     ProductPriceListWire.FormatQuantity(line.LowerQuantity),
-                    line.UpperQuantity is { } upper ? ProductPriceListWire.FormatQuantity(upper) : null)).ToList())).ToList());
+                    line.UpperQuantity is { } upper ? ProductPriceListWire.FormatQuantity(upper) : null)).ToList())).ToList(),
+            ScopeView(list.Scope));
     }
 
     private static PriceListSummaryV1 Summary(PriceList list, DateOnly today)
@@ -595,7 +677,7 @@ public sealed class ProductPriceListService : IProductPriceListServiceV1
         return new PriceListSummaryV1(list.Id, list.Name, list.CurrencyCode, list.Channel.ToString(), list.VatBasis.ToString(),
             list.Version.ToString(CultureInfo.InvariantCulture), active?.VersionNo,
             active is null ? null : ProductPriceListWire.FormatDate(active.ValidFrom), list.DraftVersion?.VersionNo, list.Versions.Count,
-            list.UpdatedAtUtc);
+            list.UpdatedAtUtc, ScopeView(list.Scope));
     }
 
     private async Task<IReadOnlyDictionary<Guid, string>> UnitCodesAsync(CancellationToken cancellationToken)

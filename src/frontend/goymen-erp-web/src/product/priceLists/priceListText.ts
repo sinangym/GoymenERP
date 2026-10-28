@@ -15,7 +15,11 @@ export const PRICE_LIST_TEXT = {
     draft: 'Taslak sürüm',
     versions: 'Sürüm sayısı',
     updated: 'Son değişiklik',
+    scope: 'Kapsam',
   },
+  /** MOD-02 (SAT-D9): whose price a list is. A customer list names the Cari account; the Cari screen shows who that is. */
+  scopeCompany: 'Şirket geneli',
+  scopeCustomer: 'Cari özel',
   none: '—',
   activeFrom: (versionNo: number, from: string) => `Sürüm ${versionNo} (${from} itibarıyla)`,
   draftVersion: (versionNo: number) => `Sürüm ${versionNo}`,
