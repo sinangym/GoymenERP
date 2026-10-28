@@ -81,6 +81,18 @@ public enum CounterpartyCommandResult
 
     /// <summary>AT-009: the proposer tried to decide their own request (409, maker-checker).</summary>
     TaxIdentitySelfDecision = 13,
+
+    /// <summary>SAT-D57: a customer group with this id already exists (409).</summary>
+    CustomerGroupExists = 14,
+
+    /// <summary>SAT-D57: another group of the company already carries this name (409).</summary>
+    CustomerGroupNameTaken = 15,
+
+    /// <summary>SAT-D57: the group to assign is not one of the active company's groups (422).</summary>
+    CustomerGroupNotFound = 16,
+
+    /// <summary>SAT-D57: the group to assign is passive; a passive group is never newly assigned (409).</summary>
+    CustomerGroupInactive = 17,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -116,6 +128,15 @@ public static class CounterpartyProblemCodesV1
 
     public const string TaxIdentitySelfDecision = "tax_identity_self_decision";
 
+    /// <summary>SAT-D57 customer groups.</summary>
+    public const string CustomerGroupExists = "customer_group_exists";
+
+    public const string CustomerGroupNameTaken = "customer_group_name_taken";
+
+    public const string CustomerGroupNotFound = "customer_group_not_found";
+
+    public const string CustomerGroupInactive = "customer_group_inactive";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -131,6 +152,10 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.TaxIdentityChangeNotPending => TaxIdentityChangeNotPending,
             CounterpartyCommandResult.TaxIdentityChangeStale => TaxIdentityChangeStale,
             CounterpartyCommandResult.TaxIdentitySelfDecision => TaxIdentitySelfDecision,
+            CounterpartyCommandResult.CustomerGroupExists => CustomerGroupExists,
+            CounterpartyCommandResult.CustomerGroupNameTaken => CustomerGroupNameTaken,
+            CounterpartyCommandResult.CustomerGroupNotFound => CustomerGroupNotFound,
+            CounterpartyCommandResult.CustomerGroupInactive => CustomerGroupInactive,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };

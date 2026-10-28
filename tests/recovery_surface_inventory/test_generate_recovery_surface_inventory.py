@@ -2258,7 +2258,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1156, len(source_paths))
+        self.assertEqual(1161, len(source_paths))
         # MOD-02 (SAT-D9 / SAT-D10): the Product price tier chain, its contracts, the Cari customer port adapter
         # and the AddPriceListScope migration.
         for mod02_source in (
@@ -2272,6 +2272,24 @@ internal {{declaration}} : IDocumentObjectStoreV1
             "20261027123034_AddPriceListScope.cs",
         ):
             self.assertIn(mod02_source, source_paths)
+        # SAT-D57: the Cari customer (price) group, its contracts, read port, service, endpoints, OpenAPI schema
+        # hook and the AddCounterpartyCustomerGroups migration.
+        for sat_d57_source in (
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/Accounts/CustomerGroup.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/"
+            "CounterpartyCustomerGroups.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/"
+            "ICounterpartyAccountCustomerGroupSourceV1.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyAccountCustomerGroupSourceV1.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyCommandService.CustomerGroups.cs",
+            "src/backend/GoymenERP.Api/Endpoints/CounterpartyEndpoints.CustomerGroups.cs",
+            "src/backend/GoymenERP.Api/OpenApi/ErpOpenApiContract.CustomerGroups.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/"
+            "20261027202534_AddCounterpartyCustomerGroups.cs",
+        ):
+            self.assertIn(sat_d57_source, source_paths)
         for shared_value_object in (
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/Money.cs",
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/ExchangeRate.cs",

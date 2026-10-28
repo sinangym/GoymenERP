@@ -38,6 +38,16 @@ public sealed class CounterpartyMigrationScriptTests
             "CREATE INDEX [IX_Parties_TaxIdentityNumber] ON [counterparty].[Parties] ([TaxIdentityNumber]) WHERE [TaxIdentityNumber] IS NOT NULL",
             script, StringComparison.Ordinal);
         Assert.DoesNotContain("CREATE UNIQUE INDEX [IX_Parties_TaxIdentityNumber]", script, StringComparison.Ordinal);
+        // SAT-D57: the company's group list and the account's same-company group (composite key); nothing seeded.
+        Assert.Contains("20261027202534_AddCounterpartyCustomerGroups", script, StringComparison.Ordinal);
+        Assert.Contains("CREATE TABLE [counterparty].[CustomerGroups]", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "CREATE UNIQUE INDEX [UX_CustomerGroups_CompanyId_Name] ON [counterparty].[CustomerGroups] ([CompanyId], [Name])",
+            script, StringComparison.Ordinal);
+        Assert.Contains(
+            "ADD CONSTRAINT [FK_CompanyPartyAccounts_CustomerGroups_CompanyId_CustomerGroupId] FOREIGN KEY ([CompanyId], [CustomerGroupId]) REFERENCES [counterparty].[CustomerGroups] ([CompanyId], [Id])",
+            script, StringComparison.Ordinal);
+        Assert.DoesNotContain("INSERT INTO [counterparty].[CustomerGroups]", script, StringComparison.OrdinalIgnoreCase);
 
         Assert.DoesNotContain("CREATE TABLE [audit].[AuditEvents]", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(

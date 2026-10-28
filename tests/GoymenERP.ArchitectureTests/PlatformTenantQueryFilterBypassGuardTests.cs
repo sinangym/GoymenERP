@@ -219,8 +219,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Contact information fresh authority: +5 late-revocation, replay, no-op and winner SQL facts.
             // GOY-UX-TEXT-FILTER-01: +1 same-address-row, pre-pagination address-filter SQL fact.
             // Location operator eligibility: +1 exact-party, supplier-only, company/actor-fenced read-only SQL fact.
+            // SAT-D57 customer group: +5 list lifecycle, account assignment/port, company fence, 403 and rollback facts.
             ["tools/relational_inventory/counterparty.txt"] =
-                "39d6ec80210580f12fde1a889187802d772815e9192407722b357dd4ce26fe2b",
+                "d8e2b013d2ef21db35516d57d168e0be2bdb4590bcfe2ba0707180dedb4c78b2",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
@@ -334,10 +335,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // efdb5edd… -> 87dc8166…).
             // MOD-01 / API-06: +2 SalesRiskCheckSqlServerRelationalAcceptanceTests facts, merged over MOD-07, kept ordinal-sorted
             // (87dc8166… -> d74f7c2d…).
-            // SAT-D24/D44, SAT-D25: +2 SalesQuoteSqlServerRelationalAcceptanceTests facts, ordinal-sorted (d74f7c2d… -> 1014c327…).
-            // SAT-D71/D72 (EK12): +1 SalesQuoteSqlServerRelationalAcceptanceTests fact, ordinal-sorted (1014c327… -> 1de636c9…).
+            // API-03 / SAT-D11: +2 SalesOrderTotalsSqlServerRelationalAcceptanceTests facts, merged over MOD-01 / API-06, kept
+            // ordinal-sorted (d74f7c2d… -> 0d7854cc…); +1 out-of-range totals fact after review B P2-1 (0d7854cc… -> 78eb83d7…).
             ["tools/relational_inventory/sales.txt"] =
-                "1de636c974a8812a4e9ecfa7713b5ea9edd95e80f9e265e701edf919fcda01da",
+                "78eb83d735e98263882363181edda16a4856a1b39a21fa11fc842fb9cee896ef",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
