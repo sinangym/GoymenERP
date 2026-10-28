@@ -23,6 +23,8 @@ import { SalesRequestDetailPage } from './SalesRequestDetailPage'
 import { SalesQuoteListPage } from './SalesQuoteListPage'
 import { SalesQuoteCreatePage } from './SalesQuoteCreatePage'
 import { SalesQuoteDetailPage } from './SalesQuoteDetailPage'
+import { SalesDispatchListPage } from './SalesDispatchListPage'
+import { SalesInvoiceCandidatesPage } from './SalesInvoiceCandidatesPage'
 
 /** The shell's `CapabilityId` union carries the three Sales route ids, so no cast is needed. */
 function gate(capability: CapabilityId, children: ReactNode) {
@@ -45,4 +47,7 @@ export const salesRoutes: RouteObject[] = [
   { path: SALES_POOL_ROUTE.quotes.slice(1), element: <SalesPoolRoute capability="quotesList"><SalesQuoteListPage /></SalesPoolRoute> },
   { path: SALES_POOL_ROUTE.quoteCreate.slice(1), element: <SalesPoolRoute capability="quotesCreate"><SalesQuoteCreatePage /></SalesPoolRoute> },
   { path: SALES_POOL_ROUTE.quoteDetail.slice(1), element: <SalesPoolRoute capability="quotesDetail"><SalesQuoteDetailPage /></SalesPoolRoute> },
+  // UI-60 / UI-61 (Sales shell 1.9): S-07 Sevkiyat / İrsaliyeler and S-08 Faturaya Hazır, each on its own published id.
+  { path: SALES_ROUTE.dispatches.slice(1), element: gate(SALES_CAPABILITY.dispatchesList, <SalesDispatchListPage />) },
+  { path: SALES_ROUTE.invoiceCandidates.slice(1), element: gate(SALES_CAPABILITY.invoiceCandidatesList, <SalesInvoiceCandidatesPage />) },
 ]

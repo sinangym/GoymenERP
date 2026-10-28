@@ -150,6 +150,10 @@ export const CAPABILITY = {
   salesDraftsDetail: 'sales.drafts.detail',
   /** S-03 new sales order draft. Route `/satis/siparisler/yeni`. A SEPARATE grant from reading. */
   salesDraftsCreate: 'sales.drafts.create',
+  /** UI-60 S-07 Sevkiyat / İrsaliyeler (API-30). Route `/satis/sevkiyatlar`. Granted on `sales.drafts.read`, its own capability. */
+  salesDispatchesList: 'sales.dispatches.list',
+  /** UI-61 S-08 Faturaya Hazır (API-31). Route `/satis/faturaya-hazir`. Granted on its own `sales.invoices.read`. */
+  salesInvoiceCandidatesList: 'sales.invoice-candidates.list',
   /** MFG-02 the company's production orders (MFG-ORD). Route `/uretim/emirler`. */
   manufacturingOrdersList: 'manufacturing.orders.list',
   /**
@@ -291,6 +295,9 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as a draft id.
   [CAPABILITY.salesDraftsCreate]: '/satis/siparisler/yeni',
   [CAPABILITY.salesDraftsDetail]: '/satis/siparisler/:draftId',
+  // Two static Sales siblings; neither is a draft id under `/satis/siparisler/:draftId`.
+  [CAPABILITY.salesDispatchesList]: '/satis/sevkiyatlar',
+  [CAPABILITY.salesInvoiceCandidatesList]: '/satis/faturaya-hazir',
   // Static before the parameter route, the /cari/yeni rule: 'emirler' must never be read as an
   // order id. The lane orders its own route table the same way.
   [CAPABILITY.manufacturingOrdersList]: '/uretim/emirler',
