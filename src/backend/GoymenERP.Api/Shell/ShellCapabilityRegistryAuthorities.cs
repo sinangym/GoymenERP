@@ -86,9 +86,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     // UI-20 / SAT-D27: Sales 1.8 (the six S-01 request/quote screens and their three controls) re-derived this long-lived row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
-    // SAT-D24 / SAT-D44: Sales 1.9 (the expired-quote approval control) re-derived it IN PLACE again, the same way.
+    // UI-60 / UI-61: Sales 1.9 (the S-07 dispatch list and S-08 invoice candidates) re-derived this long-lived row IN PLACE by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12AndPublishedSalesV15 =
-        "sha256:UGhcDjXho0apRdZQaWWccgsO0JadBAduKGE834zJeTc";
+        "sha256:AfWajSazMathj9jVGH63LD4n3PHK2-ADiLnBLVjiF-s";
 
     // ... + Finance 1.0 (#325, FIN-UI-1a) beside the STAGED Sales screens. Superseded when Sales was published
     // (#328, below); no host serves it now. Computed by the ComputeRevision reproduction and,
@@ -128,9 +129,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     // UI-20 / SAT-D27: Sales 1.8 (the six S-01 request/quote screens and their three controls) re-derived this long-lived row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
-    // SAT-D24 / SAT-D44: Sales 1.9 (the expired-quote approval control) re-derived it IN PLACE again, the same way.
+    // UI-60 / UI-61: Sales 1.9 (the S-07 dispatch list and S-08 invoice candidates) re-derived this long-lived row IN PLACE by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15AndPublishedFinanceV15 =
-        "sha256:tnAV4ceGppz6oz5iz4pV3XKQRiWu4sS8z4SUZjDPTEg";
+        "sha256:Jt3YThMbtU6NeRQ_DU1vGrSg1yb-p9GSDi08tEpGtN4";
 
     // FIN-UI-1c: ... + Manufacturing 1.0 staged: the normal host (C+O+P+S(published)+F(published)+M(staged)).
     // Computed by the ComputeRevision reproduction and, independently, by ORG (DATA ONLY); pinned by test.
@@ -156,9 +158,10 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     // UI-20 / SAT-D27: Sales 1.8 (the six S-01 request/quote screens and their three controls) re-derived this long-lived row
     // IN PLACE by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
-    // SAT-D24 / SAT-D44: Sales 1.9 (the expired-quote approval control) re-derived it IN PLACE again, the same way.
+    // UI-60 / UI-61: Sales 1.9 (the S-07 dispatch list and S-08 invoice candidates) re-derived this long-lived row IN PLACE by
+    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV15PublishedFinanceV15AndPublishedManufacturingV15 =
-        "sha256:cySZIpBAW1AohpbvzkXkfq9-6p8WZfVzKTMLjumxQ-k";
+        "sha256:XNBNbA6UynpgPXlkps9k32CYisohYfoI4vq66D4s4e0";
 
     // LOG-PUBLISH: ... + Logistics 1.1 PUBLISHED (the loading-instruction routes plus shipment/delivery actions,
     // master v3 §27.8): the normal host (C+O+P+S(published)+F(published)+M(published)+L(published)). Computed by
@@ -320,25 +323,39 @@ internal static class ShellCapabilityRegistryAuthorities
 
     // UI-20 / SAT-D27: Sales 1.8 publishes the six S-01 request/quote screens with the request decision, quote write and quote
     // conversion controls. The six live rows carrying PublishedSales were re-derived by ShellCapabilityRegistry.ComputeCandidateRevision
-    // (drift-test "Actual:") over main 861e5238's providers with this change's Sales 1.8 (SalesV17 -> SalesV19). The SalesV17
+    // (drift-test "Actual:") over main 861e5238's providers with this change's Sales 1.8 (SalesV17 -> SalesV18). The SalesV17
     // rows above keep their names and values: they describe provider sets no host composes any more. The three long-lived
     // "...SalesV15..." rows were re-derived in place, as No 30 did.
-    // SAT-D24 / SAT-D44: Sales 1.9 adds the expired-quote conversion approval control of the quote detail. The six live rows
-    // were renamed SalesV18 -> SalesV19 (FullNormalHost...SalesPool -> ...SalesQuoteExpiryApproval) and re-derived by
-    // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the 1.8 values described a provider set no host
-    // composes any more. The three long-lived "...SalesV15..." rows were re-derived in place.
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
+        "sha256:UJZwCSJxd-VkAqyoA73e4a-7-KVoot79Q_Dsr4gXnEQ";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
+        "sha256:AjdQNRK0JnYwJQ7LuOD6J0_XiUSGn0tXWJ9ua2Yf9Xg";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
+        "sha256:GyFUw8Vrf4pCcKSlGsreElOmpTejlX_DjDlrBDhp8gE";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
+        "sha256:_ji_upgapDKGx5uFdbB_HeywPtEGNFOcOXsDrcmQAv4";
+    internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV18PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
+        "sha256:v0ELCjc-Nohvay-axqDxXrzOmBOkoTwHSnPjElKIRCk";
+    internal const string FullNormalHostWithProductPriceListsAndSalesPool =
+        "sha256:XHaEBdDtqTscK_cY9_67ok-KgR2eGs_ukDxm3GTnb20";
+
+    // UI-60 / UI-61 (plan §3.3 API-30 / API-31): Sales 1.9 publishes the S-07 dispatch list and the S-08 invoice candidates. The
+    // six live rows carrying PublishedSales were re-derived by ShellCapabilityRegistry.ComputeCandidateRevision (drift-test
+    // "Actual:") over main 517bfc57's providers with this change's Sales 1.9 (SalesV18 -> SalesV19). The SalesV18 rows above keep
+    // their names and values: they describe provider sets no host composes any more. The three long-lived "...SalesV15..." rows
+    // were re-derived in place, as UI-20 did.
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15AndPublishedLogisticsV13 =
-        "sha256:lr8tbqJOdMmrWrL7TNS5kxStek8tFPcwZroGNKQEclc";
+        "sha256:Zjn_vFaCFh30exzd174LXiOVy0m3HpZFPueYfprLnqM";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13AndPublishedPurchasingV14 =
-        "sha256:ghocjtuo44E0kMbwwlrmy_Juc2mpzW8Gy6c0BK0XTrM";
+        "sha256:70PW7NPIWU9Hhqt9nThcl5PFhWSW1pH5REyD_HmL4v0";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14AndPublishedAccountingV13 =
-        "sha256:Cxp-mdZkre9OybnRyLFgxTftiwqaKXPoo7iEyix_cDw";
+        "sha256:XkAIO4OzwhVyJNV9fyWu2e0f0iXr7uSfF8CQ7w8fTWM";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13AndPublishedInventoryV17 =
-        "sha256:v857u8wMnbtK7uC1_Tbh-v1r-su6B0Wi5c-KrhrYl8s";
+        "sha256:giUwLJsZciXOMy2LmTcbYcc8ir5-21-giUFV4aZOp10";
     internal const string CounterpartyV15PublishedListCreateAndDetailOrganizationV13ProductV12PublishedSalesV19PublishedFinanceV15PublishedManufacturingV15PublishedLogisticsV13PublishedPurchasingV14PublishedAccountingV13PublishedInventoryV17AndPublishedIdentityV10 =
-        "sha256:AzNfnQoo3LjtzATUFv0uIqtMZ22BKiqYX0b3ALDCHSA";
-    internal const string FullNormalHostWithProductPriceListsAndSalesQuoteExpiryApproval =
-        "sha256:7U64WHTJdA-L4sRaA6YpsMHGYlhQPhbREhiB0eJHCxU";
+        "sha256:SSqaxGHhk6E44Li2L54i7RyhfK17ERsay3drD_Q11mg";
+    internal const string FullNormalHostWithProductPriceListsAndSalesDispatch =
+        "sha256:aMOFdc7jJguD5s39zLtbijSUh8sj2OmpvL_CZxaYIP8";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

@@ -25,10 +25,10 @@ public sealed class SalesShellCapabilityProviderContractTests
         // DEC-SAL-003 (1.2): the delivery-schedule control joins the approve and commercial-revision controls;
         // DEC-SAL-005 (1.3): cancel; DEC-SAL-002 (1.4): quantity revision; Q9 (1.5): customer acceptance;
         // AT-021 (1.6): reasoned floor-exception approval remains a separate child control; No 30 (1.7): force-close.
-        // UI-20 (1.8): the S-01 request and quote screens with their decision, write and conversion controls;
-        // SAT-D24 / SAT-D44 (1.9): the expired-quote conversion approval control of the quote detail.
+        // UI-20 (1.8): the S-01 request and quote screens with their decision, write and conversion controls.
+        // UI-60 / UI-61 (1.9): the S-07 dispatch list and the S-08 invoice candidates.
         Assert.Equal(("SALES", "1.9"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(21, declarations.Count);
+        Assert.Equal(22, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -209,6 +209,37 @@ public sealed class SalesShellCapabilityProviderContractTests
     }
 
     [Fact]
+    public void The_S07_dispatch_list_and_the_S08_invoice_candidates_are_routed_lists_on_their_own_names()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
+        var declarations = new SalesShellCapabilityProvider().GetDeclarations();
+
+        // API-30 reads under the order read name (plan §3.3); API-31 under its own sales.invoices.read. Neither has a control.
+        var expected = new (string Id, string Path, string Screen, string[] Permissions)[]
+        {
+            ("sales.dispatches.list", "/satis/sevkiyatlar", "S-07", [SalesPermissionManifestV1.DraftsRead]),
+            ("sales.invoice-candidates.list", "/satis/faturaya-hazir", "S-08", [SalesPermissionManifestV1.InvoicesRead]),
+        };
+        foreach (var item in expected)
+        {
+            var declaration = Assert.Single(declarations, candidate => candidate.CapabilityId == item.Id);
+            Assert.Equal((item.Id, item.Path, item.Screen, ShellCapabilityRoutePrecedence.Static,
+                    ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead, ShellCapabilityScopeRequirement.CompanyWide),
+                (declaration.RouteId, declaration.RoutePath, declaration.ScreenId, declaration.RoutePrecedence,
+                    declaration.ContextRequirement, declaration.ScopeRequirement));
+            Assert.Equal(item.Permissions, declaration.RequiredPermissions);
+            Assert.Null(declaration.ParentCapabilityId);
+            Assert.True(declaration.ImplementationAvailable);
+            Assert.DoesNotContain(declarations, candidate => candidate.ParentCapabilityId == item.Id);
+            Assert.Contains($"'{item.Id}'", source);
+            Assert.Contains($"'{item.Path}'", source);
+        }
+
+        // The invoice read name is S-08's alone: no other declaration asks for it.
+        Assert.Single(declarations, candidate => candidate.RequiredPermissions.Contains(SalesPermissionManifestV1.InvoicesRead));
+    }
+
+    [Fact]
     public void The_permission_names_are_the_manifests_and_spelled_as_the_card_decided()
     {
         Assert.Equal("sales.drafts.create", SalesPermissionManifestV1.DraftsCreate);
@@ -242,6 +273,8 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.orders.discount-exception.approve", SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
         // SAT-D24 / SAT-D44: the SEPARATE expired-quote conversion approval name; the quote write and order names do not confer it.
         Assert.Equal("sales.quotes.expired-conversion.approve", SalesPermissionManifestV1.QuotesExpiredConversionApprove);
+        // API-31 (plan §3.3, S-08): the invoice candidates' own read name; no order name confers it.
+        Assert.Equal("sales.invoices.read", SalesPermissionManifestV1.InvoicesRead);
         Assert.Equal((15, 18), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
@@ -263,6 +296,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.QuotesWrite,
                 SalesPermissionManifestV1.QuotesRead,
                 SalesPermissionManifestV1.QuotesExpiredConversionApprove,
+                SalesPermissionManifestV1.InvoicesRead,
             ],
             StringComparer.Ordinal);
         Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));
@@ -274,6 +308,8 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersForceClose,
                 SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsApprove,
                 SalesPermissionManifestV1.QuotesWrite, SalesPermissionManifestV1.QuotesRead));
+        Assert.Equal(new SalesDispatchReadBindings(),
+            new SalesDispatchReadBindings(SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.InvoicesRead));
     }
 
     private static string FindRepositoryRoot()

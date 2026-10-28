@@ -62,7 +62,7 @@ public sealed class FinanceShellRegistrationTests
         // each route or control service measures its own Finance permission afresh.
         Assert.Equal(21, finance.Length);
         Assert.All(finance, item => Assert.True(item.Declaration.ImplementationAvailable));
-        // Sales 1.9: nine routes (three draft, three request, three quote) plus twelve detail controls. Pin identities, parents and authorities here instead of
+        // Sales 1.9: eleven routes (three draft, three request, three quote, S-07, S-08) plus eleven detail controls. Pin identities, parents and authorities here instead of
         // accepting a blind declaration count: another control, parent or permission must receive its own review.
         var sales = registry.Registrations
             .Where(item => item.Owner == SalesShellCapabilityProvider.OwnerId)
@@ -73,9 +73,11 @@ public sealed class FinanceShellRegistrationTests
             .ToArray();
         Assert.Equal(
             [
-                (SalesShellCapabilityProvider.CreateCapabilityId, (string?)null, SalesPermissionManifestV1.DraftsCreate),
+                (SalesShellCapabilityProvider.DispatchListCapabilityId, (string?)null, SalesPermissionManifestV1.DraftsRead),
+                (SalesShellCapabilityProvider.CreateCapabilityId, null, SalesPermissionManifestV1.DraftsCreate),
                 (SalesShellCapabilityProvider.DetailCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
                 (SalesShellCapabilityProvider.ListCapabilityId, null, SalesPermissionManifestV1.DraftsRead),
+                (SalesShellCapabilityProvider.InvoiceCandidateListCapabilityId, null, SalesPermissionManifestV1.InvoicesRead),
                 (SalesShellCapabilityProvider.ApproveCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}"),
                 (SalesShellCapabilityProvider.CancelCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,

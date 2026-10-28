@@ -35,9 +35,13 @@ public sealed class SalesShellCapabilityProviderTests
         // combine read with their command permission, and remain parented by the detail capability.
         Assert.Equal(
             [
-                ("sales.drafts.create", "/satis/siparisler/yeni", SalesPermissionManifestV1.DraftsCreate, (string?)null),
+                // UI-60 (Sales 1.9): the S-07 dispatch list on the order read.
+                ("sales.dispatches.list", "/satis/sevkiyatlar", SalesPermissionManifestV1.DraftsRead, (string?)null),
+                ("sales.drafts.create", "/satis/siparisler/yeni", SalesPermissionManifestV1.DraftsCreate, null),
                 ("sales.drafts.detail", "/satis/siparisler/:draftId", SalesPermissionManifestV1.DraftsRead, null),
                 ("sales.drafts.list", "/satis/siparisler", SalesPermissionManifestV1.DraftsRead, null),
+                // UI-61 (Sales 1.9): the S-08 invoice candidates on their own name.
+                ("sales.invoice-candidates.list", "/satis/faturaya-hazir", SalesPermissionManifestV1.InvoicesRead, null),
                 ("sales.orders.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersApprove}", "sales.drafts.detail"),
                 ("sales.orders.cancel", "/satis/siparisler/:draftId",

@@ -141,10 +141,18 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string QuotesExpiredConversionApprove = "sales.quotes.expired-conversion.approve";
 
+    /// <summary>
+    /// API-31 (plan §3.3, S-08 "Faturaya Hazır"; DEC-SAL-006, AT-055): GET /api/v1/sales/invoice-candidates — the posted sales
+    /// shipment shares an invoice may later take, grouped by the decided key. Its own name: the order read and every other Sales
+    /// name do NOT confer it, and it confers none of them (no order detail, no price, no invoice write). Company-wide; not
+    /// Critical; registered, granted to no role (who receives it is a grant decision and a human gate).
+    /// </summary>
+    public const string InvoicesRead = "sales.invoices.read";
+
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
             OrdersQuantityWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
-            QuotesExpiredConversionApprove }
+            QuotesExpiredConversionApprove, InvoicesRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

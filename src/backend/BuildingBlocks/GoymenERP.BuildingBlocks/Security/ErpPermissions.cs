@@ -496,6 +496,14 @@ public static class ErpPermissions
     public const string SalesQuotesExpiredConversionApprove = "sales.quotes.expired-conversion.approve";
 
     /// <summary>
+    /// API-31 (plan §3.3, S-08 "Faturaya Hazır"; DEC-SAL-006, AT-055): read the posted sales shipment shares grouped for a later
+    /// invoice (Sales owner name SalesPermissionManifestV1.InvoicesRead, same string). Its own name: no order, price or other Sales
+    /// name confers it and it confers none of them. Registered, not granted: no seeded role and no real user receives it; the grant
+    /// is a human gate. Company-wide only, like the other Sales names. Not Critical: no approved source adds grant-time dual control.
+    /// </summary>
+    public const string SalesInvoicesRead = "sales.invoices.read";
+
+    /// <summary>
     /// DEC-SAL-002 / AT-023: revise an approved order's line quantities into a new revision that needs re-approval (Sales
     /// owner name SalesPermissionManifestV1.OrdersQuantityWrite). Its own name: create, approve, price, delivery-schedule
     /// and cancel names do not confer it. Registration grants nothing: its only grant (user decision 2026-09-28) is the
@@ -724,6 +732,7 @@ public static class ErpPermissions
             SalesQuotesWrite,
             SalesQuotesRead,
             SalesQuotesExpiredConversionApprove,
+            SalesInvoicesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,
@@ -855,6 +864,7 @@ public static class ErpPermissions
             SalesQuotesWrite,
             SalesQuotesRead,
             SalesQuotesExpiredConversionApprove,
+            SalesInvoicesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
             ManufacturingOrdersCreate,

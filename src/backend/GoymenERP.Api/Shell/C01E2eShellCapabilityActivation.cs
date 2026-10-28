@@ -171,7 +171,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
                 typeof(ProductPriceListShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsAndSalesQuoteExpiryApproval),
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsAndSalesDispatch),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

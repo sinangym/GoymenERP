@@ -21,6 +21,10 @@ export const SALES_CAPABILITY = {
    * The submit button follows `draftsCreate`. The route of this control is the detail's own.
    */
   ordersApprove: 'sales.orders.approve',
+  /** UI-60 S-07 Sevkiyat / İrsaliyeler — API-30 under `sales.drafts.read` (Sales shell contract 1.9). */
+  dispatchesList: 'sales.dispatches.list',
+  /** UI-61 S-08 Faturaya Hazır — API-31 under its own `sales.invoices.read` (Sales shell contract 1.9). */
+  invoiceCandidatesList: 'sales.invoice-candidates.list',
 } as const
 
 /** Q9: non-routed control for recording customer acceptance of the current approved revision. */
@@ -69,6 +73,10 @@ export const SALES_ROUTE = {
   // Static before the parameter route: `yeni` must never be read as a draft id.
   create: '/satis/siparisler/yeni',
   detail: '/satis/siparisler/:draftId',
+  /** S-07: static, never a draft id. */
+  dispatches: '/satis/sevkiyatlar',
+  /** S-08: static, never a draft id. */
+  invoiceCandidates: '/satis/faturaya-hazir',
 } as const
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
