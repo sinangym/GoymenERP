@@ -107,7 +107,7 @@ public static class SalesDraftRiskReasonCodesV1
 /// <list type="bullet">
 /// <item><c>result</c>: <c>Within</c>, <c>Over</c> (the total with this order EXCEEDS the limit; equal is within, SAT-D49) or
 /// <c>Unavailable</c>, with every <c>reasons</c> entry when it is not a plain answer. Decided in the credit limit's currency
-/// (SAT-D53).</item>
+/// alone (SAT-D53, SAT-D80): the local (TL) total is information only and never adds a reason or blocks the result.</item>
 /// <item><c>inLocalCurrency</c> and <c>inLimitCurrency</c> (SAT-D53): the totals in the company's local currency (TL) and in the limit's
 /// currency — each <c>{currencyId, grossRisk, grossRiskWithThisOrder}</c>; null when that currency (or its money scale) is not
 /// known. <c>grossRisk</c> = open receivables + shipped-not-invoiced + approved-unshipped remainder (DEC-FIN-007);
