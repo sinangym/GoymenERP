@@ -82,11 +82,14 @@ public sealed partial class SalesDraftServiceTests
         Assert.Empty(shipped.Components[2].Amounts!);
         Assert.DoesNotContain(shipped.Reasons, reason => reason.Component == "ApprovedUnshippedRemainder");
 
-        // A Settings TL money profile that cannot be read: no local totals (never the order currency in their place).
+        // A Settings TL money profile that cannot be read: no local totals (never the order currency in their place). SAT-D80: the
+        // local total is information only, so it adds no reason of its own — the result is still the limit's (here: no limit).
         world.Settings.Fault = "money-unavailable";
         var noLocal = await world.Service().GetDraftRiskCheckAsync(approved.Draft.Id);
         Assert.Null(noLocal.InLocalCurrency);
-        Assert.Contains(new SalesDraftRiskReasonV1("Check", "local_currency_unavailable"), noLocal.Reasons);
+        Assert.Equal(SalesDraftRiskResultsV1.Unavailable, noLocal.Result);
+        Assert.DoesNotContain(noLocal.Reasons, reason => reason.Code == "local_currency_unavailable");
+        Assert.Contains(new SalesDraftRiskReasonV1("CreditLimit", "finance_credit_limit_owner_missing"), noLocal.Reasons);
     }
 
     [Fact]

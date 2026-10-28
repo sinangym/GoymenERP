@@ -432,7 +432,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 101, "durableStores": 23},
+            {"dbContexts": 18, "migrations": 102, "durableStores": 23},
             self.inventory["counts"],
         )
         actual = {
@@ -2259,6 +2259,19 @@ internal {{declaration}} : IDocumentObjectStoreV1
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
         self.assertEqual(1149, len(source_paths))
+        # MOD-02 (SAT-D9 / SAT-D10): the Product price tier chain, its contracts, the Cari customer port adapter
+        # and the AddPriceListScope migration.
+        for mod02_source in (
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/PriceLists/PriceListScope.cs",
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/PriceLists/PriceListBusinessDay.cs",
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Domain/PriceLists/PriceTierChain.cs",
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Application/Contracts/"
+            "ProductPriceResolutionContractsV2.cs",
+            "src/backend/GoymenERP.Api/ProductRuntime/CounterpartyProductPriceListCustomerPortV1.cs",
+            "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/Migrations/"
+            "20261027123034_AddPriceListScope.cs",
+        ):
+            self.assertIn(mod02_source, source_paths)
         for shared_value_object in (
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/Money.cs",
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/ExchangeRate.cs",

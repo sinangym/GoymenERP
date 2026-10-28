@@ -112,9 +112,6 @@ public static class SalesRiskReasonCodes
     /// <summary>The credit-limit owner answered no single amount: no limit is not an unlimited (or a zero) limit.</summary>
     public const string CreditLimitNotDefined = "credit_limit_not_defined";
 
-    /// <summary>SAT-D53: the company's local currency (TL) or its approved money scale could not be read: no local total.</summary>
-    public const string LocalCurrencyUnavailable = "local_currency_unavailable";
-
     /// <summary>SAT-D53: the credit limit's currency has no approved money scale here: the limit-currency totals are not made.</summary>
     public const string LimitCurrencyUnavailable = "limit_currency_unavailable";
 }
@@ -134,8 +131,10 @@ public sealed record SalesRiskTotals(SalesRiskCurrency Currency, Money? GrossRis
 
 /// <summary>
 /// The calculator's answer (SAT-D53): the totals in the company's LOCAL currency (TL; for accounting and reporting) and in the
-/// CREDIT LIMIT's currency (the comparison, so the limit never drifts with a rate); the outcome is decided on the latter. A
-/// totals record is null when its currency is not known; <paramref name="CreditLimit"/> only when the limit is one amount.
+/// CREDIT LIMIT's currency (the comparison, so the limit never drifts with a rate); the outcome is decided on the latter alone
+/// (SAT-D80), and <paramref name="Reasons"/> are only the reasons of that decision. A totals record is null when its currency is
+/// not known; a local amount that cannot be made (no rate) is null as information and never blocks the outcome.
+/// <paramref name="CreditLimit"/> is present only when the limit is one amount.
 /// </summary>
 public sealed record SalesRiskEvaluation(
     SalesRiskOutcome Outcome,
@@ -155,6 +154,9 @@ public sealed record SalesRiskEvaluation(
 /// already in the approved remainder) with the limit; both totals are answered.</item>
 /// <item><b>SAT-D53</b>: the totals are made twice — in the company's local currency and in the credit limit's currency — and the
 /// outcome is the limit currency's. The order's own currency is never the target.</item>
+/// <item><b>SAT-D80</b>: the local (TL) total is information only. When it cannot be made (no rate, no TL scale) the decision is
+/// still made in the limit's currency and the local amounts stay null; such a local-only reason is not a reason of the decision.
+/// When the limit-currency total itself cannot be made, the outcome stays <see cref="SalesRiskOutcome.Unavailable"/>.</item>
 /// <item><b>Fail-closed</b>: an input that is <see cref="SalesRiskInputState.NoSource"/> or
 /// <see cref="SalesRiskInputState.Unavailable"/> makes the outcome <see cref="SalesRiskOutcome.Unavailable"/> — never zero and
 /// never "within". Every reason is listed once, not only the first.</item>
@@ -172,7 +174,10 @@ public sealed record SalesRiskEvaluation(
 /// </summary>
 public static class SalesCustomerRiskCalculator
 {
-    /// <param name="inLocalCurrency">The company's local currency and its scale (SAT-D53); null when Settings could not answer it.</param>
+    /// <param name="local">
+    /// The company's local currency and its scale (SAT-D53); null when Settings could not answer it — then there is no local total,
+    /// and the decision is still made in the limit's currency (SAT-D80).
+    /// </param>
     /// <param name="limitCurrency">
     /// The credit limit's currency and its scale; null when there is no single limit amount or its currency's scale is unknown.
     /// </param>
@@ -202,7 +207,7 @@ public static class SalesCustomerRiskCalculator
         };
         var thisPart = (Component: SalesRiskComponents.ThisOrder, Input: thisOrder);
 
-        // 1. Whether each part answered, and on which tax basis — once, whatever the target currency.
+        // 1. Whether each part answered, on which tax basis and with well-formed amounts — once, whatever the target currency.
         var answered = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (component, input) in exposures.Append(thisPart))
         {
@@ -214,6 +219,14 @@ public static class SalesCustomerRiskCalculator
             if (input.TaxBasis is null)
             {
                 reasons.Add(new SalesRiskReason(component, SalesRiskReasonCodes.TaxBasisMissing));
+                continue;
+            }
+
+            // A malformed amount is the answer's own fault, whatever the target currency: listed for the decision even when only
+            // the (information-only) local total would have met it (SAT-D80).
+            if (input.Amounts.Any(amount => amount is null || amount.Amount < 0m))
+            {
+                reasons.Add(new SalesRiskReason(component, SalesRiskReasonCodes.AmountInvalid));
                 continue;
             }
 
@@ -230,13 +243,14 @@ public static class SalesCustomerRiskCalculator
             reasons.Add(new SalesRiskReason(SalesRiskComponents.Check, SalesRiskReasonCodes.TaxBasisMismatch));
         }
 
-        // 2. The totals in each target currency (SAT-D53).
-        SalesRiskTotals? Totals(SalesRiskCurrency target)
+        // 2. The totals in each target currency (SAT-D53). The reasons of a total go to the list given for it: the decision's own
+        //    list for the limit currency, a discarded one for the local currency (SAT-D80: information only, never blocking).
+        SalesRiskTotals Totals(SalesRiskCurrency target, List<SalesRiskReason> totalReasons)
         {
             var sums = new Dictionary<string, Money>(StringComparer.Ordinal);
             foreach (var (component, input) in exposures.Append(thisPart))
             {
-                if (answered.Contains(component) && Sum(component, input, target.CurrencyId, target.Scale, reasons) is { } sum)
+                if (answered.Contains(component) && Sum(component, input, target.CurrencyId, target.Scale, totalReasons) is { } sum)
                 {
                     sums[component] = sum;
                 }
@@ -245,24 +259,18 @@ public static class SalesCustomerRiskCalculator
             Money? gross = null;
             if (basesAgree && exposures.All(part => sums.ContainsKey(part.Component)))
             {
-                gross = Total(exposures.Select(part => sums[part.Component]), target.CurrencyId, target.Scale, reasons);
+                gross = Total(exposures.Select(part => sums[part.Component]), target.CurrencyId, target.Scale, totalReasons);
             }
 
             Money? withThisOrder = gross is { } grossRisk && sums.TryGetValue(thisPart.Component, out var order)
-                ? Total([grossRisk, order], target.CurrencyId, target.Scale, reasons)
+                ? Total([grossRisk, order], target.CurrencyId, target.Scale, totalReasons)
                 : null;
             return new SalesRiskTotals(target, gross, withThisOrder);
         }
 
-        SalesRiskTotals? localTotals = null;
-        if (local is null)
-        {
-            reasons.Add(new SalesRiskReason(SalesRiskComponents.Check, SalesRiskReasonCodes.LocalCurrencyUnavailable));
-        }
-        else
-        {
-            localTotals = Totals(local);
-        }
+        // SAT-D80: the local (TL) total is information only — whatever stops it (no TL scale, no rate, too many decimals) leaves
+        // its amounts null and never reaches the decision's reasons.
+        var localTotals = local is null ? null : Totals(local, []);
 
         // 3. The limit, in its own currency, and the totals in that currency.
         Money? limit = null;
@@ -281,10 +289,11 @@ public static class SalesCustomerRiskCalculator
             {
                 limit = ToMoney(SalesRiskComponents.CreditLimit, creditLimit.Amounts[0], limitCurrency.CurrencyId,
                     limitCurrency.Scale, reasons);
-                limitTotals = Totals(limitCurrency);
+                limitTotals = Totals(limitCurrency, reasons);
             }
         }
 
+        // Fail-closed: a decision needs every part answered and the limit-currency total made; the local total plays no part.
         var distinct = reasons.Distinct().ToList();
         if (distinct.Count == 0 && limitTotals?.GrossRiskWithThisOrder is { } risk && limit is { } bound)
         {

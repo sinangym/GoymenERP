@@ -37,7 +37,7 @@ public sealed class PriceList
 
     private PriceList(Guid id, Guid companyId, string name, string currencyCode, PriceListChannel channel,
         PriceListVatBasis vatBasis, long version, string createdBy, DateTimeOffset createdAtUtc, DateTimeOffset updatedAtUtc,
-        List<PriceListVersion> versions)
+        List<PriceListVersion> versions, PriceListScope scope)
     {
         Id = id;
         CompanyId = companyId;
@@ -45,6 +45,7 @@ public sealed class PriceList
         CurrencyCode = currencyCode;
         Channel = channel;
         VatBasis = vatBasis;
+        Scope = scope;
         Version = version;
         CreatedBy = createdBy;
         CreatedAtUtc = createdAtUtc;
@@ -65,6 +66,9 @@ public sealed class PriceList
 
     public PriceListVatBasis VatBasis { get; }
 
+    /// <summary>SAT-D9: whose price this list is (company-wide or one customer's); fixed at creation.</summary>
+    public PriceListScope Scope { get; }
+
     /// <summary>The optimistic-concurrency token; starts at 1 and advances by one per recorded change.</summary>
     public long Version { get; private set; }
 
@@ -82,7 +86,7 @@ public sealed class PriceList
 
     public static PriceList Create(Guid id, Guid companyId, string name, string currencyCode, PriceListChannel channel,
         PriceListVatBasis vatBasis, Guid firstVersionId, DateOnly validFrom, DateOnly? validThrough,
-        IReadOnlyList<PriceListLineInput> lines, string actorId, DateTimeOffset now)
+        IReadOnlyList<PriceListLineInput> lines, string actorId, DateTimeOffset now, PriceListScope? scope = null)
     {
         RequireIdentity(id, "id");
         RequireIdentity(companyId, "companyId");
@@ -93,7 +97,8 @@ public sealed class PriceList
         RequireVatBasis(vatBasis);
         var actor = RequireActor(actorId);
         var first = PriceListVersion.CreateDraft(firstVersionId, 1, validFrom, validThrough, lines, actor, now);
-        return new PriceList(id, companyId, normalizedName, currency, channel, vatBasis, 1, actor, now, now, [first]);
+        var checkedScope = RequireScope(scope ?? PriceListScope.Company);
+        return new PriceList(id, companyId, normalizedName, currency, channel, vatBasis, 1, actor, now, now, [first], checkedScope);
     }
 
     /// <summary>
@@ -236,7 +241,7 @@ public sealed class PriceList
     /// </summary>
     public static PriceList Restore(Guid id, Guid companyId, string name, string currencyCode, PriceListChannel channel,
         PriceListVatBasis vatBasis, long version, string createdBy, DateTimeOffset createdAtUtc, DateTimeOffset updatedAtUtc,
-        IReadOnlyList<PriceListVersion> storedVersions)
+        IReadOnlyList<PriceListVersion> storedVersions, PriceListScope? scope = null)
     {
         RequireIdentity(id, "id");
         RequireIdentity(companyId, "companyId");
@@ -270,7 +275,8 @@ public sealed class PriceList
         }
 
         return new PriceList(id, companyId, NormalizeName(name), NormalizeCurrency(currencyCode), RequireChannel(channel),
-            RequireVatBasis(vatBasis), version, RequireActor(createdBy), createdAtUtc, updatedAtUtc, ordered);
+            RequireVatBasis(vatBasis), version, RequireActor(createdBy), createdAtUtc, updatedAtUtc, ordered,
+            RequireScope(scope ?? PriceListScope.Company));
     }
 
     public static string NormalizeName(string? name)
@@ -306,6 +312,9 @@ public sealed class PriceList
     public static int Scale(decimal value) => (decimal.GetBits(value)[3] >> 16) & 0xFF;
 
     public static string Format(decimal value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static PriceListScope RequireScope(PriceListScope scope) =>
+        PriceListScope.From(scope.Kind, scope.PartyId, scope.CompanyAccountId);
 
     private void RequireVersion(long expectedVersion)
     {
@@ -633,6 +642,8 @@ public static class PriceListRuleCodes
     public const string PublisherPreparedVersion = "price_list_publisher_prepared_version";
     public const string ValidFromInPast = "price_list_valid_from_in_past";
     public const string ValidFromNotAfterPublished = "price_list_valid_from_not_after_published";
+    public const string InvalidScope = "price_list_invalid_scope";
+    public const string ScopeUnavailable = "price_list_scope_unavailable";
 }
 
 /// <summary>A rule of the aggregate refused the change; <see cref="Field"/> names the input it concerns.</summary>

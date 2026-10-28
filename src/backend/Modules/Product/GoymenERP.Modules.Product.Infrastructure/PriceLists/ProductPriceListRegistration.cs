@@ -46,6 +46,8 @@ public static class ProductPriceListRegistration
         services.AddScoped<IProductPriceListServiceV1>(CreateService);
         services.AddScoped<IProductPriceReferenceReaderV1>(CreateReader);
         services.AddScoped<IProductQuantityPriceReferenceReaderV1>(CreateReader);
+        // MOD-02: the SAT-D9 tier chain beside the unchanged V1 readers.
+        services.AddScoped<IProductQuantityPriceReferenceReaderV2>(CreateReader);
         return services;
     }
 
@@ -79,7 +81,9 @@ public static class ProductPriceListRegistration
         serviceProvider.GetRequiredService<ProductPriceListStore>(),
         serviceProvider.GetRequiredService<TimeProvider>(),
         serviceProvider.GetService<ISettingsUnitIdentityCatalogV1>(),
-        ErpPermissions.IsKnown);
+        ErpPermissions.IsKnown,
+        // MOD-02: the Cari owner's answer for a customer-specific list; absent → such a list is refused 503.
+        serviceProvider.GetService<IProductPriceListCustomerPortV1>());
 
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListStore>(),
