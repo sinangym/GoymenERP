@@ -121,9 +121,9 @@ public sealed record CorrectSalesDiscountLimitRequestV1(
 public sealed record SalesDiscountLimitBindingCompanyVersionV1(Guid CompanyId, string? ExpectedVersion);
 
 /// <summary>
-/// SAT-D63/D66: the person's limit groups, by group code, written to EVERY company the actor can act in (the SAT-D66
-/// default) in one all-or-nothing transaction. <c>Companies</c> names exactly those companies with the versions the
-/// editor saw. An empty <c>GroupCodes</c> removes the person from every group.
+/// SAT-D63/D66/D116: the person's limit groups, by group code, written to every company the actor can act in where the
+/// person is an active member (the others are skipped) in one all-or-nothing transaction. <c>Companies</c> names exactly
+/// those member companies with the versions the editor saw. An empty <c>GroupCodes</c> removes the person from every group.
 /// </summary>
 public sealed record SetSalesDiscountLimitBindingRequestV1(
     IReadOnlyList<string>? GroupCodes,
@@ -174,7 +174,8 @@ public sealed record SalesDiscountLimitDefinitionViewV1(
 
 /// <summary>
 /// The limit the Sales check would read for the group on <see cref="SalesDiscountLimitGroupListV1.BusinessDate"/>:
-/// <c>Defined</c> with a percent, or <c>None</c> (no limit: every discount goes to approval, SAT-D34/D36).
+/// <c>Defined</c> with a percent, <c>None</c> (no limit: every discount goes to approval, SAT-D34/D36), or <c>Invalid</c>
+/// (the records contradict their own rules, e.g. a cycle: the Sales check refuses with 503 rather than guessing).
 /// </summary>
 public sealed record SalesDiscountLimitEffectiveViewV1(string State, string? Percent);
 
@@ -182,6 +183,7 @@ public static class SalesDiscountLimitEffectiveStatesV1
 {
     public const string Defined = "Defined";
     public const string None = "None";
+    public const string Invalid = "Invalid";
 }
 
 public sealed record SalesDiscountLimitGroupCreatedV1(Guid Id, string Version);
@@ -191,11 +193,15 @@ public sealed record SalesDiscountLimitBindingViewV1(
     Guid UserId,
     IReadOnlyList<SalesDiscountLimitBindingCompanyViewV1> Companies);
 
-/// <summary>One company: the binding version ("0" = none) and the bound groups there.</summary>
+/// <summary>
+/// One company: the binding version ("0" = none) and the bound groups there. <c>IsMember</c> false (SAT-D116): the person
+/// is not an active member of this company now, so a binding write skips it (version "0", no groups; nothing is read).
+/// </summary>
 public sealed record SalesDiscountLimitBindingCompanyViewV1(
     Guid CompanyId,
     string Version,
-    IReadOnlyList<SalesDiscountLimitBoundGroupV1> Groups);
+    IReadOnlyList<SalesDiscountLimitBoundGroupV1> Groups,
+    bool IsMember);
 
 public sealed record SalesDiscountLimitBoundGroupV1(Guid Id, string Code, string Name, bool IsActive);
 

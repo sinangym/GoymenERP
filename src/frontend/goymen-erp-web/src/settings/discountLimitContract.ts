@@ -102,7 +102,8 @@ export interface LimitDefinition {
 }
 
 export interface EffectiveLimit {
-  readonly state: 'Defined' | 'None'
+  /** `Invalid`: the stored records contradict their own rules (e.g. a cycle); Sales refuses rather than guessing. */
+  readonly state: 'Defined' | 'None' | 'Invalid'
   readonly percent: string | null
 }
 
@@ -157,6 +158,8 @@ export interface BindingCompany {
   readonly companyId: string
   readonly version: string
   readonly groups: readonly BoundGroup[]
+  /** SAT-D116: false = the person does not work in this company; a binding write skips it. */
+  readonly isMember: boolean
 }
 
 export interface Binding {
@@ -281,6 +284,7 @@ function decodeEffective(raw: unknown): EffectiveLimit | null {
   if (!isRecord(raw)) return null
   if (raw.state === 'Defined' && isPercentText(raw.percent)) return { state: 'Defined', percent: raw.percent }
   if (raw.state === 'None' && raw.percent === null) return { state: 'None', percent: null }
+  if (raw.state === 'Invalid' && raw.percent === null) return { state: 'Invalid', percent: null }
   return null
 }
 
@@ -359,7 +363,9 @@ export function decodeBinding(raw: unknown, userId: string): Binding | null {
       groups.push({ id: group.id, code: group.code, name: group.name, isActive: group.isActive })
     }
     if (entry.version === '0' && groups.length > 0) return null
-    companies.push({ companyId: entry.companyId, version: entry.version, groups })
+    if (typeof entry.isMember !== 'boolean') return null
+    if (!entry.isMember && (entry.version !== '0' || groups.length > 0)) return null
+    companies.push({ companyId: entry.companyId, version: entry.version, groups, isMember: entry.isMember })
   }
   if (new Set(companies.map((company) => company.companyId)).size !== companies.length) return null
   return { userId, companies }

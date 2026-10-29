@@ -28,6 +28,7 @@ export const LIMIT_TEXT = {
   passive: 'Pasif',
   noLimitRecorded: 'Kayıt yok',
   noLimit: 'Limit yok — her iskonto onaya gider',
+  invalidLimit: 'Kayıtlar tutarsız — satış bu grubun limitini okuyamaz, iskontolu satır kaydedilemez',
   editLimit: 'Limiti düzenle',
   rename: 'Adı değiştir',
   deactivate: 'Pasife al',
@@ -48,7 +49,7 @@ export const LIMIT_TEXT = {
     'Bağlı limit, bağlı grubun o tarihteki limitine ek puan eklenerek hesaplanır ve %100 ile sınırlıdır; bağlı grubun limiti yoksa iskonto onaya gider.',
   effectiveFromLabel: 'Geçerlilik başlangıcı',
   effectiveFromHelp:
-    'Bugün veya ileri bir tarih. Planlı bir değişiklik varsa yeni kayıt o tarihten önce başlayamaz; planlı kaydı düzeltmek için aynı tarihi seçin.',
+    'Bugün veya ileri bir tarih. Planlı bir değişiklik varsa yeni kayıt o tarihten önce başlayamaz; aynı tarihi seçerseniz yeni kayıt planlı kaydın yerine geçer (planlı kayıt geri çekilir).',
   effectiveFromError: 'Tarih bugünden ve son planlı değişiklikten önce olamaz.',
   scheduledListLabel: 'Planlı değişiklikler',
   correctScheduled: 'Düzelt',
@@ -56,9 +57,9 @@ export const LIMIT_TEXT = {
   correctHeading: 'Planlı limiti düzelt',
   withdrawHeading: 'Planlı limiti geri çek',
   withdrawConfirm:
-    'Planlı kayıt yürürlüğe girmeden geri çekilir; o tarihten sonra da önceki limit geçerli kalır. Yürürlüğe girmiş kayıt geri çekilemez.',
+    'Planlı kayıt yürürlüğe girmeden geri çekilir; o tarihte, varsa ondan önceki planlı kayıt, yoksa bugün geçerli limit geçerli kalır. Daha önce yerine geçilmiş kayıtlar geri gelmez. Yürürlüğe girmiş kayıt geri çekilemez.',
   correctHelp:
-    'Planlı kayıt geri çekilir ve yerine bu kayıt yazılır (tek işlem). Tarih boş bırakılamaz; yürürlüğe girmiş kayıt düzeltilemez, yeni kayıt girilir.',
+    'Planlı kayıt geri çekilir ve yerine bu kayıt yazılır (tek işlem). Tarih, düzeltilen kaydın tarihiyle gelir; değiştirebilirsiniz. Yalnız en son planlı kayıt düzeltilebilir; yürürlüğe girmiş kayıt düzeltilemez, yeni kayıt girilir.',
   deactivateConfirm: 'Pasif grup limite katkı vermez ve yeniden değiştirilemez. Pasife almak istiyor musunuz?',
   save: 'Kaydet',
   cancel: 'Vazgeç',
@@ -70,7 +71,7 @@ export const LIMIT_TEXT = {
     'Sonuç alınamadı; işlem uygulanmış olabilir. "Aynı işlemi yeniden dene" aynı işlem anahtarıyla gönderir ve iki kez uygulanmaz.',
   bindingHeading: 'Kişi → limit grubu bağı',
   bindingIntro:
-    'Bağ, işlem yapabildiğiniz tüm şirketlere birlikte yazılır. Bir şirkette kişi üye değilse, grup yoksa veya grup pasifse hiçbir şirkete yazılmaz.',
+    'Bağ, işlem yapabildiğiniz şirketlerden kişinin çalıştığı şirketlerin tamamına birlikte yazılır; çalışmadığı şirketler atlanır ve aşağıda gösterilir. Kişi sonradan başka bir şirkete katılırsa bağ kendiliğinden genişlemez; yeniden kaydedin. Çalıştığı bir şirkette yetkiniz yoksa, grup yoksa veya grup pasifse hiçbir şirkete yazılmaz.',
   searchLabel: 'Kişi ara',
   searchHelp: 'Ad içinden arayın (en çok 25 sonuç).',
   search: 'Ara',
@@ -85,6 +86,8 @@ export const LIMIT_TEXT = {
   columnCompany: 'Şirket',
   columnGroups: 'Gruplar',
   noBinding: 'Bağ yok',
+  skippedCompany: 'Atlanır — kişi bu şirkette çalışmıyor',
+  memberOfNone: 'Kişi, işlem yapabildiğiniz şirketlerin hiçbirinde çalışmıyor; bağ yazılamaz.',
   groupsLegend: 'Bağlanacak gruplar (bu şirketin etkin grupları)',
   noActiveGroups: 'Bağlanabilecek etkin grup yok.',
   saveBinding: 'Tüm şirketlere kaydet',
@@ -124,7 +127,7 @@ export function refusalText(status: number, code: string | null, companyLabel: s
     case LIMIT_PROBLEM.recordWithdrawn:
       return 'Bu limit kaydı daha önce geri çekildi.'
     case LIMIT_PROBLEM.effectiveFromBeforeScheduled:
-      return 'Bu grubun daha ileri tarihli planlı bir limiti var; yeni kayıt o tarihten önce başlayamaz. Planlı kaydı düzeltmek için aynı tarihi seçin.'
+      return 'Bu grubun daha ileri tarihli planlı bir limiti var; kayıt o tarihten önce başlayamaz. O tarihte geçerli olacak değeri değiştirmek için en son planlı kaydı düzeltin veya geri çekin.'
     case LIMIT_PROBLEM.bindingCompaniesMismatch:
       return 'Şirket listeniz değişmiş; güncel hâli yüklendi, yeniden kaydedin.'
     case LIMIT_PROBLEM.bindingPersonNotMember:

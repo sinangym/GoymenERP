@@ -93472,7 +93472,8 @@
         "required": [
           "companyId",
           "version",
-          "groups"
+          "groups",
+          "isMember"
         ],
         "type": "object",
         "properties": {
@@ -93488,6 +93489,9 @@
             "items": {
               "$ref": "#/components/schemas/SalesDiscountLimitBoundGroupV1"
             }
+          },
+          "isMember": {
+            "type": "boolean"
           }
         }
       },

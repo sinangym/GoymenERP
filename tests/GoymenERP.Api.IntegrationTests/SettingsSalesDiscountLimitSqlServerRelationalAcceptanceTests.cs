@@ -309,7 +309,7 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
             await run.ScalarAsync<string>("SELECT [Operation] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
             await run.ScalarAsync<string>("SELECT [ActorId] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
             await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.reason') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
-            await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.replacesLimitVersion') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
+            await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.replacesLimitVersions[0]') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'"),
             await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.limitVersion') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-correct'")));
         Assert.Equal(("settings.sales-discount-limit.withdrawn.v1", "WithdrawLimit", "SENTETIK geri çekme", "3", 1), (
             await run.ScalarAsync<string>("SELECT [EventType] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-withdraw'"),
@@ -331,6 +331,35 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
         {
             await AssertProblemAsync(cycle, HttpStatusCode.UnprocessableEntity, SalesDiscountLimitProblemCodesV1.LinkCycle);
         }
+
+        // Review P2-1: schedule → same-date replacement → withdraw the replacement: the earlier limit stays in force and the
+        // replaced record never comes back. Today 5 %; 50 % is scheduled for day +10 by mistake; a new 35 % record on the
+        // same date REPLACES it (withdrawn in the same save, audited as a correction); withdrawing the 35 % leaves 5 %.
+        var z = await run.CreateGroupAsync(client, "w-create-z", "Z", "Z");
+        await run.SetLimitAsync(client, "w-z-1", z, "1", new("Fixed", "5", null, null));
+        await run.SetLimitAsync(client, "w-z-2", z, "2", new("Fixed", "50", null, null, start));
+        await run.SetLimitAsync(client, "w-z-3", z, "3", new("Fixed", "35", null, null, start));
+        Assert.Equal("2>3", await run.ScalarAsync<string>(
+            "SELECT STRING_AGG(CONCAT([LimitVersion], '>', COALESCE(CONVERT(nvarchar(20), [ReplacedByVersion]), '-')), ';') "
+            + "FROM [settings].[SalesDiscountLimitWithdrawals] WHERE [LimitGroupId] = @id", ("@id", z)));
+        Assert.Equal(("settings.sales-discount-limit.corrected.v1", "2"), (
+            await run.ScalarAsync<string>("SELECT [EventType] FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-z-3'"),
+            await run.ScalarAsync<string>("SELECT JSON_VALUE([AfterJson], '$.replacesLimitVersions[0]') FROM [audit].[AuditEvents] WHERE [CorrelationId] = N'sales-limit-w-z-3'")));
+        var zView = (await run.JsonAsync(client, Groups)).GetProperty("groups").EnumerateArray()
+            .Single(group => group.GetProperty("code").GetString() == "Z");
+        Assert.Equal("35", Assert.Single(zView.GetProperty("scheduled").EnumerateArray()).GetProperty("limit").GetProperty("percent").GetString());
+
+        await run.CommandAsync(client, HttpMethod.Post, $"{Groups}/{z:D}/limit/withdrawal", "w-z-withdraw",
+            new WithdrawSalesDiscountLimitRequestV1("4", "3", "SENTETIK planlı değişiklik olmasın"), HttpStatusCode.NoContent);
+        await using (var port = run.PolicyPort(CompanyA))
+        {
+            var kept = await port.Value.GetSalesDiscountLimitAsync(z, start);
+            Assert.Equal((5m, 1L, (DateOnly?)null), (kept.MaximumDiscountPercent, kept.Profile.Version, kept.EffectiveThrough));
+            Assert.Equal(5m, (await port.Value.GetSalesDiscountLimitAsync(z, start.AddDays(400))).MaximumDiscountPercent);
+        }
+
+        Assert.Empty((await run.JsonAsync(client, Groups)).GetProperty("groups").EnumerateArray()
+            .Single(group => group.GetProperty("code").GetString() == "Z").GetProperty("scheduled").EnumerateArray());
     }
 
     [SqlServerFact]
@@ -448,29 +477,54 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
         await run.SetLimitAsync(clientA, "a-limit-2", managerA, "1", new("Linked", null, sellerA, "3"));
         var path = $"{SettingsEndpoints.SalesDiscountLimitsPath}/bindings/{person:D}";
 
-        // The editor's view covers every company they can act in, with version "0" before any binding.
+        // The editor's view covers every company they can act in, with version "0" before any binding; SAT-D116 (Sinan,
+        // 2026-10-29): a company where the person is not a member (C) is marked skipped and nothing of it is read.
         var initial = await run.JsonAsync(clientA, path);
-        Assert.Equal([CompanyA, CompanyB, CompanyC], initial.GetProperty("companies").EnumerateArray()
-            .Select(company => company.GetProperty("companyId").GetGuid()).Order().ToArray());
-        Assert.All(initial.GetProperty("companies").EnumerateArray(), company =>
-            Assert.Equal("0", company.GetProperty("version").GetString()));
+        var initialCompanies = initial.GetProperty("companies").EnumerateArray()
+            .ToDictionary(company => company.GetProperty("companyId").GetGuid());
+        Assert.Equal([CompanyA, CompanyB, CompanyC], initialCompanies.Keys.Order().ToArray());
+        Assert.All(initialCompanies.Values, company => Assert.Equal("0", company.GetProperty("version").GetString()));
+        Assert.Equal((true, true, false), (initialCompanies[CompanyA].GetProperty("isMember").GetBoolean(),
+            initialCompanies[CompanyB].GetProperty("isMember").GetBoolean(), initialCompanies[CompanyC].GetProperty("isMember").GetBoolean()));
         var allZero = Companies(("0", CompanyA), ("0", CompanyB), ("0", CompanyC));
 
-        // The person is not a member of C: refused for the whole request (fail-closed), nothing written.
+        // Naming a company where the person is not a member is a stale list: 422, nothing written.
         using (var notMember = await clientA.SendAsync(Json(HttpMethod.Put, path, "bind-1",
                    new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK", "MUDUR"], allZero, "SENTETIK atama"))))
         {
-            var problem = await AssertProblemAsync(notMember, HttpStatusCode.UnprocessableEntity,
-                SalesDiscountLimitProblemCodesV1.BindingPersonNotMember);
-            Assert.Equal(CompanyC, problem.GetProperty("companyId").GetGuid());
+            await AssertProblemAsync(notMember, HttpStatusCode.UnprocessableEntity,
+                SalesDiscountLimitProblemCodesV1.BindingCompaniesMismatch);
         }
 
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMemberships]"));
 
-        // A member of C now, but C has no such group: the failing company refuses ALL companies (no partial write).
+        // SAT-D116: written to the member companies A and B in one request; C is skipped and stays untouched.
+        await run.CommandAsync(clientA, HttpMethod.Put, path, "bind-1b",
+            new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK"], Companies(("0", CompanyA), ("0", CompanyB)),
+                "SENTETIK atama"),
+            HttpStatusCode.NoContent);
+        Assert.Equal((2, 0), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMemberships] WHERE [UserId] = @user",
+                ("@user", person)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMemberships] WHERE [UserId] = @user AND [CompanyId] = @c",
+                ("@user", person), ("@c", CompanyC))));
+
+        // A later membership of C does NOT extend the binding by itself (fail-closed): C is now offered at version "0" and
+        // reads no group for the person until the binding is written again.
         await run.AddMembershipAsync(person, CompanyC);
+        var joined = (await run.JsonAsync(clientA, path)).GetProperty("companies").EnumerateArray()
+            .Single(company => company.GetProperty("companyId").GetGuid() == CompanyC);
+        Assert.Equal((true, "0", 0), (joined.GetProperty("isMember").GetBoolean(), joined.GetProperty("version").GetString(),
+            joined.GetProperty("groups").GetArrayLength()));
+        await using (var sales = run.SalesPorts(person, CompanyC))
+        {
+            Assert.Empty(await sales.Groups.GetCurrentActorLimitGroupsAsync());
+        }
+
+        // C has no such group: the failing company refuses ALL companies (no partial write).
+        var afterFirst = Companies(("1", CompanyA), ("1", CompanyB), ("0", CompanyC));
         using (var missing = await clientA.SendAsync(Json(HttpMethod.Put, path, "bind-2",
-                   new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK", "MUDUR"], allZero, "SENTETIK atama"))))
+                   new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK", "MUDUR"], afterFirst, "SENTETIK atama"))))
         {
             var problem = await AssertProblemAsync(missing, HttpStatusCode.UnprocessableEntity,
                 SalesDiscountLimitProblemCodesV1.BindingGroupNotFound);
@@ -478,28 +532,28 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
                 problem.GetProperty("groupCode").GetString()));
         }
 
-        Assert.Equal((0, 0, 0), (
+        Assert.Equal((2, 2, 2), (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMemberships]"),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMembershipGroups]"),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType] = N'Settings.SalesDiscountLimitBinding'")));
 
-        // Only some of the companies: the editor must name every company they can act in.
+        // Only some of the member companies: the editor must name every company where the person works.
         using (var partial = await clientA.SendAsync(Json(HttpMethod.Put, path, "bind-3",
-                   new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK"], Companies(("0", CompanyA), ("0", CompanyB)),
+                   new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK"], Companies(("1", CompanyA), ("1", CompanyB)),
                        "SENTETIK atama"))))
         {
             await AssertProblemAsync(partial, HttpStatusCode.UnprocessableEntity,
                 SalesDiscountLimitProblemCodesV1.BindingCompaniesMismatch);
         }
 
-        // Every company has both groups: ONE request writes all three, each with its own audit event in its own company.
+        // Every member company has both groups: ONE request writes all three, each with its own audit event in its company.
         await run.CreateGroupAsync(clientC, "c-1", "SATIS-DESTEK", "Satış Destek");
         await run.CreateGroupAsync(clientC, "c-2", "MUDUR", "Müdür");
         await run.CommandAsync(clientA, HttpMethod.Put, path, "bind-4",
-            new SetSalesDiscountLimitBindingRequestV1(["mudur", "SATIS-DESTEK"], allZero, "SENTETIK atama"),
+            new SetSalesDiscountLimitBindingRequestV1(["mudur", "SATIS-DESTEK"], afterFirst, "SENTETIK atama"),
             HttpStatusCode.NoContent);
-        Assert.Equal((3, 6), (
-            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMemberships] WHERE [UserId] = @user AND [Version] = 1",
+        Assert.Equal((3, 8), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMemberships] WHERE [UserId] = @user",
                 ("@user", person)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMembershipGroups] WHERE [UserId] = @user",
                 ("@user", person))));
@@ -510,10 +564,10 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
 
         // Replay: the stored 204 with no second effect; a stale version per company is 409 naming the company.
         await run.CommandAsync(clientA, HttpMethod.Put, path, "bind-4",
-            new SetSalesDiscountLimitBindingRequestV1(["mudur", "SATIS-DESTEK"], allZero, "SENTETIK atama"),
+            new SetSalesDiscountLimitBindingRequestV1(["mudur", "SATIS-DESTEK"], afterFirst, "SENTETIK atama"),
             HttpStatusCode.NoContent, replayed: true);
         using (var stale = await clientA.SendAsync(Json(HttpMethod.Put, path, "bind-5",
-                   new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK"], Companies(("1", CompanyA), ("0", CompanyB), ("1", CompanyC)),
+                   new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK"], Companies(("2", CompanyA), ("1", CompanyB), ("1", CompanyC)),
                        "SENTETIK daraltma"))))
         {
             var problem = await AssertProblemAsync(stale, HttpStatusCode.Conflict, SalesDiscountLimitProblemCodesV1.VersionConflict);
@@ -553,7 +607,7 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
 
         // Binding to a passive group is refused for every company.
         using (var passive = await clientA.SendAsync(Json(HttpMethod.Put, path, "bind-6",
-                   new SetSalesDiscountLimitBindingRequestV1(["MUDUR"], Companies(("1", CompanyA), ("1", CompanyB), ("1", CompanyC)),
+                   new SetSalesDiscountLimitBindingRequestV1(["MUDUR"], Companies(("2", CompanyA), ("2", CompanyB), ("1", CompanyC)),
                        "SENTETIK"))))
         {
             var problem = await AssertProblemAsync(passive, HttpStatusCode.UnprocessableEntity,
@@ -561,18 +615,29 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
             Assert.Equal(CompanyA, problem.GetProperty("companyId").GetGuid());
         }
 
-        // Without the name in ONE of the companies the editor can act in: 403 and nothing written anywhere.
+        // SAT-D116: without the name in ONE company where the person works (B): 403 and nothing written anywhere.
         var (narrowSubject, _) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, Permission);
         await run.GrantAsync(TestUsers.CompanyAViewer, CompanyB, "sales.drafts.read");
         using var narrow = run.Client(narrowSubject, CompanyA);
         var before = await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMembershipGroups]");
         using (var forbidden = await narrow.SendAsync(Json(HttpMethod.Put, path, "bind-narrow",
-                   new SetSalesDiscountLimitBindingRequestV1([], Companies(("1", CompanyA), ("1", CompanyB)), "SENTETIK"))))
+                   new SetSalesDiscountLimitBindingRequestV1([], Companies(("2", CompanyA), ("2", CompanyB)), "SENTETIK"))))
         {
             Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
         }
 
         Assert.Equal(before, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMembershipGroups]"));
+
+        // A person who works in none of the narrow editor's companies (only C) cannot be bound by them: 422, nothing written.
+        var outsider = await run.PersonAsync("SENTETIK Dış", CompanyC);
+        using (var none = await narrow.SendAsync(Json(HttpMethod.Put, $"{SettingsEndpoints.SalesDiscountLimitsPath}/bindings/{outsider:D}",
+                   "bind-outsider", new SetSalesDiscountLimitBindingRequestV1(["SATIS-DESTEK"], Companies(("0", CompanyA)), "SENTETIK"))))
+        {
+            await AssertProblemAsync(none, HttpStatusCode.UnprocessableEntity, SalesDiscountLimitProblemCodesV1.BindingPersonNotMember);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[SalesDiscountLimitMemberships] WHERE [UserId] = @user", ("@user", outsider)));
 
         // The people picker lists the company's active members (id + name only).
         var people = await run.JsonAsync(clientA, $"{SettingsEndpoints.SalesDiscountLimitsPath}/people?q=SENTETIK%20Sat");

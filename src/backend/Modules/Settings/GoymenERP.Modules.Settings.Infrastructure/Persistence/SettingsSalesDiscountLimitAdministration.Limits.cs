@@ -14,7 +14,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// <item><b>Dates</b>: a record takes effect from its business date (omitted = today's Europe/Istanbul business date) and
 /// applies by itself from then on. A date before today is refused (<c>…_effective_from_past</c>), and so is a date before
 /// the group's latest non-withdrawn record (<c>…_effective_from_before_scheduled</c>): the records form one ordered
-/// timeline; a record on the same date as a scheduled one supersedes it.</item>
+/// timeline. A new record on the same date as a not-yet-effective record REPLACES it: that record is withdrawn in the same
+/// save (a correction, audited as such), so no withdrawal can ever bring back a hidden record (review P2-1).</item>
 /// <item><b>Immutability</b>: a record row never changes. A record whose date is still ahead can be withdrawn (an
 /// insert-only withdrawal row) or corrected (withdrawn and replaced by a new record in the same save); a record in force
 /// (its date is today or earlier) is refused with <c>…_record_in_effect</c> — a new record is entered instead.</item>
@@ -197,6 +198,7 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
 
         // The group's records as they would be after the change.
         SalesDiscountLimitVersionDataV1? candidate = null;
+        SalesDiscountLimitVersionDataV1? superseded = null;
         IReadOnlyList<SalesDiscountLimitGroupRow> chain = [];
         if (refusal is null)
         {
@@ -218,9 +220,13 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
                     : latest is not null && effectiveFrom < latest.EffectiveFrom
                         ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.EffectiveFromBeforeScheduled,
                             "Planlı limit var.",
-                            "Bu grubun "
-                            + latest.EffectiveFrom.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
-                            + " tarihli planlı limiti var; yeni kayıt bu tarihten önce başlayamaz. Planlı kaydı düzeltmek veya geri çekmek için o kaydı seçin.")
+                            target is null
+                                ? "Bu grubun " + latest.EffectiveFrom.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
+                                  + " tarihli planlı limiti var; yeni kayıt bu tarihten önce başlayamaz. O tarihte geçerli olacak"
+                                  + " değeri değiştirmek için planlı kaydı düzeltin veya geri çekin."
+                                : "Bu kayıttan sonra " + latest.EffectiveFrom.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
+                                  + " tarihli başka bir planlı kayıt var; düzeltilen kayıt ondan önce başlayamaz. Önce sonraki"
+                                  + " planlı kaydı geri çekin veya düzeltin.")
                     : values.LinkedGroupId is { } linkedId && !groups.ContainsKey(linkedId)
                         ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.LinkedGroupNotFound, "Bağlı grup bulunamadı.",
                             "Bağlanan limit grubu bu şirkette yok.")
@@ -228,6 +234,18 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
                         ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.LinkedGroupInactive, "Bağlı grup pasif.",
                             "Pasif bir limit grubuna bağlanılamaz.")
                     : null;
+                if (refusal is null && latest is not null && latest.EffectiveFrom == effectiveFrom
+                    && latest.EffectiveFrom > today && !(target is null && SameLimit(latest, candidate)))
+                {
+                    // SAT-D84 (review P2-1): a new record on the same date as a not-yet-effective record REPLACES it — that
+                    // record is withdrawn in the same save — so withdrawing the new one later can never bring a hidden
+                    // record back. (The same limit again on that date is a no-op below and keeps the scheduled record.)
+                    superseded = latest;
+                    remaining = remaining
+                        .Select(version => version.Version == latest.Version ? version with { IsWithdrawn = true } : version)
+                        .ToArray();
+                }
+
                 remaining = [.. remaining, candidate];
             }
 
@@ -274,11 +292,19 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
                 await StoreRefusalAsync(change.CommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
         }
 
+        if (SettingsBusinessDate.Today(timeProvider) != today)
+        {
+            // The business day turned while the command was checked (review P3-6): a record may have just taken effect.
+            // Nothing is written or stored; the editor re-reads and decides again.
+            return Done(change.LogName, metadata, subject, Unstored(Answers.VersionConflict(), metadata));
+        }
+
         var now = timeProvider.GetUtcNow();
         var versionBefore = row!.Version;
         var before = data[change.GroupId];
-        var previous = target is not null
-            ? records[(change.GroupId, target.Version)]
+        var replaced = new[] { target, superseded }.OfType<SalesDiscountLimitVersionDataV1>().ToArray();
+        var previous = replaced.Length > 0
+            ? records[(change.GroupId, replaced[0].Version)]
             : SalesDiscountLimitCalculatorV1.LatestRecord(before) is { } latestBefore
                 ? records[(change.GroupId, latestBefore.Version)]
                 : null;
@@ -304,13 +330,13 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
             row.LimitVersion = record.Version;
         }
 
-        if (target is not null)
+        foreach (var withdrawn in replaced)
         {
             database.SalesDiscountLimitWithdrawals.Add(new SalesDiscountLimitWithdrawalRow
             {
                 CompanyId = companyId,
                 LimitGroupId = change.GroupId,
-                LimitVersion = target.Version,
+                LimitVersion = withdrawn.Version,
                 ReplacedByVersion = record?.Version,
                 WithdrawnAtUtc = now,
                 WithdrawnBy = metadata.ActorId,
@@ -326,17 +352,17 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
             database.Entry(fenced).Property(group => group.UpdatedAtUtc).IsModified = true;
         }
 
-        var (eventType, operation, after) = (target, record) switch
+        var replacedVersions = replaced.Select(version => version.Version).ToArray();
+        var (eventType, operation, after) = (replaced.Length, record) switch
         {
-            (null, { } added) => ("settings.sales-discount-limit.recorded.v1", "RecordLimit", LimitSnapshot(row, added, null)),
-            ({ } withdrawn, null) => ("settings.sales-discount-limit.withdrawn.v1", "WithdrawLimit",
-                WithdrawalSnapshot(row, records[(change.GroupId, withdrawn.Version)])),
+            (0, { } added) => ("settings.sales-discount-limit.recorded.v1", "RecordLimit", LimitSnapshot(row, added, [])),
+            (_, null) => ("settings.sales-discount-limit.withdrawn.v1", "WithdrawLimit",
+                WithdrawalSnapshot(row, records[(change.GroupId, target!.Version)])),
             (_, { } replacement) => ("settings.sales-discount-limit.corrected.v1", "CorrectLimit",
-                LimitSnapshot(row, replacement, target!.Version)),
-            _ => throw new InvalidOperationException("Limit değişikliği boş olamaz."),
+                LimitSnapshot(row, replacement, replacedVersions)),
         };
         Audit(auditEvents, companyId, eventType, GroupEntityType, subject, operation, versionBefore, row.Version, scope,
-            previous is null ? null : LimitSnapshot(row, previous, null), after, change.Reason, metadata);
+            previous is null ? null : LimitSnapshot(row, previous, []), after, change.Reason, metadata);
         await RequireStillAsync(companyId, cancellationToken);
         return Done(change.LogName, metadata, subject, await SaveChangeAsync(change.CommandName, Answers.NoContent(), keyHash,
             requestHash, metadata, _ => Task.FromResult(Answers.VersionConflict()), cancellationToken));
@@ -380,7 +406,7 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
     }
 
     private static object LimitSnapshot(SalesDiscountLimitGroupRow group, SalesDiscountLimitVersionRow record,
-        long? replacesLimitVersion) => new
+        IReadOnlyList<long> replacesLimitVersions) => new
     {
         GroupId = group.Id,
         group.CompanyId,
@@ -392,7 +418,7 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
         record.LinkedGroupId,
         ExtraPoints = record.ExtraPoints is { } extra ? SalesDiscountLimitCalculatorV1.Format(extra) : null,
         record.EffectiveFrom,
-        ReplacesLimitVersion = replacesLimitVersion,
+        ReplacesLimitVersions = replacesLimitVersions,
     };
 
     private static object WithdrawalSnapshot(SalesDiscountLimitGroupRow group, SalesDiscountLimitVersionRow record) => new

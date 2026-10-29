@@ -115,7 +115,8 @@ export function groupList(overrides: Record<string, unknown> = {}) {
   }
 }
 
-export function binding(versionA = '1', versionB = '1') {
+/** SAT-D116: `memberB` false = the person does not work in company B (skipped: version "0", no groups). */
+export function binding(versionA = '1', versionB = '1', memberB = true) {
   return {
     userId: PERSON,
     companies: [
@@ -123,14 +124,16 @@ export function binding(versionA = '1', versionB = '1') {
         companyId: COMPANY_A,
         version: versionA,
         groups: versionA === '0' ? [] : [{ id: GROUP_SELLER, code: 'SATIS-DESTEK', name: 'Satış Destek', isActive: true }],
+        isMember: true,
       },
       {
         companyId: COMPANY_B,
-        version: versionB,
+        version: memberB ? versionB : '0',
         groups:
-          versionB === '0'
+          versionB === '0' || !memberB
             ? []
             : [{ id: '55555555-5555-4555-8555-555555555555', code: 'SATIS-DESTEK', name: 'Satış Destek', isActive: true }],
+        isMember: memberB,
       },
     ],
   }

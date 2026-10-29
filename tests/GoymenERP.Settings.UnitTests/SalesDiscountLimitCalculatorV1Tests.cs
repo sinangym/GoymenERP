@@ -234,6 +234,35 @@ public sealed class SalesDiscountLimitCalculatorV1Tests
     }
 
     [Fact]
+    public void Review_p2_1_a_replaced_same_date_record_and_its_withdrawn_replacement_leave_the_earlier_limit_in_force()
+    {
+        // 5 % today; 50 % scheduled for day +10 (v2), replaced on the same date by 35 % (v3, so v2 is withdrawn with it);
+        // then v3 is withdrawn too. Nothing scheduled remains and 5 % stays in force: the replaced 50 % never comes back.
+        var groups = Groups(Group(Seller, true,
+            Fixed(Seller, 1, 5m, Day),
+            Fixed(Seller, 2, 50m, Day.AddDays(10)) with { IsWithdrawn = true },
+            Fixed(Seller, 3, 35m, Day.AddDays(10)) with { IsWithdrawn = true }));
+
+        var resolution = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(10));
+
+        Assert.Equal((5m, 1L, (DateOnly?)null), (resolution.Percent, resolution.Record!.Version, resolution.EffectiveThrough));
+        Assert.Empty(SalesDiscountLimitCalculatorV1.ScheduledAfter(groups[Seller], Day));
+    }
+
+    [Fact]
+    public void Review_p2_1_a_same_date_record_left_in_place_would_be_brought_back_by_withdrawing_its_replacement()
+    {
+        // Why the store withdraws the replaced record: if it stayed active (only shadowed by a higher version on its date),
+        // withdrawing the replacement would bring the hidden 50 % back. This pins the calculator behaviour the store guards.
+        var groups = Groups(Group(Seller, true,
+            Fixed(Seller, 1, 5m, Day),
+            Fixed(Seller, 2, 50m, Day.AddDays(10)),
+            Fixed(Seller, 3, 35m, Day.AddDays(10)) with { IsWithdrawn = true }));
+
+        Assert.Equal(50m, SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(10)).Percent);
+    }
+
+    [Fact]
     public void Sat_d84_after_a_withdrawal_a_later_record_may_start_before_the_withdrawn_ones_date()
     {
         var groups = Groups(Group(Seller, true,

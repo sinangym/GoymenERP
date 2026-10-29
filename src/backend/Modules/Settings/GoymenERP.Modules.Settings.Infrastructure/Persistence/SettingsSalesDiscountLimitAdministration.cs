@@ -322,10 +322,15 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
             result.Answer.Code, result.IsReplay);
 
     private static SalesDiscountLimitEffectiveViewV1 EffectiveView(SalesDiscountLimitResolutionV1 resolution) =>
-        resolution.Outcome == SalesDiscountLimitResolutionOutcomeV1.Defined
-            ? new SalesDiscountLimitEffectiveViewV1(SalesDiscountLimitEffectiveStatesV1.Defined,
-                SalesDiscountLimitCalculatorV1.Format(resolution.Percent!.Value))
-            : new SalesDiscountLimitEffectiveViewV1(SalesDiscountLimitEffectiveStatesV1.None, null);
+        resolution.Outcome switch
+        {
+            SalesDiscountLimitResolutionOutcomeV1.Defined => new SalesDiscountLimitEffectiveViewV1(
+                SalesDiscountLimitEffectiveStatesV1.Defined, SalesDiscountLimitCalculatorV1.Format(resolution.Percent!.Value)),
+            SalesDiscountLimitResolutionOutcomeV1.None => new SalesDiscountLimitEffectiveViewV1(
+                SalesDiscountLimitEffectiveStatesV1.None, null),
+            // Review P3-5: contradictory records are shown as such, never as "no limit" (Sales answers 503 for them).
+            _ => new SalesDiscountLimitEffectiveViewV1(SalesDiscountLimitEffectiveStatesV1.Invalid, null),
+        };
 
     private static SalesDiscountLimitDefinitionViewV1 DefinitionView(SalesDiscountLimitVersionRow record) => new SalesDiscountLimitDefinitionViewV1(
         Text(record.Version),

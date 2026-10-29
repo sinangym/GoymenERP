@@ -226,7 +226,9 @@ function GroupsSection({
                 <td>
                   {group.effectiveLimit.state === 'Defined' && group.effectiveLimit.percent !== null
                     ? percentLabel(group.effectiveLimit.percent)
-                    : LIMIT_TEXT.noLimit}
+                    : group.effectiveLimit.state === 'Invalid'
+                      ? LIMIT_TEXT.invalidLimit
+                      : LIMIT_TEXT.noLimit}
                 </td>
                 <td>
                   {group.scheduled.length === 0 ? (
@@ -249,15 +251,19 @@ function GroupsSection({
                           </span>
                           {group.isActive ? (
                             <span className={styles.actions}>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                aria-label={`${LIMIT_TEXT.correctScheduled} — ${group.code} ${businessDateLabel(entry.limit.effectiveFrom)}`}
-                                onClick={() => setEditor({ kind: 'correct', group, record: entry.limit })}
-                              >
-                                {LIMIT_TEXT.correctScheduled}
-                              </Button>
+                              {/* Review P3-1: only the LAST scheduled record can be corrected in place (records stay one
+                                  ordered timeline); an earlier one is withdrawn, or corrected after the later ones go. */}
+                              {entry === group.scheduled.at(-1) ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  aria-label={`${LIMIT_TEXT.correctScheduled} — ${group.code} ${businessDateLabel(entry.limit.effectiveFrom)}`}
+                                  onClick={() => setEditor({ kind: 'correct', group, record: entry.limit })}
+                                >
+                                  {LIMIT_TEXT.correctScheduled}
+                                </Button>
+                              ) : null}
                               <Button
                                 type="button"
                                 size="sm"
@@ -923,7 +929,10 @@ function BindingForm({
   readonly companyLabel: (companyId: string | null) => string | null
   readonly onReload: () => void
 }) {
-  const own = binding.companies.find((company) => company.companyId === companyId)
+  // SAT-D116 (EK15, Sinan 2026-10-29): the binding is written only to the companies where the person works; the others are
+  // skipped and shown as such. Nothing can be written when the person works in none of them.
+  const members = binding.companies.filter((company) => company.isMember)
+  const own = members.find((company) => company.companyId === companyId) ?? members[0]
   const [selected, setSelected] = useState<ReadonlySet<string>>(
     () => new Set((own?.groups ?? []).filter((group) => group.isActive).map((group) => group.code)),
   )
@@ -944,9 +953,10 @@ function BindingForm({
   async function submit(event: FormEvent) {
     event.preventDefault()
     setNotice(null)
+    if (members.length === 0) return
     const body = {
       groupCodes: [...selected].sort(),
-      companies: binding.companies.map((company) => ({ companyId: company.companyId, expectedVersion: company.version })),
+      companies: members.map((company) => ({ companyId: company.companyId, expectedVersion: company.version })),
       reason: reason.trim(),
     }
     const outcome = await attempt.run({ person: person.userId, ...body }, (idempotencyKey) =>
@@ -982,7 +992,9 @@ function BindingForm({
             <tr key={company.companyId}>
               <td>{companyLabel(company.companyId)}</td>
               <td>
-                {company.groups.length === 0
+                {!company.isMember
+                  ? LIMIT_TEXT.skippedCompany
+                  : company.groups.length === 0
                   ? LIMIT_TEXT.noBinding
                   : company.groups
                       .map((group) => (group.isActive ? group.code : `${group.code} (${LIMIT_TEXT.passive})`))
@@ -992,6 +1004,7 @@ function BindingForm({
           ))}
         </tbody>
       </table>
+      {members.length === 0 ? <p role="alert">{LIMIT_TEXT.memberOfNone}</p> : null}
       <form className={styles.form} onSubmit={(event) => void submit(event)} aria-label={LIMIT_TEXT.saveBinding}>
         <fieldset className={styles.fieldset}>
           <legend>{LIMIT_TEXT.groupsLegend}</legend>

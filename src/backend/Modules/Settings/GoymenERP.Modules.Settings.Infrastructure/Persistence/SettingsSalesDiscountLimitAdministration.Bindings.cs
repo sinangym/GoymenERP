@@ -12,19 +12,25 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
-/// SAT-D63 / SAT-D66 (EK11 implementation note): the person → limit group binding is stored PER COMPANY (the Sales port
-/// reads it per company, and a later company-specific split needs no schema change), and by default one command writes the
-/// same binding to EVERY company the actor can act in:
+/// SAT-D63 / SAT-D66 (EK11 implementation note) and SAT-D116 (<c>docs/decisions/SINAN_KARARLARI_2026-10-29_SATIS_EK15.md</c>:
+/// "bağ yalnız kişinin üye olduğu şirketlere yazılır; üye olmadığı şirketler atlanır ve atlanan şirketler ekranda
+/// gösterilir"): the person → limit group binding is stored PER COMPANY (the Sales port reads it per company, and a later
+/// company-specific split needs no schema change), and one command writes the same binding to every company the actor can
+/// act in WHERE THE PERSON IS AN ACTIVE MEMBER now (the Identity owner's answer through the host's port); the other
+/// companies are skipped, untouched, and the read shows them as skipped (<c>isMember = false</c>):
 /// <list type="bullet">
-/// <item>The request names exactly those companies with the binding version the editor saw in each ("0" = none);
-/// any other set is 422 <c>settings_discount_limit_binding_companies_mismatch</c> — the editor re-reads, nothing is
-/// guessed. A company-specific binding written later is therefore never overwritten unseen: its version is in the
-/// request (409 per company otherwise).</item>
-/// <item>The actor must hold the name company-wide in EVERY company (403 otherwise, nothing written), measured first and
-/// re-measured fresh before the save.</item>
-/// <item>The person must be an active member of every company now (the Identity owner's answer through the host's port);
-/// a company where they are not is 422 <c>settings_discount_limit_binding_person_not_member</c> for the whole request
-/// (fail-closed; no partial write).</item>
+/// <item>The request names exactly those member companies with the binding version the editor saw in each ("0" = none);
+/// any other set (membership changed meanwhile) is 422 <c>settings_discount_limit_binding_companies_mismatch</c> — the
+/// editor re-reads, nothing is guessed. A company-specific binding written later is therefore never overwritten unseen:
+/// its version is in the request (409 per company otherwise).</item>
+/// <item>The actor must hold the name company-wide in the server company and in EVERY member company (403 otherwise,
+/// nothing written), measured first and re-measured fresh before the save. A skipped company needs no authority: nothing
+/// there is read or written.</item>
+/// <item>A person who is a member of none of the actor's companies cannot be bound: 422
+/// <c>settings_discount_limit_binding_person_not_member</c> (nothing to write).</item>
+/// <item>A company the actor cannot access is never part of the command (EK15): the person has no limit there until
+/// someone who can act there binds them. A later membership (or leaving a company) neither extends nor removes an
+/// existing binding by itself — the person is bound again (fail-closed, EK15 "Sınırlar").</item>
 /// <item>Groups are matched by CODE in each company (group ids are company-scoped); a code missing in a company is 422
 /// <c>…_binding_group_not_found</c>, a passive one 422 <c>…_binding_group_inactive</c>, both naming the company.</item>
 /// <item>All companies are written in ONE SQL transaction — one Settings context per company over the same connection, so
@@ -50,7 +56,9 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
         }
 
         var companies = ActorCompanies();
-        foreach (var company in companies)
+        var members = await MemberCompaniesAsync(contextCompany, currentUser.UserId ?? string.Empty, userId, companies,
+            cancellationToken);
+        foreach (var company in members)
         {
             await RequireAsync(company, cancellationToken);
         }
@@ -62,11 +70,18 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
         {
             foreach (var company in companies)
             {
+                if (!members.Contains(company))
+                {
+                    // Skipped (SAT-D116): the person does not work here now; nothing of this company is read or written.
+                    views.Add(new SalesDiscountLimitBindingCompanyViewV1(company, "0", [], IsMember: false));
+                    continue;
+                }
+
                 await using var store = await OpenCompanyAsync(company, contextCompany, transaction: null, cancellationToken);
                 var current = await ReadBindingAsync(store.Database, userId, tracking: false, cancellationToken);
                 views.Add(new SalesDiscountLimitBindingCompanyViewV1(company, Text(current.Version),
                     current.Groups.Select(group => new SalesDiscountLimitBoundGroupV1(group.Id, group.Code, group.Name,
-                        group.IsActive)).ToArray()));
+                        group.IsActive)).ToArray(), IsMember: true));
             }
         }
         finally
@@ -74,7 +89,8 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
             await database.Database.CloseConnectionAsync();
         }
 
-        foreach (var company in companies)
+        await RequireStillAsync(contextCompany, cancellationToken);
+        foreach (var company in members)
         {
             await RequireStillAsync(company, cancellationToken);
         }
@@ -115,8 +131,19 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
             return Done("binding", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        // Authority in EVERY company the actor can act in comes first: nothing about the request is answered without it.
-        var companies = ActorCompanies();
+        // SAT-D116 (EK15, Sinan 2026-10-29): the binding goes to the actor's companies where the person is an active member now;
+        // the others are skipped. Authority is then required in EVERY member company before anything is answered.
+        var actorCompanies = ActorCompanies();
+        var members = await MemberCompaniesAsync(contextCompany, metadata.ActorId, userId, actorCompanies, cancellationToken);
+        if (members.Count == 0)
+        {
+            return Done("binding", metadata, subject, await StoreRefusalAsync(BindingSetCommandName, Answers.Problem(422,
+                    SalesDiscountLimitProblemCodesV1.BindingPersonNotMember, "Kişi hiçbir şirkette üye değil.",
+                    "Kişi işlem yapabildiğiniz şirketlerin hiçbirinde etkin üye değil; bağ yazılmadı."),
+                keyHash, requestHash, metadata, cancellationToken));
+        }
+
+        var companies = actorCompanies.Where(members.Contains).ToArray();
         var scopes = new Dictionary<Guid, PermissionScope>();
         foreach (var company in companies)
         {
@@ -127,27 +154,7 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
         {
             return Done("binding", metadata, subject, await StoreRefusalAsync(BindingSetCommandName, Answers.Problem(422,
                     SalesDiscountLimitProblemCodesV1.BindingCompaniesMismatch, "Şirket listesi güncel değil.",
-                    "Bağ, işlem yapabildiğiniz şirketlerin tamamına birlikte yazılır; şirket listesini yenileyip yeniden deneyin."),
-                keyHash, requestHash, metadata, cancellationToken));
-        }
-
-        var directory = personDirectory
-            ?? throw new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
-        var membership = await directory.GetActiveCompaniesAsync(contextCompany, metadata.ActorId, userId, companies,
-            cancellationToken);
-        if (membership is not { Outcome: SettingsPersonDirectoryOutcomeV1.Found, ActiveCompanyIds: { } activeCompanies })
-        {
-            throw membership?.Outcome == SettingsPersonDirectoryOutcomeV1.Denied
-                ? new UnauthorizedAccessException()
-                : new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
-        }
-
-        var notMember = companies.Where(company => !activeCompanies.Contains(company)).ToArray();
-        if (notMember.Length > 0)
-        {
-            return Done("binding", metadata, subject, await StoreRefusalAsync(BindingSetCommandName, Answers.Problem(422,
-                    SalesDiscountLimitProblemCodesV1.BindingPersonNotMember, "Kişi her şirkette üye değil.",
-                    "Kişi bu şirkette etkin üye değil; bağ hiçbir şirkete yazılmadı.", notMember[0]),
+                    "Bağ, kişinin çalıştığı şirketlerin tamamına birlikte yazılır; liste değişmiş, yenileyip yeniden deneyin."),
                 keyHash, requestHash, metadata, cancellationToken));
         }
 
@@ -414,6 +421,27 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
             await context.DisposeAsync();
             throw;
         }
+    }
+
+    /// <summary>
+    /// The companies among <paramref name="companies"/> where the person is an active member now (the Identity owner's
+    /// answer through the host port). A refusal is 403, an unavailable owner 503 — never "member nowhere".
+    /// </summary>
+    private async Task<IReadOnlySet<Guid>> MemberCompaniesAsync(Guid contextCompany, string actorId, Guid userId,
+        IReadOnlyList<Guid> companies, CancellationToken cancellationToken)
+    {
+        var directory = personDirectory
+            ?? throw new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
+        var membership = await directory.GetActiveCompaniesAsync(contextCompany, actorId, userId, companies,
+            cancellationToken);
+        if (membership is not { Outcome: SettingsPersonDirectoryOutcomeV1.Found, ActiveCompanyIds: { } active })
+        {
+            throw membership?.Outcome == SettingsPersonDirectoryOutcomeV1.Denied
+                ? new UnauthorizedAccessException()
+                : new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
+        }
+
+        return companies.Where(active.Contains).ToHashSet();
     }
 
     private IReadOnlyList<Guid> ActorCompanies() =>

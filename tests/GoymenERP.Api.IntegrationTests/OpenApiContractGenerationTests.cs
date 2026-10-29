@@ -6279,10 +6279,11 @@ public sealed partial class OpenApiContractGenerationTests
                     ("userId", "type:string;format:uuid"),
                     ("companies", "type:array;items:ref:SalesDiscountLimitBindingCompanyViewV1")),
                 ["SalesDiscountLimitBindingCompanyViewV1"] = ObjectSchema(
-                    ["companyId", "version", "groups"],
+                    ["companyId", "version", "groups", "isMember"],
                     ("companyId", "type:string;format:uuid"),
                     ("version", "type:string"),
-                    ("groups", "type:array;items:ref:SalesDiscountLimitBoundGroupV1")),
+                    ("groups", "type:array;items:ref:SalesDiscountLimitBoundGroupV1"),
+                    ("isMember", "type:boolean")),
                 ["SalesDiscountLimitBoundGroupV1"] = ObjectSchema(
                     ["id", "code", "name", "isActive"],
                     ("id", "type:string;format:uuid"),

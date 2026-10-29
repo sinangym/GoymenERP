@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Settings.Application;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
@@ -51,7 +52,17 @@ internal static class SettingsBusinessDate
     public static DateOnly Today(TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(timeProvider);
-        var zone = TimeZoneInfo.FindSystemTimeZoneById(TimeZoneId);
+        TimeZoneInfo zone;
+        try
+        {
+            zone = TimeZoneInfo.FindSystemTimeZoneById(TimeZoneId);
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            // Review P3-4: unknown time zone rules are "Settings unavailable" (503), never another zone's day or a 500.
+            throw new SettingsPrerequisiteException(SalesDiscountLimitProblemCodesV1.ProviderUnavailable);
+        }
+
         return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(timeProvider.GetUtcNow(), zone).DateTime);
     }
 }

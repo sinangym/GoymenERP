@@ -268,7 +268,7 @@ describe('İskonto limitleri — person → group binding', () => {
         if (url.endsWith(`/bindings/${PERSON}`) && init?.method === 'PUT') {
           saves += 1
           return saves === 1
-            ? problem(422, { code: 'settings_discount_limit_binding_person_not_member', companyId: COMPANY_B })
+            ? problem(422, { code: 'settings_discount_limit_binding_group_not_found', companyId: COMPANY_B, groupCode: 'MUDUR' })
             : noContent()
         }
         if (url.endsWith(`/bindings/${PERSON}`)) return json(binding('1', '0'))
@@ -309,5 +309,39 @@ describe('İskonto limitleri — person → group binding', () => {
     const second = commands(recorded)[1]
     expect(second.headers['Idempotency-Key']).not.toBe(refused.headers['Idempotency-Key'])
     expect(second.headers['X-Company-Id']).toBe(COMPANY_A)
+  })
+
+  it('SAT-D116: shows a company where the person does not work as skipped and writes only to the others', async () => {
+    const recorded = installFetch({
+      respond: (url, init) => {
+        if (url.endsWith('/groups')) return json(groupList())
+        if (url.includes('/settings/sales-discount-limits/people')) {
+          return json({ items: [{ userId: PERSON, displayName: 'SENTETIK Satıcı' }], hasMore: false })
+        }
+        if (url.endsWith(`/bindings/${PERSON}`) && init?.method === 'PUT') return noContent()
+        if (url.endsWith(`/bindings/${PERSON}`)) return json(binding('1', '0', false))
+        return undefined
+      },
+    })
+    renderAt(LIMIT_PATH)
+    const user = userEvent.setup()
+    await screen.findByRole('table', { name: LIMIT_TEXT.groupsTableLabel })
+
+    await user.type(screen.getByLabelText(LIMIT_TEXT.searchLabel), 'Sat')
+    await user.click(screen.getByRole('button', { name: LIMIT_TEXT.search }))
+    await user.click(await screen.findByRole('button', { name: `${LIMIT_TEXT.selectPerson} — SENTETIK Satıcı` }))
+    const table = await screen.findByRole('table', { name: LIMIT_TEXT.bindingTableLabel })
+    const rows = within(table).getAllByRole('row')
+    expect(within(rows[2]).getByText('GSP — Göymen Sac Profil')).toBeTruthy()
+    expect(within(rows[2]).getByText(LIMIT_TEXT.skippedCompany)).toBeTruthy()
+
+    await user.type(screen.getByLabelText(LIMIT_TEXT.reasonLabel), 'Yalnız GDC')
+    await user.click(screen.getByRole('button', { name: LIMIT_TEXT.saveBinding }))
+    await waitFor(() => expect(commands(recorded)).toHaveLength(1))
+    expect(commands(recorded)[0].body).toEqual({
+      groupCodes: ['SATIS-DESTEK'],
+      companies: [{ companyId: COMPANY_A, expectedVersion: '1' }],
+      reason: 'Yalnız GDC',
+    })
   })
 })

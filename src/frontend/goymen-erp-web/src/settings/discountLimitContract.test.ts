@@ -23,6 +23,11 @@ describe('discount limit decoders', () => {
       ['ESKI', null],
     ])
     expect(decodeBinding(binding('1', '0'), PERSON)?.companies.map((company) => company.version)).toEqual(['1', '0'])
+    expect(decodeBinding(binding('1', '1', false), PERSON)?.companies.map((company) => company.isMember)).toEqual([true, false])
+    const invalid = groupList()
+    const [managerRow] = invalid.groups as Record<string, unknown>[]
+    expect(decodeGroupList({ ...invalid, groups: [{ ...managerRow, effectiveLimit: { state: 'Invalid', percent: null } }] }, COMPANY_A)
+      ?.groups[0].effectiveLimit.state).toBe('Invalid')
     expect(decodeCreated({ id: PERSON, version: '1' })).toEqual({ id: PERSON, version: '1' })
     expect(decodePeople({ items: [{ userId: PERSON, displayName: 'Ali' }], hasMore: true })?.hasMore).toBe(true)
   })
@@ -61,6 +66,9 @@ describe('discount limit decoders', () => {
     const value = binding('0', '1')
     expect(decodeBinding({ ...value, companies: [{ ...value.companies[1], version: '0' }] }, PERSON)).toBeNull()
     expect(decodeBinding({ ...value, companies: [value.companies[1], value.companies[1]] }, PERSON)).toBeNull()
+    // SAT-D116: a skipped company carries no version and no groups; the flag is required.
+    expect(decodeBinding({ ...value, companies: [{ ...value.companies[1], isMember: false }] }, PERSON)).toBeNull()
+    expect(decodeBinding({ ...value, companies: [{ ...value.companies[1], isMember: undefined }] }, PERSON)).toBeNull()
     expect(decodeCreated({ id: PERSON, version: '2' })).toBeNull()
   })
 
