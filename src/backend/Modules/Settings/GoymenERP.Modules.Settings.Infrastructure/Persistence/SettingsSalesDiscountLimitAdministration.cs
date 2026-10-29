@@ -306,6 +306,8 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration(
         "settings.sales-discount-limit-group.created.v1" => "İskonto limit grubu oluşturuldu; gerekçe kayıt içeriğindedir",
         "settings.sales-discount-limit-group.renamed.v1" => "İskonto limit grubunun adı değiştirildi; gerekçe kayıt içeriğindedir",
         "settings.sales-discount-limit-group.deactivated.v1" => "İskonto limit grubu pasife alındı; gerekçe kayıt içeriğindedir",
+        "settings.sales-discount-limit-group.reactivated.v1" =>
+            "İskonto limit grubu yeniden etkinleştirildi; gerekçe kayıt içeriğindedir",
         "settings.sales-discount-limit.recorded.v1" => "İskonto limit grubunun limiti kaydedildi; gerekçe kayıt içeriğindedir",
         "settings.sales-discount-limit.withdrawn.v1" =>
             "Yürürlüğe girmemiş iskonto limit kaydı geri çekildi; gerekçe kayıt içeriğindedir",

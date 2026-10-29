@@ -49,18 +49,21 @@ export const LIMIT_TEXT = {
     'Bağlı limit, bağlı grubun o tarihteki limitine ek puan eklenerek hesaplanır ve %100 ile sınırlıdır; bağlı grubun limiti yoksa iskonto onaya gider.',
   effectiveFromLabel: 'Geçerlilik başlangıcı',
   effectiveFromHelp:
-    'Bugün veya ileri bir tarih. Planlı bir değişiklik varsa yeni kayıt o tarihten önce başlayamaz; aynı tarihi seçerseniz yeni kayıt planlı kaydın yerine geçer (planlı kayıt geri çekilir).',
-  effectiveFromError: 'Tarih bugünden ve son planlı değişiklikten önce olamaz.',
+    'Bugün veya ileri bir tarih. Kayıt, bir sonraki planlı kaydın tarihine kadar geçerli olur. Planlı bir kayıtla aynı tarihi seçerseniz yeni kayıt onun yerine geçer (planlı kayıt geri çekilir).',
+  effectiveFromError: 'Tarih bugünden önce olamaz.',
   scheduledListLabel: 'Planlı değişiklikler',
   correctScheduled: 'Düzelt',
   withdrawScheduled: 'Geri çek',
   correctHeading: 'Planlı limiti düzelt',
   withdrawHeading: 'Planlı limiti geri çek',
   withdrawConfirm:
-    'Planlı kayıt yürürlüğe girmeden geri çekilir; o tarihte, varsa ondan önceki planlı kayıt, yoksa bugün geçerli limit geçerli kalır. Daha önce yerine geçilmiş kayıtlar geri gelmez. Yürürlüğe girmiş kayıt geri çekilemez.',
+    'Planlı kayıt yürürlüğe girmeden geri çekilir; o tarihten itibaren, ondan önce geçerli olan kayıt bir sonraki planlı kayda kadar geçerli kalır. Daha önce yerine geçilmiş kayıtlar geri gelmez. Yürürlüğe girmiş kayıt geri çekilemez.',
   correctHelp:
-    'Planlı kayıt geri çekilir ve yerine bu kayıt yazılır (tek işlem). Tarih, düzeltilen kaydın tarihiyle gelir; değiştirebilirsiniz. Yalnız en son planlı kayıt düzeltilebilir; yürürlüğe girmiş kayıt düzeltilemez, yeni kayıt girilir.',
-  deactivateConfirm: 'Pasif grup limite katkı vermez ve yeniden değiştirilemez. Pasife almak istiyor musunuz?',
+    'Planlı kayıt geri çekilir ve yerine bu kayıt yazılır (tek işlem). Tarih, düzeltilen kaydın tarihiyle gelir; değiştirebilirsiniz (bugünden önce olamaz). Yürürlüğe girmiş kayıt düzeltilemez, yeni kayıt girilir.',
+  deactivateConfirm:
+    'Pasif grup yalnız yeni bağlamaya ve yeni bağlantıya kapanır; zaten bağlı kişiler ve ona bağlı limitler çalışmaya devam eder. Limiti, yeniden etkinleştirilene kadar değiştirilemez. Pasife almak istiyor musunuz?',
+  reactivate: 'Yeniden etkinleştir',
+  reactivateConfirm: 'Grup yeniden etkin olur; yeni kişiler bağlanabilir ve limiti değiştirilebilir. Gerekçe kayda geçer.',
   save: 'Kaydet',
   cancel: 'Vazgeç',
   saving: 'Kaydediliyor…',
@@ -113,11 +116,11 @@ export function refusalText(status: number, code: string | null, companyLabel: s
     case LIMIT_PROBLEM.groupNameTaken:
       return 'Bu şirkette aynı adlı bir limit grubu var.'
     case LIMIT_PROBLEM.groupInactive:
-      return 'Pasif limit grubu değiştirilemez.'
+      return 'Pasif limit grubu değiştirilemez; önce yeniden etkinleştirin.'
     case LIMIT_PROBLEM.linkedGroupNotFound:
       return 'Bağlanan grup bu şirkette yok.'
     case LIMIT_PROBLEM.linkedGroupInactive:
-      return 'Pasif bir gruba bağlanılamaz.'
+      return 'Pasif bir gruba yeni bağlantı kurulamaz.'
     case LIMIT_PROBLEM.linkCycle:
       return 'Bu bağlantı gruplar arasında döngü oluşturur (örn. A→B→A), bugün ya da planlı bir değişiklikten sonra; kaydedilmedi.'
     case LIMIT_PROBLEM.effectiveFromPast:
@@ -126,8 +129,8 @@ export function refusalText(status: number, code: string | null, companyLabel: s
       return 'Bu limit kaydı yürürlüğe girdi; değiştirilemez veya geri çekilemez. Yeni bir limit kaydı girin.'
     case LIMIT_PROBLEM.recordWithdrawn:
       return 'Bu limit kaydı daha önce geri çekildi.'
-    case LIMIT_PROBLEM.effectiveFromBeforeScheduled:
-      return 'Bu grubun daha ileri tarihli planlı bir limiti var; kayıt o tarihten önce başlayamaz. O tarihte geçerli olacak değeri değiştirmek için en son planlı kaydı düzeltin veya geri çekin.'
+    case LIMIT_PROBLEM.groupActive:
+      return 'Grup zaten etkin.'
     case LIMIT_PROBLEM.bindingCompaniesMismatch:
       return 'Şirket listeniz değişmiş; güncel hâli yüklendi, yeniden kaydedin.'
     case LIMIT_PROBLEM.bindingPersonNotMember:
@@ -135,7 +138,7 @@ export function refusalText(status: number, code: string | null, companyLabel: s
     case LIMIT_PROBLEM.bindingGroupNotFound:
       return `"${groupCode ?? '?'}" kodlu grup bu şirkette yok${where}; bağ hiçbir şirkete yazılmadı.`
     case LIMIT_PROBLEM.bindingGroupInactive:
-      return `"${groupCode ?? '?'}" kodlu grup bu şirkette pasif${where}; bağ hiçbir şirkete yazılmadı.`
+      return `"${groupCode ?? '?'}" kodlu grup bu şirkette pasif${where}; pasif gruba yeni kişi bağlanamaz, bağ hiçbir şirkete yazılmadı.`
     default:
       if (status === 403) return 'Bu işlem için yetkiniz yok (işlem yapabildiğiniz her şirkette gerekir).'
       if (status === 404) return 'Grup bu şirkette bulunamadı.'

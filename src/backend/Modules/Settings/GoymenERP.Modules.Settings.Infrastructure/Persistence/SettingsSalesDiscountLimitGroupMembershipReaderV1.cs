@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
-/// SAT-D63/D66: the ACTIVE limit groups the current actor is bound to in the server-resolved company, read only from
-/// Settings' own tables under the company filter (the binding's current version; a passive group is left out). An actor id
+/// SAT-D63/D66: the limit groups the current actor is bound to in the server-resolved company, read only from Settings'
+/// own tables under the company filter (the binding's current version). SAT-D117 (Sinan, 2026-10-29): a passive group
+/// keeps counting for the people already bound to it — passivity only closes it to new bindings. An actor id
 /// that is not an ERP user id has no binding (empty: every discount goes to approval). Access first; a store that cannot be
 /// read is <c>settings_provider_unavailable</c>, never an empty answer.
 /// </summary>
@@ -44,7 +45,7 @@ internal sealed class SettingsSalesDiscountLimitGroupMembershipReaderV1(
 
             return await database.SalesDiscountLimitMembershipGroups.AsNoTracking()
                 .Where(bound => bound.UserId == userId && bound.MembershipVersion == current)
-                .Join(database.SalesDiscountLimitGroups.AsNoTracking().Where(group => group.IsActive),
+                .Join(database.SalesDiscountLimitGroups.AsNoTracking(),
                     bound => new { bound.CompanyId, Id = bound.LimitGroupId },
                     group => new { group.CompanyId, group.Id },
                     (_, group) => group.Id)

@@ -182,12 +182,15 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
                 var groups = await store.Database.SalesDiscountLimitGroups
                     .Where(group => codes.Contains(group.Code))
                     .ToDictionaryAsync(group => group.Code, StringComparer.Ordinal, cancellationToken);
+                var current = await ReadBindingAsync(store.Database, userId, tracking: true, cancellationToken);
                 foreach (var code in codes)
                 {
+                    // SAT-D117: a passive group is closed to NEW bindings only; keeping a person in a passive group they
+                    // are already bound to (in this company) is allowed.
                     refusal = !groups.TryGetValue(code, out var group)
                         ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.BindingGroupNotFound, "Grup bulunamadı.",
                             $"'{code}' kodlu limit grubu bu şirkette yok; bağ hiçbir şirkete yazılmadı.", company, code)
-                        : !group.IsActive
+                        : !group.IsActive && !current.Groups.Any(bound => bound.Id == group.Id)
                             ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.BindingGroupInactive, "Grup pasif.",
                                 $"'{code}' kodlu limit grubu bu şirkette pasif; bağ hiçbir şirkete yazılmadı.", company, code)
                             : null;
@@ -202,7 +205,6 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
                     break;
                 }
 
-                var current = await ReadBindingAsync(store.Database, userId, tracking: true, cancellationToken);
                 if (current.Version != expected[company])
                 {
                     refusal = Answers.VersionConflict(company);

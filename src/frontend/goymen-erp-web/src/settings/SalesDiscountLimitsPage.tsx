@@ -27,6 +27,7 @@ import { SETTINGS_CAPABILITY } from './capabilities'
 import {
   createLimitGroup,
   deactivateLimitGroup,
+  reactivateLimitGroup,
   fetchBinding,
   fetchLimitGroups,
   fetchPeople,
@@ -158,6 +159,7 @@ type Editor =
   | { readonly kind: 'rename'; readonly group: LimitGroup }
   | { readonly kind: 'limit'; readonly group: LimitGroup }
   | { readonly kind: 'deactivate'; readonly group: LimitGroup }
+  | { readonly kind: 'reactivate'; readonly group: LimitGroup }
   | { readonly kind: 'correct'; readonly group: LimitGroup; readonly record: LimitDefinition }
   | { readonly kind: 'withdraw'; readonly group: LimitGroup; readonly record: LimitDefinition }
 
@@ -251,19 +253,15 @@ function GroupsSection({
                           </span>
                           {group.isActive ? (
                             <span className={styles.actions}>
-                              {/* Review P3-1: only the LAST scheduled record can be corrected in place (records stay one
-                                  ordered timeline); an earlier one is withdrawn, or corrected after the later ones go. */}
-                              {entry === group.scheduled.at(-1) ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  aria-label={`${LIMIT_TEXT.correctScheduled} — ${group.code} ${businessDateLabel(entry.limit.effectiveFrom)}`}
-                                  onClick={() => setEditor({ kind: 'correct', group, record: entry.limit })}
-                                >
-                                  {LIMIT_TEXT.correctScheduled}
-                                </Button>
-                              ) : null}
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                aria-label={`${LIMIT_TEXT.correctScheduled} — ${group.code} ${businessDateLabel(entry.limit.effectiveFrom)}`}
+                                onClick={() => setEditor({ kind: 'correct', group, record: entry.limit })}
+                              >
+                                {LIMIT_TEXT.correctScheduled}
+                              </Button>
                               <Button
                                 type="button"
                                 size="sm"
@@ -310,7 +308,16 @@ function GroupsSection({
                         {LIMIT_TEXT.deactivate}
                       </Button>
                     </span>
-                  ) : null}
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      aria-label={`${LIMIT_TEXT.reactivate} — ${group.code}`}
+                      onClick={() => setEditor({ kind: 'reactivate', group })}
+                    >
+                      {LIMIT_TEXT.reactivate}
+                    </Button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -344,6 +351,15 @@ function GroupsSection({
           group={editor.group}
           groups={list.groups}
           businessDate={list.businessDate}
+          onDone={close}
+          onConflict={conflict}
+        />
+      ) : null}
+      {editor.kind === 'reactivate' ? (
+        <ReactivateGroupForm
+          key={editor.group.id}
+          companyId={companyId}
+          group={editor.group}
           onDone={close}
           onConflict={conflict}
         />
@@ -582,6 +598,39 @@ function DeactivateGroupForm({ companyId, group, onDone, onConflict }: FormProps
   )
 }
 
+/** SAT-D118 (Sinan, 2026-10-29): a passive group is reactivated by one person with a reason (audited). */
+function ReactivateGroupForm({ companyId, group, onDone, onConflict }: FormProps & { readonly group: LimitGroup }) {
+  const [reason, setReason] = useState('')
+  const attempt = useCommandAttempt<true>()
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    const body = { expectedVersion: group.version, reason: reason.trim() }
+    const outcome = await attempt.run({ group: group.id, reactivate: true, ...body }, (idempotencyKey) =>
+      reactivateLimitGroup({ companyId, idempotencyKey }, group.id, body),
+    )
+    if (outcome.type === 'applied') onDone(savedNotice(outcome))
+    else if (isVersionConflict(outcome)) onConflict()
+  }
+
+  return (
+    <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="limit-reactivate-heading">
+      <h3 id="limit-reactivate-heading">
+        {LIMIT_TEXT.reactivate} — <code>{group.code}</code>
+      </h3>
+      <p>{LIMIT_TEXT.reactivateConfirm}</p>
+      <ReasonField value={reason} onChange={setReason} />
+      <AttemptFooter
+        status={attempt.status}
+        hasPendingRetry={attempt.hasPendingRetry}
+        submitLabel={LIMIT_TEXT.reactivate}
+        onCancel={() => onDone(null)}
+        companyLabel={noCompanyLabel}
+      />
+    </form>
+  )
+}
+
 function LimitForm({
   companyId,
   group,
@@ -597,15 +646,11 @@ function LimitForm({
   /** SAT-D84: the scheduled record this form corrects (withdrawn + replaced); absent = a new record. */
   readonly correcting?: LimitDefinition
 }) {
-  // A new record starts from the group's latest record (the last scheduled one, else the one in force) and can start no
-  // earlier than today or that record's date (SAT-D78). A correction starts from the corrected record and can start no
-  // earlier than today or the scheduled record before it (SAT-D84). The server enforces the same.
-  const scheduledBefore = correcting === undefined
-    ? group.scheduled
-    : group.scheduled.filter((entry) => entry.limit.effectiveFrom < correcting.effectiveFrom)
-  const previousScheduled = scheduledBefore.at(-1)?.limit ?? null
-  const current = correcting ?? previousScheduled ?? group.limit
-  const earliest = previousScheduled?.effectiveFrom ?? businessDate
+  // A new record starts from the record in force today and from today; a correction starts from the corrected record and
+  // its own date (SAT-D84). Any date from today on is accepted: the timeline is ordered by date (SAT-D78, review A P2-1),
+  // and a record on a scheduled record's date replaces it. The server enforces the same.
+  const current = correcting ?? group.limit
+  const earliest = businessDate
   const [effectiveFrom, setEffectiveFrom] = useState(correcting?.effectiveFrom ?? earliest)
   const [kind, setKind] = useState<LimitKind>(current?.kind ?? LIMIT_KIND.fixed)
   const [percent, setPercent] = useState(current?.percent ?? '')
@@ -934,12 +979,15 @@ function BindingForm({
   const members = binding.companies.filter((company) => company.isMember)
   const own = members.find((company) => company.companyId === companyId) ?? members[0]
   const [selected, setSelected] = useState<ReadonlySet<string>>(
-    () => new Set((own?.groups ?? []).filter((group) => group.isActive).map((group) => group.code)),
+    () => new Set((own?.groups ?? []).map((group) => group.code)),
   )
   const [reason, setReason] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const attempt = useCommandAttempt<true>()
-  const active = groups.filter((group) => group.isActive)
+  // SAT-D117: a passive group is closed to NEW bindings only — a passive group the person is already bound to here stays
+  // selectable, so saving the binding again does not silently drop it.
+  const boundPassive = new Set((own?.groups ?? []).filter((group) => !group.isActive).map((group) => group.code))
+  const active = groups.filter((group) => group.isActive || boundPassive.has(group.code))
 
   function toggle(code: string, checked: boolean) {
     setSelected((previous) => {
@@ -1017,6 +1065,7 @@ function BindingForm({
                 onChange={(event) => toggle(group.code, event.target.checked)}
               />
               <code>{group.code}</code> — {group.name}
+              {group.isActive ? null : ` (${LIMIT_TEXT.passive})`}
             </label>
           ))}
         </fieldset>

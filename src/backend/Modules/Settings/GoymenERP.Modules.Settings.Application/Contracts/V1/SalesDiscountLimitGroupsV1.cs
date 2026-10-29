@@ -60,7 +60,7 @@ public static class SalesDiscountLimitProblemCodesV1
     public const string LinkedGroupInactive = "settings_discount_limit_linked_group_inactive";
     public const string LinkCycle = "settings_discount_limit_link_cycle";
     public const string EffectiveFromPast = "settings_discount_limit_effective_from_past";
-    public const string EffectiveFromBeforeScheduled = "settings_discount_limit_effective_from_before_scheduled";
+    public const string GroupActive = "settings_discount_limit_group_active";
     public const string RecordInEffect = "settings_discount_limit_record_in_effect";
     public const string RecordWithdrawn = "settings_discount_limit_record_withdrawn";
     public const string BindingCompaniesMismatch = "settings_discount_limit_binding_companies_mismatch";
@@ -76,8 +76,15 @@ public sealed record CreateSalesDiscountLimitGroupRequestV1(string? Code, string
 /// <summary>Rename a group; <c>ExpectedVersion</c> is the group's version as decimal text.</summary>
 public sealed record RenameSalesDiscountLimitGroupRequestV1(string? ExpectedVersion, string? Name, string? Reason);
 
-/// <summary>Deactivate a group (never deleted). A deactivated group contributes no limit.</summary>
+/// <summary>
+/// Deactivate a group (never deleted). SAT-D117 (Sinan, 2026-10-29): a passive group is closed to NEW bindings and new
+/// links only; the people already bound to it and the limits linked to it keep counting, and its own limit cannot be
+/// changed until it is reactivated.
+/// </summary>
 public sealed record DeactivateSalesDiscountLimitGroupRequestV1(string? ExpectedVersion, string? Reason);
+
+/// <summary>SAT-D118 (Sinan, 2026-10-29): reactivate a passive group — one person, a mandatory reason, audited.</summary>
+public sealed record ReactivateSalesDiscountLimitGroupRequestV1(string? ExpectedVersion, string? Reason);
 
 /// <summary>
 /// Record the group's limit as a new immutable version (SAT-D36, SAT-D62): <c>Kind</c> <c>Fixed</c> with <c>Percent</c>
@@ -253,6 +260,9 @@ public interface ISettingsSalesDiscountLimitAdministrationV1
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 
     Task<SettingsCommandResultV1> DeactivateGroupAsync(Guid groupId, DeactivateSalesDiscountLimitGroupRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<SettingsCommandResultV1> ReactivateGroupAsync(Guid groupId, ReactivateSalesDiscountLimitGroupRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 
     Task<SettingsCommandResultV1> SetLimitAsync(Guid groupId, SetSalesDiscountLimitRequestV1 request,

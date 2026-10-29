@@ -15,6 +15,7 @@ import {
   COMPANY_A,
   COMPANY_B,
   GROUP_MANAGER,
+  GROUP_OLD,
   GROUP_SELLER,
   LIMIT_PATH,
   PERSON,
@@ -36,7 +37,7 @@ afterEach(() => {
 const groupsTable = () => screen.getByRole('table', { name: LIMIT_TEXT.groupsTableLabel })
 
 describe('İskonto limitleri — groups', () => {
-  it('shows the groups with their recorded and in-force limits, and offers no change on a passive group', async () => {
+  it('shows the groups with their recorded and in-force limits, and offers only reactivation on a passive group', async () => {
     const recorded = installFetch({ respond: (url) => (url.endsWith('/settings/sales-discount-limits/groups') ? json(groupList()) : undefined) })
     renderAt(LIMIT_PATH)
 
@@ -48,7 +49,9 @@ describe('İskonto limitleri — groups', () => {
     expect(within(rows[2]).getByText('Sabit %35')).toBeTruthy()
     expect(within(rows[3]).getByText(LIMIT_TEXT.passive)).toBeTruthy()
     expect(within(rows[3]).getByText(LIMIT_TEXT.noLimit)).toBeTruthy()
-    expect(within(rows[3]).queryByRole('button')).toBeNull()
+    expect(within(rows[3]).getAllByRole('button').map((button) => button.getAttribute('aria-label'))).toEqual([
+      `${LIMIT_TEXT.reactivate} — ESKI`,
+    ])
     const read = recorded.find((request) => request.url.endsWith('/settings/sales-discount-limits/groups'))
     expect(read?.headers['X-Company-Id']).toBe(COMPANY_A)
     expect(commands(recorded)).toEqual([])
@@ -137,8 +140,8 @@ describe('İskonto limitleri — groups', () => {
       linkedGroupId: GROUP_MANAGER,
       extraPoints: '2.5',
       reason: 'Deneme',
-      // SAT-D78: the seller already has a change scheduled for 1 November, so a new record starts no earlier.
-      effectiveFrom: '2026-11-01',
+      // Today (the default) travels as omitted; the seller's 1 November change stays scheduled after it.
+      effectiveFrom: null,
     })
   })
 
@@ -179,6 +182,26 @@ describe('İskonto limitleri — groups', () => {
       reason: 'Geçmiş',
       effectiveFrom: '2027-01-01',
     })
+  })
+
+  it('SAT-D118: reactivates a passive group with a reason', async () => {
+    const recorded = installFetch({
+      respond: (url, init) => {
+        if (url.endsWith(`/groups/${GROUP_OLD}/activation`) && init?.method === 'POST') return noContent()
+        if (url.endsWith('/groups')) return json(groupList())
+        return undefined
+      },
+    })
+    renderAt(LIMIT_PATH)
+    const user = userEvent.setup()
+    await screen.findByRole('table', { name: LIMIT_TEXT.groupsTableLabel })
+
+    await user.click(screen.getByRole('button', { name: `${LIMIT_TEXT.reactivate} — ESKI` }))
+    expect(screen.getByText(LIMIT_TEXT.reactivateConfirm)).toBeTruthy()
+    await user.type(screen.getByLabelText(LIMIT_TEXT.reasonLabel), 'Yeniden kullanılacak')
+    await user.click(screen.getByRole('button', { name: LIMIT_TEXT.reactivate }))
+    expect((await screen.findByRole('status')).textContent).toBe(LIMIT_TEXT.saved)
+    expect(commands(recorded)[0].body).toEqual({ expectedVersion: '3', reason: 'Yeniden kullanılacak' })
   })
 
   it('SAT-D84: corrects a scheduled record in place of it and withdraws one, naming a record already in force', async () => {

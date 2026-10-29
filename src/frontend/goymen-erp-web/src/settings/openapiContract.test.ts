@@ -11,6 +11,7 @@ import {
   DISCOUNT_LIMIT_PEOPLE_PATH,
   LIMIT_PROBLEM,
   bindingPath,
+  groupActivationPath,
   groupDeactivationPath,
   groupLimitCorrectionPath,
   groupLimitPath,
@@ -77,6 +78,7 @@ describe('discount limit client ↔ canonical OpenAPI', () => {
     operation('post', DISCOUNT_LIMIT_GROUPS_PATH)
     operation('put', groupNamePath(ID))
     operation('post', groupDeactivationPath(ID))
+    operation('post', groupActivationPath(ID))
     operation('put', groupLimitPath(ID))
     operation('post', groupLimitWithdrawalPath(ID))
     operation('post', groupLimitCorrectionPath(ID))
@@ -89,6 +91,7 @@ describe('discount limit client ↔ canonical OpenAPI', () => {
     expectFits({ code: 'A', name: 'A', reason: 'r' }, requestSchemaOf('post', DISCOUNT_LIMIT_GROUPS_PATH))
     expectFits({ expectedVersion: '1', name: 'A', reason: 'r' }, requestSchemaOf('put', groupNamePath(ID)))
     expectFits({ expectedVersion: '1', reason: 'r' }, requestSchemaOf('post', groupDeactivationPath(ID)))
+    expectFits({ expectedVersion: '1', reason: 'r' }, requestSchemaOf('post', groupActivationPath(ID)))
     expectFits(
       { expectedVersion: '1', kind: 'Fixed', percent: '1', linkedGroupId: null, extraPoints: null, reason: 'r', effectiveFrom: null },
       requestSchemaOf('put', groupLimitPath(ID)),

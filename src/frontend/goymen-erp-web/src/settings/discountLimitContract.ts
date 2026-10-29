@@ -7,6 +7,7 @@
  *   POST /settings/sales-discount-limits/groups                      -> 201 SalesDiscountLimitGroupCreatedV1
  *   PUT  /settings/sales-discount-limits/groups/{groupId}/name       -> 204
  *   POST /settings/sales-discount-limits/groups/{groupId}/deactivation -> 204
+ *   POST /settings/sales-discount-limits/groups/{groupId}/activation -> 204 (SAT-D118)
  *   PUT  /settings/sales-discount-limits/groups/{groupId}/limit      -> 204 (SAT-D78: optional later effectiveFrom)
  *   POST /settings/sales-discount-limits/groups/{groupId}/limit/withdrawal -> 204 (SAT-D84)
  *   POST /settings/sales-discount-limits/groups/{groupId}/limit/correction -> 204 (SAT-D84)
@@ -29,6 +30,11 @@ export function groupNamePath(groupId: string): string {
 
 export function groupDeactivationPath(groupId: string): string {
   return `${DISCOUNT_LIMIT_GROUPS_PATH}/${encodeURIComponent(groupId)}/deactivation`
+}
+
+/** SAT-D118: reactivate a passive group. */
+export function groupActivationPath(groupId: string): string {
+  return `${DISCOUNT_LIMIT_GROUPS_PATH}/${encodeURIComponent(groupId)}/activation`
 }
 
 export function groupLimitPath(groupId: string): string {
@@ -64,7 +70,7 @@ export const LIMIT_PROBLEM = {
   linkedGroupInactive: 'settings_discount_limit_linked_group_inactive',
   linkCycle: 'settings_discount_limit_link_cycle',
   effectiveFromPast: 'settings_discount_limit_effective_from_past',
-  effectiveFromBeforeScheduled: 'settings_discount_limit_effective_from_before_scheduled',
+  groupActive: 'settings_discount_limit_group_active',
   recordInEffect: 'settings_discount_limit_record_in_effect',
   recordWithdrawn: 'settings_discount_limit_record_withdrawn',
   bindingCompaniesMismatch: 'settings_discount_limit_binding_companies_mismatch',

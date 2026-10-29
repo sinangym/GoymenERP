@@ -1038,6 +1038,10 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/DeactivateSalesDiscountLimitGroupRequestV1",
             ["path:groupId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("post", "/api/v1/settings/sales-discount-limits/groups/{groupId}/activation", "ReactivateSettingsSalesDiscountLimitGroupV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/ReactivateSalesDiscountLimitGroupRequestV1",
+            ["path:groupId:true:type:string;format:uuid;non-empty-uuid:true"]),
         new("put", "/api/v1/settings/sales-discount-limits/groups/{groupId}/limit", "SetSettingsSalesDiscountLimitV1",
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SetSalesDiscountLimitRequestV1",
@@ -1333,6 +1337,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CreateSettingsSalesDiscountLimitGroupV1"] = "ref:SalesDiscountLimitGroupCreatedV1",
             ["RenameSettingsSalesDiscountLimitGroupV1"] = "none",
             ["DeactivateSettingsSalesDiscountLimitGroupV1"] = "none",
+            ["ReactivateSettingsSalesDiscountLimitGroupV1"] = "none",
             ["SetSettingsSalesDiscountLimitV1"] = "none",
             ["WithdrawSettingsSalesDiscountLimitV1"] = "none",
             ["CorrectSettingsSalesDiscountLimitV1"] = "none",
@@ -1593,6 +1598,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateSettingsSalesDiscountLimitGroupV1",
         "RenameSettingsSalesDiscountLimitGroupV1",
         "DeactivateSettingsSalesDiscountLimitGroupV1",
+        "ReactivateSettingsSalesDiscountLimitGroupV1",
         "SetSettingsSalesDiscountLimitV1",
         "WithdrawSettingsSalesDiscountLimitV1",
         "CorrectSettingsSalesDiscountLimitV1",
@@ -1728,6 +1734,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateSettingsSalesDiscountLimitGroupV1",
         "RenameSettingsSalesDiscountLimitGroupV1",
         "DeactivateSettingsSalesDiscountLimitGroupV1",
+        "ReactivateSettingsSalesDiscountLimitGroupV1",
         "SetSettingsSalesDiscountLimitV1",
         "WithdrawSettingsSalesDiscountLimitV1",
         "CorrectSettingsSalesDiscountLimitV1",
@@ -1956,6 +1963,8 @@ public sealed partial class OpenApiContractGenerationTests
                     [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["DeactivateSettingsSalesDiscountLimitGroupV1"] =
                     [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["ReactivateSettingsSalesDiscountLimitGroupV1"] =
+                    [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["SetSettingsSalesDiscountLimitV1"] =
                 [
                     StatusCodes.Status204NoContent,
@@ -2154,6 +2163,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateSettingsSalesDiscountLimitGroupV1",
         "RenameSettingsSalesDiscountLimitGroupV1",
         "DeactivateSettingsSalesDiscountLimitGroupV1",
+        "ReactivateSettingsSalesDiscountLimitGroupV1",
         "SetSettingsSalesDiscountLimitV1",
         "WithdrawSettingsSalesDiscountLimitV1",
         "CorrectSettingsSalesDiscountLimitV1",
@@ -2303,6 +2313,7 @@ public sealed partial class OpenApiContractGenerationTests
         "GetDocumentVersionContentV1:404",
         "RenameSettingsSalesDiscountLimitGroupV1:404",
         "DeactivateSettingsSalesDiscountLimitGroupV1:404",
+        "ReactivateSettingsSalesDiscountLimitGroupV1:404",
         "SetSettingsSalesDiscountLimitV1:404",
         "WithdrawSettingsSalesDiscountLimitV1:404",
         "CorrectSettingsSalesDiscountLimitV1:404",
@@ -2375,6 +2386,7 @@ public sealed partial class OpenApiContractGenerationTests
         "CreateSettingsSalesDiscountLimitGroupV1:400",
         "RenameSettingsSalesDiscountLimitGroupV1:400",
         "DeactivateSettingsSalesDiscountLimitGroupV1:400",
+        "ReactivateSettingsSalesDiscountLimitGroupV1:400",
         "SetSettingsSalesDiscountLimitV1:400",
         "WithdrawSettingsSalesDiscountLimitV1:400",
         "CorrectSettingsSalesDiscountLimitV1:400",
@@ -2954,12 +2966,17 @@ public sealed partial class OpenApiContractGenerationTests
                 ["settings_discount_limit_group_inactive", "settings_discount_limit_idempotency_conflict",
                  "settings_discount_limit_version_conflict"],
             ["DeactivateSettingsSalesDiscountLimitGroupV1:503"] = ["settings_provider_unavailable"],
+            ["ReactivateSettingsSalesDiscountLimitGroupV1:400"] = ["settings_discount_limit_command_metadata_invalid", "settings_discount_limit_reason_required", "settings_discount_limit_reason_too_long", "settings_discount_limit_request_invalid"],
+            ["ReactivateSettingsSalesDiscountLimitGroupV1:409"] =
+                ["settings_discount_limit_group_active", "settings_discount_limit_idempotency_conflict",
+                 "settings_discount_limit_version_conflict"],
+            ["ReactivateSettingsSalesDiscountLimitGroupV1:503"] = ["settings_provider_unavailable"],
             ["SetSettingsSalesDiscountLimitV1:400"] = ["settings_discount_limit_command_metadata_invalid", "settings_discount_limit_reason_required", "settings_discount_limit_reason_too_long", "settings_discount_limit_request_invalid"],
             ["SetSettingsSalesDiscountLimitV1:409"] =
                 ["settings_discount_limit_group_inactive", "settings_discount_limit_idempotency_conflict",
                  "settings_discount_limit_version_conflict"],
             ["SetSettingsSalesDiscountLimitV1:422"] =
-                ["settings_discount_limit_effective_from_before_scheduled", "settings_discount_limit_effective_from_past",
+                ["settings_discount_limit_effective_from_past",
                  "settings_discount_limit_link_cycle", "settings_discount_limit_linked_group_inactive",
                  "settings_discount_limit_linked_group_not_found"],
             ["SetSettingsSalesDiscountLimitV1:503"] = ["settings_provider_unavailable"],
@@ -2976,7 +2993,7 @@ public sealed partial class OpenApiContractGenerationTests
                  "settings_discount_limit_record_in_effect", "settings_discount_limit_record_withdrawn",
                  "settings_discount_limit_version_conflict"],
             ["CorrectSettingsSalesDiscountLimitV1:422"] =
-                ["settings_discount_limit_effective_from_before_scheduled", "settings_discount_limit_effective_from_past",
+                ["settings_discount_limit_effective_from_past",
                  "settings_discount_limit_link_cycle", "settings_discount_limit_linked_group_inactive",
                  "settings_discount_limit_linked_group_not_found"],
             ["CorrectSettingsSalesDiscountLimitV1:503"] = ["settings_provider_unavailable"],
@@ -7131,6 +7148,10 @@ public sealed partial class OpenApiContractGenerationTests
                     ("name", "type:null|string"),
                     ("reason", "type:null|string")),
                 ["DeactivateSalesDiscountLimitGroupRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("reason", "type:null|string")),
+                ["ReactivateSalesDiscountLimitGroupRequestV1"] = ObjectSchema(
                     ["expectedVersion", "reason"],
                     ("expectedVersion", "type:null|string"),
                     ("reason", "type:null|string")),

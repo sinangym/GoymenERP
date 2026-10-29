@@ -12,13 +12,15 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// that has not taken effect yet (SAT-D84, <c>SINAN_KARARLARI_2026-10-28_SATIS_EK12.md</c>).
 /// <list type="bullet">
 /// <item><b>Dates</b>: a record takes effect from its business date (omitted = today's Europe/Istanbul business date) and
-/// applies by itself from then on. A date before today is refused (<c>…_effective_from_past</c>), and so is a date before
-/// the group's latest non-withdrawn record (<c>…_effective_from_before_scheduled</c>): the records form one ordered
-/// timeline. A new record on the same date as a not-yet-effective record REPLACES it: that record is withdrawn in the same
-/// save (a correction, audited as such), so no withdrawal can ever bring back a hidden record (review P2-1).</item>
-/// <item><b>Immutability</b>: a record row never changes. A record whose date is still ahead can be withdrawn (an
-/// insert-only withdrawal row) or corrected (withdrawn and replaced by a new record in the same save); a record in force
-/// (its date is today or earlier) is refused with <c>…_record_in_effect</c> — a new record is entered instead.</item>
+/// applies by itself from then on until the next later-dated record starts. A date before today is refused
+/// (<c>…_effective_from_past</c>); any other date is placed on the timeline (ordered by date, then version), also before an
+/// already scheduled record (review A P2-1). A new record on the same date as a not-yet-effective record REPLACES it: that
+/// record is withdrawn in the same save (a correction, audited as such), so no withdrawal can ever bring back a hidden
+/// record (review B P2-1).</item>
+/// <item><b>Immutability</b>: a record row never changes. ANY record whose date is still ahead can be withdrawn (an
+/// insert-only withdrawal row) or corrected (withdrawn and replaced by a new record in the same save; its date is kept
+/// unless another is given) — also when later records are scheduled (SAT-D84); a record in force (its date is today or
+/// earlier) is refused with <c>…_record_in_effect</c> — a new record is entered instead.</item>
 /// <item><b>Links</b>: a linked limit must point at an ACTIVE group of the same company, and the group's records after the
 /// change must not close a cycle on any date from the change on (EK10,
 /// <see cref="SalesDiscountLimitCalculatorV1.CheckGroupLinks"/>) — a withdrawal can close one too, by extending an earlier
@@ -198,7 +200,7 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
 
         // The group's records as they would be after the change.
         SalesDiscountLimitVersionDataV1? candidate = null;
-        SalesDiscountLimitVersionDataV1? superseded = null;
+        IReadOnlyList<SalesDiscountLimitVersionDataV1> superseded = [];
         IReadOnlyList<SalesDiscountLimitGroupRow> chain = [];
         if (refusal is null)
         {
@@ -208,7 +210,6 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
                     ? version with { IsWithdrawn = true }
                     : version)
                 .ToArray();
-            var latest = SalesDiscountLimitCalculatorV1.LatestRecord(group with { Versions = remaining });
             if (change.Record is { } values)
             {
                 var effectiveFrom = values.EffectiveFrom ?? target?.EffectiveFrom ?? today;
@@ -217,49 +218,44 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
                 refusal = effectiveFrom < today
                     ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.EffectiveFromPast, "Geçmiş tarih.",
                         "Limit değişikliği bugünden önceki bir tarihten başlatılamaz.")
-                    : latest is not null && effectiveFrom < latest.EffectiveFrom
-                        ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.EffectiveFromBeforeScheduled,
-                            "Planlı limit var.",
-                            target is null
-                                ? "Bu grubun " + latest.EffectiveFrom.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
-                                  + " tarihli planlı limiti var; yeni kayıt bu tarihten önce başlayamaz. O tarihte geçerli olacak"
-                                  + " değeri değiştirmek için planlı kaydı düzeltin veya geri çekin."
-                                : "Bu kayıttan sonra " + latest.EffectiveFrom.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture)
-                                  + " tarihli başka bir planlı kayıt var; düzeltilen kayıt ondan önce başlayamaz. Önce sonraki"
-                                  + " planlı kaydı geri çekin veya düzeltin.")
                     : values.LinkedGroupId is { } linkedId && !groups.ContainsKey(linkedId)
                         ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.LinkedGroupNotFound, "Bağlı grup bulunamadı.",
                             "Bağlanan limit grubu bu şirkette yok.")
                     : values.LinkedGroupId is { } inactiveId && !groups[inactiveId].IsActive
                         ? Answers.Problem(422, SalesDiscountLimitProblemCodesV1.LinkedGroupInactive, "Bağlı grup pasif.",
-                            "Pasif bir limit grubuna bağlanılamaz.")
+                            "Pasif bir limit grubuna yeni bağlantı kurulamaz.")
                     : null;
-                if (refusal is null && latest is not null && latest.EffectiveFrom == effectiveFrom
-                    && latest.EffectiveFrom > today && !(target is null && SameLimit(latest, candidate)))
+
+                // The record in force on the new record's date without it: the same limit there changes nothing (a no-op
+                // below). A correction is a no-op only when it keeps the corrected record's value AND date.
+                var inForce = SalesDiscountLimitCalculatorV1.RecordInForce(group with { Versions = remaining }, effectiveFrom);
+                var unchanged = target is null
+                    ? inForce is not null && SameLimit(inForce, candidate)
+                    : SameLimit(target, candidate) && target.EffectiveFrom == effectiveFrom;
+                if (refusal is null && unchanged)
                 {
-                    // SAT-D84 (review P2-1): a new record on the same date as a not-yet-effective record REPLACES it — that
-                    // record is withdrawn in the same save — so withdrawing the new one later can never bring a hidden
-                    // record back. (The same limit again on that date is a no-op below and keeps the scheduled record.)
-                    superseded = latest;
-                    remaining = remaining
-                        .Select(version => version.Version == latest.Version ? version with { IsWithdrawn = true } : version)
-                        .ToArray();
+                    await RequireStillAsync(companyId, cancellationToken);
+                    return Done(change.LogName, metadata, subject, await StoreRefusalAsync(change.CommandName,
+                        Answers.NoContent(), keyHash, requestHash, metadata, cancellationToken));
                 }
 
-                remaining = [.. remaining, candidate];
+                // SAT-D84 (review B P2-1): a new record on the same date as a not-yet-effective record REPLACES it — that
+                // record is withdrawn in the same save — so a later withdrawal can never bring a hidden record back.
+                superseded = remaining
+                    .Where(version => !version.IsWithdrawn && version.EffectiveFrom == effectiveFrom
+                                      && version.EffectiveFrom > today)
+                    .ToArray();
+                remaining = remaining
+                    .Select(version => superseded.Any(replaced => replaced.Version == version.Version)
+                        ? version with { IsWithdrawn = true }
+                        : version)
+                    .Append(candidate)
+                    .ToArray();
             }
 
             if (refusal is null)
             {
-                var from = (target, candidate) switch
-                {
-                    ({ } withdrawn, { } added) => withdrawn.EffectiveFrom < added.EffectiveFrom
-                        ? withdrawn.EffectiveFrom
-                        : added.EffectiveFrom,
-                    ({ } withdrawn, null) => withdrawn.EffectiveFrom,
-                    (null, { } added) => added.EffectiveFrom,
-                    _ => today,
-                };
+                var from = new[] { target?.EffectiveFrom, candidate?.EffectiveFrom }.OfType<DateOnly>().Min();
                 var check = SalesDiscountLimitCalculatorV1.CheckGroupLinks(
                     SalesDiscountLimitCalculatorV1.With(data, group with { Versions = remaining }), change.GroupId, from);
                 if (check.CreatesCycle)
@@ -271,18 +267,6 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
                 {
                     chain = check.Chain.Where(groups.ContainsKey).Select(id => groups[id]).ToArray();
                 }
-            }
-
-            if (refusal is null && candidate is not null
-                && (target is null
-                    ? latest is not null && SameLimit(latest, candidate)
-                    : SameLimit(target, candidate) && target.EffectiveFrom == candidate.EffectiveFrom))
-            {
-                // The same limit as the latest record (starting on or after it), or a correction that changes nothing:
-                // no new record, no version move, no audit event.
-                await RequireStillAsync(companyId, cancellationToken);
-                return Done(change.LogName, metadata, subject, await StoreRefusalAsync(change.CommandName, Answers.NoContent(),
-                    keyHash, requestHash, metadata, cancellationToken));
             }
         }
 
@@ -302,7 +286,7 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
         var now = timeProvider.GetUtcNow();
         var versionBefore = row!.Version;
         var before = data[change.GroupId];
-        var replaced = new[] { target, superseded }.OfType<SalesDiscountLimitVersionDataV1>().ToArray();
+        var replaced = new[] { target }.OfType<SalesDiscountLimitVersionDataV1>().Concat(superseded).ToArray();
         var previous = replaced.Length > 0
             ? records[(change.GroupId, replaced[0].Version)]
             : SalesDiscountLimitCalculatorV1.LatestRecord(before) is { } latestBefore

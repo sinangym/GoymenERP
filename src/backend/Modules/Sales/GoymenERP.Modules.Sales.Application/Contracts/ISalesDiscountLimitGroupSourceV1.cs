@@ -9,7 +9,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// a group from a role name. The company and the actor are the server's, never a request input.
 /// <para>
 /// Until a host registers this port, Sales reads no group: no limit is defined for anyone, so every positive discount goes to
-/// approval (SAT-D2, fail-closed) — never "unlimited". An empty answer (no binding, or only passive groups) means the same.
+/// approval (SAT-D2, fail-closed) — never "unlimited". An empty answer (no binding) means the same; a passive group the
+/// person is already bound to keeps counting (SAT-D117).
 /// An owner that cannot answer throws <see cref="SalesDiscountLimitGroupSourceException"/>: denied → 403, otherwise 503
 /// (<c>sales_discount_limit_unavailable</c>) — never an empty answer.
 /// </para>

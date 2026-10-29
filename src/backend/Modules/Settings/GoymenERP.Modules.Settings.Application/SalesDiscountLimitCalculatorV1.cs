@@ -32,7 +32,7 @@ public enum SalesDiscountLimitResolutionOutcomeV1
     /// <summary>A limit is in force on the date.</summary>
     Defined = 1,
 
-    /// <summary>No limit on the date (no record in force, a passive group, or a linked group without one): approval.</summary>
+    /// <summary>No limit on the date (no record in force, or a linked group without one): approval.</summary>
     None = 2,
 
     /// <summary>The stored records contradict their own rules (a cycle, a malformed record): fail closed, never a guess.</summary>
@@ -61,17 +61,21 @@ public sealed record SalesDiscountLimitResolutionV1(
 /// The ONE deterministic calculator of a group's discount limit (SAT-D36, SAT-D62, EK10 implementation notes), used by the
 /// Settings policy read the Sales check asks and by the Settings screen's read; no UI or report re-implements it.
 /// <list type="bullet">
-/// <item><b>Versioning</b> (the existing Settings rule: one key, ascending versions, non-overlapping windows): a record is in
-/// force from its <c>EffectiveFrom</c> until the day before the next record's later <c>EffectiveFrom</c>; on a date the
-/// HIGHEST version whose <c>EffectiveFrom</c> is on or before the date applies (a same-day correction supersedes the earlier
-/// one). Before the first record nothing is in force.</item>
+/// <item><b>Versioning</b> (one key, ascending versions, non-overlapping windows): a non-withdrawn record is in force from
+/// its <c>EffectiveFrom</c> until the day before the next later-dated record's <c>EffectiveFrom</c>; on a date the record
+/// with the latest <c>EffectiveFrom</c> on or before it applies, and of several on that date the highest version (a
+/// same-day record supersedes the earlier one; the store withdraws a superseded record that was not yet in force). Before
+/// the first record nothing is in force.</item>
 /// <item><b>Fixed</b>: the percent. <b>Linked</b>: the linked group's limit on the same date + the extra points, capped at
 /// 100 (the discount itself is 0…100).</item>
 /// <item><b>Future records</b> (SAT-D78): a record may start on a later business date; until then the previous record stays
-/// in force, and from that date on it applies by itself. A linked limit is computed on the asked date, so the linked
-/// group's own record of that date is used.</item>
-/// <item><b>None</b> (SAT-D79, fail-closed: "approval", not "0 + extra"): a passive group, no record in force, a linked
-/// group that is passive, unknown or has no limit itself.</item>
+/// in force, and from that date on it applies by itself. The timeline is ordered by date, then version, so a record may
+/// start before an already scheduled one (it holds until that one starts). A linked limit is computed on the asked date,
+/// so the linked group's own record of that date is used.</item>
+/// <item><b>Passive groups</b> (SAT-D117): still resolve — for the people already bound and for the limits linked to
+/// them; passivity only closes a group to new bindings.</item>
+/// <item><b>None</b> (SAT-D79, fail-closed: "approval", not "0 + extra"): no record in force, or a linked group that is
+/// unknown or has no limit itself.</item>
 /// <item><b>Invalid</b>: a cycle or a malformed record — the caller answers <c>settings_profile_invalid</c>.</item>
 /// </list>
 /// </summary>
@@ -110,20 +114,18 @@ public static class SalesDiscountLimitCalculatorV1
             return SalesDiscountLimitResolutionV1.Invalid;
         }
 
-        if (!group.IsActive)
-        {
-            return SalesDiscountLimitResolutionV1.None;
-        }
-
-        var ordered = Active(group).OrderBy(version => version.Version).ToArray();
+        // SAT-D117 (Sinan, 2026-10-29): a passive group still counts — for the people already bound to it and for the
+        // limits linked to it; passivity only closes the group to NEW bindings (enforced by the binding write).
         var selected = RecordInForce(group, on);
         if (selected is null)
         {
             return SalesDiscountLimitResolutionV1.None;
         }
 
-        var next = ordered.FirstOrDefault(version =>
-            version.Version > selected.Version && version.EffectiveFrom > selected.EffectiveFrom);
+        // The record holds until the day before the next later-dated record of the timeline (SAT-D78/D84).
+        var next = Active(group)
+            .Where(version => version.EffectiveFrom > selected.EffectiveFrom)
+            .MinBy(version => version.EffectiveFrom);
         DateOnly? through = next?.EffectiveFrom.AddDays(-1);
         if (selected.Kind == SalesDiscountLimitKindsV1.Fixed)
         {
@@ -152,22 +154,29 @@ public static class SalesDiscountLimitCalculatorV1
     }
 
     /// <summary>
-    /// The record of <paramref name="group"/> in force on <paramref name="on"/>: the HIGHEST non-withdrawn version whose
-    /// <c>EffectiveFrom</c> is on or before the date (null before the first record). Activity is not considered.
+    /// The record of <paramref name="group"/> in force on <paramref name="on"/>: among the non-withdrawn records whose
+    /// <c>EffectiveFrom</c> is on or before the date, the one with the LATEST date, and of several on that date the highest
+    /// version (null before the first record). Ordering by (date, version) — not by version alone — lets a record be
+    /// entered or corrected for a date before a later scheduled one (review A P2-1, SAT-D84). Activity is not considered.
     /// </summary>
     public static SalesDiscountLimitVersionDataV1? RecordInForce(SalesDiscountLimitGroupDataV1 group, DateOnly on)
     {
         ArgumentNullException.ThrowIfNull(group);
         return Active(group)
             .Where(version => version.EffectiveFrom <= on)
-            .MaxBy(version => version.Version);
+            .OrderBy(version => version.EffectiveFrom)
+            .ThenBy(version => version.Version)
+            .LastOrDefault();
     }
 
-    /// <summary>The group's latest non-withdrawn record (the end of its timeline), or null.</summary>
+    /// <summary>The group's latest non-withdrawn record (the end of its timeline by date, then version), or null.</summary>
     public static SalesDiscountLimitVersionDataV1? LatestRecord(SalesDiscountLimitGroupDataV1 group)
     {
         ArgumentNullException.ThrowIfNull(group);
-        return Active(group).MaxBy(version => version.Version);
+        return Active(group)
+            .OrderBy(version => version.EffectiveFrom)
+            .ThenBy(version => version.Version)
+            .LastOrDefault();
     }
 
     /// <summary>
@@ -333,16 +342,6 @@ public static class SalesDiscountLimitCalculatorV1
                 _ => false,
             };
             if (!valid)
-            {
-                return false;
-            }
-        }
-
-        // The non-withdrawn records form one timeline: a later version never starts before an earlier one.
-        var active = ordered.Where(version => !version.IsWithdrawn).ToArray();
-        for (var index = 1; index < active.Length; index++)
-        {
-            if (active[index].EffectiveFrom < active[index - 1].EffectiveFrom)
             {
                 return false;
             }

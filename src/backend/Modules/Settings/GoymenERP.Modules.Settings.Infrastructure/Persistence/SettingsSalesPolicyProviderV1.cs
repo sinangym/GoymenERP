@@ -17,7 +17,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 /// <item>A group the store defines: if the approved catalog ALSO has an entry for that identity the sources contradict each
 /// other → <c>settings_profile_invalid</c> (fail-closed, 503 at Sales; group ids are server-minted, so this means corrupt
 /// data, never a precedence to guess). Otherwise <see cref="SalesDiscountLimitCalculatorV1"/> answers for the date: a
-/// limit in force → its exact record (profile id + version) and the window the value holds over; none (passive group, no
+/// limit in force → its exact record (profile id + version) and the window the value holds over (a passive group still
+/// counts, SAT-D117); none (no
 /// record in force, linked group without a limit) → <see cref="SettingsPrerequisiteCodesV1.SalesPolicyNotFound"/>, which
 /// Sales reads as "this group contributes nothing" (SAT-D34); contradictory records (a cycle) →
 /// <c>settings_profile_invalid</c>.</item>

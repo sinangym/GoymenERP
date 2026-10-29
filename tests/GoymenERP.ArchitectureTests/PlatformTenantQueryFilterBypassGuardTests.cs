@@ -1420,10 +1420,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Settings contexts of one all-or-nothing binding write; every read and write stays tenant-filtered EF.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SettingsSalesDiscountLimitAdministration.Bindings.cs"] =
-                    // Re-fingerprinted for SAT-D116 (EK15): the write covers only the companies where the person is a member
+                    // Re-fingerprinted for SAT-D116 (EK15) and SAT-D117: the write covers only the companies where the person is a member,
+                    // and a passive group the person is already bound to may be kept
                     // (membership asked through the Identity port first); the one connection and context per company unchanged.
                     new(
-                        "d768db655d547f22bcc472e72da6f9789172b4a8281fc8c50cc1faa83fe6f114",
+                        "05d49a3a709f9272b07ea25d6aca23863c482c3ae65b7c83249ca4dd09dee265",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["GetDbConnection"] = 1

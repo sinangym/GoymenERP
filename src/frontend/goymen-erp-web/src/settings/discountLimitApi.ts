@@ -17,6 +17,7 @@ import {
   decodeCreated,
   decodeGroupList,
   decodePeople,
+  groupActivationPath,
   groupDeactivationPath,
   groupLimitCorrectionPath,
   groupLimitPath,
@@ -166,6 +167,15 @@ export function deactivateLimitGroup(
   signal?: AbortSignal,
 ) {
   return send<true>('POST', groupDeactivationPath(groupId), context, body, 204, noBody, signal)
+}
+
+export function reactivateLimitGroup(
+  context: CommandContext,
+  groupId: string,
+  body: DeactivateGroupBody,
+  signal?: AbortSignal,
+) {
+  return send<true>('POST', groupActivationPath(groupId), context, body, 204, noBody, signal)
 }
 
 export function setGroupLimit(context: CommandContext, groupId: string, body: SetLimitBody, signal?: AbortSignal) {

@@ -15,6 +15,7 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
     private const string GroupCreateCommandName = "settings.sales-discount-limit-group.create.v1";
     private const string GroupRenameCommandName = "settings.sales-discount-limit-group.rename.v1";
     private const string GroupDeactivateCommandName = "settings.sales-discount-limit-group.deactivate.v1";
+    private const string GroupReactivateCommandName = "settings.sales-discount-limit-group.reactivate.v1";
 
     public async Task<SettingsCommandResultV1> CreateGroupAsync(CreateSalesDiscountLimitGroupRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
@@ -191,6 +192,63 @@ internal sealed partial class SettingsSalesDiscountLimitAdministration
             metadata);
         await RequireStillAsync(companyId, cancellationToken);
         return Done("deactivate", metadata, groupId.ToString("D"), await SaveChangeAsync(GroupDeactivateCommandName,
+            Answers.NoContent(), keyHash, requestHash, metadata,
+            _ => Task.FromResult(Answers.VersionConflict()), cancellationToken));
+    }
+
+    /// <summary>
+    /// SAT-D118 (Sinan, 2026-10-29): a passive group becomes active again under the same name, with a mandatory reason and
+    /// one audit event (one person decides, like a limit change). An active group is 409 <c>…_group_active</c>.
+    /// </summary>
+    public async Task<SettingsCommandResultV1> ReactivateGroupAsync(Guid groupId,
+        ReactivateSalesDiscountLimitGroupRequestV1 request, SettingsCommandMetadataV1 metadata,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ValidateMetadata(metadata);
+        var companyId = RequireContextCompany();
+        var scope = await RequireAsync(companyId, cancellationToken);
+        if (groupId == Guid.Empty || !TryParseVersion(request.ExpectedVersion, 1, out var expectedVersion))
+        {
+            return Unstored(Answers.Invalid("Grup ve beklenen sürüm (pozitif tam sayı metni) zorunludur."), metadata);
+        }
+
+        if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
+        {
+            return Unstored(reasonRefusal, metadata);
+        }
+
+        var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
+        var requestHash = IdempotencyHash.ComputePayload(new
+        {
+            GroupId = groupId, ExpectedVersion = expectedVersion, Reason = reason,
+        });
+        if (await FindExecutionAsync(GroupReactivateCommandName, keyHash, cancellationToken) is { } existing)
+        {
+            await RequireStillAsync(companyId, cancellationToken);
+            return Done("reactivate", metadata, groupId.ToString("D"), Replay(existing, requestHash, metadata));
+        }
+
+        var row = await database.SalesDiscountLimitGroups.SingleOrDefaultAsync(group => group.Id == groupId, cancellationToken);
+        var refusal = row is null ? Answers.NotFound()
+            : row.Version != expectedVersion ? Answers.VersionConflict()
+            : row.IsActive ? Answers.Problem(409, SalesDiscountLimitProblemCodesV1.GroupActive, "Grup zaten etkin.",
+                "Limit grubu zaten etkin.")
+            : null;
+        if (refusal is not null)
+        {
+            return Done("reactivate", metadata, groupId.ToString("D"),
+                await StoreRefusalAsync(GroupReactivateCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
+        }
+
+        var before = GroupSnapshot(row!);
+        row!.IsActive = true;
+        Touch(row, metadata, bumpVersion: true);
+        Audit(auditEvents, companyId, "settings.sales-discount-limit-group.reactivated.v1", GroupEntityType,
+            groupId.ToString("D"), "Reactivate", expectedVersion, row.Version, scope, before, GroupSnapshot(row), reason,
+            metadata);
+        await RequireStillAsync(companyId, cancellationToken);
+        return Done("reactivate", metadata, groupId.ToString("D"), await SaveChangeAsync(GroupReactivateCommandName,
             Answers.NoContent(), keyHash, requestHash, metadata,
             _ => Task.FromResult(Answers.VersionConflict()), cancellationToken));
     }

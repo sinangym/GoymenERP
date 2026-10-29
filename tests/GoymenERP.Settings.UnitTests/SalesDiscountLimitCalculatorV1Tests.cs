@@ -76,17 +76,22 @@ public sealed class SalesDiscountLimitCalculatorV1Tests
     public void Without_an_approved_linked_limit_the_linked_limit_is_none_and_never_zero_plus_points()
     {
         var noRecord = Groups(Group(Seller, true), Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day)));
-        var passive = Groups(Group(Seller, false, Fixed(Seller, 1, 35m, Day)), Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day)));
         var unknown = Groups(Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day)));
         var later = Groups(Group(Seller, true, Fixed(Seller, 1, 35m, Day.AddDays(1))), Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day)));
 
-        foreach (var groups in new[] { noRecord, passive, unknown, later })
+        foreach (var groups in new[] { noRecord, unknown, later })
         {
             Assert.Equal(SalesDiscountLimitResolutionOutcomeV1.None, SalesDiscountLimitCalculatorV1.Resolve(groups, Manager, Day).Outcome);
         }
+    }
 
-        // A passive group contributes nothing itself, even with a record.
-        Assert.Equal(SalesDiscountLimitResolutionOutcomeV1.None, SalesDiscountLimitCalculatorV1.Resolve(passive, Seller, Day).Outcome);
+    [Fact]
+    public void Sat_d117_a_passive_group_keeps_counting_for_itself_and_for_the_limits_linked_to_it()
+    {
+        var passive = Groups(Group(Seller, false, Fixed(Seller, 1, 35m, Day)), Group(Manager, true, Linked(Manager, 1, Seller, 3m, Day)));
+
+        Assert.Equal(35m, SalesDiscountLimitCalculatorV1.Resolve(passive, Seller, Day).Percent);
+        Assert.Equal(38m, SalesDiscountLimitCalculatorV1.Resolve(passive, Manager, Day).Percent);
     }
 
     [Fact]
@@ -99,12 +104,10 @@ public sealed class SalesDiscountLimitCalculatorV1Tests
         var malformed = Groups(Group(Seller, true, new SalesDiscountLimitVersionDataV1(Seller, 1, Guid.NewGuid(),
             SalesDiscountLimitKindsV1.Fixed, null, null, 3m, Day)));
         var gap = Groups(Group(Seller, true, Fixed(Seller, 2, 10m, Day)));
-        var backwards = Groups(Group(Seller, true, Fixed(Seller, 1, 10m, Day), Fixed(Seller, 2, 20m, Day.AddDays(-1))));
 
         Assert.Equal(SalesDiscountLimitResolutionOutcomeV1.Invalid, SalesDiscountLimitCalculatorV1.Resolve(cycle, Manager, Day).Outcome);
         Assert.Equal(SalesDiscountLimitResolutionOutcomeV1.Invalid, SalesDiscountLimitCalculatorV1.Resolve(malformed, Seller, Day).Outcome);
         Assert.Equal(SalesDiscountLimitResolutionOutcomeV1.Invalid, SalesDiscountLimitCalculatorV1.Resolve(gap, Seller, Day).Outcome);
-        Assert.Equal(SalesDiscountLimitResolutionOutcomeV1.Invalid, SalesDiscountLimitCalculatorV1.Resolve(backwards, Seller, Day).Outcome);
     }
 
     [Fact]
@@ -231,6 +234,60 @@ public sealed class SalesDiscountLimitCalculatorV1Tests
         Assert.Equal((33m, (DateOnly?)null), (manager.Percent, manager.EffectiveThrough));
         Assert.Empty(SalesDiscountLimitCalculatorV1.ScheduledAfter(groups[Seller], Day));
         Assert.Equal(1L, SalesDiscountLimitCalculatorV1.LatestRecord(groups[Seller])!.Version);
+    }
+
+    [Fact]
+    public void Review_a_p2_1_the_timeline_is_ordered_by_date_then_version_so_a_later_version_may_start_earlier()
+    {
+        // 30 % today and 40 % scheduled for day +20 (v2); a new record v3 = 33 % from day +5 holds until day +19 and the
+        // scheduled 40 % still takes effect on day +20.
+        var groups = Groups(Group(Seller, true,
+            Fixed(Seller, 1, 30m, Day), Fixed(Seller, 2, 40m, Day.AddDays(20)), Fixed(Seller, 3, 33m, Day.AddDays(5))));
+
+        var early = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(4));
+        var middle = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(5));
+        var late = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(20));
+
+        Assert.Equal((30m, 1L, (DateOnly?)Day.AddDays(4)), (early.Percent, early.Record!.Version, early.EffectiveThrough));
+        Assert.Equal((33m, 3L, (DateOnly?)Day.AddDays(19)), (middle.Percent, middle.Record!.Version, middle.EffectiveThrough));
+        Assert.Equal((40m, 2L, (DateOnly?)null), (late.Percent, late.Record!.Version, late.EffectiveThrough));
+        Assert.Equal([3L, 2L], SalesDiscountLimitCalculatorV1.ScheduledAfter(groups[Seller], Day).Select(record => record.Version));
+        Assert.Equal(2L, SalesDiscountLimitCalculatorV1.LatestRecord(groups[Seller])!.Version);
+    }
+
+    [Fact]
+    public void Review_a_p2_1_correcting_the_earlier_of_two_scheduled_records_keeps_its_date_and_the_later_one()
+    {
+        // v2 35 % @+10 and v3 40 % @+20 scheduled; v2 corrected to 36 % on its own date (v2 withdrawn, v4 written).
+        var groups = Groups(Group(Seller, true,
+            Fixed(Seller, 1, 30m, Day), Fixed(Seller, 2, 35m, Day.AddDays(10)) with { IsWithdrawn = true },
+            Fixed(Seller, 3, 40m, Day.AddDays(20)), Fixed(Seller, 4, 36m, Day.AddDays(10))));
+
+        var corrected = SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(10));
+
+        Assert.Equal((36m, 4L, (DateOnly?)Day.AddDays(19)), (corrected.Percent, corrected.Record!.Version, corrected.EffectiveThrough));
+        Assert.Equal(40m, SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(20)).Percent);
+        Assert.Equal(30m, SalesDiscountLimitCalculatorV1.Resolve(groups, Seller, Day.AddDays(9)).Percent);
+        Assert.Equal([4L, 3L], SalesDiscountLimitCalculatorV1.ScheduledAfter(groups[Seller], Day).Select(record => record.Version));
+    }
+
+    [Fact]
+    public void Review_a_p2_1_a_link_inserted_before_a_scheduled_record_is_checked_on_every_date()
+    {
+        // The manager is fixed and scheduled to follow the seller from day +30; the seller is linked to the manager from day
+        // +5, before its own scheduled fixed record at day +40: days +30…+39 would cycle.
+        var groups = Groups(
+            Group(Seller, true, Fixed(Seller, 1, 30m, Day), Fixed(Seller, 2, 31m, Day.AddDays(40))),
+            Group(Manager, true, Fixed(Manager, 1, 40m, Day), Linked(Manager, 2, Seller, 3m, Day.AddDays(30))));
+
+        Assert.True(SalesDiscountLimitCalculatorV1.CheckLink(groups, Seller, Manager, Day.AddDays(5)).CreatesCycle);
+        // Until day +29 the manager is fixed: a link that ends before then (the seller's own fixed record from day +20)
+        // would be fine, which the date-by-date walk sees.
+        var bounded = SalesDiscountLimitCalculatorV1.With(groups, groups[Seller] with
+        {
+            Versions = [.. groups[Seller].Versions, Fixed(Seller, 3, 30m, Day.AddDays(20))],
+        });
+        Assert.False(SalesDiscountLimitCalculatorV1.CheckLink(bounded, Seller, Manager, Day.AddDays(5)).CreatesCycle);
     }
 
     [Fact]
