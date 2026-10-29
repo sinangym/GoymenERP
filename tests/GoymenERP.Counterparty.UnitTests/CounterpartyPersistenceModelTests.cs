@@ -105,6 +105,24 @@ public sealed class CounterpartyPersistenceModelTests
     }
 
     [Fact]
+    public void Account_e_document_profile_is_an_explicit_status_with_its_check_and_a_shaped_override()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var account = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(CompanyPartyAccount))!;
+
+        // SAT-D102: Unknown (0) carries no check; a known status carries both the time and the checker.
+        var status = Assert.Single(account.GetCheckConstraints(), check => check.Name == "CK_CompanyPartyAccounts_EDocumentStatus");
+        Assert.Contains("[EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL", status.Sql, StringComparison.Ordinal);
+        Assert.Contains("[EDocumentStatus] IN (1, 2)", status.Sql, StringComparison.Ordinal);
+        var code = Assert.Single(account.GetCheckConstraints(),
+            check => check.Name == "CK_CompanyPartyAccounts_EInvoiceScenarioOverrideCode");
+        Assert.Contains("NOT LIKE '%[^A-Z0-9_]%'", code.Sql, StringComparison.Ordinal);
+        Assert.False(account.FindProperty(nameof(CompanyPartyAccount.EDocumentStatus))!.IsNullable);
+        Assert.Equal(32, account.FindProperty(nameof(CompanyPartyAccount.EInvoiceScenarioOverrideCode))!.GetMaxLength());
+        Assert.Equal(128, account.FindProperty(nameof(CompanyPartyAccount.EDocumentStatusCheckedByUserId))!.GetMaxLength());
+    }
+
+    [Fact]
     public void SaveChanges_AllowsATaxIdentityOnlyPartyChangeAndStillRejectsAnyOtherPartyEdit()
     {
         var companyId = Guid.NewGuid();
@@ -181,8 +199,11 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20260930150000_AddPartyTaxIdentity",
             dbContext.Database.GetMigrations());
-        Assert.Equal(
+        Assert.Contains(
             "20261027202534_AddCounterpartyCustomerGroups",
+            dbContext.Database.GetMigrations());
+        Assert.Equal(
+            "20261028231320_AddCounterpartyAccountEDocumentProfile",
             dbContext.Database.GetMigrations().Last());
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }

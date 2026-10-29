@@ -357,6 +357,7 @@ public static partial class CounterpartyEndpoints
         MapContactInformationEndpoints(group);
         MapTaxIdentityEndpoints(group);
         MapCustomerGroupEndpoints(group);
+        MapEDocumentProfileEndpoints(group);
         return endpoints;
     }
 

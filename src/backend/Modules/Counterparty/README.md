@@ -1,6 +1,6 @@
 # Counterparty (Cari) module
 
-Only the AT-009 and SAT-D57 slices and the location-operator source are described here; the earlier Cari slices are
+Only the AT-009, SAT-D57 and SAT-D102 slices and the location-operator source are described here; the earlier Cari slices are
 documented in `docs/features/CARI_*` and `docs/handoffs/CARI_*`.
 
 ## Location operator eligibility source v1
@@ -80,3 +80,41 @@ Screens: the Cari card's account section (`src/frontend/goymen-erp-web/src/cari/
 company list `/cari/musteri-gruplari` (`CariCustomerGroupsPage.tsx`), linked from the Cari list and card and mounted
 under the Cari list capability (its read needs exactly `counterparty.parties.read`). Drawing it under the Ayarlar
 sidebar group needs its own server shell capability (a Cari owner-contract change) and is left to that step.
+
+## SAT-D102 — e-belge status and e-Fatura scenario on the Cari card (Sinan, 2026-10-28, `SINAN_KARARLARI_2026-10-28_SATIS_EK13.md`)
+
+**Owner.** Counterparty owns the customer's e-belge profile, held on the company's account (`CompanyPartyAccount`), so
+it carries `CompanyId` and each company records its own check when it opens the card. The allowed scenario codes and
+the default scenario are **Settings** data (`ISettingsEInvoiceScenarioPolicyProviderV1`, effective-dated, reviewed
+catalog `ApprovedEInvoiceScenarioCatalog`); Cari keeps no list of its own and reads Settings only through that port.
+Both Settings keys start **empty** (SAT-D102: "Boş kalsın, ben gireyim"; no code list is decided either), so today no
+override can be chosen and every customer's scenario is `Unresolved`.
+
+| Rule | Behaviour |
+|---|---|
+| Status | `EDocumentStatus` = `Unknown` (0, every existing account; never inferred) / `EInvoiceTaxpayer` (1, wire `EInvoice`) / `EArchive` (2). A known status carries the server time of the check and the checker's actor id; Unknown carries neither (check constraint `CK_CompanyPartyAccounts_EDocumentStatus`). |
+| Read | `GET /api/v1/counterparties/{partyId}/company-account/e-document` → status, `statusCheckedAtUtc`, `statusCheckedByUserId`, `scenarioOverrideCode`, `evaluatedOn` (Europe/Istanbul business day), `scenarioCodes {state, codes}`, `settingsDefault {state, scenarioCode}`, `effectiveScenario {outcome, source, scenarioCode, unresolvedReason}`, `viewer {canUpdate}`. Settings states: `Set` / `NotSet` ("kaynak yok") / `Unavailable`. |
+| Record check | `PUT …/e-document/status` `{expectedVersion, status}` → 204. A known status always records a new check (time + checker move, version moves, audited) even when unchanged; `Unknown` resets; Unknown → Unknown is a fenced no-op. |
+| Scenario override | `PUT …/e-document/scenario` `{expectedVersion, scenarioCode}` (must be present; `null` clears). A NEW code must be in the Settings list in force today: no list → `422 einvoice_scenario_code_list_missing`; not listed → `422 einvoice_scenario_not_listed`; Settings unreadable → platform `503 service_unavailable`, nothing stored (retry with the same key). Re-sending the stored code is a no-op. Lexical shape `^[A-Z][A-Z0-9_]{0,31}$` (check constraint). |
+| Effective scenario | One rule (`CounterpartyEInvoiceScenarioResolverV1`): override if present AND listed on the date → `Resolved/CustomerOverride`; an override the list does not carry → `Unresolved/CustomerOverrideNotListed` (no fallback to the default); no override → Settings default (`Resolved/SettingsDefault`) or `Unresolved/SettingsDefaultNotSet`; Settings unreadable → `Unavailable`. |
+
+Common to both commands: company-wide `counterparty.accounts.e-document.update` (new; registered, not Critical,
+**assigned to no role** — human gate; deliberately not `counterparty.parties.update.basic`, so existing basic-edit
+grants are not widened) plus `counterparty.parties.read`, measured first and re-measured before the write; one
+`Idempotency-Key` (stored 204/404/409/422 replay); the ACCOUNT version as decimal text; correlation/causation; one audit
+event per real change (`counterparty.company-account.e-document-status.recorded.v1`,
+`counterparty.company-account.e-invoice-scenario.changed.v1`). No GİB or other external call is made; the GİB mükellef
+query is a follow-up.
+
+**Read port.** `ICounterpartyAccountEDocumentProfileSourceV1.GetAuthorizedAsync(companyId, companyAccountId,
+effectiveOn)` answers `Found` (status, check, override and the effective scenario for `effectiveOn`), `NotFound`,
+`Denied` or `Unavailable` — fail-closed as the SAT-D57 port. Intended consumer: the Sales invoice draft (API-32, S5
+follow-up), which must refuse an e-Fatura draft while the status is Unknown or the scenario is not `Resolved`. It is
+not wired into Sales invoice grouping in this slice.
+
+Migration `20261028231320_AddCounterpartyAccountEDocumentProfile` (generated with `dotnet ef`): four additive columns
+and two check constraints. Rollback is refused with `51121` while any account has a known status or an override; with
+every account Unknown and no override it drops them. Forward-fix plan otherwise: keep the additive columns and correct
+with a new migration.
+
+Screen: the Cari card's account section (`src/frontend/goymen-erp-web/src/cari/CariEDocumentPanel.tsx`).

@@ -194,6 +194,8 @@ builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrereq
 builder.Services.AddScoped<ISettingsMoneyCandidateReaderV2, ApprovedSettingsPrerequisiteProvider>();
 // MOD-03 slice 1: the Settings-owned Sales policy registry (SAT-D2/D5/D6); no consumer is composed yet.
 builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
+// SAT-D102: the Settings-owned e-Fatura scenario code list and default (both start empty); read by Cari.
+builder.Services.AddScoped<ISettingsEInvoiceScenarioPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // PRD-UNIT-1: the company-independent unit identities of the approved catalog (immutable source data).
 builder.Services.AddSingleton<ISettingsUnitIdentityCatalogV1, ApprovedSettingsUnitIdentityCatalog>();
 builder.Services.AddScoped<ISalesAccountSelectionSourceV1, CounterpartySalesAccountSelectionSourceV1>();

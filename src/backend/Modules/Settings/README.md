@@ -426,3 +426,25 @@ threshold amount, an HTTP route, OpenAPI, persistence, migration, seed or grant.
 Validation: Settings unit tests (synthetic catalogs for invariants and windows; the approved
 values asserted against their SAT sources) and the host wiring tests. No persistence changed;
 rollback is removing the registration and the files, with no data rollback.
+
+## e-Fatura scenario policy (SAT-D102)
+
+Source: Sinan's decision of 2026-10-28, SAT-D102 (`docs/decisions/SINAN_KARARLARI_2026-10-28_SATIS_EK13.md`): the
+e-Fatura scenario default is a Settings value, changeable per customer on the Cari card; its starting value is
+**empty** and Sinan enters it.
+
+`ISettingsEInvoiceScenarioPolicyProviderV1` has two effective-dated keys, served by `ApprovedSettingsPrerequisiteProvider`
+from `ApprovedEInvoiceScenarioCatalog` (reviewed source code, no table or seed; catalog-taking constructors internal):
+
+| Read | Value today (every company) | Answer |
+|---|---|---|
+| `GetEInvoiceScenarioCodesAsync(effectiveOn)` | **empty** — no code list is decided (TEMEL/TİCARİ are only named as examples) | `settings_einvoice_scenario_code_list_not_found` |
+| `GetEInvoiceScenarioDefaultAsync(effectiveOn)` | **empty** — Sinan enters it | `settings_einvoice_scenario_default_not_found` |
+
+Access is checked first (`settings_access_denied`). Every accessible company has both keys, so an empty key is "not
+found", never `settings_provider_unavailable` and never a default. A served default is always a code of the list in
+force on the same date (the catalog refuses a default its list does not carry on its first day; a later list that drops
+it makes the read `settings_profile_invalid`). Codes are lexical UBL-TR profile tokens
+(`EInvoiceScenarioCodeFormatV1`: `^[A-Z][A-Z0-9_]{0,31}$`). Entering a value is a new reviewed catalog version (as the
+other Settings policies); a user-maintained Settings screen is a later slice. Consumer: Counterparty (Cari card override
+validation and `ICounterpartyAccountEDocumentProfileSourceV1`).

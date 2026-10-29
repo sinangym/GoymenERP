@@ -28,9 +28,11 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.CustomerGroupNameTaken,
             CounterpartyProblemCodesV1.CustomerGroupNotFound,
             CounterpartyProblemCodesV1.CustomerGroupInactive,
+            CounterpartyProblemCodesV1.EInvoiceScenarioCodeListMissing,
+            CounterpartyProblemCodesV1.EInvoiceScenarioNotListed,
         };
 
-        Assert.Equal(19, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(21, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.All(codes, code => Assert.Matches("^[a-z]+(?:_[a-z]+)*$", code));
     }
 
@@ -60,6 +62,10 @@ public sealed class CounterpartyProblemCodesV1Tests
     [InlineData(CounterpartyCommandResult.CustomerGroupNameTaken, CounterpartyProblemCodesV1.CustomerGroupNameTaken)]
     [InlineData(CounterpartyCommandResult.CustomerGroupNotFound, CounterpartyProblemCodesV1.CustomerGroupNotFound)]
     [InlineData(CounterpartyCommandResult.CustomerGroupInactive, CounterpartyProblemCodesV1.CustomerGroupInactive)]
+    [InlineData(
+        CounterpartyCommandResult.EInvoiceScenarioCodeListMissing,
+        CounterpartyProblemCodesV1.EInvoiceScenarioCodeListMissing)]
+    [InlineData(CounterpartyCommandResult.EInvoiceScenarioNotListed, CounterpartyProblemCodesV1.EInvoiceScenarioNotListed)]
     public void RequiredForProblem_MapsEveryPersistedTerminalFailure(
         CounterpartyCommandResult result,
         string expectedCode)

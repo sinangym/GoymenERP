@@ -122,8 +122,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // read factory, and registers one scoped in-process SalesOwnerCandidateHost, with comments (cae283bd… -> 2eae99cc…), then
     // a COMMENT-ONLY edit saying the sales-owner picker opens on the order create name alone (2eae99cc… -> 13f02f10…); no
     // OpenAPI-generation, network or hosted-service surface changes.
+    // SAT-D102 registers one scoped in-process Settings port (ISettingsEInvoiceScenarioPolicyProviderV1 ->
+    // ApprovedSettingsPrerequisiteProvider, the reviewed empty catalog) with a comment (13f02f10… -> 850af3dc…); no
+    // OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "13f02f10dd4cdd0a1a245c41326bfddfbc2f3454265be791f9d4c0d621ef08fb";
+        "850af3dc2e627882c8c1daf82d15baca8ced7438daf30360dd752a3a8a7ce7fc";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -218,8 +221,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // GOY-UX-TEXT-FILTER-01: +1 same-address-row, pre-pagination address-filter SQL fact.
             // Location operator eligibility: +1 exact-party, supplier-only, company/actor-fenced read-only SQL fact.
             // SAT-D57 customer group: +5 list lifecycle, account assignment/port, company fence, 403 and rollback facts.
+            // SAT-D102 e-belge profile: +5 status lifecycle, Settings-listed override/effective scenario, company fence
+            // and DB checks, 403 and rollback facts (d8e2b013… -> 26c1ce5c…).
             ["tools/relational_inventory/counterparty.txt"] =
-                "d8e2b013d2ef21db35516d57d168e0be2bdb4590bcfe2ba0707180dedb4c78b2",
+                "26c1ce5c46a53d877bd02ff667ffa81c936d6f4cb87f2150eada36508a7c77fa",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).

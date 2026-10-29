@@ -202,6 +202,20 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("CustomerGroupId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("EDocumentStatus")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("EDocumentStatusCheckedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("EDocumentStatusCheckedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("EInvoiceScenarioOverrideCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<string>("ExternalIntegrationCode")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -244,6 +258,10 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                     b.ToTable("CompanyPartyAccounts", "counterparty", t =>
                         {
                             t.HasCheckConstraint("CK_CompanyPartyAccounts_ContactInformationJson", "[ContactInformationJson] IS NULL OR ISJSON([ContactInformationJson]) = 1");
+
+                            t.HasCheckConstraint("CK_CompanyPartyAccounts_EDocumentStatus", "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL) OR ([EDocumentStatus] IN (1, 2) AND [EDocumentStatusCheckedAtUtc] IS NOT NULL AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0)");
+
+                            t.HasCheckConstraint("CK_CompanyPartyAccounts_EInvoiceScenarioOverrideCode", "[EInvoiceScenarioOverrideCode] IS NULL OR (LEN([EInvoiceScenarioOverrideCode]) > 0 AND DATALENGTH([EInvoiceScenarioOverrideCode]) = 2 * LEN([EInvoiceScenarioOverrideCode]) AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 LIKE '[A-Z]%' AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^A-Z0-9_]%')");
 
                             t.HasCheckConstraint("CK_CompanyPartyAccounts_Roles", "[Roles] BETWEEN 0 AND 15");
 

@@ -9,6 +9,7 @@ using GoymenERP.Modules.Counterparty.Application.Views;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -22,7 +23,9 @@ internal sealed partial class CounterpartyCommandService(
     IErpAuthorityRevalidationService authorityRevalidationService,
     IAuditEventCollector auditEventCollector,
     ICounterpartyActiveStateCommandProbe activeStateCommandProbe,
-    ILogger<CounterpartyCommandService> logger)
+    ILogger<CounterpartyCommandService> logger,
+    TimeProvider timeProvider,
+    ISettingsEInvoiceScenarioPolicyProviderV1? eInvoiceScenarioPolicy = null)
     : ICounterpartyCommandService, ICounterpartyContactInformationService
 {
     private const int CommandExecutionSchemaVersion = 1;

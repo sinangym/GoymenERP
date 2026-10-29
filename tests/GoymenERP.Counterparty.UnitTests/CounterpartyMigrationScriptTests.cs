@@ -48,6 +48,15 @@ public sealed class CounterpartyMigrationScriptTests
             "ADD CONSTRAINT [FK_CompanyPartyAccounts_CustomerGroups_CompanyId_CustomerGroupId] FOREIGN KEY ([CompanyId], [CustomerGroupId]) REFERENCES [counterparty].[CustomerGroups] ([CompanyId], [Id])",
             script, StringComparison.Ordinal);
         Assert.DoesNotContain("INSERT INTO [counterparty].[CustomerGroups]", script, StringComparison.OrdinalIgnoreCase);
+        // SAT-D102: the e-belge profile columns on the account; every existing account starts Unknown, nothing seeded.
+        Assert.Contains("20261028231320_AddCounterpartyAccountEDocumentProfile", script, StringComparison.Ordinal);
+        Assert.Contains(
+            "ALTER TABLE [counterparty].[CompanyPartyAccounts] ADD [EDocumentStatus] int NOT NULL DEFAULT 0",
+            script, StringComparison.Ordinal);
+        Assert.Contains("CK_CompanyPartyAccounts_EDocumentStatus", script, StringComparison.Ordinal);
+        Assert.Contains("CK_CompanyPartyAccounts_EInvoiceScenarioOverrideCode", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("TEMELFATURA", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("TICARIFATURA", script, StringComparison.OrdinalIgnoreCase);
 
         Assert.DoesNotContain("CREATE TABLE [audit].[AuditEvents]", script, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(

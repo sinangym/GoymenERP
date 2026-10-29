@@ -48,6 +48,22 @@ public sealed class CompanyPartyAccount
     /// </summary>
     public Guid? CustomerGroupId { get; private set; }
 
+    /// <summary>SAT-D102: the e-belge status (e-Fatura mükellefi / e-Arşiv); <see cref="EDocumentStatus.Unknown"/> until checked.</summary>
+    public EDocumentStatus EDocumentStatus { get; private set; } = EDocumentStatus.Unknown;
+
+    /// <summary>SAT-D102: when the status was last recorded as checked (server time); null exactly when Unknown.</summary>
+    public DateTimeOffset? EDocumentStatusCheckedAtUtc { get; private set; }
+
+    /// <summary>SAT-D102: who recorded the last check (the authenticated actor id); null exactly when Unknown.</summary>
+    public string? EDocumentStatusCheckedByUserId { get; private set; }
+
+    /// <summary>
+    /// SAT-D102: the customer's own e-Fatura scenario code, overriding the Settings default; null = use the default.
+    /// The allowed codes are the Settings code list's (validated by the command before it calls
+    /// <see cref="SetEInvoiceScenarioOverride"/>); this type only keeps the lexical shape.
+    /// </summary>
+    public string? EInvoiceScenarioOverrideCode { get; private set; }
+
     public bool IsActive { get; private set; } = true;
 
     public long Version { get; private set; } = 1;
@@ -144,6 +160,91 @@ public sealed class CompanyPartyAccount
         Touch(DateTimeOffset.UtcNow);
         return true;
     }
+
+    /// <summary>
+    /// SAT-D102: records the e-belge status a user checked. A known status always counts as a new check (the date and
+    /// checker move, so the version moves and the change is audited) even when the value is the same; resetting to
+    /// <see cref="EDocumentStatus.Unknown"/> clears the check date and checker. False only for Unknown → Unknown.
+    /// </summary>
+    public bool RecordEDocumentStatus(EDocumentStatus status, string checkedByUserId, DateTimeOffset checkedAtUtc)
+    {
+        if (!Enum.IsDefined(status))
+        {
+            throw new ArgumentOutOfRangeException(nameof(status), status, "Bilinmeyen e-belge durumu.");
+        }
+
+        if (status == EDocumentStatus.Unknown)
+        {
+            if (EDocumentStatus == EDocumentStatus.Unknown)
+            {
+                return false;
+            }
+
+            EDocumentStatus = EDocumentStatus.Unknown;
+            EDocumentStatusCheckedAtUtc = null;
+            EDocumentStatusCheckedByUserId = null;
+            Touch(DateTimeOffset.UtcNow);
+            return true;
+        }
+
+        var checker = checkedByUserId?.Trim();
+        if (string.IsNullOrEmpty(checker) || checker.Length > EDocumentCheckerMaximumLength)
+        {
+            throw new ArgumentException("Kontrol eden kullanıcı kimliği geçersiz.", nameof(checkedByUserId));
+        }
+
+        EDocumentStatus = status;
+        EDocumentStatusCheckedAtUtc = checkedAtUtc;
+        EDocumentStatusCheckedByUserId = checker;
+        Touch(DateTimeOffset.UtcNow);
+        return true;
+    }
+
+    /// <summary>
+    /// SAT-D102: sets (or, with null, clears) the customer's e-Fatura scenario override. The caller has already proven
+    /// that the code is in the Settings code list in force; false when the value is unchanged (no version move).
+    /// </summary>
+    public bool SetEInvoiceScenarioOverride(string? scenarioCode)
+    {
+        if (scenarioCode is not null && !IsWellFormedScenarioCode(scenarioCode))
+        {
+            throw new ArgumentException("e-Fatura senaryo kodu biçimi geçersiz.", nameof(scenarioCode));
+        }
+
+        if (string.Equals(EInvoiceScenarioOverrideCode, scenarioCode, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        EInvoiceScenarioOverrideCode = scenarioCode;
+        Touch(DateTimeOffset.UtcNow);
+        return true;
+    }
+
+    /// <summary>The stored shape of a scenario code: 1..32, an ASCII upper-case letter first, then A-Z, 0-9 or '_'.</summary>
+    public static bool IsWellFormedScenarioCode(string? code)
+    {
+        if (string.IsNullOrEmpty(code) || code.Length > EInvoiceScenarioCodeMaximumLength || code[0] is < 'A' or > 'Z')
+        {
+            return false;
+        }
+
+        foreach (var character in code)
+        {
+            if (character is not ((>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Column length of the scenario override (the Settings code format's maximum).</summary>
+    public const int EInvoiceScenarioCodeMaximumLength = 32;
+
+    /// <summary>Column length of the checker's actor id.</summary>
+    public const int EDocumentCheckerMaximumLength = 128;
 
     internal void Touch(DateTimeOffset utcNow)
     {

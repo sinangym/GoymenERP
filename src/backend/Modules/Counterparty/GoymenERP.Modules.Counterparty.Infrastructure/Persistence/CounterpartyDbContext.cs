@@ -190,9 +190,29 @@ public sealed class CounterpartyDbContext(
             table.HasCheckConstraint(
                 "CK_CompanyPartyAccounts_Version",
                 "[Version] >= 1");
+            // SAT-D102: an explicit status; Unknown carries no check date or checker, a known status carries both.
+            table.HasCheckConstraint(
+                "CK_CompanyPartyAccounts_EDocumentStatus",
+                "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL)"
+                + " OR ([EDocumentStatus] IN (1, 2) AND [EDocumentStatusCheckedAtUtc] IS NOT NULL"
+                + " AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0)");
+            // SAT-D102: the override's lexical shape only; WHICH codes exist is the Settings code list's business.
+            table.HasCheckConstraint(
+                "CK_CompanyPartyAccounts_EInvoiceScenarioOverrideCode",
+                "[EInvoiceScenarioOverrideCode] IS NULL OR (LEN([EInvoiceScenarioOverrideCode]) > 0"
+                + " AND DATALENGTH([EInvoiceScenarioOverrideCode]) = 2 * LEN([EInvoiceScenarioOverrideCode])"
+                + " AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 LIKE '[A-Z]%'"
+                + " AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^A-Z0-9_]%')");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
+        entity.Property(x => x.EDocumentStatus)
+            .HasConversion<int>()
+            .IsRequired();
+        entity.Property(x => x.EDocumentStatusCheckedByUserId)
+            .HasMaxLength(CompanyPartyAccount.EDocumentCheckerMaximumLength);
+        entity.Property(x => x.EInvoiceScenarioOverrideCode)
+            .HasMaxLength(CompanyPartyAccount.EInvoiceScenarioCodeMaximumLength);
         entity.Property(x => x.Roles)
             .HasConversion<int>()
             .IsRequired();
