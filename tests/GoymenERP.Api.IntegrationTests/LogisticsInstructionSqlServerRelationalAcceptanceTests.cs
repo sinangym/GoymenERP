@@ -595,7 +595,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             Assert.Equal(HttpStatusCode.OK, shipped.StatusCode);
         }
 
-        Assert.Equal(4m, await run.ScalarAsync<decimal>("SELECT Shipped FROM logistics.LoadingInstructionLines WHERE Id = @id",
+        Assert.Equal(4m, await run.ScalarAsync<decimal>("SELECT Shipped FROM logistics.LoadingInstructionLines WHERE LineId = @id",
             ("@id", fixture.LineId)));
     }
 
