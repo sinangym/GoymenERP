@@ -432,7 +432,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 104, "durableStores": 23},
+            {"dbContexts": 18, "migrations": 105, "durableStores": 23},
             self.inventory["counts"],
         )
         actual = {
@@ -1917,7 +1917,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(104, len(migrations))
+        self.assertEqual(105, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -2258,7 +2258,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1190, len(source_paths))
+        self.assertEqual(1204, len(source_paths))
         # SAT-D61…D70: the Settings discount limit groups, limits and bindings (contracts, calculator, rows, reads,
         # policy provider, binding reader, administration, shell provider), their routes and host adapters, and the
         # AddSalesDiscountLimitGroups migration (SAT-D78/D84: the limit timeline and its withdrawals).
@@ -2316,6 +2316,33 @@ internal {{declaration}} : IDocumentObjectStoreV1
             "20261027202534_AddCounterpartyCustomerGroups.cs",
         ):
             self.assertIn(sat_d57_source, source_paths)
+        # SAT-D102 / SAT-D119: the Settings e-Fatura scenario port and catalog, the VKN-shared Cari e-belge profile
+        # (domain + status enum), contracts, read port, Settings reader, service, endpoints, OpenAPI schema hook and
+        # the AddCustomerEDocumentProfiles migration.
+        for sat_d102_source in (
+            "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/Contracts/V1/"
+            "ISettingsEInvoiceScenarioPolicyProviderV1.cs",
+            "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/ApprovedEInvoiceScenarioCatalog.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/Accounts/EDocumentStatus.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/Accounts/CustomerEDocumentProfile.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/"
+            "CounterpartyEDocumentProfile.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/"
+            "ICounterpartyAccountEDocumentProfileSourceV1.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyAccountEDocumentProfileSourceV1.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyEInvoiceScenarioSettings.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyEDocumentProfileToken.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyCommandService.EDocumentProfile.cs",
+            "src/backend/GoymenERP.Api/Endpoints/CounterpartyEndpoints.EDocumentProfile.cs",
+            "src/backend/GoymenERP.Api/OpenApi/ErpOpenApiContract.EDocumentProfile.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/"
+            "20261031143822_AddCustomerEDocumentProfiles.cs",
+        ):
+            self.assertIn(sat_d102_source, source_paths)
         for shared_value_object in (
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/Money.cs",
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/ExchangeRate.cs",

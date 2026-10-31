@@ -426,6 +426,28 @@ Validation: Settings unit tests (synthetic catalogs for invariants and windows; 
 values asserted against their SAT sources) and the host wiring tests. No persistence changed;
 rollback is removing the registration and the files, with no data rollback.
 
+## e-Fatura scenario policy (SAT-D102)
+
+Sources: SAT-D102 (`docs/decisions/SINAN_KARARLARI_2026-10-28_SATIS_EK13.md`): the e-Fatura scenario default is a
+Settings value, changeable per customer on the Cari card; its starting value is **empty** and Sinan enters it.
+SAT-D120 (`…_2026-10-31_SATIS_EK17.md`): the scenario **code list** starts with the standard GİB/UBL-TR set.
+
+`ISettingsEInvoiceScenarioPolicyProviderV1` has two effective-dated keys, served by `ApprovedSettingsPrerequisiteProvider`
+from `ApprovedEInvoiceScenarioCatalog` (reviewed source code, no table or seed; catalog-taking constructors internal):
+
+| Read | Value today (GDC, GSP, GIN) | Answer |
+|---|---|---|
+| `GetEInvoiceScenarioCodesAsync(effectiveOn)` | **TEMELFATURA, TICARIFATURA, EARSIVFATURA, IHRACAT** (SAT-D120 standard set; before its effective date: not found) | the code list, or `settings_einvoice_scenario_code_list_not_found` |
+| `GetEInvoiceScenarioDefaultAsync(effectiveOn)` | **empty** — Sinan enters it (SAT-D102) | `settings_einvoice_scenario_default_not_found` |
+
+Access is checked first (`settings_access_denied`). Every accessible company has both keys, so an empty key is "not
+found", never `settings_provider_unavailable` and never a default. A served default is always a code of the list in
+force on the same date (the catalog refuses a default its list does not carry on its first day; a later list that drops
+it makes the read `settings_profile_invalid`). Codes are lexical UBL-TR profile tokens
+(`EInvoiceScenarioCodeFormatV1`: `^[A-Z][A-Z0-9_]{0,31}$`). Entering a value is a new reviewed catalog version (as the
+other Settings policies); a user-maintained Settings screen is a later slice. Consumer: Counterparty (Cari card override
+validation and `ICounterpartyAccountEDocumentProfileSourceV1`).
+
 ## Sales discount limit groups (SAT-D61…SAT-D70)
 
 Sources: `docs/decisions/SINAN_KARARLARI_2026-10-27_SATIS_EK10.md` (SAT-D61…D64), `…_EK11.md` (SAT-D65…D70) and

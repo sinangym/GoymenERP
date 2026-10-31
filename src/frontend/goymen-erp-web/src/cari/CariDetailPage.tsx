@@ -32,6 +32,7 @@ import { AccountStatusControl, AccountStatusRecoveryNotice } from './AccountStat
 import { CariCompanyRelationships } from './CariCompanyRelationships'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
 import { CariCustomerGroupPanel } from './CariCustomerGroupPanel'
+import { CariEDocumentPanel } from './CariEDocumentPanel'
 import {
   armTaxIdentityDiscard,
   forgetTaxIdentityAttempt,
@@ -432,6 +433,15 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             namespace={namespace}
             contractContext={contractContext}
             canOpenGroupList={hasCapability(shell, CAPABILITY.cariPartiesList)}
+          />
+        ) : null}
+        {/* SAT-D102: the account's e-belge status and e-Fatura scenario in the selected company. Its own side read. */}
+        {namespace !== null && activeCompanyId !== null && account.companyId === activeCompanyId ? (
+          <CariEDocumentPanel
+            partyId={detail.id}
+            companyId={activeCompanyId}
+            namespace={namespace}
+            contractContext={contractContext}
           />
         ) : null}
         {canEditContact ? (
