@@ -26,6 +26,20 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
     internal DbSet<SalesDiscountLimitMembershipGroupRow> SalesDiscountLimitMembershipGroups =>
         Set<SalesDiscountLimitMembershipGroupRow>();
 
+    internal DbSet<TaxCategoryRow> TaxCategories => Set<TaxCategoryRow>();
+
+    internal DbSet<TaxRateRecordRow> TaxRateRecords => Set<TaxRateRecordRow>();
+
+    internal DbSet<TaxRateRecordWithdrawalRow> TaxRateRecordWithdrawals => Set<TaxRateRecordWithdrawalRow>();
+
+    internal DbSet<TaxCodeListRow> TaxCodeLists => Set<TaxCodeListRow>();
+
+    internal DbSet<TaxCodeListVersionRow> TaxCodeListVersions => Set<TaxCodeListVersionRow>();
+
+    internal DbSet<TaxCodeListEntryRow> TaxCodeListEntries => Set<TaxCodeListEntryRow>();
+
+    internal DbSet<TaxCodeListWithdrawalRow> TaxCodeListWithdrawals => Set<TaxCodeListWithdrawalRow>();
+
     internal DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -53,6 +67,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
         policy.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
 
         ConfigureSalesDiscountLimits(modelBuilder);
+        ConfigureTaxMaster(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
         // writes them in the same SaveChanges as its own rows and reads them only through the company filter.
@@ -184,6 +199,162 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
         bound.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// MOD-03 tax master (SAT-D74/D82/D93): categories, immutable rate records and code list versions with insert-only
+    /// withdrawals, all company-scoped with the company inside every key and every foreign key. Nothing is seeded.
+    /// </summary>
+    private void ConfigureTaxMaster(ModelBuilder modelBuilder)
+    {
+        const string emptyGuid = "'00000000-0000-0000-0000-000000000000'";
+        const string binaryCollation = "Latin1_General_100_BIN2";
+
+        var category = modelBuilder.Entity<TaxCategoryRow>();
+        category.ToTable("TaxCategories", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxCategories_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxCategories_Id", $"[Id] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxCategories_Kind",
+                "[Kind] IN ('VatClass', 'WithholdingClass', 'BuyerCategory')");
+            table.HasCheckConstraint("CK_SettingsTaxCategories_Code",
+                "LEN([Code]) BETWEEN 1 AND 32 AND [Code] NOT LIKE '%[^A-Z0-9_-]%' AND LEFT([Code], 1) LIKE '[A-Z0-9]'");
+            table.HasCheckConstraint("CK_SettingsTaxCategories_Name", "LEN(LTRIM(RTRIM([Name]))) > 0");
+            table.HasCheckConstraint("CK_SettingsTaxCategories_Version", "[Version] > 0 AND [RecordVersion] >= 0");
+            table.HasCheckConstraint("CK_SettingsTaxCategories_Actors",
+                "LEN(LTRIM(RTRIM([CreatedBy]))) > 0 AND LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+        });
+        category.HasKey(x => new { x.CompanyId, x.Id });
+        category.HasIndex(x => new { x.CompanyId, x.Kind, x.Code }).IsUnique();
+        category.HasIndex(x => new { x.CompanyId, x.Kind, x.Name }).IsUnique();
+        category.Property(x => x.Kind).HasMaxLength(24).IsUnicode(false).UseCollation(binaryCollation);
+        category.Property(x => x.Code).HasMaxLength(32).IsUnicode(false).UseCollation(binaryCollation);
+        category.Property(x => x.Name).HasMaxLength(100);
+        category.Property(x => x.Version).IsConcurrencyToken();
+        category.Property(x => x.CreatedBy).HasMaxLength(128);
+        category.Property(x => x.UpdatedBy).HasMaxLength(128);
+        category.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var record = modelBuilder.Entity<TaxRateRecordRow>();
+        record.ToTable("TaxRateRecords", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Id", $"[Id] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Version", "[RecordVersion] > 0");
+            // VAT: a class rate 0…100, no buyer category, no code. Withholding: a buyer category, either applying (a rate
+            // above 0 up to 100 and a UBL-TR code) or explicitly not applied (neither).
+            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Shape",
+                "([Kind] = 'Vat' AND [BuyerCategoryId] IS NULL AND [Applies] = 1 AND [RatePercent] IS NOT NULL "
+                + "AND [RatePercent] >= 0 AND [RatePercent] <= 100 AND [WithholdingCode] IS NULL) OR "
+                + "([Kind] = 'Withholding' AND [BuyerCategoryId] IS NOT NULL AND [BuyerCategoryId] <> [ClassId] AND ("
+                + "([Applies] = 1 AND [RatePercent] IS NOT NULL AND [RatePercent] > 0 AND [RatePercent] <= 100 "
+                + "AND [WithholdingCode] IS NOT NULL AND LEN([WithholdingCode]) BETWEEN 1 AND 16 "
+                + "AND [WithholdingCode] NOT LIKE '%[^A-Z0-9]%') OR "
+                + "([Applies] = 0 AND [RatePercent] IS NULL AND [WithholdingCode] IS NULL)))");
+            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Recorded",
+                "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        record.HasKey(x => new { x.CompanyId, x.Id });
+        record.HasIndex(x => new { x.CompanyId, x.ClassId, x.RecordVersion }).IsUnique();
+        record.HasIndex(x => new { x.CompanyId, x.BuyerCategoryId });
+        record.Property(x => x.Kind).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        record.Property(x => x.RatePercent).HasPrecision(7, 4);
+        record.Property(x => x.WithholdingCode).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        record.Property(x => x.RecordedBy).HasMaxLength(128);
+        record.Property(x => x.Reason).HasMaxLength(4000);
+        record.HasOne<TaxCategoryRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ClassId })
+            .OnDelete(DeleteBehavior.Restrict);
+        record.HasOne<TaxCategoryRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.BuyerCategoryId })
+            .OnDelete(DeleteBehavior.Restrict);
+        record.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var recordWithdrawal = modelBuilder.Entity<TaxRateRecordWithdrawalRow>();
+        recordWithdrawal.ToTable("TaxRateRecordWithdrawals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Replacement",
+                "[ReplacedByRecordId] IS NULL OR [ReplacedByRecordId] <> [RecordId]");
+            table.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Recorded",
+                "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        recordWithdrawal.HasKey(x => new { x.CompanyId, x.RecordId });
+        recordWithdrawal.Property(x => x.WithdrawnBy).HasMaxLength(128);
+        recordWithdrawal.Property(x => x.Reason).HasMaxLength(4000);
+        recordWithdrawal.HasOne<TaxRateRecordRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RecordId })
+            .OnDelete(DeleteBehavior.Restrict);
+        recordWithdrawal.HasOne<TaxRateRecordRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReplacedByRecordId })
+            .OnDelete(DeleteBehavior.Restrict);
+        recordWithdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var list = modelBuilder.Entity<TaxCodeListRow>();
+        list.ToTable("TaxCodeLists", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxCodeLists_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxCodeLists_Kind", "[Kind] IN ('Exemption', 'Withholding')");
+            table.HasCheckConstraint("CK_SettingsTaxCodeLists_Version", "[Version] > 0 AND [LastListVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsTaxCodeLists_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+        });
+        list.HasKey(x => new { x.CompanyId, x.Kind });
+        list.Property(x => x.Kind).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        list.Property(x => x.Version).IsConcurrencyToken();
+        list.Property(x => x.UpdatedBy).HasMaxLength(128);
+        list.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var listVersion = modelBuilder.Entity<TaxCodeListVersionRow>();
+        listVersion.ToTable("TaxCodeListVersions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxCodeListVersions_Version", "[ListVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsTaxCodeListVersions_Recorded",
+                "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        listVersion.HasKey(x => new { x.CompanyId, x.Kind, x.ListVersion });
+        listVersion.Property(x => x.Kind).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        listVersion.Property(x => x.RecordedBy).HasMaxLength(128);
+        listVersion.Property(x => x.Reason).HasMaxLength(4000);
+        listVersion.HasOne<TaxCodeListRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Kind })
+            .OnDelete(DeleteBehavior.Restrict);
+        listVersion.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var entry = modelBuilder.Entity<TaxCodeListEntryRow>();
+        entry.ToTable("TaxCodeListEntries", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxCodeListEntries_Code",
+                "LEN([Code]) BETWEEN 1 AND 16 AND [Code] NOT LIKE '%[^A-Z0-9]%'");
+            table.HasCheckConstraint("CK_SettingsTaxCodeListEntries_Name", "LEN(LTRIM(RTRIM([Name]))) > 0");
+        });
+        entry.HasKey(x => new { x.CompanyId, x.Kind, x.ListVersion, x.Code });
+        entry.Property(x => x.Kind).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        entry.Property(x => x.Code).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        entry.Property(x => x.Name).HasMaxLength(200);
+        entry.HasOne<TaxCodeListVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Kind, x.ListVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        entry.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var listWithdrawal = modelBuilder.Entity<TaxCodeListWithdrawalRow>();
+        listWithdrawal.ToTable("TaxCodeListWithdrawals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxCodeListWithdrawals_Replacement",
+                "[ReplacedByListVersion] IS NULL OR [ReplacedByListVersion] > [ListVersion]");
+            table.HasCheckConstraint("CK_SettingsTaxCodeListWithdrawals_Recorded",
+                "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        listWithdrawal.HasKey(x => new { x.CompanyId, x.Kind, x.ListVersion });
+        listWithdrawal.Property(x => x.Kind).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        listWithdrawal.Property(x => x.WithdrawnBy).HasMaxLength(128);
+        listWithdrawal.Property(x => x.Reason).HasMaxLength(4000);
+        listWithdrawal.HasOne<TaxCodeListVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Kind, x.ListVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        listWithdrawal.HasOne<TaxCodeListVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Kind, x.ReplacedByListVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        listWithdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+    }
+
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -203,7 +374,8 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
 
     /// <summary>
     /// Fail-closed write fence: Manufacturing tolerance policies stay read-only here (their approved command workflow is
-    /// separate); nothing is ever deleted; limit records, their withdrawals and binding group rows are immutable once written; every Settings
+    /// separate); nothing is ever deleted; limit records, their withdrawals, binding group rows, tax rate records, code list
+    /// versions and their withdrawals are immutable once written; every Settings
     /// row written belongs to this context's resolved company (a multi-company binding write uses one context per company).
     /// </summary>
     private void ApplyWriteGuards()
@@ -233,6 +405,13 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 throw new InvalidOperationException("İskonto limit kaydı ve grup bağı satırı değiştirilemez; yeni sürüm yazılır.");
             }
 
+            if (entry.State == EntityState.Modified
+                && entry.Entity is TaxRateRecordRow or TaxRateRecordWithdrawalRow or TaxCodeListVersionRow
+                    or TaxCodeListEntryRow or TaxCodeListWithdrawalRow)
+            {
+                throw new InvalidOperationException("Vergi oranı kaydı ve kod listesi sürümü değiştirilemez; yeni kayıt yazılır.");
+            }
+
             var companyId = entry.Entity switch
             {
                 SalesDiscountLimitGroupRow row => row.CompanyId,
@@ -240,6 +419,13 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 SalesDiscountLimitWithdrawalRow row => row.CompanyId,
                 SalesDiscountLimitMembershipRow row => row.CompanyId,
                 SalesDiscountLimitMembershipGroupRow row => row.CompanyId,
+                TaxCategoryRow row => row.CompanyId,
+                TaxRateRecordRow row => row.CompanyId,
+                TaxRateRecordWithdrawalRow row => row.CompanyId,
+                TaxCodeListRow row => row.CompanyId,
+                TaxCodeListVersionRow row => row.CompanyId,
+                TaxCodeListEntryRow row => row.CompanyId,
+                TaxCodeListWithdrawalRow row => row.CompanyId,
                 _ => (Guid?)null,
             };
             if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))

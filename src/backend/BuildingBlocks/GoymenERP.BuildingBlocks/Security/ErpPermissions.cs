@@ -74,6 +74,14 @@ public static class ErpPermissions
     public const string ProductPriceListsPublish = "product.price-lists.publish";
 
     /// <summary>
+    /// MOD-03 (SAT-D73/D74/D82, <c>SINAN_KARARLARI_2026-10-28_SATIS_EK12.md</c>): the Product owner's ONE name for reading and
+    /// setting a product's VAT class and withholding class in the server-resolved company
+    /// (<c>ProductTaxClassificationPermissionsV1.Manage</c>). Registered, not granted: no role, seed or user receives it here;
+    /// who receives it is a human grant gate. Company-wide only. Not Critical.
+    /// </summary>
+    public const string ProductTaxClassificationManage = "product.tax-classification.manage";
+
+    /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
     /// the names makes them KNOWN, not granted: no role and no user receives them here; the grant is
     /// a human gate. Company-wide scope is required because the reads are not filtered by site or
@@ -678,6 +686,15 @@ public static class ErpPermissions
     public const string SettingsSalesDiscountLimitsManage = "settings.sales-discount-limits.manage";
 
     /// <summary>
+    /// SAT-D83 (Sinan, 2026-10-28, <c>SINAN_KARARLARI_2026-10-28_SATIS_EK12.md</c>): ONE name for reading and editing the Settings
+    /// tax master — VAT classes and their dated rates, withholding classes and buyer categories with their dated withholding
+    /// records, and the UBL-TR exemption / withholding code lists (<c>SettingsTaxMasterPermissionManifestV1.TaxMasterManage</c>).
+    /// The Muhasebe/Finans and Admin personas are the intended holders; registered, not granted: no role, seed or user receives
+    /// it here (a human grant gate). Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsTaxMasterManage = "settings.tax-master.manage";
+
+    /// <summary>
     /// ERP-000G / AT-065 (document vault core): the vault owner's names (DocumentsPermissionManifestV1). Read lists an
     /// owner record's documents and downloads a clean version; upload stores a new document on an owner record. Both
     /// are measured ON TOP of the owner record's own read (the Cari party: counterparty.parties.read), so a document is
@@ -723,6 +740,7 @@ public static class ErpPermissions
             ProductPriceListsRead,
             ProductPriceListsWrite,
             ProductPriceListsPublish,
+            ProductTaxClassificationManage,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -819,6 +837,7 @@ public static class ErpPermissions
             DocumentsFilesRead,
             DocumentsFilesUpload,
             SettingsSalesDiscountLimitsManage,
+            SettingsTaxMasterManage,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -856,6 +875,7 @@ public static class ErpPermissions
             ProductPriceListsRead,
             ProductPriceListsWrite,
             ProductPriceListsPublish,
+            ProductTaxClassificationManage,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -952,6 +972,7 @@ public static class ErpPermissions
             DocumentsFilesRead,
             DocumentsFilesUpload,
             SettingsSalesDiscountLimitsManage,
+            SettingsTaxMasterManage,
             IdentityAuditRead,
             IdentityAssignmentsRead,
         ],

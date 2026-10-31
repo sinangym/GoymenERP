@@ -34,7 +34,36 @@ public static class ProductPriceListHostComposition
         }
 
         services.TryAddScoped<IProductPriceListServiceV1, UnavailableProductPriceListService>();
+        // MOD-03: the product tax classification lives in the same company-scoped context, so it is fail-closed here too
+        // (the routes answer 503 and the Settings line tax port reads "unavailable").
+        services.TryAddScoped<IProductTaxClassificationServiceV1, UnavailableProductTaxClassificationService>();
+        services.TryAddScoped<IProductTaxClassificationReaderV1, UnavailableProductTaxClassificationService>();
         return services;
+    }
+}
+
+internal sealed class UnavailableProductTaxClassificationService : IProductTaxClassificationServiceV1,
+    IProductTaxClassificationReaderV1
+{
+    public Task<ProductTaxClassificationViewV1> GetAsync(Guid productId, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductTaxClassificationViewV1>(Unavailable(cancellationToken));
+
+    public Task<ProductTaxClassificationResultV1> SetAsync(Guid productId, SetProductTaxClassificationRequestV1 request,
+        ProductTaxClassificationCommandMetadataV1 metadata, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductTaxClassificationResultV1>(Unavailable(cancellationToken));
+
+    Task<ProductTaxClassificationReadV1> IProductTaxClassificationReaderV1.GetAsync(Guid productId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new ProductTaxClassificationReadV1(ProductTaxClassificationOutcomeV1.Unavailable, null, null, null));
+    }
+
+    private static ProductTaxClassificationException Unavailable(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return new ProductTaxClassificationException(StatusCodes.Status503ServiceUnavailable,
+            ProductTaxClassificationProblemCodesV1.ProviderUnavailable);
     }
 }
 

@@ -36,6 +36,10 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
 
     internal DbSet<PriceListProductReference> Products => Set<PriceListProductReference>();
 
+    internal DbSet<ProductTaxClassificationRow> TaxClassifications => Set<ProductTaxClassificationRow>();
+
+    internal DbSet<ProductTaxClassificationAttemptRow> TaxClassificationAttempts => Set<ProductTaxClassificationAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -55,6 +59,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         ConfigureVersions(modelBuilder);
         ConfigureLines(modelBuilder);
         ConfigureAttempts(modelBuilder);
+        ConfigureTaxClassifications(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -213,6 +218,50 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// MOD-03 (SAT-D73/D74/D82): the company's product tax classification and its command answers. The Settings category
+    /// ids are checked through the Settings port at write; no foreign key crosses into the Settings schema.
+    /// </summary>
+    private void ConfigureTaxClassifications(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ProductTaxClassificationRow>();
+        entity.ToTable("ProductTaxClassifications", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductTaxClassifications_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND [VatClassId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_ProductTaxClassifications_Withholding",
+                $"[WithholdingClassId] IS NULL OR ([WithholdingClassId] <> {EmptyGuid} AND [WithholdingClassId] <> [VatClassId])");
+            table.HasCheckConstraint("CK_ProductTaxClassifications_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.ProductId });
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
+        entity.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<ProductTaxClassificationAttemptRow>();
+        attempt.ToTable("ProductTaxClassificationAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND LEN([CommandName]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Answer",
+                "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.AnswerJson).HasColumnType("nvarchar(max)").IsRequired();
+        attempt.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         foreach (var entry in ChangeTracker.Entries<AuditEvent>())
@@ -261,6 +310,12 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                 string[] allowed = entry.Entity switch
                 {
                     PriceListRow => [nameof(PriceListRow.Name), nameof(PriceListRow.UpdatedAtUtc)],
+                    // MOD-03: only the classes and the update facts of a classification move (its version is the token).
+                    ProductTaxClassificationRow =>
+                    [
+                        nameof(ProductTaxClassificationRow.VatClassId), nameof(ProductTaxClassificationRow.WithholdingClassId),
+                        nameof(ProductTaxClassificationRow.UpdatedAtUtc), nameof(ProductTaxClassificationRow.UpdatedBy),
+                    ],
                     PriceListVersionRow when (int)entry.OriginalValues[nameof(PriceListVersionRow.State)]! == 1 =>
                     [
                         nameof(PriceListVersionRow.ValidFrom), nameof(PriceListVersionRow.ValidThrough), nameof(PriceListVersionRow.State),
