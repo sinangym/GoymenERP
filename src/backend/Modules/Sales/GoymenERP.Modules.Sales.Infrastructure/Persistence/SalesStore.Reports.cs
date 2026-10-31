@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Quotes;
@@ -11,81 +10,75 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 
 /// <summary>
 /// API-41 / API-42: the read-only report queries of the Sales store. Untracked reads through the same company-filtered context (and
-/// the company again, explicitly); orders and quotes are rebuilt through the domain like every read; nothing is written. The cursors
-/// are opaque, bound to the company, the ordering AND the filter (a cursor of another filter is refused, never read as a position).
+/// the company again, explicitly); orders and quotes are rebuilt through the domain like every read; nothing is written. API-41 is
+/// answered by keyset positions the service keeps in its own cursor; the lost-quote cursor is opaque, bound to the company, the
+/// ordering AND the filter (a cursor of another filter is refused, never read as a position).
 /// </summary>
 public sealed partial class SalesStore : ISalesReportReadStore
 {
-    public async Task<SalesOpenOrderGroupPage> ListOpenOrderGroupsAsync(SalesOpenOrderReportFilter filter, int pageSize, string? cursor,
-        int maximumOrders, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SalesOpenOrderGroupScope>> ListOpenOrderGroupsAsync(SalesOpenOrderReportFilter filter,
+        SalesOpenOrderGroupKey? after, int take, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
         var companyId = RequireResolvedCompany();
-        if (pageSize is < 1 or > MaximumPageSize)
+        ArgumentOutOfRangeException.ThrowIfLessThan(take, 1);
+        var rows = OpenLines(companyId, filter);
+        if (after is { } a)
         {
-            throw new ArgumentOutOfRangeException(nameof(pageSize), $"Sayfa boyutu 1–{MaximumPageSize} olmalıdır.");
+            rows = rows.Where(row => row.CompanyAccountId.CompareTo(a.CompanyAccountId) > 0
+                || row.CompanyAccountId == a.CompanyAccountId && (row.PartyId.CompareTo(a.PartyId) > 0
+                    || row.PartyId == a.PartyId && (row.ProductId.CompareTo(a.ProductId) > 0
+                        || row.ProductId == a.ProductId && row.OrderUnitId.CompareTo(a.UnitId) > 0)));
         }
 
-        ArgumentOutOfRangeException.ThrowIfLessThan(maximumOrders, 1);
-        var binding = ReportCursor.OpenOrderBinding(filter);
-        var open = OpenOrders(companyId, filter);
-        var keys = dbContext.DraftLines.AsNoTracking()
-            .Where(line => line.CompanyId == companyId)
-            .Join(open, line => line.DraftId, draft => draft.Id, (line, draft) => new
+        var groups = await rows
+            .GroupBy(row => new { row.CompanyAccountId, row.PartyId, row.ProductId, row.OrderUnitId })
+            .Select(group => new
             {
-                draft.CompanyAccountId,
-                draft.PartyId,
-                line.ProductId,
-                line.OrderUnitId,
+                group.Key.CompanyAccountId,
+                group.Key.PartyId,
+                group.Key.ProductId,
+                group.Key.OrderUnitId,
+                Orders = group.Select(row => row.DraftId).Distinct().Count(),
             })
-            .Distinct();
-        if (cursor is not null)
-        {
-            var after = ReportCursor.DecodeGroup(cursor, companyId, binding);
-            keys = keys.Where(key => key.CompanyAccountId.CompareTo(after.CompanyAccountId) > 0
-                || key.CompanyAccountId == after.CompanyAccountId && (key.PartyId.CompareTo(after.PartyId) > 0
-                    || key.PartyId == after.PartyId && (key.ProductId.CompareTo(after.ProductId) > 0
-                        || key.ProductId == after.ProductId && key.OrderUnitId.CompareTo(after.UnitId) > 0)));
-        }
-
-        var rows = await keys
-            .OrderBy(key => key.CompanyAccountId).ThenBy(key => key.PartyId).ThenBy(key => key.ProductId).ThenBy(key => key.OrderUnitId)
-            .Take(pageSize + 1)
+            .OrderBy(group => group.CompanyAccountId).ThenBy(group => group.PartyId).ThenBy(group => group.ProductId)
+            .ThenBy(group => group.OrderUnitId)
+            .Take(take)
             .ToListAsync(cancellationToken);
-        var hasMore = rows.Count > pageSize;
-        var groups = rows.Take(pageSize)
-            .Select(row => new SalesOpenOrderGroupKey(row.CompanyAccountId, row.PartyId, row.ProductId, row.OrderUnitId))
-            .ToArray();
-        var next = hasMore ? ReportCursor.EncodeGroup(companyId, binding, groups[^1]) : null;
-        if (groups.Length == 0)
-        {
-            return new SalesOpenOrderGroupPage([], [], false, next);
-        }
+        return [.. groups.Select(group => new SalesOpenOrderGroupScope(
+            new SalesOpenOrderGroupKey(group.CompanyAccountId, group.PartyId, group.ProductId, group.OrderUnitId), group.Orders))];
+    }
 
-        // The orders the page's keys span: candidates by account and product (a superset), narrowed to the exact keys here.
-        var accounts = groups.Select(group => group.CompanyAccountId).Distinct().ToArray();
-        var products = groups.Select(group => group.ProductId).Distinct().ToArray();
-        var candidates = await dbContext.DraftLines.AsNoTracking()
-            .Where(line => line.CompanyId == companyId && products.Contains(line.ProductId))
-            .Join(open.Where(draft => accounts.Contains(draft.CompanyAccountId)), line => line.DraftId, draft => draft.Id,
-                (line, draft) => new { line.DraftId, draft.CompanyAccountId, draft.PartyId, line.ProductId, line.OrderUnitId })
-            .ToListAsync(cancellationToken);
-        var wanted = groups.ToHashSet();
-        var orderIds = candidates
-            .Where(row => wanted.Contains(new SalesOpenOrderGroupKey(row.CompanyAccountId, row.PartyId, row.ProductId, row.OrderUnitId)))
+    public async Task<IReadOnlyList<SalesOrderDraft>> ListOpenOrdersOfGroupAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey key,
+        Guid? afterOrderId, int take, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(key);
+        var companyId = RequireResolvedCompany();
+        ArgumentOutOfRangeException.ThrowIfLessThan(take, 1);
+        var ids = OpenLines(companyId, filter)
+            .Where(row => row.CompanyAccountId == key.CompanyAccountId && row.PartyId == key.PartyId && row.ProductId == key.ProductId
+                && row.OrderUnitId == key.UnitId)
             .Select(row => row.DraftId)
-            .Distinct()
-            .ToArray();
-        if (orderIds.Length > maximumOrders)
+            .Distinct();
+        if (afterOrderId is { } after)
         {
-            return new SalesOpenOrderGroupPage(groups, [], true, next);
+            ids = ids.Where(id => id.CompareTo(after) > 0);
+        }
+
+        var page = await ids.OrderBy(id => id).Take(take).ToListAsync(cancellationToken);
+        if (page.Count == 0)
+        {
+            return [];
         }
 
         var orderRows = await dbContext.Drafts.AsNoTracking()
-            .Where(row => row.CompanyId == companyId && orderIds.Contains(row.Id))
-            .OrderBy(row => row.BusinessDate).ThenBy(row => row.Id)
+            .Where(row => row.CompanyId == companyId && page.Contains(row.Id))
             .ToListAsync(cancellationToken);
-        return new SalesOpenOrderGroupPage(groups, await RestoreAsync(orderRows, cancellationToken), false, next);
+        // The caller pages by id: answer in the id order the database chose for the page.
+        var restored = await RestoreAsync(orderRows, cancellationToken);
+        var position = page.Select((id, index) => (id, index)).ToDictionary(entry => entry.id, entry => entry.index);
+        return [.. restored.OrderBy(draft => position[draft.Id])];
     }
 
     public async Task<SalesQuotePage> ListLostQuotesAsync(SalesLostQuoteReportFilter filter, int pageSize, string? cursor,
@@ -142,85 +135,69 @@ public sealed partial class SalesStore : ISalesReportReadStore
             hasMore && last?.LostAtUtc is { } lastLost ? ListCursor.Encode(companyId, lastLost, last.Id, ordering) : null);
     }
 
-    /// <summary>The open orders of the filter: Draft lifecycle, approved now or earlier (an archived approved revision).</summary>
-    private IQueryable<DraftRow> OpenOrders(Guid companyId, SalesOpenOrderReportFilter filter)
+    /// <summary>
+    /// The current lines of the open-status orders of the filter — Draft lifecycle, approved now or earlier (an archived approved
+    /// revision) — as (draft, account, party, product, unit) rows.
+    /// </summary>
+    private IQueryable<OpenLineRow> OpenLines(Guid companyId, SalesOpenOrderReportFilter filter)
     {
         var open = (int)SalesDraftState.Draft;
         var approved = (int)InternalApprovalState.Approved;
-        var query = dbContext.Drafts.AsNoTracking()
+        var drafts = dbContext.Drafts.AsNoTracking()
             .Where(row => row.CompanyId == companyId && row.State == open
                 && (row.ApprovalState == approved
                     || dbContext.DraftRevisions.Any(revision => revision.CompanyId == companyId && revision.DraftId == row.Id)));
         if (filter.From is { } from)
         {
-            query = query.Where(row => row.BusinessDate >= from);
+            drafts = drafts.Where(row => row.BusinessDate >= from);
         }
 
         if (filter.To is { } to)
         {
-            query = query.Where(row => row.BusinessDate <= to);
+            drafts = drafts.Where(row => row.BusinessDate <= to);
         }
 
         if (filter.CompanyAccountId is { } account)
         {
-            query = query.Where(row => row.CompanyAccountId == account);
+            drafts = drafts.Where(row => row.CompanyAccountId == account);
         }
 
-        return query;
+        return dbContext.DraftLines.AsNoTracking()
+            .Where(line => line.CompanyId == companyId)
+            .Join(drafts, line => line.DraftId, draft => draft.Id, (line, draft) => new OpenLineRow
+            {
+                DraftId = draft.Id,
+                CompanyAccountId = draft.CompanyAccountId,
+                PartyId = draft.PartyId,
+                ProductId = line.ProductId,
+                OrderUnitId = line.OrderUnitId,
+            });
+    }
+
+    private sealed class OpenLineRow
+    {
+        public Guid DraftId { get; init; }
+        public Guid CompanyAccountId { get; init; }
+        public Guid PartyId { get; init; }
+        public Guid ProductId { get; init; }
+        public Guid OrderUnitId { get; init; }
     }
 
     /// <summary>The report cursors: base64url JSON bound to the company, the ordering and a digest of the filter.</summary>
     internal static class ReportCursor
     {
-        private const string OpenOrderOrdering = "reports.open-orders: companyAccountId, partyId, productId, unitId";
         private const string LostQuoteOrderingPrefix = "reports.lost-quotes: lostAtUtc desc, id desc";
-
-        public static string OpenOrderBinding(SalesOpenOrderReportFilter filter) =>
-            OpenOrderOrdering + "|" + Digest(Day(filter.From), Day(filter.To), Id(filter.CompanyAccountId));
 
         public static string LostQuoteOrdering(SalesLostQuoteReportFilter filter) =>
             LostQuoteOrderingPrefix + "|" + Digest(Instant(filter.LostFromUtc), Instant(filter.LostBeforeUtc), Id(filter.CompanyAccountId),
                 Id(filter.ReasonId));
 
-        public static string EncodeGroup(Guid companyId, string binding, SalesOpenOrderGroupKey after) =>
-            Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-                new GroupPayload(companyId, binding, after.CompanyAccountId, after.PartyId, after.ProductId, after.UnitId), Json)))
-                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
-
-        public static SalesOpenOrderGroupKey DecodeGroup(string cursor, Guid companyId, string binding)
-        {
-            GroupPayload? payload;
-            try
-            {
-                var padded = cursor.Replace('-', '+').Replace('_', '/');
-                padded = padded.PadRight(padded.Length + (4 - padded.Length % 4) % 4, '=');
-                payload = JsonSerializer.Deserialize<GroupPayload>(Encoding.UTF8.GetString(Convert.FromBase64String(padded)), Json);
-            }
-            catch (Exception exception) when (exception is FormatException or JsonException)
-            {
-                throw Refused(SalesDraftStoreCodes.InvalidCursor, "Rapor imleci çözülemedi.", exception);
-            }
-
-            if (payload is null || payload.Company != companyId || !string.Equals(payload.Binding, binding, StringComparison.Ordinal)
-                || payload.CompanyAccountId == Guid.Empty || payload.PartyId == Guid.Empty || payload.ProductId == Guid.Empty
-                || payload.UnitId == Guid.Empty)
-            {
-                throw Refused(SalesDraftStoreCodes.InvalidCursor, "Rapor imleci bu şirketin, bu sıralamanın ve bu süzgecin imleci değil.");
-            }
-
-            return new SalesOpenOrderGroupKey(payload.CompanyAccountId, payload.PartyId, payload.ProductId, payload.UnitId);
-        }
-
         private static string Digest(params string[] parts) =>
             Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', parts))));
-
-        private static string Day(DateOnly? day) => day?.ToString("O", CultureInfo.InvariantCulture) ?? "-";
 
         private static string Instant(DateTimeOffset? instant) =>
             instant?.UtcDateTime.ToString("O", CultureInfo.InvariantCulture) ?? "-";
 
         private static string Id(Guid? id) => id?.ToString("D") ?? "-";
-
-        private sealed record GroupPayload(Guid Company, string Binding, Guid CompanyAccountId, Guid PartyId, Guid ProductId, Guid UnitId);
     }
 }

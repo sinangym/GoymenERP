@@ -8,7 +8,6 @@
 import { headers, readFailure, request } from './api'
 import {
   REPORT_PAGE_SIZE,
-  REPORT_SCOPE_TOO_LARGE,
   SALES_REPORT_LOST_OPPORTUNITIES_PATH,
   SALES_REPORT_OPEN_ORDERS_PATH,
   SALES_REPORT_PRICE_VARIANCE_PATH,
@@ -65,27 +64,16 @@ async function read<T>(path: string, companyId: string, signal: AbortSignal | un
   return { type: 'ok-single', data }
 }
 
-export async function fetchOpenOrderReport(
+export function fetchOpenOrderReport(
   cursor: string | null,
   companyId: string,
   signal: AbortSignal | undefined,
   filterKey: string | null,
 ): Promise<ViewOutcome<OpenOrderReport>> {
   const filter = parseReportFilterKey(filterKey)
-  const outcome = await read(reportPath(SALES_REPORT_OPEN_ORDERS_PATH, filter, cursor), companyId, signal, decodeOpenOrderReport,
+  return read(reportPath(SALES_REPORT_OPEN_ORDERS_PATH, filter, cursor), companyId, signal, decodeOpenOrderReport,
     // A group of another customer than the one asked for is not a row to show.
     (data) => filter.companyAccountId === null || data.items.every((group) => group.customer.companyAccountId === filter.companyAccountId))
-  // The first page refused as too wide is its own state (narrow the filter); a later page keeps the generic retry.
-  if (cursor === null && outcome.type === 'http' && outcome.status === 422 && problemCode(outcome.body) === REPORT_SCOPE_TOO_LARGE) {
-    return { type: 'ok-single', data: { measure: 'ApprovedMinusShipped', items: [], nextCursor: null, tooWide: true } }
-  }
-  return outcome
-}
-
-function problemCode(body: unknown): string | null {
-  return typeof body === 'object' && body !== null && typeof (body as { code?: unknown }).code === 'string'
-    ? (body as { code: string }).code
-    : null
 }
 
 export function fetchLostOpportunityReport(

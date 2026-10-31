@@ -73,8 +73,8 @@ describe('API-41 / API-42 client ↔ canonical OpenAPI', () => {
     )
     expect(parseReportFilterKey(reportFilterKey(filtered))).toEqual(filtered)
     expect(parseReportFilterKey(reportFilterKey(NO_REPORT_FILTER))).toEqual(NO_REPORT_FILTER)
-    // 422 is the open-order report's own "too wide" answer.
-    expect(Object.keys(document.paths[`/api/v1${SALES_REPORT_OPEN_ORDERS_PATH}`].get.responses)).toContain('422')
+    // No 422 any more: a bounded scan answers a cursor and a too-large group answers its own state (never a lockout).
+    expect(Object.keys(document.paths[`/api/v1${SALES_REPORT_OPEN_ORDERS_PATH}`].get.responses)).not.toContain('422')
   })
 
   it('pins the examples to every schema they carry and the enums to the wire values', () => {
@@ -93,7 +93,8 @@ describe('API-41 / API-42 client ↔ canonical OpenAPI', () => {
     }
     expectFits(priceVarianceResponse, 'SalesPriceVarianceReportResponse')
     expect(schema('SalesOpenOrderMeasureView').enum).toEqual(['ApprovedMinusShipped'])
-    expect(schema('SalesOpenOrderUnmeasuredReasonView').enum).toEqual(['PendingReapproval', 'TolerancePolicyUnavailable'])
+    expect(schema('SalesOpenOrderUnmeasuredReasonView').enum).toEqual(['PendingReapproval', 'TolerancePolicyUnavailable', 'DeliveryAnswerInvalid'])
+    expect(schema('SalesOpenOrderGroupStateView').enum).toEqual(['Measured', 'TooManyOrders'])
     expect(schema('SalesPriceDisclosure').enum).toEqual(['Visible', 'Withheld'])
     expect(schema('SalesPriceVarianceSourceStateView').enum).toEqual(['NoSource', 'Available'])
     expect(schema('SalesPriceVarianceDirectionView').enum).toEqual(['Below', 'Above'])
@@ -105,9 +106,14 @@ describe('open order report decoder', () => {
     const report = decodeOpenOrderReport(openOrdersResponse)
     expect(report?.items.map((group) => [group.unitCode, group.remainingQuantity, group.complete])).toEqual([
       ['kg', '250.5', false],
-      ['adet', '0', true],
+      ['adet', '10', true],
+      ['kg', null, false],
     ])
-    expect(report?.tooWide).toBe(false)
+    expect(report?.items.map((group) => [group.state, group.awaitingAcceptanceQuantity])).toEqual([
+      ['Measured', '800'],
+      ['Measured', '0'],
+      ['TooManyOrders', null],
+    ])
   })
 
   it('refuses a missing, extra or mistyped member, a contradicting complete flag, a wrong order count and a repeated group', () => {
@@ -125,6 +131,18 @@ describe('open order report decoder', () => {
       // SAT-D130: completed within the tolerance means nothing open.
       (body) => (((body.groups as Wire[])[0].lines as Wire[])[1].remainingQuantity = '10'),
       (body) => delete (((body.groups as Wire[])[0].lines as Wire[])[0]).completedWithinTolerance,
+      // Awaiting acceptance: a quantity names its revision and only it; nothing accepted has nothing open; closed lines are not listed.
+      (body) => (((body.groups as Wire[])[0].lines as Wire[])[1].awaitingAcceptanceRevision = null),
+      (body) => (((body.groups as Wire[])[0].lines as Wire[])[2].remainingQuantity = '5'),
+      (body) => {
+        const line = ((body.groups as Wire[])[1].lines as Wire[])[0]
+        line.remainingQuantity = '0'
+      },
+      // A group too large to measure carries no sums and is never complete; a measured one always has its sums.
+      (body) => ((body.groups as Wire[])[2].remainingQuantity = '0'),
+      (body) => ((body.groups as Wire[])[2].complete = true),
+      (body) => ((body.groups as Wire[])[1].awaitingAcceptanceQuantity = null),
+      (body) => ((body.groups as Wire[])[0].state = 'Other'),
     ]
     for (const change of cases) {
       const body = clone(openOrdersResponse) as unknown as Wire

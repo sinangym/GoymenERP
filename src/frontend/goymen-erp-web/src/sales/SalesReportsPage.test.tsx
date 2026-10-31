@@ -57,15 +57,24 @@ describe('Açık siparişler (API-41, KPI No 124)', () => {
     expect(screen.getByRole('heading', { level: 1, name: T.heading })).toBeTruthy()
     expect(screen.getByRole('tab', { name: T.tab['open-orders'] }).getAttribute('aria-selected')).toBe('true')
     const rows = within(table).getAllByRole('row').slice(1)
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
     expect(within(rows[0]).getByText('250.5 kg')).toBeTruthy()
     expect(within(rows[0]).getByText('3500.5 kg')).toBeTruthy()
-    expect(within(rows[1]).getByText('0 adet')).toBeTruthy()
+    expect(within(rows[1]).getByText('10 adet')).toBeTruthy()
+    // Sinan 2026-10-31 (EK19 pending): the quantity awaiting customer acceptance is its own column, never in the open tonnage.
+    expect(within(table).getByRole('columnheader', { name: T.openOrders.awaitingAcceptance })).toBeTruthy()
+    expect(within(rows[0]).getByText('800 kg')).toBeTruthy()
+    expect(screen.getByTestId('sales-report-line-awaiting-c3c3c3c3-0000-4000-8000-000000000501').textContent).toContain('Rev.0')
+    expect(screen.getAllByText(T.openOrders.noAcceptedRevision).length).toBeGreaterThan(0)
+    // A group too large to measure shows no sums and asks to narrow the dates; it has no detail table.
+    expect(within(rows[2]).getByText(T.openOrders.tooManyOrders(1500))).toBeTruthy()
+    expect(within(rows[2]).queryByText(/^\d[\d.]* kg$/)).toBeNull()
     // The kg and the piece group are never added into one number.
     expect(screen.queryByText(/2290\.5|2250\.5 adet/)).toBeNull()
     // A group with an unmeasured line says so; its detail names the line and why.
     expect(within(rows[0]).getByText(T.openOrders.incomplete)).toBeTruthy()
     expect(within(rows[1]).queryByText(T.openOrders.incomplete)).toBeNull()
+    expect(screen.getByText(/SO-2026-000009 \/ 2 — /)).toBeTruthy()
     expect(screen.getByText(/SO-2026-000009 \/ 2 — Revizyon yeniden onay bekliyor/)).toBeTruthy()
     // SAT-D130: a line completed within the SAT-D5 tolerance shows 0 open with its reason; an unreadable tolerance is unmeasured.
     expect(screen.getByTestId('sales-report-line-tolerance-c3c3c3c3-0000-4000-8000-000000000201').textContent).toBe(
@@ -91,7 +100,7 @@ describe('Açık siparişler (API-41, KPI No 124)', () => {
     const { router } = renderPool('/satis/raporlar')
     await screen.findByRole('table', { name: T.openOrders.caption })
     await user.click(screen.getByRole('button', { name: /Daha fazla/ }))
-    await waitFor(() => expect(document.querySelectorAll('[data-group-id]')).toHaveLength(3))
+    await waitFor(() => expect(document.querySelectorAll('[data-group-id]')).toHaveLength(4))
     expect(fetch.calls[1].url).toContain('cursor=c2FsZXMtcmVwb3J0LWN1cnNvcg')
 
     await user.type(screen.getByLabelText(T.filter.from), '2026-10-01')
@@ -117,11 +126,17 @@ describe('Açık siparişler (API-41, KPI No 124)', () => {
     expect(fetch.calls).toHaveLength(1)
   })
 
-  it('asks to narrow a page that spans too many orders, and shows 403, 503, malformed and empty as their own states', async () => {
-    installPoolFetch(reports({ open: () => problem(422, 'report_scope_too_large') }), GRANTED)
+  it('continues a bounded scan that found nothing on this page, and shows 403, 503, malformed and empty as their own states', async () => {
+    const user = userEvent.setup()
+    // The server's work bound ended the page before an open group: a cursor and no group — "continue", never "Kayıt yok".
+    const fetch = installPoolFetch(reports({
+      open: () => json(fetch.calls.length > 1 ? openOrdersResponse : { measure: 'ApprovedMinusShipped', groups: [], nextCursor: 'c2Nhbi1tb3Jl' }),
+    }), GRANTED)
     renderPool('/satis/raporlar')
-    expect((await screen.findByTestId('sales-report-open-orders-too-wide')).textContent).toBe(T.openOrders.tooWide)
-    expect(screen.queryByRole('table', { name: T.openOrders.caption })).toBeNull()
+    expect((await screen.findByTestId('sales-report-open-orders-scan-continues')).textContent).toBe(T.openOrders.scanContinues)
+    expect(screen.queryByText(/Kayıt yok/)).toBeNull()
+    await user.click(screen.getByRole('button', { name: /Daha fazla/ }))
+    await waitFor(() => expect(fetch.calls.at(-1)?.url).toContain('cursor=c2Nhbi1tb3Jl'))
     cleanup()
     vi.unstubAllGlobals()
 
@@ -170,7 +185,8 @@ describe('Kayıp fırsatlar (API-42, SAT-D25)', () => {
     installPoolFetch(reports({ lost: () => json(withheld) }), GRANTED)
     renderPool('/satis/raporlar?rapor=lost')
     expect((await screen.findByTestId('sales-report-lost-withheld')).textContent).toBe(T.lost.withheld)
-    expect(screen.queryByRole('columnheader', { name: T.lost.netAmount })).toBeNull()
+    // Each row says its own disclosure: "Gizli", never an amount.
+    expect(screen.getAllByText(T.lost.withheldCell)).toHaveLength(2)
     cleanup()
     vi.unstubAllGlobals()
 
@@ -214,6 +230,9 @@ describe('tabs (WAI-ARIA)', () => {
     await screen.findByRole('table', { name: T.openOrders.caption })
     const tabs = screen.getAllByRole('tab')
     expect(tabs.map((tab) => tab.textContent)).toEqual([T.tab['open-orders'], T.tab.lost, T.tab['price-variance']])
+    // Only the selected tab controls a rendered panel; the others point at nothing.
+    expect(tabs.map((tab) => tab.getAttribute('aria-controls') !== null)).toEqual([true, false, false])
+    expect(document.getElementById(tabs[0].getAttribute('aria-controls') ?? '')?.getAttribute('role')).toBe('tabpanel')
     tabs[0].focus()
     await user.keyboard('{ArrowLeft}')
     expect(await screen.findByTestId('sales-report-price-variance-no-source')).toBeTruthy()

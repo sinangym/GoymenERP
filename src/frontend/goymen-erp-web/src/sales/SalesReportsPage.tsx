@@ -125,7 +125,8 @@ function SalesReports({ namespace }: { readonly namespace: string | null }) {
                 role="tab"
                 id={`${baseId}-tab-${tab}`}
                 aria-selected={selected}
-                aria-controls={`${baseId}-panel-${tab}`}
+                // Only the selected tab's panel is rendered: the others point at nothing.
+                aria-controls={selected ? `${baseId}-panel-${tab}` : undefined}
                 tabIndex={selected ? 0 : -1}
                 className={tabStyles.tab}
                 data-testid={`sales-report-tab-${tab}`}
@@ -227,17 +228,22 @@ function OpenOrders({
 }) {
   const O = T.openOrders
   const list = usePoolPages(namespace, 'sales-report-open-orders', fetchOpenOrderReport, reportFilterKey(filter))
-  if (list.firstPage?.tooWide === true) {
-    return (
-      <p className={styles.notice} role="status" data-testid="sales-report-open-orders-too-wide">
-        {O.tooWide}
-      </p>
-    )
-  }
   if (list.rows === null) {
     return <StateBlock state={list.firstState ?? { kind: 'initial-loading' }} subject={O.subject} onRetry={list.retryFirst} />
   }
   const intro = <p className={styles.muted}>{O.intro}</p>
+  if (list.rows.length === 0 && list.nextCursor !== null) {
+    // The server's bounded scan ended this page before it found an open group: continue on request, never "Kayıt yok".
+    return (
+      <>
+        {intro}
+        <p className={styles.notice} role="status" data-testid="sales-report-open-orders-scan-continues">
+          {O.scanContinues}
+        </p>
+        <PoolContinuation list={list} />
+      </>
+    )
+  }
   if (list.rows.length === 0) {
     return (
       <>
@@ -247,6 +253,8 @@ function OpenOrders({
     )
   }
 
+  const sum = (group: OpenOrderGroup, value: string | null) =>
+    value === null ? <span className={styles.muted}>{T.common.none}</span> : <Quantity value={value} unit={group.unitCode} />
   const columns: readonly DataTableColumn<OpenOrderGroup>[] = [
     {
       key: 'customer',
@@ -269,16 +277,20 @@ function OpenOrders({
     { key: 'product', header: T.common.product, cell: (group) => `${group.productCode} ${group.productName}` },
     { key: 'unit', header: O.unit, cell: (group) => group.unitCode },
     { key: 'orders', header: O.orderCount, align: 'end', cell: (group) => <span className={styles.numeric}>{group.orderCount}</span> },
-    { key: 'approved', header: O.approved, align: 'end', cell: (group) => <Quantity value={group.approvedQuantity} unit={group.unitCode} /> },
-    { key: 'shipped', header: O.shipped, align: 'end', cell: (group) => <Quantity value={group.shippedQuantity} unit={group.unitCode} /> },
+    { key: 'approved', header: O.approved, align: 'end', cell: (group) => sum(group, group.approvedQuantity) },
+    { key: 'shipped', header: O.shipped, align: 'end', cell: (group) => sum(group, group.shippedQuantity) },
     {
       key: 'remaining',
       header: O.remaining,
       align: 'end',
       cell: (group) => (
         <>
-          <Quantity value={group.remainingQuantity} unit={group.unitCode} />
-          {group.complete ? null : (
+          {sum(group, group.remainingQuantity)}
+          {group.state === 'TooManyOrders' ? (
+            <StatusIndicator tone="warning">
+              <span data-testid={`sales-report-group-too-many-${group.id}`}>{O.tooManyOrders(group.scopeOrderCount)}</span>
+            </StatusIndicator>
+          ) : group.complete ? null : (
             <StatusIndicator tone="warning">
               <span data-testid={`sales-report-group-incomplete-${group.id}`}>{O.incomplete}</span>
             </StatusIndicator>
@@ -286,13 +298,15 @@ function OpenOrders({
         </>
       ),
     },
+    // Sinan 2026-10-31 (EK19 pending): kept apart from the open tonnage, never added to it.
+    { key: 'awaiting', header: O.awaitingAcceptance, align: 'end', cell: (group) => sum(group, group.awaitingAcceptanceQuantity) },
   ]
 
   return (
     <>
       {intro}
       <DataTable label={O.caption} columns={columns} rows={list.rows} rowKey={(group) => group.id} rowAttributes={(group) => ({ 'data-group-id': group.id })} />
-      {list.rows.map((group) => (
+      {list.rows.filter((group) => group.state === 'Measured').map((group) => (
         <OpenOrderDetail key={group.id} group={group} />
       ))}
       <PoolContinuation list={list} />
@@ -316,7 +330,11 @@ function OpenOrderDetail({ group }: { readonly group: OpenOrderGroup }) {
       header: O.delivery,
       cell: (line) => (line.requestedDeliveryDate === null ? T.common.none : formatBusinessDate(line.requestedDeliveryDate)),
     },
-    { key: 'basis', header: O.basisRevision, cell: (line) => line.basisRevision },
+    {
+      key: 'basis',
+      header: O.basisRevision,
+      cell: (line) => line.basisRevision ?? <span className={styles.muted}>{O.noAcceptedRevision}</span>,
+    },
     { key: 'approved', header: O.approved, align: 'end', cell: (line) => <Quantity value={line.approvedQuantity} unit={group.unitCode} /> },
     { key: 'shipped', header: O.shipped, align: 'end', cell: (line) => <Quantity value={line.shippedQuantity} unit={group.unitCode} /> },
     {
@@ -331,6 +349,22 @@ function OpenOrderDetail({ group }: { readonly group: OpenOrderGroup }) {
               <span data-testid={`sales-report-line-tolerance-${line.lineId}`}>{O.completedWithinTolerance}</span>
             </StatusIndicator>
           ) : null}
+        </>
+      ),
+    },
+    {
+      key: 'awaiting',
+      header: O.awaitingAcceptance,
+      align: 'end',
+      cell: (line) => (
+        <>
+          <Quantity value={line.awaitingAcceptanceQuantity} unit={group.unitCode} />
+          {line.awaitingAcceptanceRevision === null ? null : (
+            <span className={styles.muted} data-testid={`sales-report-line-awaiting-${line.lineId}`}>
+              {' '}
+              {O.awaitingRevision(line.awaitingAcceptanceRevision)}
+            </span>
+          )}
         </>
       ),
     },
@@ -386,7 +420,8 @@ function LostOpportunities({
       </>
     )
   }
-  const withheld = list.firstPage?.amountDisclosure === 'Withheld'
+  // Each row carries its own page's disclosure: a later page read under another grant shows its own state.
+  const anyWithheld = list.rows.some((item) => item.amountWithheld)
   const columns: DataTableColumn<LostOpportunity>[] = [
     { key: 'quote', header: L.quote, pin: 'start', cell: (item) => `${item.documentNo} (${item.revision})` },
     { key: 'quoteDate', header: L.quoteDate, cell: (item) => formatBusinessDate(item.businessDate) },
@@ -420,28 +455,32 @@ function LostOpportunities({
     { key: 'explanation', header: L.explanation, cell: (item) => item.explanation ?? T.common.none },
     { key: 'lines', header: L.lineCount, align: 'end', cell: (item) => <span className={styles.numeric}>{item.lineCount}</span> },
   ]
-  if (!withheld) {
-    columns.push(
-      {
-        key: 'amount',
-        header: L.netAmount,
-        align: 'end',
-        cell: (item) =>
-          item.amount?.netAmount != null ? (
-            <span className={styles.numeric}>
-              {item.amount.netAmount} <span className={styles.identifier}>{item.currencyId}</span>
-            </span>
-          ) : (
-            T.common.none
-          ),
-      },
-      { key: 'amountState', header: L.amountState, cell: (item) => (item.amount === null ? T.common.none : AMOUNT_STATE_TEXT[item.amount.state]) },
-    )
-  }
+  columns.push(
+    {
+      key: 'amount',
+      header: L.netAmount,
+      align: 'end',
+      cell: (item) =>
+        item.amountWithheld ? (
+          <span className={styles.muted} data-testid={`sales-report-lost-amount-withheld-${item.id}`}>{L.withheldCell}</span>
+        ) : item.amount?.netAmount != null ? (
+          <span className={styles.numeric}>
+            {item.amount.netAmount} <span className={styles.identifier}>{item.currencyId}</span>
+          </span>
+        ) : (
+          T.common.none
+        ),
+    },
+    {
+      key: 'amountState',
+      header: L.amountState,
+      cell: (item) => (item.amount === null ? T.common.none : AMOUNT_STATE_TEXT[item.amount.state]),
+    },
+  )
   return (
     <>
       {intro}
-      {withheld ? (
+      {anyWithheld ? (
         <p className={styles.notice} role="note" data-testid="sales-report-lost-withheld">
           {L.withheld}
         </p>

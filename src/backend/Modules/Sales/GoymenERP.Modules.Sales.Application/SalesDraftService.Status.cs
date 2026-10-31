@@ -277,6 +277,16 @@ public sealed partial class SalesDraftService
             return null;
         }
 
+        return RecordedQuantities(scope, draft, answer);
+    }
+
+    /// <summary>
+    /// The owner's answer for <paramref name="draft"/> validated (the AT-024 rules of <see cref="RecordedDeliveries"/>) and taken as
+    /// exact quantities of each line's unit; null when it is malformed. Shared by the status axis and the API-41 batch read.
+    /// </summary>
+    private static Dictionary<Guid, (Quantity Shipped, Quantity Delivered)>? RecordedQuantities(Scope scope, SalesOrderDraft draft,
+        SalesOrderDeliveryReadAnswerV1? answer)
+    {
         try
         {
             var totals = RecordedDeliveries(scope, draft, answer);

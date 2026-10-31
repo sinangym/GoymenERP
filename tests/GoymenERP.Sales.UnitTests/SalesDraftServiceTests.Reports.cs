@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Sales.Domain.Quotes;
 
@@ -15,100 +16,135 @@ public sealed partial class SalesDraftServiceTests
     private const string ReportPermission = SalesPermissionManifestV1.ReportsRead;
 
     [Fact]
-    public async Task Reports_open_orders_group_the_approved_minus_shipped_quantity_per_customer_product_and_unit_and_write_nothing()
+    public async Task Reports_open_orders_measure_the_accepted_quantity_minus_shipped_per_group_leave_closed_lines_out_and_write_nothing()
     {
         var world = new World();
-        var approved = await ApprovedTwoLineAsync(world);
-        var (first, second) = (approved.Lines[0].LineId, approved.Lines[1].LineId);
-        var draft = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
-        // Line 1 (1.25 kg) over-shipped 1.5: nothing open, never negative. Line 2 (2.25 kg) shipped 1 in two entries: 1.25 open.
+        var accepted = await AcceptedTwoLineAsync(world);
+        var (first, second) = (accepted.Lines[0].LineId, accepted.Lines[1].LineId);
+        var draft = (await world.Store.FindDraftAsync(accepted.Draft.Id))!;
+        // Line 1 (1.25 kg) over-shipped 1.5: nothing open, nothing awaiting — closed history, not listed. Line 2 (2.25 kg) shipped 1
+        // in two entries (55 % short, beyond SAT-D5's 1 %): 1.25 open.
         var deliveries = new FakeDeliveries(order => new(Company, order,
             [new(first, KgUnit, 1.5m, 1m), new(second, KgUnit, 0.75m, 0m), new(second, KgUnit, 0.25m, 0m)]));
         world.Deliveries = deliveries;
-        // SAT-D130: line 2 is shipped short (1 of 2.25 kg, 55 % — beyond the 1 % of SAT-D5), so the tolerance is read once.
         var policies = new FakeSalesPolicies(Ladder123());
         world.SalesPolicies = policies;
-        var key = new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit);
-        world.Reports!.OpenOrders = (_, _, _, _) => new SalesOpenOrderGroupPage([key], [draft], false, "next-page");
+        world.Reports!.Orders.Add(draft);
         var (attempts, envelopes, transitions) = (world.Store.Attempts, world.Store.Envelopes.Count, world.Store.Transitions.Count);
         world.Authority.Measured.Clear();
 
-        var report = await world.Service().GetOpenOrderReportAsync(
-            new SalesOpenOrderReportQuery(Day, Day.AddDays(30), Account, 20, null));
+        var report = await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(Day, Day.AddDays(30), Account, 20, null));
 
-        Assert.Equal((SalesOpenOrderMeasureView.ApprovedMinusShipped, "next-page"), (report.Measure, report.NextCursor));
+        Assert.Equal((SalesOpenOrderMeasureView.ApprovedMinusShipped, (string?)null), (report.Measure, report.NextCursor));
         var group = Assert.Single(report.Groups);
         Assert.Equal((Party, Account, $"CAR-{Party:N}", $"Legal {Party:N}"),
             (group.Customer.PartyId, group.Customer.CompanyAccountId, group.Customer.Code, group.Customer.LegalName));
-        Assert.Equal((Product, "GDC-001", KgUnit, "kg", 1, "3.5", "2.5", "1.25", true),
-            (group.ProductId, group.ProductCode, group.UnitId, group.UnitCode, group.OrderCount, group.ApprovedQuantity,
-                group.ShippedQuantity, group.RemainingQuantity, group.Complete));
+        Assert.Equal((Product, "GDC-001", KgUnit, "kg", SalesOpenOrderGroupStateView.Measured, 1, 1),
+            (group.ProductId, group.ProductCode, group.UnitId, group.UnitCode, group.State, group.ScopeOrderCount, group.OrderCount));
+        Assert.Equal(("2.25", "1", "1.25", "0", true), (group.ApprovedQuantity, group.ShippedQuantity, group.RemainingQuantity,
+            group.AwaitingAcceptanceQuantity, group.Complete));
         Assert.Equal(
             [
-                new SalesOpenOrderLineView(draft.Id, draft.DocumentNo, Day, draft.Lines[0].RequestedDeliveryDate ?? draft.Header.RequestedDeliveryDate,
-                    SalesDraftApiV1.Rev0, first, 1, "1.25", "1.5", "0", false),
                 new SalesOpenOrderLineView(draft.Id, draft.DocumentNo, Day, draft.Lines[1].RequestedDeliveryDate ?? draft.Header.RequestedDeliveryDate,
-                    SalesDraftApiV1.Rev0, second, 2, "2.25", "1", "1.25", false),
+                    SalesDraftApiV1.Rev0, second, 2, "2.25", "1", "1.25", false, "0", null),
             ],
             group.Lines);
         Assert.Empty(group.Unmeasured);
 
-        // The store is asked once with the filter, the page and the technical order bound; the owner once per order.
-        var asked = Assert.Single(world.Reports.OpenOrderCalls);
-        Assert.Equal((new SalesOpenOrderReportFilter(Day, Day.AddDays(30), Account), 20, (string?)null, SalesReportApiV1.MaximumOrdersPerPage),
-            asked);
+        // The store is asked for the filter's group keys and that group's orders; the owner once (one batch); the tolerance once.
+        Assert.Equal([new SalesOpenOrderReportFilter(Day, Day.AddDays(30), Account)], world.Reports.GroupCalls.Select(call => call.Filter));
+        Assert.Single(world.Reports.OrderCalls);
         Assert.Equal([draft.Id], deliveries.Asked);
         Assert.Equal([Day], policies.Asked);
-        // The report read before, after the store, after the delivery owner, after Settings and after the Cari owner; no other name.
-        Assert.Equal([ReportPermission, ReportPermission, ReportPermission, ReportPermission, ReportPermission], world.Authority.Measured);
+        // The report read before, after the key scan, the order read, the delivery owner, Settings and the Cari owner.
+        Assert.Equal(Enumerable.Repeat(ReportPermission, 6), world.Authority.Measured);
         // Read-only: no attempt, envelope, transition or refusal anywhere in Sales.
         Assert.Equal((attempts, envelopes, transitions), (world.Store.Attempts, world.Store.Envelopes.Count, world.Store.Transitions.Count));
         Assert.Empty(world.Store.Refusals);
     }
 
     [Fact]
-    public async Task Reports_open_orders_measure_a_revision_awaiting_re_approval_against_the_last_approved_quantity()
+    public async Task Reports_open_orders_count_an_order_awaiting_customer_acceptance_apart_never_as_open_tonnage()
+    {
+        // Q9: a new order requires the customer's acceptance; approved inside but not accepted, nothing of it can ship or invoice.
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        world.Reports!.Orders.Add((await world.Store.FindDraftAsync(approved.Draft.Id))!);
+
+        var group = Assert.Single((await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, null))).Groups);
+
+        // Sinan 2026-10-31 (EK19 pending): not open tonnage — shown apart as "müşteri onayı bekliyor".
+        Assert.Equal(("0", "0", "0", "3.5", true), (group.ApprovedQuantity, group.ShippedQuantity, group.RemainingQuantity,
+            group.AwaitingAcceptanceQuantity, group.Complete));
+        Assert.Equal([((string?)null, "0", "1.25", (string?)SalesDraftApiV1.Rev0), (null, "0", "2.25", SalesDraftApiV1.Rev0)],
+            group.Lines.Select(line => (line.BasisRevision, line.RemainingQuantity, line.AwaitingAcceptanceQuantity, line.AwaitingAcceptanceRevision)));
+        Assert.Equal((1, 1), (group.OrderCount, group.ScopeOrderCount));
+
+        // Once the customer accepts, the same quantity is open and nothing awaits.
+        await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("5"), Metadata("k-accept"));
+        world.Reports.Orders[0] = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
+        var accepted = Assert.Single((await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, null))).Groups);
+        Assert.Equal(("3.5", "3.5", "0"), (accepted.ApprovedQuantity, accepted.RemainingQuantity, accepted.AwaitingAcceptanceQuantity));
+    }
+
+    [Fact]
+    public async Task Reports_open_orders_measure_an_accepted_rev0_while_a_larger_rev1_awaits_approval_or_acceptance()
     {
         var world = new World();
         var approved = await ApprovedAsync(world);
         var line = approved.Lines[0].LineId;
         Owners(world);
+        await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("4"), Metadata("k-accept"));
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(line, KgUnit, 1m, 1m)]));
         world.SalesPolicies = new FakeSalesPolicies(Ladder123());
-        // Rev.1 asks 2 kg and awaits re-approval: the open quantity stays 1.25 − 1 of the APPROVED Rev.0, never 2 − 1.
+        var query = new SalesOpenOrderReportQuery(null, null, null, 50, null);
+
+        // Rev.1 asks 2 kg and awaits internal approval: the accepted Rev.0 (1.25) is measured — 1.25 − 1 open, nothing awaits acceptance.
         await world.Service().ReviseQuantityAsync(approved.Draft.Id,
-            new SalesDraftQuantityRevisionRequest("4", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity"));
-        var draft = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
-        world.Reports!.OpenOrders = (_, _, _, _) =>
-            new SalesOpenOrderGroupPage([new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit)], [draft], false, null);
+            new SalesDraftQuantityRevisionRequest("5", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity"));
+        world.Reports!.Orders.Add((await world.Store.FindDraftAsync(approved.Draft.Id))!);
+        var pending = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
+        Assert.Equal(("1.25", "1", "0.25", "0"), (pending.ApprovedQuantity, pending.ShippedQuantity, pending.RemainingQuantity,
+            pending.AwaitingAcceptanceQuantity));
+        Assert.Equal(SalesDraftApiV1.Rev0, Assert.Single(pending.Lines).BasisRevision);
 
-        var group = Assert.Single((await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, null))).Groups);
+        // Rev.1 approved inside, the customer has not accepted it: still 1.25 − 1 open; the +0.75 awaits acceptance (Rev.1).
+        await world.Service().SubmitDraftAsync(approved.Draft.Id, Command("6"), Metadata("k-submit-1"));
+        await world.Service().ApproveDraftAsync(approved.Draft.Id, Command("7"), Metadata("k-approve-1"));
+        world.Reports.Orders[0] = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
+        var awaiting = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
+        Assert.Equal(("1.25", "1", "0.25", "0.75"), (awaiting.ApprovedQuantity, awaiting.ShippedQuantity, awaiting.RemainingQuantity,
+            awaiting.AwaitingAcceptanceQuantity));
+        var awaitingLine = Assert.Single(awaiting.Lines);
+        Assert.Equal((SalesDraftApiV1.Rev0, (string?)SalesDraftApiV1.RevisionText(1)), (awaitingLine.BasisRevision, awaitingLine.AwaitingAcceptanceRevision));
 
-        Assert.Equal(("1.25", "1", "0.25", true), (group.ApprovedQuantity, group.ShippedQuantity, group.RemainingQuantity, group.Complete));
-        Assert.Equal(SalesDraftApiV1.Rev0, Assert.Single(group.Lines).BasisRevision);
+        // The customer accepts Rev.1: 2 − 1 open, nothing awaits.
+        await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("8"), Metadata("k-accept-1"));
+        world.Reports.Orders[0] = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
+        var accepted = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
+        Assert.Equal(("2", "1", "1", "0"), (accepted.ApprovedQuantity, accepted.ShippedQuantity, accepted.RemainingQuantity,
+            accepted.AwaitingAcceptanceQuantity));
     }
 
     [Fact]
     public async Task Reports_open_orders_count_nothing_open_on_a_line_completed_within_the_sat_d5_tolerance_sat_d130()
     {
         var world = new World();
-        var approved = await ApprovedTwoLineAsync(world);
-        var (first, second) = (approved.Lines[0].LineId, approved.Lines[1].LineId);
-        var draft = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
+        var accepted = await AcceptedTwoLineAsync(world);
+        var (first, second) = (accepted.Lines[0].LineId, accepted.Lines[1].LineId);
         // Line 1: 1.24 of 1.25 kg (0.8 % short, within the 1 % warn bound): "Tamamlandı", nothing open. Line 2: 1 of 2.25 kg: Partial.
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(first, KgUnit, 1.24m, 1.24m), new(second, KgUnit, 1m, 0m)]));
         var policies = new FakeSalesPolicies(Ladder123());
         world.SalesPolicies = policies;
-        world.Reports!.OpenOrders = (_, _, _, _) =>
-            new SalesOpenOrderGroupPage([new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit)], [draft], false, null);
+        world.Reports!.Orders.Add((await world.Store.FindDraftAsync(accepted.Draft.Id))!);
         var query = new SalesOpenOrderReportQuery(null, null, null, 50, null);
 
         var group = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
 
-        Assert.Equal(("3.5", "2.24", "1.25", true), (group.ApprovedQuantity, group.ShippedQuantity, group.RemainingQuantity, group.Complete));
-        Assert.Equal([("1.24", "0", true), ("1", "1.25", false)],
-            group.Lines.Select(line => (line.ShippedQuantity, line.RemainingQuantity, line.CompletedWithinTolerance)));
-        // The tolerance of the order's business date, asked once for the order (never re-derived in the report).
+        // The completed line is closed history: only line 2 is listed and summed.
+        Assert.Equal(("2.25", "1", "1.25", true), (group.ApprovedQuantity, group.ShippedQuantity, group.RemainingQuantity, group.Complete));
+        Assert.Equal([second], group.Lines.Select(line => line.LineId));
         Assert.Equal([Day], policies.Asked);
 
         // No readable tolerance (Settings not composed): the short-shipped lines are unmeasured — never open, never closed.
@@ -131,17 +167,20 @@ public sealed partial class SalesDraftServiceTests
         var untouched = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
         Assert.Equal(("3.5", "0", "3.5", true), (untouched.ApprovedQuantity, untouched.ShippedQuantity, untouched.RemainingQuantity, untouched.Complete));
         Assert.Empty(unasked.Asked);
+
+        // Everything shipped: the group is closed history and the report has nothing to show.
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(first, KgUnit, 1.25m, 1.25m), new(second, KgUnit, 2.25m, 2.25m)]));
+        Assert.Empty((await world.Service().GetOpenOrderReportAsync(query)).Groups);
     }
 
     [Fact]
-    public async Task Reports_open_orders_are_never_a_guess_an_absent_or_malformed_owner_is_503_and_a_wide_page_is_refused()
+    public async Task Reports_open_orders_isolate_one_malformed_owner_answer_and_never_guess_an_absent_owner()
     {
         var world = new World();
-        var approved = await ApprovedAsync(world);
-        var line = approved.Lines[0].LineId;
-        var draft = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
-        var key = new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit);
-        world.Reports!.OpenOrders = (_, _, _, _) => new SalesOpenOrderGroupPage([key], [draft], false, null);
+        var accepted = await AcceptedAsync(world);
+        var line = accepted.Lines[0].LineId;
+        var draft = (await world.Store.FindDraftAsync(accepted.Draft.Id))!;
+        world.Reports!.Orders.Add(draft);
         var query = new SalesOpenOrderReportQuery(null, null, null, 50, null);
 
         // No delivery owner composed: 503, never "nothing shipped".
@@ -149,10 +188,15 @@ public sealed partial class SalesDraftServiceTests
         var absent = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetOpenOrderReportAsync(query));
         Assert.Equal((503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable), (absent.Status, absent.Code));
 
-        // A total recorded in another unit is no number of this unit (no conversion).
+        // The owner fails: 503.
+        world.Deliveries = new FakeDeliveries(_ => throw new InvalidOperationException("SENTETIK outage"));
+        Assert.Equal(503, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetOpenOrderReportAsync(query))).Status);
+
+        // A total recorded in another unit is no number of this unit: that order's line is unmeasured, the report stands.
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(line, Guid.NewGuid(), 1m, 0m)]));
-        var malformed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetOpenOrderReportAsync(query));
-        Assert.Equal((503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable), (malformed.Status, malformed.Code));
+        var malformed = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
+        Assert.Equal((false, SalesOpenOrderUnmeasuredReasonView.DeliveryAnswerInvalid),
+            (malformed.Complete, Assert.Single(malformed.Unmeasured).Reason));
 
         // The Cari owner not composed: 503, never a guessed customer.
         world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
@@ -161,24 +205,53 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable), (noCustomer.Status, noCustomer.Code));
         world.PartyDisplays.Fault = "";
 
-        // Nothing open: an empty page; with nothing open the group shows the full approved quantity.
-        var open = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
-        Assert.Equal(("1.25", "0", "1.25"), (open.ApprovedQuantity, open.ShippedQuantity, open.RemainingQuantity));
-
-        // More orders than one page may measure: 422, never a cut group.
-        world.Reports.OpenOrders = (_, _, _, _) => new SalesOpenOrderGroupPage([key], [], true, null);
-        var wide = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetOpenOrderReportAsync(query));
-        Assert.Equal((422, SalesReportProblemCodesV1.ReportScopeTooLarge), (wide.Status, wide.Code));
-
-        // A foreign cursor is the store's refusal: 400 invalid_cursor.
-        world.Reports.OpenOrders = (_, _, _, _) => throw new SalesDraftStoreException(SalesDraftStoreCodes.InvalidCursor, "synthetic");
-        var cursor = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
-            world.Service().GetOpenOrderReportAsync(query with { Cursor = "foreign" }));
-        Assert.Equal((400, SalesDraftProblemCodesV1.InvalidCursor), (cursor.Status, cursor.Code));
+        // A null or foreign row from the store is a malformed store answer: 503, never a 500.
+        world.Reports.Orders[0] = null!;
+        world.Reports.ExtraKeys.Add((new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit), 1));
+        Assert.Equal(503, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetOpenOrderReportAsync(query))).Status);
 
         // The store not composed: 503.
         world.Reports = null;
         Assert.Equal(503, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetOpenOrderReportAsync(query))).Status);
+    }
+
+    [Fact]
+    public async Task Reports_open_orders_bound_the_work_answer_a_huge_group_without_sums_and_always_give_a_cursor_to_continue()
+    {
+        var world = new World();
+        var accepted = await AcceptedAsync(world);
+        var draft = (await world.Store.FindDraftAsync(accepted.Draft.Id))!;
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        world.Reports!.Orders.Add(draft);
+        var real = new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit);
+        // A group (sorted first) whose scope counts 600 orders, then the real group also counted 600: the second exceeds what is
+        // left of the request's 1000-order bound, so the page ends after the first with a cursor — never a 422, never a cut sum.
+        var synthetic = new SalesOpenOrderGroupKey(Guid.Parse("00000000-0000-4000-8000-000000000001"), Party, Product, KgUnit);
+        world.Reports.ExtraKeys.Add((synthetic, 600));
+        world.Reports.CountOverride[real] = 600;
+        var query = new SalesOpenOrderReportQuery(null, null, null, 50, null);
+
+        var first = await world.Service().GetOpenOrderReportAsync(query);
+        Assert.Empty(first.Groups);
+        Assert.NotNull(first.NextCursor);
+        var second = await world.Service().GetOpenOrderReportAsync(query with { Cursor = first.NextCursor });
+        Assert.Equal((real.CompanyAccountId, (string?)null), (Assert.Single(second.Groups).Customer.CompanyAccountId, second.NextCursor));
+
+        // A group above 1000 orders is answered "too many" with no sums, and the scan moves past it.
+        world.Reports.CountOverride[real] = SalesReportApiV1.MaximumOrdersPerGroup + 1;
+        var huge = await world.Service().GetOpenOrderReportAsync(query);
+        var tooMany = Assert.Single(huge.Groups);
+        Assert.Equal((SalesOpenOrderGroupStateView.TooManyOrders, SalesReportApiV1.MaximumOrdersPerGroup + 1, (string?)null, (string?)null, false),
+            (tooMany.State, tooMany.ScopeOrderCount, tooMany.ApprovedQuantity, tooMany.RemainingQuantity, tooMany.Complete));
+        Assert.Empty(tooMany.Lines);
+        Assert.Null(huge.NextCursor);
+
+        // The cursor is bound to the company and the filter: another filter's cursor or a broken one is 400 invalid_cursor.
+        var otherFilter = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().GetOpenOrderReportAsync(query with { From = Day, Cursor = first.NextCursor }));
+        var broken = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().GetOpenOrderReportAsync(query with { Cursor = "not-a-cursor" }));
+        Assert.All([otherFilter, broken], exception => Assert.Equal((400, SalesDraftProblemCodesV1.InvalidCursor), (exception.Status, exception.Code)));
     }
 
     [Theory]
@@ -199,7 +272,7 @@ public sealed partial class SalesDraftServiceTests
             new SalesPriceVarianceReportQuery(query.From, query.To, query.CompanyAccountId, pageSize, null)));
 
         Assert.All([refused, lost, variance], exception => Assert.Equal((400, "validation_failed"), (exception.Status, exception.Code)));
-        Assert.Empty(world.Reports!.OpenOrderCalls);
+        Assert.Empty(world.Reports!.GroupCalls);
         Assert.Empty(world.Reports.LostQuoteCalls);
     }
 
@@ -217,7 +290,7 @@ public sealed partial class SalesDraftServiceTests
             world.Service().GetPriceVarianceReportAsync(new SalesPriceVarianceReportQuery(null, null, null, 50, null)));
 
         Assert.All([open, lost, variance], exception => Assert.Equal(403, exception.Status));
-        Assert.Empty(world.Reports!.OpenOrderCalls);
+        Assert.Empty(world.Reports!.GroupCalls);
         Assert.Empty(world.Reports.LostQuoteCalls);
         // Only the report name was measured (once per read): the draft read or the price read never stands in for it.
         Assert.Equal([ReportPermission, ReportPermission, ReportPermission], world.Authority.Measured);
@@ -233,22 +306,33 @@ public sealed partial class SalesDraftServiceTests
     public async Task Reports_a_grant_lost_after_the_store_read_is_403_and_no_owner_is_asked()
     {
         var world = new World();
-        var approved = await ApprovedAsync(world);
-        var draft = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
+        var accepted = await AcceptedAsync(world);
         var deliveries = new FakeDeliveries(order => new(Company, order, []));
         world.Deliveries = deliveries;
-        world.Reports!.OpenOrders = (_, _, _, _) =>
-        {
-            world.Authority.Granted = false;
-            return new SalesOpenOrderGroupPage([new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit)], [draft], false, null);
-        };
+        world.Reports!.Orders.Add((await world.Store.FindDraftAsync(accepted.Draft.Id))!);
+        world.Reports.OnGroupRead = () => world.Authority.Granted = false;
 
         var lostGrant = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
             world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, null)));
 
         Assert.Equal(403, lostGrant.Status);
+        Assert.Empty(world.Reports.OrderCalls);
         Assert.Empty(deliveries.Asked);
         Assert.Equal(0, world.PartyDisplays.Calls);
+    }
+
+    /// <summary>A one-line order (1.25 kg), approved and accepted by the customer: version 5.</summary>
+    private static async Task<SalesOrderDraftDetailView> AcceptedAsync(World world)
+    {
+        var approved = await ApprovedAsync(world);
+        return (await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("4"), Metadata("k-accept"))).Detail;
+    }
+
+    /// <summary>A two-line order (1.25 and 2.25 kg), approved and accepted by the customer: version 6.</summary>
+    private static async Task<SalesOrderDraftDetailView> AcceptedTwoLineAsync(World world)
+    {
+        var approved = await ApprovedTwoLineAsync(world);
+        return (await world.Service().RecordCustomerAcceptanceAsync(approved.Draft.Id, Command("5"), Metadata("k-accept"))).Detail;
     }
 
     [Fact]
@@ -322,19 +406,69 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(403, forbidden.Status);
     }
 
-    /// <summary>The Sales report queries in memory: the case sets the open-order answer; lost quotes are those it added.</summary>
+    /// <summary>
+    /// The Sales report queries in memory over the orders the case added (the store's open rule and key order), plus synthetic keys
+    /// and order counts a case sets; lost quotes are those it added.
+    /// </summary>
     private sealed class FakeReportStore : ISalesReportReadStore
     {
-        public Func<SalesOpenOrderReportFilter, int, string?, int, SalesOpenOrderGroupPage>? OpenOrders { get; set; }
-        public List<(SalesOpenOrderReportFilter Filter, int PageSize, string? Cursor, int MaximumOrders)> OpenOrderCalls { get; } = [];
+        public List<SalesOrderDraft> Orders { get; } = [];
+        public List<(SalesOpenOrderGroupKey Key, int Count)> ExtraKeys { get; } = [];
+        public Dictionary<SalesOpenOrderGroupKey, int> CountOverride { get; } = [];
+        public Action? OnGroupRead { get; set; }
+        public List<(SalesOpenOrderReportFilter Filter, SalesOpenOrderGroupKey? After, int Take)> GroupCalls { get; } = [];
+        public List<(SalesOpenOrderGroupKey Key, Guid? After, int Take)> OrderCalls { get; } = [];
         public List<SalesQuote> Lost { get; } = [];
         public List<(SalesLostQuoteReportFilter Filter, int PageSize, string? Cursor)> LostQuoteCalls { get; } = [];
 
-        public Task<SalesOpenOrderGroupPage> ListOpenOrderGroupsAsync(SalesOpenOrderReportFilter filter, int pageSize, string? cursor,
-            int maximumOrders, CancellationToken cancellationToken = default)
+        private IEnumerable<(SalesOrderDraft Order, SalesOpenOrderGroupKey Key)> OpenLines(SalesOpenOrderReportFilter filter) =>
+            Orders.Where(order => order is null || order.State == SalesDraftState.Draft
+                    && (order.ApprovalState == InternalApprovalState.Approved || order.ArchivedRevisions.Count > 0)
+                    && (filter.From is not { } from || order.Header.BusinessDate >= from)
+                    && (filter.To is not { } to || order.Header.BusinessDate <= to)
+                    && (filter.CompanyAccountId is not { } account || order.Header.CompanyAccountId == account))
+                .Where(order => order is not null)
+                .SelectMany(order => order.Lines.Select(line => (order, new SalesOpenOrderGroupKey(order.Header.CompanyAccountId,
+                    order.Header.PartyId, line.Product.ProductId, line.OrderUnit.UnitId))));
+
+        private static int Compare(SalesOpenOrderGroupKey a, SalesOpenOrderGroupKey b)
         {
-            OpenOrderCalls.Add((filter, pageSize, cursor, maximumOrders));
-            return Task.FromResult(OpenOrders?.Invoke(filter, pageSize, cursor, maximumOrders) ?? new SalesOpenOrderGroupPage([], [], false, null));
+            var result = a.CompanyAccountId.CompareTo(b.CompanyAccountId);
+            if (result == 0) result = a.PartyId.CompareTo(b.PartyId);
+            if (result == 0) result = a.ProductId.CompareTo(b.ProductId);
+            return result == 0 ? a.UnitId.CompareTo(b.UnitId) : result;
+        }
+
+        public Task<IReadOnlyList<SalesOpenOrderGroupScope>> ListOpenOrderGroupsAsync(SalesOpenOrderReportFilter filter,
+            SalesOpenOrderGroupKey? after, int take, CancellationToken cancellationToken = default)
+        {
+            GroupCalls.Add((filter, after, take));
+            OnGroupRead?.Invoke();
+            var groups = OpenLines(filter).GroupBy(entry => entry.Key)
+                .Select(group => (group.Key, Count: CountOverride.GetValueOrDefault(group.Key, group.Select(entry => entry.Order.Id).Distinct().Count())))
+                .Concat(ExtraKeys)
+                .DistinctBy(group => group.Key)
+                .Where(group => after is null || Compare(group.Key, after) > 0)
+                .OrderBy(group => group.Key, Comparer<SalesOpenOrderGroupKey>.Create(Compare))
+                .Take(take)
+                .Select(group => new SalesOpenOrderGroupScope(group.Key, group.Count))
+                .ToList();
+            return Task.FromResult<IReadOnlyList<SalesOpenOrderGroupScope>>(groups);
+        }
+
+        public Task<IReadOnlyList<SalesOrderDraft>> ListOpenOrdersOfGroupAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey key,
+            Guid? afterOrderId, int take, CancellationToken cancellationToken = default)
+        {
+            OrderCalls.Add((key, afterOrderId, take));
+            if (Orders.Any(order => order is null))
+            {
+                return Task.FromResult<IReadOnlyList<SalesOrderDraft>>([null!]);
+            }
+
+            var orders = OpenLines(filter).Where(entry => entry.Key == key).Select(entry => entry.Order).DistinctBy(order => order.Id)
+                .Where(order => afterOrderId is null || order.Id.CompareTo(afterOrderId.Value) > 0)
+                .OrderBy(order => order.Id).Take(take).ToList();
+            return Task.FromResult<IReadOnlyList<SalesOrderDraft>>(orders);
         }
 
         public Task<SalesQuotePage> ListLostQuotesAsync(SalesLostQuoteReportFilter filter, int pageSize, string? cursor,

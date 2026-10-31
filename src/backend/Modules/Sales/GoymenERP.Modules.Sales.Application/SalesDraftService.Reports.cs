@@ -35,147 +35,6 @@ namespace GoymenERP.Modules.Sales.Application;
 /// </summary>
 public sealed partial class SalesDraftService
 {
-    public async Task<SalesOpenOrderReportResponse> GetOpenOrderReportAsync(SalesOpenOrderReportQuery query,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-        cancellationToken.ThrowIfCancellationRequested();
-        var permission = bindings.ReportReadPermission;
-        var scope = await RequireAsync(permission, cancellationToken);
-        RequireReportPage(query.PageSize, query.Cursor);
-        RequireRange(query.From, query.To);
-        RequireAccount(query.CompanyAccountId);
-        var store = reports ?? throw new SalesDraftServiceException(503, "service_unavailable");
-
-        SalesOpenOrderGroupPage page;
-        try
-        {
-            page = await GuardedAsync(scope, permission, () => store.ListOpenOrderGroupsAsync(
-                new SalesOpenOrderReportFilter(query.From, query.To, query.CompanyAccountId), query.PageSize, query.Cursor,
-                SalesReportApiV1.MaximumOrdersPerPage, cancellationToken), cancellationToken);
-        }
-        catch (SalesDraftStoreException exception)
-        {
-            throw Store(exception);
-        }
-
-        if (page is null || page.Groups is null || page.Orders is null || page.Groups.Count > query.PageSize
-            || page.NextCursor is { Length: 0 })
-        {
-            throw new SalesDraftServiceException(503, "service_unavailable");
-        }
-
-        if (page.OrdersExceeded)
-        {
-            // A technical read bound (each order is one owner read): refused, never a cut group.
-            throw new SalesDraftServiceException(422, SalesReportProblemCodesV1.ReportScopeTooLarge,
-                [new("pageSize", SalesReportProblemCodesV1.ReportScopeTooLarge)]);
-        }
-
-        if (page.Groups.Count == 0)
-        {
-            return new SalesOpenOrderReportResponse(SalesOpenOrderMeasureView.ApprovedMinusShipped, [], page.NextCursor);
-        }
-
-        var keys = page.Groups.ToHashSet();
-        var measured = new Dictionary<SalesOpenOrderGroupKey, List<OpenLine>>();
-        var unmeasured = new Dictionary<SalesOpenOrderGroupKey, List<SalesOpenOrderUnmeasuredLineView>>();
-        foreach (var draft in page.Orders.OrderBy(order => order.Header.BusinessDate).ThenBy(order => order.DocumentNo, StringComparer.Ordinal)
-            .ThenBy(order => order.Id))
-        {
-            if (draft is null || draft.CompanyId != scope.CompanyId)
-            {
-                throw new SalesDraftServiceException(503, "service_unavailable");
-            }
-
-            var lines = draft.Lines.OrderBy(line => line.LineNo)
-                .Select(line => (Line: line, Key: new SalesOpenOrderGroupKey(draft.Header.CompanyAccountId, draft.Header.PartyId,
-                    line.Product.ProductId, line.OrderUnit.UnitId)))
-                .Where(entry => keys.Contains(entry.Key))
-                .ToArray();
-            if (lines.Length == 0)
-            {
-                continue;
-            }
-
-            if (Basis(draft) is not { } basis)
-            {
-                // A revision awaits re-approval and the approved quantities cannot be taken exactly: nothing is measured and no
-                // owner is asked (the API-08 rule), but the line is named so the group's sum is never read as complete.
-                foreach (var (line, key) in lines)
-                {
-                    Add(unmeasured, key, new SalesOpenOrderUnmeasuredLineView(draft.Id, draft.DocumentNo, line.Id, line.LineNo,
-                        SalesOpenOrderUnmeasuredReasonView.PendingReapproval));
-                }
-
-                continue;
-            }
-
-            if (deliveries is null)
-            {
-                // Not composed (the owner registers the port in its own module): 503, never an assumed "nothing shipped".
-                throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable);
-            }
-
-            var recorded = await RecordedShipmentsAsync(scope, permission, draft, cancellationToken)
-                ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable);
-            // SAT-D130: only a line shipped SHORT needs the SAT-D5 judgement (within the tolerance it is "Tamamlandı" and nothing is
-            // open); the tolerance of the order's business date is read once per order and only then (the API-08 read).
-            var shortShipped = lines.Any(entry => IsShortShipped(basis.Lines[entry.Line.Id].Quantity, recorded[entry.Line.Id].Shipped));
-            var tolerance = shortShipped ? await ToleranceAsync(scope, permission, draft, cancellationToken) : null;
-            foreach (var (line, key) in lines)
-            {
-                var approved = basis.Lines[line.Id].Quantity;
-                var shipped = recorded[line.Id].Shipped;
-                if (IsShortShipped(approved, shipped) && tolerance is null)
-                {
-                    // No readable tolerance: whether the remainder is open is unknown — never counted open, never closed.
-                    Add(unmeasured, key, new SalesOpenOrderUnmeasuredLineView(draft.Id, draft.DocumentNo, line.Id, line.LineNo,
-                        SalesOpenOrderUnmeasuredReasonView.TolerancePolicyUnavailable));
-                    continue;
-                }
-
-                Quantity remaining;
-                var completedWithinTolerance = false;
-                try
-                {
-                    if (shipped.CompareTo(approved) >= 0)
-                    {
-                        remaining = Quantity.Zero(approved.Unit);
-                    }
-                    else if (shipped.IsZero)
-                    {
-                        remaining = approved;
-                    }
-                    else
-                    {
-                        // The realization calculator decides (SAT-D5 / SAT-D15 / SAT-D16): Completed within the tolerance, else Partial.
-                        var realization = SalesRealizationCalculator.Line(approved, shipped, lineClosed: false, tolerance!.Tolerance);
-                        completedWithinTolerance = realization.State == LineRealizationState.Completed;
-                        remaining = completedWithinTolerance ? Quantity.Zero(approved.Unit) : approved.Subtract(shipped);
-                    }
-                }
-                catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
-                {
-                    throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
-                }
-
-                Add(measured, key, new OpenLine(draft, line, basis.Revision, approved, shipped, remaining, completedWithinTolerance));
-            }
-        }
-
-        var customers = await ReportCustomersAsync(scope, permission, page.Groups.Select(group => group.PartyId), cancellationToken);
-        var groups = new List<SalesOpenOrderGroupView>(page.Groups.Count);
-        foreach (var key in page.Groups)
-        {
-            var lines = measured.GetValueOrDefault(key) ?? [];
-            var skipped = unmeasured.GetValueOrDefault(key) ?? [];
-            groups.Add(OpenOrderGroup(key, ReportCustomer(customers, key.PartyId, key.CompanyAccountId), lines, skipped, page.Orders));
-        }
-
-        return new SalesOpenOrderReportResponse(SalesOpenOrderMeasureView.ApprovedMinusShipped, groups, page.NextCursor);
-    }
-
     public async Task<SalesLostOpportunityReportResponse> GetLostOpportunityReportAsync(SalesLostOpportunityReportQuery query,
         CancellationToken cancellationToken = default)
     {
@@ -234,6 +93,12 @@ public sealed partial class SalesDraftService
         RequireReportPage(query.PageSize, query.Cursor);
         RequireRange(query.From, query.To);
         RequireAccount(query.CompanyAccountId);
+        if (query.Cursor is not null)
+        {
+            // While there is no source no page was ever issued, so no cursor can be one of this report's (consistently refused).
+            throw new SalesDraftServiceException(400, SalesDraftProblemCodesV1.InvalidCursor);
+        }
+
         // The variance is prices: the narrow price read is required, not merely asked (nothing is disclosed without it).
         if (await DiscloseAsync(scope, cancellationToken) != SalesPriceDisclosure.Visible)
         {
@@ -243,81 +108,6 @@ public sealed partial class SalesDraftService
         // No 25 / SAT-D92: the variance is recorded by the invoice owner (S5 API-32), which does not exist yet. No source is
         // "kaynak yok" — never an empty page, which would claim that no invoice was priced differently.
         return new SalesPriceVarianceReportResponse(SalesPriceVarianceSourceStateView.NoSource, null, null);
-    }
-
-    // ---- open orders ----------------------------------------------------------------------------------------------------------
-
-    private sealed record OpenLine(SalesOrderDraft Order, SalesOrderDraftLine Line, string BasisRevision, Quantity Approved, Quantity Shipped,
-        Quantity Remaining, bool CompletedWithinTolerance);
-
-    /// <summary>Something but less than the approved quantity shipped: the only case the SAT-D5 tolerance decides (SAT-D130).</summary>
-    private static bool IsShortShipped(Quantity approved, Quantity shipped) => !shipped.IsZero && shipped.CompareTo(approved) < 0;
-
-    private static void Add<T>(Dictionary<SalesOpenOrderGroupKey, List<T>> map, SalesOpenOrderGroupKey key, T value)
-    {
-        if (!map.TryGetValue(key, out var list))
-        {
-            list = [];
-            map.Add(key, list);
-        }
-
-        list.Add(value);
-    }
-
-    /// <summary>
-    /// One group's view: the sums are exact additions in the group's single unit (one unit id is one Settings unit of one dimension,
-    /// checked again per line); the product and unit texts are the order line's snapshots. A group with no measured line (only
-    /// unmeasured ones) shows the product of its first open line and no sums of zero are claimed complete.
-    /// </summary>
-    private static SalesOpenOrderGroupView OpenOrderGroup(SalesOpenOrderGroupKey key, SalesReportCustomerView customer, List<OpenLine> lines,
-        List<SalesOpenOrderUnmeasuredLineView> unmeasured, IReadOnlyList<SalesOrderDraft> orders)
-    {
-        var sample = lines.Count > 0
-            ? lines[0].Line
-            : orders.Where(order => unmeasured.Any(line => line.OrderId == order.Id))
-                .SelectMany(order => order.Lines)
-                .FirstOrDefault(line => unmeasured.Any(entry => entry.LineId == line.Id))
-            ?? throw new SalesDraftServiceException(503, "service_unavailable");
-        var unit = sample.Quantity.Unit;
-        var approved = Quantity.Zero(unit);
-        var shipped = Quantity.Zero(unit);
-        var remaining = Quantity.Zero(unit);
-        try
-        {
-            foreach (var line in lines)
-            {
-                if (line.Line.Product.ProductId != key.ProductId || line.Line.OrderUnit.UnitId != key.UnitId)
-                {
-                    throw new SalesDraftServiceException(503, "service_unavailable");
-                }
-
-                approved = approved.Add(line.Approved);
-                shipped = shipped.Add(line.Shipped);
-                remaining = remaining.Add(line.Remaining);
-            }
-        }
-        catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
-        {
-            // Another dimension under the same unit id, or a sum beyond the exact range: no number rather than a wrong one.
-            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
-        }
-
-        return new SalesOpenOrderGroupView(
-            customer,
-            key.ProductId,
-            sample.Product.Code,
-            sample.Product.Name,
-            key.UnitId,
-            sample.OrderUnit.UnitCode,
-            lines.Select(line => line.Order.Id).Distinct().Count(),
-            QuantityText(approved),
-            QuantityText(shipped),
-            QuantityText(remaining),
-            Complete: unmeasured.Count == 0,
-            [.. lines.Select(line => new SalesOpenOrderLineView(line.Order.Id, line.Order.DocumentNo, line.Order.Header.BusinessDate,
-                line.Line.RequestedDeliveryDate ?? line.Order.Header.RequestedDeliveryDate, line.BasisRevision, line.Line.Id, line.Line.LineNo,
-                QuantityText(line.Approved), QuantityText(line.Shipped), QuantityText(line.Remaining), line.CompletedWithinTolerance))],
-            unmeasured);
     }
 
     // ---- lost opportunities ---------------------------------------------------------------------------------------------------
@@ -352,11 +142,21 @@ public sealed partial class SalesDraftService
     /// </summary>
     private static SalesLostAmountView QuoteAmount(SalesQuote quote)
     {
-        var totals = SalesOrderTotalsCalculator.Calculate(
-            [.. quote.Lines.Select(line => new SalesTotalsLineInput(line.Id, line.LineNo, line.OrderUnit.UnitId, line.Quantity.Value,
-                new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))],
-            quote.Header.CurrencyId,
-            Math.Min(quote.Money.Scale, Money.MaximumScale));
+        SalesOrderTotals totals;
+        try
+        {
+            totals = SalesOrderTotalsCalculator.Calculate(
+                [.. quote.Lines.Select(line => new SalesTotalsLineInput(line.Id, line.LineNo, line.OrderUnit.UnitId, line.Quantity.Value,
+                    new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent)))],
+                quote.Header.CurrencyId,
+                Math.Min(quote.Money.Scale, Money.MaximumScale));
+        }
+        catch (Exception exception) when (exception is ArgumentException or FormatException or OverflowException or SalesRuleException)
+        {
+            // A stored quote the calculator cannot read is no amount to show (never a 500, never a guessed amount).
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
+        }
+
         var document = totals.Document;
         return new SalesLostAmountView(DocumentStateText(document.State), totals.CurrencyId, totals.AmountScale, Amount(document.NetAmount),
             document.UnpricedLineCount, document.PriceUnitNotOrderUnitLineCount);

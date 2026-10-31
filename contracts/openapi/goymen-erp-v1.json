@@ -14514,30 +14514,6 @@
             ],
             "x-erp-empty-body-possible": true
           },
-          "422": {
-            "description": "Unprocessable Entity",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "report_scope_too_large"
-            ]
-          },
           "503": {
             "description": "Service Unavailable",
             "headers": {
@@ -15013,6 +14989,7 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
+              "invalid_cursor",
               "validation_failed"
             ],
             "x-erp-empty-body-possible": true
@@ -98574,6 +98551,12 @@
           }
         }
       },
+      "SalesOpenOrderGroupStateView": {
+        "enum": [
+          "Measured",
+          "TooManyOrders"
+        ]
+      },
       "SalesOpenOrderGroupView": {
         "required": [
           "customer",
@@ -98582,10 +98565,13 @@
           "productName",
           "unitId",
           "unitCode",
+          "state",
+          "scopeOrderCount",
           "orderCount",
           "approvedQuantity",
           "shippedQuantity",
           "remainingQuantity",
+          "awaitingAcceptanceQuantity",
           "complete",
           "lines",
           "unmeasured"
@@ -98612,6 +98598,17 @@
           "unitCode": {
             "type": "string"
           },
+          "state": {
+            "$ref": "#/components/schemas/SalesOpenOrderGroupStateView"
+          },
+          "scopeOrderCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
           "orderCount": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
@@ -98621,13 +98618,28 @@
             "format": "int32"
           },
           "approvedQuantity": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "shippedQuantity": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "remainingQuantity": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "awaitingAcceptanceQuantity": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "complete": {
             "type": "boolean"
@@ -98658,7 +98670,9 @@
           "approvedQuantity",
           "shippedQuantity",
           "remainingQuantity",
-          "completedWithinTolerance"
+          "completedWithinTolerance",
+          "awaitingAcceptanceQuantity",
+          "awaitingAcceptanceRevision"
         ],
         "type": "object",
         "properties": {
@@ -98681,7 +98695,10 @@
             "format": "date"
           },
           "basisRevision": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "lineId": {
             "type": "string",
@@ -98706,6 +98723,15 @@
           },
           "completedWithinTolerance": {
             "type": "boolean"
+          },
+          "awaitingAcceptanceQuantity": {
+            "type": "string"
+          },
+          "awaitingAcceptanceRevision": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -98776,7 +98802,8 @@
       "SalesOpenOrderUnmeasuredReasonView": {
         "enum": [
           "PendingReapproval",
-          "TolerancePolicyUnavailable"
+          "TolerancePolicyUnavailable",
+          "DeliveryAnswerInvalid"
         ]
       },
       "SalesOrderDispatchNoteLineView": {

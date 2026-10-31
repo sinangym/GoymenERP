@@ -66,6 +66,9 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit ApprovedAudit = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
     private static readonly SalesDraftStateAudit Lost = new("sales.quote.lost.v1", "Lose", "SENTETIK kaybedildi");
+    private static readonly SalesDraftStateAudit AcceptedAudit =
+        new("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance", "SENTETIK müşteri kabul etti");
+    private static readonly SalesDraftStateAudit RevisedAudit = new("sales.order-draft.quantity-revised.v1", "ReviseQuantity", "SENTETIK revizyon");
     private static readonly LogisticsMutationAudit Issued = new("logistics.loading-instruction.issued.v1", "Issue", "SENTETIK yayımlandı");
     private static readonly LogisticsMutationAudit Loaded = new("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "SENTETIK yüklendi");
     private static readonly LogisticsMutationAudit Shipped = new("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "SENTETIK sevk edildi");
@@ -76,19 +79,25 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
         await using var run = await Run.StartAsync();
         var first = await run.CustomerAsync(CompanyA, "SENTETIK Rapor Müşterisi A.Ş.");
         var second = await run.CustomerAsync(CompanyA, "SENTETIK İkinci Müşteri A.Ş.");
-        // Two approved orders of the first customer (6 + 3 kg and 2 kg) and one of the second (5 kg); a draft never approved is not
-        // open and never appears.
-        var big = await run.ApprovedDraftAsync(CompanyA, first, "o1", "6", "3");
-        var small = await run.ApprovedDraftAsync(CompanyA, first, "o2", "2");
-        var other = await run.ApprovedDraftAsync(CompanyA, second, "o3", "5");
+        // Orders as the current service path builds them (Q9: customer acceptance required), approved and ACCEPTED: two of the first
+        // customer (6 + 3 kg and 2 kg) and one of the second (5 kg); a draft never approved is not open and never appears.
+        var big = await run.AcceptedDraftAsync(CompanyA, first, "o1", "6", "3");
+        var small = await run.AcceptedDraftAsync(CompanyA, first, "o2", "2");
+        var other = await run.AcceptedDraftAsync(CompanyA, second, "o3", "5");
         await run.DraftAsync(CompanyA, first, "o4", "100");
+        // Approved inside, never accepted by the customer (it cannot ship or invoice): not open tonnage, 4 kg awaiting acceptance.
+        var pending = await run.ApprovedDraftAsync(CompanyA, first, "o6", "4");
+        // Rev.0 10 kg accepted, Rev.1 15 kg approved inside and awaiting acceptance, 3 kg shipped (30 % short of the accepted 10):
+        // 10 − 3 open, the +5 awaiting acceptance.
+        var revised = await run.RevisedAwaitingAcceptanceAsync(CompanyA, first, "o7", "10", "15");
         // 4 kg of the 6 kg line shipped through Logistics: 33 % short (beyond SAT-D5's 1 %), 2 kg of that line stays open.
         await run.ShipAsync(CompanyA, big, big.Lines.Single(line => line.LineNo == 1), "s1", 4m);
         // SAT-D130: 2.99 kg of the 3 kg line (0.33 % short, within the 1 % tolerance) is "Tamamlandı" — nothing of it is open.
         await run.ShipAsync(CompanyA, big, big.Lines.Single(line => line.LineNo == 2), "s2", 2.99m);
         // An order of a day before the tolerance record, shipped short: no readable policy — unmeasured, never open or closed.
-        var early = await run.ApprovedDraftAsync(CompanyA, first, "o5", BeforePolicy, "5");
+        var early = await run.AcceptedDraftAsync(CompanyA, first, "o5", BeforePolicy, "5");
         await run.ShipAsync(CompanyA, early, Assert.Single(early.Lines), "s3", 1m);
+        await run.ShipAsync(CompanyA, revised, Assert.Single(revised.Lines), "s4", 3m, planned: 10m);
         var quote = await run.LostQuoteAsync(CompanyA, first, "q1", "1.25", "12.50", "5", "SENTETIK rakip daha ucuz");
 
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.ReportsRead,
@@ -101,17 +110,27 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
             var groups = report.GetProperty("groups").EnumerateArray().ToArray();
             Assert.Equal(2, groups.Length);
             var mine = Assert.Single(groups, group => group.GetProperty("customer").GetProperty("companyAccountId").GetGuid() == first.AccountId);
-            Assert.Equal((first.Code, Product, KgUnit, "kg", 2, "11", "6.99", "4", false),
+            // Listed: big/1 (6 − 4 = 2), small/1 (2), pending (0 open, 4 awaiting), revised (10 − 3 = 7 open, 5 awaiting). big/2 (2.99
+            // of 3, within SAT-D5) is completed — closed history, not listed (SAT-D130). The early order is unmeasured (no policy).
+            Assert.Equal((first.Code, Product, KgUnit, "kg", "Measured", 5, 4, "18", "7", "11", "9", false),
                 (mine.GetProperty("customer").GetProperty("code").GetString(), mine.GetProperty("productId").GetGuid(),
-                    mine.GetProperty("unitId").GetGuid(), mine.GetProperty("unitCode").GetString(), mine.GetProperty("orderCount").GetInt32(),
+                    mine.GetProperty("unitId").GetGuid(), mine.GetProperty("unitCode").GetString(), mine.GetProperty("state").GetString(),
+                    mine.GetProperty("scopeOrderCount").GetInt32(), mine.GetProperty("orderCount").GetInt32(),
                     mine.GetProperty("approvedQuantity").GetString(), mine.GetProperty("shippedQuantity").GetString(),
-                    mine.GetProperty("remainingQuantity").GetString(), mine.GetProperty("complete").GetBoolean()));
-            Assert.Equal([(big.DocumentNo, 1, "6", "4", "2", false), (big.DocumentNo, 2, "3", "2.99", "0", true),
-                    (small.DocumentNo, 1, "2", "0", "2", false)],
+                    mine.GetProperty("remainingQuantity").GetString(), mine.GetProperty("awaitingAcceptanceQuantity").GetString(),
+                    mine.GetProperty("complete").GetBoolean()));
+            Assert.Equal(
+                [
+                    (big.DocumentNo, 1, "6", "4", "2", "0", (string?)"Rev.0", (string?)null),
+                    (small.DocumentNo, 1, "2", "0", "2", "0", "Rev.0", null),
+                    (pending.DocumentNo, 1, "0", "0", "0", "4", null, "Rev.0"),
+                    (revised.DocumentNo, 1, "10", "3", "7", "5", "Rev.0", "Rev.1"),
+                ],
                 mine.GetProperty("lines").EnumerateArray().Select(line => (line.GetProperty("documentNo").GetString(),
                     line.GetProperty("lineNo").GetInt32(), line.GetProperty("approvedQuantity").GetString(),
                     line.GetProperty("shippedQuantity").GetString(), line.GetProperty("remainingQuantity").GetString(),
-                    line.GetProperty("completedWithinTolerance").GetBoolean()))
+                    line.GetProperty("awaitingAcceptanceQuantity").GetString(), line.GetProperty("basisRevision").GetString(),
+                    line.GetProperty("awaitingAcceptanceRevision").GetString()))
                     .OrderBy(line => line.Item1, StringComparer.Ordinal).ThenBy(line => line.Item2));
             var unmeasured = Assert.Single(mine.GetProperty("unmeasured").EnumerateArray());
             Assert.Equal((early.Id, "TolerancePolicyUnavailable"), (unmeasured.GetProperty("orderId").GetGuid(),
@@ -170,6 +189,8 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
             var variance = await run.ReadAsync(client, SalesEndpoints.ReportPriceVariancePath);
             Assert.Equal(("NoSource", JsonValueKind.Null, JsonValueKind.Null), (variance.GetProperty("state").GetString(),
                 variance.GetProperty("items").ValueKind, variance.GetProperty("nextCursor").ValueKind));
+            // No page was ever issued while there is no source: a cursor is refused, never ignored.
+            Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync($"{SalesEndpoints.ReportPriceVariancePath}?cursor=abc")).StatusCode);
 
             // The reads wrote nothing: no audit event, attempt or version moved in Sales or Logistics.
             Assert.Equal(before, await run.EffectsAsync());
@@ -201,12 +222,13 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
         // The store under each company: each sees only its own open order and lost quote.
         await using (var b = run.SalesStore(CompanyB))
         {
-            var page = await b.Reports.ListOpenOrderGroupsAsync(new SalesOpenOrderReportFilter(null, null, null), 50, null, 10);
-            Assert.Equal(orderOfB.Id, Assert.Single(page.Orders).Id);
-            Assert.Equal(customerOfB.AccountId, Assert.Single(page.Groups).CompanyAccountId);
+            var all = new SalesOpenOrderReportFilter(null, null, null);
+            var scope = Assert.Single(await b.Reports.ListOpenOrderGroupsAsync(all, null, 50));
+            Assert.Equal((customerOfB.AccountId, 1), (scope.Key.CompanyAccountId, scope.OrderCount));
+            Assert.Equal(orderOfB.Id, Assert.Single(await b.Reports.ListOpenOrdersOfGroupAsync(all, scope.Key, null, 10)).Id);
             Assert.Equal(quoteOfB.Id, Assert.Single((await b.Reports.ListLostQuotesAsync(new SalesLostQuoteReportFilter(null, null, null, null), 50, null)).Items).Id);
             // A filter naming A's customer finds nothing in B.
-            Assert.Empty((await b.Reports.ListOpenOrderGroupsAsync(new SalesOpenOrderReportFilter(null, null, customerOfA.AccountId), 50, null, 10)).Groups);
+            Assert.Empty(await b.Reports.ListOpenOrderGroupsAsync(new SalesOpenOrderReportFilter(null, null, customerOfA.AccountId), null, 50));
         }
 
         var readerOfB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, SalesPermissionManifestV1.ReportsRead);
@@ -220,12 +242,13 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
                 .GetProperty("items").EnumerateArray()).GetProperty("quoteId").GetGuid());
         }
 
-        // Company A's cursor is refused in B.
+        // Company A's cursor (read by A's reader from A's two groups) is refused in B.
+        await run.ApprovedDraftAsync(CompanyA, await run.CustomerAsync(CompanyA, "SENTETIK A İkinci A.Ş."), "a2", "1");
+        var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.ReportsRead);
         string cursorOfA;
-        await using (var a = run.SalesStore(CompanyA))
+        using (var clientOfA = run.Client(readerOfA, CompanyA))
         {
-            await run.ApprovedDraftAsync(CompanyA, await run.CustomerAsync(CompanyA, "SENTETIK A İkinci A.Ş."), "a2", "1");
-            cursorOfA = (await a.Reports.ListOpenOrderGroupsAsync(new SalesOpenOrderReportFilter(null, null, null), 1, null, 10)).NextCursor!;
+            cursorOfA = (await run.ReadAsync(clientOfA, $"{SalesEndpoints.ReportOpenOrdersPath}?pageSize=1")).GetProperty("nextCursor").GetString()!;
         }
 
         using (var clientOfB = run.Client(readerOfB, CompanyB))
@@ -247,7 +270,6 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
         }
 
         // A reader of A whose request names company B is not let into B.
-        var readerOfA = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.ReportsRead);
         using (var crossing = run.Client(readerOfA, CompanyB))
         {
             Assert.Equal(HttpStatusCode.Forbidden, (await crossing.GetAsync(SalesEndpoints.ReportOpenOrdersPath)).StatusCode);
@@ -281,7 +303,9 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
         IReadOnlyList<string> quantities)
     {
         var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, businessDate, businessDate.AddDays(10));
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, Money(company, businessDate), T0);
+        // Q9: the current service path creates every order with customer acceptance required (not the pre-Q9 default).
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, Money(company, businessDate), T0,
+            customerAcceptanceRequired: true);
         foreach (var quantity in quantities)
         {
             draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), ProductOf(company, businessDate), Unit(company), quantity,
@@ -354,6 +378,46 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
                 created.GetProperty("code").GetString()!, legalName);
         }
 
+        /// <summary>An approved order the customer accepted (Q9) through the real Sales store.</summary>
+        public Task<SalesOrderDraft> AcceptedDraftAsync(Guid company, Customer customer, string keyPrefix, params string[] quantities) =>
+            AcceptedDraftAsync(company, customer, keyPrefix, Day, quantities);
+
+        public async Task<SalesOrderDraft> AcceptedDraftAsync(Guid company, Customer customer, string keyPrefix, DateOnly businessDate,
+            params string[] quantities)
+        {
+            var approved = await ApprovedDraftAsync(company, customer, keyPrefix, businessDate, quantities);
+            return await AcceptAsync(company, approved, $"{keyPrefix}-accept");
+        }
+
+        public async Task<SalesOrderDraft> AcceptAsync(Guid company, SalesOrderDraft draft, string key)
+        {
+            await using var scope = SalesStore(company);
+            return (await scope.Store.UpdateDraftStateAsync(SalesEnvelope(key), Hash(key), SalesDraftCommands.RecordCustomerAcceptanceV1, draft.Id,
+                (d, now) => d.RecordCustomerAcceptance(draft.Version, Actor, now), AcceptedAudit))!.Draft;
+        }
+
+        /// <summary>
+        /// Rev.0 of <paramref name="accepted"/> kg approved and accepted, then a quantity revision to <paramref name="revised"/> kg
+        /// (Rev.1) approved inside — awaiting the customer's acceptance — through the real Sales store.
+        /// </summary>
+        public async Task<SalesOrderDraft> RevisedAwaitingAcceptanceAsync(Guid company, Customer customer, string keyPrefix, string accepted,
+            string revised)
+        {
+            var rev0 = await AcceptedDraftAsync(company, customer, keyPrefix, accepted);
+            await using var scope = SalesStore(company);
+            var line = Assert.Single(rev0.Lines);
+            var value = decimal.Parse(revised, System.Globalization.CultureInfo.InvariantCulture);
+            var revisedDraft = (await scope.Store.ReviseDraftQuantityAsync(SalesEnvelope($"{keyPrefix}-revise"), Hash($"{keyPrefix}-revise"),
+                SalesDraftCommands.ReviseQuantityV1, rev0.Id,
+                (d, now) => d.ReviseQuantities(rev0.Version, [new LineQuantityInput(line.Id, revised, value)], Actor, "SENTETIK revizyon", now),
+                RevisedAudit, (_, _) => Task.CompletedTask))!.Draft;
+            var submitted = await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-submit-1"), Hash($"{keyPrefix}-submit-1"),
+                SalesDraftCommands.SubmitV1, rev0.Id, (d, now) => d.Submit(revisedDraft.Version, Actor, now), Submitted);
+            return (await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-approve-1", actor: "SENTETIK-approver"),
+                Hash($"{keyPrefix}-approve-1"), SalesDraftCommands.ApproveV1, rev0.Id,
+                (d, now) => d.Approve(submitted!.Draft.Version, "SENTETIK-approver", now), ApprovedAudit))!.Draft;
+        }
+
         /// <summary>A stored, never submitted draft of the company (not an open order).</summary>
         public Task<SalesOrderDraft> DraftAsync(Guid company, Customer customer, string keyPrefix, params string[] quantities) =>
             DraftAsync(company, customer, keyPrefix, Day, quantities);
@@ -404,15 +468,16 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>An instruction for one order line, issued, loaded in full and shipped <paramref name="shipped"/> kg.</summary>
-        public async Task ShipAsync(Guid company, SalesOrderDraft draft, SalesOrderDraftLine orderLine, string keyPrefix, decimal shipped)
+        public async Task ShipAsync(Guid company, SalesOrderDraft draft, SalesOrderDraftLine orderLine, string keyPrefix, decimal shipped,
+            decimal? planned = null)
         {
-            var planned = orderLine.Quantity.Value;
+            var plannedQuantity = planned ?? orderLine.Quantity.Value;
             await using var scope = LogisticsStore(company);
             var stored = (await scope.Store.StoreInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-create"), Hash($"{keyPrefix}-l-create"), Day, () =>
             {
                 var instruction = LoadingInstruction.Create(Guid.NewGuid(), company, draft.Header.PartyId, draft.Header.CompanyAccountId, T0);
                 instruction.AddLine(instruction.Version, Guid.NewGuid(), new SourceOrderLineRef(draft.Id, orderLine.Id, draft.Revision),
-                    orderLine.Product.ProductId, KgUnit, null, Kg(planned), T0);
+                    orderLine.Product.ProductId, KgUnit, null, Kg(plannedQuantity), T0);
                 return instruction;
             })).Instruction.Instruction;
             var lineId = Assert.Single(stored.Lines).Id;
@@ -420,7 +485,7 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
             var issued = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-issue"), Hash($"{keyPrefix}-l-issue"),
                 LogisticsCommands.IssueV1, id, (instruction, now) => instruction.Issue(stored.Version, now), Issued))!.Instruction.Instruction;
             var loaded = (await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-load"), Hash($"{keyPrefix}-l-load"),
-                LogisticsCommands.RecordLoadV1, id, (instruction, now) => instruction.RecordLoad(issued.Version, Guid.NewGuid(), lineId, Kg(planned),
+                LogisticsCommands.RecordLoadV1, id, (instruction, now) => instruction.RecordLoad(issued.Version, Guid.NewGuid(), lineId, Kg(plannedQuantity),
                     MeasurementKind.Measured, now), Loaded))!.Instruction.Instruction;
             await scope.Store.MutateInstructionAsync(LogisticsEnvelope($"{keyPrefix}-l-ship"), Hash($"{keyPrefix}-l-ship"),
                 LogisticsCommands.RecordShipmentV1, id, (instruction, now) => instruction.MarkShipped(loaded.Version, Guid.NewGuid(), lineId,

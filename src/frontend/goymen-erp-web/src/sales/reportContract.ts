@@ -39,7 +39,8 @@ export interface OpenOrderLine {
   readonly documentNo: string
   readonly businessDate: string
   readonly requestedDeliveryDate: string | null
-  readonly basisRevision: string
+  /** The revision the customer accepted (the open quantity is measured on it); null when none is accepted yet. */
+  readonly basisRevision: string | null
   readonly lineId: string
   readonly lineNo: number
   readonly approvedQuantity: string
@@ -47,15 +48,18 @@ export interface OpenOrderLine {
   readonly remainingQuantity: string
   /** SAT-D130: shipped short WITHIN the SAT-D5 tolerance — "Tamamlandı", nothing open although shipped < approved. */
   readonly completedWithinTolerance: boolean
+  /** Sinan 2026-10-31 (EK19 pending): what the approved revision awaiting customer acceptance adds — never open tonnage. */
+  readonly awaitingAcceptanceQuantity: string
+  readonly awaitingAcceptanceRevision: string | null
 }
 
 /**
- * Why a line is not in its group's sums: `PendingReapproval` (the last approved quantities cannot be taken exactly while a
- * revision awaits approval) or `TolerancePolicyUnavailable` (SAT-D130: shipped short and no readable SAT-D5 tolerance — neither
- * open nor closed).
+ * Why a line is not in its group's sums: `PendingReapproval` (a revision's line cannot be compared exactly with the current one),
+ * `TolerancePolicyUnavailable` (SAT-D130: shipped short and no readable SAT-D5 tolerance — neither open nor closed) or
+ * `DeliveryAnswerInvalid` (the Logistics answer for that order is malformed).
  */
-export type UnmeasuredReason = 'PendingReapproval' | 'TolerancePolicyUnavailable'
-const UNMEASURED_REASONS: readonly string[] = ['PendingReapproval', 'TolerancePolicyUnavailable']
+export type UnmeasuredReason = 'PendingReapproval' | 'TolerancePolicyUnavailable' | 'DeliveryAnswerInvalid'
+const UNMEASURED_REASONS: readonly string[] = ['PendingReapproval', 'TolerancePolicyUnavailable', 'DeliveryAnswerInvalid']
 
 export interface OpenOrderUnmeasuredLine {
   readonly orderId: string
@@ -64,6 +68,9 @@ export interface OpenOrderUnmeasuredLine {
   readonly lineNo: number
   readonly reason: UnmeasuredReason
 }
+
+/** `Measured`, or `TooManyOrders`: the group's scope is above the server's bound — no sums (never a cut sum); narrow the dates. */
+export type OpenOrderGroupState = 'Measured' | 'TooManyOrders'
 
 export interface OpenOrderGroup {
   /** Client-side row identity: the group key (customer account, party, product, unit). */
@@ -74,29 +81,25 @@ export interface OpenOrderGroup {
   readonly productName: string
   readonly unitId: string
   readonly unitCode: string
+  readonly state: OpenOrderGroupState
+  readonly scopeOrderCount: number
   readonly orderCount: number
-  readonly approvedQuantity: string
-  readonly shippedQuantity: string
-  readonly remainingQuantity: string
+  /** Null exactly when the group is `TooManyOrders`. */
+  readonly approvedQuantity: string | null
+  readonly shippedQuantity: string | null
+  readonly remainingQuantity: string | null
+  readonly awaitingAcceptanceQuantity: string | null
   readonly complete: boolean
   readonly lines: readonly OpenOrderLine[]
   readonly unmeasured: readonly OpenOrderUnmeasuredLine[]
 }
 
+/** A page may hold fewer groups than asked — even none — with a cursor to continue the server's bounded scan. */
 export interface OpenOrderReport {
   readonly measure: 'ApprovedMinusShipped'
   readonly items: readonly OpenOrderGroup[]
   readonly nextCursor: string | null
-  /**
-   * Client-side only (never on the wire): the server refused the FIRST page as spanning too many orders (422
-   * `report_scope_too_large`); the screen asks to narrow the filter instead of showing a cut group.
-   */
-  readonly tooWide: boolean
 }
-
-/** API-41 422 code: one page of groups spans more orders than one read may measure. */
-export const REPORT_SCOPE_TOO_LARGE = 'report_scope_too_large'
-
 
 export interface LostReason {
   readonly reasonId: string
@@ -133,6 +136,8 @@ export interface LostOpportunity {
   readonly explanation: string | null
   readonly lineCount: number
   readonly amount: LostAmount | null
+  /** The page's disclosure carried on its rows: pages read at different moments may differ, each row says its own. */
+  readonly amountWithheld: boolean
 }
 
 export type AmountDisclosure = 'Visible' | 'Withheld'
@@ -228,22 +233,29 @@ function decodeCustomer(value: unknown): ReportCustomer | null {
 
 const OPEN_LINE_KEYS = [
   'orderId', 'documentNo', 'businessDate', 'requestedDeliveryDate', 'basisRevision', 'lineId', 'lineNo', 'approvedQuantity',
-  'shippedQuantity', 'remainingQuantity', 'completedWithinTolerance',
+  'shippedQuantity', 'remainingQuantity', 'completedWithinTolerance', 'awaitingAcceptanceQuantity', 'awaitingAcceptanceRevision',
 ] as const
 
 function decodeOpenLine(value: unknown): OpenOrderLine | null {
   const o = exact(value, OPEN_LINE_KEYS)
   if (
     o === null || !isReferenceId(o.orderId) || !isText(o.documentNo) || !isDateOnly(o.businessDate) || !isNullableDate(o.requestedDeliveryDate)
-    || !isRevision(o.basisRevision) || !isReferenceId(o.lineId) || !isPositiveInt(o.lineNo) || !isPositiveQuantity(o.approvedQuantity)
-    || !isQuantity(o.shippedQuantity) || !isQuantity(o.remainingQuantity) || typeof o.completedWithinTolerance !== 'boolean'
+    || !(o.basisRevision === null || isRevision(o.basisRevision)) || !isReferenceId(o.lineId) || !isPositiveInt(o.lineNo)
+    || !isQuantity(o.approvedQuantity) || !isQuantity(o.shippedQuantity) || !isQuantity(o.remainingQuantity)
+    || typeof o.completedWithinTolerance !== 'boolean' || !isQuantity(o.awaitingAcceptanceQuantity)
+    || !(o.awaitingAcceptanceRevision === null || isRevision(o.awaitingAcceptanceRevision))
   ) return null
-  // SAT-D130: a line completed within the tolerance has nothing open.
+  // The facts agree: completed within the tolerance has nothing open (SAT-D130); nothing accepted has nothing open; an awaiting
+  // quantity names its revision and only it does; a listed line has something open or awaiting (closed history is not listed).
   if (o.completedWithinTolerance && o.remainingQuantity !== '0') return null
+  if (o.basisRevision === null && (o.approvedQuantity !== '0' || o.remainingQuantity !== '0')) return null
+  if ((o.awaitingAcceptanceQuantity === '0') !== (o.awaitingAcceptanceRevision === null)) return null
+  if (o.remainingQuantity === '0' && o.awaitingAcceptanceQuantity === '0') return null
   return {
     orderId: o.orderId, documentNo: o.documentNo, businessDate: o.businessDate, requestedDeliveryDate: o.requestedDeliveryDate,
     basisRevision: o.basisRevision, lineId: o.lineId, lineNo: o.lineNo, approvedQuantity: o.approvedQuantity,
     shippedQuantity: o.shippedQuantity, remainingQuantity: o.remainingQuantity, completedWithinTolerance: o.completedWithinTolerance,
+    awaitingAcceptanceQuantity: o.awaitingAcceptanceQuantity, awaitingAcceptanceRevision: o.awaitingAcceptanceRevision,
   }
 }
 
@@ -257,18 +269,27 @@ function decodeUnmeasured(value: unknown): OpenOrderUnmeasuredLine | null {
 }
 
 const GROUP_KEYS = [
-  'customer', 'productId', 'productCode', 'productName', 'unitId', 'unitCode', 'orderCount', 'approvedQuantity', 'shippedQuantity',
-  'remainingQuantity', 'complete', 'lines', 'unmeasured',
+  'customer', 'productId', 'productCode', 'productName', 'unitId', 'unitCode', 'state', 'scopeOrderCount', 'orderCount',
+  'approvedQuantity', 'shippedQuantity', 'remainingQuantity', 'awaitingAcceptanceQuantity', 'complete', 'lines', 'unmeasured',
 ] as const
+const SUM_KEYS = ['approvedQuantity', 'shippedQuantity', 'remainingQuantity', 'awaitingAcceptanceQuantity'] as const
 
 function decodeGroup(value: unknown): OpenOrderGroup | null {
   const o = exact(value, GROUP_KEYS)
   if (
     o === null || !isReferenceId(o.productId) || !isText(o.productCode) || !isText(o.productName) || !isReferenceId(o.unitId)
-    || !isText(o.unitCode) || !isCount(o.orderCount) || !isQuantity(o.approvedQuantity) || !isQuantity(o.shippedQuantity)
-    || !isQuantity(o.remainingQuantity) || typeof o.complete !== 'boolean' || !Array.isArray(o.lines) || !Array.isArray(o.unmeasured)
-    || o.lines.length + o.unmeasured.length === 0
+    || !isText(o.unitCode) || (o.state !== 'Measured' && o.state !== 'TooManyOrders') || !isPositiveInt(o.scopeOrderCount)
+    || !isCount(o.orderCount) || o.orderCount > o.scopeOrderCount || typeof o.complete !== 'boolean' || !Array.isArray(o.lines)
+    || !Array.isArray(o.unmeasured)
   ) return null
+  const state: OpenOrderGroupState = o.state
+  const sums = SUM_KEYS.map((key) => o[key])
+  if (state === 'TooManyOrders') {
+    // Not measured: no sums, no lines, never complete.
+    if (sums.some((sum) => sum !== null) || o.lines.length > 0 || o.unmeasured.length > 0 || o.complete || o.orderCount !== 0) return null
+  } else if (sums.some((sum) => !isQuantity(sum)) || o.lines.length + o.unmeasured.length === 0) {
+    return null
+  }
   const customer = decodeCustomer(o.customer)
   if (customer === null) return null
   const lines: OpenOrderLine[] = []
@@ -283,17 +304,19 @@ function decodeGroup(value: unknown): OpenOrderGroup | null {
     if (line === null || unmeasured.some((seen) => seen.lineId === line.lineId) || lines.some((seen) => seen.lineId === line.lineId)) return null
     unmeasured.push(line)
   }
-  // The facts agree: complete exactly when nothing is unmeasured; the order count is the measured lines' distinct orders.
-  if (o.complete !== (unmeasured.length === 0) || o.orderCount !== new Set(lines.map((line) => line.orderId)).size) return null
+  // The facts agree: complete exactly when measured and nothing is unmeasured; the order count is the listed lines' distinct orders.
+  if (o.complete !== (state === 'Measured' && unmeasured.length === 0) || o.orderCount !== new Set(lines.map((line) => line.orderId)).size) return null
   return {
     id: [customer.companyAccountId, customer.partyId, o.productId, o.unitId].join('|'),
     customer, productId: o.productId, productCode: o.productCode, productName: o.productName, unitId: o.unitId, unitCode: o.unitCode,
-    orderCount: o.orderCount, approvedQuantity: o.approvedQuantity, shippedQuantity: o.shippedQuantity,
-    remainingQuantity: o.remainingQuantity, complete: o.complete, lines, unmeasured,
+    state, scopeOrderCount: o.scopeOrderCount, orderCount: o.orderCount,
+    approvedQuantity: o.approvedQuantity as string | null, shippedQuantity: o.shippedQuantity as string | null,
+    remainingQuantity: o.remainingQuantity as string | null, awaitingAcceptanceQuantity: o.awaitingAcceptanceQuantity as string | null,
+    complete: o.complete, lines, unmeasured,
   }
 }
 
-/** `SalesOpenOrderReportResponse`: each group once; `nextCursor` null at the end. */
+/** `SalesOpenOrderReportResponse`: each group once; `nextCursor` null at the end (a page may be short or empty with a cursor). */
 export function decodeOpenOrderReport(value: unknown): OpenOrderReport | null {
   const o = exact(value, ['measure', 'groups', 'nextCursor'])
   if (o === null || o.measure !== 'ApprovedMinusShipped' || !Array.isArray(o.groups) || !(o.nextCursor === null || isCursor(o.nextCursor))) return null
@@ -303,7 +326,7 @@ export function decodeOpenOrderReport(value: unknown): OpenOrderReport | null {
     if (group === null || items.some((seen) => seen.id === group.id)) return null
     items.push(group)
   }
-  return { measure: o.measure, items, nextCursor: o.nextCursor, tooWide: false }
+  return { measure: o.measure, items, nextCursor: o.nextCursor }
 }
 
 const REASON_KEYS = ['reasonId', 'code', 'label', 'profileId', 'profileVersion'] as const
@@ -357,7 +380,7 @@ function decodeLost(value: unknown, disclosure: AmountDisclosure): LostOpportuni
   return {
     id: o.quoteId, documentNo: o.documentNo, revision: o.revision, businessDate: o.businessDate, validUntil: o.validUntil, customer,
     currencyId: o.currencyId, lostAtUtc: o.lostAtUtc, lostOn: o.lostOn, lostBy: o.lostBy, reason, explanation: o.explanation,
-    lineCount: o.lineCount, amount,
+    lineCount: o.lineCount, amount, amountWithheld: disclosure === 'Withheld',
   }
 }
 

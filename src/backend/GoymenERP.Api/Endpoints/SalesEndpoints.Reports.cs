@@ -64,7 +64,6 @@ public static partial class SalesEndpoints
             .Produces<SalesOpenOrderReportResponse>()
             .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.InvalidCursor)
             .AllowsEmptyErpBadRequestBody()
-            .ProducesErpUnprocessableEntity(SalesReportProblemCodesV1.ReportScopeTooLarge)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
 
@@ -143,7 +142,7 @@ public static partial class SalesEndpoints
             .RequireCompanyContext()
             .WithName("GetSalesPriceVarianceReportV1")
             .Produces<SalesPriceVarianceReportResponse>()
-            .ProducesErpBadRequest("validation_failed")
+            .ProducesErpBadRequest("validation_failed", SalesDraftProblemCodesV1.InvalidCursor)
             .AllowsEmptyErpBadRequestBody()
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

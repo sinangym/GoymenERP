@@ -24,19 +24,21 @@ public static class SalesReportApiV1
     public const int MaximumPageSize = 100;
 
     /// <summary>
-    /// API-41: the most open orders one page of groups measures (each order's shipped totals are one Logistics read). A technical
-    /// read bound, not a business threshold: a page whose groups span more orders is refused with
-    /// <see cref="SalesReportProblemCodesV1.ReportScopeTooLarge"/> (422) and the screen narrows the page, the dates or the customer —
-    /// a group is never silently cut.
+    /// API-41 technical read bounds (not business thresholds), so one request's work is bounded whatever the history holds:
+    /// <list type="bullet">
+    /// <item><see cref="MaximumOrdersPerGroup"/> — a group whose scope holds more orders is answered as
+    /// <see cref="SalesOpenOrderGroupStateView.TooManyOrders"/> (no sums, never a cut sum) and the cursor moves past it, so the
+    /// report stays reachable; the screen asks to narrow the dates for that group.</item>
+    /// <item><see cref="MaximumOrdersPerRequest"/> — the orders one request measures; when the next group would exceed it the
+    /// page ends early with a cursor (possibly with fewer groups, or none, than asked) and the screen continues from there.</item>
+    /// <item><see cref="OrderBatchSize"/> — orders read from the store and from the Logistics owner per round trip.</item>
+    /// <item><see cref="MaximumGroupsScannedPerRequest"/> — group keys one request looks at (groups with nothing open are skipped).</item>
+    /// </list>
     /// </summary>
-    public const int MaximumOrdersPerPage = 500;
-}
-
-/// <summary>API-41 / API-42 refusal codes beside the shared Sales ones.</summary>
-public static class SalesReportProblemCodesV1
-{
-    /// <summary>422: one page of open-order groups spans more orders than <see cref="SalesReportApiV1.MaximumOrdersPerPage"/>.</summary>
-    public const string ReportScopeTooLarge = "report_scope_too_large";
+    public const int MaximumOrdersPerGroup = 1000;
+    public const int MaximumOrdersPerRequest = 1000;
+    public const int OrderBatchSize = 100;
+    public const int MaximumGroupsScannedPerRequest = 500;
 }
 
 /// <summary>
@@ -60,11 +62,13 @@ public sealed record SalesPriceVarianceReportQuery(DateOnly? From, DateOnly? To,
 public sealed record SalesReportCustomerView(Guid PartyId, Guid CompanyAccountId, string Code, string LegalName, string? TradeName);
 
 /// <summary>
-/// API-41: what the open quantity measures. Only <see cref="ApprovedMinusShipped"/>: the approved (basis revision) quantity of the
-/// line minus the definitely shipped total the Logistics owner recorded, never below zero — except that a line the SAT-D5
-/// realization axis judges <c>Completed</c> (shipped short WITHIN the delivery tolerance) has nothing open (SAT-D130, EK18; its line
-/// carries <c>completedWithinTolerance</c>). The judgement is <see cref="SalesRealizationCalculator"/>'s with the Settings tolerance
-/// of the order's business date, never re-derived here; nothing is converted between units.
+/// API-41: what the open quantity measures. Only <see cref="ApprovedMinusShipped"/>: the quantity of the last internally approved
+/// revision the customer ACCEPTED (or of the last approved revision when acceptance is not required — the owner's own rule, as the
+/// shipping line standing and the invoicing gate apply it, Q9 / SAT-D113…D115) minus the definitely shipped total the Logistics
+/// owner recorded, never below zero; a line the SAT-D5 realization axis judges <c>Completed</c> (shipped short WITHIN the delivery
+/// tolerance) has nothing open (SAT-D130, EK18). An approved revision that awaits customer acceptance adds nothing to the open
+/// quantity: what it would add is shown apart as <c>awaitingAcceptanceQuantity</c> (Sinan 2026-10-31, EK19 pending). Lines with
+/// nothing open and nothing awaiting (fully shipped, or completed within the tolerance) are closed history and not in the report.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<SalesOpenOrderMeasureView>))]
 public enum SalesOpenOrderMeasureView
@@ -77,8 +81,8 @@ public enum SalesOpenOrderMeasureView
 public enum SalesOpenOrderUnmeasuredReasonView
 {
     /// <summary>
-    /// A revision awaits re-approval and the last approved revision does not hold the line in the same unit exactly (the API-08
-    /// basis rule): nothing is measured against unapproved quantities.
+    /// The line in the accepted or the approved revision cannot be compared exactly with the current line (another product or unit,
+    /// an unreadable quantity): nothing is measured against it.
     /// </summary>
     PendingReapproval = 1,
 
@@ -88,26 +92,47 @@ public enum SalesOpenOrderUnmeasuredReasonView
     /// another company's or malformed): the line is neither counted open nor closed (fail-closed).
     /// </summary>
     TolerancePolicyUnavailable = 2,
+
+    /// <summary>The Logistics owner's answer for this order is malformed (another company or order, an unknown line, another unit,
+    /// delivered above shipped): its lines show no number rather than a wrong one; the rest of the report stands.</summary>
+    DeliveryAnswerInvalid = 3,
+}
+
+/// <summary>Whether a group was measured.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesOpenOrderGroupStateView>))]
+public enum SalesOpenOrderGroupStateView
+{
+    /// <summary>Every order of the group's scope was measured (its unmeasured lines, if any, are listed).</summary>
+    Measured = 1,
+
+    /// <summary>
+    /// The group's scope holds more than <see cref="SalesReportApiV1.MaximumOrdersPerGroup"/> orders: not measured, no sums (never a
+    /// cut sum); narrow the order dates.
+    /// </summary>
+    TooManyOrders = 2,
 }
 
 /// <summary>
-/// API-41: one measured order line of a group — the order, the basis revision its approved quantity comes from, and the three
-/// quantities exactly in the line's order unit (Ö2 text: kilograms ≤ 3 decimals, pieces whole; never rounded).
-/// <c>completedWithinTolerance</c> (SAT-D130): shipped short but within the SAT-D5 tolerance — the realization axis' "Tamamlandı",
-/// so the remaining quantity is 0 although shipped &lt; approved.
+/// API-41: one order line of a group with something open or awaiting customer acceptance — the order, the accepted revision its
+/// open quantity is measured on (null when no revision is accepted yet), and the quantities exactly in the line's order unit (Ö2
+/// text: kilograms ≤ 3 decimals, pieces whole; never rounded). <c>completedWithinTolerance</c> (SAT-D130): shipped short but within
+/// the SAT-D5 tolerance — remaining 0. <c>awaitingAcceptanceQuantity</c>: what the approved revision awaiting customer acceptance
+/// (<c>awaitingAcceptanceRevision</c>) adds above the accepted quantity — max(0, awaiting − accepted); "0" and null when none.
 /// </summary>
 public sealed record SalesOpenOrderLineView(
     Guid OrderId,
     string DocumentNo,
     DateOnly BusinessDate,
     DateOnly? RequestedDeliveryDate,
-    string BasisRevision,
+    string? BasisRevision,
     Guid LineId,
     int LineNo,
     string ApprovedQuantity,
     string ShippedQuantity,
     string RemainingQuantity,
-    bool CompletedWithinTolerance);
+    bool CompletedWithinTolerance,
+    string AwaitingAcceptanceQuantity,
+    string? AwaitingAcceptanceRevision);
 
 /// <summary>API-41: an open order line of the group that is NOT in its sums, and why.</summary>
 public sealed record SalesOpenOrderUnmeasuredLineView(
@@ -118,9 +143,11 @@ public sealed record SalesOpenOrderUnmeasuredLineView(
     SalesOpenOrderUnmeasuredReasonView Reason);
 
 /// <summary>
-/// API-41: one group — one customer account, one product, one order unit. The sums are taken in that ONE unit (different units are
-/// different groups, never added); <c>complete</c> is false whenever a line of the group is unmeasured, so a partial sum is never
-/// shown as the whole.
+/// API-41: one group — one customer account, one product, one order unit. The sums are taken in that ONE unit over the lines listed
+/// (different units are different groups, never added); <c>complete</c> is false whenever a line of the group is unmeasured or the
+/// group was not measured, so a partial sum is never shown as the whole. <c>scopeOrderCount</c> is the orders of the group's scope
+/// (open-status orders, history included); <c>orderCount</c> the orders with a listed line. A <c>TooManyOrders</c> group carries
+/// null sums and no lines.
 /// </summary>
 public sealed record SalesOpenOrderGroupView(
     SalesReportCustomerView Customer,
@@ -129,15 +156,22 @@ public sealed record SalesOpenOrderGroupView(
     string ProductName,
     Guid UnitId,
     string UnitCode,
+    SalesOpenOrderGroupStateView State,
+    int ScopeOrderCount,
     int OrderCount,
-    string ApprovedQuantity,
-    string ShippedQuantity,
-    string RemainingQuantity,
+    string? ApprovedQuantity,
+    string? ShippedQuantity,
+    string? RemainingQuantity,
+    string? AwaitingAcceptanceQuantity,
     bool Complete,
     IReadOnlyList<SalesOpenOrderLineView> Lines,
     IReadOnlyList<SalesOpenOrderUnmeasuredLineView> Unmeasured);
 
-/// <summary>API-41: one page of groups ordered by (customer account, product, unit) identities; <c>nextCursor</c> null at the end.</summary>
+/// <summary>
+/// API-41: one page of groups with something open, awaiting acceptance or unmeasured, ordered by (customer account, party, product,
+/// unit) identities. A page may hold fewer groups than asked — even none — when the request's work bound ended it: a non-null
+/// <c>nextCursor</c> then continues the scan; null is the end.
+/// </summary>
 public sealed record SalesOpenOrderReportResponse(
     SalesOpenOrderMeasureView Measure,
     IReadOnlyList<SalesOpenOrderGroupView> Groups,
@@ -264,16 +298,8 @@ public sealed record SalesOpenOrderReportFilter(DateOnly? From, DateOnly? To, Gu
 /// <summary>API-41: the identity of one group (customer account of its party, product, order unit).</summary>
 public sealed record SalesOpenOrderGroupKey(Guid CompanyAccountId, Guid PartyId, Guid ProductId, Guid UnitId);
 
-/// <summary>
-/// API-41 store answer: one page of group keys and every open order with a current line in one of them (restored through the
-/// domain). <paramref name="OrdersExceeded"/> is true — and <paramref name="Orders"/> empty — when they are more than the caller's
-/// bound.
-/// </summary>
-public sealed record SalesOpenOrderGroupPage(
-    IReadOnlyList<SalesOpenOrderGroupKey> Groups,
-    IReadOnlyList<SalesOrderDraft> Orders,
-    bool OrdersExceeded,
-    string? NextCursor);
+/// <summary>API-41 store answer: one group key and how many open-status orders of the filter have a current line in it.</summary>
+public sealed record SalesOpenOrderGroupScope(SalesOpenOrderGroupKey Key, int OrderCount);
 
 /// <summary>API-42 store filter: the loss instant range [from, before) in UTC, an optional customer account and SAT-D25 reason.</summary>
 public sealed record SalesLostQuoteReportFilter(DateTimeOffset? LostFromUtc, DateTimeOffset? LostBeforeUtc, Guid? CompanyAccountId,
@@ -286,12 +312,19 @@ public sealed record SalesLostQuoteReportFilter(DateTimeOffset? LostFromUtc, Dat
 public interface ISalesReportReadStore
 {
     /// <summary>
-    /// API-41: the open orders — lifecycle Draft (neither cancelled nor closed) and either the current revision approved or an earlier
-    /// approved revision archived — under <paramref name="filter"/>; one page of the distinct (account, party, product, order unit)
-    /// keys of their current lines in key order, and the orders those keys span (at most <paramref name="maximumOrders"/>).
+    /// API-41: the group keys of the open-status orders — lifecycle Draft (neither cancelled nor closed) and either the current
+    /// revision approved or an earlier approved revision archived — under <paramref name="filter"/>, in key order after
+    /// <paramref name="after"/>, at most <paramref name="take"/>, each with its order count (one aggregate statement).
     /// </summary>
-    Task<SalesOpenOrderGroupPage> ListOpenOrderGroupsAsync(SalesOpenOrderReportFilter filter, int pageSize, string? cursor, int maximumOrders,
-        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SalesOpenOrderGroupScope>> ListOpenOrderGroupsAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey? after,
+        int take, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-41: the open-status orders of the filter with a current line in <paramref name="key"/>, in id order after
+    /// <paramref name="afterOrderId"/>, at most <paramref name="take"/>, restored through the domain.
+    /// </summary>
+    Task<IReadOnlyList<SalesOrderDraft>> ListOpenOrdersOfGroupAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey key,
+        Guid? afterOrderId, int take, CancellationToken cancellationToken = default);
 
     /// <summary>API-42: the lost quotes under <paramref name="filter"/>, latest loss first (loss instant, then id).</summary>
     Task<SalesQuotePage> ListLostQuotesAsync(SalesLostQuoteReportFilter filter, int pageSize, string? cursor,

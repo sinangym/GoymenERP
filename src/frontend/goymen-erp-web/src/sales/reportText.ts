@@ -18,6 +18,7 @@ export const AMOUNT_STATE_TEXT: Readonly<Record<AmountState, string>> = {
 export const UNMEASURED_REASON_TEXT: Readonly<Record<UnmeasuredReason, string>> = {
   PendingReapproval: 'Revizyon yeniden onay bekliyor; son onaylı miktar tam alınamadı',
   TolerancePolicyUnavailable: 'Eksik sevk edildi ve teslim toleransı (Ayarlar) okunamadı; kalanın açık olup olmadığı bilinmiyor',
+  DeliveryAnswerInvalid: 'Lojistik sevk bilgisi bu sipariş için okunamadı; miktar gösterilmiyor',
 }
 
 export const REPORT_TEXT = {
@@ -48,7 +49,7 @@ export const REPORT_TEXT = {
   },
   openOrders: {
     intro:
-      'Onaylı, kapatılmamış ve iptal edilmemiş siparişlerin açık miktarı: onaylı miktar − sevk edilen miktar (sıfırın altına inmez). Teslim toleransı içinde eksik sevkle tamamlanmış satırın kalanı açık sayılmaz. Müşteri, ürün ve birim başına gruplanır; farklı birimler hiçbir zaman toplanmaz. Tarih süzgeci sipariş tarihine uygulanır.',
+      'Kapatılmamış ve iptal edilmemiş siparişlerin açık miktarı: müşterinin kabul ettiği onaylı revizyonun miktarı − sevk edilen miktar (sıfırın altına inmez). Teslim toleransı içinde eksik sevkle tamamlanmış satırın kalanı açık sayılmaz. Müşteri onayı bekleyen miktar açık tonaja eklenmez, ayrı sütunda gösterilir. Tamamen sevk edilmiş ya da tamamlanmış satırlar listelenmez. Müşteri, ürün ve birim başına gruplanır; farklı birimler hiçbir zaman toplanmaz. Tarih süzgeci sipariş tarihine uygulanır.',
     subject: 'açık siparişler',
     caption: 'Açık sipariş miktarları',
     unit: 'Birim',
@@ -56,6 +57,9 @@ export const REPORT_TEXT = {
     approved: 'Onaylı miktar',
     shipped: 'Sevk edilen',
     remaining: 'Açık miktar',
+    awaitingAcceptance: 'Müşteri onayı bekliyor',
+    awaitingRevision: (revision: string) => `${revision} müşteri onayı bekliyor`,
+    noAcceptedRevision: 'Kabul edilmiş revizyon yok',
     completedWithinTolerance: 'Tolerans içinde tamamlandı',
     detail: 'Sipariş satırları',
     detailCaption: (product: string, customer: string) => `${customer} — ${product} sipariş satırları`,
@@ -65,7 +69,10 @@ export const REPORT_TEXT = {
     basisRevision: 'Onaylı revizyon',
     incomplete: 'Eksik — bazı satırlar ölçülemedi; toplam bu satırları içermez.',
     unmeasured: 'Ölçülemeyen satırlar',
-    tooWide: 'Bu sayfa çok fazla siparişe yayılıyor. Tarih aralığını ya da müşteriyi daraltın.',
+    tooManyOrders: (count: number) =>
+      `Bu grup ${count} siparişe yayılıyor; tek seferde ölçülemedi ve toplamı gösterilmiyor. Sipariş tarih aralığını daraltın.`,
+    scanContinues:
+      'Bu bölümde açık ya da müşteri onayı bekleyen miktar bulunamadı; tarama sunucuda sınırlı yapılıyor. Devam etmek için sonraki bölümü yükleyin.',
   },
   lost: {
     intro:
@@ -81,6 +88,7 @@ export const REPORT_TEXT = {
     netAmount: 'Net tutar (KDV hariç)',
     amountState: 'Tutar durumu',
     withheld: 'Tutarlar gizli: fiyat okuma yetkiniz yok.',
+    withheldCell: 'Gizli',
     lineCount: 'Satır sayısı',
   },
   priceVariance: {
