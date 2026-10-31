@@ -27,8 +27,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // AT-021 (1.6): reasoned floor-exception approval remains a separate child control; No 30 (1.7): force-close.
         // UI-20 (1.8): the S-01 request and quote screens with their decision, write and conversion controls.
         // UI-60 / UI-61 (1.9): the S-07 dispatch list and the S-08 invoice candidates.
-        Assert.Equal(("SALES", "1.9"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(22, declarations.Count);
+        // SAT-D24 / SAT-D44 merged over 1.9 (1.10): the expired-quote conversion approval control of the quote detail.
+        Assert.Equal(("SALES", "1.10"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(23, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -173,6 +174,9 @@ public sealed class SalesShellCapabilityProviderContractTests
             // Conversion: the two names the command measures — the quote write name and the order create name.
             ("sales.quotes.convert", "sales.quotes.detail",
                 [SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesWrite, SalesPermissionManifestV1.DraftsCreate]),
+            // SAT-D24 / SAT-D44: the expired-quote approval — the read plus its own name; the quote write name does not confer it.
+            ("sales.quotes.expired-conversion.approve", "sales.quotes.detail",
+                [SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesExpiredConversionApprove]),
         };
         foreach (var expected in controls)
         {
@@ -192,6 +196,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         {
             SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsApprove,
             SalesPermissionManifestV1.QuotesRead, SalesPermissionManifestV1.QuotesWrite,
+            SalesPermissionManifestV1.QuotesExpiredConversionApprove,
         };
         foreach (var declaration in declarations.Where(item => !poolIds.Contains(item.CapabilityId)))
         {
@@ -267,9 +272,11 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.quotes.read", SalesPermissionManifestV1.QuotesRead);
         // SAT-D2 / API-12: the SEPARATE discount-exception approval name; price write, order approval and the floor approval do not confer it.
         Assert.Equal("sales.orders.discount-exception.approve", SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
+        // SAT-D24 / SAT-D44: the SEPARATE expired-quote conversion approval name; the quote write and order names do not confer it.
+        Assert.Equal("sales.quotes.expired-conversion.approve", SalesPermissionManifestV1.QuotesExpiredConversionApprove);
         // API-31 (plan §3.3, S-08): the invoice candidates' own read name; no order name confers it.
         Assert.Equal("sales.invoices.read", SalesPermissionManifestV1.InvoicesRead);
-        Assert.Equal((15, 18), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((16, 19), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -289,6 +296,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.RequestsApprove,
                 SalesPermissionManifestV1.QuotesWrite,
                 SalesPermissionManifestV1.QuotesRead,
+                SalesPermissionManifestV1.QuotesExpiredConversionApprove,
                 SalesPermissionManifestV1.InvoicesRead,
             ],
             StringComparer.Ordinal);

@@ -61,6 +61,13 @@ public static class SalesDraftProblemCodesV1
     /// <summary>503 (AT-018): the Product price-list owner is not composed in this host; never an assumed "no price".</summary>
     public const string PriceListProviderUnavailable = "price_list_provider_unavailable";
 
+    /// <summary>
+    /// 422 (SAT-D71): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at a draft create and at
+    /// a quote conversion alike; today or a later date is accepted. Field <c>businessDate</c>. Not recorded: nothing is read or
+    /// written, and the same key may be retried with a valid date. An unresolvable zone is 503, never a UTC guess.
+    /// </summary>
+    public const string BusinessDateBeforeBusinessDay = "sales_business_date_before_business_day";
+
     /// <summary>422 (contract delta, card decision 3): an owner reference without an owner port is refused, never stored unvalidated.</summary>
     public const string OwnerReferenceUnavailable = "owner_reference_unavailable";
 
@@ -229,4 +236,6 @@ public sealed record SalesDraftServiceBindings(
     string? QuoteWritePermission = SalesPermissionManifestV1.QuotesWrite,
     string? QuoteReadPermission = SalesPermissionManifestV1.QuotesRead,
     // SAT-D2 / API-12: the over-limit discount approval name (Müdür's persona, SAT-D37; a grant, never implied here).
-    string? DiscountExceptionApprovePermission = SalesPermissionManifestV1.OrdersDiscountExceptionApprove);
+    string? DiscountExceptionApprovePermission = SalesPermissionManifestV1.OrdersDiscountExceptionApprove,
+    // SAT-D24 / SAT-D44: the expired-quote conversion approval name (a grant, never implied here).
+    string? QuoteExpiredConversionApprovePermission = SalesPermissionManifestV1.QuotesExpiredConversionApprove);

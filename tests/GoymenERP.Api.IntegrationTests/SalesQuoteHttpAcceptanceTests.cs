@@ -159,13 +159,17 @@ public sealed class SalesQuoteHttpAcceptanceTests(GoymenErpApiFactory factory) :
             Assert.Null(revised.Headers.Location);
         }
 
-        using (var noReason = await client.SendAsync(Post($"{SalesEndpoints.QuotesPath}/{quoteId:D}/loss", "SENTETIK-l0", "{\"expectedVersion\":\"2\"}")))
+        // API-24 v2 (SAT-D25): the retired v1 body (free text without a list entry) and a missing or empty entry id are 400.
+        foreach (var retired in new[] { "{\"expectedVersion\":\"2\"}", "{\"expectedVersion\":\"2\",\"reason\":\"Fiyat yüksek\"}",
+                     "{\"expectedVersion\":\"2\",\"reasonId\":\"00000000-0000-0000-0000-000000000000\"}" })
         {
+            using var noReason = await client.SendAsync(Post($"{SalesEndpoints.QuotesPath}/{quoteId:D}/loss", "SENTETIK-l0", retired));
             Assert.Equal(HttpStatusCode.BadRequest, noReason.StatusCode);
         }
 
+        var reasonId = Guid.NewGuid();
         using (var replayed = await client.SendAsync(Post($"{SalesEndpoints.QuotesPath}/{quoteId:D}/loss", "SENTETIK-l1",
-                   "{\"expectedVersion\":\"2\",\"reason\":\"Fiyat yüksek\"}")))
+                   $"{{\"expectedVersion\":\"2\",\"reasonId\":\"{reasonId:D}\",\"explanation\":\"Fiyat yüksek\"}}")))
         {
             Assert.Equal(HttpStatusCode.Conflict, replayed.StatusCode);
             Assert.Equal("true", Assert.Single(replayed.Headers.GetValues("Idempotency-Replayed")));
@@ -175,7 +179,79 @@ public sealed class SalesQuoteHttpAcceptanceTests(GoymenErpApiFactory factory) :
         }
 
         Assert.Equal(["SENTETIK-r", "SENTETIK-l1"], service.Keys);
-        Assert.Equal("Fiyat yüksek", Assert.Single(service.Losses).Reason);
+        Assert.Equal(new SalesQuoteLossRequestV2("2", reasonId, "Fiyat yüksek"), Assert.Single(service.Losses));
+    }
+
+    [Fact]
+    public async Task The_expiry_approval_answers_200_with_its_strict_body_and_its_refusals_keep_their_codes()
+    {
+        var quoteId = Guid.NewGuid();
+        var service = new StubQuoteService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{SalesEndpoints.QuotesPath}/{quoteId:D}/expiry-approval";
+
+        using (var approved = await client.SendAsync(Post(path, "SENTETIK-a1", "{\"expectedVersion\":\"3\",\"note\":\"Müşteri kabul etti\"}")))
+        {
+            Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+            Assert.True(approved.Headers.CacheControl is { NoStore: true, Private: true });
+        }
+
+        foreach (var bad in new[] { "{\"note\":\"x\"}", "{\"expectedVersion\":\"0\"}", "{\"expectedVersion\":\"3\",\"approvedBy\":\"x\"}",
+                     $"{{\"expectedVersion\":\"3\",\"note\":\"{new string('n', 4001)}\"}}" })
+        {
+            using var refused = await client.SendAsync(Post(path, "SENTETIK-bad", bad));
+            Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        }
+
+        foreach (var (status, code) in new[] { (409, SalesQuoteProblemCodesV1.NotExpired), (409, SalesQuoteProblemCodesV1.ExpiryAlreadyApproved) })
+        {
+            service.Approve = (_, _) => throw new SalesDraftServiceException(status, code, [new("validUntil", code)]);
+            using var refused = await client.SendAsync(Post(path, "SENTETIK-a2", "{\"expectedVersion\":\"3\"}"));
+            Assert.Equal(status, (int)refused.StatusCode);
+            using var body = JsonDocument.Parse(await refused.Content.ReadAsStringAsync());
+            Assert.Equal(code, body.RootElement.GetProperty("code").GetString());
+        }
+
+        Assert.Equal([(quoteId, "3", "Müşteri kabul etti"), (quoteId, "3", null), (quoteId, "3", null)],
+            service.Approvals.Select(approval => (approval.QuoteId, approval.Body.ExpectedVersion, approval.Body.Note)));
+    }
+
+    [Fact]
+    public async Task The_loss_reasons_and_the_validity_suggestion_are_strict_reads_without_a_store()
+    {
+        var service = new StubQuoteService();
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var reasons = await client.GetAsync($"{SalesEndpoints.QuotesPath}/loss-reasons"))
+        {
+            Assert.Equal(HttpStatusCode.OK, reasons.StatusCode);
+            Assert.True(reasons.Headers.CacheControl is { NoStore: true, Private: true });
+            using var body = JsonDocument.Parse(await reasons.Content.ReadAsStringAsync());
+            Assert.False(body.RootElement.GetProperty("isDefined").GetBoolean());
+        }
+
+        using (var suggestion = await client.GetAsync($"{SalesEndpoints.QuotesPath}/validity-suggestion?businessDate=2026-10-27"))
+        {
+            Assert.Equal(HttpStatusCode.OK, suggestion.StatusCode);
+            using var body = JsonDocument.Parse(await suggestion.Content.ReadAsStringAsync());
+            Assert.Equal("2026-11-26", body.RootElement.GetProperty("suggestedValidUntil").GetString());
+        }
+
+        Assert.Equal([new DateOnly(2026, 10, 27)], service.SuggestionDates);
+        foreach (var query in new[] { "loss-reasons?x=1", "validity-suggestion", "validity-suggestion?businessDate=27.10.2026",
+                     "validity-suggestion?businessDate=2026-10-27&businessDate=2026-10-28", "validity-suggestion?businessDate=2026-10-27&days=3" })
+        {
+            using var refused = await client.GetAsync($"{SalesEndpoints.QuotesPath}/{query}");
+            Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        }
+
+        Assert.Single(service.SuggestionDates);
+        service.ReasonsFailure = new SalesDraftServiceException(503, SalesQuoteProblemCodesV1.LossReasonsUnavailable);
+        using var unavailable = await client.GetAsync($"{SalesEndpoints.QuotesPath}/loss-reasons");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+        Assert.DoesNotContain(SalesQuoteProblemCodesV1.LossReasonsUnavailable, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Theory]
@@ -270,7 +346,9 @@ public sealed class SalesQuoteHttpAcceptanceTests(GoymenErpApiFactory factory) :
         [Guid.NewGuid()], null, null,
         [new SalesQuoteLineView(Guid.NewGuid(), 1, Guid.NewGuid(), "7", "GDC-001", "Sentetik bant", Guid.NewGuid(), "kg", "1.25",
             "12.50", Guid.NewGuid(), "5", SalesPriceDisclosure.Visible, null, null)],
-        null, null);
+        null, null, "SENTETIK-seller", [new SalesQuoteRevisionRecordV1("Rev.0", new DateOnly(2026, 11, 10), "SENTETIK-seller",
+            new DateTimeOffset(2026, 10, 27, 9, 0, 0, TimeSpan.Zero))], [],
+        new SalesQuoteExpiryV1(new DateOnly(2026, 10, 27), false, false));
 
     private static SalesOrderDraftDetailView DraftDetail(Guid draftId) => new(
         new SalesOrderDraftSummaryView(draftId, CompanyA, "SO-2026-000001", "Order", "Draft", "1", "Rev.0", Guid.NewGuid(), Guid.NewGuid(),
@@ -282,13 +360,19 @@ public sealed class SalesQuoteHttpAcceptanceTests(GoymenErpApiFactory factory) :
     {
         public List<string> Keys { get; } = [];
         public List<SalesQuoteListQuery> Queries { get; } = [];
-        public List<SalesQuoteLossRequest> Losses { get; } = [];
+        public List<SalesQuoteLossRequestV2> Losses { get; } = [];
+        public List<(Guid QuoteId, SalesQuoteExpiryApprovalRequest Body)> Approvals { get; } = [];
+        public List<DateOnly> SuggestionDates { get; } = [];
+        public SalesDraftServiceException? ReasonsFailure { get; set; }
+
+        public Func<Guid, SalesQuoteExpiryApprovalRequest, Task<SalesQuoteResponse>> Approve { get; set; } =
+            (id, _) => Task.FromResult(new SalesQuoteResponse(Detail(id), false, "SENTETIK-corr"));
         public List<(Guid QuoteId, SalesQuoteConversionRequest Body)> Conversions { get; } = [];
 
         public Func<CreateSalesQuoteRequest, Task<SalesQuoteResponse>> Create { get; set; } =
             _ => Task.FromResult(new SalesQuoteResponse(Detail(Guid.NewGuid()), false, "SENTETIK-corr"));
 
-        public Func<Guid, SalesQuoteLossRequest, Task<SalesQuoteResponse>> Lose { get; set; } =
+        public Func<Guid, SalesQuoteLossRequestV2, Task<SalesQuoteResponse>> Lose { get; set; } =
             (id, _) => Task.FromResult(new SalesQuoteResponse(Detail(id, "Lost"), false, "SENTETIK-corr"));
 
         public Func<Guid, SalesQuoteConversionRequest, Task<SalesOrderDraftResponse>> Convert { get; set; } =
@@ -317,12 +401,30 @@ public sealed class SalesQuoteHttpAcceptanceTests(GoymenErpApiFactory factory) :
             return Task.FromResult(new SalesQuoteResponse(Detail(quoteId), false, "SENTETIK-corr"));
         }
 
-        public Task<SalesQuoteResponse> RecordQuoteLossAsync(Guid quoteId, SalesQuoteLossRequest request, SalesCommandMetadata metadata,
+        public Task<SalesQuoteResponse> RecordQuoteLossV2Async(Guid quoteId, SalesQuoteLossRequestV2 request, SalesCommandMetadata metadata,
             CancellationToken cancellationToken = default)
         {
             Keys.Add(metadata.IdempotencyKey);
             Losses.Add(request);
             return Lose(quoteId, request);
+        }
+
+        public Task<SalesQuoteResponse> ApproveExpiredQuoteConversionAsync(Guid quoteId, SalesQuoteExpiryApprovalRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+        {
+            Approvals.Add((quoteId, request));
+            return Approve(quoteId, request);
+        }
+
+        public Task<SalesQuoteLossReasonsViewV1> GetQuoteLossReasonsAsync(CancellationToken cancellationToken = default) =>
+            ReasonsFailure is { } failure
+                ? Task.FromException<SalesQuoteLossReasonsViewV1>(failure)
+                : Task.FromResult(new SalesQuoteLossReasonsViewV1(new DateOnly(2026, 10, 27), false, null, null, []));
+
+        public Task<SalesQuoteValiditySuggestionV1> GetQuoteValiditySuggestionAsync(DateOnly businessDate, CancellationToken cancellationToken = default)
+        {
+            SuggestionDates.Add(businessDate);
+            return Task.FromResult(new SalesQuoteValiditySuggestionV1(businessDate, 30, businessDate.AddDays(30), Guid.NewGuid(), "1"));
         }
 
         public Task<SalesOrderDraftResponse> ConvertQuoteAsync(Guid quoteId, SalesQuoteConversionRequest request, SalesCommandMetadata metadata,

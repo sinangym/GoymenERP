@@ -82,9 +82,9 @@ export const SALES_ROUTE = {
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`
 
 /**
- * UI-20 / S-01 "Satış Talebi / Teklif Havuzu": the ids the backend shell provider publishes (Sales shell contract 1.8), keyed
+ * UI-20 / S-01 "Satış Talebi / Teklif Havuzu": the ids the backend shell provider publishes (Sales shell contract 1.9), keyed
  * by the pool's own capability keys. Each screen is its own grant (a list grant does not imply a detail or a create grant);
- * the three non-routed controls share their detail's route. Listing an id grants nothing: the shell publishes it only to an
+ * the four non-routed controls share their detail's route. Listing an id grants nothing: the shell publishes it only to an
  * actor holding the names beside it, and the API re-measures every call.
  */
 export const SALES_POOL_CAPABILITY_ID = {
@@ -106,6 +106,11 @@ export const SALES_POOL_CAPABILITY_ID = {
   quotesWrite: 'sales.quotes.write',
   /** Teklif detayında "Siparişe dönüştür" — `sales.quotes.read` + `sales.quotes.write` + `sales.drafts.create`. */
   quotesConvert: 'sales.quotes.convert',
+  /**
+   * Teklif detayında süresi geçmiş teklifin siparişe dönüştürülme onayı — `sales.quotes.read` +
+   * `sales.quotes.expired-conversion.approve` (SAT-D24 / SAT-D44; bu izin hiçbir role verilmedi).
+   */
+  quotesApproveExpired: 'sales.quotes.expired-conversion.approve',
 } as const
 
 /** The S-01 pool routes the backend declares beside the ids above. Static `yeni` before each parameter route. */

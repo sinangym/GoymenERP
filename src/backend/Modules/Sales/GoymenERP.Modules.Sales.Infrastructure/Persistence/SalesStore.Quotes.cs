@@ -145,9 +145,9 @@ public sealed partial class SalesStore
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
-        if (commandName is not (SalesQuoteCommands.ReviseV1 or SalesQuoteCommands.LoseV1))
+        if (commandName is not (SalesQuoteCommands.ReviseV1 or SalesQuoteCommands.LoseV2 or SalesQuoteCommands.ApproveExpiredConversionV1))
         {
-            throw new ArgumentException("Yalnız revizyon ve kayıp bir teklifi günceller.", nameof(commandName));
+            throw new ArgumentException("Yalnız revizyon, kayıp ve süre onayı bir teklifi günceller.", nameof(commandName));
         }
 
         var companyId = RequireResolvedCompany();
@@ -175,6 +175,7 @@ public sealed partial class SalesStore
         var before = QuoteAuditState(quote, withLines: false);
         var versionBefore = quote.Version;
         var revisionBefore = quote.Revision;
+        var approvalsBefore = quote.ExpiryApprovals.Count;
         var now = timeProvider.GetUtcNow();
         mutate(quote, now);
         if (quote.Version != versionBefore + 1 || quote.Id != row.Id || quote.CompanyId != companyId)
@@ -184,15 +185,16 @@ public sealed partial class SalesStore
 
         row.State = (int)quote.State;
         row.Revision = quote.Revision;
-        row.LossReason = quote.Loss?.Reason;
-        row.LostBy = quote.Loss?.LostBy;
-        row.LostAtUtc = quote.Loss?.LostAtUtc;
+        SalesQuoteRows.ApplyLoss(row, quote);
         row.Version = quote.Version;
         row.UpdatedAtUtc = quote.UpdatedAtUtc;
         if (quote.Revision != revisionBefore)
         {
             SalesQuoteRows.AddRevision(dbContext, quote, actorId, envelope.CorrelationId);
         }
+
+        // SAT-D24 / SAT-D44: an approval is appended (one per revision; the primary key refuses a second for the same revision).
+        SalesQuoteRows.AddExpiryApprovals(dbContext, quote, approvalsBefore, envelope.CorrelationId);
 
         if (quote.State == SalesQuoteState.Lost)
         {
@@ -330,7 +332,9 @@ public sealed partial class SalesStore
 
         var versionBefore = quote.Version;
         var before = QuoteAuditState(quote, withLines: false);
-        quote.Convert(expectedQuoteVersion, draft.Id, actorId, draft.Header.BusinessDate, now);
+        // SAT-D24: expiry is decided on the SERVER's business day of this save's own clock (Europe/Istanbul, SAT-D10), never on
+        // the order's client-chosen business date; an approval recorded for the current revision lets an expired quote convert.
+        quote.Convert(expectedQuoteVersion, draft.Id, actorId, SalesBusinessDay.DateOf(now), now);
         SalesDraftRows.Add(dbContext, draft, envelope.ActorId, envelope.CorrelationId, quote.Id, quote.Revision);
         draft.RestoreCreator(envelope.ActorId);
         row.State = (int)quote.State;
@@ -424,13 +428,20 @@ public sealed partial class SalesStore
 
     private async Task<SalesQuote> RestoreQuoteAsync(QuoteRow row, CancellationToken cancellationToken)
     {
-        var revision = await dbContext.QuoteRevisions.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.QuoteId == row.Id && candidate.Revision == row.Revision, cancellationToken)
-            ?? throw new InvalidOperationException("Kayıtlı teklifin güncel revizyonu bulunamadı.");
+        // Every revision header (SAT-D44 (1): who created and revised the quote); the lines of the current one only.
+        var revisions = await dbContext.QuoteRevisions.AsNoTracking()
+            .Where(candidate => candidate.QuoteId == row.Id).OrderBy(candidate => candidate.Revision).ToListAsync(cancellationToken);
+        if (!revisions.Any(candidate => candidate.Revision == row.Revision))
+        {
+            throw new InvalidOperationException("Kayıtlı teklifin güncel revizyonu bulunamadı.");
+        }
+
         var lines = await dbContext.QuoteLines.AsNoTracking()
             .Where(line => line.QuoteId == row.Id && line.Revision == row.Revision).ToListAsync(cancellationToken);
         var requests = await dbContext.QuoteRequests.AsNoTracking().Where(link => link.QuoteId == row.Id).ToListAsync(cancellationToken);
-        return SalesQuoteRows.Restore(row, revision, lines, requests);
+        var approvals = await dbContext.QuoteExpiryApprovals.AsNoTracking()
+            .Where(approval => approval.QuoteId == row.Id).ToListAsync(cancellationToken);
+        return SalesQuoteRows.Restore(row, revisions, lines, requests, approvals);
     }
 
     private async Task<SalesQuoteStoreResult> ReplayQuoteAttemptAsync(QuoteAttemptRow attempt, string actorId, string requestHash,
@@ -495,6 +506,7 @@ public sealed partial class SalesStore
         terms = quote.Terms,
         loss = quote.Loss,
         conversion = quote.Conversion,
+        expiryApprovals = quote.ExpiryApprovals,
         lines = withLines
             ? quote.Lines.Select(line => new
             {

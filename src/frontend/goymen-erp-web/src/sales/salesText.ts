@@ -220,6 +220,8 @@ export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
     'Siparişte açık tahsis ya da sevk edilmemiş yükleme var; sipariş kapatılmadı. Bunlar kendi ekranlarında kapatıldıktan sonra etkiyi yeniden okuyun.',
   [SALES_PROBLEM_CODE.forceCloseImpactChanged]:
     'Kapatma etkisi siz gördükten sonra değişti; sipariş kapatılmadı. Güncel etkiyi yeniden okuyun.',
+  [SALES_PROBLEM_CODE.businessDateBeforeBusinessDay]:
+    'Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.',
 }
 
 export function problemCodeText(code: string | null): string | null {
@@ -509,7 +511,9 @@ export const ORDER_DETAIL_TEXT = {
     heading: 'Sipariş iptali',
     description:
       'İptal etkisi her kategori için kendi sahibinden okunur (DEC-SAL-005). Bağlı bir kayıt varken ya da bir sahip okunamazken ' +
-      'iptal yapılmaz; Satış başka modülün kaydını serbest bırakmaz veya geri almaz. İptal geçmişi silmez (AT-007).',
+      'iptal yapılmaz; Satış başka modülün kaydını serbest bırakmaz veya geri almaz. İptal geçmişi silmez (AT-007). ' +
+      'Sipariş bir tekliften dönüştürüldüyse iptal sonrası teklifin karşıladığı satış talepleri açık kalır; bu talepler için yeni ' +
+      'teklif hazırlanıp yeniden siparişe dönüştürülebilir. Dönüşmüş teklif ikinci kez siparişe dönüştürülmez.',
     showImpact: 'İptal etkisini göster',
     refresh: 'Etkiyi yeniden oku',
     subject: 'iptal etkisi',

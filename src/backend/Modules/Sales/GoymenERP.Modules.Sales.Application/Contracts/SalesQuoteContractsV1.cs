@@ -28,11 +28,24 @@ public sealed record SalesQuoteRevisionRequest(
     string ExpectedVersion, IReadOnlyList<SalesQuoteLineRequest> Lines,
     DateOnly? ValidUntil = null, DateOnly? RequestedDeliveryDate = null, string? Note = null);
 
-/// <summary>API-24: the loss of an open quote with its free-text reason (required).</summary>
-public sealed record SalesQuoteLossRequest(string ExpectedVersion, string Reason);
+/// <summary>
+/// API-24 v2 (SAT-D25; <c>RecordSalesQuoteLossV2</c>, which retires the free-text v1): the loss of an open quote with the id
+/// of an entry of the company's closed Settings loss reason list (<c>GET …/quotes/loss-reasons</c>) and the free-text
+/// explanation — required when that entry asks for one, otherwise optional.
+/// </summary>
+public sealed record SalesQuoteLossRequestV2(string ExpectedVersion, Guid ReasonId, string? Explanation = null);
 
-/// <summary>API-23: "Siparişe dönüştür" — the quote's expected version and the order's business date (the client names it, as on a create).</summary>
+/// <summary>
+/// API-23: "Siparişe dönüştür" — the quote's expected version and the ORDER's business date (the client names it, as on a
+/// create). The date does not decide whether the quote has expired: the server's business day does (SAT-D24).
+/// </summary>
 public sealed record SalesQuoteConversionRequest(string ExpectedVersion, DateOnly BusinessDate);
+
+/// <summary>
+/// SAT-D24 / SAT-D44: the manager approval that lets the CURRENT revision of an expired quote be converted — the quote's
+/// expected version and an optional note (≤ 4000). Under its own permission; the quote's creator or reviser may give it.
+/// </summary>
+public sealed record SalesQuoteExpiryApprovalRequest(string ExpectedVersion, string? Note = null);
 
 public sealed record SalesQuoteSummaryView(
     Guid Id, Guid CompanyId, string DocumentNo, string State, string Version, string Revision,
@@ -49,13 +62,58 @@ public sealed record SalesQuoteLineView(
     string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent, SalesPriceDisclosure PriceDisclosure,
     DateOnly? RequestedDeliveryDate, string? Note);
 
-public sealed record SalesQuoteLossV1(string Reason, string LostBy, DateTimeOffset LostAtUtc);
+/// <summary>
+/// The recorded loss. <see cref="Reason"/> is the free-text explanation (SAT-D25: null when the chosen entry did not ask for
+/// one); <see cref="ReasonId"/>, <see cref="ReasonCode"/> and <see cref="ReasonLabel"/> are the chosen Settings list entry as
+/// recorded — all null on a loss recorded before SAT-D25, whose free text is then its reason.
+/// </summary>
+public sealed record SalesQuoteLossV1(string? Reason, string LostBy, DateTimeOffset LostAtUtc, Guid? ReasonId = null,
+    string? ReasonCode = null, string? ReasonLabel = null);
 
 public sealed record SalesQuoteConversionV1(Guid DraftId, string ConvertedBy, DateTimeOffset ConvertedAtUtc);
 
+/// <summary>SAT-D44 (1): one recorded revision — who wrote it (Rev.0: who created the quote), when, and its validity date.</summary>
+public sealed record SalesQuoteRevisionRecordV1(string Revision, DateOnly? ValidUntil, string RevisedBy, DateTimeOffset RevisedAtUtc);
+
+/// <summary>SAT-D24 / SAT-D44 (1): one recorded expired-quote approval — the revision and validity date it approves, the server business day it was given on, who, when, the note.</summary>
+public sealed record SalesQuoteExpiryApprovalV1(string Revision, DateOnly ValidUntil, DateOnly BusinessDay, string ApprovedBy,
+    DateTimeOffset ApprovedAtUtc, string? Note);
+
+/// <summary>
+/// SAT-D24, measured by the server at the read: <see cref="BusinessDay"/> is the server's Europe/Istanbul business day,
+/// <see cref="IsExpired"/> whether the validity date precedes it, <see cref="IsApproved"/> whether the CURRENT revision carries
+/// an expired-quote approval (an expired quote converts only then).
+/// </summary>
+public sealed record SalesQuoteExpiryV1(DateOnly BusinessDay, bool IsExpired, bool IsApproved);
+
+/// <summary>
+/// The quote detail. Additive members (S4 follow-up, SAT-D24/D44): <see cref="CreatedBy"/>, <see cref="Revisions"/> (who
+/// created and revised it), <see cref="ExpiryApprovals"/> (who approved an expired conversion) and <see cref="Expiry"/>.
+/// </summary>
 public sealed record SalesQuoteDetailView(
     SalesQuoteSummaryView Quote, IReadOnlyList<Guid> RequestIds, DateOnly? RequestedDeliveryDate, string? Note,
-    IReadOnlyList<SalesQuoteLineView> Lines, SalesQuoteLossV1? Loss, SalesQuoteConversionV1? Conversion);
+    IReadOnlyList<SalesQuoteLineView> Lines, SalesQuoteLossV1? Loss, SalesQuoteConversionV1? Conversion,
+    string CreatedBy, IReadOnlyList<SalesQuoteRevisionRecordV1> Revisions, IReadOnlyList<SalesQuoteExpiryApprovalV1> ExpiryApprovals,
+    SalesQuoteExpiryV1 Expiry);
+
+/// <summary>
+/// SAT-D39: the default validity suggested for a new quote on <see cref="BusinessDate"/> — the quote's business date plus the
+/// company's Settings day count in force on that date. All of <see cref="ValidityDays"/>, <see cref="SuggestedValidUntil"/>,
+/// <see cref="ProfileId"/> and <see cref="ProfileVersion"/> are null when Settings holds no value (no suggestion); the
+/// suggestion is never applied by the server — the person sees it and may change or clear it.
+/// </summary>
+public sealed record SalesQuoteValiditySuggestionV1(DateOnly BusinessDate, int? ValidityDays, DateOnly? SuggestedValidUntil,
+    Guid? ProfileId, string? ProfileVersion);
+
+/// <summary>One selectable SAT-D25 loss reason (an active entry of the list in force).</summary>
+public sealed record SalesQuoteLossReasonOptionV1(Guid ReasonId, string Code, string Label, bool RequiresExplanation);
+
+/// <summary>
+/// SAT-D25: the company's closed loss reason list in force on the server's business day. <see cref="IsDefined"/> false (and no
+/// reasons) when Settings holds no list, or the list is passive or outside its window: a loss is then refused (fail-closed).
+/// </summary>
+public sealed record SalesQuoteLossReasonsViewV1(DateOnly BusinessDay, bool IsDefined, Guid? ProfileId, string? ProfileVersion,
+    IReadOnlyList<SalesQuoteLossReasonOptionV1> Reasons);
 
 public sealed record SalesQuoteResponse(SalesQuoteDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
@@ -83,11 +141,36 @@ public static class SalesQuoteProblemCodesV1
     public const string RequestNotApproved = SalesRuleCodes.QuoteRequestNotApproved;
 
     /// <summary>
-    /// 409 (SAT-D24 interim, fail-closed; field <c>validUntil</c>): the quote's validity date precedes the conversion's
-    /// business date. SAT-D24 converts an expired quote only with a manager approval, which is a follow-up step; until it exists
-    /// the conversion is refused. Not recorded (the No 160 pattern): the approval is meant to clear it for the same request.
+    /// 409 (SAT-D24; field <c>validUntil</c>): the quote's validity date precedes the SERVER's business day (Europe/Istanbul;
+    /// the order's client-sent business date never decides it) and its current revision carries no expired-quote approval.
+    /// Not recorded (the No 160 pattern): the approval clears it for the SAME request, so the key is not burned.
     /// </summary>
     public const string Expired = SalesRuleCodes.QuoteExpired;
+
+    /// <summary>409 (SAT-D24; field <c>validUntil</c>): an expired-quote approval for a quote that is not expired on the server's business day. Not recorded (the quote may still expire).</summary>
+    public const string NotExpired = SalesRuleCodes.QuoteNotExpired;
+
+    /// <summary>409 (SAT-D24; field <c>expiryApproval</c>): the quote's current revision already carries an expired-quote approval. Recorded under the key.</summary>
+    public const string ExpiryAlreadyApproved = SalesRuleCodes.QuoteExpiryAlreadyApproved;
+
+    /// <summary>422 (SAT-D25; field <c>reasonId</c>): the reason is not a selectable (active) entry of the list in force.</summary>
+    public const string LossReasonUnknown = "sales_quote_loss_reason_unknown";
+
+    /// <summary>422 (SAT-D25; field <c>explanation</c>): the chosen entry asks for an explanation and none was given.</summary>
+    public const string LossExplanationRequired = SalesRuleCodes.QuoteLossReasonRequired;
+
+    /// <summary>422 (field <c>explanation</c>): the explanation is over the technical bound (4000); refused, never cut.</summary>
+    public const string LossExplanationTooLong = SalesRuleCodes.QuoteLossReasonTooLong;
+
+    /// <summary>
+    /// 503 (SAT-D25, fail-closed; service code, code-less on the wire like every 503): the company's loss reason list cannot be
+    /// read or holds no selectable list — Settings has no list record, the list is passive or outside its window, or the
+    /// Settings source is not composed / not served / malformed. No loss is recorded on an unread list and none is guessed.
+    /// </summary>
+    public const string LossReasonsUnavailable = "sales_quote_loss_reasons_unavailable";
+
+    /// <summary>503 (SAT-D10; service code, code-less on the wire): the host cannot resolve the business day's time zone.</summary>
+    public const string BusinessDayUnavailable = "sales_business_day_unavailable";
 
     /// <summary>
     /// 403 (service code; the wire's 403 stays code-less like every platform 403): a quote revision, or a quote create that
@@ -101,6 +184,8 @@ public static class SalesQuoteProblemCodesV1
 public static class SalesQuoteApiV1
 {
     public const string QuotePath = "/api/v1/sales/quotes";
+    public const string LossReasonsPath = QuotePath + "/loss-reasons";
+    public const string ValiditySuggestionPath = QuotePath + "/validity-suggestion";
     public const int CreatedStatus = 201;
     public const int CommandStatus = 200;
 }
@@ -109,12 +194,19 @@ public static class SalesQuoteCommands
 {
     public const string CreateV1 = "sales.quote.create.v1";
     public const string ReviseV1 = "sales.quote.revise.v1";
+    /// <summary>The retired free-text loss (before SAT-D25): no route records it any more; its recorded attempts stay as history.</summary>
     public const string LoseV1 = "sales.quote.lose.v1";
+
+    /// <summary>API-24 v2 (SAT-D25): the loss with an entry of the Settings list.</summary>
+    public const string LoseV2 = "sales.quote.lose.v2";
+
+    /// <summary>SAT-D24 / SAT-D44: the manager approval of an expired quote's conversion (a quote attempt; the quote's version moves).</summary>
+    public const string ApproveExpiredConversionV1 = "sales.quote.approve-expired-conversion.v1";
 
     /// <summary>No 162: the conversion's attempt is recorded under its own name and answers the ORDER it created (a draft attempt).</summary>
     public const string ConvertV1 = "sales.quote.convert.v1";
 
-    public static bool IsQuoteCommand(string commandName) => commandName is CreateV1 or ReviseV1 or LoseV1;
+    public static bool IsQuoteCommand(string commandName) => commandName is CreateV1 or ReviseV1 or LoseV1 or LoseV2 or ApproveExpiredConversionV1;
 }
 
 public static class SalesQuoteJson
@@ -142,13 +234,23 @@ public static class SalesQuoteJson
         return request;
     }
 
-    public static SalesQuoteLossRequest ReadLoss(string json)
+    public static SalesQuoteLossRequestV2 ReadLossV2(string json)
     {
-        var request = JsonSerializer.Deserialize<SalesQuoteLossRequest>(json, SalesDraftJson.Options)
+        var request = JsonSerializer.Deserialize<SalesQuoteLossRequestV2>(json, SalesDraftJson.Options)
             ?? throw new JsonException("Request body is required.");
         RequireVersion(request.ExpectedVersion);
-        if (request.Reason is null || request.Reason.Length > SalesQuote.MaximumReasonLength)
+        if (request.ReasonId == Guid.Empty || request.Explanation?.Length > SalesQuote.MaximumReasonLength)
             throw new JsonException("Invalid reason.");
+        return request;
+    }
+
+    public static SalesQuoteExpiryApprovalRequest ReadExpiryApproval(string json)
+    {
+        var request = JsonSerializer.Deserialize<SalesQuoteExpiryApprovalRequest>(json, SalesDraftJson.Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersion(request.ExpectedVersion);
+        if (request.Note?.Length > SalesQuote.MaximumNoteLength)
+            throw new JsonException("Invalid note.");
         return request;
     }
 
@@ -199,10 +301,17 @@ public static class SalesQuoteHash
         return Hash(JsonSerializer.Serialize(new { command = SalesQuoteCommands.ReviseV1, quoteId, request }, SalesDraftJson.Options));
     }
 
-    public static string Compute(Guid quoteId, SalesQuoteLossRequest request)
+    public static string Compute(Guid quoteId, SalesQuoteLossRequestV2 request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return Hash(JsonSerializer.Serialize(new { command = SalesQuoteCommands.LoseV1, quoteId, request }, SalesDraftJson.Options));
+        return Hash(JsonSerializer.Serialize(new { command = SalesQuoteCommands.LoseV2, quoteId, request }, SalesDraftJson.Options));
+    }
+
+    public static string Compute(Guid quoteId, SalesQuoteExpiryApprovalRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return Hash(JsonSerializer.Serialize(new { command = SalesQuoteCommands.ApproveExpiredConversionV1, quoteId, request },
+            SalesDraftJson.Options));
     }
 
     public static string Compute(Guid quoteId, SalesQuoteConversionRequest request)
@@ -237,7 +346,10 @@ public interface ISalesQuoteStore
     Task RecordQuoteRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid? quoteId,
         SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default);
 
-    /// <summary>A revision or the loss of the company's stored quote in one save; null when the quote does not exist here.</summary>
+    /// <summary>
+    /// A revision, the loss or an expired-quote approval of the company's stored quote in one save (the quote row, an appended
+    /// revision or approval, the attempt and the audit event); null when the quote does not exist here.
+    /// </summary>
     Task<SalesQuoteStoreResult?> UpdateQuoteAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid quoteId,
         Action<SalesQuote, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default);
 
@@ -251,7 +363,8 @@ public interface ISalesQuoteStore
     /// <summary>
     /// No 162: the conversion's ONE save. <paramref name="build"/> receives the order's document number and returns the order
     /// built by the draft's own rules; the store re-reads the quote (tracked), checks it with <see cref="SalesQuote.Convert"/>
-    /// (expected version, still open, not expired on the order's business date — SAT-D24 interim), checks that every request it covers is approved (No 160), writes the order with its
+    /// (expected version, still open, not expired on the SERVER's business day of the save's own clock unless its current
+    /// revision carries an expired-quote approval — SAT-D24/D44), checks that every request it covers is approved (No 160), writes the order with its
     /// source-quote reference (UX_Drafts_SourceQuoteId: one order per quote), the quote's conversion, the attempt (answering
     /// the order) and both audit events. A same-key replay answers the stored order.
     /// </summary>
@@ -260,9 +373,11 @@ public interface ISalesQuoteStore
 }
 
 /// <summary>
-/// API-22 / API-23 / API-24: the sales quote use cases. Create, revision and loss need <c>sales.quotes.write</c>; list and
-/// detail <c>sales.quotes.read</c>; the conversion needs <c>sales.quotes.write</c> AND <c>sales.drafts.create</c> (and, for a
-/// priced line, the order path's own <c>sales.orders.price.write</c>).
+/// API-22 / API-23 / API-24: the sales quote use cases. Create, revision and loss need <c>sales.quotes.write</c> (as do the
+/// SAT-D25 loss reason list and the SAT-D39 validity suggestion reads); list and detail <c>sales.quotes.read</c>; the
+/// conversion needs <c>sales.quotes.write</c> AND <c>sales.drafts.create</c> (and, for a priced line, the order path's own
+/// <c>sales.orders.price.write</c>); the expired-quote approval (SAT-D24/D44) its own
+/// <c>sales.quotes.expired-conversion.approve</c>.
 /// </summary>
 public interface ISalesQuoteService
 {
@@ -275,8 +390,15 @@ public interface ISalesQuoteService
     Task<SalesQuoteResponse> ReviseQuoteAsync(Guid quoteId, SalesQuoteRevisionRequest request, SalesCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
-    Task<SalesQuoteResponse> RecordQuoteLossAsync(Guid quoteId, SalesQuoteLossRequest request, SalesCommandMetadata metadata,
+    Task<SalesQuoteResponse> RecordQuoteLossV2Async(Guid quoteId, SalesQuoteLossRequestV2 request, SalesCommandMetadata metadata,
         CancellationToken cancellationToken = default);
+
+    Task<SalesQuoteResponse> ApproveExpiredQuoteConversionAsync(Guid quoteId, SalesQuoteExpiryApprovalRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    Task<SalesQuoteLossReasonsViewV1> GetQuoteLossReasonsAsync(CancellationToken cancellationToken = default);
+
+    Task<SalesQuoteValiditySuggestionV1> GetQuoteValiditySuggestionAsync(DateOnly businessDate, CancellationToken cancellationToken = default);
 
     Task<SalesOrderDraftResponse> ConvertQuoteAsync(Guid quoteId, SalesQuoteConversionRequest request, SalesCommandMetadata metadata,
         CancellationToken cancellationToken = default);

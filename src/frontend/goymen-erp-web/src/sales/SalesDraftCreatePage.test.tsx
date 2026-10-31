@@ -252,6 +252,33 @@ describe('refusals and validation', () => {
     expect(screen.getByText(/Taslak kaydedilmedi\. İşaretli alanları düzeltin\./)).toBeTruthy()
   })
 
+  it('SAT-D71: an order date before the server business day is placed on the date field in Turkish, keeping what was typed', async () => {
+    installFetch({
+      onCreate: () =>
+        json(
+          JSON.stringify({
+            status: 422,
+            title: 'validation_failed',
+            code: 'validation_failed',
+            errors: [{ field: 'businessDate', code: 'sales_business_date_before_business_day' }],
+          }),
+          422,
+        ),
+    })
+    renderSalesApp(PATH)
+    await fillExample()
+    await userEvent.click(saveButton())
+
+    const date = await waitFor(() => {
+      const field = screen.getByLabelText(T.field.businessDate)
+      expect(field.getAttribute('aria-invalid')).toBe('true')
+      return field
+    })
+    const described = (date.getAttribute('aria-describedby') ?? '').split(' ').map((id) => document.getElementById(id)?.textContent)
+    expect(described).toContain('Sipariş tarihi bugünden önce olamaz; bugünü ya da ileri bir tarihi seçin. Bugün, sunucunun İstanbul saatine göre iş günüdür.')
+    expect((screen.getByLabelText(T.field.quantity) as HTMLInputElement).value).toBe('1000')
+  })
+
   it('after a lost POST, an invalid field does not claim the draft was not sent', async () => {
     const fetch = installFetch({ onCreate: () => Promise.reject(new TypeError('lost')) })
     renderSalesApp(PATH)

@@ -1283,7 +1283,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         {
                             t.HasTrigger("TR_QuoteAttempts_RejectMutation");
 
-                            t.HasCheckConstraint("CK_QuoteAttempts_Command", "[CommandName] IN (N'sales.quote.create.v1', N'sales.quote.revise.v1', N'sales.quote.lose.v1')");
+                            t.HasCheckConstraint("CK_QuoteAttempts_Command", "[CommandName] IN (N'sales.quote.create.v1', N'sales.quote.revise.v1', N'sales.quote.lose.v1', N'sales.quote.lose.v2', N'sales.quote.approve-expired-conversion.v1')");
 
                             t.HasCheckConstraint("CK_QuoteAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
 
@@ -1295,6 +1295,52 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.QuoteExpiryApprovalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("QuoteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("ApprovedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ApprovedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateOnly>("BusinessDay")
+                        .HasColumnType("date");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateOnly>("ValidUntil")
+                        .HasColumnType("date");
+
+                    b.HasKey("CompanyId", "QuoteId", "Revision");
+
+                    b.ToTable("QuoteExpiryApprovals", "sales", t =>
+                        {
+                            t.HasCheckConstraint("CK_QuoteExpiryApprovals_Expired", "[ValidUntil] < [BusinessDay]");
+
+                            t.HasCheckConstraint("CK_QuoteExpiryApprovals_Identity", "[QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([ApprovedBy]) > 0 AND LEN([CorrelationId]) > 0");
+
+                            t.HasCheckConstraint("CK_QuoteExpiryApprovals_Note", "[Note] IS NULL OR LEN([Note]) > 0");
+                        });
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.QuoteLineRow", b =>
@@ -1586,6 +1632,23 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
 
+                    b.Property<string>("LossReasonCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<Guid?>("LossReasonId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LossReasonLabel")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("LossReasonProfileId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("LossReasonProfileVersion")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTimeOffset?>("LostAtUtc")
                         .HasColumnType("datetimeoffset");
 
@@ -1659,7 +1722,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_Quotes_Identity", "[Id] <> '00000000-0000-0000-0000-000000000000' AND [CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [MoneyProfileId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_Quotes_Lifecycle", "([State] = 1 AND [LossReason] IS NULL AND [LostBy] IS NULL AND [LostAtUtc] IS NULL AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) OR ([State] = 3 AND [LossReason] IS NOT NULL AND LEN([LossReason]) > 0 AND [LostBy] IS NOT NULL AND LEN([LostBy]) > 0 AND [LostAtUtc] IS NOT NULL AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) OR ([State] = 2 AND [ConvertedDraftId] IS NOT NULL AND [ConvertedDraftId] <> '00000000-0000-0000-0000-000000000000' AND [ConvertedBy] IS NOT NULL AND LEN([ConvertedBy]) > 0 AND [ConvertedAtUtc] IS NOT NULL AND [LossReason] IS NULL AND [LostBy] IS NULL AND [LostAtUtc] IS NULL)");
+                            t.HasCheckConstraint("CK_Quotes_Lifecycle", "([State] = 1 AND [LossReason] IS NULL AND [LossReasonId] IS NULL AND [LossReasonCode] IS NULL AND [LossReasonLabel] IS NULL AND [LossReasonProfileId] IS NULL AND [LossReasonProfileVersion] IS NULL AND [LostBy] IS NULL AND [LostAtUtc] IS NULL AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) OR ([State] = 3 AND [LostBy] IS NOT NULL AND LEN([LostBy]) > 0 AND [LostAtUtc] IS NOT NULL AND (([LossReasonId] IS NULL AND [LossReason] IS NOT NULL AND LEN([LossReason]) > 0 AND [LossReasonId] IS NULL AND [LossReasonCode] IS NULL AND [LossReasonLabel] IS NULL AND [LossReasonProfileId] IS NULL AND [LossReasonProfileVersion] IS NULL) OR ([LossReasonId] IS NOT NULL AND [LossReasonId] <> '00000000-0000-0000-0000-000000000000' AND [LossReasonCode] IS NOT NULL AND LEN([LossReasonCode]) > 0 AND [LossReasonLabel] IS NOT NULL AND LEN([LossReasonLabel]) > 0 AND [LossReasonProfileId] IS NOT NULL AND [LossReasonProfileId] <> '00000000-0000-0000-0000-000000000000' AND [LossReasonProfileVersion] IS NOT NULL AND [LossReasonProfileVersion] > 0 AND ([LossReason] IS NULL OR LEN([LossReason]) > 0))) AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) OR ([State] = 2 AND [ConvertedDraftId] IS NOT NULL AND [ConvertedDraftId] <> '00000000-0000-0000-0000-000000000000' AND [ConvertedBy] IS NOT NULL AND LEN([ConvertedBy]) > 0 AND [ConvertedAtUtc] IS NOT NULL AND [LossReason] IS NULL AND [LossReasonId] IS NULL AND [LossReasonCode] IS NULL AND [LossReasonLabel] IS NULL AND [LossReasonProfileId] IS NULL AND [LossReasonProfileVersion] IS NULL AND [LostBy] IS NULL AND [LostAtUtc] IS NULL)");
 
                             t.HasCheckConstraint("CK_Quotes_Money", "[MoneyScale] >= 0 AND ([MoneyEffectiveThrough] IS NULL OR [MoneyEffectiveThrough] >= [MoneyEffectiveFrom])");
 
@@ -2162,6 +2225,15 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "QuoteId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.QuoteExpiryApprovalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Sales.Infrastructure.Persistence.QuoteRevisionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "QuoteId", "Revision")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Sales.Infrastructure.Persistence.QuoteLineRow", b =>

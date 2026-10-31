@@ -487,6 +487,15 @@ public static class ErpPermissions
     public const string SalesQuotesRead = "sales.quotes.read";
 
     /// <summary>
+    /// SAT-D24 / SAT-D44: approving the conversion of an EXPIRED sales quote's current revision (Sales owner name
+    /// SalesPermissionManifestV1.QuotesExpiredConversionApprove, same string). Its own name: the quote write, draft create and
+    /// order approval names do not confer it, and it confers none of them. SAT-D44 lets its holder approve a quote they
+    /// created or revised (an explicit P6 exception for this approval only). Registered, not granted: no seeded role and no
+    /// real user receives it; the grant is a human gate. Company-wide only, like the other Sales names. Not Critical.
+    /// </summary>
+    public const string SalesQuotesExpiredConversionApprove = "sales.quotes.expired-conversion.approve";
+
+    /// <summary>
     /// API-31 (plan §3.3, S-08 "Faturaya Hazır"; DEC-SAL-006, AT-055): read the posted sales shipment shares grouped for a later
     /// invoice (Sales owner name SalesPermissionManifestV1.InvoicesRead, same string). Its own name: no order, price or other Sales
     /// name confers it and it confers none of them. Registered, not granted: no seeded role and no real user receives it; the grant
@@ -722,6 +731,7 @@ public static class ErpPermissions
             SalesRequestsApprove,
             SalesQuotesWrite,
             SalesQuotesRead,
+            SalesQuotesExpiredConversionApprove,
             SalesInvoicesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
@@ -853,6 +863,7 @@ public static class ErpPermissions
             SalesRequestsApprove,
             SalesQuotesWrite,
             SalesQuotesRead,
+            SalesQuotesExpiredConversionApprove,
             SalesInvoicesRead,
             ManufacturingPlansWrite,
             ManufacturingPlansApprove,
