@@ -6,7 +6,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Sales.UnitTests;
 
 /// <summary>
-/// MOD-03 (SAT-D73…D76): the Settings tax master's answer feeds the ONE amount calculator (<see cref="SalesOrderTotalsCalculator"/>)
+/// MOD-03 (SAT-D75/D76, SAT-D139): the Settings tax master's answer feeds the ONE amount calculator (<see cref="SalesOrderTotalsCalculator"/>)
 /// unchanged — the VAT percent as is, the withholding percent as its exact share (<see cref="TaxMasterCalculatorV1.WithholdingShare"/>).
 /// Golden cases pin SAT-D75 (withholding from the ROUNDED line VAT) and SAT-D76 (the net unit price is never rounded). The order
 /// line is not wired to the port in this slice (follow-up); every rate here is SENTETIK.
@@ -45,11 +45,28 @@ public sealed class SalesTaxMasterGoldenTests
     }
 
     [Fact]
-    public void An_unresolved_vat_is_never_turned_into_a_rate_so_no_tax_is_computed()
+    public void The_sat_d139_steel_default_feeds_the_calculator_as_20_percent_vat_and_a_half_withheld()
     {
-        var data = new TaxMasterDataV1(new Dictionary<Guid, TaxCategoryDataV1>(), [], []);
-        var parts = TaxMasterCalculatorV1.Resolve(data, Guid.NewGuid(), null, null, new DateOnly(2026, 11, 1));
-        Assert.Equal(TaxResolutionStatesV1.Unresolved, parts.VatState);
+        var day = new DateOnly(2026, 11, 1);
+        var parts = TaxMasterCalculatorV1.Resolve(new TaxMasterDataV1(
+                ApprovedTaxItemTypeDefaultCatalog.For(ApprovedUnitProfileCatalog.GdcCompanyId), [], []),
+            TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, day);
+        var rate = SalesLineTaxRate.Of(parts.VatPercent!.Value, TaxMasterCalculatorV1.WithholdingShare(parts.WithholdingPercent!.Value));
+
+        // 1000 kg × 25.505 = 25505.00; VAT 20 % = 5101.00; withheld 5/10 of the rounded VAT = 2550.50.
+        var line = Assert.Single(SalesOrderTotalsCalculator.Calculate(
+            [new SalesTotalsLineInput(L1, 1, Kg, 1000m, new CommercialDraftFields("25.505", Kg, null, null, null, null, null))],
+            Try, 2, _ => rate).Lines);
+        Assert.Equal(("25505.00", "5101.00", "2550.50", "30606.00", "28055.50"), (Text(line.NetAmount), Text(line.VatAmount),
+            Text(line.WithheldVatAmount), Text(line.GrossAmount), Text(line.PayableAmount)));
+    }
+
+    [Fact]
+    public void An_unresolved_default_is_never_turned_into_a_rate_so_no_tax_is_computed()
+    {
+        var data = new TaxMasterDataV1([], [], []);
+        var parts = TaxMasterCalculatorV1.Resolve(data, TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, new DateOnly(2026, 11, 1));
+        Assert.Equal(TaxResolutionStatesV1.Unresolved, parts.State);
 
         SalesLineTaxRate? rate = parts.VatState == TaxResolutionStatesV1.Resolved ? SalesLineTaxRate.Of(parts.VatPercent!.Value, null) : null;
         var line = Assert.Single(SalesOrderTotalsCalculator.Calculate(
@@ -58,27 +75,20 @@ public sealed class SalesTaxMasterGoldenTests
         Assert.Equal((SalesTaxState.NoSource, (Money?)null, (Money?)null), (line.TaxState, line.VatAmount, line.WithheldVatAmount));
     }
 
-    private static TaxLineResolutionPartsV1 Resolved(string vat, string withholding)
+    private static TaxDefaultResolutionPartsV1 Resolved(string vat, string withholding)
     {
-        var vatClass = Guid.NewGuid();
-        var withholdingClass = Guid.NewGuid();
-        var buyer = Guid.NewGuid();
         var day = new DateOnly(2026, 11, 1);
+        var company = Guid.NewGuid();
         var data = new TaxMasterDataV1(
-            new Dictionary<Guid, TaxCategoryDataV1>
-            {
-                [vatClass] = new(vatClass, TaxCategoryKindsV1.VatClass, "GENEL", "SENTETIK"),
-                [withholdingClass] = new(withholdingClass, TaxCategoryKindsV1.WithholdingClass, "SINIF", "SENTETIK"),
-                [buyer] = new(buyer, TaxCategoryKindsV1.BuyerCategory, "ALICI", "SENTETIK"),
-            },
             [
-                new TaxRateRecordDataV1(Guid.NewGuid(), TaxRateKindsV1.Vat, vatClass, null, 1, day, true, Parse(vat), null),
-                new TaxRateRecordDataV1(Guid.NewGuid(), TaxRateKindsV1.Withholding, withholdingClass, buyer, 1, day, true,
-                    Parse(withholding), "T1"),
+                new TaxItemTypeDefaultDataV1(Guid.NewGuid(), company, TaxItemTypesV1.Steel, TaxDefaultSourcesV1.Record, 1, day, true,
+                    Parse(vat), null, true, Parse(withholding), "T1"),
             ],
-            [new TaxCodeListVersionDataV1(TaxCodeListKindsV1.Withholding, 1, day, [new TaxCodeListEntryViewV1("T1", "SENTETIK")])]);
-        var parts = TaxMasterCalculatorV1.Resolve(data, vatClass, withholdingClass, buyer, day);
-        Assert.Equal((TaxResolutionStatesV1.Resolved, TaxResolutionStatesV1.Resolved), (parts.VatState, parts.WithholdingState));
+            [new TaxCodeListVersionDataV1(TaxCodeListKindsV1.Withholding, 1, day, [new TaxCodeListEntryViewV1("T1", "SENTETIK")])],
+            []);
+        var parts = TaxMasterCalculatorV1.Resolve(data, TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, day);
+        Assert.Equal((TaxResolutionStatesV1.Resolved, TaxResolutionStatesV1.Resolved, TaxResolutionStatesV1.Resolved),
+            (parts.VatState, parts.WithholdingState, parts.WithholdingCodeState));
         return parts;
     }
 

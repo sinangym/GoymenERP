@@ -34048,12 +34048,12 @@
         ]
       }
     },
-    "/api/v1/product-tax-classifications/{productId}": {
+    "/api/v1/product-item-types/{productId}": {
       "get": {
         "tags": [
           "Product"
         ],
-        "operationId": "GetProductTaxClassificationV1",
+        "operationId": "GetProductItemTypeV1",
         "parameters": [
           {
             "name": "productId",
@@ -34116,7 +34116,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProductTaxClassificationViewV1"
+                  "$ref": "#/components/schemas/ProductItemTypeViewV1"
                 }
               }
             }
@@ -34144,7 +34144,7 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "product_tax_classification_request_invalid"
+              "product_item_type_request_invalid"
             ]
           },
           "404": {
@@ -34189,7 +34189,7 @@
               }
             },
             "x-erp-problem-codes": [
-              "product_tax_classification_provider_unavailable",
+              "product_item_type_provider_unavailable",
               "service_unavailable"
             ]
           },
@@ -34276,7 +34276,7 @@
         "tags": [
           "Product"
         ],
-        "operationId": "SetProductTaxClassificationV1",
+        "operationId": "SetProductItemTypeV1",
         "parameters": [
           {
             "name": "productId",
@@ -34339,7 +34339,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SetProductTaxClassificationRequestV1"
+                "$ref": "#/components/schemas/SetProductItemTypeRequestV1"
               }
             }
           },
@@ -34405,10 +34405,10 @@
             "x-erp-problem-codes": [
               "company_context_invalid",
               "correlation_metadata_invalid",
-              "product_tax_classification_command_metadata_invalid",
-              "product_tax_classification_reason_required",
-              "product_tax_classification_reason_too_long",
-              "product_tax_classification_request_invalid"
+              "product_item_type_command_metadata_invalid",
+              "product_item_type_reason_required",
+              "product_item_type_reason_too_long",
+              "product_item_type_request_invalid"
             ],
             "x-erp-empty-body-possible": true
           },
@@ -34498,48 +34498,8 @@
               }
             },
             "x-erp-problem-codes": [
-              "product_tax_classification_idempotency_conflict",
-              "product_tax_classification_version_conflict"
-            ]
-          },
-          "422": {
-            "description": "Unprocessable Entity",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "product_tax_classification_vat_class_invalid",
-              "product_tax_classification_withholding_class_invalid"
+              "product_item_type_idempotency_conflict",
+              "product_item_type_version_conflict"
             ]
           },
           "503": {
@@ -34563,7 +34523,7 @@
               }
             },
             "x-erp-problem-codes": [
-              "product_tax_classification_provider_unavailable",
+              "product_item_type_provider_unavailable",
               "service_unavailable"
             ]
           },
@@ -78285,319 +78245,19 @@
         ]
       }
     },
-    "/api/v1/settings/tax-master/categories": {
+    "/api/v1/settings/tax-master/item-type-defaults/{itemType}": {
       "post": {
         "tags": [
           "Settings"
         ],
-        "operationId": "CreateSettingsTaxCategoryV1",
+        "operationId": "RecordSettingsItemTypeDefaultV1",
         "parameters": [
           {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "description": "Optional client correlation identifier; the server creates one when absent.",
-            "schema": {
-              "maxLength": 128,
-              "minLength": 1,
-              "pattern": "^[A-Za-z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Causation-Id",
-            "in": "header",
-            "description": "Optional identifier of the command or event that caused this request.",
-            "schema": {
-              "maxLength": 128,
-              "minLength": 1,
-              "pattern": "^[A-Za-z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Company-Id",
-            "in": "header",
-            "description": "Selected company identifier for this company-scoped request.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "x-erp-non-empty-uuid": true
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "pattern": "^(?!.*[,])(?=.*\\S).+$",
-              "type": "string",
-              "x-erp-canonicalization": "trim",
-              "x-erp-canonical-max-length": 128
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTaxCategoryRequestV1"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TaxCategoryCreatedV1"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
-                    }
-                  ]
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "company_context_invalid",
-              "correlation_metadata_invalid",
-              "settings_tax_master_command_metadata_invalid",
-              "settings_tax_master_reason_required",
-              "settings_tax_master_reason_too_long",
-              "settings_tax_master_request_invalid"
-            ],
-            "x-erp-empty-body-possible": true
-          },
-          "415": {
-            "description": "Unsupported Media Type",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "settings_tax_master_category_code_taken",
-              "settings_tax_master_category_name_taken",
-              "settings_tax_master_idempotency_conflict"
-            ]
-          },
-          "503": {
-            "description": "Service Unavailable",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "service_unavailable",
-              "settings_provider_unavailable"
-            ]
-          },
-          "401": {
-            "description": "Unauthorized",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "authentication_required"
-            ]
-          },
-          "403": {
-            "description": "Forbidden",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "forbidden"
-            ]
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "internal_error"
-            ]
-          }
-        },
-        "security": [
-          {
-            "Bearer": [ ]
-          }
-        ]
-      }
-    },
-    "/api/v1/settings/tax-master/categories/{categoryId}/name": {
-      "put": {
-        "tags": [
-          "Settings"
-        ],
-        "operationId": "RenameSettingsTaxCategoryV1",
-        "parameters": [
-          {
-            "name": "categoryId",
+            "name": "itemType",
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid",
-              "x-erp-non-empty-uuid": true
+              "type": "string"
             }
           },
           {
@@ -78651,7 +78311,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RenameTaxCategoryRequestV1"
+                "$ref": "#/components/schemas/RecordItemTypeDefaultRequestV1"
               }
             }
           },
@@ -78734,379 +78394,6 @@
                   "minLength": 1,
                   "pattern": "^[A-Za-z0-9._:-]+$",
                   "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "settings_tax_master_category_name_taken",
-              "settings_tax_master_idempotency_conflict",
-              "settings_tax_master_version_conflict"
-            ]
-          },
-          "503": {
-            "description": "Service Unavailable",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "service_unavailable",
-              "settings_provider_unavailable"
-            ]
-          },
-          "401": {
-            "description": "Unauthorized",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "authentication_required"
-            ]
-          },
-          "403": {
-            "description": "Forbidden",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "forbidden"
-            ]
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "internal_error"
-            ]
-          }
-        },
-        "security": [
-          {
-            "Bearer": [ ]
-          }
-        ]
-      }
-    },
-    "/api/v1/settings/tax-master/vat-classes/{classId}/rates": {
-      "post": {
-        "tags": [
-          "Settings"
-        ],
-        "operationId": "RecordSettingsVatRateV1",
-        "parameters": [
-          {
-            "name": "classId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "x-erp-non-empty-uuid": true
-            }
-          },
-          {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "description": "Optional client correlation identifier; the server creates one when absent.",
-            "schema": {
-              "maxLength": 128,
-              "minLength": 1,
-              "pattern": "^[A-Za-z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Causation-Id",
-            "in": "header",
-            "description": "Optional identifier of the command or event that caused this request.",
-            "schema": {
-              "maxLength": 128,
-              "minLength": 1,
-              "pattern": "^[A-Za-z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Company-Id",
-            "in": "header",
-            "description": "Selected company identifier for this company-scoped request.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "x-erp-non-empty-uuid": true
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "pattern": "^(?!.*[,])(?=.*\\S).+$",
-              "type": "string",
-              "x-erp-canonicalization": "trim",
-              "x-erp-canonical-max-length": 128
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecordVatRateRequestV1"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
-                    }
-                  ]
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "company_context_invalid",
-              "correlation_metadata_invalid",
-              "settings_tax_master_command_metadata_invalid",
-              "settings_tax_master_reason_required",
-              "settings_tax_master_reason_too_long",
-              "settings_tax_master_request_invalid"
-            ],
-            "x-erp-empty-body-possible": true
-          },
-          "415": {
-            "description": "Unsupported Media Type",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
                 }
               }
             }
@@ -79187,385 +78474,8 @@
               }
             },
             "x-erp-problem-codes": [
-              "settings_tax_master_category_kind_mismatch",
-              "settings_tax_master_effective_from_past"
-            ]
-          },
-          "503": {
-            "description": "Service Unavailable",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "service_unavailable",
-              "settings_provider_unavailable"
-            ]
-          },
-          "401": {
-            "description": "Unauthorized",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "authentication_required"
-            ]
-          },
-          "403": {
-            "description": "Forbidden",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "forbidden"
-            ]
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "internal_error"
-            ]
-          }
-        },
-        "security": [
-          {
-            "Bearer": [ ]
-          }
-        ]
-      }
-    },
-    "/api/v1/settings/tax-master/withholding-classes/{classId}/rates": {
-      "post": {
-        "tags": [
-          "Settings"
-        ],
-        "operationId": "RecordSettingsWithholdingRateV1",
-        "parameters": [
-          {
-            "name": "classId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "x-erp-non-empty-uuid": true
-            }
-          },
-          {
-            "name": "X-Correlation-Id",
-            "in": "header",
-            "description": "Optional client correlation identifier; the server creates one when absent.",
-            "schema": {
-              "maxLength": 128,
-              "minLength": 1,
-              "pattern": "^[A-Za-z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Causation-Id",
-            "in": "header",
-            "description": "Optional identifier of the command or event that caused this request.",
-            "schema": {
-              "maxLength": 128,
-              "minLength": 1,
-              "pattern": "^[A-Za-z0-9._:-]+$",
-              "type": "string"
-            }
-          },
-          {
-            "name": "X-Company-Id",
-            "in": "header",
-            "description": "Selected company identifier for this company-scoped request.",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "x-erp-non-empty-uuid": true
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "description": "Unique command key; one non-empty value with at most 128 canonical characters.",
-            "required": true,
-            "schema": {
-              "minLength": 1,
-              "pattern": "^(?!.*[,])(?=.*\\S).+$",
-              "type": "string",
-              "x-erp-canonicalization": "trim",
-              "x-erp-canonical-max-length": 128
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RecordWithholdingRateRequestV1"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
-                    }
-                  ]
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "company_context_invalid",
-              "correlation_metadata_invalid",
-              "settings_tax_master_command_metadata_invalid",
-              "settings_tax_master_reason_required",
-              "settings_tax_master_reason_too_long",
-              "settings_tax_master_request_invalid"
-            ],
-            "x-erp-empty-body-possible": true
-          },
-          "415": {
-            "description": "Unsupported Media Type",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpCodeLessProblemDetailsContract"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "settings_tax_master_idempotency_conflict",
-              "settings_tax_master_version_conflict"
-            ]
-          },
-          "422": {
-            "description": "Unprocessable Entity",
-            "headers": {
-              "X-Correlation-Id": {
-                "description": "Server-resolved correlation identifier.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              },
-              "Idempotency-Replayed": {
-                "description": "True only when the response safely replays an earlier command result.",
-                "schema": {
-                  "type": "boolean"
-                }
-              },
-              "Idempotency-Original-Correlation-Id": {
-                "description": "Original command correlation identifier when the response is a replay.",
-                "schema": {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "pattern": "^[A-Za-z0-9._:-]+$",
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
-                }
-              }
-            },
-            "x-erp-problem-codes": [
-              "settings_tax_master_buyer_category_not_found",
-              "settings_tax_master_category_kind_mismatch",
               "settings_tax_master_effective_from_past",
+              "settings_tax_master_exemption_code_unknown",
               "settings_tax_master_withholding_code_unknown"
             ]
           },
@@ -79674,12 +78584,12 @@
         ]
       }
     },
-    "/api/v1/settings/tax-master/rate-records/{recordId}/withdrawal": {
+    "/api/v1/settings/tax-master/item-type-defaults/records/{recordId}/withdrawal": {
       "post": {
         "tags": [
           "Settings"
         ],
-        "operationId": "WithdrawSettingsTaxRateRecordV1",
+        "operationId": "WithdrawSettingsItemTypeDefaultV1",
         "parameters": [
           {
             "name": "recordId",
@@ -79742,7 +78652,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WithdrawTaxRateRecordRequestV1"
+                "$ref": "#/components/schemas/WithdrawTaxRecordRequestV1"
               }
             }
           },
@@ -81092,7 +80002,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/WithdrawTaxRateRecordRequestV1"
+                "$ref": "#/components/schemas/WithdrawTaxRecordRequestV1"
               }
             }
           },
@@ -84947,41 +83857,6 @@
             "x-erp-canonicalization": "trim",
             "x-erp-canonical-min-length": 1,
             "x-erp-canonical-max-length": 1000
-          }
-        }
-      },
-      "CreateTaxCategoryRequestV1": {
-        "required": [
-          "kind",
-          "code",
-          "name",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "code": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "name": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
           }
         }
       },
@@ -95013,6 +93888,49 @@
           }
         }
       },
+      "ProductItemTypeViewV1": {
+        "required": [
+          "companyId",
+          "productId",
+          "version",
+          "itemType",
+          "updatedAtUtc",
+          "updatedBy"
+        ],
+        "type": "object",
+        "properties": {
+          "companyId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "itemType": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "updatedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ProductManufacturingFamilyRevisionV1": {
         "required": [
           "familyId",
@@ -95961,58 +94879,6 @@
               "string"
             ],
             "format": "double"
-          }
-        }
-      },
-      "ProductTaxClassificationViewV1": {
-        "required": [
-          "companyId",
-          "productId",
-          "version",
-          "vatClassId",
-          "withholdingClassId",
-          "updatedAtUtc",
-          "updatedBy"
-        ],
-        "type": "object",
-        "properties": {
-          "companyId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "productId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "version": {
-            "type": "string"
-          },
-          "vatClassId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
-          },
-          "withholdingClassId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
-          },
-          "updatedAtUtc": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "date-time"
-          },
-          "updatedBy": {
-            "type": [
-              "null",
-              "string"
-            ]
           }
         }
       },
@@ -97512,6 +96378,76 @@
         },
         "additionalProperties": false
       },
+      "RecordItemTypeDefaultRequestV1": {
+        "required": [
+          "expectedVersion",
+          "vatApplies",
+          "vatPercent",
+          "exemptionCode",
+          "withholdingApplies",
+          "withholdingPercent",
+          "withholdingCode",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "vatApplies": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "vatPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "exemptionCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingApplies": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "withholdingPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "effectiveFrom": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date"
+          }
+        }
+      },
       "RecordLoadRequest": {
         "required": [
           "expectedVersion",
@@ -97686,41 +96622,6 @@
           }
         }
       },
-      "RecordVatRateRequestV1": {
-        "required": [
-          "expectedVersion",
-          "ratePercent",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedVersion": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "ratePercent": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "effectiveFrom": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "date"
-          }
-        }
-      },
       "RecordWeighingRequest": {
         "required": [
           "expectedVersion",
@@ -97746,63 +96647,6 @@
           },
           "secondWeighingKg": {
             "type": "string"
-          }
-        }
-      },
-      "RecordWithholdingRateRequestV1": {
-        "required": [
-          "expectedVersion",
-          "buyerCategoryId",
-          "applies",
-          "ratePercent",
-          "withholdingCode",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedVersion": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "buyerCategoryId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
-          },
-          "applies": {
-            "type": [
-              "null",
-              "boolean"
-            ]
-          },
-          "ratePercent": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "withholdingCode": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "effectiveFrom": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "date"
           }
         }
       },
@@ -97984,34 +96828,6 @@
         "x-erp-normalized-maximum-expectedVersion": "9223372036854775807"
       },
       "RenameSalesDiscountLimitGroupRequestV1": {
-        "required": [
-          "expectedVersion",
-          "name",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "expectedVersion": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "name": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "reason": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
-      "RenameTaxCategoryRequestV1": {
         "required": [
           "expectedVersion",
           "name",
@@ -104352,11 +103168,10 @@
           }
         }
       },
-      "SetProductTaxClassificationRequestV1": {
+      "SetProductItemTypeRequestV1": {
         "required": [
           "expectedVersion",
-          "vatClassId",
-          "withholdingClassId",
+          "itemType",
           "reason"
         ],
         "type": "object",
@@ -104367,19 +103182,11 @@
               "string"
             ]
           },
-          "vatClassId": {
+          "itemType": {
             "type": [
               "null",
               "string"
-            ],
-            "format": "uuid"
-          },
-          "withholdingClassId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
+            ]
           },
           "reason": {
             "type": [
@@ -104867,50 +103674,6 @@
           }
         }
       },
-      "TaxCategoryCreatedV1": {
-        "required": [
-          "id",
-          "version"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "version": {
-            "type": "string"
-          }
-        }
-      },
-      "TaxCategoryViewV1": {
-        "required": [
-          "id",
-          "kind",
-          "code",
-          "name",
-          "version"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "code": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          },
-          "version": {
-            "type": "string"
-          }
-        }
-      },
       "TaxCodeListEntryV1": {
         "required": [
           "code",
@@ -105016,12 +103779,124 @@
           }
         }
       },
+      "TaxItemTypeDefaultRecordViewV1": {
+        "required": [
+          "recordId",
+          "source",
+          "recordVersion",
+          "effectiveFrom",
+          "vatApplies",
+          "vatPercent",
+          "exemptionCode",
+          "withholdingApplies",
+          "withholdingPercent",
+          "withholdingCode",
+          "recordedBy",
+          "recordedAtUtc",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string"
+          },
+          "recordVersion": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "vatApplies": {
+            "type": "boolean"
+          },
+          "vatPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "exemptionCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingApplies": {
+            "type": "boolean"
+          },
+          "withholdingPercent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "withholdingCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recordedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recordedAtUtc": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "TaxItemTypeDefaultSeriesViewV1": {
+        "required": [
+          "itemType",
+          "version",
+          "inForce",
+          "scheduled"
+        ],
+        "type": "object",
+        "properties": {
+          "itemType": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "inForce": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TaxItemTypeDefaultRecordViewV1"
+              }
+            ]
+          },
+          "scheduled": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaxItemTypeDefaultRecordViewV1"
+            }
+          }
+        }
+      },
       "TaxMasterViewV1": {
         "required": [
           "companyId",
           "businessDate",
-          "categories",
-          "rateSeries",
+          "itemTypeDefaults",
           "codeLists",
           "withholdingThreshold"
         ],
@@ -105035,16 +103910,10 @@
             "type": "string",
             "format": "date"
           },
-          "categories": {
+          "itemTypeDefaults": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TaxCategoryViewV1"
-            }
-          },
-          "rateSeries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaxRateSeriesViewV1"
+              "$ref": "#/components/schemas/TaxItemTypeDefaultSeriesViewV1"
             }
           },
           "codeLists": {
@@ -105055,100 +103924,6 @@
           },
           "withholdingThreshold": {
             "$ref": "#/components/schemas/TaxWithholdingThresholdViewV1"
-          }
-        }
-      },
-      "TaxRateRecordViewV1": {
-        "required": [
-          "recordId",
-          "recordVersion",
-          "effectiveFrom",
-          "applies",
-          "ratePercent",
-          "withholdingCode",
-          "recordedBy",
-          "recordedAtUtc",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "recordId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "recordVersion": {
-            "type": "string"
-          },
-          "effectiveFrom": {
-            "type": "string",
-            "format": "date"
-          },
-          "applies": {
-            "type": "boolean"
-          },
-          "ratePercent": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "withholdingCode": {
-            "type": [
-              "null",
-              "string"
-            ]
-          },
-          "recordedBy": {
-            "type": "string"
-          },
-          "recordedAtUtc": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "reason": {
-            "type": "string"
-          }
-        }
-      },
-      "TaxRateSeriesViewV1": {
-        "required": [
-          "kind",
-          "classId",
-          "buyerCategoryId",
-          "inForce",
-          "scheduled"
-        ],
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string"
-          },
-          "classId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "buyerCategoryId": {
-            "type": [
-              "null",
-              "string"
-            ],
-            "format": "uuid"
-          },
-          "inForce": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/TaxRateRecordViewV1"
-              }
-            ]
-          },
-          "scheduled": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaxRateRecordViewV1"
-            }
           }
         }
       },
@@ -105555,7 +104330,7 @@
           }
         }
       },
-      "WithdrawTaxRateRecordRequestV1": {
+      "WithdrawTaxRecordRequestV1": {
         "required": [
           "expectedVersion",
           "reason"

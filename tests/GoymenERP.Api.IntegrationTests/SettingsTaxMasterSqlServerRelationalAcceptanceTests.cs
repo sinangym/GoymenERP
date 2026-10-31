@@ -17,6 +17,7 @@ using GoymenERP.Modules.Identity.Infrastructure.Services;
 using GoymenERP.Modules.Product.Application.Contracts;
 using GoymenERP.Modules.Product.Infrastructure.Fixtures;
 using GoymenERP.Modules.Product.Infrastructure.PriceLists;
+using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using Microsoft.Data.SqlClient;
@@ -30,11 +31,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// MOD-03 (SAT-D73/D74/D82/D83, EK12; SAT-D93, EK13) against a REAL SQL Server: the Settings tax master through the REAL host
-/// (routes, authorization, migrations, audit) — 403 without the name, an empty master is "kaynak yok", categories, dated VAT
-/// and withholding records, the UBL-TR code lists, same-date replacement and withdrawal without resurrection, company isolation,
-/// replay/conflict, the VUK 232 withholding threshold (empty = "kaynak yok") and the rollback refusals (51141, 51131); and the Product owner's tax classification feeding the Settings line tax
-/// port end to end (51132). Every grant is a fresh synthetic role; every rate and code is SENTETIK.
+/// MOD-03 (EK12 SAT-D83; EK13 SAT-D93; EK19 SAT-D133…D140) against a REAL SQL Server: the Settings tax master through the REAL
+/// host (routes, authorization, migrations, audit) — 403 without the name, the reviewed SAT-D139 default per item type, a
+/// Settings record over it (same-date replacement, withdrawal without resurrection, record in force immutable), the UBL-TR code
+/// lists, the VUK 232 threshold (empty = "kaynak yok"), the buyer-situation rule, company isolation, replay/conflict, audit and
+/// the rollback refusal (51131); and the Product owner's item type feeding the Settings line tax port end to end (51132).
+/// Every grant is a fresh synthetic role; codes and amounts are SENTETIK.
 /// </summary>
 public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
 {
@@ -42,6 +44,8 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private const string Permission = SettingsTaxMasterPermissionManifestV1.TaxMasterManage;
     private const string Root = SettingsTaxMasterEndpoints.TaxMasterPath;
+    private const string TaxMasterMigration = "20261031194631_AddTaxMaster";
+    private const string ProductItemTypeMigration = "20261031195253_AddProductItemTypes";
 
     [SqlServerFact]
     public async Task Tax_master_lifecycle_with_dated_records_code_lists_isolation_replay_and_audit_on_real_sql()
@@ -54,6 +58,7 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         using var viewer = run.Client(viewerSubject, CompanyA);
         using var clientB = run.Client(editorBSubject, CompanyB);
         var today = run.Today;
+        var steelPath = $"{Root}/item-type-defaults/{TaxItemTypesV1.Steel}";
 
         // Without the name: 403 on the read and on a command; nothing is written.
         using (var forbidden = await viewer.GetAsync(Root))
@@ -61,66 +66,56 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
         }
 
-        using (var forbidden = await viewer.SendAsync(Json(HttpMethod.Post, $"{Root}/categories", "k-forbidden",
-                   new CreateTaxCategoryRequestV1(TaxCategoryKindsV1.VatClass, "GENEL", "Genel", "SENTETIK"))))
+        using (var forbidden = await viewer.SendAsync(Json(HttpMethod.Post, steelPath, "k-forbidden",
+                   new RecordItemTypeDefaultRequestV1("0", true, "20", null, false, null, null, "SENTETIK"))))
         {
             Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
         }
 
-        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[TaxCategories]"));
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[TaxItemTypeDefaultRecords]"));
 
-        // Nothing is seeded: the empty master shows no category, no rate and both lists at version "0".
-        var empty = await run.JsonAsync(client, Root);
-        Assert.Equal((CompanyA, 0, 0), (empty.GetProperty("companyId").GetGuid(), empty.GetProperty("categories").GetArrayLength(),
-            empty.GetProperty("rateSeries").GetArrayLength()));
-        Assert.Equal(("0", JsonValueKind.Null), (empty.GetProperty("withholdingThreshold").GetProperty("version").GetString(),
-            empty.GetProperty("withholdingThreshold").GetProperty("inForce").ValueKind));
-        Assert.All(empty.GetProperty("codeLists").EnumerateArray(), list =>
+        // SAT-D139: the reviewed catalog answers every item type (version "0"); no code list and no threshold (kaynak yok).
+        var initial = await run.JsonAsync(client, Root);
+        Assert.Equal(CompanyA, initial.GetProperty("companyId").GetGuid());
+        var initialDefaults = initial.GetProperty("itemTypeDefaults").EnumerateArray()
+            .ToDictionary(series => series.GetProperty("itemType").GetString()!);
+        Assert.Equal(("0", "Catalog", "20", "50", JsonValueKind.Null), (initialDefaults["Steel"].GetProperty("version").GetString(),
+            initialDefaults["Steel"].GetProperty("inForce").GetProperty("source").GetString(),
+            initialDefaults["Steel"].GetProperty("inForce").GetProperty("vatPercent").GetString(),
+            initialDefaults["Steel"].GetProperty("inForce").GetProperty("withholdingPercent").GetString(),
+            initialDefaults["Steel"].GetProperty("inForce").GetProperty("withholdingCode").ValueKind));
+        Assert.False(initialDefaults["Scrap"].GetProperty("inForce").GetProperty("vatApplies").GetBoolean());
+        Assert.Equal(("0", JsonValueKind.Null), (initial.GetProperty("withholdingThreshold").GetProperty("version").GetString(),
+            initial.GetProperty("withholdingThreshold").GetProperty("inForce").ValueKind));
+        Assert.All(initial.GetProperty("codeLists").EnumerateArray(), list =>
+            Assert.Equal(JsonValueKind.Null, list.GetProperty("inForce").ValueKind));
+
+        await using (var port = run.LineTaxPort(CompanyA))
         {
-            Assert.Equal("0", list.GetProperty("version").GetString());
-            Assert.Equal(JsonValueKind.Null, list.GetProperty("inForce").ValueKind);
-        });
+            var scrap = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Scrap, TaxBuyerSituationsV1.Normal, today);
+            Assert.Equal((TaxResolutionStatesV1.Exempt, TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.ExemptionCodeMissing),
+                (scrap.VatState, scrap.ExemptionCodeState, scrap.ExemptionCodeReason));
+            var steel = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, today);
+            Assert.Equal((20m, 50m, TaxResolutionStatesV1.Unresolved, TaxDefaultSourcesV1.Catalog),
+                (steel.VatPercent, steel.WithholdingPercent, steel.WithholdingCodeState, steel.Source));
+            var finalConsumer = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.FinalConsumer, today);
+            Assert.Equal((TaxResolutionStatesV1.NotApplied, TaxResolutionReasonsV1.BuyerNotSubjectToWithholding),
+                (finalConsumer.WithholdingState, finalConsumer.BuyerAdjustment));
+        }
 
-        // Categories: create, replay, another body under the key, a taken code; a reason is required.
-        using (var noReason = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/categories", "k-cat-1",
-                   new CreateTaxCategoryRequestV1(TaxCategoryKindsV1.VatClass, "genel", "Genel", " "))))
+        // A reason is required; a code must be in the list in force on the date (fail-closed).
+        using (var noReason = await client.SendAsync(Json(HttpMethod.Post, steelPath, "k-noreason",
+                   new RecordItemTypeDefaultRequestV1("0", true, "20", null, true, "50", null, " "))))
         {
             await AssertProblemAsync(noReason, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.ReasonRequired);
         }
 
-        var general = await run.CreateCategoryAsync(client, "k-cat-1", TaxCategoryKindsV1.VatClass, "genel", "Genel");
-        using (var replay = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/categories", "k-cat-1",
-                   new CreateTaxCategoryRequestV1(TaxCategoryKindsV1.VatClass, "genel", "Genel", "SENTETIK kuruluş"))))
-        {
-            Assert.Equal(HttpStatusCode.Created, replay.StatusCode);
-            Assert.Equal("true", Assert.Single(replay.Headers.GetValues("Idempotency-Replayed")));
-            Assert.Equal(general, (await replay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid());
-        }
-
-        using (var other = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/categories", "k-cat-1",
-                   new CreateTaxCategoryRequestV1(TaxCategoryKindsV1.VatClass, "BASKA", "Başka", "SENTETIK kuruluş"))))
-        {
-            await AssertProblemAsync(other, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.IdempotencyConflict);
-        }
-
-        using (var taken = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/categories", "k-cat-taken",
-                   new CreateTaxCategoryRequestV1(TaxCategoryKindsV1.VatClass, "GENEL", "Yine", "SENTETIK"))))
-        {
-            await AssertProblemAsync(taken, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.CategoryCodeTaken);
-        }
-
-        var steel = await run.CreateCategoryAsync(client, "k-cat-2", TaxCategoryKindsV1.WithholdingClass, "DEMIR-CELIK", "Demir-çelik");
-        var taxpayer = await run.CreateCategoryAsync(client, "k-cat-3", TaxCategoryKindsV1.BuyerCategory, "MUKELLEF", "KDV mükellefi");
-        var consumer = await run.CreateCategoryAsync(client, "k-cat-4", TaxCategoryKindsV1.BuyerCategory, "NIHAI", "Nihai tüketici");
-
-        // A withholding record needs its code in the withholding code list in force on its date (fail-closed).
-        using (var noList = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/withholding-classes/{steel:D}/rates", "k-wh-nolist",
-                   new RecordWithholdingRateRequestV1("1", taxpayer, true, "50", "T1", "SENTETIK"))))
+        using (var noList = await client.SendAsync(Json(HttpMethod.Post, steelPath, "k-nolist",
+                   new RecordItemTypeDefaultRequestV1("0", true, "20", null, true, "50", "T1", "SENTETIK"))))
         {
             await AssertProblemAsync(noList, HttpStatusCode.UnprocessableEntity, TaxMasterProblemCodesV1.WithholdingCodeUnknown);
         }
 
-        // The code lists start at "0"; a stale version is 409.
         await run.CommandAsync(client, HttpMethod.Post, $"{Root}/code-lists/Withholding/versions", "k-list-1",
             new PublishTaxCodeListRequestV1("0", [new TaxCodeListEntryV1("t1", "SENTETIK tevkifat kodu")], "SENTETIK liste"),
             HttpStatusCode.NoContent);
@@ -130,283 +125,222 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             await AssertProblemAsync(stale, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.VersionConflict);
         }
 
-        // VAT: a record on a withholding class is a kind mismatch; the VAT class takes its rate.
-        using (var mismatch = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/vat-classes/{steel:D}/rates", "k-vat-mismatch",
-                   new RecordVatRateRequestV1("1", "20", "SENTETIK"))))
+        // The catalog's own values again are a no-op (no record); naming the listed code is a real change.
+        await run.CommandAsync(client, HttpMethod.Post, steelPath, "k-same",
+            new RecordItemTypeDefaultRequestV1("0", true, "20", null, true, "50", null, "SENTETIK aynı"), HttpStatusCode.NoContent);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[TaxItemTypeDefaultRecords]"));
+        var steelBody = new RecordItemTypeDefaultRequestV1("0", true, "20", null, true, "50", "T1", "SENTETIK kod");
+        await run.CommandAsync(client, HttpMethod.Post, steelPath, "k-steel-1", steelBody, HttpStatusCode.NoContent);
+        await run.CommandAsync(client, HttpMethod.Post, steelPath, "k-steel-1", steelBody, HttpStatusCode.NoContent, replayed: true);
+        using (var other = await client.SendAsync(Json(HttpMethod.Post, steelPath, "k-steel-1", steelBody with { VatPercent = "18" })))
         {
-            await AssertProblemAsync(mismatch, HttpStatusCode.UnprocessableEntity, TaxMasterProblemCodesV1.CategoryKindMismatch);
+            await AssertProblemAsync(other, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.IdempotencyConflict);
         }
 
-        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/vat-classes/{general:D}/rates", "k-vat-1",
-            new RecordVatRateRequestV1("1", "20", "SENTETIK oran"), HttpStatusCode.NoContent);
-        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/vat-classes/{general:D}/rates", "k-vat-1",
-            new RecordVatRateRequestV1("1", "20", "SENTETIK oran"), HttpStatusCode.NoContent, replayed: true);
-        // The same rate again changes nothing (no record, no version move, no audit).
-        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/vat-classes/{general:D}/rates", "k-vat-same",
-            new RecordVatRateRequestV1("2", "20", "SENTETIK aynı"), HttpStatusCode.NoContent);
-        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[TaxRateRecords] WHERE [ClassId] = @id", ("@id", general)));
-
-        using (var past = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/vat-classes/{general:D}/rates", "k-vat-past",
-                   new RecordVatRateRequestV1("2", "18", "SENTETIK", today.AddDays(-1)))))
+        using (var past = await client.SendAsync(Json(HttpMethod.Post, steelPath, "k-past",
+                   steelBody with { ExpectedVersion = "1", VatPercent = "18", EffectiveFrom = today.AddDays(-1) })))
         {
             await AssertProblemAsync(past, HttpStatusCode.UnprocessableEntity, TaxMasterProblemCodesV1.EffectiveFromPast);
         }
 
-        // Withholding: applies for the taxpayer, explicitly not applied for the consumer.
-        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/withholding-classes/{steel:D}/rates", "k-wh-1",
-            new RecordWithholdingRateRequestV1("1", taxpayer, true, "50", "T1", "SENTETIK tevkifat"), HttpStatusCode.NoContent);
-        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/withholding-classes/{steel:D}/rates", "k-wh-2",
-            new RecordWithholdingRateRequestV1("2", consumer, false, null, null, "SENTETIK yok"), HttpStatusCode.NoContent);
+        using (var shape = await client.SendAsync(Json(HttpMethod.Post, steelPath, "k-shape",
+                   new RecordItemTypeDefaultRequestV1("1", false, null, null, true, "50", null, "SENTETIK"))))
+        {
+            await AssertProblemAsync(shape, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.RequestInvalid);
+        }
 
-        // SAT-D84 precedent: a scheduled record, replaced by another on the same date (a correction), then withdrawn — the
-        // replaced one never comes back.
+        // A scheduled record, replaced by another on the same date (a correction), then withdrawn — the replaced one never
+        // comes back.
         var scheduledDay = today.AddDays(30);
-        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/vat-classes/{general:D}/rates", "k-vat-sched-1",
-            new RecordVatRateRequestV1("2", "25", "SENTETIK planlı", scheduledDay), HttpStatusCode.NoContent);
-        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/vat-classes/{general:D}/rates", "k-vat-sched-2",
-            new RecordVatRateRequestV1("3", "26", "SENTETIK düzeltme", scheduledDay), HttpStatusCode.NoContent);
-        var master = await run.JsonAsync(client, Root);
-        var vatSeries = master.GetProperty("rateSeries").EnumerateArray()
-            .Single(series => series.GetProperty("kind").GetString() == TaxRateKindsV1.Vat);
-        Assert.Equal("20", vatSeries.GetProperty("inForce").GetProperty("ratePercent").GetString());
-        var scheduled = Assert.Single(vatSeries.GetProperty("scheduled").EnumerateArray());
-        Assert.Equal(("26", scheduledDay.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)), (scheduled.GetProperty("ratePercent").GetString(),
-            scheduled.GetProperty("effectiveFrom").GetString()));
+        await run.CommandAsync(client, HttpMethod.Post, steelPath, "k-sched-1",
+            steelBody with { ExpectedVersion = "1", VatPercent = "25", Reason = "SENTETIK planlı", EffectiveFrom = scheduledDay },
+            HttpStatusCode.NoContent);
+        await run.CommandAsync(client, HttpMethod.Post, steelPath, "k-sched-2",
+            steelBody with { ExpectedVersion = "2", VatPercent = "26", Reason = "SENTETIK düzeltme", EffectiveFrom = scheduledDay },
+            HttpStatusCode.NoContent);
+        var steelSeries = (await run.JsonAsync(client, Root)).GetProperty("itemTypeDefaults").EnumerateArray()
+            .Single(series => series.GetProperty("itemType").GetString() == TaxItemTypesV1.Steel);
+        Assert.Equal(("Record", "T1", "3"), (steelSeries.GetProperty("inForce").GetProperty("source").GetString(),
+            steelSeries.GetProperty("inForce").GetProperty("withholdingCode").GetString(), steelSeries.GetProperty("version").GetString()));
+        var scheduled = Assert.Single(steelSeries.GetProperty("scheduled").EnumerateArray());
+        Assert.Equal("26", scheduled.GetProperty("vatPercent").GetString());
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [settings].[TaxRateRecordWithdrawals] WHERE [ReplacedByRecordId] IS NOT NULL"));
+            "SELECT COUNT(*) FROM [settings].[TaxItemTypeDefaultWithdrawals] WHERE [ReplacedByRecordId] IS NOT NULL"));
         var scheduledId = scheduled.GetProperty("recordId").GetGuid();
-        var inForceId = vatSeries.GetProperty("inForce").GetProperty("recordId").GetGuid();
+        var inForceId = steelSeries.GetProperty("inForce").GetProperty("recordId").GetGuid();
 
-        using (var inEffect = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/rate-records/{inForceId:D}/withdrawal",
-                   "k-withdraw-in-effect", new WithdrawTaxRateRecordRequestV1("4", "SENTETIK"))))
+        using (var inEffect = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/item-type-defaults/records/{inForceId:D}/withdrawal",
+                   "k-withdraw-in-effect", new WithdrawTaxRecordRequestV1("3", "SENTETIK"))))
         {
             await AssertProblemAsync(inEffect, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.RecordInEffect);
         }
 
-        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/rate-records/{scheduledId:D}/withdrawal", "k-withdraw-1",
-            new WithdrawTaxRateRecordRequestV1("4", "SENTETIK geri çekme"), HttpStatusCode.NoContent);
-        using (var again = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/rate-records/{scheduledId:D}/withdrawal",
-                   "k-withdraw-2", new WithdrawTaxRateRecordRequestV1("5", "SENTETIK"))))
+        var catalogSteel = ApprovedTaxItemTypeDefaultCatalog.For(ApprovedUnitProfileCatalog.GdcCompanyId)
+            .Single(entry => entry.ItemType == TaxItemTypesV1.Steel).RecordId;
+        using (var catalog = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/item-type-defaults/records/{catalogSteel:D}/withdrawal",
+                   "k-withdraw-catalog", new WithdrawTaxRecordRequestV1("3", "SENTETIK"))))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, catalog.StatusCode);
+        }
+
+        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/item-type-defaults/records/{scheduledId:D}/withdrawal", "k-withdraw-1",
+            new WithdrawTaxRecordRequestV1("3", "SENTETIK geri çekme"), HttpStatusCode.NoContent);
+        using (var again = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/item-type-defaults/records/{scheduledId:D}/withdrawal",
+                   "k-withdraw-2", new WithdrawTaxRecordRequestV1("4", "SENTETIK"))))
         {
             await AssertProblemAsync(again, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.RecordWithdrawn);
         }
 
-        master = await run.JsonAsync(client, Root);
-        vatSeries = master.GetProperty("rateSeries").EnumerateArray()
-            .Single(series => series.GetProperty("kind").GetString() == TaxRateKindsV1.Vat);
-        Assert.Empty(vatSeries.GetProperty("scheduled").EnumerateArray());
-        Assert.Equal(4, master.GetProperty("categories").GetArrayLength());
+        steelSeries = (await run.JsonAsync(client, Root)).GetProperty("itemTypeDefaults").EnumerateArray()
+            .Single(series => series.GetProperty("itemType").GetString() == TaxItemTypesV1.Steel);
+        Assert.Empty(steelSeries.GetProperty("scheduled").EnumerateArray());
 
-        // SAT-D93 (Sinan, 2026-10-31): the VUK 232 withholding threshold starts empty — the port answers "kaynak yok" —
-        // and is a dated record like the rates (SENTETIK amounts).
-        await using (var port = run.LineTaxPort(CompanyA, new StubProductClasses(general, steel)))
+        await using (var port = run.LineTaxPort(CompanyA))
         {
-            var none = await port.Value.GetWithholdingThresholdAsync(today);
-            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.WithholdingThresholdMissing, (decimal?)null),
-                (none.State, none.Reason, none.Amount));
+            var steel = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, scheduledDay);
+            Assert.Equal((20m, TaxResolutionStatesV1.Resolved, "T1", TaxDefaultSourcesV1.Record, inForceId),
+                (steel.VatPercent, steel.WithholdingCodeState, steel.WithholdingCode, steel.Source, steel.RecordId));
+            var undecided = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExportRegistered, today);
+            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.BuyerSituationUndecided),
+                (undecided.VatState, undecided.BuyerAdjustment));
         }
 
-        using (var badAmount = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/withholding-threshold", "k-th-bad",
-                   new RecordWithholdingThresholdRequestV1("0", "0", "TRY", "SENTETIK"))))
+        // SAT-D135: the VUK 232 withholding threshold starts empty and is a dated record (SENTETIK amounts).
+        await using (var port = run.LineTaxPort(CompanyA))
         {
-            await AssertProblemAsync(badAmount, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.RequestInvalid);
+            var none = await port.Value.GetWithholdingThresholdAsync(today);
+            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.WithholdingThresholdMissing), (none.State, none.Reason));
         }
 
         await run.CommandAsync(client, HttpMethod.Post, $"{Root}/withholding-threshold", "k-th-1",
             new RecordWithholdingThresholdRequestV1("0", "1000.50", "try", "SENTETIK sınır"), HttpStatusCode.NoContent);
         await run.CommandAsync(client, HttpMethod.Post, $"{Root}/withholding-threshold", "k-th-2",
             new RecordWithholdingThresholdRequestV1("1", "2000", "TRY", "SENTETIK planlı sınır", scheduledDay), HttpStatusCode.NoContent);
-        using (var staleThreshold = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/withholding-threshold", "k-th-stale",
-                   new RecordWithholdingThresholdRequestV1("1", "3000", "TRY", "SENTETIK"))))
-        {
-            await AssertProblemAsync(staleThreshold, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.VersionConflict);
-        }
-
         var thresholdView = (await run.JsonAsync(client, Root)).GetProperty("withholdingThreshold");
         Assert.Equal(("2", "1000.5", "TRY"), (thresholdView.GetProperty("version").GetString(),
             thresholdView.GetProperty("inForce").GetProperty("amount").GetString(),
             thresholdView.GetProperty("inForce").GetProperty("currencyCode").GetString()));
         var scheduledThreshold = Assert.Single(thresholdView.GetProperty("scheduled").EnumerateArray());
-        await using (var port = run.LineTaxPort(CompanyA, new StubProductClasses(general, steel)))
-        {
-            var current = await port.Value.GetWithholdingThresholdAsync(today);
-            Assert.Equal((TaxResolutionStatesV1.Resolved, 1000.5m, "TRY"), (current.State, current.Amount, current.CurrencyCode));
-            Assert.Equal(2000m, (await port.Value.GetWithholdingThresholdAsync(scheduledDay)).Amount);
-        }
-
         await run.CommandAsync(client, HttpMethod.Post,
             $"{Root}/withholding-threshold/records/{scheduledThreshold.GetProperty("recordId").GetGuid():D}/withdrawal", "k-th-withdraw",
-            new WithdrawTaxRateRecordRequestV1("2", "SENTETIK sınır geri"), HttpStatusCode.NoContent);
-        await using (var port = run.LineTaxPort(CompanyA, new StubProductClasses(general, steel)))
+            new WithdrawTaxRecordRequestV1("2", "SENTETIK sınır geri"), HttpStatusCode.NoContent);
+        await using (var port = run.LineTaxPort(CompanyA))
         {
-            Assert.Equal(1000.5m, (await port.Value.GetWithholdingThresholdAsync(scheduledDay)).Amount);
+            var later = await port.Value.GetWithholdingThresholdAsync(scheduledDay);
+            Assert.Equal((TaxResolutionStatesV1.Resolved, 1000.5m, "TRY"), (later.State, later.Amount, later.CurrencyCode));
         }
 
-        // Company isolation: B sees an empty master and A's record is B's code-less 404.
+        // Company isolation: B sees its own catalog and none of A's records; A's record is B's code-less 404.
         var masterB = await run.JsonAsync(clientB, Root);
-        Assert.Equal((CompanyB, 0), (masterB.GetProperty("companyId").GetGuid(), masterB.GetProperty("categories").GetArrayLength()));
+        Assert.Equal(CompanyB, masterB.GetProperty("companyId").GetGuid());
+        Assert.All(masterB.GetProperty("itemTypeDefaults").EnumerateArray(), series =>
+            Assert.Equal(("0", "Catalog"), (series.GetProperty("version").GetString(),
+                series.GetProperty("inForce").GetProperty("source").GetString())));
         Assert.Equal(JsonValueKind.Null, masterB.GetProperty("withholdingThreshold").GetProperty("inForce").ValueKind);
-        using (var foreign = await clientB.SendAsync(Json(HttpMethod.Post, $"{Root}/rate-records/{inForceId:D}/withdrawal",
-                   "k-foreign", new WithdrawTaxRateRecordRequestV1("4", "SENTETIK"))))
+        using (var foreign = await clientB.SendAsync(Json(HttpMethod.Post, $"{Root}/item-type-defaults/records/{inForceId:D}/withdrawal",
+                   "k-foreign", new WithdrawTaxRecordRequestV1("4", "SENTETIK"))))
         {
             Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
         }
 
-        // The line tax port over the real store (the product's classes come from a stub here; the Product owner's real
-        // classification is the second fact).
-        await using (var port = run.LineTaxPort(CompanyA, new StubProductClasses(general, steel)))
-        {
-            var resolution = await port.Value.ResolveAsync(Guid.NewGuid(), taxpayer, today);
-            Assert.Equal((TaxResolutionStatesV1.Resolved, 20m, TaxResolutionStatesV1.Resolved, 50m, "T1"),
-                (resolution.VatState, resolution.VatPercent, resolution.WithholdingState, resolution.WithholdingPercent,
-                    resolution.WithholdingCode));
-            var notApplied = await port.Value.ResolveAsync(Guid.NewGuid(), consumer, today);
-            Assert.Equal(TaxResolutionStatesV1.NotApplied, notApplied.WithholdingState);
-            var exemption = await port.Value.GetCodeListAsync(TaxCodeListKindsV1.Exemption, today);
-            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.CodeListMissing), (exemption.State, exemption.Reason));
-        }
-
-        await using (var portB = run.LineTaxPort(CompanyB, new StubProductClasses(general, steel)))
-        {
-            // A's class ids mean nothing in B: "kaynak yok", never A's rate.
-            var resolution = await portB.Value.ResolveAsync(Guid.NewGuid(), taxpayer, today);
-            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.VatClassUnknown), (resolution.VatState, resolution.VatReason));
-        }
-
-        // One audit event per real change, the whole reason in the after-image; none for the no-op.
-        Assert.Equal(4, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-category.created.v1' AND [CompanyId] = @c",
+        // One audit event per real change with the whole reason; none for the no-op.
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-item-type-default.recorded.v1' AND [CompanyId] = @c",
             ("@c", CompanyA)));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-rate.corrected.v1'"));
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-item-type-default.corrected.v1'"));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-rate.withdrawn.v1' "
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-item-type-default.withdrawn.v1' "
             + "AND JSON_VALUE([AfterJson], '$.reason') = N'SENTETIK geri çekme' AND [PermissionCode] = N'settings.tax-master.manage'"));
-        Assert.Equal(4, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-rate.recorded.v1'"));
 
-        // The rollback is refused while a threshold exists (forward fix, 51141); nothing is dropped. (51131 for AddTaxMaster
-        // itself is the second fact, where no threshold exists.)
+        // The rollback is refused while tax master data exists (forward fix, 51131); nothing is dropped.
         await using var context = run.SettingsContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        var migration = Array.IndexOf(applied, "20261031180502_AddTaxWithholdingThreshold");
+        var migration = Array.IndexOf(applied, TaxMasterMigration);
         Assert.True(migration > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
-        Assert.Equal(51141, rollback.Number);
+        Assert.Equal(51131, rollback.Number);
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
     [SqlServerFact]
-    public async Task Product_tax_classification_is_checked_with_settings_and_feeds_the_line_tax_port_on_real_sql()
+    public async Task Product_item_type_feeds_the_line_tax_port_with_the_item_type_default_on_real_sql()
     {
         await using var run = await ProductRun.StartAsync();
         var today = run.Today;
         var productId = ProductSalesCandidateFixture.ProductId;
 
-        // Settings data is entered through the Settings owner's own context (SENTETIK values).
-        Guid general, steel, taxpayer, foreignVat;
-        await using (var settings = run.Settings(CompanyA))
-        {
-            general = settings.Category(TaxCategoryKindsV1.VatClass, "GENEL");
-            steel = settings.Category(TaxCategoryKindsV1.WithholdingClass, "DEMIR-CELIK");
-            taxpayer = settings.Category(TaxCategoryKindsV1.BuyerCategory, "MUKELLEF");
-            settings.Rate(TaxRateKindsV1.Vat, general, null, 1, today, 10m, null);
-            settings.Rate(TaxRateKindsV1.Withholding, steel, taxpayer, 1, today, 50m, "T1");
-            settings.List(TaxCodeListKindsV1.Withholding, today, "T1");
-            await settings.SaveAsync();
-        }
-
-        await using (var settingsB = run.Settings(CompanyB))
-        {
-            foreignVat = settingsB.Category(TaxCategoryKindsV1.VatClass, "GENEL");
-            await settingsB.SaveAsync();
-        }
-
         await using (var scope = run.Request(CompanyA))
         {
-            // Not classified yet: version "0" and the port answers "kaynak yok".
+            // No item type yet: version "0" and the port answers "kaynak yok".
             var none = await scope.Service.GetAsync(productId);
-            Assert.Equal(("0", (Guid?)null), (none.Version, none.VatClassId));
-            var unclassified = await scope.LineTaxPort.ResolveAsync(productId, taxpayer, today);
-            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.ProductNotClassified),
-                (unclassified.VatState, unclassified.VatReason));
-            var unknownProduct = await scope.LineTaxPort.ResolveAsync(Guid.NewGuid(), taxpayer, today);
-            Assert.Equal(TaxResolutionReasonsV1.ProductNotFound, unknownProduct.VatReason);
+            Assert.Equal(("0", (string?)null), (none.Version, none.ItemType));
+            var unset = await scope.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.Normal, today);
+            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.ProductItemTypeMissing), (unset.State, unset.Reason));
+            Assert.Equal(TaxResolutionReasonsV1.ProductNotFound,
+                (await scope.LineTaxPort.ResolveAsync(Guid.NewGuid(), TaxBuyerSituationsV1.Normal, today)).Reason);
 
-            // Wrong kinds and another company's class are refused (422); nothing is stored.
-            Assert.Equal((422, ProductTaxClassificationProblemCodesV1.VatClassInvalid),
-                Status(await scope.Service.SetAsync(productId, new("0", steel, null, "SENTETIK"), Metadata("k-wrong-kind"))));
-            Assert.Equal((422, ProductTaxClassificationProblemCodesV1.VatClassInvalid),
-                Status(await scope.Service.SetAsync(productId, new("0", foreignVat, null, "SENTETIK"), Metadata("k-foreign"))));
-            Assert.Equal((422, ProductTaxClassificationProblemCodesV1.WithholdingClassInvalid),
-                Status(await scope.Service.SetAsync(productId, new("0", general, taxpayer, "SENTETIK"), Metadata("k-wrong-wh"))));
-            Assert.Equal((400, ProductTaxClassificationProblemCodesV1.ReasonRequired),
-                Status(await scope.Service.SetAsync(productId, new("0", general, null, " "), Metadata("k-no-reason"))));
+            Assert.Equal((400, ProductItemTypeProblemCodesV1.RequestInvalid),
+                Status(await scope.Service.SetAsync(productId, new("0", "Wood", "SENTETIK"), Metadata("k-bad-type"))));
+            Assert.Equal((400, ProductItemTypeProblemCodesV1.ReasonRequired),
+                Status(await scope.Service.SetAsync(productId, new("0", ProductItemTypesV1.Steel, " "), Metadata("k-no-reason"))));
 
-            var set = await scope.Service.SetAsync(productId, new("0", general, steel, "SENTETIK sınıf"), Metadata("k-set-1"));
+            var set = await scope.Service.SetAsync(productId, new("0", ProductItemTypesV1.Steel, "SENTETIK tip"), Metadata("k-set-1"));
             Assert.Equal((204, false), (set.Answer.StatusCode, set.IsReplay));
-            var replay = await scope.Service.SetAsync(productId, new("0", general, steel, "SENTETIK sınıf"), Metadata("k-set-1"));
+            var replay = await scope.Service.SetAsync(productId, new("0", ProductItemTypesV1.Steel, "SENTETIK tip"), Metadata("k-set-1"));
             Assert.Equal((204, true), (replay.Answer.StatusCode, replay.IsReplay));
-            Assert.Equal((409, ProductTaxClassificationProblemCodesV1.IdempotencyConflict),
-                Status(await scope.Service.SetAsync(productId, new("0", general, null, "SENTETIK sınıf"), Metadata("k-set-1"))));
-            Assert.Equal((409, ProductTaxClassificationProblemCodesV1.VersionConflict),
-                Status(await scope.Service.SetAsync(productId, new("0", general, null, "SENTETIK"), Metadata("k-stale"))));
-            var unknown = await scope.Service.SetAsync(Guid.NewGuid(), new("0", general, null, "SENTETIK"), Metadata("k-unknown"));
+            Assert.Equal((409, ProductItemTypeProblemCodesV1.IdempotencyConflict),
+                Status(await scope.Service.SetAsync(productId, new("0", ProductItemTypesV1.Scrap, "SENTETIK tip"), Metadata("k-set-1"))));
+            Assert.Equal((409, ProductItemTypeProblemCodesV1.VersionConflict),
+                Status(await scope.Service.SetAsync(productId, new("0", ProductItemTypesV1.Scrap, "SENTETIK"), Metadata("k-stale"))));
+            var unknown = await scope.Service.SetAsync(Guid.NewGuid(), new("0", ProductItemTypesV1.Steel, "SENTETIK"), Metadata("k-unknown"));
             Assert.Equal((404, (string?)null), (unknown.Answer.StatusCode, unknown.Answer.Code));
+            Assert.Equal(("1", ProductItemTypesV1.Steel), ((await scope.Service.GetAsync(productId)).Version,
+                (await scope.Service.GetAsync(productId)).ItemType));
 
-            var view = await scope.Service.GetAsync(productId);
-            Assert.Equal(("1", (Guid?)general, (Guid?)steel), (view.Version, view.VatClassId, view.WithholdingClassId));
+            // End to end: Product item type → host adapter → Settings line tax port → the SAT-D139 steel default.
+            var resolved = await scope.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.Normal, today);
+            Assert.Equal((TaxResolutionStatesV1.Resolved, TaxItemTypesV1.Steel, 20m, 50m, TaxDefaultSourcesV1.Catalog, CompanyA),
+                (resolved.State, resolved.ItemType, resolved.VatPercent, resolved.WithholdingPercent, resolved.Source, resolved.CompanyId));
+            var notSubject = await scope.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.NotSubjectToWithholding, today);
+            Assert.Equal((TaxResolutionStatesV1.NotApplied, (decimal?)20m), (notSubject.WithholdingState, notSubject.VatPercent));
 
-            // End to end: Product classification → host adapter → Settings line tax port.
-            var resolved = await scope.LineTaxPort.ResolveAsync(productId, taxpayer, today);
-            Assert.Equal((TaxResolutionStatesV1.Resolved, 10m, TaxResolutionStatesV1.Resolved, 50m, "T1"),
-                (resolved.VatState, resolved.VatPercent, resolved.WithholdingState, resolved.WithholdingPercent, resolved.WithholdingCode));
-            Assert.Equal(CompanyA, resolved.CompanyId);
-            var noBuyer = await scope.LineTaxPort.ResolveAsync(productId, null, today);
-            Assert.Equal((TaxResolutionStatesV1.Resolved, TaxResolutionReasonsV1.BuyerCategoryMissing),
-                (noBuyer.VatState, noBuyer.WithholdingReason));
+            // Changing the type to scrap: KDV yok with the exemption code "kaynak yok" (the invoice waits).
+            Assert.Equal(204, (await scope.Service.SetAsync(productId, new("1", ProductItemTypesV1.Scrap, "SENTETIK hurda"),
+                Metadata("k-set-2"))).Answer.StatusCode);
+            var scrap = await scope.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.Normal, today);
+            Assert.Equal((TaxResolutionStatesV1.Exempt, TaxResolutionStatesV1.Unresolved), (scrap.VatState, scrap.ExemptionCodeState));
         }
 
         await using (var scopeB = run.Request(CompanyB))
         {
-            // Company B never sees A's classification.
+            // Company B never sees A's item type.
             Assert.Equal("0", (await scopeB.Service.GetAsync(productId)).Version);
-            Assert.Equal(TaxResolutionReasonsV1.ProductNotClassified,
-                (await scopeB.LineTaxPort.ResolveAsync(productId, null, today)).VatReason);
+            Assert.Equal(TaxResolutionReasonsV1.ProductItemTypeMissing,
+                (await scopeB.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.Normal, today)).Reason);
         }
 
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'product.item-type.changed.v1' AND [CompanyId] = @c",
+            ("@c", CompanyA)));
         Assert.Equal(1, await run.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'product.tax-classification.changed.v1' "
-            + "AND JSON_VALUE([AfterJson], '$.reason') = N'SENTETIK sınıf' AND [CompanyId] = @c", ("@c", CompanyA)));
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'product.item-type.changed.v1' "
+            + "AND JSON_VALUE([AfterJson], '$.reason') = N'SENTETIK tip'"));
 
-        // Settings: with no threshold, AddTaxWithholdingThreshold rolls back freely and AddTaxMaster refuses while categories
-        // exist (forward fix, 51131); everything up to AddTaxMaster stays applied.
-        await using (var settingsRollback = run.Settings(CompanyA))
-        {
-            var settingsContext = settingsRollback.Context;
-            var settingsApplied = (await settingsContext.Database.GetAppliedMigrationsAsync()).ToArray();
-            var taxMaster = Array.IndexOf(settingsApplied, "20261031130138_AddTaxMaster");
-            Assert.True(taxMaster > 0);
-            var settingsRefusal = await Assert.ThrowsAsync<SqlException>(
-                () => settingsContext.GetService<IMigrator>().MigrateAsync(settingsApplied[taxMaster - 1]));
-            Assert.Equal(51131, settingsRefusal.Number);
-            Assert.Equal(settingsApplied.Take(taxMaster + 1), await settingsContext.Database.GetAppliedMigrationsAsync());
-        }
-
-        // The rollback is refused while a classification exists (forward fix, 51132).
+        // The rollback is refused while an item type exists (forward fix, 51132).
         await using var scopeRollback = run.Request(CompanyA);
         var context = scopeRollback.Context;
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        var migration = Array.IndexOf(applied, "20261031130728_AddProductTaxClassifications");
+        var migration = Array.IndexOf(applied, ProductItemTypeMigration);
         Assert.True(migration > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
         Assert.Equal(51132, rollback.Number);
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
-    private static (int, string?) Status(ProductTaxClassificationResultV1 result) => (result.Answer.StatusCode, result.Answer.Code);
+    private static (int, string?) Status(ProductItemTypeResultV1 result) => (result.Answer.StatusCode, result.Answer.Code);
 
-    private static ProductTaxClassificationCommandMetadataV1 Metadata(string key) =>
+    private static ProductItemTypeCommandMetadataV1 Metadata(string key) =>
         new(CompanyA, ProductRun.ActorId.ToString("D"), $"corr-{key}", null, "Web", null, null, key);
 
     private static HttpRequestMessage Json(HttpMethod method, string path, string key, object body)
@@ -468,12 +402,6 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             .Options, companyContext);
     }
 
-    private sealed class StubProductClasses(Guid vatClass, Guid? withholdingClass) : ISettingsProductTaxClassSourceV1
-    {
-        public Task<SettingsProductTaxClassAnswerV1> GetAsync(Guid companyId, Guid productId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new SettingsProductTaxClassAnswerV1(SettingsProductTaxClassOutcomeV1.Found, vatClass, withholdingClass));
-    }
-
     private sealed class FixedActor(string userId, params Guid[] companies) : ICurrentUser
     {
         public bool IsAuthenticated => true;
@@ -530,16 +458,6 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             return client;
         }
 
-        public async Task<Guid> CreateCategoryAsync(HttpClient client, string key, string kind, string code, string name)
-        {
-            using var response = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/categories", key,
-                new CreateTaxCategoryRequestV1(kind, code, name, "SENTETIK kuruluş")));
-            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
-            Assert.True(response.StatusCode == HttpStatusCode.Created, $"{response.StatusCode}: {body}");
-            Assert.Equal("1", body.GetProperty("version").GetString());
-            return body.GetProperty("id").GetGuid();
-        }
-
         public async Task CommandAsync(HttpClient client, HttpMethod method, string path, string key, object body,
             HttpStatusCode expected, bool replayed = false)
         {
@@ -559,11 +477,11 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
 
         public SettingsDbContext SettingsContext(Guid company) => NewSettingsContext(Factory.DatabaseConnectionString, company, out _);
 
-        public PortScope<ISettingsLineTaxResolverV1> LineTaxPort(Guid company, ISettingsProductTaxClassSourceV1 classes)
+        public PortScope<ISettingsLineTaxResolverV1> LineTaxPort(Guid company)
         {
             var database = NewSettingsContext(Factory.DatabaseConnectionString, company, out var companyContext);
             return new PortScope<ISettingsLineTaxResolverV1>(database,
-                new SettingsTaxMasterReader(database, companyContext, new FixedActor("SENTETIK-sales-actor", company), classes));
+                new SettingsTaxMasterReader(database, companyContext, new FixedActor("SENTETIK-sales-actor", company)));
         }
 
         public async Task<(string Subject, string ActorId)> GrantAsync(string developmentUser, Guid company, params string[] permissions)
@@ -664,9 +582,6 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             }
         }
 
-        public SettingsSetup Settings(Guid company) =>
-            new(NewSettingsContext(factory.DatabaseConnectionString, company, out _), company);
-
         public RequestScope Request(Guid company)
         {
             var scope = factory.Services.CreateAsyncScope();
@@ -675,12 +590,11 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             companyContext.Set(company);
             var actor = new FixedActor(ActorId.ToString("D"), CompanyA, CompanyB);
             var settings = NewSettingsContext(factory.DatabaseConnectionString, company, out var settingsCompany);
-            var categories = new SettingsTaxMasterReader(settings, settingsCompany, actor);
             var context = provider.GetRequiredService<ProductPriceListDbContext>();
-            var service = new ProductTaxClassificationService(context, companyContext, actor, new Granted(),
-                provider.GetRequiredService<IAuditEventCollector>(), TimeProvider.System, categories);
+            var service = new ProductItemTypeService(context, companyContext, actor, new Granted(),
+                provider.GetRequiredService<IAuditEventCollector>(), TimeProvider.System);
             var port = new SettingsTaxMasterReader(settings, settingsCompany, actor,
-                new SettingsProductTaxClassHost(service, companyContext));
+                new SettingsProductItemTypeHost(service, companyContext));
             return new RequestScope(scope, settings, service, port, context);
         }
 
@@ -694,10 +608,10 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         }
     }
 
-    private sealed class RequestScope(AsyncServiceScope scope, SettingsDbContext settings, ProductTaxClassificationService service,
+    private sealed class RequestScope(AsyncServiceScope scope, SettingsDbContext settings, ProductItemTypeService service,
         ISettingsLineTaxResolverV1 lineTaxPort, ProductPriceListDbContext context) : IAsyncDisposable
     {
-        public IProductTaxClassificationServiceV1 Service => service;
+        public IProductItemTypeServiceV1 Service => service;
 
         public ISettingsLineTaxResolverV1 LineTaxPort => lineTaxPort;
 
@@ -708,54 +622,5 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             await settings.DisposeAsync();
             await scope.DisposeAsync();
         }
-    }
-
-    /// <summary>Settings rows entered through the Settings owner's context (the test's setup, SENTETIK values).</summary>
-    private sealed class SettingsSetup(SettingsDbContext database, Guid company) : IAsyncDisposable
-    {
-        private const string Actor = "SENTETIK-setup";
-
-        public Guid Category(string kind, string code)
-        {
-            var id = Guid.NewGuid();
-            var now = DateTimeOffset.UtcNow;
-            database.TaxCategories.Add(new TaxCategoryRow
-            {
-                CompanyId = company, Id = id, Kind = kind, Code = code, Name = $"SENTETIK {code}", Version = 1, RecordVersion = 1,
-                CreatedAtUtc = now, CreatedBy = Actor, UpdatedAtUtc = now, UpdatedBy = Actor,
-            });
-            return id;
-        }
-
-        public void Rate(string kind, Guid classId, Guid? buyer, long version, DateOnly from, decimal rate, string? code) =>
-            database.TaxRateRecords.Add(new TaxRateRecordRow
-            {
-                CompanyId = company, Id = Guid.NewGuid(), Kind = kind, ClassId = classId, BuyerCategoryId = buyer,
-                RecordVersion = version, EffectiveFrom = from, Applies = true, RatePercent = rate, WithholdingCode = code,
-                RecordedAtUtc = DateTimeOffset.UtcNow, RecordedBy = Actor, Reason = "SENTETIK",
-            });
-
-        public void List(string kind, DateOnly from, string code)
-        {
-            database.TaxCodeLists.Add(new TaxCodeListRow
-            {
-                CompanyId = company, Kind = kind, Version = 1, LastListVersion = 1, UpdatedAtUtc = DateTimeOffset.UtcNow, UpdatedBy = Actor,
-            });
-            database.TaxCodeListVersions.Add(new TaxCodeListVersionRow
-            {
-                CompanyId = company, Kind = kind, ListVersion = 1, EffectiveFrom = from, RecordedAtUtc = DateTimeOffset.UtcNow,
-                RecordedBy = Actor, Reason = "SENTETIK",
-            });
-            database.TaxCodeListEntries.Add(new TaxCodeListEntryRow
-            {
-                CompanyId = company, Kind = kind, ListVersion = 1, Code = code, Name = "SENTETIK",
-            });
-        }
-
-        public SettingsDbContext Context => database;
-
-        public Task SaveAsync() => database.SaveChangesAsync();
-
-        public ValueTask DisposeAsync() => database.DisposeAsync();
     }
 }
