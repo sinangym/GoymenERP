@@ -627,3 +627,19 @@ three `ErpPermissions` names; `AddProductPriceLists` + `InitializeProductPriceLi
 operations); the tenant-bypass guard pins (the new DbContext and the AuditEvent context inventory, the store's SqlClient use, the
 registration's MigrateAsync branch, the migration's reviewed `Sql`); `MODULE_DEPENDENCY_ALLOWLIST.json`
 (Product.Infrastructure → Audit.Infrastructure, ADR-009); the three relational-inventory names.
+
+## Product tax classification (MOD-03, SAT-D73/D74/D82)
+
+Sources: `docs/decisions/SINAN_KARARLARI_2026-10-28_SATIS_EK12.md` (SAT-D73/D74/D82: the product card carries a VAT CLASS and a
+withholding class, never a rate; the rates are the Settings tax master's dated records) and `…_EK13.md` (SAT-D93/D110).
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product, **company-scoped** (like the price lists, in `ProductPriceListDbContext`): `product.ProductTaxClassifications` (company, product, `VatClassId` required, `WithholdingClassId` optional — null = the product bears no withholding, SAT-D74 — version, update facts). The classes are the company's Settings tax categories, checked through `ISettingsTaxCategoryReaderV1` (kind and company) before anything is stored; no foreign key crosses into the Settings schema. |
+| Authority | ONE name, `product.tax-classification.manage` (`ProductTaxClassificationPermissionsV1.Manage` = `ErpPermissions.ProductTaxClassificationManage`): company-wide, not Critical, granted to NO role (who receives it is a human gate, NEEDS-SINAN). Measured fresh first and before the answer / save. |
+| Command | `PUT /api/v1/product-tax-classifications/{productId}` `{expectedVersion ("0" = none), vatClassId, withholdingClassId, reason}`: Idempotency-Key (own `ProductTaxClassificationAttempts`, SHA-256 key under a binary collation; same key + body replays, another body 409), stale version 409, unknown card code-less 404, wrong kind / another company's class 422, Settings unreachable 503; ONE audit event `product.tax-classification.changed.v1` with the whole reason; a no-op writes none. `GET` answers the classification (version "0" while none). |
+| Read port | `IProductTaxClassificationReaderV1` (access only, no permission; never throws for a missing card or classification) — consumed by the host's `SettingsProductTaxClassHost` for the Settings line tax port. |
+| Rollback | Migration `20261031130728_AddProductTaxClassifications` (`dotnet ef`): `Down` refuses with `THROW 51132` while any classification or command answer exists (forward fix). |
+
+Not here: the product card UI for the classes (follow-up of the frontend lane); a global (all-company) classification.
+
