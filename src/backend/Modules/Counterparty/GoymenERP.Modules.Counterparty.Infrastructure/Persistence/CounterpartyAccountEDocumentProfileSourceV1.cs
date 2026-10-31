@@ -2,17 +2,20 @@ using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 
 /// <summary>
-/// SAT-D102: the Counterparty owner's read of a company account's e-belge profile (<see
-/// cref="ICounterpartyAccountEDocumentProfileSourceV1"/>). Fail-closed: a context that is not the requested company, a
-/// missing company-wide <c>counterparty.parties.read</c>, or any failure of the owner read is never "no profile"; the
+/// SAT-D102 / SAT-D119: the Counterparty owner's read of an account's customer e-belge profile (<see
+/// cref="ICounterpartyAccountEDocumentProfileSourceV1"/>). The account is resolved to its party's VKN and the one
+/// group-shared <see cref="CustomerEDocumentProfile"/> is read. Fail-closed: a context that is not the requested
+/// company, a missing company-wide <c>counterparty.parties.read</c>, or any owner failure is never "no profile"; the
 /// scenario is resolved through the Settings port only (override if listed, else the Settings default, else
-/// Unresolved) and a Settings read that fails is <c>Unavailable</c>, never a guessed code.
+/// Unresolved) and a Settings read that fails is <c>Unavailable</c>. A party with no VKN is Found with
+/// <c>TaxIdentityNumberPresent = false</c>, status Unknown and an Unresolved scenario.
 /// </summary>
 public sealed class CounterpartyAccountEDocumentProfileSourceV1(
     CounterpartyDbContext dbContext,
@@ -44,38 +47,50 @@ public sealed class CounterpartyAccountEDocumentProfileSourceV1(
                 return Answer(CounterpartyAccountEDocumentProfileOutcomeV1.Denied);
             }
 
-            var row = await dbContext.CompanyPartyAccounts.AsNoTracking()
-                .Where(account => account.CompanyId == companyId && account.Id == companyAccountId)
-                .Select(account => new
-                {
-                    account.Id,
-                    account.CompanyId,
-                    account.PartyId,
-                    account.IsActive,
-                    account.Version,
-                    account.EDocumentStatus,
-                    account.EDocumentStatusCheckedAtUtc,
-                    account.EDocumentStatusCheckedByUserId,
-                    account.EInvoiceScenarioOverrideCode,
-                })
+            // The account must be the requested company's (existence + company fence). Its party's VKN is the shared
+            // key; the profile row is group-wide (no company filter) and reached only through this company's account.
+            var account = await dbContext.CompanyPartyAccounts.AsNoTracking()
+                .Where(candidate => candidate.CompanyId == companyId && candidate.Id == companyAccountId)
+                .Select(candidate => new { candidate.Id, candidate.CompanyId, candidate.PartyId, candidate.IsActive, candidate.Version })
                 .SingleOrDefaultAsync(cancellationToken);
             if (!RemainsCurrent(companyId, actorId))
             {
                 return Answer(CounterpartyAccountEDocumentProfileOutcomeV1.Denied);
             }
 
-            if (row is null)
+            if (account is null || account.Version <= 0)
             {
-                return Answer(CounterpartyAccountEDocumentProfileOutcomeV1.NotFound);
+                return Answer(account is null
+                    ? CounterpartyAccountEDocumentProfileOutcomeV1.NotFound
+                    : CounterpartyAccountEDocumentProfileOutcomeV1.Unavailable);
             }
 
-            if (row.Version <= 0)
+            var taxIdentityNumber = await dbContext.Parties.AsNoTracking()
+                .Where(party => party.Id == account.PartyId)
+                .Select(party => party.TaxIdentityNumber)
+                .SingleOrDefaultAsync(cancellationToken);
+            var profile = string.IsNullOrEmpty(taxIdentityNumber)
+                ? null
+                : await dbContext.CustomerEDocumentProfiles.AsNoTracking()
+                    .Where(row => row.TaxIdentityNumber == taxIdentityNumber)
+                    .Select(row => new
+                    {
+                        row.EDocumentStatus,
+                        row.EDocumentStatusCheckedAtUtc,
+                        row.EDocumentStatusCheckedByUserId,
+                        row.EInvoiceScenarioOverrideCode,
+                        row.Version,
+                    })
+                    .SingleOrDefaultAsync(cancellationToken);
+            if (!RemainsCurrent(companyId, actorId))
             {
-                return Answer(CounterpartyAccountEDocumentProfileOutcomeV1.Unavailable);
+                return Answer(CounterpartyAccountEDocumentProfileOutcomeV1.Denied);
             }
 
+            var status = profile?.EDocumentStatus ?? EDocumentStatus.Unknown;
+            var overrideCode = profile?.EInvoiceScenarioOverrideCode;
             var (_, _, effective) = await CounterpartyEInvoiceScenarioSettings.ResolveAsync(
-                eInvoiceScenarioPolicy, companyId, row.EInvoiceScenarioOverrideCode, effectiveOn, cancellationToken);
+                eInvoiceScenarioPolicy, companyId, overrideCode, effectiveOn, cancellationToken);
             if (!RemainsCurrent(companyId, actorId))
             {
                 return Answer(CounterpartyAccountEDocumentProfileOutcomeV1.Denied);
@@ -84,17 +99,18 @@ public sealed class CounterpartyAccountEDocumentProfileSourceV1(
             return new CounterpartyAccountEDocumentProfileAnswerV1(
                 CounterpartyAccountEDocumentProfileOutcomeV1.Found,
                 new CounterpartyAccountEDocumentProfileV1(
-                    row.CompanyId,
-                    row.Id,
-                    row.PartyId,
-                    row.IsActive,
-                    CounterpartyCommandService.ToContract(row.EDocumentStatus),
-                    row.EDocumentStatusCheckedAtUtc,
-                    row.EDocumentStatusCheckedByUserId,
-                    row.EInvoiceScenarioOverrideCode,
+                    account.CompanyId,
+                    account.Id,
+                    account.PartyId,
+                    account.IsActive,
+                    !string.IsNullOrEmpty(taxIdentityNumber),
+                    CounterpartyCommandService.ToContract(status),
+                    profile?.EDocumentStatusCheckedAtUtc,
+                    profile?.EDocumentStatusCheckedByUserId,
+                    overrideCode,
                     effectiveOn,
                     effective,
-                    row.Version.ToString(CultureInfo.InvariantCulture)));
+                    (profile?.Version ?? 0L).ToString(CultureInfo.InvariantCulture)));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

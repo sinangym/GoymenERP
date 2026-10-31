@@ -9,10 +9,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyDbContext.cs";
     // SAT-D57: + the company-filtered CustomerGroups set, its write guard (no delete, company-bound) and the
     // account's same-company composite foreign key; the CommandExecution tenant filter is unchanged.
-    // SAT-D102: + the account's e-belge columns (status/check/override) and their two check constraints; no new set,
-    // query filter or write-guard change.
+    // SAT-D119: + the group-level, VKN-keyed CustomerEDocumentProfiles set (no CompanyId, no query filter — the Party
+    // pattern), its config (unique VKN, status/override check constraints) and its write guard (no delete, id/VKN
+    // immutable, resolved-company required); the CommandExecution tenant filter is unchanged.
     private const string ReviewedCounterpartyDbContextFingerprint =
-        "6ea1f13b1ef02d75546c939e8679ad0da71749d939c7cf18b12bfa8d343edb3e";
+        "9a2d3e98c8fdfe6ce3ab1ac6c6dc0801d15955b1bb79aff5724399a4eabe186c";
     private const string ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath =
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"

@@ -105,21 +105,43 @@ public sealed class CounterpartyPersistenceModelTests
     }
 
     [Fact]
-    public void Account_e_document_profile_is_an_explicit_status_with_its_check_and_a_shaped_override()
+    public void Customer_e_document_profile_is_group_wide_VKN_keyed_with_an_explicit_status_and_a_shaped_override()
     {
         using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
-        var account = dbContext.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(CompanyPartyAccount))!;
+        var model = dbContext.GetService<IDesignTimeModel>().Model;
+        var profile = model.FindEntityType(typeof(CustomerEDocumentProfile))!;
+        Assert.Equal("counterparty", profile.GetSchema());
+        Assert.Equal("CustomerEDocumentProfiles", profile.GetTableName());
+
+        // SAT-D119: a GROUP-LEVEL record — no CompanyId property and no query filter (the same shape as Party).
+        Assert.Null(profile.FindProperty("CompanyId"));
+        Assert.Empty(profile.GetDeclaredQueryFilters());
+
+        // One profile per taxpayer: the VKN/TCKN is unique across the group.
+        var unique = Assert.Single(profile.GetIndexes(), index => index.IsUnique);
+        Assert.Equal([nameof(CustomerEDocumentProfile.TaxIdentityNumber)], unique.Properties.Select(property => property.Name));
+        Assert.False(profile.FindProperty(nameof(CustomerEDocumentProfile.TaxIdentityNumber))!.IsUnicode());
 
         // SAT-D102: Unknown (0) carries no check; a known status carries both the time and the checker.
-        var status = Assert.Single(account.GetCheckConstraints(), check => check.Name == "CK_CompanyPartyAccounts_EDocumentStatus");
+        var status = Assert.Single(profile.GetCheckConstraints(), check => check.Name == "CK_CustomerEDocumentProfiles_Status");
         Assert.Contains("[EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL", status.Sql, StringComparison.Ordinal);
         Assert.Contains("[EDocumentStatus] IN (1, 2)", status.Sql, StringComparison.Ordinal);
-        var code = Assert.Single(account.GetCheckConstraints(),
-            check => check.Name == "CK_CompanyPartyAccounts_EInvoiceScenarioOverrideCode");
+        var code = Assert.Single(profile.GetCheckConstraints(),
+            check => check.Name == "CK_CustomerEDocumentProfiles_ScenarioOverrideCode");
         Assert.Contains("NOT LIKE '%[^A-Z0-9_]%'", code.Sql, StringComparison.Ordinal);
-        Assert.False(account.FindProperty(nameof(CompanyPartyAccount.EDocumentStatus))!.IsNullable);
-        Assert.Equal(32, account.FindProperty(nameof(CompanyPartyAccount.EInvoiceScenarioOverrideCode))!.GetMaxLength());
-        Assert.Equal(128, account.FindProperty(nameof(CompanyPartyAccount.EDocumentStatusCheckedByUserId))!.GetMaxLength());
+        Assert.False(profile.FindProperty(nameof(CustomerEDocumentProfile.EDocumentStatus))!.IsNullable);
+        Assert.Equal(32, profile.FindProperty(nameof(CustomerEDocumentProfile.EInvoiceScenarioOverrideCode))!.GetMaxLength());
+        Assert.Equal(128, profile.FindProperty(nameof(CustomerEDocumentProfile.EDocumentStatusCheckedByUserId))!.GetMaxLength());
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_e_document_profile_delete_before_the_database_call()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var profile = new CustomerEDocumentProfile(Guid.NewGuid(), "1234567890");
+        dbContext.CustomerEDocumentProfiles.Attach(profile);
+        dbContext.CustomerEDocumentProfiles.Remove(profile);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
     }
 
     [Fact]
@@ -203,7 +225,7 @@ public sealed class CounterpartyPersistenceModelTests
             "20261027202534_AddCounterpartyCustomerGroups",
             dbContext.Database.GetMigrations());
         Assert.Equal(
-            "20261028231320_AddCounterpartyAccountEDocumentProfile",
+            "20261031091827_AddCustomerEDocumentProfiles",
             dbContext.Database.GetMigrations().Last());
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }

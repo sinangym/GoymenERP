@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(CounterpartyDbContext))]
-    [Migration("20261028231320_AddCounterpartyAccountEDocumentProfile")]
-    partial class AddCounterpartyAccountEDocumentProfile
+    [Migration("20261031091827_AddCustomerEDocumentProfiles")]
+    partial class AddCustomerEDocumentProfiles
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -205,20 +205,6 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                     b.Property<Guid?>("CustomerGroupId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int>("EDocumentStatus")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset?>("EDocumentStatusCheckedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("EDocumentStatusCheckedByUserId")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("EInvoiceScenarioOverrideCode")
-                        .HasMaxLength(32)
-                        .HasColumnType("nvarchar(32)");
-
                     b.Property<string>("ExternalIntegrationCode")
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
@@ -262,13 +248,69 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_CompanyPartyAccounts_ContactInformationJson", "[ContactInformationJson] IS NULL OR ISJSON([ContactInformationJson]) = 1");
 
-                            t.HasCheckConstraint("CK_CompanyPartyAccounts_EDocumentStatus", "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL) OR ([EDocumentStatus] IN (1, 2) AND [EDocumentStatusCheckedAtUtc] IS NOT NULL AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0)");
-
-                            t.HasCheckConstraint("CK_CompanyPartyAccounts_EInvoiceScenarioOverrideCode", "[EInvoiceScenarioOverrideCode] IS NULL OR (LEN([EInvoiceScenarioOverrideCode]) > 0 AND DATALENGTH([EInvoiceScenarioOverrideCode]) = 2 * LEN([EInvoiceScenarioOverrideCode]) AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 LIKE '[A-Z]%' AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^A-Z0-9_]%')");
-
                             t.HasCheckConstraint("CK_CompanyPartyAccounts_Roles", "[Roles] BETWEEN 0 AND 15");
 
                             t.HasCheckConstraint("CK_CompanyPartyAccounts_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.CustomerEDocumentProfile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("EDocumentStatus")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("EDocumentStatusCheckedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("EDocumentStatusCheckedByUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("EInvoiceScenarioOverrideCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("TaxIdentityNumber")
+                        .IsRequired()
+                        .HasMaxLength(11)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(11)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TaxIdentityNumber")
+                        .IsUnique()
+                        .HasDatabaseName("UX_CustomerEDocumentProfiles_TaxIdentityNumber");
+
+                    b.ToTable("CustomerEDocumentProfiles", "counterparty", t =>
+                        {
+                            t.HasCheckConstraint("CK_CustomerEDocumentProfiles_ScenarioOverrideCode", "[EInvoiceScenarioOverrideCode] IS NULL OR (LEN([EInvoiceScenarioOverrideCode]) > 0 AND DATALENGTH([EInvoiceScenarioOverrideCode]) = 2 * LEN([EInvoiceScenarioOverrideCode]) AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 LIKE '[A-Z]%' AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^A-Z0-9_]%')");
+
+                            t.HasCheckConstraint("CK_CustomerEDocumentProfiles_Status", "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL) OR ([EDocumentStatus] IN (1, 2) AND [EDocumentStatusCheckedAtUtc] IS NOT NULL AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0)");
+
+                            t.HasCheckConstraint("CK_CustomerEDocumentProfiles_TaxIdentityNumber", "LEN([TaxIdentityNumber]) IN (10, 11) AND DATALENGTH([TaxIdentityNumber]) = LEN([TaxIdentityNumber]) AND [TaxIdentityNumber] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'");
+
+                            t.HasCheckConstraint("CK_CustomerEDocumentProfiles_Version", "[Version] >= 1");
                         });
                 });
 

@@ -221,10 +221,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // GOY-UX-TEXT-FILTER-01: +1 same-address-row, pre-pagination address-filter SQL fact.
             // Location operator eligibility: +1 exact-party, supplier-only, company/actor-fenced read-only SQL fact.
             // SAT-D57 customer group: +5 list lifecycle, account assignment/port, company fence, 403 and rollback facts.
-            // SAT-D102 e-belge profile: +5 status lifecycle, Settings-listed override/effective scenario, company fence
-            // and DB checks, 403 and rollback facts (d8e2b013… -> 26c1ce5c…).
+            // SAT-D102/SAT-D119 e-belge profile: +6 VKN-shared status lifecycle, cross-company sharing, Settings-listed
+            // override/effective scenario, no-VKN and DB checks, 403 and rollback facts (d8e2b013… -> 41b1da14…).
             ["tools/relational_inventory/counterparty.txt"] =
-                "26c1ce5c46a53d877bd02ff667ffa81c936d6f4cb87f2150eada36508a7c77fa",
+                "41b1da14bdacbd38c9d278b11835d42c97ad364af268b787b52ef0e0822fa0ed",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).

@@ -5,8 +5,9 @@
  * `contracts/openapi/goymen-erp-v1.json` (operations `GetCounterpartyAccountEDocumentProfileV1`,
  * `RecordCounterpartyAccountEDocumentStatusV1`, `SetCounterpartyAccountEInvoiceScenarioV1`).
  *
- *  - The status (e-Fatura mükellefi / e-Arşiv) sits on the selected COMPANY's account. `Unknown` is explicit: nothing
- *    is inferred, and the card says "Kontrol edilmedi".
+ *  - SAT-D119: the status (e-Fatura mükellefi / e-Arşiv) is a fact about the customer's VKN, SHARED across all
+ *    companies. `Unknown` is explicit: nothing is inferred, and the card says "Kontrol edilmedi". A customer with no
+ *    VKN cannot have a profile (`taxIdentityNumberPresent === false`); the command then answers 422.
  *  - The scenario codes and the default are Settings data. The client offers exactly the codes the server read from
  *    Settings for `evaluatedOn`; with no list ("kaynak yok") there is nothing to choose and nothing is invented here.
  *  - The effective scenario is the server's answer (override → Settings default → Unresolved); the card only shows it.
@@ -17,10 +18,16 @@
 
 import { isBoundUuid, isLosslessVersion } from './wireGuards'
 
+/** The shared profile version is a lossless positive version, or "0" when no profile exists yet. */
+export function isEDocumentVersion(value: unknown): value is string {
+  return value === '0' || isLosslessVersion(value)
+}
+
 /** The endpoints' own stable codes (`CounterpartyProblemCodesV1`). */
 export const E_DOCUMENT_PROBLEM_CODE = {
   codeListMissing: 'einvoice_scenario_code_list_missing',
   notListed: 'einvoice_scenario_not_listed',
+  taxIdentityRequired: 'e_document_tax_identity_required',
   versionConflict: 'version_conflict',
   notFound: 'not_found',
   idempotencyConflict: 'idempotency_conflict',
@@ -67,6 +74,7 @@ export interface AccountEDocumentProfile {
   readonly companyId: string
   readonly version: string
   readonly accountIsActive: boolean
+  readonly taxIdentityNumberPresent: boolean
   readonly status: EDocumentStatus
   readonly statusCheckedAtUtc: string | null
   readonly statusCheckedByUserId: string | null
@@ -116,8 +124,9 @@ export function decodeAccountEDocumentProfile(
     raw.partyId !== expected.partyId ||
     raw.companyId !== expected.companyId ||
     !isBoundUuid(raw.accountId) ||
-    !isLosslessVersion(raw.version) ||
+    !isEDocumentVersion(raw.version) ||
     typeof raw.accountIsActive !== 'boolean' ||
+    typeof raw.taxIdentityNumberPresent !== 'boolean' ||
     !oneOf(E_DOCUMENT_STATUSES, raw.status) ||
     typeof raw.evaluatedOn !== 'string' ||
     !DATE.test(raw.evaluatedOn) ||
@@ -161,6 +170,7 @@ export function decodeAccountEDocumentProfile(
     companyId: raw.companyId,
     version: raw.version,
     accountIsActive: raw.accountIsActive,
+    taxIdentityNumberPresent: raw.taxIdentityNumberPresent,
     status: raw.status,
     statusCheckedAtUtc: checkedAt as string | null,
     statusCheckedByUserId: checkedBy as string | null,
@@ -198,7 +208,9 @@ export function effectiveScenarioText(effective: EffectiveScenario): string {
 export const E_DOCUMENT_TEXT = {
   panelHeading: 'e-Belge durumu',
   panelNote:
-    'Müşterinin e-Fatura / e-Arşiv durumu cari kart açılırken kontrol edilir ve seçili şirketin cari hesabında tutulur.',
+    'Müşterinin e-Fatura / e-Arşiv durumu cari kart açılırken kontrol edilir. Durum müşterinin VKN/TCKN’sine bağlıdır; grup içindeki şirketlerde ortaktır.',
+  noTaxIdentity:
+    'Bu carinin VKN/TCKN bilgisi yok. e-Belge durumu VKN/TCKN’ye bağlı olduğundan önce cari kimlik bölümünden geçerli bir numara girilmelidir.',
   panelLoading: 'e-Belge durumu yükleniyor…',
   panelError: 'e-Belge durumu okunamadı.',
   panelForbidden: 'e-Belge durumunu görme yetkiniz yok.',
@@ -257,6 +269,8 @@ export const E_DOCUMENT_TEXT = {
       'Kayıt siz düzenlerken başka biri tarafından değiştirildi. Güncel bilgiler yüklendi; değişikliğinizi yeniden yapın.',
     [E_DOCUMENT_PROBLEM_CODE.notFound]: 'Kayıt bulunamadı veya bu şirkette kullanılamıyor.',
     [E_DOCUMENT_PROBLEM_CODE.idempotencyConflict]: 'Aynı işlem anahtarı farklı bir istekte kullanılmış. Yeniden deneyin.',
+    [E_DOCUMENT_PROBLEM_CODE.taxIdentityRequired]:
+      'Bu carinin VKN/TCKN bilgisi yok; e-Belge durumu kaydedilemez. Önce cari kimlik bölümünden numara girin.',
     [E_DOCUMENT_PROBLEM_CODE.validationFailed]: 'Girilen bilgi geçersiz.',
   } as Readonly<Record<string, string>>,
 } as const

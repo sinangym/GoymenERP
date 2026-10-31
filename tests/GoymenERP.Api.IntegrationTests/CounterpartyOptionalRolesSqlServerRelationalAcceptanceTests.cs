@@ -32,7 +32,7 @@ public sealed class CounterpartyOptionalRolesSqlServerRelationalAcceptanceTests
     private const string ContactInformationMigration = "20260912003000_AddCompanyAccountContactInformation";
     private const string TaxIdentityMigration = "20260930150000_AddPartyTaxIdentity";
     private const string CustomerGroupMigration = "20261027202534_AddCounterpartyCustomerGroups";
-    private const string EDocumentProfileMigration = "20261028231320_AddCounterpartyAccountEDocumentProfile";
+    private const string EDocumentProfileMigration = "20261031091827_AddCustomerEDocumentProfiles";
     private const PartyRole AllRoles =
         PartyRole.Customer | PartyRole.Supplier | PartyRole.Tolling | PartyRole.Service;
 

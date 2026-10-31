@@ -16,13 +16,18 @@ public static class CounterpartyEDocumentPermissionsV1
 }
 
 /// <summary>
-/// SAT-D102 (Sinan, 2026-10-28): the customer's e-belge profile on the Cari card, owned by Counterparty and held on
-/// the company's account (<c>CompanyPartyAccount</c>): the e-Fatura / e-Arşiv status checked when the card is opened
-/// (with who checked it and when), and an optional per-customer e-Fatura scenario overriding the Settings default.
-/// The allowed scenario codes and the default are Settings data (<c>ISettingsEInvoiceScenarioPolicyProviderV1</c>);
-/// Cari never holds its own list. Every command is the Counterparty command shape: company-wide permission first, one
-/// Idempotency-Key (stored terminal answers replay), the ACCOUNT version as decimal text, one audit event per real
-/// change. The GİB mükellef query is a follow-up; nothing here calls outside the ERP.
+/// SAT-D102 (Sinan, 2026-10-28) and SAT-D119 (Sinan, 2026-10-31, EK17): the customer's e-belge profile — the
+/// e-Fatura / e-Arşiv status (with who checked it and when) and an optional e-Fatura scenario overriding the Settings
+/// default. SAT-D119 makes it a fact about the customer's VKN/TCKN, SHARED across all Göymen companies: it is a
+/// group-level Counterparty record keyed by the tax identity number (<c>CustomerEDocumentProfile</c>), not a
+/// per-company-account field, so a check recorded in one company is seen on the same-VKN customer's card in the
+/// others. The allowed scenario codes and the default are Settings data
+/// (<c>ISettingsEInvoiceScenarioPolicyProviderV1</c>, read per company); Cari never holds its own list. The command
+/// takes a <c>partyId</c>, resolves the active company's account for it (existence fence) and the party's VKN, and
+/// upserts the one VKN-keyed profile. Every command is the Counterparty command shape: company-wide permission first,
+/// one Idempotency-Key (stored terminal answers replay), the PROFILE version as decimal text ("0" creates), one audit
+/// event per real change. A party with no VKN cannot have an e-belge profile (fail-closed). The GİB mükellef query is
+/// a follow-up; nothing here calls outside the ERP.
 /// </summary>
 public interface ICounterpartyEDocumentProfileService
 {
@@ -210,9 +215,12 @@ public sealed record CounterpartyEInvoiceScenarioDefaultView(
 public sealed record CounterpartyAccountEDocumentViewer(bool CanUpdate);
 
 /// <summary>
-/// The active company's account of a Cari card and its e-belge profile. <c>version</c> is the ACCOUNT version the
-/// commands are fenced on. <c>statusCheckedAtUtc</c>/<c>statusCheckedByUserId</c> are null exactly when the status is
-/// Unknown. <c>evaluatedOn</c> is the Europe/Istanbul business day the Settings keys were read for.
+/// The active company's account of a Cari card and the customer's VKN-shared e-belge profile (SAT-D119).
+/// <c>taxIdentityNumberPresent</c> is false when the party has no VKN/TCKN: no profile can exist, the status is
+/// Unknown and the scenario is Unresolved (fail-closed), and both commands answer 422. <c>version</c> is the shared
+/// PROFILE version the commands are fenced on; it is "0" when no profile exists yet (the first write creates it).
+/// <c>statusCheckedAtUtc</c>/<c>statusCheckedByUserId</c> are null exactly when the status is Unknown.
+/// <c>evaluatedOn</c> is the Europe/Istanbul business day the Settings keys were read for.
 /// </summary>
 public sealed record CounterpartyAccountEDocumentView(
     Guid PartyId,
@@ -220,6 +228,7 @@ public sealed record CounterpartyAccountEDocumentView(
     Guid CompanyId,
     string Version,
     bool AccountIsActive,
+    bool TaxIdentityNumberPresent,
     CounterpartyEDocumentStatusV1 Status,
     DateTimeOffset? StatusCheckedAtUtc,
     string? StatusCheckedByUserId,

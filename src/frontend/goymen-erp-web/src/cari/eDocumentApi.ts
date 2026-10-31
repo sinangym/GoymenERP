@@ -96,13 +96,18 @@ const replayable = (entries: ReadonlyArray<readonly [number, readonly string[]]>
 const STATUS_REPLAYABLE = replayable([
   [404, [E_DOCUMENT_PROBLEM_CODE.notFound]],
   [409, [E_DOCUMENT_PROBLEM_CODE.versionConflict]],
+  [422, [E_DOCUMENT_PROBLEM_CODE.taxIdentityRequired]],
 ])
 
 /** `SetCounterpartyAccountEInvoiceScenarioV1` stores 204, 404, 409 (version) and 422 (no list / not listed). */
 const SCENARIO_REPLAYABLE = replayable([
   [404, [E_DOCUMENT_PROBLEM_CODE.notFound]],
   [409, [E_DOCUMENT_PROBLEM_CODE.versionConflict]],
-  [422, [E_DOCUMENT_PROBLEM_CODE.codeListMissing, E_DOCUMENT_PROBLEM_CODE.notListed]],
+  [422, [
+    E_DOCUMENT_PROBLEM_CODE.codeListMissing,
+    E_DOCUMENT_PROBLEM_CODE.notListed,
+    E_DOCUMENT_PROBLEM_CODE.taxIdentityRequired,
+  ]],
 ])
 
 /** Record the e-belge status a user checked; `expectedVersion` is the ACCOUNT version of the read the form opened on. */
@@ -120,6 +125,7 @@ export function recordAccountEDocumentStatus(
     { status },
     signal,
     STATUS_REPLAYABLE,
+    true,
   )
 }
 
@@ -141,5 +147,6 @@ export function setAccountEInvoiceScenario(
     { scenarioCode },
     signal,
     SCENARIO_REPLAYABLE,
+    true,
   )
 }

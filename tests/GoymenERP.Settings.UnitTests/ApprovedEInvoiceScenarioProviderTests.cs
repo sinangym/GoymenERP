@@ -18,11 +18,16 @@ public sealed class ApprovedEInvoiceScenarioProviderTests
     private static readonly Guid SyntheticList = Guid.Parse("71000000-0000-4000-8000-0000000000b1");
     private static readonly Guid SyntheticDefault = Guid.Parse("71000000-0000-4000-8000-0000000000b2");
     private static readonly DateOnly Start = new(2026, 11, 1);
+    private static readonly DateOnly StandardFrom = new(2026, 10, 31);
+    private static readonly Guid Unserved = Guid.Parse("71000000-0000-4000-8000-0000000000ee");
 
     [Fact]
-    public void The_reviewed_catalog_is_empty_no_code_and_no_default_is_seeded()
+    public void The_reviewed_catalog_seeds_the_standard_code_list_for_three_companies_and_no_default()
     {
-        Assert.Empty(ApprovedEInvoiceScenarioCatalog.Approved.CodeLists);
+        // SAT-D120: the standard GİB/UBL-TR set is seeded; SAT-D102: the default is still empty.
+        Assert.Equal(["TEMELFATURA", "TICARIFATURA", "EARSIVFATURA", "IHRACAT"],
+            ApprovedEInvoiceScenarioCatalog.StandardScenarioCodes);
+        Assert.Equal(3, ApprovedEInvoiceScenarioCatalog.Approved.CodeLists.Count);
         Assert.Empty(ApprovedEInvoiceScenarioCatalog.Approved.Defaults);
     }
 
@@ -30,19 +35,35 @@ public sealed class ApprovedEInvoiceScenarioProviderTests
     [InlineData("10000000-0000-0000-0000-000000000001")]
     [InlineData("10000000-0000-0000-0000-000000000002")]
     [InlineData("10000000-0000-0000-0000-000000000003")]
-    public async Task Every_company_has_the_keys_and_both_answer_not_found_until_Sinan_enters_them(string company)
+    public async Task Every_company_serves_the_standard_list_and_the_default_stays_not_found_until_Sinan_enters_it(string company)
     {
         var provider = new ApprovedSettingsPrerequisiteProvider(
             new Context(Guid.Parse(company), true), new Actor(true, "x", Guid.Parse(company)));
 
-        var list = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
-            () => provider.GetEInvoiceScenarioCodesAsync(Start));
-        var defaultValue = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
-            () => provider.GetEInvoiceScenarioDefaultAsync(Start));
+        var list = await provider.GetEInvoiceScenarioCodesAsync(StandardFrom);
+        Assert.Equal(Guid.Parse(company), list.CompanyId);
+        Assert.Equal(["TEMELFATURA", "TICARIFATURA", "EARSIVFATURA", "IHRACAT"], list.Codes);
 
-        Assert.Equal(SettingsPrerequisiteCodesV1.EInvoiceScenarioCodeListNotFound, list.Code);
+        // Before the standard list's effective date there is no list.
+        var early = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetEInvoiceScenarioCodesAsync(StandardFrom.AddDays(-1)));
+        Assert.Equal(SettingsPrerequisiteCodesV1.EInvoiceScenarioCodeListNotFound, early.Code);
+
+        // The default is empty everywhere, on every date.
+        var defaultValue = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetEInvoiceScenarioDefaultAsync(StandardFrom));
         Assert.Equal(SettingsPrerequisiteCodesV1.EInvoiceScenarioDefaultNotFound, defaultValue.Code);
         Assert.Contains(Guid.Parse(company), new[] { Gdc, Gsp, Gin });
+    }
+
+    [Fact]
+    public async Task An_unserved_company_has_no_standard_list()
+    {
+        var provider = new ApprovedSettingsPrerequisiteProvider(
+            new Context(Unserved, true), new Actor(true, "x", Unserved));
+        var list = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+            () => provider.GetEInvoiceScenarioCodesAsync(StandardFrom));
+        Assert.Equal(SettingsPrerequisiteCodesV1.EInvoiceScenarioCodeListNotFound, list.Code);
     }
 
     [Theory]

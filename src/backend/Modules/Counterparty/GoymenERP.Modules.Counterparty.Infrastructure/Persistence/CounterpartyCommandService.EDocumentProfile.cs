@@ -5,31 +5,37 @@ using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 
 /// <summary>
-/// SAT-D102 (Sinan, 2026-10-28) — the e-belge profile on the Cari card's company account:
+/// SAT-D102 / SAT-D119 (Sinan, 2026-10-28 and 2026-10-31) — the customer's e-belge profile, shared across the group by
+/// VKN/TCKN (<see cref="CustomerEDocumentProfile"/>, no CompanyId). A command names a <c>partyId</c>; the service
+/// resolves the active company's account for it (existence/company fence), the party's VKN, and upserts the one
+/// VKN-keyed profile — so a check recorded in one company is seen by the others. A party with no VKN cannot have a
+/// profile (422 <c>e_document_tax_identity_required</c>, fail-closed).
 /// <list type="bullet">
-/// <item><b>Status</b> (<see cref="CompanyPartyAccount.EDocumentStatus"/>): e-Fatura mükellefi / e-Arşiv as a user
-/// checked it, with the server time of the check and the checker; <c>Unknown</c> until then (never inferred).</item>
-/// <item><b>Scenario override</b> (<see cref="CompanyPartyAccount.EInvoiceScenarioOverrideCode"/>): only a code of the
-/// Settings list in force today (Europe/Istanbul business day); with no list in Settings the override cannot be set
-/// (422 <c>einvoice_scenario_code_list_missing</c>, "kaynak yok"); an explicit null clears it.</item>
+/// <item><b>Status</b>: e-Fatura mükellefi / e-Arşiv as a user checked it, with the server time and checker; Unknown
+/// until then (never inferred). A known status always records a new check (version moves); Unknown resets it.</item>
+/// <item><b>Scenario override</b>: only a code of the writing company's Settings list in force today; no list → 422
+/// <c>einvoice_scenario_code_list_missing</c>; not listed → 422 <c>einvoice_scenario_not_listed</c>; Settings
+/// unreadable → 503, nothing stored. Re-sending the stored code is a no-op.</item>
 /// </list>
-/// Both commands are the Counterparty command shape under <c>counterparty.accounts.e-document.update</c> (plus
-/// <c>counterparty.parties.read</c>), measured first and re-measured before the write; one Idempotency-Key (stored
-/// 204/404/409/422 answers replay); the ACCOUNT version as decimal text (shared with the other account commands); one
-/// audit event per real change and none for a no-op. Nothing here calls GİB or any other external service.
+/// Both commands run under <c>counterparty.accounts.e-document.update</c> (plus <c>counterparty.parties.read</c>),
+/// measured first and re-measured before the write; one Idempotency-Key (stored 204/404/409/422 replay); the PROFILE
+/// version as decimal text ("0" creates); one audit event per real change (in the acting company's context). No GİB or
+/// other external call.
 /// </summary>
 internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumentProfileService
 {
-    private const string RecordEDocumentStatusCommandName = "counterparty.company-account.e-document-status.record.v1";
-    private const string SetEInvoiceScenarioCommandName = "counterparty.company-account.e-invoice-scenario.set.v1";
-    private const string EDocumentStatusRecordedEvent = "counterparty.company-account.e-document-status.recorded.v1";
-    private const string EInvoiceScenarioChangedEvent = "counterparty.company-account.e-invoice-scenario.changed.v1";
+    private const string RecordEDocumentStatusCommandName = "counterparty.customer-e-document.status.record.v1";
+    private const string SetEInvoiceScenarioCommandName = "counterparty.customer-e-document.e-invoice-scenario.set.v1";
+    private const string EDocumentStatusRecordedEvent = "counterparty.customer-e-document.status.recorded.v1";
+    private const string EInvoiceScenarioChangedEvent = "counterparty.customer-e-document.e-invoice-scenario.changed.v1";
+    private const string EDocumentProfileEntityType = "Counterparty.CustomerEDocumentProfile";
 
     public async Task<CounterpartyAccountEDocumentView?> GetAccountEDocumentProfileAsync(
         Guid partyId,
@@ -50,20 +56,25 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             return null;
         }
 
+        var taxIdentityNumber = await ReadPartyTaxIdentityAsync(partyId, cancellationToken);
+        var profile = string.IsNullOrEmpty(taxIdentityNumber)
+            ? null
+            : await FindEDocumentProfileAsync(taxIdentityNumber, tracking: false, cancellationToken);
         var evaluatedOn = CounterpartyEInvoiceScenarioSettings.BusinessDateOf(timeProvider.GetUtcNow());
         var (codes, settingsDefault, effective) = await CounterpartyEInvoiceScenarioSettings.ResolveAsync(
-            eInvoiceScenarioPolicy, companyId, account.EInvoiceScenarioOverrideCode, evaluatedOn, cancellationToken);
+            eInvoiceScenarioPolicy, companyId, profile?.EInvoiceScenarioOverrideCode, evaluatedOn, cancellationToken);
         await RequireCustomerGroupReadStillAsync(companyId, actorId, cancellationToken);
         return new CounterpartyAccountEDocumentView(
             account.PartyId,
             account.Id,
             account.CompanyId,
-            account.Version.ToString(CultureInfo.InvariantCulture),
+            (profile?.Version ?? 0L).ToString(CultureInfo.InvariantCulture),
             account.IsActive,
-            ToContract(account.EDocumentStatus),
-            account.EDocumentStatusCheckedAtUtc,
-            account.EDocumentStatusCheckedByUserId,
-            account.EInvoiceScenarioOverrideCode,
+            !string.IsNullOrEmpty(taxIdentityNumber),
+            ToContract(profile?.EDocumentStatus ?? EDocumentStatus.Unknown),
+            profile?.EDocumentStatusCheckedAtUtc,
+            profile?.EDocumentStatusCheckedByUserId,
+            profile?.EInvoiceScenarioOverrideCode,
             evaluatedOn,
             new CounterpartyEInvoiceScenarioCodesView(codes.State, codes.Codes),
             new CounterpartyEInvoiceScenarioDefaultView(settingsDefault.State, settingsDefault.ScenarioCode),
@@ -86,55 +97,23 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             metadata, CounterpartyEDocumentPermissionsV1.Update, token);
         RequirePartyId(partyId);
         var status = ToDomain(command.Status);
-        var expectedVersion = CounterpartyContactInformationEditor.ParseVersion(command.ExpectedVersion);
+        var expectedVersion = ParseEDocumentExpectedVersion(command.ExpectedVersion);
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new
         {
             PartyId = partyId, ExpectedVersion = expectedVersion, Status = status.ToString(),
         });
 
-        var account = await dbContext.CompanyPartyAccounts.SingleOrDefaultAsync(
-            candidate => candidate.CompanyId == metadata.CompanyId && candidate.PartyId == partyId,
+        return await UpsertEDocumentProfileAsync(
+            RecordEDocumentStatusCommandName, partyId, expectedVersion, keyHash, requestHash, metadata, beforeSave,
+            scope, EDocumentStatusRecordedEvent,
+            ensureSettings: null,
+            apply: profile => profile.RecordStatus(status, metadata.ActorId, timeProvider.GetUtcNow()),
+            createWhenAbsentAndNoop: status == EDocumentStatus.Unknown,
+            operation: status == EDocumentStatus.Unknown ? "ResetEDocumentStatus" : "RecordEDocumentStatus",
+            reason: "Müşteri e-belge durumu kontrolü",
+            logOperation: "record-status",
             cancellationToken);
-        var existing = await FindCommandExecutionAsync(RecordEDocumentStatusCommandName, keyHash, cancellationToken);
-        if (existing is not null)
-        {
-            await beforeSave(cancellationToken);
-            return ReplayFenced(existing, requestHash, metadata, account is not null);
-        }
-
-        if (account is null)
-        {
-            return await CompleteCommandAsync(RecordEDocumentStatusCommandName, Responses.NotFound(),
-                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
-        }
-
-        if (account.Version != expectedVersion)
-        {
-            return await CompleteCommandAsync(RecordEDocumentStatusCommandName,
-                Responses.VersionConflict(expectedVersion, account.Version),
-                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
-        }
-
-        var concurrency = new AccountConcurrencyContext(partyId, expectedVersion);
-        var beforeJson = SerializeAccountEDocumentSnapshot(account);
-        var versionBefore = account.Version;
-        if (!account.RecordEDocumentStatus(status, metadata.ActorId, timeProvider.GetUtcNow()))
-        {
-            // Unknown → Unknown: fenced by the same Version + rowversion predicate, without a version move or audit.
-            dbContext.Entry(account).Property(value => value.EDocumentStatus).IsModified = true;
-            return await CompleteCommandAsync(RecordEDocumentStatusCommandName, Responses.Succeeded(),
-                keyHash, requestHash, metadata, concurrency, cancellationToken, beforeSave);
-        }
-
-        await beforeSave(cancellationToken);
-        EnqueueAccountEDocumentAudit(metadata, scope, account, EDocumentStatusRecordedEvent,
-            status == EDocumentStatus.Unknown ? "ResetEDocumentStatus" : "RecordEDocumentStatus",
-            versionBefore, beforeJson, "Cari şirket hesabı e-belge durumu kontrolü");
-        var result = await CompleteCommandAsync(RecordEDocumentStatusCommandName, Responses.Succeeded(),
-            keyHash, requestHash, metadata, concurrency, cancellationToken, beforeSave);
-        LogEDocumentCommand("record-status", metadata, account.Id, result);
-        return result;
     }
 
     public async Task<CounterpartyCommandExecution> SetAccountEInvoiceScenarioOverrideAsync(
@@ -152,84 +131,204 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             metadata, CounterpartyEDocumentPermissionsV1.Update, token);
         RequirePartyId(partyId);
         var scenarioCode = command.ScenarioCode;
-        if (scenarioCode is not null && !CompanyPartyAccount.IsWellFormedScenarioCode(scenarioCode))
+        if (scenarioCode is not null && !CustomerEDocumentProfile.IsWellFormedScenarioCode(scenarioCode))
         {
             throw new ArgumentException(
                 "e-Fatura senaryo kodu 1-32 karakter, büyük harfle başlayan A-Z, 0-9 veya '_' olmalıdır; kaldırmak için null gönderin.",
                 nameof(command));
         }
 
-        var expectedVersion = CounterpartyContactInformationEditor.ParseVersion(command.ExpectedVersion);
+        var expectedVersion = ParseEDocumentExpectedVersion(command.ExpectedVersion);
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new
         {
             PartyId = partyId, ExpectedVersion = expectedVersion, ScenarioCode = scenarioCode,
         });
 
-        var account = await dbContext.CompanyPartyAccounts.SingleOrDefaultAsync(
-            candidate => candidate.CompanyId == metadata.CompanyId && candidate.PartyId == partyId,
-            cancellationToken);
-        var existing = await FindCommandExecutionAsync(SetEInvoiceScenarioCommandName, keyHash, cancellationToken);
-        if (existing is not null)
+        // A NEW code must be one the acting company's Settings owner lists today. Re-sending the current code is a
+        // no-op; a null clear needs no list; Settings that cannot be read store nothing (503, retry with same key).
+        async Task<CounterpartyCommandResult?> EnsureSettings(CustomerEDocumentProfile? profile, CancellationToken token)
         {
-            await beforeSave(cancellationToken);
-            return ReplayFenced(existing, requestHash, metadata, account is not null);
-        }
+            if (scenarioCode is null
+                || (profile is not null
+                    && string.Equals(profile.EInvoiceScenarioOverrideCode, scenarioCode, StringComparison.Ordinal)))
+            {
+                return null;
+            }
 
-        if (account is null)
-        {
-            return await CompleteCommandAsync(SetEInvoiceScenarioCommandName, Responses.NotFound(),
-                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
-        }
-
-        if (account.Version != expectedVersion)
-        {
-            return await CompleteCommandAsync(SetEInvoiceScenarioCommandName,
-                Responses.VersionConflict(expectedVersion, account.Version),
-                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
-        }
-
-        // A NEW code must be one the Settings owner lists today. Re-sending the current code is a no-op below and a
-        // null clear needs no list. Settings that cannot be read store nothing (503, retry with the same key).
-        if (scenarioCode is not null
-            && !string.Equals(account.EInvoiceScenarioOverrideCode, scenarioCode, StringComparison.Ordinal))
-        {
             var today = CounterpartyEInvoiceScenarioSettings.BusinessDateOf(timeProvider.GetUtcNow());
             var codes = await CounterpartyEInvoiceScenarioSettings.ReadCodesAsync(
-                eInvoiceScenarioPolicy, metadata.CompanyId, today, cancellationToken);
-            var refusal = codes.State switch
+                eInvoiceScenarioPolicy, metadata.CompanyId, today, token);
+            return codes.State switch
             {
                 CounterpartySettingsSourceStateV1.NotSet => CounterpartyCommandResult.EInvoiceScenarioCodeListMissing,
                 CounterpartySettingsSourceStateV1.Set when !codes.Codes.Contains(scenarioCode, StringComparer.Ordinal) =>
                     CounterpartyCommandResult.EInvoiceScenarioNotListed,
-                CounterpartySettingsSourceStateV1.Set => (CounterpartyCommandResult?)null,
+                CounterpartySettingsSourceStateV1.Set => null,
                 _ => throw new CounterpartySettingsUnavailableException(),
             };
-            if (refusal is not null)
-            {
-                return await CompleteCommandAsync(SetEInvoiceScenarioCommandName, EDocumentResponses.Refused(refusal.Value),
-                    keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
-            }
         }
 
-        var concurrency = new AccountConcurrencyContext(partyId, expectedVersion);
-        var beforeJson = SerializeAccountEDocumentSnapshot(account);
-        var versionBefore = account.Version;
-        if (!account.SetEInvoiceScenarioOverride(scenarioCode))
+        return await UpsertEDocumentProfileAsync(
+            SetEInvoiceScenarioCommandName, partyId, expectedVersion, keyHash, requestHash, metadata, beforeSave,
+            scope, EInvoiceScenarioChangedEvent,
+            ensureSettings: EnsureSettings,
+            apply: profile => profile.SetScenarioOverride(scenarioCode),
+            createWhenAbsentAndNoop: scenarioCode is null,
+            operation: scenarioCode is null ? "ClearEInvoiceScenarioOverride" : "SetEInvoiceScenarioOverride",
+            reason: "Müşteri e-Fatura senaryosu değişikliği",
+            logOperation: "set-scenario",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The shared create-or-update for both e-belge commands: resolve the account (existence/company fence) and the
+    /// party's VKN, fence on the profile version ("0" = create), run the owner-supplied Settings precheck and change,
+    /// and audit one real change. Group-wide: the profile row carries no CompanyId.
+    /// </summary>
+    private async Task<CounterpartyCommandExecution> UpsertEDocumentProfileAsync(
+        string commandName,
+        Guid partyId,
+        long expectedVersion,
+        string keyHash,
+        string requestHash,
+        CounterpartyCommandMetadata metadata,
+        Func<CancellationToken, Task> beforeSave,
+        PermissionScope scope,
+        string eventType,
+        Func<CustomerEDocumentProfile?, CancellationToken, Task<CounterpartyCommandResult?>>? ensureSettings,
+        Func<CustomerEDocumentProfile, bool> apply,
+        bool createWhenAbsentAndNoop,
+        string operation,
+        string reason,
+        string logOperation,
+        CancellationToken cancellationToken)
+    {
+        var accountExists = await dbContext.CompanyPartyAccounts.AsNoTracking().AnyAsync(
+            candidate => candidate.CompanyId == metadata.CompanyId && candidate.PartyId == partyId, cancellationToken);
+        var taxIdentityNumber = accountExists
+            ? await ReadPartyTaxIdentityAsync(partyId, cancellationToken)
+            : null;
+        var profile = string.IsNullOrEmpty(taxIdentityNumber)
+            ? null
+            : await FindEDocumentProfileAsync(taxIdentityNumber, tracking: true, cancellationToken);
+
+        var existing = await FindCommandExecutionAsync(commandName, keyHash, cancellationToken);
+        if (existing is not null)
         {
-            dbContext.Entry(account).Property(value => value.EInvoiceScenarioOverrideCode).IsModified = true;
-            return await CompleteCommandAsync(SetEInvoiceScenarioCommandName, Responses.Succeeded(),
+            await beforeSave(cancellationToken);
+            return ReplayFenced(existing, requestHash, metadata, accountExists);
+        }
+
+        if (!accountExists)
+        {
+            return await CompleteCommandAsync(commandName, Responses.NotFound(),
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+        }
+
+        if (string.IsNullOrEmpty(taxIdentityNumber))
+        {
+            return await CompleteCommandAsync(commandName,
+                EDocumentResponses.Refused(CounterpartyCommandResult.EDocumentTaxIdentityRequired),
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+        }
+
+        var currentVersion = profile?.Version ?? 0L;
+        if (currentVersion != expectedVersion)
+        {
+            return await CompleteCommandAsync(commandName, Responses.VersionConflict(expectedVersion, currentVersion),
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+        }
+
+        if (ensureSettings is not null && await ensureSettings(profile, cancellationToken) is { } refusal)
+        {
+            return await CompleteCommandAsync(commandName, EDocumentResponses.Refused(refusal),
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+        }
+
+        if (profile is null)
+        {
+            // Nothing to persist for a no-op create (e.g. recording Unknown on an absent profile, or clearing an
+            // already-absent override): the absent row IS the value, success without creating it.
+            if (createWhenAbsentAndNoop)
+            {
+                return await CompleteCommandAsync(commandName, Responses.Succeeded(),
+                    keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+            }
+
+            var created = new CustomerEDocumentProfile(Guid.NewGuid(), taxIdentityNumber);
+            apply(created);
+            dbContext.CustomerEDocumentProfiles.Add(created);
+            await beforeSave(cancellationToken);
+            EnqueueEDocumentAudit(metadata, scope, created, eventType, operation, versionBefore: null, beforeJson: "{}", reason);
+            CounterpartyCommandExecution createdResult;
+            try
+            {
+                createdResult = await CompleteCommandAsync(commandName, Responses.Succeeded(),
+                    keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+            }
+            catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+            {
+                // A concurrent create took the VKN between the check and the insert: it is now version 1, so the
+                // caller's "0" fence is stale.
+                dbContext.ChangeTracker.Clear();
+                createdResult = await CompleteCommandAsync(commandName, Responses.VersionConflict(expectedVersion, 1),
+                    keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+            }
+
+            LogEDocumentCommand(logOperation, metadata, created.Id, createdResult);
+            return createdResult;
+        }
+
+        var concurrency = new EDocumentProfileConcurrencyContext(profile.Id, expectedVersion);
+        var beforeJson = SerializeEDocumentSnapshot(profile);
+        var versionBefore = profile.Version;
+        if (!apply(profile))
+        {
+            // A fenced no-op (Unknown→Unknown, or an unchanged override): no version move, no audit, but the same
+            // Version + rowversion predicate still guards it. (A re-recorded known status is a real change — a new
+            // check — so apply returns true and it is audited below.)
+            dbContext.Entry(profile).Property(value => value.Version).IsModified = true;
+            return await CompleteCommandAsync(commandName, Responses.Succeeded(),
                 keyHash, requestHash, metadata, concurrency, cancellationToken, beforeSave);
         }
 
         await beforeSave(cancellationToken);
-        EnqueueAccountEDocumentAudit(metadata, scope, account, EInvoiceScenarioChangedEvent,
-            scenarioCode is null ? "ClearEInvoiceScenarioOverride" : "SetEInvoiceScenarioOverride",
-            versionBefore, beforeJson, "Cari şirket hesabı e-Fatura senaryosu değişikliği");
-        var result = await CompleteCommandAsync(SetEInvoiceScenarioCommandName, Responses.Succeeded(),
+        EnqueueEDocumentAudit(metadata, scope, profile, eventType, operation, versionBefore, beforeJson, reason);
+        var result = await CompleteCommandAsync(commandName, Responses.Succeeded(),
             keyHash, requestHash, metadata, concurrency, cancellationToken, beforeSave);
-        LogEDocumentCommand("set-scenario", metadata, account.Id, result);
+        LogEDocumentCommand(logOperation, metadata, profile.Id, result);
         return result;
+    }
+
+    private Task<string?> ReadPartyTaxIdentityAsync(Guid partyId, CancellationToken cancellationToken) =>
+        dbContext.Parties.AsNoTracking()
+            .Where(party => party.Id == partyId)
+            .Select(party => party.TaxIdentityNumber)
+            .SingleOrDefaultAsync(cancellationToken);
+
+    private Task<CustomerEDocumentProfile?> FindEDocumentProfileAsync(
+        string taxIdentityNumber, bool tracking, CancellationToken cancellationToken)
+    {
+        var profiles = tracking ? dbContext.CustomerEDocumentProfiles : dbContext.CustomerEDocumentProfiles.AsNoTracking();
+        return profiles.SingleOrDefaultAsync(row => row.TaxIdentityNumber == taxIdentityNumber, cancellationToken);
+    }
+
+    internal Task<long?> ReadEDocumentProfileVersionAsync(Guid profileId, CancellationToken cancellationToken) =>
+        dbContext.CustomerEDocumentProfiles.AsNoTracking()
+            .Where(row => row.Id == profileId)
+            .Select(row => (long?)row.Version)
+            .SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>Accepts the canonical "0" (create) or a positive decimal; never a leading zero like "01".</summary>
+    private static long ParseEDocumentExpectedVersion(string? value)
+    {
+        if (value == "0")
+        {
+            return 0L;
+        }
+
+        return CounterpartyContactInformationEditor.ParseVersion(value);
     }
 
     internal static CounterpartyEDocumentStatusV1 ToContract(EDocumentStatus status) => status switch
@@ -248,29 +347,29 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         _ => throw new ArgumentException("e-Belge durumu Unknown, EInvoice veya EArchive olmalıdır.", nameof(status)),
     };
 
-    private void EnqueueAccountEDocumentAudit(
+    private void EnqueueEDocumentAudit(
         CounterpartyCommandMetadata metadata,
         PermissionScope scope,
-        CompanyPartyAccount account,
+        CustomerEDocumentProfile profile,
         string eventType,
         string operation,
-        long versionBefore,
+        long? versionBefore,
         string beforeJson,
         string reason) =>
         auditEventCollector.Enqueue(new AuditEventDraft(
             metadata.CompanyId,
             eventType,
-            "Counterparty.CompanyPartyAccount",
-            account.Id.ToString("D"),
+            EDocumentProfileEntityType,
+            profile.Id.ToString("D"),
             operation,
             versionBefore,
-            account.Version,
+            profile.Version,
             AuditActorTypes.User,
             metadata.ActorId,
             CounterpartyEDocumentPermissionsV1.Update,
             scope.RoleCodes,
             beforeJson,
-            SerializeAccountEDocumentSnapshot(account),
+            SerializeEDocumentSnapshot(profile),
             reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -283,22 +382,22 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             metadata.IdempotencyKey));
 
     private void LogEDocumentCommand(
-        string operation, CounterpartyCommandMetadata metadata, Guid accountId, CounterpartyCommandExecution result) =>
+        string operation, CounterpartyCommandMetadata metadata, Guid profileId, CounterpartyCommandExecution result) =>
         logger.LogInformation(
-            "Counterparty e-document command completed. Operation={Operation} CompanyId={CompanyId} AccountId={AccountId} CorrelationId={CorrelationId} Result={Result} IsReplay={IsReplay}",
-            operation, metadata.CompanyId, accountId, metadata.CorrelationId, result.Response.Result, result.IsReplay);
+            "Counterparty e-document command completed. Operation={Operation} CompanyId={CompanyId} ProfileId={ProfileId} CorrelationId={CorrelationId} Result={Result} IsReplay={IsReplay}",
+            operation, metadata.CompanyId, profileId, metadata.CorrelationId, result.Response.Result, result.IsReplay);
 
-    private static string SerializeAccountEDocumentSnapshot(CompanyPartyAccount account) =>
+    // The VKN is deliberately NOT written to the audit snapshot (AT-009: the number is kept out of logs); the profile
+    // is identified by its surrogate id.
+    private static string SerializeEDocumentSnapshot(CustomerEDocumentProfile profile) =>
         JsonSerializer.Serialize(new
         {
-            account.Id,
-            account.CompanyId,
-            account.PartyId,
-            EDocumentStatus = account.EDocumentStatus.ToString(),
-            account.EDocumentStatusCheckedAtUtc,
-            account.EDocumentStatusCheckedByUserId,
-            account.EInvoiceScenarioOverrideCode,
-            account.Version,
+            profile.Id,
+            EDocumentStatus = profile.EDocumentStatus.ToString(),
+            profile.EDocumentStatusCheckedAtUtc,
+            profile.EDocumentStatusCheckedByUserId,
+            profile.EInvoiceScenarioOverrideCode,
+            profile.Version,
         });
 
     private static class EDocumentResponses
@@ -311,7 +410,10 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             CounterpartyCommandResult.EInvoiceScenarioNotListed => Problem(result,
                 "e-Fatura senaryosu listede yok.",
                 "Seçilen senaryo kodu Ayarlar'daki geçerli e-Fatura senaryo listesinde yok."),
-            _ => throw new InvalidOperationException($"SAT-D102 ret sonucu değil: {result}."),
+            CounterpartyCommandResult.EDocumentTaxIdentityRequired => Problem(result,
+                "VKN/TCKN gerekli.",
+                "Müşterinin e-belge durumu VKN/TCKN'ye bağlıdır; önce cari karta geçerli bir VKN/TCKN girin."),
+            _ => throw new InvalidOperationException($"SAT-D102/119 ret sonucu değil: {result}."),
         };
 
         private static CounterpartyCommandResponse Problem(CounterpartyCommandResult result, string title, string detail) =>

@@ -79,7 +79,7 @@ public static partial class CounterpartyEndpoints
             .RequiresNonEmptyGuidPathParameter("partyId")
             .WithName("RecordCounterpartyAccountEDocumentStatusV1")
             .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
-                StatusCodes.Status409Conflict)
+                StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity)
             .Accepts<RecordCounterpartyEDocumentStatus>("application/json")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed,
@@ -87,6 +87,7 @@ public static partial class CounterpartyEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
             .ProducesErpConflict(EDocumentCommon409Codes)
+            .ProducesErpUnprocessableEntity(CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired)
             .ProducesErpAuthenticatedProblems();
 
         group.MapPut(EDocumentPath + "/scenario", async (
@@ -111,7 +112,8 @@ public static partial class CounterpartyEndpoints
             .ProducesErpConflict(EDocumentCommon409Codes)
             .ProducesErpUnprocessableEntity(
                 CounterpartyProblemCodesV1.EInvoiceScenarioCodeListMissing,
-                CounterpartyProblemCodesV1.EInvoiceScenarioNotListed)
+                CounterpartyProblemCodesV1.EInvoiceScenarioNotListed,
+                CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
     }
@@ -171,7 +173,8 @@ public static partial class CounterpartyEndpoints
         {
             CounterpartyCommandResult.NotFound => StatusCodes.Status404NotFound,
             CounterpartyCommandResult.EInvoiceScenarioCodeListMissing
-                or CounterpartyCommandResult.EInvoiceScenarioNotListed => StatusCodes.Status422UnprocessableEntity,
+                or CounterpartyCommandResult.EInvoiceScenarioNotListed
+                or CounterpartyCommandResult.EDocumentTaxIdentityRequired => StatusCodes.Status422UnprocessableEntity,
             CounterpartyCommandResult.VersionConflict
                 or CounterpartyCommandResult.IdempotencyConflict => StatusCodes.Status409Conflict,
             _ => throw new InvalidOperationException($"e-Belge komutu bu sonucu üretmez: {response.Result}."),

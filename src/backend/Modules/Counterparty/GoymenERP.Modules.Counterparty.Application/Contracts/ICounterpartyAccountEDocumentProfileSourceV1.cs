@@ -1,15 +1,18 @@
 namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 
 /// <summary>
-/// SAT-D102: the Cari owner's answer for "how is this company account invoiced electronically, and with which
-/// e-Fatura scenario on this date?" — read by consumers through this versioned port, never from the Counterparty
-/// tables. The intended consumer is the Sales invoice draft (API-32, S5 follow-up), which must refuse to prepare an
-/// e-Fatura draft until the status is known and the scenario is Resolved.
+/// SAT-D102 / SAT-D119: the Cari owner's answer for "how is this account's customer invoiced electronically, and with
+/// which e-Fatura scenario on this date?" — read by consumers through this versioned port, never from the Counterparty
+/// tables. The profile is the customer's VKN-shared record (SAT-D119): the port resolves the account to its party's
+/// VKN and returns the one group-level profile. The intended consumer is the Sales invoice draft (API-32, S5
+/// follow-up), which must refuse to prepare an e-Fatura draft until the status is known and the scenario is Resolved.
 /// <list type="bullet">
-/// <item><b>Found</b>: the account's status (Unknown is explicit — "not checked", never inferred), the check's time and
-/// checker, the customer override, and the effective scenario resolved for <c>effectiveOn</c>: the override if present
-/// and listed in the Settings code list in force, else the Settings default, else Unresolved (the Settings default
-/// starts EMPTY, SAT-D102). Settings that could not be read make the scenario <c>Unavailable</c>, never a guess.</item>
+/// <item><b>Found</b>: the customer's VKN-shared status (Unknown is explicit — "not checked" or no VKN yet, never
+/// inferred), the check's time and checker, the override, and the effective scenario resolved for <c>effectiveOn</c>:
+/// the override if present and listed in the Settings code list in force, else the Settings default, else Unresolved
+/// (the Settings default starts EMPTY, SAT-D102). <c>TaxIdentityNumberPresent</c> is false when the party has no VKN:
+/// no profile exists, so the status is Unknown and the scenario is Unresolved (fail-closed). Settings that could not
+/// be read make the scenario <c>Unavailable</c>, never a guess.</item>
 /// <item><b>NotFound</b>: no such account in the requested company.</item>
 /// <item><b>Denied</b>: the server context is not the requested company, the actor is not authenticated, or the actor
 /// lacks the company-wide <c>counterparty.parties.read</c>.</item>
@@ -46,6 +49,7 @@ public sealed record CounterpartyAccountEDocumentProfileV1(
     Guid CompanyAccountId,
     Guid PartyId,
     bool AccountIsActive,
+    bool TaxIdentityNumberPresent,
     CounterpartyEDocumentStatusV1 Status,
     DateTimeOffset? StatusCheckedAtUtc,
     string? StatusCheckedByUserId,

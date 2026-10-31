@@ -31395,6 +31395,52 @@
               "version_conflict"
             ]
           },
+          "422": {
+            "description": "Unprocessable Entity",
+            "headers": {
+              "X-ERP-Counterparty-Contract": {
+                "description": "Optional server acknowledgment, present only after the client-contract filter accepts the exact request declaration. It can accompany handler-generated errors; errors before the filter (including authentication, company resolution and body binding) may omit it. Its presence on an error is not command success or client readiness. Readiness requires a fresh, successful, validated GET with the matching acknowledgment bound to the current API origin, actor/session, selected company and generation. Absence on an error is not proof of an old server.",
+                "schema": {
+                  "pattern": "^optional-trade-roles-v1$",
+                  "type": "string"
+                }
+              },
+              "X-Correlation-Id": {
+                "description": "Server-resolved correlation identifier.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              },
+              "Idempotency-Replayed": {
+                "description": "True only when the response safely replays an earlier command result.",
+                "schema": {
+                  "type": "boolean"
+                }
+              },
+              "Idempotency-Original-Correlation-Id": {
+                "description": "Original command correlation identifier when the response is a replay.",
+                "schema": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[A-Za-z0-9._:-]+$",
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErpProblemDetailsContract"
+                }
+              }
+            },
+            "x-erp-problem-codes": [
+              "e_document_tax_identity_required"
+            ]
+          },
           "401": {
             "description": "Unauthorized",
             "headers": {
@@ -31811,6 +31857,7 @@
               }
             },
             "x-erp-problem-codes": [
+              "e_document_tax_identity_required",
               "einvoice_scenario_code_list_missing",
               "einvoice_scenario_not_listed"
             ]
@@ -76148,6 +76195,7 @@
           "companyId",
           "version",
           "accountIsActive",
+          "taxIdentityNumberPresent",
           "status",
           "statusCheckedAtUtc",
           "statusCheckedByUserId",
@@ -76175,10 +76223,13 @@
           "version": {
             "maxLength": 19,
             "minLength": 1,
-            "pattern": "^[1-9][0-9]*$",
+            "pattern": "^(0|[1-9][0-9]*)$",
             "type": "string"
           },
           "accountIsActive": {
+            "type": "boolean"
+          },
+          "taxIdentityNumberPresent": {
             "type": "boolean"
           },
           "status": {
@@ -76220,7 +76271,7 @@
             "$ref": "#/components/schemas/CounterpartyAccountEDocumentViewer"
           }
         },
-        "description": "The active company's account e-belge profile (SAT-D102). effectiveScenario is the customer override if present and listed, else the Settings default, else Unresolved; the Settings default starts empty, so Unresolved is the normal starting answer. evaluatedOn is the Europe/Istanbul business day the Settings keys were read for."
+        "description": "The account's customer VKN-shared e-belge profile (SAT-D119): a check or scenario set in one company is seen on the same-VKN customer in the others. taxIdentityNumberPresent is false when the party has no VKN (then status Unknown, scenario Unresolved). version is the shared profile version (\"0\" = none yet). effectiveScenario is the override if present and listed, else the Settings default, else Unresolved; the default starts empty, so Unresolved is the normal start. evaluatedOn is the Europe/Istanbul business day the Settings keys were read for."
       },
       "CounterpartyAccountEDocumentViewer": {
         "required": [
@@ -90408,7 +90459,7 @@
           "expectedVersion": {
             "maxLength": 19,
             "minLength": 1,
-            "pattern": "^[1-9][0-9]*$",
+            "pattern": "^(0|[1-9][0-9]*)$",
             "type": "string"
           },
           "status": {
@@ -90416,7 +90467,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Records the e-belge status a user checked for the active company's account (SAT-D102). A known status (EInvoice / EArchive) stamps the server time and the caller as the check, even when the value is unchanged; Unknown resets the status and its check. expectedVersion is the ACCOUNT version as canonical decimal TEXT. No external (GİB) call is made.",
+        "description": "Records the e-belge status a user checked for the customer's VKN-shared profile (SAT-D102 / SAT-D119). A known status (EInvoice / EArchive) stamps the server time and the caller as the check, even when the value is unchanged; Unknown resets the status and its check. expectedVersion is the shared PROFILE version as canonical decimal TEXT (\"0\" = no profile yet; the first record creates it). A party with no VKN/TCKN is 422 e_document_tax_identity_required. No external (GİB) call.",
         "x-erp-normalized-maximum-expectedVersion": "9223372036854775807"
       },
       "RecordDeliveryRequest": {
@@ -96566,7 +96617,7 @@
           "expectedVersion": {
             "maxLength": 19,
             "minLength": 1,
-            "pattern": "^[1-9][0-9]*$",
+            "pattern": "^(0|[1-9][0-9]*)$",
             "type": "string"
           },
           "scenarioCode": {
@@ -96580,7 +96631,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Sets the customer's e-Fatura scenario override to a code of the Settings scenario list in force today, or clears it with an explicit null (scenarioCode must be present). Settings without a list is 422 einvoice_scenario_code_list_missing; a code the list does not carry is 422 einvoice_scenario_not_listed; Settings that cannot be read is 503 service_unavailable (nothing stored). Re-sending the current code is a no-op.",
+        "description": "Sets the customer's e-Fatura scenario override (VKN-shared) to a code of the writing company's Settings scenario list in force today, or clears it with an explicit null (scenarioCode must be present). expectedVersion is the shared PROFILE version (\"0\" creates). Settings without a list is 422 einvoice_scenario_code_list_missing; a code the list does not carry is 422 einvoice_scenario_not_listed; Settings that cannot be read is 503 service_unavailable (nothing stored); a party with no VKN is 422 e_document_tax_identity_required. Re-sending the current code is a no-op.",
         "x-erp-normalized-maximum-expectedVersion": "9223372036854775807"
       },
       "SetEDispatchNumberRequest": {

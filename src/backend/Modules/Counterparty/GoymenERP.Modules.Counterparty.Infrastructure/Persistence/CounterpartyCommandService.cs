@@ -324,6 +324,8 @@ internal sealed partial class CounterpartyCommandService(
                     metadata.CompanyId, concurrencyContext.PartyId, cancellationToken),
                 CustomerGroupConcurrencyContext => await ReadCustomerGroupVersionAsync(
                     metadata.CompanyId, concurrencyContext.PartyId, cancellationToken),
+                EDocumentProfileConcurrencyContext => await ReadEDocumentProfileVersionAsync(
+                    concurrencyContext.PartyId, cancellationToken),
                 _ => await dbContext.CompanyPartyAccounts
                     .AsNoTracking()
                     .Where(x =>
@@ -655,6 +657,11 @@ internal sealed partial class CounterpartyCommandService(
     private sealed record CustomerGroupConcurrencyContext(
         Guid CustomerGroupId,
         long ExpectedVersion) : ConcurrencyContext(CustomerGroupId, ExpectedVersion);
+
+    /// <summary>A SAT-D119 e-belge command: fenced on the VKN-shared profile's version (the id rides in <c>PartyId</c>).</summary>
+    private sealed record EDocumentProfileConcurrencyContext(
+        Guid ProfileId,
+        long ExpectedVersion) : ConcurrencyContext(ProfileId, ExpectedVersion);
 
     private static class Responses
     {

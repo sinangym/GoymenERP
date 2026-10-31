@@ -341,10 +341,18 @@ export async function putVersionedCommand(
    * stores something else passes its own table rather than inheriting this one.
    */
   replayable: ReplayableFailures = VERSIONED_UPDATE_REPLAYABLE_FAILURES,
+  /**
+   * Some records are UPSERTS whose read reports version "0" when the row does not exist yet (the first write
+   * creates it). Such a command opts in here so "0" is an accepted fence; every other value is still a lossless
+   * positive version. The server owns the create-or-update decision; the client only carries the token.
+   */
+  allowZeroVersion = false,
 ): Promise<CommandOutcome<null>> {
   // Same write gate as every command: proven compatibility in THIS context first.
   if (!isCommandContractReady(context.contract)) return { type: 'contract-not-ready' }
-  if (!isLosslessVersion(expectedVersion)) return { type: 'unfenced' }
+  if (!(isLosslessVersion(expectedVersion) || (allowZeroVersion && expectedVersion === '0'))) {
+    return { type: 'unfenced' }
+  }
 
   const headers: Record<string, string> = {
     ...devHeaders(),

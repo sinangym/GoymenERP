@@ -337,7 +337,7 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json"),
             ParameterValues: ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
         new("put", "/api/v1/counterparties/{partyId}/company-account/e-document/status", "RecordCounterpartyAccountEDocumentStatusV1",
-            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:"),
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
             "#/components/schemas/RecordCounterpartyEDocumentStatus",
             ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
         new("put", "/api/v1/counterparties/{partyId}/company-account/e-document/scenario", "SetCounterpartyAccountEInvoiceScenarioV1",
@@ -1738,7 +1738,12 @@ public sealed partial class OpenApiContractGenerationTests
                     StatusCodes.Status422UnprocessableEntity,
                 ],
                 ["RecordCounterpartyAccountEDocumentStatusV1"] =
-                [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                [
+                    StatusCodes.Status204NoContent,
+                    StatusCodes.Status404NotFound,
+                    StatusCodes.Status409Conflict,
+                    StatusCodes.Status422UnprocessableEntity,
+                ],
                 ["SetCounterpartyAccountEInvoiceScenarioV1"] =
                 [
                     StatusCodes.Status204NoContent,
@@ -2535,12 +2540,13 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordCounterpartyAccountEDocumentStatusV1:404"] = ["not_found"],
             ["RecordCounterpartyAccountEDocumentStatusV1:409"] =
                 ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
+            ["RecordCounterpartyAccountEDocumentStatusV1:422"] = ["e_document_tax_identity_required"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:404"] = ["not_found"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:409"] =
                 ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:422"] =
-                ["einvoice_scenario_code_list_missing", "einvoice_scenario_not_listed"],
+                ["e_document_tax_identity_required", "einvoice_scenario_code_list_missing", "einvoice_scenario_not_listed"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:503"] = ["service_unavailable"],
             ["SaveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["SaveManufacturingPlanV1:409"] =
@@ -5263,14 +5269,15 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CounterpartyEInvoiceScenarioUnresolvedReasonV1"] =
                     ScalarSchema("enum:None|SettingsDefaultNotSet|CustomerOverrideNotListed"),
                 ["CounterpartyAccountEDocumentView"] = ObjectSchema(
-                    ["partyId", "accountId", "companyId", "version", "accountIsActive", "status", "statusCheckedAtUtc",
-                     "statusCheckedByUserId", "scenarioOverrideCode", "evaluatedOn", "scenarioCodes", "settingsDefault",
-                     "effectiveScenario", "viewer"],
+                    ["partyId", "accountId", "companyId", "version", "accountIsActive", "taxIdentityNumberPresent",
+                     "status", "statusCheckedAtUtc", "statusCheckedByUserId", "scenarioOverrideCode", "evaluatedOn",
+                     "scenarioCodes", "settingsDefault", "effectiveScenario", "viewer"],
                     ("partyId", "type:string;format:uuid"),
                     ("accountId", "type:string;format:uuid"),
                     ("companyId", "type:string;format:uuid"),
                     ("version", "type:string"),
                     ("accountIsActive", "type:boolean"),
+                    ("taxIdentityNumberPresent", "type:boolean"),
                     ("status", "ref:CounterpartyEDocumentStatusV1"),
                     ("statusCheckedAtUtc", "type:null|string;format:date-time"),
                     ("statusCheckedByUserId", "type:null|string"),

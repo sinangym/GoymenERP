@@ -102,6 +102,9 @@ public enum CounterpartyCommandResult
 
     /// <summary>SAT-D102: the scenario code is not in the Settings list in force for the company (422).</summary>
     EInvoiceScenarioNotListed = 19,
+
+    /// <summary>SAT-D119: the party has no VKN/TCKN, so no VKN-keyed e-belge profile can exist (422).</summary>
+    EDocumentTaxIdentityRequired = 20,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -151,6 +154,9 @@ public static class CounterpartyProblemCodesV1
 
     public const string EInvoiceScenarioNotListed = "einvoice_scenario_not_listed";
 
+    /// <summary>SAT-D119: no VKN/TCKN on the party, so the shared e-belge profile cannot be recorded.</summary>
+    public const string EDocumentTaxIdentityRequired = "e_document_tax_identity_required";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -172,6 +178,7 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.CustomerGroupInactive => CustomerGroupInactive,
             CounterpartyCommandResult.EInvoiceScenarioCodeListMissing => EInvoiceScenarioCodeListMissing,
             CounterpartyCommandResult.EInvoiceScenarioNotListed => EInvoiceScenarioNotListed,
+            CounterpartyCommandResult.EDocumentTaxIdentityRequired => EDocumentTaxIdentityRequired,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };

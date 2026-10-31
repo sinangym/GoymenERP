@@ -10,8 +10,9 @@ const profile = (over: Record<string, unknown> = {}) => ({
   partyId: PARTY,
   accountId: ACCOUNT,
   companyId: COMPANY,
-  version: '1',
+  version: '0',
   accountIsActive: true,
+  taxIdentityNumberPresent: true,
   status: 'Unknown',
   statusCheckedAtUtc: null,
   statusCheckedByUserId: null,
@@ -25,11 +26,26 @@ const profile = (over: Record<string, unknown> = {}) => ({
 })
 
 describe('SAT-D102 e-belge profile decoder', () => {
-  it('accepts the starting answer: Unknown, no list, no default, unresolved', () => {
+  it('accepts the starting answer: version 0, Unknown, no default, unresolved', () => {
     const decoded = decodeAccountEDocumentProfile(profile(), expected)
+    expect(decoded?.version).toBe('0')
     expect(decoded?.status).toBe('Unknown')
-    expect(decoded?.scenarioCodes).toEqual({ state: 'NotSet', codes: [] })
+    expect(decoded?.taxIdentityNumberPresent).toBe(true)
     expect(decoded?.effectiveScenario.outcome).toBe('Unresolved')
+  })
+
+  it('accepts a customer with no VKN (status Unknown, version 0)', () => {
+    const decoded = decodeAccountEDocumentProfile(profile({ taxIdentityNumberPresent: false }), expected)
+    expect(decoded?.taxIdentityNumberPresent).toBe(false)
+    expect(decoded?.version).toBe('0')
+  })
+
+  it('accepts a shared profile at a positive version', () => {
+    const decoded = decodeAccountEDocumentProfile(
+      profile({ version: '3', scenarioCodes: { state: 'Set', codes: ['TEMELFATURA'] } }),
+      expected,
+    )
+    expect(decoded?.version).toBe('3')
   })
 
   it('accepts a recorded check with a listed override', () => {
@@ -65,6 +81,8 @@ describe('SAT-D102 e-belge profile decoder', () => {
       { effectiveScenario: { outcome: 'Resolved', source: 'SettingsDefault', scenarioCode: null, unresolvedReason: 'None' } },
     ],
     ['a missing viewer', { viewer: null }],
+    ['a missing taxIdentityNumberPresent', { taxIdentityNumberPresent: undefined }],
+    ['a non-canonical version', { version: '01' }],
   ])('refuses %s', (_name, over) => {
     expect(decodeAccountEDocumentProfile(profile(over), expected)).toBeNull()
   })

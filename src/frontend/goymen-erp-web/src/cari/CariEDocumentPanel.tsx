@@ -155,7 +155,11 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
         </dd>
       </dl>
 
-      {profile.viewer.canUpdate ? (
+      {!profile.taxIdentityNumberPresent ? (
+        <p className={styles.notice} data-no-tax-identity role="note">
+          {T.noTaxIdentity}
+        </p>
+      ) : profile.viewer.canUpdate ? (
         <form className={styles.form} onSubmit={(event) => void submitStatus(event)} aria-busy={command.busy}>
           <label htmlFor={statusSelectId}>{T.statusSelectLabel}</label>
           <select
@@ -203,7 +207,7 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
       </dl>
       <p className={styles.muted}>{T.evaluatedOn(profile.evaluatedOn)}</p>
 
-      {profile.viewer.canUpdate ? (
+      {profile.viewer.canUpdate && profile.taxIdentityNumberPresent ? (
         profile.scenarioCodes.state === 'Unavailable' ? (
           <p className={styles.error} role="alert">
             {T.codeListUnavailable}

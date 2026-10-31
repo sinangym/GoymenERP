@@ -45,8 +45,9 @@ const profile = (over: Record<string, unknown> = {}) => ({
   partyId: PARTY,
   accountId: ACCOUNT,
   companyId: COMPANY,
-  version: '1',
+  version: '0',
   accountIsActive: true,
+  taxIdentityNumberPresent: true,
   status: 'Unknown',
   statusCheckedAtUtc: null,
   statusCheckedByUserId: null,
@@ -124,6 +125,14 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
     expect(calls[0].headers['X-Company-Id']).toBe(COMPANY)
   })
 
+  it('shows the no-VKN note and offers no forms when the customer has no tax identity', async () => {
+    install(() => json(profile({ taxIdentityNumberPresent: false, scenarioCodes: listed })))
+    renderPanel()
+    expect(await screen.findByText(T.noTaxIdentity)).toBeTruthy()
+    expect(screen.queryByLabelText(T.statusSelectLabel)).toBeNull()
+    expect(screen.queryByLabelText(T.scenarioSelectLabel)).toBeNull()
+  })
+
   it('records a status check with one key and the account version, then reads again', async () => {
     let recorded = false
     const calls = install((call) => {
@@ -134,9 +143,9 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
       return json(
         recorded
           ? profile({
-              version: '2',
+              version: '1',
               status: 'EInvoice',
-              statusCheckedAtUtc: '2026-10-29T07:30:00+00:00',
+              statusCheckedAtUtc: '2026-10-31T07:30:00+00:00',
               statusCheckedByUserId: 'actor-a',
             })
           : profile(),
@@ -150,7 +159,7 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
     expect(await screen.findByText(T.statusRecorded)).toBeTruthy()
     const [put] = puts(calls)
     expect(put.url).toBe(`${PROFILE_URL}/status`)
-    expect(put.body).toEqual({ status: 'EInvoice', expectedVersion: '1' })
+    expect(put.body).toEqual({ status: 'EInvoice', expectedVersion: '0' })
     expect(put.headers['Idempotency-Key']).toMatch(/^[0-9a-f]{32}$/)
     await waitFor(() => expect(screen.getByText(T.status.EInvoice, { selector: 'dd' })).toBeTruthy())
     expect(screen.getByText(/actor-a/)).toBeTruthy()
@@ -168,7 +177,7 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
         override === null
           ? profile({ scenarioCodes: listed })
           : profile({
-              version: '2',
+              version: '1',
               scenarioCodes: listed,
               scenarioOverrideCode: override,
               effectiveScenario: { outcome: 'Resolved', source: 'CustomerOverride', scenarioCode: override, unresolvedReason: 'None' },
@@ -186,13 +195,13 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
     await user.selectOptions(select, 'CODE_B')
     await user.click(screen.getByRole('button', { name: T.saveScenario }))
     expect(await screen.findByText(T.scenarioSaved)).toBeTruthy()
-    expect(puts(calls)[0]).toMatchObject({ url: `${PROFILE_URL}/scenario`, body: { scenarioCode: 'CODE_B', expectedVersion: '1' } })
+    expect(puts(calls)[0]).toMatchObject({ url: `${PROFILE_URL}/scenario`, body: { scenarioCode: 'CODE_B', expectedVersion: '0' } })
     expect(await screen.findByText(T.effectiveFromOverride('CODE_B'))).toBeTruthy()
 
     await user.selectOptions(screen.getByLabelText(T.scenarioSelectLabel), '')
     await user.click(screen.getByRole('button', { name: T.saveScenario }))
     expect(await screen.findByText(T.scenarioCleared)).toBeTruthy()
-    expect(puts(calls)[1].body).toEqual({ scenarioCode: null, expectedVersion: '2' })
+    expect(puts(calls)[1].body).toEqual({ scenarioCode: null, expectedVersion: '1' })
   })
 
   it('keeps an override the list no longer carries visible and marked, and says the scenario is unresolved', async () => {
