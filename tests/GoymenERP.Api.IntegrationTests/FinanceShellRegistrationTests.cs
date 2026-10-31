@@ -90,6 +90,9 @@ public sealed class FinanceShellRegistrationTests
                 // No 30 / SAT-D12: the force-close control of the detail.
                 (SalesShellCapabilityProvider.ForceCloseCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersForceClose}"),
+                // API-04: the header-revision control of the detail.
+                (SalesShellCapabilityProvider.HeaderWriteCapabilityId, SalesShellCapabilityProvider.DetailCapabilityId,
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersHeaderWrite}"),
                 (SalesShellCapabilityProvider.PriceFloorExceptionApproveCapabilityId,
                     SalesShellCapabilityProvider.DetailCapabilityId,
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove}"),

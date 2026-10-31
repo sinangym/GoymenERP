@@ -72,6 +72,12 @@ internal sealed class DraftRow : ISalesTenantRow
     public Guid? PackageId { get; set; }
     public string? PackageVersion { get; set; }
 
+    /// <summary>API-04 (SAT-D27): the Identity user who is the order's sales owner; null = none. Set or changed only by a header revision.</summary>
+    public Guid? SalesOwnerUserId { get; set; }
+
+    /// <summary>API-04 (DEC-SAL-008): the order's due terms as JSON (<c>SalesDueTermsJson</c>); null = none. Set or changed only by a header revision.</summary>
+    public string? DueTermsJson { get; set; }
+
     public string MoneyOperation { get; set; } = string.Empty;
     public Guid MoneyProfileId { get; set; }
     public string MoneyProfileVersion { get; set; } = string.Empty;
@@ -205,6 +211,27 @@ internal sealed class DraftRevisionRow : ISalesTenantRow
 
     /// <summary>DEC-SAL-002: why this approved revision was superseded (the quantity revision's reason); null when a price revision archived it.</summary>
     public string? Reason { get; set; }
+}
+
+/// <summary>
+/// API-04 (DEC-SAL-002): the header of an archived approved revision as it was approved — customer (party + account), currency,
+/// delivery address and contact references, sales owner and due terms. One per archived revision (the migration backfilled the
+/// archives written before it from the then never-revised header). Append-only, never changed.
+/// </summary>
+internal sealed class DraftRevisionHeaderRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public Guid PartyId { get; set; }
+    public Guid CompanyAccountId { get; set; }
+    public Guid CurrencyId { get; set; }
+    public Guid? DeliveryAddressId { get; set; }
+    public string? DeliveryAddressVersion { get; set; }
+    public Guid? ContactId { get; set; }
+    public string? ContactVersion { get; set; }
+    public Guid? SalesOwnerUserId { get; set; }
+    public string? DueTermsJson { get; set; }
 }
 
 /// <summary>A line of an archived approved revision: identity, quantity text and the commercial fields exactly as they were. Append-only.</summary>

@@ -111,6 +111,7 @@ import { SalesDraftLinePricing } from './SalesDraftLinePricing'
 import { SalesDraftPriceFloorApproval } from './SalesDraftPriceFloorApproval'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm'
+import { SalesDraftHeaderRevisionForm } from './SalesDraftHeaderRevisionForm'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
@@ -275,13 +276,23 @@ export function SalesDraftDetailPage() {
       }
       quantityRevision={
         companyId === null ? null : (
-          <SalesDraftQuantityRevisionForm
-            key={`quantity:${namespace ?? ''}:${outcome.data.draft.id}`}
-            shell={shell}
-            detail={outcome.data}
-            companyId={companyId}
-            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
-          />
+          <>
+            <SalesDraftQuantityRevisionForm
+              key={`quantity:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
+            {/* API-04: the header revision beside the quantity revision (its own control). */}
+            <SalesDraftHeaderRevisionForm
+              key={`header:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
+          </>
         )
       }
       deliverySchedule={

@@ -86,7 +86,13 @@ public sealed record ApprovalFacts(
 /// </summary>
 public sealed record CustomerAcceptanceFacts(int Revision, string AcceptedBy, DateTimeOffset AcceptedAtUtc);
 
-/// <summary>The header facts of a draft as the client sent them; identities only, validated by their owners at command time.</summary>
+/// <summary>
+/// The header facts of a draft as the client sent them; identities only, validated by their owners at command time.
+/// API-04 (DEC-SAL-002, DEC-SAL-008): <see cref="DueTerms"/> is the order's own due-terms snapshot (the "vade modeli"; null =
+/// none, never a default) and <see cref="SalesOwnerUserId"/> the Identity user who is the order's sales owner (SAT-D27); both
+/// are set or changed only by <see cref="SalesOrderDraft.ReviseHeader"/>. The older <see cref="PaymentTerms"/> /
+/// <see cref="Responsible"/> owner references stay refused at create (no owner port) and are not used.
+/// </summary>
 public sealed record SalesDraftHeader(
     Guid PartyId,
     Guid CompanyAccountId,
@@ -99,7 +105,9 @@ public sealed record SalesDraftHeader(
     OwnerReference? Responsible = null,
     OwnerReference? PaymentTerms = null,
     OwnerReference? SourceStrategy = null,
-    OwnerReference? Package = null);
+    OwnerReference? Package = null,
+    SalesDueTerms? DueTerms = null,
+    Guid? SalesOwnerUserId = null);
 
 /// <summary>Everything a line needs at <see cref="SalesOrderDraft.AddLine"/>; the owner snapshots come from the ports, the rest from the client.</summary>
 public sealed record SalesDraftLineInput(
@@ -249,7 +257,8 @@ public sealed partial class SalesOrderDraft
     public IReadOnlyList<DeliveryScheduleSnapshot> DeliveryScheduleHistory =>
         [originalSchedule ?? CurrentSchedule(0, null, null), .. deliverySchedules];
 
-    public MoneyProfileSnapshot Money { get; }
+    /// <summary>The Settings money profile of the order's currency on its business date; a header revision of the currency replaces it (API-04).</summary>
+    public MoneyProfileSnapshot Money { get; private set; }
 
     public DateTimeOffset CreatedAtUtc { get; }
 
@@ -921,7 +930,8 @@ public sealed partial class SalesOrderDraft
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
                 now.ToUniversalTime(), actor,
                 [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
-                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))]);
+                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
+                Header: CurrentHeaderSnapshot());
             archivedRevisions.Add(archived);
             Revision += 1;
             ApprovalState = InternalApprovalState.Preparing;
@@ -1120,7 +1130,7 @@ public sealed partial class SalesOrderDraft
                 now.ToUniversalTime(), actor,
                 [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
                     line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
-                trimmedReason);
+                trimmedReason, CurrentHeaderSnapshot());
             archivedRevisions.Add(archived);
             Revision += 1;
             ApprovalState = InternalApprovalState.Preparing;

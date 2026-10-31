@@ -794,7 +794,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         // The sales schema's tables, by name: no money, no stock, no shipment table exists here for a withdrawal to touch.
         var tables = await run.ScalarAsync<string>(
             "SELECT STRING_AGG([name], N',') WITHIN GROUP (ORDER BY [name]) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND [name] <> N'__EFMigrationsHistory'");
-        Assert.Equal("DocumentCounters,DraftAttempts,DraftCancellations,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftForceClosures,DraftLines,DraftNumbers,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionLines,DraftRevisions,Drafts,QuoteAttempts,QuoteExpiryApprovals,QuoteLines,QuoteRequests,QuoteRevisions,Quotes,RequestAttempts,RequestLines,Requests", tables);
+        Assert.Equal("DocumentCounters,DraftAttempts,DraftCancellations,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftForceClosures,DraftLines,DraftNumbers,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionHeaders,DraftRevisionLines,DraftRevisions,Drafts,QuoteAttempts,QuoteExpiryApprovals,QuoteLines,QuoteRequests,QuoteRevisions,Quotes,RequestAttempts,RequestLines,Requests", tables);
         async Task<(int Drafts, int Lines, int Slices, int Numbers, int Revisions, int RevisionLines)> QuietCountsAsync() => (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [CompanyId] = @c", ("@c", CompanyA)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [CompanyId] = @c", ("@c", CompanyA)),
@@ -1482,7 +1482,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     private static void AssertRevisionChangeSet(IReadOnlyList<SaveRecorder.Entry> save)
     {
         Assert.Equal(
-            ["AuditEvent:Added", "DraftAttemptRow:Added", "DraftLineRow:Modified", "DraftRevisionLineRow:Added", "DraftRevisionRow:Added", "DraftRow:Modified"],
+            ["AuditEvent:Added", "DraftAttemptRow:Added", "DraftLineRow:Modified", "DraftRevisionHeaderRow:Added", "DraftRevisionLineRow:Added", "DraftRevisionRow:Added", "DraftRow:Modified"],
             save.Select(entry => $"{entry.Entity}:{entry.State}").Order(StringComparer.Ordinal));
         // The header's modified set, EXACTLY (both directions, as the line below): Approved → Preparing clears the four approval
         // facts, the revision counter and the version advance, the timestamp moves; RejectionReason stays null (not modified)

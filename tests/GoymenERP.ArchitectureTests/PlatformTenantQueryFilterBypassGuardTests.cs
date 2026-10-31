@@ -350,8 +350,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D103 / SAT-D104 / SAT-D111 / SAT-D112 (EK13, EK14), merged over #849's quote facts: the quantity revision's "a
             // loading line blocks" fact replaced by the shipped/loaded floor and re-approval cap fact, +1 price re-approval fact,
             // +1 rejected decrease resubmission fact (K3-REVIEW-B P1-1), kept ordinal-sorted (2b0ee4d9… -> ece55741…).
+            // API-04: +4 header revision facts (route + one save, customer/currency through the store, isolation/authority,
+            // migration backfill and 51133 rollback refusal), kept ordinal-sorted (ece55741… -> dbddfceb…).
             ["tools/relational_inventory/sales.txt"] =
-                "ece557412bf412ae5f8be947fdef08df7c2e50bebcdf0442707c0a607e329159",
+                "dbddfceb757b4e0588656c456441505823bf88175a16e0a4840505603cfd528f",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -436,9 +438,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for SAT-D24/D44 and SAT-D25: the company-filtered QuoteExpiryApprovals table (company-leading
             // key and FK to the quote revision, append-only in the write guard), the nullable list-reason snapshot on Quotes and
             // the widened CK_Quotes_Lifecycle / CK_QuoteAttempts_Command; no query-filter bypass or direct database surface.
+            // Re-fingerprinted for API-04: the company-filtered DraftRevisionHeaders table (company-leading key and FK to the archived
+            // revision, append-only in the write guard), two nullable header columns with CK_Drafts_HeaderRevision, and the
+            // header's write guard widened by exactly the revisable header columns; no query-filter bypass or direct database surface.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "028658c63b5804aa8f0a580479e0648fd2884d7f6570aed60ce5019b029fe207",
+                "31067bc68e4029659a2cb20db7db8bd33accd1b5d3b4be252a7261bb17f7f24a",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1355,8 +1360,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // and the named service factory (DI-only, the owner ports optional); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D63 (limit-group source) merged over SAT-D25 / SAT-D39 (the draft service also
                     // receives the optional Settings quote policy port, DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for API-04: the draft service also receives the optional Identity directory adapters (the
+                    // sales owner's display and eligibility, DI-only); the provider branch and its token counts are unchanged.
                     new(
-                        "dd90dbd593384dd7bda252031ff8ebfabfa0f1653f6b22cf202c5e92e8f82052",
+                        "a3736abb404247b35b225ebb4a665c7b3556feb3606c0b87edd481c685125e75",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1394,8 +1401,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for SAT-D72 (EK12): the cancellation's one save also deactivates its source quote's active
                     // request links (tracked through the same filtered context, IsActive 1 -> 0 only); no connection, command, raw
                     // SQL or filter-bypass API; SqlClient count unchanged.
+                    // Re-fingerprinted for API-04: the archive write is shared by the line revisions and the header revision
+                    // (SalesStore.HeaderRevision.cs, same filtered context, one save) and every archive writes its header row;
+                    // the restore reads those rows through the same filtered context; SqlClient count unchanged.
                     new(
-                        "8102573a0ed7a42ca9952cff9263abd594c4fb77ddb1f6eeb9ef36bf3f282d6a",
+                        "b8e6b25024d3ecbfc1ee1fdccaaf173755a67eccabf6e2ef4816686603a1bbaa",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1870,6 +1880,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("d89c457fd4f0abae21736f09ad6dd79023c266301bcbbe0875c8818b9065f739",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
+                // API-04: two raw SQL calls — Up's one-statement backfill of DraftRevisionHeaders from the (never revised) draft
+                // headers of the archives written before it, and Down's refusal (51133, used by no other migration) while a header
+                // revision was recorded or any draft carries a sales owner or due terms; the THROW precedes every drop. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261031131127_AddDraftHeaderRevisions.cs"] =
+                    new("d2f0eb7e622945e26ebe3de8328fc8fd64d7e39248b6a209a72592fb0ed470b6",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 2 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

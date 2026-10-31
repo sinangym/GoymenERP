@@ -61,7 +61,9 @@ public sealed partial class SalesDraftService(
     ISettingsSalesPolicyProviderV1? salesPolicies = null,
     ISalesDiscountLimitGroupSourceV1? discountLimitGroups = null,
     ISalesPartyRiskReadPortV1? partyRisk = null,
-    ISettingsSalesQuotePolicyProviderV1? quotePolicies = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
+    ISettingsSalesQuotePolicyProviderV1? quotePolicies = null,
+    ISalesUserDisplaySourceV1? userDisplays = null,
+    ISalesOwnerCandidateSourceV1? salesOwners = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -933,6 +935,12 @@ public sealed partial class SalesDraftService(
             await RequireReapprovalFloorAsync(scope, permission, current, expectedVersion, commandName, cancellationToken);
         }
 
+        // API-04 (fail-closed): a pending customer or currency change is approved only while no owner record names the order.
+        if (commandName == SalesDraftCommands.ApproveV1)
+        {
+            await RequireHeaderReapprovalClearAsync(scope, permission, current, expectedVersion, cancellationToken);
+        }
+
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
@@ -1247,15 +1255,36 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
         }
 
-        var answer = await GuardedAsync(scope, bindings.CreatePermission,
-            () => contactInformation.GetContactInformationAsync(request.PartyId, request.CompanyAccountId, cancellationToken), cancellationToken);
+        return await ReadContactReferencesAsync(scope, bindings.CreatePermission, request.PartyId, request.CompanyAccountId,
+            request.DeliveryAddress, request.Contact,
+            refusal => TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash, refusal, cancellationToken, commandName),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The SALES-A2a contact-information read of one party account under <paramref name="permission"/>: each named reference must
+    /// be an ACTIVE address / contact of that account at the owner's version (422 <c>owner_reference_invalid</c> otherwise; a
+    /// stale version is the key's terminal 409 through <paramref name="terminal"/>). The create's rules, shared with the API-04
+    /// header revision. The port must be composed (503 otherwise).
+    /// </summary>
+    private async Task<OwnerReferences> ReadContactReferencesAsync(Scope scope, string? permission, Guid partyId, Guid companyAccountId,
+        SalesDraftOwnerReferenceV1? requestedAddress, SalesDraftOwnerReferenceV1? requestedContact,
+        Func<SalesDraftTerminalRefusal, Task<SalesDraftServiceException>> terminal, CancellationToken cancellationToken)
+    {
+        if (contactInformation is null)
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+        }
+
+        var answer = await GuardedAsync(scope, permission,
+            () => contactInformation.GetContactInformationAsync(partyId, companyAccountId, cancellationToken), cancellationToken);
         SalesPartyContactInformationV1 information;
         switch (answer.Outcome)
         {
             case SalesPartyContactInformationOutcomeV1.Found when answer.Information is { } found:
                 // The account read already bound the account to this company; an answer for another party, account or
                 // company here is the provider contradicting itself, not the user's input: 503, never a user error.
-                if (found.PartyId != request.PartyId || found.CompanyAccountId != request.CompanyAccountId
+                if (found.PartyId != partyId || found.CompanyAccountId != companyAccountId
                     || found.CompanyId != scope.CompanyId)
                 {
                     throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
@@ -1274,9 +1303,9 @@ public sealed partial class SalesDraftService(
 
         var invalid = new List<SalesDraftFieldError>();
         var stale = new List<SalesDraftFieldError>();
-        var deliveryAddress = Resolve("deliveryAddress", request.DeliveryAddress,
+        var deliveryAddress = Resolve("deliveryAddress", requestedAddress,
             information.Addresses.Select(address => (address.Id, address.Version, address.IsActive)), invalid, stale);
-        var contact = Resolve("contact", request.Contact,
+        var contact = Resolve("contact", requestedContact,
             information.Contacts.Select(person => (person.Id, person.Version, person.IsActive)), invalid, stale);
         if (invalid.Count > 0)
         {
@@ -1285,8 +1314,7 @@ public sealed partial class SalesDraftService(
 
         if (stale.Count > 0)
         {
-            throw await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash,
-                new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale), cancellationToken, commandName);
+            throw await terminal(new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale));
         }
 
         return new OwnerReferences(deliveryAddress, contact);

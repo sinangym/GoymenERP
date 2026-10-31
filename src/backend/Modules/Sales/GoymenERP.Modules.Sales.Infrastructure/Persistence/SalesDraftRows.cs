@@ -57,6 +57,8 @@ internal static class SalesDraftRows
             SourceStrategyVersion = header.SourceStrategy?.ExpectedVersion,
             PackageId = header.Package?.Id,
             PackageVersion = header.Package?.ExpectedVersion,
+            SalesOwnerUserId = header.SalesOwnerUserId,
+            DueTermsJson = SalesDueTermsJson.Serialize(header.DueTerms),
             SourceQuoteId = sourceQuoteId,
             SourceQuoteRevision = sourceQuoteRevision,
             MoneyOperation = money.Operation,

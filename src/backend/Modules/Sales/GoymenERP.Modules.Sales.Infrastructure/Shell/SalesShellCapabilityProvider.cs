@@ -6,7 +6,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// <summary>
 /// Publishes the three Sales draft screens of #260 (S-02 list, S-03 create, S-04 detail) — and, since shell contract 1.8,
 /// the six S-01 request / quote pool screens of UI-20 with their controls, and since 1.9 the S-07 dispatch list and the S-08
-/// invoice candidates (UI-60 / UI-61) — to the
+/// invoice candidates (UI-60 / UI-61), and since 1.11 the header-revision control of the detail (API-04) — to the
 /// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
@@ -24,7 +24,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.10";
+    public const string OwnerContractVersion = "1.11";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -67,6 +67,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     /// schedule and cancel never confer it (shell contract 1.4).
     /// </summary>
     public const string QuantityWriteCapabilityId = "sales.orders.quantity.write";
+
+    /// <summary>
+    /// API-04 (DEC-SAL-002, DEC-SAL-008): the header-revision CONTROL of the S-04 detail (read + the header-write name) —
+    /// customer account, currency, due terms, sales owner and delivery references. Create, approve, price, quantity, schedule
+    /// and cancel never confer it (shell contract 1.11).
+    /// </summary>
+    public const string HeaderWriteCapabilityId = "sales.orders.header.write";
 
     /// <summary>Q9: records customer acceptance of the current approved revision; a child control of S-04.</summary>
     public const string CustomerAcceptanceRecordCapabilityId = "sales.orders.customer-acceptance.record";
@@ -222,6 +229,13 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             CapabilityId = QuantityWriteCapabilityId,
             ParentCapabilityId = DetailCapabilityId,
             RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersQuantityWrite],
+        },
+        // API-04: the header revision is a control of the detail, like the quantity revision.
+        detail with
+        {
+            CapabilityId = HeaderWriteCapabilityId,
+            ParentCapabilityId = DetailCapabilityId,
+            RequiredPermissions = [SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersHeaderWrite],
         },
         detail with
         {

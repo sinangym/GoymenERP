@@ -160,9 +160,9 @@ public sealed class SalesOrderDraftApprovalTests
         // DEC-SAL-005: the cancellation of an approved order is a mutation entry too (RequireCancellable only reads);
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads); No 30: so is the force-close
         // (RequireForceClosable only reads).
-        // SAT-D2 / API-12: so is the discount exception approval.
+        // SAT-D2 / API-12: so is the discount exception approval. API-04: so is the header revision (RequireHeaderRevisable only reads).
         Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "ForceClose", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
-            "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseQuantities", "Submit", "Withdraw"], entries);
+            "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
         draft.Withdraw(2, Preparer, "SENTETIK", T0);
@@ -196,6 +196,9 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ApproveRemainderChange(3, 1,
             new RemainderFloor(1m, 1m, 1m), Approver, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RejectRemainderChange(3, 1, Approver, "SENTETIK", T0)));
+        // API-04: a withdrawn draft's header does not move.
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseHeader(3, new SalesHeaderRevisionInput(draft.Header.PartyId,
+            draft.Header.CompanyAccountId, draft.Header.CurrencyId, null, null, null, Guid.NewGuid(), null), "synthetic-reviser", "SENTETIK", T0)));
         Assert.Equal(before, (draft.ApprovalState, draft.Version, draft.Revision, draft.Approval, draft.Lines.Count, draft.Lines[0].Commercial));
         Assert.Equal(InternalApprovalState.Withdrawn, draft.ApprovalState);
     }

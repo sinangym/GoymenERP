@@ -58,6 +58,13 @@ export const SALES_FORCE_CLOSE_CAPABILITY = 'sales.orders.force-close' as const
  */
 export const SALES_QUANTITY_WRITE_CAPABILITY = 'sales.orders.quantity.write' as const
 
+/**
+ * API-04 (DEC-SAL-002, DEC-SAL-008): the header-revision CONTROL on S-04 ("Başlığı revize et": customer account, currency, due
+ * terms, sales owner, delivery address and contact). The shell publishes it only to an actor holding
+ * `sales.orders.header.write` beside the read; create, approve, price, quantity, schedule and cancel never confer it.
+ */
+export const SALES_HEADER_WRITE_CAPABILITY = 'sales.orders.header.write' as const
+
 export type SalesCapabilityId =
   | (typeof SALES_CAPABILITY)[keyof typeof SALES_CAPABILITY]
   | typeof SALES_PRICE_WRITE_CAPABILITY
@@ -66,6 +73,7 @@ export type SalesCapabilityId =
   | typeof SALES_CANCEL_CAPABILITY
   | typeof SALES_FORCE_CLOSE_CAPABILITY
   | typeof SALES_QUANTITY_WRITE_CAPABILITY
+  | typeof SALES_HEADER_WRITE_CAPABILITY
   | typeof SALES_CUSTOMER_ACCEPTANCE_RECORD_CAPABILITY
 
 export const SALES_ROUTE = {

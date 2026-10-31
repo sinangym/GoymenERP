@@ -209,10 +209,22 @@ public sealed record RevisionLineSnapshot(
 /// they were. The previous approved snapshot is never deleted; the draft goes on as the next revision.
 /// DEC-SAL-002: a quantity revision archives the same way; <see cref="Reason"/> is WHY this approved revision was
 /// superseded — required by the quantity revision, null for a price revision (which carries no reason member).
+/// API-04 (DEC-SAL-002): <see cref="Header"/> is the header the approved revision was approved with (customer, currency, delivery
+/// references, sales owner, due terms); every archive written since <c>AddDraftHeaderRevisions</c> carries it, and the migration
+/// backfilled the older archives from the then never-revised header. Null only on a hand-built snapshot (unit tests).
 /// </summary>
 public sealed record ApprovedRevisionSnapshot(
     int Revision, ApprovalFacts Approval, Guid MoneyProfileId, string MoneyProfileVersion, int MoneyScale,
-    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines, string? Reason = null);
+    DateTimeOffset ArchivedAtUtc, string ArchivedBy, IReadOnlyList<RevisionLineSnapshot> Lines, string? Reason = null,
+    RevisionHeaderSnapshot? Header = null);
+
+/// <summary>
+/// API-04: the header of an approved revision as it was approved — the customer (party + account), the currency, the delivery
+/// address and contact references, the sales owner and the due terms (DEC-SAL-008). Append-only beside the archived revision.
+/// </summary>
+public sealed record RevisionHeaderSnapshot(
+    Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, OwnerReference? DeliveryAddress, OwnerReference? Contact,
+    Guid? SalesOwnerUserId, SalesDueTerms? DueTerms);
 
 /// <summary>DEC-SAL-003: one slice's new requested delivery date, addressed by the slice id the line already carries.</summary>
 public sealed record SliceScheduleInput(Guid SliceId, DateOnly RequestedDeliveryDate);

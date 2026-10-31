@@ -1,0 +1,221 @@
+namespace GoymenERP.Modules.Sales.Domain.Drafts;
+
+/// <summary>
+/// API-04: the header values a header revision sets — every member is the NEW value (a full replacement; an unchanged member
+/// repeats the current one). <see cref="Money"/> is the Settings money profile of <see cref="CurrencyId"/> on the order's
+/// business date, given exactly when the currency changes. A null reference / owner / terms clears it.
+/// </summary>
+public sealed record SalesHeaderRevisionInput(
+    Guid PartyId,
+    Guid CompanyAccountId,
+    Guid CurrencyId,
+    MoneyProfileSnapshot? Money,
+    OwnerReference? DeliveryAddress,
+    OwnerReference? Contact,
+    Guid? SalesOwnerUserId,
+    SalesDueTerms? DueTerms);
+
+public sealed partial class SalesOrderDraft
+{
+    /// <summary>
+    /// DEC-SAL-002 (KILITLI, K0, verbatim): "Cari, ürün, miktar, fiyat, iskonto, para, vade ve risk istisnası değişirse yeni
+    /// revizyon ve yeniden onay gerekir." — "Rev.0 korunur". API-04 (SATIS_HAZIRLIK_PLANI_v1 §3.1): the header revision of the
+    /// customer account, the currency, the due terms (DEC-SAL-008 "vade"), the sales owner and the delivery information
+    /// (address, contact), with a required reason. The quantity revision's shape, step for step:
+    /// <list type="bullet">
+    /// <item>From <c>Preparing</c> or <c>Rejected</c> the header simply changes (nothing approved is touched; the revision number
+    /// stays). From <c>Approved</c> the approved revision is archived FIRST — its approval facts, money profile, lines and now
+    /// its HEADER as approved, with the reason — and only then does the draft advance to the next revision, back to
+    /// <c>Preparing</c>; the existing submit/approve commands re-approve it (SAT-D103 machinery, unchanged). <c>PendingApproval</c>,
+    /// <c>Withdrawn</c> and a cancelled or closed order are refused (<see cref="SalesRuleCodes.StateConflict"/>).</item>
+    /// <item>Every changed field re-enters approval — also the sales owner and the delivery references, which DEC-SAL-002 does
+    /// not list: whether those could change without re-approval is not decided (NEEDS-SINAN), so the stricter reading holds.</item>
+    /// <item>Customer or currency (fail-closed, NEEDS-SINAN): refused while any line is priced
+    /// (<see cref="SalesRuleCodes.HeaderRevisionPricedLines"/>); a currency change brings the new currency's money profile on the
+    /// order's business date (the create's money rules). Whether the order's owner records (allocations, loading, dispatch)
+    /// allow it is the caller's read, made BEFORE this runs.</item>
+    /// <item>A revision that changes nothing is refused (<see cref="SalesRuleCodes.RevisionNoChange"/>): an approval is never
+    /// discarded for nothing. Due terms compare by value (<see cref="SalesDueTerms.SameTerms"/>).</item>
+    /// </list>
+    /// Returns the archived snapshot when one was made (the store persists it in the same save), else null.
+    /// </summary>
+    public ApprovedRevisionSnapshot? ReviseHeader(long expectedVersion, SalesHeaderRevisionInput input, string actorId, string? reason,
+        DateTimeOffset now)
+    {
+        var actor = RequireActor(actorId);
+        var trimmedReason = RequireHeaderRevisable(expectedVersion, reason);
+        ArgumentNullException.ThrowIfNull(input);
+        Identity.Require(input.PartyId, nameof(input.PartyId));
+        Identity.Require(input.CompanyAccountId, nameof(input.CompanyAccountId));
+        Identity.Require(input.CurrencyId, nameof(input.CurrencyId));
+        foreach (var reference in new[] { input.DeliveryAddress, input.Contact })
+        {
+            if (reference is not null && (reference.Id == Guid.Empty || string.IsNullOrWhiteSpace(reference.ExpectedVersion)))
+            {
+                throw new ArgumentException("Sahip referansı kimlik ve beklenen sürüm ister.", nameof(input));
+            }
+        }
+
+        if (input.SalesOwnerUserId == Guid.Empty)
+        {
+            throw new ArgumentException("Satış sorumlusu boş kimlik olamaz.", nameof(input));
+        }
+
+        var customerChanged = input.PartyId != Header.PartyId || input.CompanyAccountId != Header.CompanyAccountId;
+        var currencyChanged = input.CurrencyId != Header.CurrencyId;
+        if ((customerChanged || currencyChanged) && lines.Any(line => line.Commercial.UnitPrice is not null))
+        {
+            throw new SalesRuleException(SalesRuleCodes.HeaderRevisionPricedLines,
+                "Fiyatlı satırı olan siparişin carisi ya da para birimi değiştirilmez; fiyatların yeni cariye/para birimine geçişi karara bağlı değil.");
+        }
+
+        var money = Money;
+        if (currencyChanged)
+        {
+            money = RequireRevisedMoney(input.Money ?? throw new ArgumentException("Para birimi değişince yeni para profili gerekir.", nameof(input)),
+                input.CurrencyId);
+        }
+        else if (input.Money is not null)
+        {
+            throw new ArgumentException("Para birimi değişmeden para profili verilmez.", nameof(input));
+        }
+
+        var unchanged = !customerChanged && !currencyChanged
+            && input.DeliveryAddress == Header.DeliveryAddress && input.Contact == Header.Contact
+            && input.SalesOwnerUserId == Header.SalesOwnerUserId
+            && SalesDueTerms.SameTerms(input.DueTerms, Header.DueTerms);
+        if (unchanged)
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
+                "Başlık revizyonu hiçbir değeri değiştirmiyor; onay boşuna düşürülmez.");
+        }
+
+        ApprovedRevisionSnapshot? archived = null;
+        if (ApprovalState == InternalApprovalState.Approved)
+        {
+            // The approved revision as it stands — its header included — archived BEFORE anything of it changes.
+            archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
+                now.ToUniversalTime(), actor,
+                [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
+                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
+                trimmedReason, CurrentHeaderSnapshot());
+            archivedRevisions.Add(archived);
+            Revision += 1;
+            ApprovalState = InternalApprovalState.Preparing;
+            Approval = ApprovalFacts.None;
+        }
+
+        // A value-equal due terms keeps the stored spelling (as a value-equal quantity text keeps its text).
+        var dueTerms = SalesDueTerms.SameTerms(input.DueTerms, Header.DueTerms) ? Header.DueTerms : input.DueTerms;
+        Header = Header with
+        {
+            PartyId = input.PartyId,
+            CompanyAccountId = input.CompanyAccountId,
+            CurrencyId = input.CurrencyId,
+            DeliveryAddress = input.DeliveryAddress,
+            Contact = input.Contact,
+            SalesOwnerUserId = input.SalesOwnerUserId,
+            DueTerms = dueTerms,
+        };
+        Money = money;
+        Touch(now);
+        return archived;
+    }
+
+    /// <summary>
+    /// The header revision's own preconditions WITHOUT the change — the expected version, the lifecycle and approval state and
+    /// the reason — so the caller can refuse a stale or wrong-state command before it asks any owner. Returns the trimmed
+    /// reason. <see cref="ReviseHeader"/> runs the same checks again.
+    /// </summary>
+    public string RequireHeaderRevisable(long expectedVersion, string? reason)
+    {
+        RequireVersion(expectedVersion);
+        RequireNotCancelled("İptal edilmiş siparişin başlığı değiştirilmez.");
+        if (State != SalesDraftState.Draft)
+        {
+            throw new SalesRuleException(SalesRuleCodes.DraftNotDraft, "Yalnız taslak değiştirilebilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.PendingApproval)
+        {
+            throw StateConflict("Onay bekleyen siparişin başlığı değiştirilmez; önce karar verilir.");
+        }
+
+        if (ApprovalState == InternalApprovalState.Withdrawn)
+        {
+            throw StateConflict("Geri çekilmiş taslak değiştirilmez.");
+        }
+
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        if (trimmedReason is null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionReasonRequired, "Revizyon gerekçesi zorunludur.");
+        }
+
+        if (trimmedReason.Length > MaximumRevisionReasonLength)
+        {
+            throw new SalesRuleException(SalesRuleCodes.RevisionReasonTooLong,
+                $"Revizyon gerekçesi en fazla {MaximumRevisionReasonLength} karakterdir.");
+        }
+
+        return trimmedReason;
+    }
+
+    /// <summary>
+    /// SAT-D103 does not cover a currency change ("Para biriminin değişmesi bu satıra dahil değildir") and no decision lets a
+    /// customer change ship under the old customer: while the current (not yet approved) revision names another customer
+    /// (party or account) or another currency than the LAST APPROVED revision, nothing of the order is shipped (the line port
+    /// answers not approved) and the approval re-reads the owner records (fail-closed). False when no approved revision is
+    /// archived, when the current revision is approved, or for a cancelled / closed order.
+    /// </summary>
+    public bool CustomerOrCurrencyRevisionPending =>
+        State == SalesDraftState.Draft
+        && ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.PendingApproval or InternalApprovalState.Rejected
+        && archivedRevisions.Count > 0
+        && (archivedRevisions[^1].Header is not { } approved
+            || approved.PartyId != Header.PartyId || approved.CompanyAccountId != Header.CompanyAccountId
+            || approved.CurrencyId != Header.CurrencyId);
+
+    /// <summary>The header as it stands, for an archive (API-04).</summary>
+    private RevisionHeaderSnapshot CurrentHeaderSnapshot() =>
+        new(Header.PartyId, Header.CompanyAccountId, Header.CurrencyId, Header.DeliveryAddress, Header.Contact,
+            Header.SalesOwnerUserId, Header.DueTerms);
+
+    /// <summary>The create's money-profile rules for the revised currency on the order's business date.</summary>
+    private MoneyProfileSnapshot RequireRevisedMoney(MoneyProfileSnapshot money, Guid currencyId)
+    {
+        if (money.CompanyId != CompanyId)
+        {
+            throw new SalesRuleException(SalesRuleCodes.SnapshotCompanyMismatch, "Para profili başka şirketin.");
+        }
+
+        if (money.CurrencyId != currencyId || money.ProfileId == Guid.Empty || string.IsNullOrWhiteSpace(money.ProfileVersion))
+        {
+            throw new ArgumentException("Para profili siparişin yeni para birimini adlandırmalı ve tam olmalıdır.", nameof(money));
+        }
+
+        if (money.EffectiveOn != Header.BusinessDate)
+        {
+            throw new SalesRuleException(SalesRuleCodes.SnapshotDateMismatch, "Para profili siparişin iş tarihi için alınmamış.");
+        }
+
+        if (!string.Equals(money.Operation, MoneyOperation, StringComparison.Ordinal))
+        {
+            throw new SalesRuleException(SalesRuleCodes.SnapshotOperationMismatch,
+                "Para profili siparişin operasyonu için değil başka bir operasyon için alınmış.");
+        }
+
+        if (money.Scale < 0 || (money.EffectiveThrough is { } moneyThrough && moneyThrough < money.EffectiveFrom))
+        {
+            throw new ArgumentException("Para profili snapshot'ı kendiyle çelişiyor.", nameof(money));
+        }
+
+        if (!money.IsActive || Header.BusinessDate < money.EffectiveFrom
+            || (money.EffectiveThrough is { } until && Header.BusinessDate > until))
+        {
+            throw new SalesRuleException(SalesRuleCodes.MoneyProfileNotInEffect, "Para profili iş tarihinde etkin değil.");
+        }
+
+        return money;
+    }
+}
