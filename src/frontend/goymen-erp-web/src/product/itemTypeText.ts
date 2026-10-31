@@ -16,6 +16,7 @@ export const ITEM_TYPE_TEXT = {
   loading: 'Kalem tipi yükleniyor…',
   failed: 'Kalem tipi şu anda okunamadı.',
   change: 'Kalem tipini değiştir',
+  choose: 'Kalem tipi seçin',
   formLabel: 'Kalem tipi değişikliği',
   reasonLabel: 'Gerekçe',
   save: 'Kaydet',

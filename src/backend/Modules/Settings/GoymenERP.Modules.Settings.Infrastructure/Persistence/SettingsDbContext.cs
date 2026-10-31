@@ -235,10 +235,10 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
         {
             table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Id", $"[Id] <> {emptyGuid}");
             table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Version", "[RecordVersion] > 0");
-            // VAT applies with a 0…100 rate and no exemption code, or not ("KDV yok") with an optional exemption code;
+            // VAT applies with a rate above 0 up to 100 and no exemption code (zero VAT is only "KDV yok" with its exemption code gate), or not ("KDV yok") with an optional exemption code;
             // withholding only with VAT: a rate above 0 up to 100 and an optional code, or neither.
             table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Vat",
-                "([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] >= 0 AND [VatPercent] <= 100 "
+                "([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] > 0 AND [VatPercent] <= 100 "
                 + "AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL)");
             table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Withholding",
                 "([WithholdingApplies] = 1 AND [VatApplies] = 1 AND [WithholdingPercent] IS NOT NULL "

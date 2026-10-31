@@ -62,7 +62,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("default-record", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var rows = await ReadForCommandAsync(cancellationToken);
         var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var series = rows.Series.SingleOrDefault(row => row.ItemType == itemType);
@@ -80,6 +80,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             : null;
         if (refusal is not null)
         {
+            await RequireStillAsync(companyId, cancellationToken);
             return Done("default-record", metadata, subject,
                 await StoreRefusalAsync(DefaultRecordCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
         }
@@ -189,7 +190,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("default-withdraw", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var rows = await ReadForCommandAsync(cancellationToken);
         var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         // Only a Settings record can be withdrawn; a catalog id is "not found" here (it is reviewed source, not a row).
@@ -202,6 +203,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             : null;
         if (refusal is not null)
         {
+            await RequireStillAsync(companyId, cancellationToken);
             return Done("default-withdraw", metadata, subject,
                 await StoreRefusalAsync(DefaultWithdrawCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
         }
@@ -274,7 +276,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("list-publish", metadata, listKind, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var rows = await ReadForCommandAsync(cancellationToken);
         var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var list = rows.Lists.SingleOrDefault(row => row.Kind == listKind);
@@ -284,6 +286,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             : null;
         if (refusal is not null)
         {
+            await RequireStillAsync(companyId, cancellationToken);
             return Done("list-publish", metadata, listKind,
                 await StoreRefusalAsync(CodeListPublishCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
         }
@@ -398,7 +401,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("list-withdraw", metadata, listKind, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var rows = await ReadForCommandAsync(cancellationToken);
         var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var list = rows.Lists.SingleOrDefault(row => row.Kind == listKind);
@@ -410,6 +413,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             : null;
         if (refusal is not null)
         {
+            await RequireStillAsync(companyId, cancellationToken);
             return Done("list-withdraw", metadata, listKind,
                 await StoreRefusalAsync(CodeListWithdrawCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
         }
@@ -451,9 +455,10 @@ internal sealed partial class SettingsTaxMasterAdministration
         string? exemptionCode = null;
         if (vatApplies)
         {
-            if (!TaxMasterCalculatorV1.TryParsePercent(vatPercentText, allowZero: true, out var parsed) || exemptionCodeText is not null)
+            if (!TaxMasterCalculatorV1.TryParsePercent(vatPercentText, allowZero: false, out var parsed) || exemptionCodeText is not null)
             {
-                detail = "KDV uygulanıyorsa 0-100 arası, en çok 4 ondalıklı oran girilir; istisna kodu girilmez.";
+                detail = "KDV uygulanıyorsa 0'dan büyük, en fazla 100, en çok 4 ondalıklı oran girilir; istisna kodu girilmez. "
+                    + "Sıfır KDV yalnız \"KDV yok (istisna)\" ile girilir.";
                 return false;
             }
 

@@ -53,7 +53,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("threshold-record", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var rows = await ReadForCommandAsync(cancellationToken);
         var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var header = rows.Threshold;
@@ -63,6 +63,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             : null;
         if (refusal is not null)
         {
+            await RequireStillAsync(companyId, cancellationToken);
             return Done("threshold-record", metadata, subject,
                 await StoreRefusalAsync(ThresholdRecordCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
         }
@@ -169,7 +170,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("threshold-withdraw", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var rows = await ReadForCommandAsync(cancellationToken);
         var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var header = rows.Threshold;
@@ -181,6 +182,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             : null;
         if (refusal is not null)
         {
+            await RequireStillAsync(companyId, cancellationToken);
             return Done("threshold-withdraw", metadata, subject,
                 await StoreRefusalAsync(ThresholdWithdrawCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
         }

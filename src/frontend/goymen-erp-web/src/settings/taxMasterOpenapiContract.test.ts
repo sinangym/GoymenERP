@@ -99,6 +99,27 @@ describe('tax master client ↔ canonical OpenAPI', () => {
     expectFits({ expectedVersion: '1', reason: 'r' }, 'post', thresholdWithdrawalPath(ID))
   })
 
+  it('decodes exactly the members the read answers (response schemas)', () => {
+    const members = (name: string) => Object.keys(document.components.schemas[name]?.properties ?? {}).sort()
+    const read = operation('get', TAX_MASTER_PATH) as Operation & {
+      readonly responses?: Record<string, { readonly content?: Record<string, { readonly schema?: { readonly $ref?: string } }> }>
+    }
+    expect(read.responses?.['200']?.content?.['application/json']?.schema?.$ref).toBe('#/components/schemas/TaxMasterViewV1')
+    // Every member below is read by decodeTaxMaster (./taxMasterContract.ts); a new or renamed member must be decoded first.
+    expect(members('TaxMasterViewV1')).toEqual(['businessDate', 'codeLists', 'companyId', 'itemTypeDefaults', 'withholdingThreshold'])
+    expect(members('TaxItemTypeDefaultSeriesViewV1')).toEqual(['inForce', 'itemType', 'scheduled', 'version'])
+    expect(members('TaxItemTypeDefaultRecordViewV1')).toEqual([
+      'effectiveFrom', 'exemptionCode', 'reason', 'recordId', 'recordVersion', 'recordedAtUtc', 'recordedBy', 'source',
+      'vatApplies', 'vatPercent', 'withholdingApplies', 'withholdingCode', 'withholdingPercent',
+    ])
+    expect(members('TaxCodeListViewV1')).toEqual(['inForce', 'kind', 'scheduled', 'version'])
+    expect(members('TaxCodeListVersionViewV1')).toEqual(['effectiveFrom', 'entries', 'listVersion', 'reason', 'recordedAtUtc', 'recordedBy'])
+    expect(members('TaxWithholdingThresholdViewV1')).toEqual(['inForce', 'scheduled', 'version'])
+    expect(members('TaxWithholdingThresholdRecordViewV1')).toEqual([
+      'amount', 'currencyCode', 'effectiveFrom', 'reason', 'recordId', 'recordVersion', 'recordedAtUtc', 'recordedBy',
+    ])
+  })
+
   it('knows every problem code the routes declare', () => {
     const declared = new Set(
       Object.entries(document.paths)

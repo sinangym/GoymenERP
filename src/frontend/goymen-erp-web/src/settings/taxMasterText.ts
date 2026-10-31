@@ -32,7 +32,7 @@ export const TAX_TEXT = {
   vatAppliesLabel: 'KDV uygulanır',
   vatNotAppliedLabel: 'KDV yok (istisna)',
   vatRateLabel: 'KDV oranı (%)',
-  rateHelp: '0-100 arası, en çok 4 ondalık (örn. 20 veya 0.5).',
+  rateHelp: '0\'dan büyük, en fazla 100, en çok 4 ondalık (örn. 20 veya 0.5). Sıfır KDV için "KDV yok (istisna)" seçin.',
   exemptionCodeLabel: 'İstisna kodu (isteğe bağlı)',
   exemptionCodeHelp: 'Yürürlükteki istisna kod listesinden; boş bırakılırsa "kaynak yok" kalır ve fatura bekler.',
   withholdingAppliesLabel: 'Tevkifat uygulanır',

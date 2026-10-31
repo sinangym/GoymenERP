@@ -121,6 +121,19 @@ internal sealed partial class SettingsTaxMasterAdministration(
         return scope is { IsGranted: true, IsCompanyWide: true } ? scope : throw new UnauthorizedAccessException();
     }
 
+    /// <summary>A command's tracked read; an unreadable store is <c>settings_provider_unavailable</c> (503), never a 500.</summary>
+    private async Task<TaxMasterRows> ReadForCommandAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new SettingsPrerequisiteException(TaxMasterProblemCodesV1.ProviderUnavailable);
+        }
+    }
+
     /// <summary>The same measurement, fresh from the authority rows (a grant revoked meanwhile is seen).</summary>
     private async Task RequireStillAsync(Guid companyId, CancellationToken cancellationToken)
     {

@@ -131,7 +131,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     table.CheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Codes", "([ExemptionCode] IS NULL OR (LEN([ExemptionCode]) BETWEEN 1 AND 16 AND [ExemptionCode] NOT LIKE '%[^A-Z0-9]%')) AND ([WithholdingCode] IS NULL OR (LEN([WithholdingCode]) BETWEEN 1 AND 16 AND [WithholdingCode] NOT LIKE '%[^A-Z0-9]%'))");
                     table.CheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'");
                     table.CheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
-                    table.CheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Vat", "([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] >= 0 AND [VatPercent] <= 100 AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL)");
+                    table.CheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Vat", "([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] > 0 AND [VatPercent] <= 100 AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL)");
                     table.CheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Version", "[RecordVersion] > 0");
                     table.CheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Withholding", "([WithholdingApplies] = 1 AND [VatApplies] = 1 AND [WithholdingPercent] IS NOT NULL AND [WithholdingPercent] > 0 AND [WithholdingPercent] <= 100) OR ([WithholdingApplies] = 0 AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL)");
                     table.ForeignKey(

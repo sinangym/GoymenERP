@@ -808,7 +808,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
 
-                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Vat", "([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] >= 0 AND [VatPercent] <= 100 AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL)");
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Vat", "([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] > 0 AND [VatPercent] <= 100 AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL)");
 
                             t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Version", "[RecordVersion] > 0");
 

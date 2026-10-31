@@ -229,6 +229,11 @@ export function isRatePercentText(value: unknown): value is string {
   return typeof value === 'string' && PERCENT.test(value) && Number(value) >= 0 && Number(value) <= 100
 }
 
+/** A VAT rate that applies: above 0 up to 100 (zero VAT is only "KDV yok" with its exemption code gate). */
+export function isVatPercentText(value: unknown): value is string {
+  return isRatePercentText(value) && Number(value) > 0
+}
+
 export function normalizeTaxCode(value: string): string {
   return value.trim().toLocaleUpperCase('en-US')
 }
@@ -242,7 +247,7 @@ function decodeDefault(raw: unknown): TaxDefaultRecord | null {
     || !isVersion(raw.recordVersion) || !isDateText(raw.effectiveFrom) || typeof raw.vatApplies !== 'boolean'
     || typeof raw.withholdingApplies !== 'boolean' || typeof raw.reason !== 'string') return null
   const optionalCode = (value: unknown) => value === null || (typeof value === 'string' && isListCode(value))
-  if (raw.vatApplies ? !isRatePercentText(raw.vatPercent) || raw.exemptionCode !== null
+  if (raw.vatApplies ? !isVatPercentText(raw.vatPercent) || raw.exemptionCode !== null
     : raw.vatPercent !== null || !optionalCode(raw.exemptionCode)) return null
   if (raw.withholdingApplies
     ? !raw.vatApplies || !isRatePercentText(raw.withholdingPercent) || Number(raw.withholdingPercent) <= 0

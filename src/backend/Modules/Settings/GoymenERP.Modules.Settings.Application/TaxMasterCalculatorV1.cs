@@ -224,7 +224,9 @@ public static class TaxMasterCalculatorV1
             return Unresolved(TaxResolutionReasonsV1.ItemTypeDefaultMissing);
         }
 
-        var (exemptionState, exemptionCode, exemptionReason) = record.VatApplies
+        // Fail closed: a zero VAT rate is never a resolved rate without its exemption code (the command and the CHECK refuse
+        // it; a record that still carried it waits on the exemption code gate like "KDV yok").
+        var (exemptionState, exemptionCode, exemptionReason) = record.VatApplies && record.VatPercent is > 0m
             ? (TaxResolutionStatesV1.NotRequired, (string?)null, (string?)null)
             : Code(data, TaxCodeListKindsV1.Exemption, record.ExemptionCode, TaxResolutionReasonsV1.ExemptionCodeMissing, on);
         var (withholdingCodeState, withholdingCode, withholdingReason) = record.WithholdingApplies

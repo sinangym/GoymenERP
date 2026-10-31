@@ -46,8 +46,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function decodeItemType(raw: unknown, productId: string): ProductItemTypeView | null {
-  if (!isRecord(raw) || raw.productId !== productId || typeof raw.version !== 'string' || !/^(0|[1-9]\d*)$/.test(raw.version)) {
+export function decodeItemType(raw: unknown, companyId: string, productId: string): ProductItemTypeView | null {
+  if (!isRecord(raw) || raw.companyId !== companyId || raw.productId !== productId || typeof raw.version !== 'string' || !/^(0|[1-9]\d*)$/.test(raw.version)) {
     return null
   }
   const itemType = raw.itemType
@@ -61,7 +61,7 @@ export async function fetchItemType(companyId: string, productId: string, signal
     const response = await fetch(`${API_BASE}${itemTypePath(productId)}`, { headers: headers(companyId), signal })
     if (response.status === 401 || response.status === 403) return { type: 'forbidden' }
     if (response.status !== 200) return { type: 'failed' }
-    const data = decodeItemType(await response.json(), productId)
+    const data = decodeItemType(await response.json(), companyId, productId)
     return data === null ? { type: 'failed' } : { type: 'ok', data }
   } catch {
     return { type: 'failed' }

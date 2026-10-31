@@ -341,6 +341,22 @@ describe('Vergi ayarları — commands', () => {
     expect(screen.queryByRole('button', { name: TAX_TEXT.save })).toBeNull()
   })
 
+  it('refuses "KDV uygulanır %0" in the form and sends nothing', async () => {
+    const user = userEvent.setup()
+    const recorded = install((url) => (isRead(url) ? json(master()) : undefined))
+    renderAt(TAX_PATH)
+
+    await user.click(await screen.findByRole('button', { name: `${TAX_TEXT.changeDefault} — ${ITEM_TYPE_LABEL.Service}` }))
+    const rate = screen.getByLabelText(TAX_TEXT.vatRateLabel, { exact: false })
+    await user.clear(rate)
+    await user.type(rate, '0')
+    await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), 'SENTETIK')
+    await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
+
+    expect(screen.getAllByText(TAX_TEXT.rateHelp).length).toBeGreaterThan(0)
+    expect(commands(recorded)).toEqual([])
+  })
+
   it('shows an unknown withholding code refusal by its code', async () => {
     const user = userEvent.setup()
     install((url, init) => {
@@ -390,6 +406,11 @@ describe('Vergi ayarları — contract decoders', () => {
     const broken = master()
     broken.itemTypeDefaults[0].inForce.vatPercent = '20.12345'
     expect(decodeTaxMaster(broken, COMPANY_A)).toBeNull()
+
+    // SAT-D93 / review B P2-1: "KDV uygulanır %0" is off-contract (zero VAT is only "KDV yok" with its exemption gate).
+    const zeroVat = master()
+    zeroVat.itemTypeDefaults[2].inForce.vatPercent = '0'
+    expect(decodeTaxMaster(zeroVat, COMPANY_A)).toBeNull()
 
     const zeroWithholding = master()
     zeroWithholding.itemTypeDefaults[0].inForce.withholdingPercent = '0'

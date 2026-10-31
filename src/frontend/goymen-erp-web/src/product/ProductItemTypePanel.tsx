@@ -89,7 +89,7 @@ function ItemTypeForm({
   readonly view: ProductItemTypeView
   readonly onDone: (notice: string | null) => void
 }) {
-  const [itemType, setType] = useState<ProductItemType>(view.itemType ?? 'Steel')
+  const [itemType, setType] = useState<ProductItemType | ''>(view.itemType ?? '')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -97,6 +97,8 @@ function ItemTypeForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    // An unset product gets no preselected type: the person chooses one explicitly.
+    if (itemType === '') return
     const body = { expectedVersion: view.version, itemType, reason: reason.trim() }
     const fingerprint = JSON.stringify(body)
     const key = pending !== null && pending.fingerprint === fingerprint ? pending.key : crypto.randomUUID()
@@ -123,7 +125,12 @@ function ItemTypeForm({
     <form onSubmit={(event) => void submit(event)} aria-label={ITEM_TYPE_TEXT.formLabel}>
       <label>
         {ITEM_TYPE_TEXT.label}
-        <select value={itemType} onChange={(event) => setType(event.target.value as ProductItemType)}>
+        <select required value={itemType} onChange={(event) => setType(event.target.value as ProductItemType | '')}>
+          {view.itemType === null ? (
+            <option value="" disabled>
+              {ITEM_TYPE_TEXT.choose}
+            </option>
+          ) : null}
           {PRODUCT_ITEM_TYPES.map((option) => (
             <option key={option} value={option}>
               {ITEM_TYPE_LABEL[option]}
@@ -136,7 +143,7 @@ function ItemTypeForm({
         <textarea required rows={2} maxLength={4000} value={reason} onChange={(event) => setReason(event.target.value)} />
       </label>
       {error !== null ? <p role="alert">{error}</p> : null}
-      <button type="submit" disabled={busy} aria-busy={busy}>
+      <button type="submit" disabled={busy || itemType === ''} aria-busy={busy}>
         {busy ? ITEM_TYPE_TEXT.saving : pending !== null ? ITEM_TYPE_TEXT.retrySame : ITEM_TYPE_TEXT.save}
       </button>
       <button type="button" disabled={busy} onClick={() => onDone(null)}>

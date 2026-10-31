@@ -415,7 +415,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for MOD-03: the company-filtered tax master sets (categories, immutable rate records and code list versions with insert-only withdrawals; company inside every key and foreign key) join the write fence (immutable rows, every row in the context company).
                 // Re-fingerprinted for SAT-D93 (Sinan 2026-10-31): the company-filtered VUK 232 withholding threshold fence, its
                 // immutable records and insert-only withdrawals join the write fence.
-                "5ffc96ad10f7e4b1bdfb9c49e6f1dd7d53dff77ade04e256314221b2649ae7fc",
+                "fa35e2a7d5592a4cd177cf01a17363894c4007aabdaae4ffa1d1eb4635904bce",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -1623,7 +1623,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261031194631_AddTaxMaster.cs"] =
                     new(
-                        "e71a390ac0fb2a4af2eae1ae6449e37006c7b7055e03795a06d18382ee292419",
+                        "285bff1b47db99f02583ec2465f5da796bd894ed92d90e01004e05503920bb79",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

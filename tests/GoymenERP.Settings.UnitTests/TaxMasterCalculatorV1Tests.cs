@@ -249,6 +249,20 @@ public sealed class TaxMasterCalculatorV1Tests
     public void List_codes_are_letters_and_digits_only(string code, bool valid) =>
         Assert.Equal(valid, TaxMasterCalculatorV1.TryNormalizeListCode(code, out _));
 
+    [Fact]
+    public void A_zero_vat_rate_never_resolves_without_the_exemption_code_and_the_command_parser_refuses_it()
+    {
+        // Review B P2-1: "KDV uygulanır, %0" must not bypass the exemption code gate. The command parses VAT with
+        // allowZero: false (and the CHECK holds [VatPercent] > 0); a record that still carried 0 waits on the exemption code.
+        Assert.False(TaxMasterCalculatorV1.TryParsePercent("0", allowZero: false, out _));
+        Assert.False(TaxMasterCalculatorV1.TryParsePercent("0.0000", allowZero: false, out _));
+        var zero = Record(TaxItemTypesV1.Scrap, 1, Day, 0m, 50m, "T1");
+        var resolution = TaxMasterCalculatorV1.Resolve(Data(Gdc, [zero], [List(TaxCodeListKindsV1.Withholding, "T1")]),
+            TaxItemTypesV1.Scrap, TaxBuyerSituationsV1.Normal, Day);
+        Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.ExemptionCodeMissing),
+            (resolution.ExemptionCodeState, resolution.ExemptionCodeReason));
+    }
+
     private static TaxMasterDataV1 Catalog() => Data(Gdc);
 
     private static TaxMasterDataV1 Data(Guid company, IReadOnlyList<TaxItemTypeDefaultDataV1>? records = null,

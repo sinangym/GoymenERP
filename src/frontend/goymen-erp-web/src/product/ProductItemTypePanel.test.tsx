@@ -11,7 +11,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ProductItemTypePanel } from './ProductItemTypePanel'
-import { decodeItemType, itemTypePath } from './itemTypeApi'
+import { ITEM_TYPE_PROBLEM, decodeItemType, itemTypePath } from './itemTypeApi'
 import { ITEM_TYPE_LABEL, ITEM_TYPE_TEXT } from './itemTypeText'
 
 const COMPANY = 'aaaaaaaa-0000-4000-8000-000000000001'
@@ -104,10 +104,36 @@ describe('product item type panel (SAT-D134)', () => {
   })
 
   it('fails closed on an off-contract read', () => {
-    expect(decodeItemType({ productId: PRODUCT, version: '1', itemType: 'Steel' }, PRODUCT)).not.toBeNull()
-    expect(decodeItemType({ productId: PRODUCT, version: '1', itemType: 'Copper' }, PRODUCT)).toBeNull()
-    expect(decodeItemType({ productId: PRODUCT, version: '0', itemType: 'Steel' }, PRODUCT)).toBeNull()
-    expect(decodeItemType({ productId: COMPANY, version: '1', itemType: 'Steel' }, PRODUCT)).toBeNull()
+    const of = (overrides: Record<string, unknown>) => ({ companyId: COMPANY, productId: PRODUCT, version: '1', itemType: 'Steel', ...overrides })
+    expect(decodeItemType(of({}), COMPANY, PRODUCT)).not.toBeNull()
+    expect(decodeItemType(of({ itemType: 'Copper' }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeItemType(of({ version: '0' }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeItemType(of({ productId: COMPANY }), COMPANY, PRODUCT)).toBeNull()
+    // Another company's answer is off-contract, never shown.
+    expect(decodeItemType(of({ companyId: '00000000-0000-4000-8000-000000000009' }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeItemType(of({ companyId: undefined }), COMPANY, PRODUCT)).toBeNull()
+  })
+})
+
+describe('product item type — explicit choice', () => {
+  it('preselects nothing for an unset product and sends only an explicitly chosen type', async () => {
+    const user = userEvent.setup()
+    const sent = install((method) => (method === 'GET' ? view('0', null) : new Response(null, { status: 204 })))
+    renderPanel()
+
+    await user.click(await screen.findByRole('button', { name: ITEM_TYPE_TEXT.change }))
+    const select = screen.getByRole('combobox', { name: ITEM_TYPE_TEXT.label }) as HTMLSelectElement
+    expect(select.value).toBe('')
+    await user.type(screen.getByRole('textbox', { name: ITEM_TYPE_TEXT.reasonLabel }), 'SENTETIK')
+    expect((screen.getByRole('button', { name: ITEM_TYPE_TEXT.save }) as HTMLButtonElement).disabled).toBe(true)
+    expect(sent.some((request) => request.method === 'PUT')).toBe(false)
+
+    await user.selectOptions(select, 'Service')
+    await user.click(screen.getByRole('button', { name: ITEM_TYPE_TEXT.save }))
+    expect(await screen.findByText(ITEM_TYPE_TEXT.saved)).toBeTruthy()
+    expect(sent.filter((request) => request.method === 'PUT').map((request) => request.body)).toEqual([
+      { expectedVersion: '0', itemType: 'Service', reason: 'SENTETIK' },
+    ])
   })
 })
 
@@ -133,5 +159,33 @@ describe('product item type client ↔ canonical OpenAPI', () => {
     const reference = document.paths[route]?.put?.requestBody?.content?.['application/json']?.schema?.$ref ?? ''
     const schema = document.components.schemas[reference.replace('#/components/schemas/', '')]
     expect(Object.keys(schema?.properties ?? {}).sort()).toEqual(['expectedVersion', 'itemType', 'reason'])
+  })
+
+  it('decodes exactly the declared read members and knows only declared problem codes', () => {
+    const route = `/api/v1${itemTypePath(PRODUCT)}`.replace(PRODUCT, '{productId}')
+    const operations = document.paths[route] as unknown as Record<
+      string,
+      {
+        readonly responses?: Record<
+          string,
+          {
+            readonly 'x-erp-problem-codes'?: readonly string[]
+            readonly content?: Record<string, { readonly schema?: { readonly $ref?: string } }>
+          }
+        >
+      }
+    >
+    expect(operations.get?.responses?.['200']?.content?.['application/json']?.schema?.$ref).toBe(
+      '#/components/schemas/ProductItemTypeViewV1',
+    )
+    expect(Object.keys(document.components.schemas.ProductItemTypeViewV1?.properties ?? {}).sort()).toEqual([
+      'companyId', 'itemType', 'productId', 'updatedAtUtc', 'updatedBy', 'version',
+    ])
+    const declared = new Set(
+      Object.values(operations)
+        .flatMap((operation) => Object.values(operation.responses ?? {}))
+        .flatMap((response) => response['x-erp-problem-codes'] ?? []),
+    )
+    for (const code of Object.values(ITEM_TYPE_PROBLEM)) expect(declared.has(code), code).toBe(true)
   })
 })

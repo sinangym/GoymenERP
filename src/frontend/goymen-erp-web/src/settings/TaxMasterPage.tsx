@@ -37,6 +37,7 @@ import {
   isCurrencyCode,
   isListCode,
   isRatePercentText,
+  isVatPercentText,
   normalizeTaxCode,
   parseCodeListText,
   type TaxCodeList,
@@ -439,7 +440,7 @@ function DefaultForm(props: FormProps & { readonly series: TaxDefaultSeries }) {
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [reason, setReason] = useState('')
   const attempt = useCommandAttempt<true>()
-  const vatValid = !vatApplies || isRatePercentText(vatPercent)
+  const vatValid = !vatApplies || isVatPercentText(vatPercent)
   const withholdingValid = !withholdingApplies || (isRatePercentText(withholdingPercent) && Number(withholdingPercent) > 0)
   const normalizedExemption = normalizeTaxCode(exemptionCode)
   const normalizedWithholding = normalizeTaxCode(withholdingCode)

@@ -149,6 +149,23 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             await AssertProblemAsync(shape, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.RequestInvalid);
         }
 
+        // Review B P2-1: "KDV uygulanır, %0" (with or without withholding) is refused by the command and by the CHECK, so a
+        // zero VAT can only be entered as "KDV yok" behind the exemption code gate.
+        foreach (var (key, zero) in new[]
+                 {
+                     ("k-zero-1", new RecordItemTypeDefaultRequestV1("0", true, "0", null, false, null, null, "SENTETIK")),
+                     ("k-zero-2", new RecordItemTypeDefaultRequestV1("0", true, "0.0000", null, true, "50", "T1", "SENTETIK")),
+                 })
+        {
+            using var refused = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/item-type-defaults/Scrap", key, zero));
+            await AssertProblemAsync(refused, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.RequestInvalid);
+        }
+
+        var zeroCheck = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "UPDATE [settings].[TaxItemTypeDefaultRecords] SET [VatPercent] = 0 WHERE [VatApplies] = 1; SELECT 1"));
+        Assert.Equal(547, zeroCheck.Number);
+        Assert.Contains("CK_SettingsTaxItemTypeDefaultRecords_Vat", zeroCheck.Message, StringComparison.Ordinal);
+
         // A scheduled record, replaced by another on the same date (a correction), then withdrawn — the replaced one never
         // comes back.
         var scheduledDay = today.AddDays(30);
