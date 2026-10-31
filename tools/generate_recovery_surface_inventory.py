@@ -53,7 +53,7 @@ EXPECTED_MIGRATION_COUNT = 106
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "4792b8688d57bbf187c4e1b43a03e9231b7a38a84d6d4d2d0930fcb4fdd7f3b9"
 )
-EXPECTED_DURABLE_STORE_COUNT = 23
+EXPECTED_DURABLE_STORE_COUNT = 24
 # The source-only inventory is reviewed for one frozen backend compilation surface.  A
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
@@ -146,6 +146,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("logistics", "TransferOutgoingDocumentAttempts"),
     ("manufacturing", "Commands"),
     ("product", "PriceListAttempts"),
+    ("product", "ProductTaxClassificationAttempts"),
     ("purchasing", "PurchaseAcceptanceShares"),
     ("purchasing", "PurchaseAttempts"),
     ("sales", "DraftAttempts"),
@@ -472,6 +473,15 @@ DURABLE_STORE_SPECS = (
         ("dbContext.Attempts.Add(row)",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
+        "product.tax-classification-attempts", "Product", "idempotency", "ProductPriceListDbContext",
+        "ProductTaxClassificationAttemptRow", "product", "ProductTaxClassificationAttempts",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListDbContext.cs",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/Migrations/20261031130728_AddProductTaxClassifications.cs",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductTaxClassificationService.cs",
+        ("database.TaxClassificationAttempts.Add(new ProductTaxClassificationAttemptRow",),
+        mapping_tokens=("IdempotencyKeyHash",),
+    ),
+    _store(
         "purchasing.purchase-acceptance-shares", "Purchasing", "idempotency", "PurchasingDbContext",
         "PurchaseAcceptanceRow", "purchasing", "PurchaseAcceptanceShares", PURCHASING_CONTEXT,
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/Migrations/20260924102017_AddPurchaseAcceptanceParticipant.cs",
@@ -589,6 +599,10 @@ WRITER_METHOD_SCOPES = {
         "product.price-list-attempts",
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs",
     ): "RecordRefusalAsync",
+    (
+        "product.tax-classification-attempts",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductTaxClassificationService.cs",
+    ): "AddAttempt",
     (
         "purchasing.purchase-acceptance-shares",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs",
