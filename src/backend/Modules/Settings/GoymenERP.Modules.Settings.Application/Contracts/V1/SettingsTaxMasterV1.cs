@@ -145,7 +145,41 @@ public sealed record TaxMasterViewV1(
     DateOnly BusinessDate,
     IReadOnlyList<TaxCategoryViewV1> Categories,
     IReadOnlyList<TaxRateSeriesViewV1> RateSeries,
-    IReadOnlyList<TaxCodeListViewV1> CodeLists);
+    IReadOnlyList<TaxCodeListViewV1> CodeLists,
+    TaxWithholdingThresholdViewV1 WithholdingThreshold);
+
+/// <summary>
+/// The withholding amount threshold (VUK 232 fatura sınırı, SAT-D93; Sinan 2026-10-31: a dated Settings value that starts
+/// EMPTY). <c>Version</c> is its edit fence ("0" while none is recorded); <c>InForce</c> null = "kaynak yok".
+/// </summary>
+public sealed record TaxWithholdingThresholdViewV1(
+    string Version,
+    TaxWithholdingThresholdRecordViewV1? InForce,
+    IReadOnlyList<TaxWithholdingThresholdRecordViewV1> Scheduled);
+
+/// <summary>One immutable threshold record: the amount as lossless decimal text and its ISO 4217 currency code.</summary>
+public sealed record TaxWithholdingThresholdRecordViewV1(
+    Guid RecordId,
+    string RecordVersion,
+    DateOnly EffectiveFrom,
+    string Amount,
+    string CurrencyCode,
+    string RecordedBy,
+    DateTimeOffset RecordedAtUtc,
+    string Reason);
+
+/// <summary>
+/// Record the withholding amount threshold (VUK 232) from <c>EffectiveFrom</c> (omitted = today; the same date rules as a rate
+/// record). <c>Amount</c> is lossless decimal text above 0 (at most 15 integer digits and 4 decimals, never rounded);
+/// <c>CurrencyCode</c> is the ISO 4217 code the amount is in (entered, never assumed). <c>ExpectedVersion</c> is the
+/// threshold's version ("0" while none is recorded).
+/// </summary>
+public sealed record RecordWithholdingThresholdRequestV1(
+    string? ExpectedVersion,
+    string? Amount,
+    string? CurrencyCode,
+    string? Reason,
+    DateOnly? EffectiveFrom = null);
 
 public sealed record TaxCategoryViewV1(Guid Id, string Kind, string Code, string Name, string Version);
 
@@ -236,6 +270,13 @@ public interface ISettingsTaxMasterAdministrationV1
 
     Task<TaxMasterCommandResultV1> WithdrawCodeListAsync(string listKind, long listVersion, WithdrawTaxCodeListRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    Task<TaxMasterCommandResultV1> RecordWithholdingThresholdAsync(RecordWithholdingThresholdRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>Withdraw a threshold record before it takes effect; <c>ExpectedVersion</c> is the threshold's version.</summary>
+    Task<TaxMasterCommandResultV1> WithdrawWithholdingThresholdAsync(Guid recordId, WithdrawTaxRateRecordRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 }
 
 /// <summary>A category the Product card may refer to (the owner's answer to <see cref="ISettingsTaxCategoryReaderV1"/>).</summary>
@@ -283,6 +324,7 @@ public static class TaxResolutionReasonsV1
     public const string WithholdingRateMissing = "withholding_rate_missing";
     public const string WithholdingCodeNotInList = "withholding_code_not_in_list";
     public const string CodeListMissing = "code_list_missing";
+    public const string WithholdingThresholdMissing = "withholding_threshold_missing";
 }
 
 /// <summary>
@@ -339,7 +381,28 @@ public interface ISettingsLineTaxResolverV1
 
     Task<SettingsTaxCodeListResolutionV1> GetCodeListAsync(string kind, DateOnly on,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The withholding amount threshold (VUK 232, SAT-D93) in force on <paramref name="on"/>: <c>Resolved</c> with the amount
+    /// and its currency, or <c>Unresolved</c> (<c>withholding_threshold_missing</c>) while none is recorded — the invoice
+    /// (API-32) then waits; no number is ever assumed. The comparison against the transaction total (KDV dahil, the whole
+    /// transaction, never split) is the consumer's.
+    /// </summary>
+    Task<SettingsWithholdingThresholdResolutionV1> GetWithholdingThresholdAsync(DateOnly on,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>The withholding amount threshold in force on a date (see <see cref="ISettingsLineTaxResolverV1.GetWithholdingThresholdAsync"/>).</summary>
+public sealed record SettingsWithholdingThresholdResolutionV1(
+    Guid CompanyId,
+    DateOnly On,
+    string State,
+    decimal? Amount,
+    string? CurrencyCode,
+    Guid? RecordId,
+    long? RecordVersion,
+    DateOnly? EffectiveFrom,
+    string? Reason);
 
 public enum SettingsProductTaxClassOutcomeV1
 {

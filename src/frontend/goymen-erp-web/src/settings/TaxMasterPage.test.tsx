@@ -53,6 +53,7 @@ function emptyMaster() {
       { kind: 'Exemption', version: '0', inForce: null, scheduled: [] },
       { kind: 'Withholding', version: '0', inForce: null, scheduled: [] },
     ],
+    withholdingThreshold: { version: '0', inForce: null, scheduled: [] },
   }
 }
 
@@ -98,6 +99,20 @@ function master() {
         scheduled: [],
       },
     ],
+    withholdingThreshold: {
+      version: '2',
+      inForce: {
+        recordId: '61000000-0000-4000-8000-0000000000b1',
+        recordVersion: '1',
+        effectiveFrom: '2026-11-01',
+        amount: '1000.5',
+        currencyCode: 'TRY',
+        recordedBy: USER,
+        recordedAtUtc: '2026-11-01T09:00:00+00:00',
+        reason: 'SENTETIK',
+      },
+      scheduled: [],
+    },
   }
 }
 
@@ -113,7 +128,8 @@ describe('Vergi ayarları — reads', () => {
     renderAt(TAX_PATH)
 
     expect(await screen.findByText(TAX_TEXT.emptyMaster)).toBeTruthy()
-    expect(screen.getAllByText(TAX_TEXT.noSource)).toHaveLength(2)
+    // VAT/withholding rows absent; both code lists and the VUK 232 threshold are "kaynak yok".
+    expect(screen.getAllByText(TAX_TEXT.noSource)).toHaveLength(3)
     expect(screen.getByText(TAX_TEXT.withholdingNeedsCategories)).toBeTruthy()
     const read = recorded.find((request) => isRead(request.url))
     expect(read?.headers['X-Company-Id']).toBe(COMPANY_A)
@@ -289,6 +305,28 @@ describe('Vergi ayarları — commands', () => {
   })
 })
 
+describe('Vergi ayarları — VUK 232 threshold (SAT-D93)', () => {
+  it('shows the threshold in force and records a new one with the entered amount and currency as text', async () => {
+    const user = userEvent.setup()
+    const recorded = install((url, init) => {
+      if (isRead(url)) return json(master())
+      return init?.method === 'POST' && url.endsWith('/settings/tax-master/withholding-threshold') ? noContent() : undefined
+    })
+    renderAt(TAX_PATH)
+
+    expect(await screen.findByLabelText(`${TAX_TEXT.thresholdHeading} — ${TAX_TEXT.columnInForce}`)).toBeTruthy()
+    expect(screen.getByText('1000.5 TRY')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: `${TAX_TEXT.recordThreshold} — ${TAX_TEXT.thresholdHeading}` }))
+    await user.type(screen.getByRole('textbox', { name: TAX_TEXT.amountLabel }), '12000.50')
+    await user.type(screen.getByRole('textbox', { name: TAX_TEXT.currencyLabel }), 'try')
+    await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), 'SENTETIK')
+    await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
+
+    expect(await screen.findByText(TAX_TEXT.saved)).toBeTruthy()
+    expect(commands(recorded)[0].body).toEqual({ expectedVersion: '2', amount: '12000.50', currencyCode: 'TRY', reason: 'SENTETIK' })
+  })
+})
+
 describe('Vergi ayarları — contract decoders', () => {
   it('accepts the fixtures and fails closed on an off-contract record', () => {
     expect(decodeTaxMaster(master(), COMPANY_A)).not.toBeNull()
@@ -299,6 +337,11 @@ describe('Vergi ayarları — contract decoders', () => {
     const zeroWithholding = master()
     ;(zeroWithholding.rateSeries[1].inForce as { withholdingCode: string | null }).withholdingCode = null
     expect(decodeTaxMaster(zeroWithholding, COMPANY_A)).toBeNull()
+    const zeroThreshold = master()
+    ;(zeroThreshold.withholdingThreshold.inForce as { amount: string }).amount = '0'
+    expect(decodeTaxMaster(zeroThreshold, COMPANY_A)).toBeNull()
+    const { withholdingThreshold: _omitted, ...noThreshold } = master()
+    expect(decodeTaxMaster(noThreshold, COMPANY_A)).toBeNull()
   })
 
   it('parses "KOD;Ad" lines and refuses malformed or repeated codes', () => {

@@ -40,6 +40,13 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
 
     internal DbSet<TaxCodeListWithdrawalRow> TaxCodeListWithdrawals => Set<TaxCodeListWithdrawalRow>();
 
+    internal DbSet<TaxWithholdingThresholdRow> TaxWithholdingThresholds => Set<TaxWithholdingThresholdRow>();
+
+    internal DbSet<TaxWithholdingThresholdRecordRow> TaxWithholdingThresholdRecords => Set<TaxWithholdingThresholdRecordRow>();
+
+    internal DbSet<TaxWithholdingThresholdWithdrawalRow> TaxWithholdingThresholdWithdrawals =>
+        Set<TaxWithholdingThresholdWithdrawalRow>();
+
     internal DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -353,6 +360,61 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
             .HasForeignKey(x => new { x.CompanyId, x.Kind, x.ReplacedByListVersion })
             .OnDelete(DeleteBehavior.Restrict);
         listWithdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        // VUK 232 withholding amount threshold (SAT-D93; Sinan 2026-10-31): dated, starts empty, an entered amount and currency.
+        var threshold = modelBuilder.Entity<TaxWithholdingThresholdRow>();
+        threshold.ToTable("TaxWithholdingThresholds", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholds_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholds_Version", "[Version] > 0 AND [LastRecordVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholds_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+        });
+        threshold.HasKey(x => x.CompanyId);
+        threshold.Property(x => x.Version).IsConcurrencyToken();
+        threshold.Property(x => x.UpdatedBy).HasMaxLength(128);
+        threshold.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var thresholdRecord = modelBuilder.Entity<TaxWithholdingThresholdRecordRow>();
+        thresholdRecord.ToTable("TaxWithholdingThresholdRecords", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Id", $"[Id] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Version", "[RecordVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Amount", "[Amount] > 0");
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Currency",
+                "LEN([CurrencyCode]) = 3 AND [CurrencyCode] NOT LIKE '%[^A-Z]%'");
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Recorded",
+                "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        thresholdRecord.HasKey(x => new { x.CompanyId, x.Id });
+        thresholdRecord.HasIndex(x => new { x.CompanyId, x.RecordVersion }).IsUnique();
+        thresholdRecord.Property(x => x.Amount).HasPrecision(19, 4);
+        thresholdRecord.Property(x => x.CurrencyCode).HasMaxLength(3).IsUnicode(false).IsFixedLength()
+            .UseCollation(binaryCollation);
+        thresholdRecord.Property(x => x.RecordedBy).HasMaxLength(128);
+        thresholdRecord.Property(x => x.Reason).HasMaxLength(4000);
+        thresholdRecord.HasOne<TaxWithholdingThresholdRow>().WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        thresholdRecord.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var thresholdWithdrawal = modelBuilder.Entity<TaxWithholdingThresholdWithdrawalRow>();
+        thresholdWithdrawal.ToTable("TaxWithholdingThresholdWithdrawals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdWithdrawals_Replacement",
+                "[ReplacedByRecordId] IS NULL OR [ReplacedByRecordId] <> [RecordId]");
+            table.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdWithdrawals_Recorded",
+                "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        thresholdWithdrawal.HasKey(x => new { x.CompanyId, x.RecordId });
+        thresholdWithdrawal.Property(x => x.WithdrawnBy).HasMaxLength(128);
+        thresholdWithdrawal.Property(x => x.Reason).HasMaxLength(4000);
+        thresholdWithdrawal.HasOne<TaxWithholdingThresholdRecordRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RecordId })
+            .OnDelete(DeleteBehavior.Restrict);
+        thresholdWithdrawal.HasOne<TaxWithholdingThresholdRecordRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReplacedByRecordId })
+            .OnDelete(DeleteBehavior.Restrict);
+        thresholdWithdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
     }
 
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
@@ -407,7 +469,8 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
 
             if (entry.State == EntityState.Modified
                 && entry.Entity is TaxRateRecordRow or TaxRateRecordWithdrawalRow or TaxCodeListVersionRow
-                    or TaxCodeListEntryRow or TaxCodeListWithdrawalRow)
+                    or TaxCodeListEntryRow or TaxCodeListWithdrawalRow or TaxWithholdingThresholdRecordRow
+                    or TaxWithholdingThresholdWithdrawalRow)
             {
                 throw new InvalidOperationException("Vergi oranı kaydı ve kod listesi sürümü değiştirilemez; yeni kayıt yazılır.");
             }
@@ -426,6 +489,9 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 TaxCodeListVersionRow row => row.CompanyId,
                 TaxCodeListEntryRow row => row.CompanyId,
                 TaxCodeListWithdrawalRow row => row.CompanyId,
+                TaxWithholdingThresholdRow row => row.CompanyId,
+                TaxWithholdingThresholdRecordRow row => row.CompanyId,
+                TaxWithholdingThresholdWithdrawalRow row => row.CompanyId,
                 _ => (Guid?)null,
             };
             if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))

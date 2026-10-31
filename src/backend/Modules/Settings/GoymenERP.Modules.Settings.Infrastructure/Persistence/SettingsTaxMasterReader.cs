@@ -135,6 +135,18 @@ internal sealed class SettingsTaxMasterReader(
                 TaxResolutionReasonsV1.CodeListMissing);
     }
 
+    public async Task<SettingsWithholdingThresholdResolutionV1> GetWithholdingThresholdAsync(DateOnly on,
+        CancellationToken cancellationToken = default)
+    {
+        var companyId = RequireAccess();
+        var data = await ReadAsync(cancellationToken);
+        return TaxMasterCalculatorV1.ThresholdInForce(data, on) is { } record
+            ? new SettingsWithholdingThresholdResolutionV1(companyId, on, TaxResolutionStatesV1.Resolved, record.Amount,
+                record.CurrencyCode, record.RecordId, record.RecordVersion, record.EffectiveFrom, null)
+            : new SettingsWithholdingThresholdResolutionV1(companyId, on, TaxResolutionStatesV1.Unresolved, null, null, null, null,
+                null, TaxResolutionReasonsV1.WithholdingThresholdMissing);
+    }
+
     private Guid RequireAccess()
     {
         if (!currentUser.IsAuthenticated || string.IsNullOrWhiteSpace(currentUser.UserId)

@@ -162,6 +162,46 @@ public sealed class TaxMasterCalculatorV1Tests
             .Select(list => list.ListVersion));
     }
 
+    [Fact]
+    public void The_withholding_threshold_starts_empty_and_follows_the_same_timeline()
+    {
+        // SAT-D93 (Sinan, 2026-10-31): no threshold is assumed; before a record the answer is "kaynak yok" (null).
+        Assert.Null(TaxMasterCalculatorV1.ThresholdInForce(Data(), Day));
+        var data = new TaxMasterDataV1(new Dictionary<Guid, TaxCategoryDataV1>(), [], [],
+        [
+            new TaxWithholdingThresholdDataV1(Guid.NewGuid(), 1, Day, 1000m, "TRY"),
+            new TaxWithholdingThresholdDataV1(Guid.NewGuid(), 2, Day.AddDays(10), 2000m, "TRY", IsWithdrawn: true),
+            new TaxWithholdingThresholdDataV1(Guid.NewGuid(), 3, Day.AddDays(20), 3000m, "TRY"),
+        ]);
+
+        Assert.Null(TaxMasterCalculatorV1.ThresholdInForce(data, Day.AddDays(-1)));
+        Assert.Equal(1000m, TaxMasterCalculatorV1.ThresholdInForce(data, Day.AddDays(15))!.Amount);
+        Assert.Equal(3000m, TaxMasterCalculatorV1.ThresholdInForce(data, Day.AddDays(20))!.Amount);
+        Assert.Equal([3L], TaxMasterCalculatorV1.ScheduledThresholds(data, Day).Select(record => record.RecordVersion));
+    }
+
+    [Theory]
+    [InlineData("12000", true)]
+    [InlineData("12000.5", true)]
+    [InlineData("999999999999999.9999", true)]
+    [InlineData("0", false)]
+    [InlineData("0.0000", false)]
+    [InlineData("012000", false)]
+    [InlineData("1234567890123456", false)]
+    [InlineData("1.23456", false)]
+    [InlineData("-1", false)]
+    [InlineData("1,000", false)]
+    public void Threshold_amounts_are_positive_lossless_text(string text, bool valid) =>
+        Assert.Equal(valid, TaxMasterCalculatorV1.TryParseAmount(text, out _));
+
+    [Theory]
+    [InlineData("try", true)]
+    [InlineData("TRY", true)]
+    [InlineData("TL", false)]
+    [InlineData("TR1", false)]
+    public void Currency_codes_are_three_letters(string code, bool valid) =>
+        Assert.Equal(valid, TaxMasterCalculatorV1.TryNormalizeCurrencyCode(code, out _));
+
     [Theory]
     [InlineData("0", true, true, "0")]
     [InlineData("0", false, false, null)]

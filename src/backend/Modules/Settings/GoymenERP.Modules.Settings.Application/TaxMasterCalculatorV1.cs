@@ -32,11 +32,21 @@ public sealed record TaxCodeListVersionDataV1(
     IReadOnlyList<TaxCodeListEntryViewV1> Entries,
     bool IsWithdrawn = false);
 
-/// <summary>Everything the tax master of one company holds.</summary>
+/// <summary>One immutable withholding amount threshold record (VUK 232). <c>IsWithdrawn</c>: withdrawn before it took effect.</summary>
+public sealed record TaxWithholdingThresholdDataV1(
+    Guid RecordId,
+    long RecordVersion,
+    DateOnly EffectiveFrom,
+    decimal Amount,
+    string CurrencyCode,
+    bool IsWithdrawn = false);
+
+/// <summary>Everything the tax master of one company holds (thresholds null = none).</summary>
 public sealed record TaxMasterDataV1(
     IReadOnlyDictionary<Guid, TaxCategoryDataV1> Categories,
     IReadOnlyList<TaxRateRecordDataV1> Records,
-    IReadOnlyList<TaxCodeListVersionDataV1> CodeLists);
+    IReadOnlyList<TaxCodeListVersionDataV1> CodeLists,
+    IReadOnlyList<TaxWithholdingThresholdDataV1>? Thresholds = null);
 
 /// <summary>The VAT and withholding parts of a line's tax resolution (company/product identity added by the port).</summary>
 public sealed record TaxLineResolutionPartsV1(
@@ -122,6 +132,68 @@ public static class TaxMasterCalculatorV1
             .Select(sameDay => sameDay.MaxBy(list => list.ListVersion)!)
             .OrderBy(list => list.EffectiveFrom)
             .ToArray();
+    }
+
+    /// <summary>The withholding amount threshold in force on <paramref name="on"/> (null before the first: "kaynak yok").</summary>
+    public static TaxWithholdingThresholdDataV1? ThresholdInForce(TaxMasterDataV1 data, DateOnly on)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return Thresholds(data)
+            .Where(record => record.EffectiveFrom <= on)
+            .OrderBy(record => record.EffectiveFrom)
+            .ThenBy(record => record.RecordVersion)
+            .LastOrDefault();
+    }
+
+    public static IReadOnlyList<TaxWithholdingThresholdDataV1> ScheduledThresholds(TaxMasterDataV1 data, DateOnly after)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return Thresholds(data)
+            .Where(record => record.EffectiveFrom > after)
+            .GroupBy(record => record.EffectiveFrom)
+            .Select(sameDay => sameDay.MaxBy(record => record.RecordVersion)!)
+            .OrderBy(record => record.EffectiveFrom)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// An amount as lossless decimal text above 0: 1…15 integer digits (no leading zero), an optional '.' and 1…4 decimals.
+    /// No sign, exponent, group separator or whitespace; never rounded.
+    /// </summary>
+    public static bool TryParseAmount(string? text, out decimal value)
+    {
+        value = 0m;
+        if (string.IsNullOrEmpty(text) || text.Length > 15 + 1 + TaxMasterInputLimitsV1.PercentMaximumScale)
+        {
+            return false;
+        }
+
+        var dot = text.IndexOf('.', StringComparison.Ordinal);
+        var integerPart = dot < 0 ? text : text[..dot];
+        var fraction = dot < 0 ? string.Empty : text[(dot + 1)..];
+        if (integerPart.Length is 0 or > 15 || !integerPart.All(char.IsAsciiDigit)
+            || (integerPart.Length > 1 && integerPart[0] == '0')
+            || (dot >= 0 && (fraction.Length is 0 || fraction.Length > TaxMasterInputLimitsV1.PercentMaximumScale
+                || !fraction.All(char.IsAsciiDigit))))
+        {
+            return false;
+        }
+
+        if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed)
+            || parsed <= 0m)
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    /// <summary>An ISO 4217 alphabetic code: exactly three ASCII letters, upper-cased.</summary>
+    public static bool TryNormalizeCurrencyCode(string? code, out string normalized)
+    {
+        normalized = code?.Trim().ToUpperInvariant() ?? string.Empty;
+        return normalized.Length == 3 && normalized.All(char.IsAsciiLetterUpper);
     }
 
     /// <summary>
@@ -283,6 +355,9 @@ public static class TaxMasterCalculatorV1
     private static IEnumerable<TaxRateRecordDataV1> Series(TaxMasterDataV1 data, string kind, Guid classId, Guid? buyerCategoryId) =>
         data.Records.Where(record => !record.IsWithdrawn && record.Kind == kind && record.ClassId == classId
                                      && record.BuyerCategoryId == buyerCategoryId);
+
+    private static IEnumerable<TaxWithholdingThresholdDataV1> Thresholds(TaxMasterDataV1 data) =>
+        (data.Thresholds ?? []).Where(record => !record.IsWithdrawn);
 
     private static IEnumerable<TaxCodeListVersionDataV1> Lists(TaxMasterDataV1 data, string kind) =>
         data.CodeLists.Where(list => !list.IsWithdrawn && list.Kind == kind);

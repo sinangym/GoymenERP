@@ -33,7 +33,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// MOD-03 (SAT-D73/D74/D82/D83, EK12; SAT-D93, EK13) against a REAL SQL Server: the Settings tax master through the REAL host
 /// (routes, authorization, migrations, audit) — 403 without the name, an empty master is "kaynak yok", categories, dated VAT
 /// and withholding records, the UBL-TR code lists, same-date replacement and withdrawal without resurrection, company isolation,
-/// replay/conflict and the rollback refusal (51131); and the Product owner's tax classification feeding the Settings line tax
+/// replay/conflict, the VUK 232 withholding threshold (empty = "kaynak yok") and the rollback refusals (51141, 51131); and the Product owner's tax classification feeding the Settings line tax
 /// port end to end (51132). Every grant is a fresh synthetic role; every rate and code is SENTETIK.
 /// </summary>
 public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
@@ -73,6 +73,8 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         var empty = await run.JsonAsync(client, Root);
         Assert.Equal((CompanyA, 0, 0), (empty.GetProperty("companyId").GetGuid(), empty.GetProperty("categories").GetArrayLength(),
             empty.GetProperty("rateSeries").GetArrayLength()));
+        Assert.Equal(("0", JsonValueKind.Null), (empty.GetProperty("withholdingThreshold").GetProperty("version").GetString(),
+            empty.GetProperty("withholdingThreshold").GetProperty("inForce").ValueKind));
         Assert.All(empty.GetProperty("codeLists").EnumerateArray(), list =>
         {
             Assert.Equal("0", list.GetProperty("version").GetString());
@@ -195,9 +197,55 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         Assert.Empty(vatSeries.GetProperty("scheduled").EnumerateArray());
         Assert.Equal(4, master.GetProperty("categories").GetArrayLength());
 
+        // SAT-D93 (Sinan, 2026-10-31): the VUK 232 withholding threshold starts empty — the port answers "kaynak yok" —
+        // and is a dated record like the rates (SENTETIK amounts).
+        await using (var port = run.LineTaxPort(CompanyA, new StubProductClasses(general, steel)))
+        {
+            var none = await port.Value.GetWithholdingThresholdAsync(today);
+            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.WithholdingThresholdMissing, (decimal?)null),
+                (none.State, none.Reason, none.Amount));
+        }
+
+        using (var badAmount = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/withholding-threshold", "k-th-bad",
+                   new RecordWithholdingThresholdRequestV1("0", "0", "TRY", "SENTETIK"))))
+        {
+            await AssertProblemAsync(badAmount, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.RequestInvalid);
+        }
+
+        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/withholding-threshold", "k-th-1",
+            new RecordWithholdingThresholdRequestV1("0", "1000.50", "try", "SENTETIK sınır"), HttpStatusCode.NoContent);
+        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/withholding-threshold", "k-th-2",
+            new RecordWithholdingThresholdRequestV1("1", "2000", "TRY", "SENTETIK planlı sınır", scheduledDay), HttpStatusCode.NoContent);
+        using (var staleThreshold = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/withholding-threshold", "k-th-stale",
+                   new RecordWithholdingThresholdRequestV1("1", "3000", "TRY", "SENTETIK"))))
+        {
+            await AssertProblemAsync(staleThreshold, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.VersionConflict);
+        }
+
+        var thresholdView = (await run.JsonAsync(client, Root)).GetProperty("withholdingThreshold");
+        Assert.Equal(("2", "1000.5", "TRY"), (thresholdView.GetProperty("version").GetString(),
+            thresholdView.GetProperty("inForce").GetProperty("amount").GetString(),
+            thresholdView.GetProperty("inForce").GetProperty("currencyCode").GetString()));
+        var scheduledThreshold = Assert.Single(thresholdView.GetProperty("scheduled").EnumerateArray());
+        await using (var port = run.LineTaxPort(CompanyA, new StubProductClasses(general, steel)))
+        {
+            var current = await port.Value.GetWithholdingThresholdAsync(today);
+            Assert.Equal((TaxResolutionStatesV1.Resolved, 1000.5m, "TRY"), (current.State, current.Amount, current.CurrencyCode));
+            Assert.Equal(2000m, (await port.Value.GetWithholdingThresholdAsync(scheduledDay)).Amount);
+        }
+
+        await run.CommandAsync(client, HttpMethod.Post,
+            $"{Root}/withholding-threshold/records/{scheduledThreshold.GetProperty("recordId").GetGuid():D}/withdrawal", "k-th-withdraw",
+            new WithdrawTaxRateRecordRequestV1("2", "SENTETIK sınır geri"), HttpStatusCode.NoContent);
+        await using (var port = run.LineTaxPort(CompanyA, new StubProductClasses(general, steel)))
+        {
+            Assert.Equal(1000.5m, (await port.Value.GetWithholdingThresholdAsync(scheduledDay)).Amount);
+        }
+
         // Company isolation: B sees an empty master and A's record is B's code-less 404.
         var masterB = await run.JsonAsync(clientB, Root);
         Assert.Equal((CompanyB, 0), (masterB.GetProperty("companyId").GetGuid(), masterB.GetProperty("categories").GetArrayLength()));
+        Assert.Equal(JsonValueKind.Null, masterB.GetProperty("withholdingThreshold").GetProperty("inForce").ValueKind);
         using (var foreign = await clientB.SendAsync(Json(HttpMethod.Post, $"{Root}/rate-records/{inForceId:D}/withdrawal",
                    "k-foreign", new WithdrawTaxRateRecordRequestV1("4", "SENTETIK"))))
         {
@@ -237,13 +285,14 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         Assert.Equal(4, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-rate.recorded.v1'"));
 
-        // The rollback is refused while tax master data exists (forward fix, 51131); nothing is dropped.
+        // The rollback is refused while a threshold exists (forward fix, 51141); nothing is dropped. (51131 for AddTaxMaster
+        // itself is the second fact, where no threshold exists.)
         await using var context = run.SettingsContext(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        var migration = Array.IndexOf(applied, "20261031130138_AddTaxMaster");
+        var migration = Array.IndexOf(applied, "20261031180502_AddTaxWithholdingThreshold");
         Assert.True(migration > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
-        Assert.Equal(51131, rollback.Number);
+        Assert.Equal(51141, rollback.Number);
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
@@ -329,6 +378,20 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'product.tax-classification.changed.v1' "
             + "AND JSON_VALUE([AfterJson], '$.reason') = N'SENTETIK sınıf' AND [CompanyId] = @c", ("@c", CompanyA)));
+
+        // Settings: with no threshold, AddTaxWithholdingThreshold rolls back freely and AddTaxMaster refuses while categories
+        // exist (forward fix, 51131); everything up to AddTaxMaster stays applied.
+        await using (var settingsRollback = run.Settings(CompanyA))
+        {
+            var settingsContext = settingsRollback.Context;
+            var settingsApplied = (await settingsContext.Database.GetAppliedMigrationsAsync()).ToArray();
+            var taxMaster = Array.IndexOf(settingsApplied, "20261031130138_AddTaxMaster");
+            Assert.True(taxMaster > 0);
+            var settingsRefusal = await Assert.ThrowsAsync<SqlException>(
+                () => settingsContext.GetService<IMigrator>().MigrateAsync(settingsApplied[taxMaster - 1]));
+            Assert.Equal(51131, settingsRefusal.Number);
+            Assert.Equal(settingsApplied.Take(taxMaster + 1), await settingsContext.Database.GetAppliedMigrationsAsync());
+        }
 
         // The rollback is refused while a classification exists (forward fix, 51132).
         await using var scopeRollback = run.Request(CompanyA);
@@ -688,6 +751,8 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
                 CompanyId = company, Kind = kind, ListVersion = 1, Code = code, Name = "SENTETIK",
             });
         }
+
+        public SettingsDbContext Context => database;
 
         public Task SaveAsync() => database.SaveChangesAsync();
 

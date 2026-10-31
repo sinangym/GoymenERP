@@ -12,7 +12,10 @@ internal sealed record TaxMasterRows(
     IReadOnlyList<TaxCodeListRow> Lists,
     IReadOnlyList<TaxCodeListVersionRow> ListVersions,
     IReadOnlyList<TaxCodeListEntryRow> ListEntries,
-    IReadOnlyList<TaxCodeListWithdrawalRow> ListWithdrawals)
+    IReadOnlyList<TaxCodeListWithdrawalRow> ListWithdrawals,
+    TaxWithholdingThresholdRow? Threshold,
+    IReadOnlyList<TaxWithholdingThresholdRecordRow> ThresholdRecords,
+    IReadOnlyList<TaxWithholdingThresholdWithdrawalRow> ThresholdWithdrawals)
 {
     public static async Task<TaxMasterRows> ReadAsync(SettingsDbContext database, bool trackCategoriesAndLists,
         CancellationToken cancellationToken)
@@ -28,12 +31,19 @@ internal sealed record TaxMasterRows(
         var listVersions = await database.TaxCodeListVersions.AsNoTracking().ToListAsync(cancellationToken);
         var listEntries = await database.TaxCodeListEntries.AsNoTracking().ToListAsync(cancellationToken);
         var listWithdrawals = await database.TaxCodeListWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
-        return new TaxMasterRows(categories, records, recordWithdrawals, lists, listVersions, listEntries, listWithdrawals);
+        var threshold = trackCategoriesAndLists
+            ? await database.TaxWithholdingThresholds.SingleOrDefaultAsync(cancellationToken)
+            : await database.TaxWithholdingThresholds.AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        var thresholdRecords = await database.TaxWithholdingThresholdRecords.AsNoTracking().ToListAsync(cancellationToken);
+        var thresholdWithdrawals = await database.TaxWithholdingThresholdWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
+        return new TaxMasterRows(categories, records, recordWithdrawals, lists, listVersions, listEntries, listWithdrawals,
+            threshold, thresholdRecords, thresholdWithdrawals);
     }
 
     public TaxMasterDataV1 ToData()
     {
         var withdrawnRecords = RecordWithdrawals.Select(withdrawal => withdrawal.RecordId).ToHashSet();
+        var withdrawnThresholds = ThresholdWithdrawals.Select(withdrawal => withdrawal.RecordId).ToHashSet();
         var withdrawnLists = ListWithdrawals.Select(withdrawal => (withdrawal.Kind, withdrawal.ListVersion)).ToHashSet();
         var entries = ListEntries
             .GroupBy(entry => (entry.Kind, entry.ListVersion))
@@ -47,6 +57,8 @@ internal sealed record TaxMasterRows(
                 row.EffectiveFrom, row.Applies, row.RatePercent, row.WithholdingCode, withdrawnRecords.Contains(row.Id))).ToArray(),
             ListVersions.Select(row => new TaxCodeListVersionDataV1(row.Kind, row.ListVersion, row.EffectiveFrom,
                 entries.GetValueOrDefault((row.Kind, row.ListVersion)) ?? [],
-                withdrawnLists.Contains((row.Kind, row.ListVersion)))).ToArray());
+                withdrawnLists.Contains((row.Kind, row.ListVersion)))).ToArray(),
+            ThresholdRecords.Select(row => new TaxWithholdingThresholdDataV1(row.Id, row.RecordVersion, row.EffectiveFrom,
+                row.Amount, row.CurrencyCode, withdrawnThresholds.Contains(row.Id))).ToArray());
     }
 }

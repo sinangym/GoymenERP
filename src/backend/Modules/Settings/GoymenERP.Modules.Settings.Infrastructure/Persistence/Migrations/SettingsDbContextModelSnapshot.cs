@@ -923,6 +923,133 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxWithholdingThresholdRecordRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("char(3)")
+                        .IsFixedLength()
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<long>("RecordVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "RecordVersion")
+                        .IsUnique();
+
+                    b.ToTable("TaxWithholdingThresholdRecords", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Amount", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Currency", "LEN([CurrencyCode]) = 3 AND [CurrencyCode] NOT LIKE '%[^A-Z]%'");
+
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdRecords_Version", "[RecordVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxWithholdingThresholdRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("LastRecordVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("TaxWithholdingThresholds", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholds_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholds_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholds_Version", "[Version] > 0 AND [LastRecordVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxWithholdingThresholdWithdrawalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid?>("ReplacedByRecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("WithdrawnAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WithdrawnBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "RecordId");
+
+                    b.HasIndex("CompanyId", "ReplacedByRecordId");
+
+                    b.ToTable("TaxWithholdingThresholdWithdrawals", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdWithdrawals_Recorded", "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdWithdrawals_Replacement", "[ReplacedByRecordId] IS NULL OR [ReplacedByRecordId] <> [RecordId]");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitMembershipGroupRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitGroupRow", null)
@@ -1021,6 +1148,29 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         .IsRequired();
 
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxRateRecordRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ReplacedByRecordId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxWithholdingThresholdRecordRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxWithholdingThresholdRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxWithholdingThresholdWithdrawalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxWithholdingThresholdRecordRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "RecordId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxWithholdingThresholdRecordRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "ReplacedByRecordId")
                         .OnDelete(DeleteBehavior.Restrict);

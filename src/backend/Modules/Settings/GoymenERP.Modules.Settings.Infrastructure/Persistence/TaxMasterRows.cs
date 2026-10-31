@@ -95,3 +95,40 @@ internal sealed class TaxCodeListWithdrawalRow
     public string WithdrawnBy { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// The withholding amount threshold of one company (VUK 232; the edit fence of its records). Created with its first record.
+/// </summary>
+internal sealed class TaxWithholdingThresholdRow
+{
+    public Guid CompanyId { get; set; }
+    public long Version { get; set; }
+    public long LastRecordVersion { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+    public string UpdatedBy { get; set; } = string.Empty;
+}
+
+/// <summary>One immutable threshold record: an amount above 0 in an entered ISO 4217 currency, from its business date.</summary>
+internal sealed class TaxWithholdingThresholdRecordRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid Id { get; set; }
+    public long RecordVersion { get; set; }
+    public DateOnly EffectiveFrom { get; set; }
+    public decimal Amount { get; set; }
+    public string CurrencyCode { get; set; } = string.Empty;
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}
+
+/// <summary>The withdrawal of a threshold record before it took effect (insert-only).</summary>
+internal sealed class TaxWithholdingThresholdWithdrawalRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid RecordId { get; set; }
+    public Guid? ReplacedByRecordId { get; set; }
+    public DateTimeOffset WithdrawnAtUtc { get; set; }
+    public string WithdrawnBy { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}

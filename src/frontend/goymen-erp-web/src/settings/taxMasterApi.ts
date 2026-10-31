@@ -16,6 +16,9 @@ import {
   rateWithdrawalPath,
   vatRatePath,
   withholdingRatePath,
+  WITHHOLDING_THRESHOLD_PATH,
+  thresholdWithdrawalPath,
+  type RecordThresholdBody,
   type CodeListKind,
   type CreateCategoryBody,
   type PublishCodeListBody,
@@ -52,4 +55,12 @@ export function publishCodeList(context: CommandContext, kind: CodeListKind, bod
 
 export function withdrawCodeList(context: CommandContext, kind: CodeListKind, listVersion: string, body: WithdrawBody) {
   return send<true>('POST', codeListWithdrawalPath(kind, listVersion), context, body, 204, noBody)
+}
+
+export function recordWithholdingThreshold(context: CommandContext, body: RecordThresholdBody) {
+  return send<true>('POST', WITHHOLDING_THRESHOLD_PATH, context, body, 204, noBody)
+}
+
+export function withdrawWithholdingThreshold(context: CommandContext, recordId: string, body: WithdrawBody) {
+  return send<true>('POST', thresholdWithdrawalPath(recordId), context, body, 204, noBody)
 }

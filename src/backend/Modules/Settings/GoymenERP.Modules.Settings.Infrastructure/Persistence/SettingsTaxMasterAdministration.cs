@@ -99,7 +99,16 @@ internal sealed partial class SettingsTaxMasterAdministration(
             .ThenBy(row => row.Code, StringComparer.Ordinal)
             .Select(row => new TaxCategoryViewV1(row.Id, row.Kind, row.Code, row.Name, Text(row.Version)))
             .ToArray();
-        return new TaxMasterViewV1(companyId, today, categories, series, lists);
+        var thresholdRows = rows.ThresholdRecords.ToDictionary(row => row.Id);
+        var threshold = new TaxWithholdingThresholdViewV1(
+            Text(rows.Threshold?.Version ?? 0),
+            TaxMasterCalculatorV1.ThresholdInForce(data, today) is { } thresholdInForce
+                ? ThresholdView(thresholdRows[thresholdInForce.RecordId])
+                : null,
+            TaxMasterCalculatorV1.ScheduledThresholds(data, today)
+                .Select(record => ThresholdView(thresholdRows[record.RecordId]))
+                .ToArray());
+        return new TaxMasterViewV1(companyId, today, categories, series, lists, threshold);
     }
 
     public async Task<TaxMasterCommandResultV1> CreateCategoryAsync(CreateTaxCategoryRequestV1 request,
@@ -452,6 +461,11 @@ internal sealed partial class SettingsTaxMasterAdministration(
         "settings.tax-code-list.published.v1" => "Vergi kod listesi sürümü yayımlandı; gerekçe kayıt içeriğindedir",
         "settings.tax-code-list.corrected.v1" => "Yürürlüğe girmemiş kod listesi sürümü düzeltildi; gerekçe kayıt içeriğindedir",
         "settings.tax-code-list.withdrawn.v1" => "Yürürlüğe girmemiş kod listesi sürümü geri çekildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-withholding-threshold.recorded.v1" => "Tevkifat tutar sınırı kaydı girildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-withholding-threshold.corrected.v1" =>
+            "Yürürlüğe girmemiş tevkifat tutar sınırı kaydı düzeltildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-withholding-threshold.withdrawn.v1" =>
+            "Yürürlüğe girmemiş tevkifat tutar sınırı kaydı geri çekildi; gerekçe kayıt içeriğindedir",
         _ => throw new InvalidOperationException("Tanımsız Ayarlar audit olayı."),
     };
 
@@ -492,6 +506,17 @@ internal sealed partial class SettingsTaxMasterAdministration(
         row.RecordedBy,
         row.RecordedAtUtc,
         row.Reason);
+
+    private static TaxWithholdingThresholdRecordViewV1 ThresholdView(TaxWithholdingThresholdRecordRow row) =>
+        new TaxWithholdingThresholdRecordViewV1(
+            row.Id,
+            Text(row.RecordVersion),
+            row.EffectiveFrom,
+            TaxMasterCalculatorV1.Format(row.Amount),
+            row.CurrencyCode,
+            row.RecordedBy,
+            row.RecordedAtUtc,
+            row.Reason);
 
     private static TaxCodeListVersionViewV1 ListView(TaxCodeListVersionRow row, TaxCodeListVersionDataV1 data) => new TaxCodeListVersionViewV1(
         Text(row.ListVersion),

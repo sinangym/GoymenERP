@@ -11,6 +11,8 @@ import {
   codeListPath,
   codeListWithdrawalPath,
   rateWithdrawalPath,
+  WITHHOLDING_THRESHOLD_PATH,
+  thresholdWithdrawalPath,
   vatRatePath,
   withholdingRatePath,
 } from './taxMasterContract'
@@ -44,6 +46,7 @@ function template(builtPath: string): string {
     .replace(`/vat-classes/${ID}`, '/vat-classes/{classId}')
     .replace(`/withholding-classes/${ID}`, '/withholding-classes/{classId}')
     .replace(`/rate-records/${ID}`, '/rate-records/{recordId}')
+    .replace(`/withholding-threshold/records/${ID}`, '/withholding-threshold/records/{recordId}')
     .replace(/\/code-lists\/(Exemption|Withholding)\/versions/, '/code-lists/{listKind}/versions')
     .replace(/\/versions\/7\/withdrawal$/, '/versions/{listVersion}/withdrawal')
 }
@@ -73,6 +76,8 @@ describe('tax master client ↔ canonical OpenAPI', () => {
     operation('post', rateWithdrawalPath(ID))
     operation('post', codeListPath('Exemption'))
     operation('post', codeListWithdrawalPath('Withholding', '7'))
+    operation('post', WITHHOLDING_THRESHOLD_PATH)
+    operation('post', thresholdWithdrawalPath(ID))
   })
 
   it('sends exactly the declared request members', () => {
@@ -86,6 +91,8 @@ describe('tax master client ↔ canonical OpenAPI', () => {
     expectFits({ expectedVersion: '1', reason: 'r' }, 'post', rateWithdrawalPath(ID))
     expectFits({ expectedVersion: '0', entries: [], reason: 'r' }, 'post', codeListPath('Withholding'))
     expectFits({ expectedVersion: '1', reason: 'r' }, 'post', codeListWithdrawalPath('Withholding', '7'))
+    expectFits({ expectedVersion: '0', amount: '1', currencyCode: 'TRY', reason: 'r' }, 'post', WITHHOLDING_THRESHOLD_PATH)
+    expectFits({ expectedVersion: '1', reason: 'r' }, 'post', thresholdWithdrawalPath(ID))
   })
 
   it('knows every problem code the routes declare', () => {

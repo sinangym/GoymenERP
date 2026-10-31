@@ -9,6 +9,8 @@
  *   POST /settings/tax-master/rate-records/{recordId}/withdrawal             -> 204
  *   POST /settings/tax-master/code-lists/{listKind}/versions                 -> 204
  *   POST /settings/tax-master/code-lists/{listKind}/versions/{v}/withdrawal  -> 204
+ *   POST /settings/tax-master/withholding-threshold                          -> 204 (SAT-D93, VUK 232)
+ *   POST /settings/tax-master/withholding-threshold/records/{id}/withdrawal  -> 204
  *
  * Every decoder fails CLOSED (one bad row invalidates the whole answer); rates stay the lossless decimal TEXT the server
  * sends and the screen never computes a tax. A missing value is "kaynak yok", never 0.
@@ -29,6 +31,12 @@ export function withholdingRatePath(classId: string): string {
 
 export function rateWithdrawalPath(recordId: string): string {
   return `${TAX_MASTER_PATH}/rate-records/${encodeURIComponent(recordId)}/withdrawal`
+}
+
+export const WITHHOLDING_THRESHOLD_PATH = `${TAX_MASTER_PATH}/withholding-threshold`
+
+export function thresholdWithdrawalPath(recordId: string): string {
+  return `${WITHHOLDING_THRESHOLD_PATH}/records/${encodeURIComponent(recordId)}/withdrawal`
 }
 
 export function codeListPath(kind: CodeListKind): string {
@@ -121,12 +129,39 @@ export interface TaxCodeList {
   readonly scheduled: readonly TaxCodeListVersion[]
 }
 
+/** SAT-D93 VUK 232 withholding amount threshold record: lossless amount text in an entered ISO 4217 currency. */
+export interface TaxThresholdRecord {
+  readonly recordId: string
+  readonly recordVersion: string
+  readonly effectiveFrom: string
+  readonly amount: string
+  readonly currencyCode: string
+  readonly recordedBy: string
+  readonly recordedAtUtc: string
+  readonly reason: string
+}
+
+export interface TaxThreshold {
+  readonly version: string
+  readonly inForce: TaxThresholdRecord | null
+  readonly scheduled: readonly TaxThresholdRecord[]
+}
+
 export interface TaxMaster {
   readonly companyId: string
   readonly businessDate: string
   readonly categories: readonly TaxCategory[]
   readonly rateSeries: readonly TaxRateSeries[]
   readonly codeLists: readonly TaxCodeList[]
+  readonly withholdingThreshold: TaxThreshold
+}
+
+export interface RecordThresholdBody {
+  readonly expectedVersion: string
+  readonly amount: string
+  readonly currencyCode: string
+  readonly reason: string
+  readonly effectiveFrom?: string
 }
 
 export interface CreateCategoryBody {
@@ -169,6 +204,42 @@ const VERSION = /^(0|[1-9]\d*)$/
 const PERCENT = /^(0|[1-9]\d{0,2})(\.\d{1,4})?$/
 const CATEGORY_CODE = /^[A-Z0-9][A-Z0-9_-]{0,31}$/
 const LIST_CODE = /^[A-Z0-9]{1,16}$/
+const AMOUNT = /^(0|[1-9]\d{0,14})(\.\d{1,4})?$/
+const CURRENCY = /^[A-Z]{3}$/
+
+/** Above 0, at most 15 integer digits and 4 decimals, as text (never a JS number on the wire). */
+export function isAmountText(value: unknown): value is string {
+  return typeof value === 'string' && AMOUNT.test(value) && Number(value) > 0
+}
+
+export function isCurrencyCode(value: string): boolean {
+  return CURRENCY.test(value)
+}
+
+function decodeThresholdRecord(raw: unknown): TaxThresholdRecord | null {
+  if (!isRecord(raw) || !isUuid(raw.recordId) || !isVersion(raw.recordVersion) || !isDateText(raw.effectiveFrom)
+    || !isAmountText(raw.amount) || typeof raw.currencyCode !== 'string' || !isCurrencyCode(raw.currencyCode)
+    || !isText(raw.recordedBy) || typeof raw.recordedAtUtc !== 'string' || typeof raw.reason !== 'string') return null
+  return {
+    recordId: raw.recordId,
+    recordVersion: raw.recordVersion,
+    effectiveFrom: raw.effectiveFrom,
+    amount: raw.amount,
+    currencyCode: raw.currencyCode,
+    recordedBy: raw.recordedBy,
+    recordedAtUtc: raw.recordedAtUtc,
+    reason: raw.reason,
+  }
+}
+
+function decodeThreshold(raw: unknown): TaxThreshold | null {
+  if (!isRecord(raw) || !isVersion(raw.version) || !Array.isArray(raw.scheduled)) return null
+  const inForce = raw.inForce === null ? null : decodeThresholdRecord(raw.inForce)
+  if (raw.inForce !== null && inForce === null) return null
+  const scheduled = raw.scheduled.map(decodeThresholdRecord)
+  if (scheduled.some((record) => record === null)) return null
+  return { version: raw.version, inForce, scheduled: scheduled as TaxThresholdRecord[] }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -287,6 +358,8 @@ export function decodeTaxMaster(raw: unknown, companyId: string): TaxMaster | nu
     return null
   }
 
+  const threshold = decodeThreshold(raw.withholdingThreshold)
+  if (threshold === null) return null
   const kinds = (lists as TaxCodeList[]).map((list) => list.kind)
   if (kinds.length !== CODE_LIST_KINDS.length || CODE_LIST_KINDS.some((kind) => !kinds.includes(kind))) return null
   return {
@@ -295,6 +368,7 @@ export function decodeTaxMaster(raw: unknown, companyId: string): TaxMaster | nu
     categories: categories as TaxCategory[],
     rateSeries: series as TaxRateSeries[],
     codeLists: lists as TaxCodeList[],
+    withholdingThreshold: threshold,
   }
 }
 

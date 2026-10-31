@@ -18,7 +18,8 @@ namespace GoymenERP.Api.Endpoints;
 /// <item><c>POST …/categories</c> (201 + id) · <c>PUT …/categories/{categoryId}/name</c> ·
 /// <c>POST …/vat-classes/{classId}/rates</c> · <c>POST …/withholding-classes/{classId}/rates</c> ·
 /// <c>POST …/rate-records/{recordId}/withdrawal</c> · <c>POST …/code-lists/{listKind}/versions</c> ·
-/// <c>POST …/code-lists/{listKind}/versions/{listVersion}/withdrawal</c> (204).</item>
+/// <c>POST …/code-lists/{listKind}/versions/{listVersion}/withdrawal</c> · SAT-D93 <c>POST …/withholding-threshold</c> ·
+/// <c>POST …/withholding-threshold/records/{recordId}/withdrawal</c> (204).</item>
 /// </list>
 /// Commands: one Idempotency-Key (stored terminal answers replay with <c>Idempotency-Replayed</c>), the version as decimal
 /// text, a mandatory reason (≤ 4000). Another company's record is the same code-less 404 as an unknown one.
@@ -255,6 +256,65 @@ public static class SettingsTaxMasterEndpoints
             .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
                 StatusCodes.Status409Conflict)
             .Accepts<WithdrawTaxCodeListRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(
+                TaxMasterProblemCodesV1.IdempotencyConflict,
+                TaxMasterProblemCodesV1.VersionConflict,
+                TaxMasterProblemCodesV1.RecordInEffect,
+                TaxMasterProblemCodesV1.RecordWithdrawn)
+            .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        // SAT-D93 (Sinan, 2026-10-31): the dated VUK 232 withholding amount threshold, starting empty.
+        group.MapPost("/withholding-threshold", async (
+                RecordWithholdingThresholdRequestV1 request,
+                ISettingsTaxMasterAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                metadata => service.RecordWithholdingThresholdAsync(request, metadata, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
+            .WithName("RecordSettingsWithholdingThresholdV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<RecordWithholdingThresholdRequestV1>("application/json")
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .AllowsCodeLessErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpConflict(
+                TaxMasterProblemCodesV1.IdempotencyConflict,
+                TaxMasterProblemCodesV1.VersionConflict)
+            .ProducesErpUnprocessableEntity(TaxMasterProblemCodesV1.EffectiveFromPast)
+            .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/withholding-threshold/records/{recordId:guid}/withdrawal", async (
+                Guid recordId,
+                WithdrawTaxRateRecordRequestV1 request,
+                ISettingsTaxMasterAdministrationV1 service,
+                ICurrentUser currentUser,
+                ICompanyContext companyContext,
+                ICorrelationContext correlationContext,
+                HttpContext httpContext,
+                CancellationToken cancellationToken) =>
+            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
+                metadata => service.WithdrawWithholdingThresholdAsync(recordId, request, metadata, cancellationToken)))
+            .RequireCompanyContext()
+            .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
+            .RequiresNonEmptyGuidPathParameter("recordId")
+            .WithName("WithdrawSettingsWithholdingThresholdV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
+                StatusCodes.Status409Conflict)
+            .Accepts<WithdrawTaxRateRecordRequestV1>("application/json")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesErpBadRequest(CommandBadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()

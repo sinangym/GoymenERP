@@ -27,14 +27,18 @@ import {
   publishCodeList,
   recordVatRate,
   recordWithholdingRate,
+  recordWithholdingThreshold,
   withdrawCodeList,
   withdrawRateRecord,
+  withdrawWithholdingThreshold,
 } from './taxMasterApi'
 import {
   CATEGORY_KINDS,
   TAX_INPUT,
   TAX_PROBLEM,
+  isAmountText,
   isCategoryCode,
+  isCurrencyCode,
   isListCode,
   isRatePercentText,
   normalizeTaxCode,
@@ -45,6 +49,8 @@ import {
   type TaxMaster,
   type TaxRateRecord,
   type TaxRateSeries,
+  type TaxThreshold,
+  type TaxThresholdRecord,
 } from './taxMasterContract'
 import { CATEGORY_KIND_LABEL, CODE_LIST_LABEL, TAX_TEXT, formatDate, taxRefusalText } from './taxMasterText'
 import { useCommandAttempt, type AttemptStatus } from './useCommandAttempt'
@@ -122,6 +128,8 @@ type Editor =
   | { readonly kind: 'withdraw-rate'; readonly owner: TaxCategory; readonly record: TaxRateRecord }
   | { readonly kind: 'list'; readonly list: TaxCodeList }
   | { readonly kind: 'withdraw-list'; readonly list: TaxCodeList; readonly listVersion: string }
+  | { readonly kind: 'threshold'; readonly threshold: TaxThreshold }
+  | { readonly kind: 'withdraw-threshold'; readonly threshold: TaxThreshold; readonly record: TaxThresholdRecord }
 
 function MasterView({
   master,
@@ -283,6 +291,42 @@ function MasterView({
         )}
       </section>
 
+      <section aria-labelledby="tax-threshold-heading" className={styles.section}>
+        <h2 id="tax-threshold-heading">{TAX_TEXT.thresholdHeading}</h2>
+        <p className={styles.muted}>{TAX_TEXT.thresholdIntro}</p>
+        <p aria-label={`${TAX_TEXT.thresholdHeading} — ${TAX_TEXT.columnInForce}`}>
+          {master.withholdingThreshold.inForce === null
+            ? TAX_TEXT.noSource
+            : TAX_TEXT.thresholdLabelOf(master.withholdingThreshold.inForce.amount, master.withholdingThreshold.inForce.currencyCode)}
+        </p>
+        {master.withholdingThreshold.scheduled.length > 0 ? (
+          <ul aria-label={`${TAX_TEXT.thresholdHeading} — ${TAX_TEXT.columnScheduled}`} className={styles.plainList}>
+            {master.withholdingThreshold.scheduled.map((record) => (
+              <li key={record.recordId}>
+                {TAX_TEXT.scheduledLabel(record.effectiveFrom, TAX_TEXT.thresholdLabelOf(record.amount, record.currencyCode))}{' '}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="danger"
+                  aria-label={`${TAX_TEXT.withdraw} — ${TAX_TEXT.thresholdHeading} ${formatDate(record.effectiveFrom)}`}
+                  onClick={() => setEditor({ kind: 'withdraw-threshold', threshold: master.withholdingThreshold, record })}
+                >
+                  {TAX_TEXT.withdraw}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          aria-label={`${TAX_TEXT.recordThreshold} — ${TAX_TEXT.thresholdHeading}`}
+          onClick={() => setEditor({ kind: 'threshold', threshold: master.withholdingThreshold })}
+        >
+          {TAX_TEXT.recordThreshold}
+        </Button>
+      </section>
+
       <section aria-labelledby="tax-lists-heading" className={styles.section}>
         <h2 id="tax-lists-heading">{TAX_TEXT.codeListsHeading}</h2>
         {master.codeLists.map((list) => (
@@ -353,6 +397,18 @@ function MasterView({
             withdrawRateRecord(context, editor.record.recordId, { expectedVersion: editor.owner.version, reason })
           }
           fingerprint={{ record: editor.record.recordId, version: editor.owner.version }}
+        />
+      ) : null}
+      {editor.kind === 'threshold' ? <ThresholdForm {...formProps} threshold={editor.threshold} /> : null}
+      {editor.kind === 'withdraw-threshold' ? (
+        <WithdrawForm
+          key={editor.record.recordId}
+          {...formProps}
+          heading={`${TAX_TEXT.withdraw} — ${TAX_TEXT.thresholdHeading} ${formatDate(editor.record.effectiveFrom)}`}
+          execute={(context, reason) =>
+            withdrawWithholdingThreshold(context, editor.record.recordId, { expectedVersion: editor.threshold.version, reason })
+          }
+          fingerprint={{ threshold: editor.record.recordId, version: editor.threshold.version }}
         />
       ) : null}
       {editor.kind === 'list' ? <CodeListForm key={editor.list.kind} {...formProps} list={editor.list} /> : null}
@@ -650,6 +706,52 @@ function WithholdingForm(props: FormProps & { readonly withholdingClass: TaxCate
           </Field>
         </>
       ) : null}
+      <EffectiveFromField value={effectiveFrom} onChange={setEffectiveFrom} />
+      <ReasonField value={reason} onChange={setReason} />
+      <Footer status={attempt.status} hasPendingRetry={attempt.hasPendingRetry} onCancel={() => props.onDone(null)} />
+    </form>
+  )
+}
+
+function ThresholdForm(props: FormProps & { readonly threshold: TaxThreshold }) {
+  const [amount, setAmount] = useState('')
+  const [currency, setCurrency] = useState('')
+  const [effectiveFrom, setEffectiveFrom] = useState('')
+  const [reason, setReason] = useState('')
+  const attempt = useCommandAttempt<true>()
+  const currencyCode = normalizeTaxCode(currency)
+  const amountError = amount.length > 0 && !isAmountText(amount) ? TAX_TEXT.amountHelp : undefined
+  const currencyError = currency.trim().length > 0 && !isCurrencyCode(currencyCode) ? TAX_TEXT.currencyHelp : undefined
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (!isAmountText(amount) || !isCurrencyCode(currencyCode)) return
+    const body = {
+      expectedVersion: props.threshold.version,
+      amount,
+      currencyCode,
+      reason: reason.trim(),
+      ...(effectiveFrom.length > 0 ? { effectiveFrom } : {}),
+    }
+    finish(
+      await attempt.run(body, (idempotencyKey) => recordWithholdingThreshold({ companyId: props.companyId, idempotencyKey }, body)),
+      props,
+    )
+  }
+
+  return (
+    <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="tax-threshold-form-heading">
+      <h3 id="tax-threshold-form-heading">{TAX_TEXT.recordThreshold} — {TAX_TEXT.thresholdHeading}</h3>
+      <Field label={TAX_TEXT.amountLabel} help={TAX_TEXT.amountHelp} error={amountError}>
+        {(control) => (
+          <input {...control} type="text" inputMode="decimal" required value={amount} onChange={(event) => setAmount(event.target.value.trim())} />
+        )}
+      </Field>
+      <Field label={TAX_TEXT.currencyLabel} help={TAX_TEXT.currencyHelp} error={currencyError}>
+        {(control) => (
+          <input {...control} type="text" required maxLength={3} autoComplete="off" value={currency} onChange={(event) => setCurrency(event.target.value)} />
+        )}
+      </Field>
       <EffectiveFromField value={effectiveFrom} onChange={setEffectiveFrom} />
       <ReasonField value={reason} onChange={setReason} />
       <Footer status={attempt.status} hasPendingRetry={attempt.hasPendingRetry} onCancel={() => props.onDone(null)} />

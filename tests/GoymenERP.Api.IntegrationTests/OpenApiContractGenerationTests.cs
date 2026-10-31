@@ -1108,6 +1108,13 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/WithdrawTaxCodeListRequestV1",
             ["path:listKind:true:type:string", "path:listVersion:true:type:integer;format:int64;pattern:^-?(?:0|[1-9]\\d*)$"]),
+        new("post", "/api/v1/settings/tax-master/withholding-threshold", "RecordSettingsWithholdingThresholdV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordWithholdingThresholdRequestV1"),
+        new("post", "/api/v1/settings/tax-master/withholding-threshold/records/{recordId}/withdrawal", "WithdrawSettingsWithholdingThresholdV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/WithdrawTaxRateRecordRequestV1",
+            ["path:recordId:true:type:string;format:uuid;non-empty-uuid:true"]),
         new("get", "/api/v1/product-tax-classifications/{productId}", "GetProductTaxClassificationV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:productId:true:type:string;format:uuid;non-empty-uuid:true"]),
@@ -1402,6 +1409,8 @@ public sealed partial class OpenApiContractGenerationTests
             ["WithdrawSettingsTaxRateRecordV1"] = "none",
             ["PublishSettingsTaxCodeListV1"] = "none",
             ["WithdrawSettingsTaxCodeListV1"] = "none",
+            ["RecordSettingsWithholdingThresholdV1"] = "none",
+            ["WithdrawSettingsWithholdingThresholdV1"] = "none",
             ["GetProductTaxClassificationV1"] = "ref:ProductTaxClassificationViewV1",
             ["SetProductTaxClassificationV1"] = "none",
         };
@@ -1676,6 +1685,8 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsTaxRateRecordV1",
         "PublishSettingsTaxCodeListV1",
         "WithdrawSettingsTaxCodeListV1",
+        "RecordSettingsWithholdingThresholdV1",
+        "WithdrawSettingsWithholdingThresholdV1",
         "GetProductTaxClassificationV1",
         "SetProductTaxClassificationV1",
     ];
@@ -1820,6 +1831,8 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsTaxRateRecordV1",
         "PublishSettingsTaxCodeListV1",
         "WithdrawSettingsTaxCodeListV1",
+        "RecordSettingsWithholdingThresholdV1",
+        "WithdrawSettingsWithholdingThresholdV1",
         "SetProductTaxClassificationV1",
     ];
 
@@ -2079,6 +2092,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["WithdrawSettingsTaxRateRecordV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["PublishSettingsTaxCodeListV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["WithdrawSettingsTaxCodeListV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["RecordSettingsWithholdingThresholdV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["WithdrawSettingsWithholdingThresholdV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["SetProductTaxClassificationV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
             };
 
@@ -2271,6 +2286,8 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsTaxRateRecordV1",
         "PublishSettingsTaxCodeListV1",
         "WithdrawSettingsTaxCodeListV1",
+        "RecordSettingsWithholdingThresholdV1",
+        "WithdrawSettingsWithholdingThresholdV1",
         "SetProductTaxClassificationV1",
     ];
 
@@ -2426,6 +2443,7 @@ public sealed partial class OpenApiContractGenerationTests
         "RecordSettingsWithholdingRateV1:404",
         "WithdrawSettingsTaxRateRecordV1:404",
         "WithdrawSettingsTaxCodeListV1:404",
+        "WithdrawSettingsWithholdingThresholdV1:404",
         "GetProductTaxClassificationV1:404",
         "SetProductTaxClassificationV1:404",
     ];
@@ -2509,6 +2527,8 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsTaxRateRecordV1:400",
         "PublishSettingsTaxCodeListV1:400",
         "WithdrawSettingsTaxCodeListV1:400",
+        "RecordSettingsWithholdingThresholdV1:400",
+        "WithdrawSettingsWithholdingThresholdV1:400",
         "SetProductTaxClassificationV1:400",
     ];
 
@@ -3160,6 +3180,13 @@ public sealed partial class OpenApiContractGenerationTests
             ["WithdrawSettingsTaxCodeListV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
             ["WithdrawSettingsTaxCodeListV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_record_in_effect", "settings_tax_master_record_withdrawn", "settings_tax_master_version_conflict"],
             ["WithdrawSettingsTaxCodeListV1:503"] = ["settings_provider_unavailable"],
+            ["RecordSettingsWithholdingThresholdV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["RecordSettingsWithholdingThresholdV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_version_conflict"],
+            ["RecordSettingsWithholdingThresholdV1:422"] = ["settings_tax_master_effective_from_past"],
+            ["RecordSettingsWithholdingThresholdV1:503"] = ["settings_provider_unavailable"],
+            ["WithdrawSettingsWithholdingThresholdV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["WithdrawSettingsWithholdingThresholdV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_record_in_effect", "settings_tax_master_record_withdrawn", "settings_tax_master_version_conflict"],
+            ["WithdrawSettingsWithholdingThresholdV1:503"] = ["settings_provider_unavailable"],
             ["GetProductTaxClassificationV1:400"] = ["product_tax_classification_request_invalid"],
             ["GetProductTaxClassificationV1:503"] = ["product_tax_classification_provider_unavailable"],
             ["SetProductTaxClassificationV1:400"] = ["product_tax_classification_command_metadata_invalid", "product_tax_classification_reason_required", "product_tax_classification_reason_too_long", "product_tax_classification_request_invalid"],
@@ -6530,12 +6557,28 @@ public sealed partial class OpenApiContractGenerationTests
                     ("displayName", "type:string")),
                 // MOD-03: the tax master and product tax classification reads.
                 ["TaxMasterViewV1"] = ObjectSchema(
-                    ["companyId", "businessDate", "categories", "rateSeries", "codeLists"],
+                    ["companyId", "businessDate", "categories", "rateSeries", "codeLists", "withholdingThreshold"],
                     ("companyId", "type:string;format:uuid"),
                     ("businessDate", "type:string;format:date"),
                     ("categories", "type:array;items:ref:TaxCategoryViewV1"),
                     ("rateSeries", "type:array;items:ref:TaxRateSeriesViewV1"),
-                    ("codeLists", "type:array;items:ref:TaxCodeListViewV1")),
+                    ("codeLists", "type:array;items:ref:TaxCodeListViewV1"),
+                    ("withholdingThreshold", "ref:TaxWithholdingThresholdViewV1")),
+                ["TaxWithholdingThresholdViewV1"] = ObjectSchema(
+                    ["version", "inForce", "scheduled"],
+                    ("version", "type:string"),
+                    ("inForce", "oneOf:ref:TaxWithholdingThresholdRecordViewV1|type:null"),
+                    ("scheduled", "type:array;items:ref:TaxWithholdingThresholdRecordViewV1")),
+                ["TaxWithholdingThresholdRecordViewV1"] = ObjectSchema(
+                    ["recordId", "recordVersion", "effectiveFrom", "amount", "currencyCode", "recordedBy", "recordedAtUtc", "reason"],
+                    ("recordId", "type:string;format:uuid"),
+                    ("recordVersion", "type:string"),
+                    ("effectiveFrom", "type:string;format:date"),
+                    ("amount", "type:string"),
+                    ("currencyCode", "type:string"),
+                    ("recordedBy", "type:string"),
+                    ("recordedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string")),
                 ["TaxCategoryViewV1"] = ObjectSchema(
                     ["id", "kind", "code", "name", "version"],
                     ("id", "type:string;format:uuid"),
@@ -7515,6 +7558,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ["expectedVersion", "reason"],
                     ("expectedVersion", "type:null|string"),
                     ("reason", "type:null|string")),
+                ["RecordWithholdingThresholdRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "amount", "currencyCode", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("amount", "type:null|string"),
+                    ("currencyCode", "type:null|string"),
+                    ("reason", "type:null|string"),
+                    ("effectiveFrom", "type:null|string;format:date")),
                 ["SetProductTaxClassificationRequestV1"] = ObjectSchema(
                     ["expectedVersion", "vatClassId", "withholdingClassId", "reason"],
                     ("expectedVersion", "type:null|string"),
