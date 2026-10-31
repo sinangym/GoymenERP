@@ -642,4 +642,3 @@ withholding class, never a rate; the rates are the Settings tax master's dated r
 | Rollback | Migration `20261031130728_AddProductTaxClassifications` (`dotnet ef`): `Down` refuses with `THROW 51132` while any classification or command answer exists (forward fix). |
 
 Not here: the product card UI for the classes (follow-up of the frontend lane); a global (all-company) classification.
-
