@@ -49,27 +49,51 @@ public sealed partial class SalesStore : ISalesReportReadStore
             new SalesOpenOrderGroupKey(group.CompanyAccountId, group.PartyId, group.ProductId, group.OrderUnitId), group.Orders))];
     }
 
-    public async Task<IReadOnlyList<SalesOrderDraft>> ListOpenOrdersOfGroupAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey key,
-        Guid? afterOrderId, int take, CancellationToken cancellationToken = default)
+    public async Task<SalesOpenOrderBatch> ListOpenOrdersOfGroupsAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey first,
+        SalesOpenOrderGroupKey last, Guid? afterOrderId, int take, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(filter);
-        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(first);
+        ArgumentNullException.ThrowIfNull(last);
         var companyId = RequireResolvedCompany();
         ArgumentOutOfRangeException.ThrowIfLessThan(take, 1);
-        var ids = OpenLines(companyId, filter)
-            .Where(row => row.CompanyAccountId == key.CompanyAccountId && row.PartyId == key.PartyId && row.ProductId == key.ProductId
-                && row.OrderUnitId == key.UnitId)
-            .Select(row => row.DraftId)
-            .Distinct();
+        var rows = OpenLines(companyId, filter);
+        if (first == last)
+        {
+            rows = rows.Where(row => row.CompanyAccountId == first.CompanyAccountId && row.PartyId == first.PartyId
+                && row.ProductId == first.ProductId && row.OrderUnitId == first.UnitId);
+        }
+        else
+        {
+            // The same keyset comparison as the group scan, so the range is the scan's own key order (first ≤ key ≤ last).
+            rows = rows
+                .Where(row => row.CompanyAccountId.CompareTo(first.CompanyAccountId) > 0
+                    || row.CompanyAccountId == first.CompanyAccountId && (row.PartyId.CompareTo(first.PartyId) > 0
+                        || row.PartyId == first.PartyId && (row.ProductId.CompareTo(first.ProductId) > 0
+                            || row.ProductId == first.ProductId && row.OrderUnitId.CompareTo(first.UnitId) >= 0)))
+                .Where(row => row.CompanyAccountId.CompareTo(last.CompanyAccountId) < 0
+                    || row.CompanyAccountId == last.CompanyAccountId && (row.PartyId.CompareTo(last.PartyId) < 0
+                        || row.PartyId == last.PartyId && (row.ProductId.CompareTo(last.ProductId) < 0
+                            || row.ProductId == last.ProductId && row.OrderUnitId.CompareTo(last.UnitId) <= 0)));
+        }
+
+        var ids = rows.Select(row => row.DraftId).Distinct();
         if (afterOrderId is { } after)
         {
             ids = ids.Where(id => id.CompareTo(after) > 0);
         }
 
-        var page = await ids.OrderBy(id => id).Take(take).ToListAsync(cancellationToken);
+        // One id more than asked tells whether another order follows, without a further read.
+        var page = await ids.OrderBy(id => id).Take(take + 1).ToListAsync(cancellationToken);
+        var hasMore = page.Count > take;
+        if (hasMore)
+        {
+            page.RemoveAt(take);
+        }
+
         if (page.Count == 0)
         {
-            return [];
+            return new SalesOpenOrderBatch([], false);
         }
 
         var orderRows = await dbContext.Drafts.AsNoTracking()
@@ -78,7 +102,7 @@ public sealed partial class SalesStore : ISalesReportReadStore
         // The caller pages by id: answer in the id order the database chose for the page.
         var restored = await RestoreAsync(orderRows, cancellationToken);
         var position = page.Select((id, index) => (id, index)).ToDictionary(entry => entry.id, entry => entry.index);
-        return [.. restored.OrderBy(draft => position[draft.Id])];
+        return new SalesOpenOrderBatch([.. restored.OrderBy(draft => position[draft.Id])], hasMore);
     }
 
     public async Task<SalesQuotePage> ListLostQuotesAsync(SalesLostQuoteReportFilter filter, int pageSize, string? cursor,

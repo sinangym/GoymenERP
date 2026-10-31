@@ -61,8 +61,13 @@ describe('Açık siparişler (API-41, KPI No 124)', () => {
     expect(within(rows[0]).getByText('250.5 kg')).toBeTruthy()
     expect(within(rows[0]).getByText('3500.5 kg')).toBeTruthy()
     expect(within(rows[1]).getByText('10 adet')).toBeTruthy()
-    // Sinan 2026-10-31 (EK19 pending): the quantity awaiting customer acceptance is its own column, never in the open tonnage.
+    // SAT-D137 (SINAN_KARARLARI_2026-10-31_SATIS_EK19.md): the quantity awaiting customer acceptance is its own column, never in
+    // the open tonnage.
     expect(within(table).getByRole('columnheader', { name: T.openOrders.awaitingAcceptance })).toBeTruthy()
+    // The open quantity is measured on the customer-ACCEPTED revision: the columns say so, never "Onaylı".
+    expect(within(table).getByRole('columnheader', { name: 'Kabul edilen miktar' })).toBeTruthy()
+    expect(screen.getAllByRole('columnheader', { name: 'Kabul edilen revizyon' }).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('columnheader', { name: /^Onaylı/ })).toBeNull()
     expect(within(rows[0]).getByText('800 kg')).toBeTruthy()
     expect(screen.getByTestId('sales-report-line-awaiting-c3c3c3c3-0000-4000-8000-000000000501').textContent).toContain('Rev.0')
     expect(screen.getAllByText(T.openOrders.noAcceptedRevision).length).toBeGreaterThan(0)
@@ -75,7 +80,8 @@ describe('Açık siparişler (API-41, KPI No 124)', () => {
     expect(within(rows[0]).getByText(T.openOrders.incomplete)).toBeTruthy()
     expect(within(rows[1]).queryByText(T.openOrders.incomplete)).toBeNull()
     expect(screen.getByText(/SO-2026-000009 \/ 2 — /)).toBeTruthy()
-    expect(screen.getByText(/SO-2026-000009 \/ 2 — Revizyon yeniden onay bekliyor/)).toBeTruthy()
+    // Not measurable: awaiting re-approval, or not comparable with the customer-accepted revision.
+    expect(screen.getByText(/SO-2026-000009 \/ 2 — Ölçü alınacak miktar tam alınamadı: revizyon yeniden onay bekliyor ya da müşterinin kabul ettiği revizyonla karşılaştırılamıyor/)).toBeTruthy()
     // SAT-D130: a line completed within the SAT-D5 tolerance shows 0 open with its reason; an unreadable tolerance is unmeasured.
     expect(screen.getByTestId('sales-report-line-tolerance-c3c3c3c3-0000-4000-8000-000000000201').textContent).toBe(
       T.openOrders.completedWithinTolerance,

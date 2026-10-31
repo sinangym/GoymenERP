@@ -298,7 +298,7 @@ function OpenOrders({
         </>
       ),
     },
-    // Sinan 2026-10-31 (EK19 pending): kept apart from the open tonnage, never added to it.
+    // SAT-D137 (SINAN_KARARLARI_2026-10-31_SATIS_EK19.md): kept apart from the open tonnage, never added to it.
     { key: 'awaiting', header: O.awaitingAcceptance, align: 'end', cell: (group) => sum(group, group.awaitingAcceptanceQuantity) },
   ]
 

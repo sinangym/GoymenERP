@@ -74,7 +74,7 @@ public sealed partial class SalesDraftServiceTests
 
         var group = Assert.Single((await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, null))).Groups);
 
-        // Sinan 2026-10-31 (EK19 pending): not open tonnage — shown apart as "müşteri onayı bekliyor".
+        // SAT-D137 (SINAN_KARARLARI_2026-10-31_SATIS_EK19.md): not open tonnage — shown apart as "müşteri onayı bekliyor".
         Assert.Equal(("0", "0", "0", "3.5", true), (group.ApprovedQuantity, group.ShippedQuantity, group.RemainingQuantity,
             group.AwaitingAcceptanceQuantity, group.Complete));
         Assert.Equal([((string?)null, "0", "1.25", (string?)SalesDraftApiV1.Rev0), (null, "0", "2.25", SalesDraftApiV1.Rev0)],
@@ -254,6 +254,141 @@ public sealed partial class SalesDraftServiceTests
         Assert.All([otherFilter, broken], exception => Assert.Equal((400, SalesDraftProblemCodesV1.InvalidCursor), (exception.Status, exception.Code)));
     }
 
+    [Fact]
+    public async Task Reports_open_orders_read_many_small_groups_in_shared_batches_within_the_request_batch_budget()
+    {
+        var world = new World();
+        var orders = await ManyAcceptedAsync(world, 500);
+        // 500 single-order groups (one customer party each), shipped in full except every 50th: one request scans all 500.
+        var open = orders.Where((_, index) => index % 50 == 0).Select(order => order.Order).ToHashSet();
+        var lines = orders.ToDictionary(order => order.Order, order => order.Line);
+        var deliveries = new FakeDeliveries(order => new(Company, order, open.Contains(order) ? [] : [new(lines[order], KgUnit, 1.25m, 1.25m)]));
+        world.Deliveries = deliveries;
+        world.Authority.Measured.Clear();
+
+        var report = await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, null));
+
+        Assert.Equal(orders.Where(order => open.Contains(order.Order)).Select(order => order.Party).Order(),
+            report.Groups.Select(group => group.Customer.PartyId));
+        // Per 100 keys scanned: one key scan, ONE store order read of the 100 groups' orders, ONE Logistics read of their shipments —
+        // never a read per group (5 + 5 + 5 for 500 groups, within the 11-batch request budget).
+        Assert.Equal(5, world.Reports!.GroupCalls.Count);
+        Assert.Equal(5, world.Reports.OrderCalls.Count);
+        Assert.Equal(5, deliveries.Batches.Count);
+        Assert.All(deliveries.Batches, batch => Assert.Equal(SalesReportApiV1.OrderBatchSize, batch.Count));
+        Assert.InRange(world.Reports.OrderCalls.Count, 1, SalesReportApiV1.MaximumOrderBatchesPerRequest);
+        // Fences: before, after every key scan, store read and Logistics read, and after the Cari read (no tolerance read).
+        Assert.Equal(1 + 5 + 5 + 5 + 1, world.Authority.Measured.Count);
+
+        // 500 keys is the scan bound of one request, so it ends with a cursor; the next one finds no further key and ends.
+        var rest = await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, report.NextCursor));
+        Assert.Equal((0, (string?)null, 6, 5), (rest.Groups.Count, rest.NextCursor, world.Reports.GroupCalls.Count, world.Reports.OrderCalls.Count));
+    }
+
+    [Fact]
+    public async Task Reports_open_orders_page_across_shared_batches_with_no_group_skipped_or_repeated()
+    {
+        var world = new World();
+        var orders = await ManyAcceptedAsync(world, 130);
+        // Every third order open: 44 groups to show among 130 scanned (two key scans), seven per page.
+        var open = orders.Where((_, index) => index % 3 == 0).Select(order => order.Order).ToHashSet();
+        var lines = orders.ToDictionary(order => order.Order, order => order.Line);
+        var deliveries = new FakeDeliveries(order => new(Company, order, open.Contains(order) ? [] : [new(lines[order], KgUnit, 1.25m, 1.25m)]));
+        world.Deliveries = deliveries;
+        var query = new SalesOpenOrderReportQuery(null, null, null, 7, null);
+
+        var seen = new List<Guid>();
+        string? cursor = null;
+        var pages = 0;
+        do
+        {
+            var (storeReads, ownerReads) = (world.Reports!.OrderCalls.Count, deliveries.Batches.Count);
+            var page = await world.Service().GetOpenOrderReportAsync(query with { Cursor = cursor });
+            Assert.InRange(page.Groups.Count, 0, 7);
+            Assert.InRange(world.Reports.OrderCalls.Count - storeReads, 0, SalesReportApiV1.MaximumOrderBatchesPerRequest);
+            Assert.InRange(deliveries.Batches.Count - ownerReads, 0, SalesReportApiV1.MaximumOrderBatchesPerRequest);
+            seen.AddRange(page.Groups.Select(group => group.Customer.PartyId));
+            cursor = page.NextCursor;
+            pages++;
+        }
+        while (cursor is not null && pages < 50);
+
+        // The pages together are the whole report, in key order: a page that fills inside a shared batch ends before the first group
+        // it did not take, and the next page measures that group again (never skipped, never listed twice).
+        Assert.Null(cursor);
+        Assert.Equal(orders.Where(order => open.Contains(order.Order)).Select(order => order.Party).Order(), seen);
+        Assert.Equal(7, pages);
+    }
+
+    [Fact]
+    public async Task Reports_open_orders_end_the_page_at_the_request_batch_budget_and_read_a_grown_shared_scope_group_by_group()
+    {
+        var world = new World();
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        // 30 groups of 51 orders by their scan (none left when read): no two share a batch, each costs one store read. A request
+        // makes at most 11 — its order budget (1000) would allow 19 — and then ends with a cursor; the pages take every group once.
+        for (var index = 1; index <= 30; index++)
+        {
+            world.Reports!.ExtraKeys.Add((new SalesOpenOrderGroupKey(Guid.Parse($"00000000-0000-4000-8000-{index:D12}"), Party, Product, KgUnit), 51));
+        }
+
+        var query = new SalesOpenOrderReportQuery(null, null, null, 50, null);
+        var reads = new List<int>();
+        string? cursor = null;
+        do
+        {
+            var before = world.Reports!.OrderCalls.Count;
+            var page = await world.Service().GetOpenOrderReportAsync(query with { Cursor = cursor });
+            Assert.Empty(page.Groups);
+            reads.Add(world.Reports.OrderCalls.Count - before);
+            cursor = page.NextCursor;
+        }
+        while (cursor is not null && reads.Count < 10);
+
+        Assert.Equal([SalesReportApiV1.MaximumOrderBatchesPerRequest, SalesReportApiV1.MaximumOrderBatchesPerRequest, 8], reads);
+        Assert.Equal(30, world.Reports!.OrderCalls.Select(call => call.First).Distinct().Count());
+
+        // A shared batch whose scope holds more orders than the scan counted (here: 150 groups the scan does not see, between the
+        // two it sees): nothing of that read is used — its first group is read again alone, then the next; no Logistics read is
+        // made for the overfull batch, and the groups the scan saw are answered exactly.
+        var grown = new World();
+        var orders = await ManyAcceptedAsync(grown, 152);
+        var deliveries = new FakeDeliveries(order => new(Company, order, []));
+        grown.Deliveries = deliveries;
+        var keys = orders.Select(order => order.Party).Order().Select(party => new SalesOpenOrderGroupKey(Account, party, Product, KgUnit)).ToArray();
+        foreach (var hidden in keys[1..^1])
+        {
+            grown.Reports!.HiddenFromScan.Add(hidden);
+        }
+
+        var report = await grown.Service().GetOpenOrderReportAsync(query);
+        Assert.Equal([keys[0].PartyId, keys[^1].PartyId], report.Groups.Select(group => group.Customer.PartyId));
+        Assert.Null(report.NextCursor);
+        Assert.Equal([(keys[0], keys[^1]), (keys[0], keys[0]), (keys[^1], keys[^1])],
+            grown.Reports!.OrderCalls.Select(call => (call.First, call.Last)));
+        Assert.Equal([1, 1], deliveries.Batches.Select(batch => batch.Count));
+    }
+
+    [Fact]
+    public async Task Reports_open_orders_skip_a_too_large_group_whose_orders_closed_before_its_texts_were_read()
+    {
+        var world = new World();
+        var accepted = await AcceptedAsync(world);
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        world.Reports!.Orders.Add((await world.Store.FindDraftAsync(accepted.Draft.Id))!);
+        // The scan counted 1001 orders for a group (sorted first) that has none left when its texts are read: nothing to show —
+        // skipped like a measured group with no open line, never a 503 for the whole report.
+        var vanished = new SalesOpenOrderGroupKey(Guid.Parse("00000000-0000-4000-8000-000000000001"), Party, Product, KgUnit);
+        world.Reports.ExtraKeys.Add((vanished, SalesReportApiV1.MaximumOrdersPerGroup + 1));
+
+        var report = await world.Service().GetOpenOrderReportAsync(new SalesOpenOrderReportQuery(null, null, null, 50, null));
+
+        var group = Assert.Single(report.Groups);
+        Assert.Equal((Account, SalesOpenOrderGroupStateView.Measured, "1.25"), (group.Customer.CompanyAccountId, group.State, group.RemainingQuantity));
+        Assert.Null(report.NextCursor);
+        Assert.Equal((vanished, vanished, 1), (world.Reports.OrderCalls[0].First, world.Reports.OrderCalls[0].Last, world.Reports.OrderCalls[0].Take));
+    }
+
     [Theory]
     [InlineData(0, null, null, null)]
     [InlineData(101, null, null, null)]
@@ -319,6 +454,27 @@ public sealed partial class SalesDraftServiceTests
         Assert.Empty(world.Reports.OrderCalls);
         Assert.Empty(deliveries.Asked);
         Assert.Equal(0, world.PartyDisplays.Calls);
+    }
+
+    /// <summary>
+    /// <paramref name="count"/> one-line orders (1.25 kg), each of its own customer party (so one group each), approved and accepted
+    /// by the customer, in the report store.
+    /// </summary>
+    private static async Task<IReadOnlyList<(Guid Order, Guid Line, Guid Party)>> ManyAcceptedAsync(World world, int count)
+    {
+        var orders = new List<(Guid Order, Guid Line, Guid Party)>();
+        for (var index = 1; index <= count; index++)
+        {
+            var party = Guid.Parse($"b7100000-0000-4000-8000-{index:D12}");
+            var id = (await world.Service().CreateDraftAsync(Request() with { PartyId = party }, Metadata($"many-{index}-create"))).Detail.Draft.Id;
+            await world.Service().SubmitDraftAsync(id, Command("2"), Metadata($"many-{index}-submit"));
+            await world.Service().ApproveDraftAsync(id, Command("3"), Metadata($"many-{index}-approve"));
+            var accepted = (await world.Service().RecordCustomerAcceptanceAsync(id, Command("4"), Metadata($"many-{index}-accept"))).Detail;
+            world.Reports!.Orders.Add((await world.Store.FindDraftAsync(id))!);
+            orders.Add((id, accepted.Lines[0].LineId, party));
+        }
+
+        return orders;
     }
 
     /// <summary>A one-line order (1.25 kg), approved and accepted by the customer: version 5.</summary>
@@ -415,9 +571,11 @@ public sealed partial class SalesDraftServiceTests
         public List<SalesOrderDraft> Orders { get; } = [];
         public List<(SalesOpenOrderGroupKey Key, int Count)> ExtraKeys { get; } = [];
         public Dictionary<SalesOpenOrderGroupKey, int> CountOverride { get; } = [];
+        /// <summary>Keys the group scan does not answer although their orders are read (a scope that grew after the scan).</summary>
+        public HashSet<SalesOpenOrderGroupKey> HiddenFromScan { get; } = [];
         public Action? OnGroupRead { get; set; }
         public List<(SalesOpenOrderReportFilter Filter, SalesOpenOrderGroupKey? After, int Take)> GroupCalls { get; } = [];
-        public List<(SalesOpenOrderGroupKey Key, Guid? After, int Take)> OrderCalls { get; } = [];
+        public List<(SalesOpenOrderGroupKey First, SalesOpenOrderGroupKey Last, Guid? After, int Take)> OrderCalls { get; } = [];
         public List<SalesQuote> Lost { get; } = [];
         public List<(SalesLostQuoteReportFilter Filter, int PageSize, string? Cursor)> LostQuoteCalls { get; } = [];
 
@@ -448,6 +606,7 @@ public sealed partial class SalesDraftServiceTests
                 .Select(group => (group.Key, Count: CountOverride.GetValueOrDefault(group.Key, group.Select(entry => entry.Order.Id).Distinct().Count())))
                 .Concat(ExtraKeys)
                 .DistinctBy(group => group.Key)
+                .Where(group => !HiddenFromScan.Contains(group.Key))
                 .Where(group => after is null || Compare(group.Key, after) > 0)
                 .OrderBy(group => group.Key, Comparer<SalesOpenOrderGroupKey>.Create(Compare))
                 .Take(take)
@@ -456,19 +615,21 @@ public sealed partial class SalesDraftServiceTests
             return Task.FromResult<IReadOnlyList<SalesOpenOrderGroupScope>>(groups);
         }
 
-        public Task<IReadOnlyList<SalesOrderDraft>> ListOpenOrdersOfGroupAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey key,
-            Guid? afterOrderId, int take, CancellationToken cancellationToken = default)
+        public Task<SalesOpenOrderBatch> ListOpenOrdersOfGroupsAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey first,
+            SalesOpenOrderGroupKey last, Guid? afterOrderId, int take, CancellationToken cancellationToken = default)
         {
-            OrderCalls.Add((key, afterOrderId, take));
+            OrderCalls.Add((first, last, afterOrderId, take));
             if (Orders.Any(order => order is null))
             {
-                return Task.FromResult<IReadOnlyList<SalesOrderDraft>>([null!]);
+                return Task.FromResult(new SalesOpenOrderBatch([null!], false));
             }
 
-            var orders = OpenLines(filter).Where(entry => entry.Key == key).Select(entry => entry.Order).DistinctBy(order => order.Id)
+            var orders = OpenLines(filter).Where(entry => Compare(entry.Key, first) >= 0 && Compare(entry.Key, last) <= 0)
+                .Select(entry => entry.Order).DistinctBy(order => order.Id)
                 .Where(order => afterOrderId is null || order.Id.CompareTo(afterOrderId.Value) > 0)
-                .OrderBy(order => order.Id).Take(take).ToList();
-            return Task.FromResult<IReadOnlyList<SalesOrderDraft>>(orders);
+                .OrderBy(order => order.Id).Take(take + 1).ToList();
+            var hasMore = orders.Count > take;
+            return Task.FromResult(new SalesOpenOrderBatch([.. orders.Take(take)], hasMore));
         }
 
         public Task<SalesQuotePage> ListLostQuotesAsync(SalesLostQuoteReportFilter filter, int pageSize, string? cursor,

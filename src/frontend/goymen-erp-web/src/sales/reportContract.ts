@@ -48,7 +48,10 @@ export interface OpenOrderLine {
   readonly remainingQuantity: string
   /** SAT-D130: shipped short WITHIN the SAT-D5 tolerance — "Tamamlandı", nothing open although shipped < approved. */
   readonly completedWithinTolerance: boolean
-  /** Sinan 2026-10-31 (EK19 pending): what the approved revision awaiting customer acceptance adds — never open tonnage. */
+  /**
+   * SAT-D137 (SINAN_KARARLARI_2026-10-31_SATIS_EK19.md): what the approved revision awaiting customer acceptance adds — never open
+   * tonnage.
+   */
   readonly awaitingAcceptanceQuantity: string
   readonly awaitingAcceptanceRevision: string | null
 }

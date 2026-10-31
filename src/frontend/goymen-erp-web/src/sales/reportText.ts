@@ -16,7 +16,8 @@ export const AMOUNT_STATE_TEXT: Readonly<Record<AmountState, string>> = {
 }
 
 export const UNMEASURED_REASON_TEXT: Readonly<Record<UnmeasuredReason, string>> = {
-  PendingReapproval: 'Revizyon yeniden onay bekliyor; son onaylı miktar tam alınamadı',
+  PendingReapproval:
+    'Ölçü alınacak miktar tam alınamadı: revizyon yeniden onay bekliyor ya da müşterinin kabul ettiği revizyonla karşılaştırılamıyor',
   TolerancePolicyUnavailable: 'Eksik sevk edildi ve teslim toleransı (Ayarlar) okunamadı; kalanın açık olup olmadığı bilinmiyor',
   DeliveryAnswerInvalid: 'Lojistik sevk bilgisi bu sipariş için okunamadı; miktar gösterilmiyor',
 }
@@ -54,7 +55,7 @@ export const REPORT_TEXT = {
     caption: 'Açık sipariş miktarları',
     unit: 'Birim',
     orderCount: 'Sipariş sayısı',
-    approved: 'Onaylı miktar',
+    approved: 'Kabul edilen miktar',
     shipped: 'Sevk edilen',
     remaining: 'Açık miktar',
     awaitingAcceptance: 'Müşteri onayı bekliyor',
@@ -66,7 +67,7 @@ export const REPORT_TEXT = {
     order: 'Sipariş',
     orderDate: 'Sipariş tarihi',
     delivery: 'İstenen teslim',
-    basisRevision: 'Onaylı revizyon',
+    basisRevision: 'Kabul edilen revizyon',
     incomplete: 'Eksik — bazı satırlar ölçülemedi; toplam bu satırları içermez.',
     unmeasured: 'Ölçülemeyen satırlar',
     tooManyOrders: (count: number) =>

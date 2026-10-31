@@ -16,15 +16,21 @@ namespace GoymenERP.Modules.Sales.Application;
 /// another company's orders and quotes never appear.</item>
 /// <item><b>API-41 open orders (KPI No 124)</b>: an order is open while its lifecycle is <c>Draft</c> (neither cancelled nor
 /// closed) and it is approved — its current revision, or an earlier approved revision archived by one awaiting re-approval. A line's
-/// approved quantity is the API-08 measurement basis (the current lines, or the last approved revision's while one awaits
-/// re-approval; <see cref="Basis"/>), its shipped total the Logistics owner's recorded total through the AT-024 port
-/// (<see cref="RecordedShipmentsAsync"/>, the same validation), and its open quantity approved − shipped, never below zero.
-/// SAT-D130 (EK18): a line shipped short is judged by <see cref="SalesRealizationCalculator"/> with the Settings SAT-D5 tolerance of
-/// the order's business date (<see cref="ToleranceAsync"/>, the API-08 read) — "Tamamlandı" within the tolerance has nothing open;
-/// an unreadable tolerance makes the line unmeasured (never open, never closed). Lines are
-/// grouped by customer account, product and order unit: quantities are added only within one unit (Ö2, exact, never converted or
-/// rounded). A line whose basis cannot be taken exactly is listed as unmeasured and its group is not <c>complete</c>; an unreadable
-/// delivery owner is 503 — never a zero.</item>
+/// ACCEPTANCE BASIS is the quantity of the last internally approved revision the customer accepted (the owner's Q9 rule, as the
+/// shipping line standing and the SAT-D114 invoicing gate apply it), or the API-08 measurement basis when acceptance is not required
+/// (<see cref="Basis"/>); its open quantity is that basis − the Logistics owner's recorded shipped total through the AT-024 port
+/// (the <see cref="RecordedQuantities"/> validation), never below zero. What an approved revision awaiting customer acceptance adds
+/// above the accepted quantity (all of it when nothing is accepted yet) is never open: it is the line's and the group's
+/// awaiting-acceptance quantity, apart (SAT-D137, SINAN_KARARLARI_2026-10-31_SATIS_EK19.md). SAT-D130 (EK18): a line shipped short
+/// is judged by <see cref="SalesRealizationCalculator"/> with the Settings SAT-D5 tolerance of the order's business date
+/// (<see cref="ToleranceAsync"/>, the API-08 read) — "Tamamlandı" within the tolerance has nothing open; an unreadable tolerance
+/// makes the line unmeasured (never open, never closed). Lines are grouped by customer account, product and order unit: quantities
+/// are added only within one unit (Ö2, exact, never converted or rounded). A line whose basis cannot be taken exactly (a revision
+/// not comparable with the current line, or no approved revision to measure on) is unmeasured <c>PendingReapproval</c>; an order
+/// whose Logistics answer is missing or malformed is unmeasured <c>DeliveryAnswerInvalid</c> on its own lines — the rest of the
+/// report stands — and an unmeasured line leaves its group not <c>complete</c>. An absent, failing or batch-malformed delivery
+/// owner is 503 — never a zero. The work of one request is bounded (order batches shared by small groups, at most
+/// <see cref="SalesReportApiV1.MaximumOrderBatchesPerRequest"/> per request; see <see cref="GetOpenOrderReportAsync"/>).</item>
 /// <item><b>API-42 lost opportunities (SAT-D25)</b>: lost quotes, latest loss first, with the Settings list reason snapshot and the
 /// explanation as recorded; the net amount is <see cref="SalesOrderTotalsCalculator"/>'s answer over the quote's lines and money
 /// profile snapshot, in the quote's currency (never added across quotes or currencies), disclosed only under

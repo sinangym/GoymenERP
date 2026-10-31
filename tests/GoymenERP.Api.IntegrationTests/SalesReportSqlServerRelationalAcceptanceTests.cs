@@ -225,7 +225,8 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
             var all = new SalesOpenOrderReportFilter(null, null, null);
             var scope = Assert.Single(await b.Reports.ListOpenOrderGroupsAsync(all, null, 50));
             Assert.Equal((customerOfB.AccountId, 1), (scope.Key.CompanyAccountId, scope.OrderCount));
-            Assert.Equal(orderOfB.Id, Assert.Single(await b.Reports.ListOpenOrdersOfGroupAsync(all, scope.Key, null, 10)).Id);
+            var batch = await b.Reports.ListOpenOrdersOfGroupsAsync(all, scope.Key, scope.Key, null, 10);
+            Assert.Equal((orderOfB.Id, false), (Assert.Single(batch.Orders).Id, batch.HasMore));
             Assert.Equal(quoteOfB.Id, Assert.Single((await b.Reports.ListLostQuotesAsync(new SalesLostQuoteReportFilter(null, null, null, null), 50, null)).Items).Id);
             // A filter naming A's customer finds nothing in B.
             Assert.Empty(await b.Reports.ListOpenOrderGroupsAsync(new SalesOpenOrderReportFilter(null, null, customerOfA.AccountId), null, 50));

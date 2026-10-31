@@ -31,13 +31,20 @@ public static class SalesReportApiV1
     /// report stays reachable; the screen asks to narrow the dates for that group.</item>
     /// <item><see cref="MaximumOrdersPerRequest"/> — the orders one request measures; when the next group would exceed it the
     /// page ends early with a cursor (possibly with fewer groups, or none, than asked) and the screen continues from there.</item>
-    /// <item><see cref="OrderBatchSize"/> — orders read from the store and from the Logistics owner per round trip.</item>
+    /// <item><see cref="OrderBatchSize"/> — orders read from the store and from the Logistics owner per round trip (one order batch:
+    /// one store read and at most one Logistics read). Consecutive groups of few orders share a batch: their orders are read together
+    /// (at most <see cref="OrderBatchSize"/> by their scanned counts) and each group is measured over its own lines.</item>
+    /// <item><see cref="MaximumOrderBatchesPerRequest"/> — the order batches one request makes, whatever the groups' sizes; when the
+    /// next group (or batch of groups) would exceed it the page ends early with a cursor, like the order bound. It is the batches of
+    /// one group at <see cref="MaximumOrdersPerGroup"/> plus one: a request's first group always fits, even when a shared batch
+    /// found its scope grown while it was read and the first group is read again on its own — so the report always advances.</item>
     /// <item><see cref="MaximumGroupsScannedPerRequest"/> — group keys one request looks at (groups with nothing open are skipped).</item>
     /// </list>
     /// </summary>
     public const int MaximumOrdersPerGroup = 1000;
     public const int MaximumOrdersPerRequest = 1000;
     public const int OrderBatchSize = 100;
+    public const int MaximumOrderBatchesPerRequest = MaximumOrdersPerGroup / OrderBatchSize + 1;
     public const int MaximumGroupsScannedPerRequest = 500;
 }
 
@@ -67,8 +74,9 @@ public sealed record SalesReportCustomerView(Guid PartyId, Guid CompanyAccountId
 /// shipping line standing and the invoicing gate apply it, Q9 / SAT-D113…D115) minus the definitely shipped total the Logistics
 /// owner recorded, never below zero; a line the SAT-D5 realization axis judges <c>Completed</c> (shipped short WITHIN the delivery
 /// tolerance) has nothing open (SAT-D130, EK18). An approved revision that awaits customer acceptance adds nothing to the open
-/// quantity: what it would add is shown apart as <c>awaitingAcceptanceQuantity</c> (Sinan 2026-10-31, EK19 pending). Lines with
-/// nothing open and nothing awaiting (fully shipped, or completed within the tolerance) are closed history and not in the report.
+/// quantity: what it would add is shown apart as <c>awaitingAcceptanceQuantity</c> (SAT-D137,
+/// SINAN_KARARLARI_2026-10-31_SATIS_EK19.md). Lines with nothing open and nothing awaiting (fully shipped, or completed within the
+/// tolerance) are closed history and not in the report.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<SalesOpenOrderMeasureView>))]
 public enum SalesOpenOrderMeasureView
@@ -301,6 +309,9 @@ public sealed record SalesOpenOrderGroupKey(Guid CompanyAccountId, Guid PartyId,
 /// <summary>API-41 store answer: one group key and how many open-status orders of the filter have a current line in it.</summary>
 public sealed record SalesOpenOrderGroupScope(SalesOpenOrderGroupKey Key, int OrderCount);
 
+/// <summary>API-41 store answer: one id-ordered batch of restored open-status orders and whether another order follows it.</summary>
+public sealed record SalesOpenOrderBatch(IReadOnlyList<SalesOrderDraft> Orders, bool HasMore);
+
 /// <summary>API-42 store filter: the loss instant range [from, before) in UTC, an optional customer account and SAT-D25 reason.</summary>
 public sealed record SalesLostQuoteReportFilter(DateTimeOffset? LostFromUtc, DateTimeOffset? LostBeforeUtc, Guid? CompanyAccountId,
     Guid? ReasonId);
@@ -320,11 +331,13 @@ public interface ISalesReportReadStore
         int take, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// API-41: the open-status orders of the filter with a current line in <paramref name="key"/>, in id order after
-    /// <paramref name="afterOrderId"/>, at most <paramref name="take"/>, restored through the domain.
+    /// API-41: the open-status orders of the filter with a current line in a group key from <paramref name="first"/> through
+    /// <paramref name="last"/> (both inclusive, in the key order of <see cref="ListOpenOrderGroupsAsync"/>; one key when they are
+    /// equal), each once, in id order after <paramref name="afterOrderId"/>, at most <paramref name="take"/>, restored through the
+    /// domain; <see cref="SalesOpenOrderBatch.HasMore"/> says whether another such order follows (no extra read to learn the end).
     /// </summary>
-    Task<IReadOnlyList<SalesOrderDraft>> ListOpenOrdersOfGroupAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey key,
-        Guid? afterOrderId, int take, CancellationToken cancellationToken = default);
+    Task<SalesOpenOrderBatch> ListOpenOrdersOfGroupsAsync(SalesOpenOrderReportFilter filter, SalesOpenOrderGroupKey first,
+        SalesOpenOrderGroupKey last, Guid? afterOrderId, int take, CancellationToken cancellationToken = default);
 
     /// <summary>API-42: the lost quotes under <paramref name="filter"/>, latest loss first (loss instant, then id).</summary>
     Task<SalesQuotePage> ListLostQuotesAsync(SalesLostQuoteReportFilter filter, int pageSize, string? cursor,

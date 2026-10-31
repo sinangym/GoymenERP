@@ -15,21 +15,24 @@ namespace GoymenERP.Modules.Sales.Application;
 /// SAT-D114 invoicing gate apply the same): the quantity of the last internally approved revision the CUSTOMER ACCEPTED, or of the
 /// last approved revision when acceptance is not required (the API-08 basis, <see cref="Basis"/>). An approved revision that awaits
 /// customer acceptance adds NOTHING to the open quantity; what it adds above the accepted quantity (all of it when no revision is
-/// accepted yet) is answered apart as <c>awaitingAcceptanceQuantity</c> — Sinan 2026-10-31 (EK19 pending): "Açık tonaja eklenmez;
-/// 'müşteri onayı bekliyor' olarak ayrı görünür".</item>
+/// accepted yet) is answered apart as <c>awaitingAcceptanceQuantity</c> — SAT-D137 (SINAN_KARARLARI_2026-10-31_SATIS_EK19.md):
+/// "Açık tonaja eklenmez; 'müşteri onayı bekliyor' olarak ayrı görünür".</item>
 /// <item><b>Open</b> = accepted − shipped (the Logistics owner's recorded shipped total, AT-024 validation), never below zero; a line
 /// shipped short WITHIN the SAT-D5 tolerance is "Tamamlandı" and has nothing open (SAT-D130: <see cref="SalesRealizationCalculator"/>
 /// with the Settings tolerance of the order's business date, read once per business date per request); an unreadable tolerance
 /// makes the line unmeasured (never open, never closed).</item>
 /// <item><b>Closed history is not in the report</b>: a line with nothing open and nothing awaiting (fully shipped, completed within
 /// the tolerance) is left out, and a group with no listed and no unmeasured line is skipped.</item>
-/// <item><b>Bounded work</b> (<see cref="SalesReportApiV1"/>): group keys are scanned in key order through the service's own cursor;
-/// each group's orders are read and their shipments asked in batches of <see cref="SalesReportApiV1.OrderBatchSize"/> (one store
-/// read and one Logistics read per batch); a group above <see cref="SalesReportApiV1.MaximumOrdersPerGroup"/> orders is answered
-/// <c>TooManyOrders</c> without sums and passed; a request measures at most
-/// <see cref="SalesReportApiV1.MaximumOrdersPerRequest"/> orders and then ends its page with a cursor (fewer groups, or none, than
-/// asked). Cost of one request: at most ⌈1000 / 100⌉ = 10 order batches (each one restoring store read and one Logistics read, each
-/// fenced), ⌈500 / 100⌉ key scans, one tolerance read per distinct business date, one Cari read — never a lockout.</item>
+/// <item><b>Bounded work</b> (<see cref="SalesReportApiV1"/>): group keys are scanned in key order through the service's own cursor
+/// (at most ⌈500 / 100⌉ = 5 key scans). Orders are read in ORDER BATCHES of at most <see cref="SalesReportApiV1.OrderBatchSize"/>
+/// (one store read that restores them, then one Logistics read of their shipments): consecutive groups whose scanned counts add up
+/// to at most one batch share one batch (each measured over its own lines), a larger group is read batch by batch on its own, and a
+/// group above <see cref="SalesReportApiV1.MaximumOrdersPerGroup"/> orders is answered <c>TooManyOrders</c> without sums (one store
+/// read for its texts) and passed. A request makes at most <see cref="SalesReportApiV1.MaximumOrderBatchesPerRequest"/> (11) store
+/// order reads and as many Logistics reads, and measures at most <see cref="SalesReportApiV1.MaximumOrdersPerRequest"/> orders: when
+/// the next group would exceed either, the page ends with a cursor before it (fewer groups, or none, than asked). Every one of these
+/// reads is fenced. Besides them: one Settings tolerance read per distinct business date of a short-shipped line, one Cari read —
+/// never a lockout (a request always takes its first group, so every cursor advances).</item>
 /// <item><b>Isolation</b>: a malformed owner answer for ONE order makes that order's lines unmeasured
 /// (<c>DeliveryAnswerInvalid</c>); an owner that is not composed, throws or answers the batch malformed is 503.</item>
 /// </list>
@@ -52,18 +55,16 @@ public sealed partial class SalesDraftService
         var filter = new SalesOpenOrderReportFilter(query.From, query.To, query.CompanyAccountId);
         var after = query.Cursor is null ? null : OpenOrderCursor.Decode(query.Cursor, scope.CompanyId, filter);
 
-        var context = new OpenOrderRun(scope, permission, store, filter);
+        var run = new OpenOrderRun(scope, permission, store, filter);
         var results = new List<GroupResult>();
-        var budget = SalesReportApiV1.MaximumOrdersPerRequest;
         var scanned = 0;
-        var measuredAny = false;
         var exhausted = false;
         var position = after;
         while (results.Count < query.PageSize && scanned < SalesReportApiV1.MaximumGroupsScannedPerRequest)
         {
             var take = Math.Min(GroupKeysPerScan, SalesReportApiV1.MaximumGroupsScannedPerRequest - scanned);
             var keyFrom = position;
-            var groups = await ReadAsync(context, () => store.ListOpenOrderGroupsAsync(filter, keyFrom, take, cancellationToken),
+            var groups = await ReadAsync(run, () => store.ListOpenOrderGroupsAsync(filter, keyFrom, take, cancellationToken),
                 cancellationToken);
             if (groups is null || groups.Count > take || groups.Any(group => group is null || group.Key is null || group.OrderCount < 1))
             {
@@ -71,7 +72,9 @@ public sealed partial class SalesDraftService
             }
 
             var stopped = false;
-            foreach (var group in groups)
+            var index = 0;
+            var alone = false;
+            while (index < groups.Count && !stopped)
             {
                 if (results.Count >= query.PageSize)
                 {
@@ -79,27 +82,38 @@ public sealed partial class SalesDraftService
                     break;
                 }
 
-                if (group.OrderCount <= SalesReportApiV1.MaximumOrdersPerGroup && group.OrderCount > budget && measuredAny)
+                // The request's work bounds: the next group (or shared batch) is the next page's first, never a cut sum.
+                if (NextUnit(run, groups, index, alone) is not { } unit
+                    || await MeasureUnitAsync(run, unit, cancellationToken) is not { } outcome)
                 {
-                    // The request's work bound: this group is the next page's first, never a cut sum.
                     stopped = true;
                     break;
                 }
 
-                var result = group.OrderCount > SalesReportApiV1.MaximumOrdersPerGroup
-                    ? await TooManyOrdersAsync(context, group, cancellationToken)
-                    : await MeasureGroupAsync(context, group, cancellationToken);
-                if (result.State == SalesOpenOrderGroupStateView.Measured)
+                if (outcome.ReadAgainAlone)
                 {
-                    budget -= group.OrderCount;
-                    measuredAny = true;
+                    alone = true;
+                    continue;
                 }
 
-                position = group.Key;
-                scanned++;
-                if (result.HasAnything)
+                alone = false;
+                foreach (var (group, result) in outcome.Groups)
                 {
-                    results.Add(result);
+                    if (results.Count >= query.PageSize)
+                    {
+                        // Measured with its batch but not taken: the next page measures it again (the position stays before it).
+                        stopped = true;
+                        break;
+                    }
+
+                    position = group.Key;
+                    scanned++;
+                    index++;
+                    run.ProcessedAny = true;
+                    if (result is { HasAnything: true })
+                    {
+                        results.Add(result);
+                    }
                 }
             }
 
@@ -122,10 +136,76 @@ public sealed partial class SalesDraftService
         return new SalesOpenOrderReportResponse(SalesOpenOrderMeasureView.ApprovedMinusShipped, views, next);
     }
 
-    private sealed record OpenOrderRun(Scope Scope, string? Permission, ISalesReportReadStore Store, SalesOpenOrderReportFilter Filter)
+    /// <summary>One request's state: its work budgets (order batches, orders) and the SAT-D130 tolerances it read.</summary>
+    private sealed class OpenOrderRun(Scope scope, string? permission, ISalesReportReadStore store, SalesOpenOrderReportFilter filter)
     {
+        public Scope Scope => scope;
+        public string? Permission => permission;
+        public ISalesReportReadStore Store => store;
+        public SalesOpenOrderReportFilter Filter => filter;
+
         /// <summary>SAT-D130: the tolerance per business date, read once per request (null = not readable, fail-closed).</summary>
         public Dictionary<DateOnly, ToleranceRead?> Tolerances { get; } = [];
+
+        /// <summary>
+        /// Store order reads left (<see cref="SalesReportApiV1.MaximumOrderBatchesPerRequest"/>); each is followed by one Logistics
+        /// read at most.
+        /// </summary>
+        public int BatchesLeft { get; set; } = SalesReportApiV1.MaximumOrderBatchesPerRequest;
+
+        /// <summary>
+        /// Orders left to read (<see cref="SalesReportApiV1.MaximumOrdersPerRequest"/>): the scanned counts are taken, or what was read
+        /// when that is more.
+        /// </summary>
+        public int OrdersLeft { get; set; } = SalesReportApiV1.MaximumOrdersPerRequest;
+
+        /// <summary>Whether a group was taken (the position moved): from then on a bound ends the page instead of being waived.</summary>
+        public bool ProcessedAny { get; set; }
+    }
+
+    /// <summary>The next work unit: a too-large group alone, a larger group alone, or consecutive small groups sharing one batch.</summary>
+    private sealed record OpenOrderUnit(IReadOnlyList<SalesOpenOrderGroupScope> Groups, bool TooMany);
+
+    /// <summary>A unit's answer in group order (null result = nothing to show), or a request to read its first group alone.</summary>
+    private sealed record OpenOrderUnitOutcome(IReadOnlyList<(SalesOpenOrderGroupScope Group, GroupResult? Result)> Groups,
+        bool ReadAgainAlone);
+
+    /// <summary>
+    /// The unit starting at <paramref name="index"/>, or null when the request's budgets cannot hold it (only once a group was taken:
+    /// the first group of a request always fits — 1000 orders are 10 batches, within 11 — so every page advances).
+    /// </summary>
+    private static OpenOrderUnit? NextUnit(OpenOrderRun run, IReadOnlyList<SalesOpenOrderGroupScope> groups, int index, bool alone)
+    {
+        var first = groups[index];
+        if (first.OrderCount > SalesReportApiV1.MaximumOrdersPerGroup)
+        {
+            return run.ProcessedAny && run.BatchesLeft < 1 ? null : new OpenOrderUnit([first], true);
+        }
+
+        var batches = (first.OrderCount + SalesReportApiV1.OrderBatchSize - 1) / SalesReportApiV1.OrderBatchSize;
+        if (run.ProcessedAny && (batches > run.BatchesLeft || first.OrderCount > run.OrdersLeft))
+        {
+            return null;
+        }
+
+        var members = new List<SalesOpenOrderGroupScope> { first };
+        var orders = first.OrderCount;
+        if (!alone && first.OrderCount <= SalesReportApiV1.OrderBatchSize)
+        {
+            for (var next = index + 1; next < groups.Count; next++)
+            {
+                var candidate = groups[next];
+                if (orders + candidate.OrderCount > SalesReportApiV1.OrderBatchSize || orders + candidate.OrderCount > run.OrdersLeft)
+                {
+                    break;
+                }
+
+                members.Add(candidate);
+                orders += candidate.OrderCount;
+            }
+        }
+
+        return new OpenOrderUnit(members, false);
     }
 
     /// <summary>A store read under the report fence; a store refusal is its own answer (the cursor is the service's).</summary>
@@ -141,123 +221,196 @@ public sealed partial class SalesDraftService
         }
     }
 
-    /// <summary>A group too large to measure in one request: no sums, its product and unit texts from one order of its scope.</summary>
-    private async Task<GroupResult> TooManyOrdersAsync(OpenOrderRun run, SalesOpenOrderGroupScope group, CancellationToken cancellationToken)
+    /// <summary>One store order read of the unit's key range (one order batch of the request's budget), validated as an answer.</summary>
+    private async Task<SalesOpenOrderBatch> OrderBatchAsync(OpenOrderRun run, SalesOpenOrderGroupKey first, SalesOpenOrderGroupKey last,
+        Guid? afterOrder, int take, CancellationToken cancellationToken)
     {
-        var first = await ReadAsync(run, () => run.Store.ListOpenOrdersOfGroupAsync(run.Filter, group.Key, null, 1, cancellationToken),
-            cancellationToken);
-        var sample = first?.Count == 1 ? KeyLines(first[0], group.Key).FirstOrDefault() : null;
-        if (sample is null)
+        if (run.BatchesLeft < 1)
+        {
+            // Unreachable by the unit rules (a first group needs at most 10 of 11 batches): never more reads than the bound.
+            throw new SalesDraftServiceException(503, "service_unavailable");
+        }
+
+        run.BatchesLeft--;
+        var batch = await ReadAsync(run, () => run.Store.ListOpenOrdersOfGroupsAsync(run.Filter, first, last, afterOrder, take,
+            cancellationToken), cancellationToken);
+        if (batch?.Orders is not { } orders || orders.Count > take || batch.HasMore && orders.Count < take)
         {
             throw new SalesDraftServiceException(503, "service_unavailable");
         }
 
-        return new GroupResult(group.Key, group.OrderCount, SalesOpenOrderGroupStateView.TooManyOrders, sample, [], []);
+        foreach (var order in orders)
+        {
+            // Defence in depth: the store's open-status rule is checked again (and a null row is a malformed store answer).
+            if (order is null || order.CompanyId != run.Scope.CompanyId || order.State != SalesDraftState.Draft
+                || order.ApprovalState != InternalApprovalState.Approved && order.ArchivedRevisions.Count == 0)
+            {
+                throw new SalesDraftServiceException(503, "service_unavailable");
+            }
+        }
+
+        return batch;
     }
 
     /// <summary>
-    /// One group measured over every order of its scope, batch by batch: the acceptance basis, the shipped totals (one Logistics
-    /// read per batch), the SAT-D5 judgement where a line is shipped short, and only the lines with something open or awaiting.
+    /// Measures one unit. A too-large group: no sums, its product and unit texts from one order of its scope — and when its orders
+    /// closed between the scan and this read there is nothing to show (skipped, as a measured group with no open line is). Otherwise
+    /// every order of the unit's key range, batch by batch: the acceptance basis, the shipped totals (one Logistics read per batch),
+    /// the SAT-D5 judgement where a line is shipped short, and only the lines with something open or awaiting, per group. Null when
+    /// the request's batch budget ends before the unit does (only once a group was taken).
     /// </summary>
-    private async Task<GroupResult> MeasureGroupAsync(OpenOrderRun run, SalesOpenOrderGroupScope group, CancellationToken cancellationToken)
+    private async Task<OpenOrderUnitOutcome?> MeasureUnitAsync(OpenOrderRun run, OpenOrderUnit unit, CancellationToken cancellationToken)
     {
-        var lines = new List<OpenLine>();
-        var unmeasured = new List<SalesOpenOrderUnmeasuredLineView>();
-        SalesOrderDraftLine? sample = null;
+        var groups = unit.Groups;
+        if (unit.TooMany)
+        {
+            var group = groups[0];
+            var first = await OrderBatchAsync(run, group.Key, group.Key, null, 1, cancellationToken);
+            var sample = first.Orders.Count == 1 ? KeyLines(first.Orders[0], group.Key).FirstOrDefault() : null;
+            if (first.Orders.Count == 1 && sample is null)
+            {
+                // The store named an order of the group that has no current line in it: a malformed answer.
+                throw new SalesDraftServiceException(503, "service_unavailable");
+            }
+
+            return new OpenOrderUnitOutcome([(group, sample is null ? null : TooManyOrders(group, group.OrderCount, sample))], false);
+        }
+
+        var measures = groups.Select(group => new GroupMeasure(group)).ToArray();
         Guid? afterOrder = null;
         var read = 0;
         while (true)
         {
-            var from = afterOrder;
-            var orders = await ReadAsync(run, () => run.Store.ListOpenOrdersOfGroupAsync(run.Filter, group.Key, from,
-                SalesReportApiV1.OrderBatchSize, cancellationToken), cancellationToken);
-            if (orders is null || orders.Count > SalesReportApiV1.OrderBatchSize)
+            if (run.ProcessedAny && run.BatchesLeft < 1)
             {
-                throw new SalesDraftServiceException(503, "service_unavailable");
+                // The request's batch budget ends inside this unit: it is the next page's first, never a cut sum.
+                return null;
             }
 
-            if (orders.Count == 0)
+            var batch = await OrderBatchAsync(run, groups[0].Key, groups[^1].Key, afterOrder, SalesReportApiV1.OrderBatchSize,
+                cancellationToken);
+            var orders = batch.Orders;
+            read += orders.Count;
+            if (groups.Count > 1 && batch.HasMore)
+            {
+                // The shared scope grew past one batch while it was read (the scan counted at most one): its first group is read
+                // again on its own, under the same budgets; nothing of this batch is used (no Logistics read was made for it).
+                run.OrdersLeft -= read;
+                return new OpenOrderUnitOutcome([], true);
+            }
+
+            if (orders.Count > 0)
+            {
+                var answers = await ShipmentsAsync(run, orders, cancellationToken);
+                foreach (var order in orders)
+                {
+                    await MeasureOrderAsync(run, measures, order, answers, cancellationToken);
+                }
+            }
+
+            if (!batch.HasMore)
             {
                 break;
-            }
-
-            read += orders.Count;
-            if (read > SalesReportApiV1.MaximumOrdersPerGroup)
-            {
-                // The scope grew past the bound while it was read: answered as too large, never a cut sum.
-                return await TooManyOrdersAsync(run, group with { OrderCount = read }, cancellationToken);
-            }
-
-            foreach (var order in orders)
-            {
-                // Defence in depth: the store's open-status rule is checked again (and a null row is a malformed store answer).
-                if (order is null || order.CompanyId != run.Scope.CompanyId || order.State != SalesDraftState.Draft
-                    || order.ApprovalState != InternalApprovalState.Approved && order.ArchivedRevisions.Count == 0)
-                {
-                    throw new SalesDraftServiceException(503, "service_unavailable");
-                }
-            }
-
-            var answers = await ShipmentsAsync(run, orders, cancellationToken);
-            foreach (var order in orders)
-            {
-                var keyLines = KeyLines(order, group.Key).ToArray();
-                sample ??= keyLines.FirstOrDefault();
-                if (keyLines.Length == 0)
-                {
-                    continue;
-                }
-
-                if (AcceptanceBasis(order) is not { } basis)
-                {
-                    unmeasured.AddRange(keyLines.Select(line => Unmeasured(order, line, SalesOpenOrderUnmeasuredReasonView.PendingReapproval)));
-                    continue;
-                }
-
-                var recorded = answers.TryGetValue(order.Id, out var answer) ? RecordedQuantities(run.Scope, order, answer) : null;
-                if (recorded is null)
-                {
-                    unmeasured.AddRange(keyLines.Select(line => Unmeasured(order, line, SalesOpenOrderUnmeasuredReasonView.DeliveryAnswerInvalid)));
-                    continue;
-                }
-
-                foreach (var line in keyLines)
-                {
-                    var (accepted, awaiting) = basis.Lines[line.Id];
-                    var shipped = recorded[line.Id].Shipped;
-                    ToleranceRead? tolerance = null;
-                    if (IsShortShipped(accepted, shipped))
-                    {
-                        tolerance = await ToleranceOfAsync(run, order, cancellationToken);
-                        if (tolerance is null)
-                        {
-                            unmeasured.Add(Unmeasured(order, line, SalesOpenOrderUnmeasuredReasonView.TolerancePolicyUnavailable));
-                            continue;
-                        }
-                    }
-
-                    var (remaining, completedWithinTolerance) = Remaining(accepted, shipped, tolerance);
-                    if (remaining.IsZero && awaiting.IsZero)
-                    {
-                        // Closed history: nothing open, nothing awaiting — not part of the report.
-                        continue;
-                    }
-
-                    lines.Add(new OpenLine(order, line, basis.AcceptedRevision, accepted, shipped, remaining, completedWithinTolerance,
-                        awaiting, awaiting.IsZero ? null : basis.AwaitingRevision));
-                }
             }
 
             afterOrder = orders[^1].Id;
-            if (orders.Count < SalesReportApiV1.OrderBatchSize)
+            if (read >= SalesReportApiV1.MaximumOrdersPerGroup)
             {
-                break;
+                // One group whose scope grew past the bound while it was read: answered as too large, never a cut sum; what was read
+                // counts against the request's order budget (P3: never a second full group on top of it).
+                run.OrdersLeft -= read;
+                var measure = measures[0];
+                return new OpenOrderUnitOutcome([(measure.Group, measure.Sample is null
+                    ? null
+                    : TooManyOrders(measure.Group, Math.Max(measure.Group.OrderCount, read + 1), measure.Sample))], false);
             }
         }
 
-        return sample is null
+        run.OrdersLeft -= Math.Max(read, groups.Sum(group => group.OrderCount));
+        return new OpenOrderUnitOutcome([.. measures.Select(measure => (measure.Group, (GroupResult?)measure.Result()))], false);
+    }
+
+    private static GroupResult TooManyOrders(SalesOpenOrderGroupScope group, int orderCount, SalesOrderDraftLine sample) =>
+        new(group.Key, orderCount, SalesOpenOrderGroupStateView.TooManyOrders, sample, [], []);
+
+    /// <summary>One group's measurement as the unit's batches add its orders.</summary>
+    private sealed class GroupMeasure(SalesOpenOrderGroupScope group)
+    {
+        public SalesOpenOrderGroupScope Group => group;
+        public List<OpenLine> Lines { get; } = [];
+        public List<SalesOpenOrderUnmeasuredLineView> Unmeasured { get; } = [];
+        public SalesOrderDraftLine? Sample { get; set; }
+
+        public GroupResult Result() => Sample is null
             ? new GroupResult(group.Key, group.OrderCount, SalesOpenOrderGroupStateView.Measured, null, [], [])
-            : new GroupResult(group.Key, group.OrderCount, SalesOpenOrderGroupStateView.Measured, sample, lines, unmeasured);
+            : new GroupResult(group.Key, group.OrderCount, SalesOpenOrderGroupStateView.Measured, Sample, Lines, Unmeasured);
+    }
+
+    /// <summary>One order's lines measured into each group of the unit it has current lines in (an order may span groups).</summary>
+    private async Task MeasureOrderAsync(OpenOrderRun run, IReadOnlyList<GroupMeasure> measures, SalesOrderDraft order,
+        IReadOnlyDictionary<Guid, SalesOrderDeliveryReadAnswerV1> answers, CancellationToken cancellationToken)
+    {
+        OpenBasis? basis = null;
+        IReadOnlyDictionary<Guid, (Quantity Shipped, Quantity Delivered)>? recorded = null;
+        var judged = false;
+        foreach (var measure in measures)
+        {
+            var keyLines = KeyLines(order, measure.Group.Key).ToArray();
+            measure.Sample ??= keyLines.FirstOrDefault();
+            if (keyLines.Length == 0)
+            {
+                continue;
+            }
+
+            if (!judged)
+            {
+                judged = true;
+                basis = AcceptanceBasis(order);
+                recorded = basis is not null && answers.TryGetValue(order.Id, out var answer)
+                    ? RecordedQuantities(run.Scope, order, answer)
+                    : null;
+            }
+
+            if (basis is null)
+            {
+                measure.Unmeasured.AddRange(keyLines.Select(line =>
+                    Unmeasured(order, line, SalesOpenOrderUnmeasuredReasonView.PendingReapproval)));
+                continue;
+            }
+
+            if (recorded is null)
+            {
+                measure.Unmeasured.AddRange(keyLines.Select(line =>
+                    Unmeasured(order, line, SalesOpenOrderUnmeasuredReasonView.DeliveryAnswerInvalid)));
+                continue;
+            }
+
+            foreach (var line in keyLines)
+            {
+                var (accepted, awaiting) = basis.Lines[line.Id];
+                var shipped = recorded[line.Id].Shipped;
+                ToleranceRead? tolerance = null;
+                if (IsShortShipped(accepted, shipped))
+                {
+                    tolerance = await ToleranceOfAsync(run, order, cancellationToken);
+                    if (tolerance is null)
+                    {
+                        measure.Unmeasured.Add(Unmeasured(order, line, SalesOpenOrderUnmeasuredReasonView.TolerancePolicyUnavailable));
+                        continue;
+                    }
+                }
+
+                var (remaining, completedWithinTolerance) = Remaining(accepted, shipped, tolerance);
+                if (remaining.IsZero && awaiting.IsZero)
+                {
+                    // Closed history: nothing open, nothing awaiting — not part of the report.
+                    continue;
+                }
+
+                measure.Lines.Add(new OpenLine(order, line, basis.AcceptedRevision, accepted, shipped, remaining, completedWithinTolerance,
+                    awaiting, awaiting.IsZero ? null : basis.AwaitingRevision));
+            }
+        }
     }
 
     /// <summary>The current lines of <paramref name="order"/> in the group key (the store's grouping, applied to the restored order).</summary>
@@ -270,9 +423,11 @@ public sealed partial class SalesDraftService
         SalesOpenOrderUnmeasuredReasonView reason) => new(order.Id, order.DocumentNo, line.Id, line.LineNo, reason);
 
     /// <summary>
-    /// The batch's shipped totals from the Logistics owner, one read: answers by order id. Not composed, throwing, or an answer that
-    /// is not one per requested order is 503 (the whole batch is unreadable); a single order's malformed CONTENT is that order's
-    /// own unmeasured lines (validated per order by <see cref="RecordedQuantities"/>).
+    /// The batch's shipped totals from the Logistics owner, one read: answers by order id. Not composed, throwing, a null answer
+    /// list or entry, an answer for an order not asked, or two answers for one order is 503 (the whole batch is unreadable). An
+    /// order the owner did NOT answer, or whose answer's content is malformed (validated per order by
+    /// <see cref="RecordedQuantities"/>: company, order, units, quantities), is that order's own <c>DeliveryAnswerInvalid</c>
+    /// unmeasured lines — the rest of the report stands.
     /// </summary>
     private async Task<IReadOnlyDictionary<Guid, SalesOrderDeliveryReadAnswerV1>> ShipmentsAsync(OpenOrderRun run,
         IReadOnlyList<SalesOrderDraft> orders, CancellationToken cancellationToken)
