@@ -93,7 +93,7 @@ describe('API-41 / API-42 client ↔ canonical OpenAPI', () => {
     }
     expectFits(priceVarianceResponse, 'SalesPriceVarianceReportResponse')
     expect(schema('SalesOpenOrderMeasureView').enum).toEqual(['ApprovedMinusShipped'])
-    expect(schema('SalesOpenOrderUnmeasuredReasonView').enum).toEqual(['PendingReapproval'])
+    expect(schema('SalesOpenOrderUnmeasuredReasonView').enum).toEqual(['PendingReapproval', 'TolerancePolicyUnavailable'])
     expect(schema('SalesPriceDisclosure').enum).toEqual(['Visible', 'Withheld'])
     expect(schema('SalesPriceVarianceSourceStateView').enum).toEqual(['NoSource', 'Available'])
     expect(schema('SalesPriceVarianceDirectionView').enum).toEqual(['Below', 'Above'])
@@ -104,7 +104,7 @@ describe('open order report decoder', () => {
   it('reads the example exactly, quantity text as text, one group per unit', () => {
     const report = decodeOpenOrderReport(openOrdersResponse)
     expect(report?.items.map((group) => [group.unitCode, group.remainingQuantity, group.complete])).toEqual([
-      ['kg', '2250.5', false],
+      ['kg', '250.5', false],
       ['adet', '0', true],
     ])
     expect(report?.tooWide).toBe(false)
@@ -122,6 +122,9 @@ describe('open order report decoder', () => {
       (body) => (((body.groups as Wire[])[0].lines as Wire[])[0].basisRevision = 'rev0'),
       (body) => (((body.groups as Wire[])[0].unmeasured as Wire[])[0].reason = 'Other'),
       (body) => ((body.groups as Wire[])[0].price = '1'),
+      // SAT-D130: completed within the tolerance means nothing open.
+      (body) => (((body.groups as Wire[])[0].lines as Wire[])[1].remainingQuantity = '10'),
+      (body) => delete (((body.groups as Wire[])[0].lines as Wire[])[0]).completedWithinTolerance,
     ]
     for (const change of cases) {
       const body = clone(openOrdersResponse) as unknown as Wire

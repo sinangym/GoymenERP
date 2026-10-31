@@ -48,9 +48,13 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
-    private static readonly DateOnly Day = new(2026, 10, 20);
+    // SAT-D130: on or after the approved SAT-D5 tolerance of the synthetic companies' Settings record (GDC from 2026-10-25, GSP
+    // from 2026-10-26), so the real Settings owner answers the 1 / 2 / 3 % ladder for the orders of this day.
+    private static readonly DateOnly Day = new(2026, 10, 26);
+    // Before the tolerance record's window: the real owner answers no policy for an order of this day (fail-closed).
+    private static readonly DateOnly BeforePolicy = new(2026, 10, 20);
     private static readonly DateOnly From = new(2026, 9, 1);
-    private static readonly DateTimeOffset T0 = new(2026, 10, 20, 9, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset T0 = new(2026, 10, 26, 9, 0, 0, TimeSpan.Zero);
     private static readonly Guid KgUnit = SettingsUnitIdentitiesV1.Kilogram;
     private static readonly Guid Currency = SettingsCurrencyIdentitiesV1.TurkishLira;
     private static readonly Guid MoneyProfile = Guid.Parse("7c3f4e5d-6c7b-48a9-9c2d-3e4f5a6b7d32");
@@ -78,8 +82,13 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
         var small = await run.ApprovedDraftAsync(CompanyA, first, "o2", "2");
         var other = await run.ApprovedDraftAsync(CompanyA, second, "o3", "5");
         await run.DraftAsync(CompanyA, first, "o4", "100");
-        // 4 kg of the 6 kg line shipped through Logistics: 2 kg of that line stays open.
+        // 4 kg of the 6 kg line shipped through Logistics: 33 % short (beyond SAT-D5's 1 %), 2 kg of that line stays open.
         await run.ShipAsync(CompanyA, big, big.Lines.Single(line => line.LineNo == 1), "s1", 4m);
+        // SAT-D130: 2.99 kg of the 3 kg line (0.33 % short, within the 1 % tolerance) is "Tamamlandı" — nothing of it is open.
+        await run.ShipAsync(CompanyA, big, big.Lines.Single(line => line.LineNo == 2), "s2", 2.99m);
+        // An order of a day before the tolerance record, shipped short: no readable policy — unmeasured, never open or closed.
+        var early = await run.ApprovedDraftAsync(CompanyA, first, "o5", BeforePolicy, "5");
+        await run.ShipAsync(CompanyA, early, Assert.Single(early.Lines), "s3", 1m);
         var quote = await run.LostQuoteAsync(CompanyA, first, "q1", "1.25", "12.50", "5", "SENTETIK rakip daha ucuz");
 
         var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.ReportsRead,
@@ -92,16 +101,21 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
             var groups = report.GetProperty("groups").EnumerateArray().ToArray();
             Assert.Equal(2, groups.Length);
             var mine = Assert.Single(groups, group => group.GetProperty("customer").GetProperty("companyAccountId").GetGuid() == first.AccountId);
-            Assert.Equal((first.Code, Product, KgUnit, "kg", 2, "11", "4", "7", true),
+            Assert.Equal((first.Code, Product, KgUnit, "kg", 2, "11", "6.99", "4", false),
                 (mine.GetProperty("customer").GetProperty("code").GetString(), mine.GetProperty("productId").GetGuid(),
                     mine.GetProperty("unitId").GetGuid(), mine.GetProperty("unitCode").GetString(), mine.GetProperty("orderCount").GetInt32(),
                     mine.GetProperty("approvedQuantity").GetString(), mine.GetProperty("shippedQuantity").GetString(),
                     mine.GetProperty("remainingQuantity").GetString(), mine.GetProperty("complete").GetBoolean()));
-            Assert.Equal([(big.DocumentNo, 1, "6", "4", "2"), (big.DocumentNo, 2, "3", "0", "3"), (small.DocumentNo, 1, "2", "0", "2")],
+            Assert.Equal([(big.DocumentNo, 1, "6", "4", "2", false), (big.DocumentNo, 2, "3", "2.99", "0", true),
+                    (small.DocumentNo, 1, "2", "0", "2", false)],
                 mine.GetProperty("lines").EnumerateArray().Select(line => (line.GetProperty("documentNo").GetString(),
                     line.GetProperty("lineNo").GetInt32(), line.GetProperty("approvedQuantity").GetString(),
-                    line.GetProperty("shippedQuantity").GetString(), line.GetProperty("remainingQuantity").GetString()))
+                    line.GetProperty("shippedQuantity").GetString(), line.GetProperty("remainingQuantity").GetString(),
+                    line.GetProperty("completedWithinTolerance").GetBoolean()))
                     .OrderBy(line => line.Item1, StringComparer.Ordinal).ThenBy(line => line.Item2));
+            var unmeasured = Assert.Single(mine.GetProperty("unmeasured").EnumerateArray());
+            Assert.Equal((early.Id, "TolerancePolicyUnavailable"), (unmeasured.GetProperty("orderId").GetGuid(),
+                unmeasured.GetProperty("reason").GetString()));
             var theirs = Assert.Single(groups, group => group.GetProperty("customer").GetProperty("companyAccountId").GetGuid() == second.AccountId);
             Assert.Equal(("5", other.DocumentNo), (theirs.GetProperty("remainingQuantity").GetString(),
                 Assert.Single(theirs.GetProperty("lines").EnumerateArray()).GetProperty("documentNo").GetString()));
@@ -126,8 +140,12 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
                 .GetProperty("customer").GetProperty("companyAccountId").GetGuid());
             Assert.Empty((await run.ReadAsync(client, $"{SalesEndpoints.ReportOpenOrdersPath}?from={Day.AddDays(1):yyyy-MM-dd}"))
                 .GetProperty("groups").EnumerateArray());
-            Assert.Equal(2, (await run.ReadAsync(client, $"{SalesEndpoints.ReportOpenOrdersPath}?from={Day:yyyy-MM-dd}&to={Day:yyyy-MM-dd}"))
-                .GetProperty("groups").GetArrayLength());
+            var today = (await run.ReadAsync(client, $"{SalesEndpoints.ReportOpenOrdersPath}?from={Day:yyyy-MM-dd}&to={Day:yyyy-MM-dd}"))
+                .GetProperty("groups").EnumerateArray().ToArray();
+            Assert.Equal(2, today.Length);
+            // Without the early order the first customer's group is complete again.
+            Assert.True(Assert.Single(today, group => group.GetProperty("customer").GetProperty("companyAccountId").GetGuid() == first.AccountId)
+                .GetProperty("complete").GetBoolean());
             foreach (var malformed in new[] { "?from=2026-10-21&to=2026-10-20", "?from=20.10.2026", "?pageSize=101", "?unknown=1",
                          $"?companyAccountId={Guid.Empty:D}" })
             {
@@ -247,26 +265,27 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
 
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
-    private static MoneyProfileSnapshot Money(Guid company) =>
-        new(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
+    private static MoneyProfileSnapshot Money(Guid company, DateOnly? on = null) =>
+        new(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", on ?? Day, true, From, null, 2);
 
     private static UnitProfileSnapshot Unit(Guid company) => new(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
 
-    private static ProductSnapshot ProductOf(Guid company)
+    private static ProductSnapshot ProductOf(Guid company, DateOnly? on = null)
     {
         var binding = new UnitBindingSnapshot(company, KgUnit, KgProfile, "4");
-        return new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
+        return new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", on ?? Day, binding, binding, binding);
     }
 
     /// <summary>A draft of one line per given kg quantity for the Cari customer, from SYNTHETIC Product/Settings snapshots.</summary>
-    private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, IReadOnlyList<string> quantities)
+    private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, DateOnly businessDate,
+        IReadOnlyList<string> quantities)
     {
-        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, Day, Day.AddDays(10));
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, Money(company), T0);
+        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, businessDate, businessDate.AddDays(10));
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, Money(company, businessDate), T0);
         foreach (var quantity in quantities)
         {
-            draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), ProductOf(company), Unit(company), quantity,
-                decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture), Day.AddDays(3)), T0);
+            draft.AddLine(draft.Version, new SalesDraftLineInput(Guid.NewGuid(), ProductOf(company, businessDate), Unit(company), quantity,
+                decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture), businessDate.AddDays(3)), T0);
         }
 
         return draft;
@@ -336,17 +355,25 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>A stored, never submitted draft of the company (not an open order).</summary>
-        public async Task<SalesOrderDraft> DraftAsync(Guid company, Customer customer, string keyPrefix, params string[] quantities)
+        public Task<SalesOrderDraft> DraftAsync(Guid company, Customer customer, string keyPrefix, params string[] quantities) =>
+            DraftAsync(company, customer, keyPrefix, Day, quantities);
+
+        public async Task<SalesOrderDraft> DraftAsync(Guid company, Customer customer, string keyPrefix, DateOnly businessDate,
+            params string[] quantities)
         {
             await using var scope = SalesStore(company);
             return (await scope.Store.StoreDraftAsync(SalesEnvelope($"{keyPrefix}-create"), Hash($"{keyPrefix}-create"),
-                documentNo => Draft(company, customer, documentNo, quantities))).Draft;
+                documentNo => Draft(company, customer, documentNo, businessDate, quantities))).Draft;
         }
 
         /// <summary>A stored draft of the company for the customer, submitted and approved through the real Sales store.</summary>
-        public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, Customer customer, string keyPrefix, params string[] quantities)
+        public Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, Customer customer, string keyPrefix, params string[] quantities) =>
+            ApprovedDraftAsync(company, customer, keyPrefix, Day, quantities);
+
+        public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, Customer customer, string keyPrefix, DateOnly businessDate,
+            params string[] quantities)
         {
-            var draft = await DraftAsync(company, customer, keyPrefix, quantities);
+            var draft = await DraftAsync(company, customer, keyPrefix, businessDate, quantities);
             await using var scope = SalesStore(company);
             var submitted = await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-submit"), Hash($"{keyPrefix}-submit"),
                 SalesDraftCommands.SubmitV1, draft.Id, (d, now) => d.Submit(draft.Version, Actor, now), Submitted);

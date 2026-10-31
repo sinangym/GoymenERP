@@ -45,10 +45,17 @@ export interface OpenOrderLine {
   readonly approvedQuantity: string
   readonly shippedQuantity: string
   readonly remainingQuantity: string
+  /** SAT-D130: shipped short WITHIN the SAT-D5 tolerance — "Tamamlandı", nothing open although shipped < approved. */
+  readonly completedWithinTolerance: boolean
 }
 
-/** Only `PendingReapproval` today: the last approved quantities cannot be taken exactly while a revision awaits approval. */
-export type UnmeasuredReason = 'PendingReapproval'
+/**
+ * Why a line is not in its group's sums: `PendingReapproval` (the last approved quantities cannot be taken exactly while a
+ * revision awaits approval) or `TolerancePolicyUnavailable` (SAT-D130: shipped short and no readable SAT-D5 tolerance — neither
+ * open nor closed).
+ */
+export type UnmeasuredReason = 'PendingReapproval' | 'TolerancePolicyUnavailable'
+const UNMEASURED_REASONS: readonly string[] = ['PendingReapproval', 'TolerancePolicyUnavailable']
 
 export interface OpenOrderUnmeasuredLine {
   readonly orderId: string
@@ -221,7 +228,7 @@ function decodeCustomer(value: unknown): ReportCustomer | null {
 
 const OPEN_LINE_KEYS = [
   'orderId', 'documentNo', 'businessDate', 'requestedDeliveryDate', 'basisRevision', 'lineId', 'lineNo', 'approvedQuantity',
-  'shippedQuantity', 'remainingQuantity',
+  'shippedQuantity', 'remainingQuantity', 'completedWithinTolerance',
 ] as const
 
 function decodeOpenLine(value: unknown): OpenOrderLine | null {
@@ -229,12 +236,14 @@ function decodeOpenLine(value: unknown): OpenOrderLine | null {
   if (
     o === null || !isReferenceId(o.orderId) || !isText(o.documentNo) || !isDateOnly(o.businessDate) || !isNullableDate(o.requestedDeliveryDate)
     || !isRevision(o.basisRevision) || !isReferenceId(o.lineId) || !isPositiveInt(o.lineNo) || !isPositiveQuantity(o.approvedQuantity)
-    || !isQuantity(o.shippedQuantity) || !isQuantity(o.remainingQuantity)
+    || !isQuantity(o.shippedQuantity) || !isQuantity(o.remainingQuantity) || typeof o.completedWithinTolerance !== 'boolean'
   ) return null
+  // SAT-D130: a line completed within the tolerance has nothing open.
+  if (o.completedWithinTolerance && o.remainingQuantity !== '0') return null
   return {
     orderId: o.orderId, documentNo: o.documentNo, businessDate: o.businessDate, requestedDeliveryDate: o.requestedDeliveryDate,
     basisRevision: o.basisRevision, lineId: o.lineId, lineNo: o.lineNo, approvedQuantity: o.approvedQuantity,
-    shippedQuantity: o.shippedQuantity, remainingQuantity: o.remainingQuantity,
+    shippedQuantity: o.shippedQuantity, remainingQuantity: o.remainingQuantity, completedWithinTolerance: o.completedWithinTolerance,
   }
 }
 
@@ -243,8 +252,8 @@ const UNMEASURED_KEYS = ['orderId', 'documentNo', 'lineId', 'lineNo', 'reason'] 
 function decodeUnmeasured(value: unknown): OpenOrderUnmeasuredLine | null {
   const o = exact(value, UNMEASURED_KEYS)
   if (o === null || !isReferenceId(o.orderId) || !isText(o.documentNo) || !isReferenceId(o.lineId) || !isPositiveInt(o.lineNo)
-    || o.reason !== 'PendingReapproval') return null
-  return { orderId: o.orderId, documentNo: o.documentNo, lineId: o.lineId, lineNo: o.lineNo, reason: o.reason }
+    || typeof o.reason !== 'string' || !UNMEASURED_REASONS.includes(o.reason)) return null
+  return { orderId: o.orderId, documentNo: o.documentNo, lineId: o.lineId, lineNo: o.lineNo, reason: o.reason as UnmeasuredReason }
 }
 
 const GROUP_KEYS = [

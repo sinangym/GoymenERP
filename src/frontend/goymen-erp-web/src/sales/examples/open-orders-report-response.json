@@ -16,8 +16,8 @@
       "unitCode": "kg",
       "orderCount": 2,
       "approvedQuantity": "3500.5",
-      "shippedQuantity": "1250",
-      "remainingQuantity": "2250.5",
+      "shippedQuantity": "3240",
+      "remainingQuantity": "250.5",
       "complete": false,
       "lines": [
         {
@@ -30,7 +30,8 @@
           "lineNo": 1,
           "approvedQuantity": "1500.5",
           "shippedQuantity": "1250",
-          "remainingQuantity": "250.5"
+          "remainingQuantity": "250.5",
+          "completedWithinTolerance": false
         },
         {
           "orderId": "c3c3c3c3-0000-4000-8000-000000000002",
@@ -41,8 +42,9 @@
           "lineId": "c3c3c3c3-0000-4000-8000-000000000201",
           "lineNo": 1,
           "approvedQuantity": "2000",
-          "shippedQuantity": "0",
-          "remainingQuantity": "2000"
+          "shippedQuantity": "1990",
+          "remainingQuantity": "0",
+          "completedWithinTolerance": true
         }
       ],
       "unmeasured": [
@@ -52,6 +54,13 @@
           "lineId": "c3c3c3c3-0000-4000-8000-000000000301",
           "lineNo": 2,
           "reason": "PendingReapproval"
+        },
+        {
+          "orderId": "c3c3c3c3-0000-4000-8000-000000000004",
+          "documentNo": "SO-2026-000010",
+          "lineId": "c3c3c3c3-0000-4000-8000-000000000401",
+          "lineNo": 1,
+          "reason": "TolerancePolicyUnavailable"
         }
       ]
     },
@@ -84,7 +93,8 @@
           "lineNo": 2,
           "approvedQuantity": "40",
           "shippedQuantity": "40",
-          "remainingQuantity": "0"
+          "remainingQuantity": "0",
+          "completedWithinTolerance": false
         }
       ],
       "unmeasured": []

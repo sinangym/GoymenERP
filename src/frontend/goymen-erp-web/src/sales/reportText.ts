@@ -17,6 +17,7 @@ export const AMOUNT_STATE_TEXT: Readonly<Record<AmountState, string>> = {
 
 export const UNMEASURED_REASON_TEXT: Readonly<Record<UnmeasuredReason, string>> = {
   PendingReapproval: 'Revizyon yeniden onay bekliyor; son onaylı miktar tam alınamadı',
+  TolerancePolicyUnavailable: 'Eksik sevk edildi ve teslim toleransı (Ayarlar) okunamadı; kalanın açık olup olmadığı bilinmiyor',
 }
 
 export const REPORT_TEXT = {
@@ -47,7 +48,7 @@ export const REPORT_TEXT = {
   },
   openOrders: {
     intro:
-      'Onaylı, kapatılmamış ve iptal edilmemiş siparişlerin açık miktarı: onaylı miktar − sevk edilen miktar (sıfırın altına inmez). Müşteri, ürün ve birim başına gruplanır; farklı birimler hiçbir zaman toplanmaz. Tarih süzgeci sipariş tarihine uygulanır.',
+      'Onaylı, kapatılmamış ve iptal edilmemiş siparişlerin açık miktarı: onaylı miktar − sevk edilen miktar (sıfırın altına inmez). Teslim toleransı içinde eksik sevkle tamamlanmış satırın kalanı açık sayılmaz. Müşteri, ürün ve birim başına gruplanır; farklı birimler hiçbir zaman toplanmaz. Tarih süzgeci sipariş tarihine uygulanır.',
     subject: 'açık siparişler',
     caption: 'Açık sipariş miktarları',
     unit: 'Birim',
@@ -55,6 +56,7 @@ export const REPORT_TEXT = {
     approved: 'Onaylı miktar',
     shipped: 'Sevk edilen',
     remaining: 'Açık miktar',
+    completedWithinTolerance: 'Tolerans içinde tamamlandı',
     detail: 'Sipariş satırları',
     detailCaption: (product: string, customer: string) => `${customer} — ${product} sipariş satırları`,
     order: 'Sipariş',

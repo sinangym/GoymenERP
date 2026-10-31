@@ -61,8 +61,10 @@ public sealed record SalesReportCustomerView(Guid PartyId, Guid CompanyAccountId
 
 /// <summary>
 /// API-41: what the open quantity measures. Only <see cref="ApprovedMinusShipped"/>: the approved (basis revision) quantity of the
-/// line minus the definitely shipped total the Logistics owner recorded, never below zero. No tolerance judges it (the realization
-/// axis does that) and nothing is converted between units.
+/// line minus the definitely shipped total the Logistics owner recorded, never below zero — except that a line the SAT-D5
+/// realization axis judges <c>Completed</c> (shipped short WITHIN the delivery tolerance) has nothing open (SAT-D130, EK18; its line
+/// carries <c>completedWithinTolerance</c>). The judgement is <see cref="SalesRealizationCalculator"/>'s with the Settings tolerance
+/// of the order's business date, never re-derived here; nothing is converted between units.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<SalesOpenOrderMeasureView>))]
 public enum SalesOpenOrderMeasureView
@@ -79,11 +81,20 @@ public enum SalesOpenOrderUnmeasuredReasonView
     /// basis rule): nothing is measured against unapproved quantities.
     /// </summary>
     PendingReapproval = 1,
+
+    /// <summary>
+    /// SAT-D130: the line was shipped short and only the SAT-D5 delivery tolerance can say whether its remainder is still open, but
+    /// the Settings tolerance policy for the order's business date is not readable (not composed, refused, inactive, out of window,
+    /// another company's or malformed): the line is neither counted open nor closed (fail-closed).
+    /// </summary>
+    TolerancePolicyUnavailable = 2,
 }
 
 /// <summary>
 /// API-41: one measured order line of a group — the order, the basis revision its approved quantity comes from, and the three
 /// quantities exactly in the line's order unit (Ö2 text: kilograms ≤ 3 decimals, pieces whole; never rounded).
+/// <c>completedWithinTolerance</c> (SAT-D130): shipped short but within the SAT-D5 tolerance — the realization axis' "Tamamlandı",
+/// so the remaining quantity is 0 although shipped &lt; approved.
 /// </summary>
 public sealed record SalesOpenOrderLineView(
     Guid OrderId,
@@ -95,7 +106,8 @@ public sealed record SalesOpenOrderLineView(
     int LineNo,
     string ApprovedQuantity,
     string ShippedQuantity,
-    string RemainingQuantity);
+    string RemainingQuantity,
+    bool CompletedWithinTolerance);
 
 /// <summary>API-41: an open order line of the group that is NOT in its sums, and why.</summary>
 public sealed record SalesOpenOrderUnmeasuredLineView(

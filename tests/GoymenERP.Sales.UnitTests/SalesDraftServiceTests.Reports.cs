@@ -25,6 +25,9 @@ public sealed partial class SalesDraftServiceTests
         var deliveries = new FakeDeliveries(order => new(Company, order,
             [new(first, KgUnit, 1.5m, 1m), new(second, KgUnit, 0.75m, 0m), new(second, KgUnit, 0.25m, 0m)]));
         world.Deliveries = deliveries;
+        // SAT-D130: line 2 is shipped short (1 of 2.25 kg, 55 % — beyond the 1 % of SAT-D5), so the tolerance is read once.
+        var policies = new FakeSalesPolicies(Ladder123());
+        world.SalesPolicies = policies;
         var key = new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit);
         world.Reports!.OpenOrders = (_, _, _, _) => new SalesOpenOrderGroupPage([key], [draft], false, "next-page");
         var (attempts, envelopes, transitions) = (world.Store.Attempts, world.Store.Envelopes.Count, world.Store.Transitions.Count);
@@ -43,9 +46,9 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(
             [
                 new SalesOpenOrderLineView(draft.Id, draft.DocumentNo, Day, draft.Lines[0].RequestedDeliveryDate ?? draft.Header.RequestedDeliveryDate,
-                    SalesDraftApiV1.Rev0, first, 1, "1.25", "1.5", "0"),
+                    SalesDraftApiV1.Rev0, first, 1, "1.25", "1.5", "0", false),
                 new SalesOpenOrderLineView(draft.Id, draft.DocumentNo, Day, draft.Lines[1].RequestedDeliveryDate ?? draft.Header.RequestedDeliveryDate,
-                    SalesDraftApiV1.Rev0, second, 2, "2.25", "1", "1.25"),
+                    SalesDraftApiV1.Rev0, second, 2, "2.25", "1", "1.25", false),
             ],
             group.Lines);
         Assert.Empty(group.Unmeasured);
@@ -55,8 +58,9 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((new SalesOpenOrderReportFilter(Day, Day.AddDays(30), Account), 20, (string?)null, SalesReportApiV1.MaximumOrdersPerPage),
             asked);
         Assert.Equal([draft.Id], deliveries.Asked);
-        // The report read before, after the store, after the delivery owner and after the Cari owner; no other name.
-        Assert.Equal([ReportPermission, ReportPermission, ReportPermission, ReportPermission], world.Authority.Measured);
+        Assert.Equal([Day], policies.Asked);
+        // The report read before, after the store, after the delivery owner, after Settings and after the Cari owner; no other name.
+        Assert.Equal([ReportPermission, ReportPermission, ReportPermission, ReportPermission, ReportPermission], world.Authority.Measured);
         // Read-only: no attempt, envelope, transition or refusal anywhere in Sales.
         Assert.Equal((attempts, envelopes, transitions), (world.Store.Attempts, world.Store.Envelopes.Count, world.Store.Transitions.Count));
         Assert.Empty(world.Store.Refusals);
@@ -70,6 +74,7 @@ public sealed partial class SalesDraftServiceTests
         var line = approved.Lines[0].LineId;
         Owners(world);
         world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(line, KgUnit, 1m, 1m)]));
+        world.SalesPolicies = new FakeSalesPolicies(Ladder123());
         // Rev.1 asks 2 kg and awaits re-approval: the open quantity stays 1.25 − 1 of the APPROVED Rev.0, never 2 − 1.
         await world.Service().ReviseQuantityAsync(approved.Draft.Id,
             new SalesDraftQuantityRevisionRequest("4", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, "2")]), Metadata("k-quantity"));
@@ -81,6 +86,51 @@ public sealed partial class SalesDraftServiceTests
 
         Assert.Equal(("1.25", "1", "0.25", true), (group.ApprovedQuantity, group.ShippedQuantity, group.RemainingQuantity, group.Complete));
         Assert.Equal(SalesDraftApiV1.Rev0, Assert.Single(group.Lines).BasisRevision);
+    }
+
+    [Fact]
+    public async Task Reports_open_orders_count_nothing_open_on_a_line_completed_within_the_sat_d5_tolerance_sat_d130()
+    {
+        var world = new World();
+        var approved = await ApprovedTwoLineAsync(world);
+        var (first, second) = (approved.Lines[0].LineId, approved.Lines[1].LineId);
+        var draft = (await world.Store.FindDraftAsync(approved.Draft.Id))!;
+        // Line 1: 1.24 of 1.25 kg (0.8 % short, within the 1 % warn bound): "Tamamlandı", nothing open. Line 2: 1 of 2.25 kg: Partial.
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(first, KgUnit, 1.24m, 1.24m), new(second, KgUnit, 1m, 0m)]));
+        var policies = new FakeSalesPolicies(Ladder123());
+        world.SalesPolicies = policies;
+        world.Reports!.OpenOrders = (_, _, _, _) =>
+            new SalesOpenOrderGroupPage([new SalesOpenOrderGroupKey(Account, Party, Product, KgUnit)], [draft], false, null);
+        var query = new SalesOpenOrderReportQuery(null, null, null, 50, null);
+
+        var group = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
+
+        Assert.Equal(("3.5", "2.24", "1.25", true), (group.ApprovedQuantity, group.ShippedQuantity, group.RemainingQuantity, group.Complete));
+        Assert.Equal([("1.24", "0", true), ("1", "1.25", false)],
+            group.Lines.Select(line => (line.ShippedQuantity, line.RemainingQuantity, line.CompletedWithinTolerance)));
+        // The tolerance of the order's business date, asked once for the order (never re-derived in the report).
+        Assert.Equal([Day], policies.Asked);
+
+        // No readable tolerance (Settings not composed): the short-shipped lines are unmeasured — never open, never closed.
+        world.SalesPolicies = null;
+        var unknown = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
+        Assert.False(unknown.Complete);
+        Assert.Empty(unknown.Lines);
+        Assert.Equal([(first, SalesOpenOrderUnmeasuredReasonView.TolerancePolicyUnavailable), (second, SalesOpenOrderUnmeasuredReasonView.TolerancePolicyUnavailable)],
+            unknown.Unmeasured.Select(line => (line.LineId, line.Reason)));
+        Assert.Equal(("0", "0", "0", 0), (unknown.ApprovedQuantity, unknown.ShippedQuantity, unknown.RemainingQuantity, unknown.OrderCount));
+
+        // A policy of another company is no policy (the API-08 validation): unmeasured as well.
+        world.SalesPolicies = new FakeSalesPolicies(on => Ladder123()(on) with { CompanyId = Guid.NewGuid() });
+        Assert.Equal(2, Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups).Unmeasured.Count);
+
+        // Nothing shipped needs no tolerance: open in full, the policy is not asked.
+        var unasked = new FakeSalesPolicies(Ladder123());
+        world.SalesPolicies = unasked;
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        var untouched = Assert.Single((await world.Service().GetOpenOrderReportAsync(query)).Groups);
+        Assert.Equal(("3.5", "0", "3.5", true), (untouched.ApprovedQuantity, untouched.ShippedQuantity, untouched.RemainingQuantity, untouched.Complete));
+        Assert.Empty(unasked.Asked);
     }
 
     [Fact]

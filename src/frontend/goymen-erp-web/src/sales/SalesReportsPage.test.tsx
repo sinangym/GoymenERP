@@ -58,7 +58,7 @@ describe('Açık siparişler (API-41, KPI No 124)', () => {
     expect(screen.getByRole('tab', { name: T.tab['open-orders'] }).getAttribute('aria-selected')).toBe('true')
     const rows = within(table).getAllByRole('row').slice(1)
     expect(rows).toHaveLength(2)
-    expect(within(rows[0]).getByText('2250.5 kg')).toBeTruthy()
+    expect(within(rows[0]).getByText('250.5 kg')).toBeTruthy()
     expect(within(rows[0]).getByText('3500.5 kg')).toBeTruthy()
     expect(within(rows[1]).getByText('0 adet')).toBeTruthy()
     // The kg and the piece group are never added into one number.
@@ -67,6 +67,11 @@ describe('Açık siparişler (API-41, KPI No 124)', () => {
     expect(within(rows[0]).getByText(T.openOrders.incomplete)).toBeTruthy()
     expect(within(rows[1]).queryByText(T.openOrders.incomplete)).toBeNull()
     expect(screen.getByText(/SO-2026-000009 \/ 2 — Revizyon yeniden onay bekliyor/)).toBeTruthy()
+    // SAT-D130: a line completed within the SAT-D5 tolerance shows 0 open with its reason; an unreadable tolerance is unmeasured.
+    expect(screen.getByTestId('sales-report-line-tolerance-c3c3c3c3-0000-4000-8000-000000000201').textContent).toBe(
+      T.openOrders.completedWithinTolerance,
+    )
+    expect(screen.getByText(/SO-2026-000010 \/ 1 — Eksik sevk edildi ve teslim toleransı/)).toBeTruthy()
     // The order line opens Sipariş 360 only with that screen's grant.
     expect(screen.getAllByRole('link', { name: 'Sipariş SO-2026-000007 / 1' })[0].getAttribute('href')).toBe(
       '/satis/siparisler/c3c3c3c3-0000-4000-8000-000000000001',

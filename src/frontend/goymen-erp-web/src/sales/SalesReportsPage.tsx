@@ -319,7 +319,21 @@ function OpenOrderDetail({ group }: { readonly group: OpenOrderGroup }) {
     { key: 'basis', header: O.basisRevision, cell: (line) => line.basisRevision },
     { key: 'approved', header: O.approved, align: 'end', cell: (line) => <Quantity value={line.approvedQuantity} unit={group.unitCode} /> },
     { key: 'shipped', header: O.shipped, align: 'end', cell: (line) => <Quantity value={line.shippedQuantity} unit={group.unitCode} /> },
-    { key: 'remaining', header: O.remaining, align: 'end', cell: (line) => <Quantity value={line.remainingQuantity} unit={group.unitCode} /> },
+    {
+      key: 'remaining',
+      header: O.remaining,
+      align: 'end',
+      cell: (line) => (
+        <>
+          <Quantity value={line.remainingQuantity} unit={group.unitCode} />
+          {line.completedWithinTolerance ? (
+            <StatusIndicator tone="success">
+              <span data-testid={`sales-report-line-tolerance-${line.lineId}`}>{O.completedWithinTolerance}</span>
+            </StatusIndicator>
+          ) : null}
+        </>
+      ),
+    },
   ]
   return (
     <details className={styles.section} data-testid={`sales-report-group-detail-${group.id}`}>

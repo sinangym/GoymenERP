@@ -4654,7 +4654,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("legalName", "type:string"),
                     ("tradeName", "type:null|string")),
                 ["SalesOpenOrderMeasureView"] = ScalarSchema("enum:ApprovedMinusShipped"),
-                ["SalesOpenOrderUnmeasuredReasonView"] = ScalarSchema("enum:PendingReapproval"),
+                ["SalesOpenOrderUnmeasuredReasonView"] = ScalarSchema("enum:PendingReapproval|TolerancePolicyUnavailable"),
                 ["SalesOpenOrderReportResponse"] = ObjectSchema(
                     ["measure", "groups", "nextCursor"],
                     ("measure", "ref:SalesOpenOrderMeasureView"),
@@ -4678,7 +4678,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("unmeasured", "type:array;items:ref:SalesOpenOrderUnmeasuredLineView")),
                 ["SalesOpenOrderLineView"] = ObjectSchema(
                     ["orderId", "documentNo", "businessDate", "requestedDeliveryDate", "basisRevision", "lineId", "lineNo", "approvedQuantity",
-                        "shippedQuantity", "remainingQuantity"],
+                        "shippedQuantity", "remainingQuantity", "completedWithinTolerance"],
                     ("orderId", "type:string;format:uuid"),
                     ("documentNo", "type:string"),
                     ("businessDate", "type:string;format:date"),
@@ -4688,7 +4688,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("lineNo", "type:integer|string;format:int32"),
                     ("approvedQuantity", "type:string"),
                     ("shippedQuantity", "type:string"),
-                    ("remainingQuantity", "type:string")),
+                    ("remainingQuantity", "type:string"),
+                    ("completedWithinTolerance", "type:boolean")),
                 ["SalesOpenOrderUnmeasuredLineView"] = ObjectSchema(
                     ["orderId", "documentNo", "lineId", "lineNo", "reason"],
                     ("orderId", "type:string;format:uuid"),

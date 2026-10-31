@@ -98657,7 +98657,8 @@
           "lineNo",
           "approvedQuantity",
           "shippedQuantity",
-          "remainingQuantity"
+          "remainingQuantity",
+          "completedWithinTolerance"
         ],
         "type": "object",
         "properties": {
@@ -98702,6 +98703,9 @@
           },
           "remainingQuantity": {
             "type": "string"
+          },
+          "completedWithinTolerance": {
+            "type": "boolean"
           }
         }
       },
@@ -98771,7 +98775,8 @@
       },
       "SalesOpenOrderUnmeasuredReasonView": {
         "enum": [
-          "PendingReapproval"
+          "PendingReapproval",
+          "TolerancePolicyUnavailable"
         ]
       },
       "SalesOrderDispatchNoteLineView": {

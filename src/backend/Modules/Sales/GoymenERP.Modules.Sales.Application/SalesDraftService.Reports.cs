@@ -18,7 +18,10 @@ namespace GoymenERP.Modules.Sales.Application;
 /// closed) and it is approved — its current revision, or an earlier approved revision archived by one awaiting re-approval. A line's
 /// approved quantity is the API-08 measurement basis (the current lines, or the last approved revision's while one awaits
 /// re-approval; <see cref="Basis"/>), its shipped total the Logistics owner's recorded total through the AT-024 port
-/// (<see cref="RecordedShipmentsAsync"/>, the same validation), and its open quantity approved − shipped, never below zero. Lines are
+/// (<see cref="RecordedShipmentsAsync"/>, the same validation), and its open quantity approved − shipped, never below zero.
+/// SAT-D130 (EK18): a line shipped short is judged by <see cref="SalesRealizationCalculator"/> with the Settings SAT-D5 tolerance of
+/// the order's business date (<see cref="ToleranceAsync"/>, the API-08 read) — "Tamamlandı" within the tolerance has nothing open;
+/// an unreadable tolerance makes the line unmeasured (never open, never closed). Lines are
 /// grouped by customer account, product and order unit: quantities are added only within one unit (Ö2, exact, never converted or
 /// rounded). A line whose basis cannot be taken exactly is listed as unmeasured and its group is not <c>complete</c>; an unreadable
 /// delivery owner is 503 — never a zero.</item>
@@ -116,21 +119,48 @@ public sealed partial class SalesDraftService
 
             var recorded = await RecordedShipmentsAsync(scope, permission, draft, cancellationToken)
                 ?? throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DeliveryProviderUnavailable);
+            // SAT-D130: only a line shipped SHORT needs the SAT-D5 judgement (within the tolerance it is "Tamamlandı" and nothing is
+            // open); the tolerance of the order's business date is read once per order and only then (the API-08 read).
+            var shortShipped = lines.Any(entry => IsShortShipped(basis.Lines[entry.Line.Id].Quantity, recorded[entry.Line.Id].Shipped));
+            var tolerance = shortShipped ? await ToleranceAsync(scope, permission, draft, cancellationToken) : null;
             foreach (var (line, key) in lines)
             {
                 var approved = basis.Lines[line.Id].Quantity;
                 var shipped = recorded[line.Id].Shipped;
+                if (IsShortShipped(approved, shipped) && tolerance is null)
+                {
+                    // No readable tolerance: whether the remainder is open is unknown — never counted open, never closed.
+                    Add(unmeasured, key, new SalesOpenOrderUnmeasuredLineView(draft.Id, draft.DocumentNo, line.Id, line.LineNo,
+                        SalesOpenOrderUnmeasuredReasonView.TolerancePolicyUnavailable));
+                    continue;
+                }
+
                 Quantity remaining;
+                var completedWithinTolerance = false;
                 try
                 {
-                    remaining = shipped.CompareTo(approved) >= 0 ? Quantity.Zero(approved.Unit) : approved.Subtract(shipped);
+                    if (shipped.CompareTo(approved) >= 0)
+                    {
+                        remaining = Quantity.Zero(approved.Unit);
+                    }
+                    else if (shipped.IsZero)
+                    {
+                        remaining = approved;
+                    }
+                    else
+                    {
+                        // The realization calculator decides (SAT-D5 / SAT-D15 / SAT-D16): Completed within the tolerance, else Partial.
+                        var realization = SalesRealizationCalculator.Line(approved, shipped, lineClosed: false, tolerance!.Tolerance);
+                        completedWithinTolerance = realization.State == LineRealizationState.Completed;
+                        remaining = completedWithinTolerance ? Quantity.Zero(approved.Unit) : approved.Subtract(shipped);
+                    }
                 }
                 catch (Exception exception) when (exception is ArgumentException or OverflowException or SalesRuleException)
                 {
                     throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
                 }
 
-                Add(measured, key, new OpenLine(draft, line, basis.Revision, approved, shipped, remaining));
+                Add(measured, key, new OpenLine(draft, line, basis.Revision, approved, shipped, remaining, completedWithinTolerance));
             }
         }
 
@@ -218,7 +248,10 @@ public sealed partial class SalesDraftService
     // ---- open orders ----------------------------------------------------------------------------------------------------------
 
     private sealed record OpenLine(SalesOrderDraft Order, SalesOrderDraftLine Line, string BasisRevision, Quantity Approved, Quantity Shipped,
-        Quantity Remaining);
+        Quantity Remaining, bool CompletedWithinTolerance);
+
+    /// <summary>Something but less than the approved quantity shipped: the only case the SAT-D5 tolerance decides (SAT-D130).</summary>
+    private static bool IsShortShipped(Quantity approved, Quantity shipped) => !shipped.IsZero && shipped.CompareTo(approved) < 0;
 
     private static void Add<T>(Dictionary<SalesOpenOrderGroupKey, List<T>> map, SalesOpenOrderGroupKey key, T value)
     {
@@ -283,7 +316,7 @@ public sealed partial class SalesDraftService
             Complete: unmeasured.Count == 0,
             [.. lines.Select(line => new SalesOpenOrderLineView(line.Order.Id, line.Order.DocumentNo, line.Order.Header.BusinessDate,
                 line.Line.RequestedDeliveryDate ?? line.Order.Header.RequestedDeliveryDate, line.BasisRevision, line.Line.Id, line.Line.LineNo,
-                QuantityText(line.Approved), QuantityText(line.Shipped), QuantityText(line.Remaining)))],
+                QuantityText(line.Approved), QuantityText(line.Shipped), QuantityText(line.Remaining), line.CompletedWithinTolerance))],
             unmeasured);
     }
 
