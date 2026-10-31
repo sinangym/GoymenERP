@@ -20,10 +20,18 @@ cevapları. Sinan'a seçeneğin adı **ve açıklaması** birlikte gösterildi; 
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| SAT-D119 | e-belge durumunun şirket kapsamı | Müşterinin e-belge durumu (e-Fatura mükellefi / e-Arşiv) müşterinin **VKN'sine bağlı tek bir olgudur**; bir kez kontrol edilip kaydedilince aynı VKN'li müşterinin **üç şirketteki** cari kartında da görünür. Kayıt mimari değişmezleri korur: VKN düzeyinde ortak referans olarak tutulur, bir şirketin özel satırı diğerine sızdırılmaz; modül sınırı ve CompanyId filtresi bozulmaz. Senaryo override'ı ve kontrol zamanı/kişisi de aynı VKN için ortaktır | Cari e-belge (PR #860), SAT-D102 |
+| SAT-D119 | e-belge durumunun şirket kapsamı | Müşterinin e-belge durumu (e-Fatura mükellefi / e-Arşiv) müşterinin **VKN'sine bağlı tek bir olgudur**; bir kez kontrol edilip kaydedilince aynı VKN'li müşterinin **üç şirketteki** cari kartında da görünür. Kayıt mimari değişmezleri korur: VKN düzeyinde ortak referans olarak tutulur, bir şirketin özel satırı diğerine sızdırılmaz; modül sınırı ve CompanyId filtresi bozulmaz. Senaryo override'ı ve kontrol zamanı/kişisi de aynı VKN için ortaktır (senaryo override'ının VKN-ortak olması SAT-D102'deki "müşteri bazında" ifadesinin okunuşu; kontrol zamanı/kişisinin ortaklığı öneri — ikisi de geri alınabilir yorum). Bu karar #860'ın bugünkü `CompanyPartyAccount` (şirket-hesap) bazlı modelinin yerine geçer | Cari e-belge (PR #860), SAT-D102, AT-009 |
 | SAT-D120 | e-Fatura senaryo kod listesi | Ayarlar'daki e-Fatura senaryo kod listesi standart GİB/UBL-TR kodlarıyla başlar (TEMELFATURA, TİCARİFATURA, e-Arşiv senaryosu, İHRACAT); liste efektif tarihli ve **düzenlenebilir** (gözden geçirilmiş katalog sürümü). Senaryo **varsayılan değeri** boş kalır ve Sinan tarafından girilir (SAT-D102) | Ayarlar senaryo kod listesi (PR #860), SAT-D102 |
 | SAT-D121 | Müşteri kabulü beklenirken fatura (tüm revizyon türleri) | SAT-D114'teki "müşteri kabulü beklenirken fatura bekler" kuralı yalnız fiyat revizyonunda değil, **miktar (SAT-D104/D111) ve KDV/tevkifat (SAT-D105) revizyonlarında da** geçerlidir. Müşteri kabulü gereken siparişte, yeni revizyon müşteri kabulü beklerken daha önce sevk edilmiş mal dahil o siparişin faturası bekler | Sipariş durum ekseni (`invoicing.gate`), PR #857, S5 API-32 |
 | SAT-D122 | Şirkete özel iskonto limit bağı | İskonto limit grubu kişi bağları **şimdilik üç şirkette ortaktır** (SAT-D66 teyidi); şirkete özel bağ (bir kişiye şirket bazında farklı grup) bu dalgada açılmaz, ihtiyaç olunca ayrı kararla açılır. SAT-D116'nın "üye olunan şirketlere yazılır" kuralı geçerlidir | Ayarlar iskonto limit bağı (PR #852) |
+
+## Açık kalanlar
+
+- **SAT-D119 paylaşım anahtarı:** Aynı VKN birden çok Cari kartında olabildiğinden (AT-009, uyarı — ret değil), paylaşılan
+  olgunun anahtarının VKN → hangi taraf/hesap kümesini kapsadığı ve **TCKN'li veya vergi numarasız** (nihai tüketici, e-Arşiv)
+  müşterilerde durumun nasıl tutulacağı uygulama PR'ında (K3) belirlenir. Belirlenene kadar kontrol bugünkü gibi şirket/hesap
+  bazında kalır (fail-closed, geri alınabilir).
+- Paylaşılan e-belge referansının müşterinin VKN'si değişirse (`OPEN-030`) ne olacağı sorulmadı; bu durum uygulama PR'ında ele alınır.
 
 ## Sınırlar
 
