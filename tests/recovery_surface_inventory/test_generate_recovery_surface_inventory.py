@@ -2261,7 +2261,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1209, len(source_paths))
+        self.assertEqual(1223, len(source_paths))
         # SAT-D61…D70: the Settings discount limit groups, limits and bindings (contracts, calculator, rows, reads,
         # policy provider, binding reader, administration, shell provider), their routes and host adapters, and the
         # AddSalesDiscountLimitGroups migration (SAT-D78/D84: the limit timeline and its withdrawals).
