@@ -196,6 +196,9 @@ builder.Services.AddScoped<ISettingsMoneyCandidateReaderV2, ApprovedSettingsPrer
 // MOD-03 slice 1: the Settings-owned Sales policy registry (SAT-D2/D5/D6). AddSettingsModule replaces it with the
 // SettingsSalesPolicyProviderV1 that adds the company's discount limit groups (SAT-D61…D64) to this catalog.
 builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
+// SAT-D102: the Settings-owned e-Fatura scenario code list and default (SAT-D120 seeds the code list; the default
+// starts empty); read by Cari.
+builder.Services.AddScoped<ISettingsEInvoiceScenarioPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // SAT-D25 / SAT-D39: the Settings-owned Sales quote policies (loss reason list, default validity); the reviewed catalog is
 // empty, so a loss is refused and no validity is suggested until Sinan enters the records.
 builder.Services.AddScoped<ISettingsSalesQuotePolicyProviderV1, ApprovedSettingsSalesQuotePolicyProvider>();

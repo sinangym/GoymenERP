@@ -24,6 +24,9 @@ public sealed class CounterpartyDbContext(
     /// <summary>SAT-D57: each company's customer (price) group list.</summary>
     public DbSet<CustomerGroup> CustomerGroups => Set<CustomerGroup>();
 
+    /// <summary>SAT-D119: the group-level, VKN-keyed customer e-belge profiles (shared across all companies).</summary>
+    public DbSet<CustomerEDocumentProfile> CustomerEDocumentProfiles => Set<CustomerEDocumentProfile>();
+
     public DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -37,6 +40,7 @@ public sealed class CounterpartyDbContext(
         ConfigureCompanyPartyAccount(modelBuilder);
         ConfigurePartyTaxIdentityChangeRequest(modelBuilder);
         ConfigureCustomerGroup(modelBuilder);
+        ConfigureCustomerEDocumentProfile(modelBuilder);
         ConfigureOrganizationCompanyReference(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
@@ -254,6 +258,60 @@ public sealed class CounterpartyDbContext(
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    private static void ConfigureCustomerEDocumentProfile(ModelBuilder modelBuilder)
+    {
+        // SAT-D119: a GROUP-LEVEL record keyed by the taxpayer's VKN/TCKN, with NO CompanyId and NO query filter (the
+        // same group-wide shape as Party, DEC-CAR-001). One profile per tax identity number, shared across companies;
+        // each company reaches it through its own account that resolves to this VKN. Never deleted.
+        var entity = modelBuilder.Entity<CustomerEDocumentProfile>();
+        entity.ToTable("CustomerEDocumentProfiles", "counterparty", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_CustomerEDocumentProfiles_TaxIdentityNumber",
+                "LEN([TaxIdentityNumber]) IN (10, 11) AND DATALENGTH([TaxIdentityNumber]) = LEN([TaxIdentityNumber])"
+                + " AND [TaxIdentityNumber] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'");
+            table.HasCheckConstraint(
+                "CK_CustomerEDocumentProfiles_Version",
+                "[Version] >= 1");
+            // An explicit status: Unknown (0) carries no check; a known status (1, 2) carries the time, the checker and
+            // the company the check was recorded in (which alone decides who sees the checker, P3-1).
+            table.HasCheckConstraint(
+                "CK_CustomerEDocumentProfiles_Status",
+                "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL"
+                + " AND [EDocumentStatusCheckedInCompanyId] IS NULL)"
+                + " OR ([EDocumentStatus] IN (1, 2) AND [EDocumentStatusCheckedAtUtc] IS NOT NULL"
+                + " AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0"
+                + " AND [EDocumentStatusCheckedInCompanyId] IS NOT NULL)");
+            // The override's lexical shape only; WHICH codes exist is the Settings code list's business.
+            table.HasCheckConstraint(
+                "CK_CustomerEDocumentProfiles_ScenarioOverrideCode",
+                "[EInvoiceScenarioOverrideCode] IS NULL OR (LEN([EInvoiceScenarioOverrideCode]) > 0"
+                + " AND DATALENGTH([EInvoiceScenarioOverrideCode]) = 2 * LEN([EInvoiceScenarioOverrideCode])"
+                + " AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 LIKE '[A-Z]%'"
+                + " AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^A-Z0-9_]%')");
+        });
+        entity.HasKey(x => x.Id);
+        entity.Property(x => x.TaxIdentityNumber).HasMaxLength(11).IsUnicode(false).IsRequired();
+        entity.Property(x => x.EDocumentStatus).HasConversion<int>().IsRequired();
+        entity.Property(x => x.EDocumentStatusCheckedByUserId)
+            .HasMaxLength(CustomerEDocumentProfile.CheckerMaximumLength);
+        entity.Property(x => x.EInvoiceScenarioOverrideCode)
+            .HasMaxLength(CustomerEDocumentProfile.ScenarioCodeMaximumLength);
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.RowVersion).IsRowVersion();
+        // One profile per taxpayer across the whole group (shared by VKN).
+        entity.HasIndex(x => x.TaxIdentityNumber)
+            .IsUnique()
+            .HasDatabaseName("UX_CustomerEDocumentProfiles_TaxIdentityNumber");
+
+        // The checking company is a real company (not a tenant key of this group-wide row).
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.EDocumentStatusCheckedInCompanyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_CustomerEDocumentProfiles_Companies_CheckedInCompanyId");
+    }
+
     private static void ConfigureOrganizationCompanyReference(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<OrganizationCompanyReference>();
@@ -320,6 +378,45 @@ public sealed class CounterpartyDbContext(
             {
                 throw new InvalidOperationException(
                     "Cari hesap yazması aktif şirket bağlamıyla eşleşmelidir.");
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<CustomerEDocumentProfile>())
+        {
+            if (entry.State == EntityState.Unchanged)
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted)
+            {
+                throw new InvalidOperationException(
+                    "Grup seviyesindeki e-belge profili silinemez; durum Unknown'a sıfırlanır.");
+            }
+
+            if (entry.State == EntityState.Modified
+                && (entry.Property(x => x.Id).IsModified || entry.Property(x => x.TaxIdentityNumber).IsModified))
+            {
+                throw new InvalidOperationException("e-belge profilinin kimliği ve VKN'si değiştirilemez.");
+            }
+
+            // No company fence: this record is group-wide (SAT-D119). A resolved company context is still required so
+            // every write happens inside an authorized company operation.
+            if (!companyContext.IsResolved)
+            {
+                throw new InvalidOperationException(
+                    "e-belge profili yazması aktif şirket bağlamı ister.");
+            }
+
+            // A check is always recorded IN the writing company (review B-P3-3): a newly written checking company must
+            // be the active one. Clearing it (Unknown) and writes that leave it untouched are not checks.
+            var checkingCompany = entry.Property(x => x.EDocumentStatusCheckedInCompanyId);
+            if ((entry.State == EntityState.Added || checkingCompany.IsModified)
+                && entry.Entity.EDocumentStatusCheckedInCompanyId is { } checkedIn
+                && checkedIn != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "e-belge kontrolü yalnız aktif şirkette kaydedilebilir.");
             }
         }
 

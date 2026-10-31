@@ -53,6 +53,16 @@ public static class ErpPermissions
     public const string CounterpartyAccountsCustomerGroupAssign = "counterparty.accounts.customer-group.assign";
 
     /// <summary>
+    /// SAT-D102 / SAT-D119 (Sinan, 2026-10-28 and 2026-10-31): record the e-belge (e-Fatura / e-Arşiv) status check and
+    /// set or clear the e-Fatura scenario override of the customer's group-level, VKN-shared profile, through the active
+    /// company's account for the Cari card — the Counterparty owner's name
+    /// (CounterpartyEDocumentPermissionsV1). Registered, not granted: no role, seed or user receives it here (human
+    /// gate). Company-wide only, as every Counterparty name. Not Critical: no source makes it a grant-time dual-control
+    /// duty. Deliberately not counterparty.parties.update.basic, so existing basic-edit grants are not widened.
+    /// </summary>
+    public const string CounterpartyAccountsEDocumentUpdate = "counterparty.accounts.e-document.update";
+
+    /// <summary>
     /// The narrow operational product-selection read (K-1(a), Sinan's decision relayed in Business
     /// #66 5719251344; registration asked for in 5720016574 §3). Registering the name makes it
     /// KNOWN, not granted: no role and no user receives it here, and an actor without an explicit
@@ -728,6 +738,7 @@ public static class ErpPermissions
             CounterpartyPartiesTaxIdentityApprove,
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
+            CounterpartyAccountsEDocumentUpdate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,
@@ -862,6 +873,7 @@ public static class ErpPermissions
             CounterpartyPartiesTaxIdentityApprove,
             CounterpartyCustomerGroupsManage,
             CounterpartyAccountsCustomerGroupAssign,
+            CounterpartyAccountsEDocumentUpdate,
             ProductOperationalSelectionRead,
             ProductPriceListsRead,
             ProductPriceListsWrite,

@@ -122,11 +122,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // read factory, and registers one scoped in-process SalesOwnerCandidateHost, with comments (cae283bd… -> 2eae99cc…), then
     // a COMMENT-ONLY edit saying the sales-owner picker opens on the order create name alone (2eae99cc… -> 13f02f10…); no
     // OpenAPI-generation, network or hosted-service surface changes.
-    // SAT-D61…D70 maps the Settings limit routes and registers the central adapters and the shell provider; SAT-D25 / SAT-D39
-    // (merged) also register one scoped Settings quote policy provider beside the Sales policy provider. Comments only; no
-    // OpenAPI-generation, network or hosted-service surface changes.
+    // SAT-D61…D70 (main) maps the Settings limit routes and registers the central adapters and the shell provider;
+    // SAT-D25 / SAT-D39 (main) register one scoped Settings quote policy provider; SAT-D102 registers one scoped
+    // Settings e-Fatura scenario port (ISettingsEInvoiceScenarioPolicyProviderV1 -> ApprovedSettingsPrerequisiteProvider).
+    // Comments / scoped in-process registrations only; no OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "341af1bcb67b7ffa6e97fd3bc3a9de5438808a54ef7f0eb727a9a4a767cc8d4a";
+        "c561dd712ee9370940120153360dfeed7fce6e9403db91a0c521cd023061d16f";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -221,8 +222,14 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // GOY-UX-TEXT-FILTER-01: +1 same-address-row, pre-pagination address-filter SQL fact.
             // Location operator eligibility: +1 exact-party, supplier-only, company/actor-fenced read-only SQL fact.
             // SAT-D57 customer group: +5 list lifecycle, account assignment/port, company fence, 403 and rollback facts.
+            // SAT-D102/SAT-D119 e-belge profile: +10 VKN-shared status lifecycle, cross-company sharing without the
+            // checker, VKN change (profile-bound fence, ABA 409), existing-party isolation + port, concurrent first creation,
+            // per-company Idempotency-Key, Settings-listed override/effective scenario, no-VKN and DB checks, 403 and
+            // rollback facts (d8e2b013… -> 7b1a22af…). Review round 3: +2 facts — another company's audit carries
+            // neither the checker nor the checking company, and a passive account's commands are a stored 422
+            // (7b1a22af… -> 53063d1f…).
             ["tools/relational_inventory/counterparty.txt"] =
-                "d8e2b013d2ef21db35516d57d168e0be2bdb4590bcfe2ba0707180dedb4c78b2",
+                "53063d1f05e0bb4f65f6c9c966fc04c4a433a455bba426d1c51018b3c0ce35b0",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).
