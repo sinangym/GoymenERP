@@ -561,6 +561,45 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     }
 
     [SqlServerFact]
+    public async Task A_shipment_above_the_sales_owners_current_cap_is_refused_with_no_effect_and_within_it_ships_on_real_sql()
+    {
+        // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): 5 kg were loaded under the earlier cap of 6; the Sales owner now answers a
+        // cap of 4 (a decrease waiting for, or just given, approval — the race the floor read cannot see). Shipping the 5 is
+        // refused before any Logistics or Inventory effect; shipping 4 within the cap goes through.
+        await using var run = await Run.StartAsync();
+        var fixture = await SeedHostedShipmentAsync(run, "SYN-LOG5-SALES-CAP");
+        var grant = await GrantRealizationAsync(run, $"SYN-LOG5-sales-cap-{Guid.NewGuid():N}");
+        await using var host = HostedShipmentHost(run, fixture, new HostedAllocationReads(fixture), grant.Subject,
+            configure: services =>
+            {
+                services.RemoveAll<ISalesOrderLineReferencePortV1>();
+                services.AddSingleton<ISalesOrderLineReferencePortV1>(new HostedSalesLine(fixture, shippingCap: "4"));
+            });
+        using var client = HostedClientFor(host, grant.Subject, CompanyA);
+        var over = CreateHostedShipmentRequest(fixture, "1", "sales-cap-over", quantity: "5");
+        var before = await HostedEffectsAsync(run, fixture, over);
+
+        using (var refused = await client.SendAsync(over.Message))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            var body = await refused.Content.ReadAsStringAsync();
+            Assert.Contains(LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded, body, StringComparison.Ordinal);
+            Assert.Contains("sales_shipping_cap_exceeded", body, StringComparison.Ordinal);
+        }
+
+        Assert.Equal(before, await HostedEffectsAsync(run, fixture, over));
+
+        var within = CreateHostedShipmentRequest(fixture, "1", "sales-cap-within", quantity: "4");
+        using (var shipped = await client.SendAsync(within.Message))
+        {
+            Assert.Equal(HttpStatusCode.OK, shipped.StatusCode);
+        }
+
+        Assert.Equal(4m, await run.ScalarAsync<decimal>("SELECT Shipped FROM logistics.LoadingInstructionLines WHERE LineId = @id",
+            ("@id", fixture.LineId)));
+    }
+
+    [SqlServerFact]
     public async Task Terminal_inventory_conflict_records_one_refusal_replays_and_leaves_no_physical_effect()
     {
         await using var run = await Run.StartAsync();
@@ -909,8 +948,26 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         }
     }
 
-    private sealed class HostedSalesLine(HostedShipmentFixture fixture) : ISalesOrderLineReferencePortV1
+    private sealed class HostedSalesLine(HostedShipmentFixture fixture, string? shippingCap = null) : ISalesOrderLineReferencePortV1
     {
+        /// <summary>SAT-D111: with a cap the loading read answers the owner-resolved limit (the current shipping cap).</summary>
+        public async Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
+            CancellationToken cancellationToken = default)
+        {
+            var answer = await GetApprovedLineAsync(orderId, lineId, cancellationToken);
+            return shippingCap is null || answer.Line is not { } line
+                ? answer
+                : answer with
+                {
+                    Line = line with
+                    {
+                        LoadingLimit = new SalesOrderLineLoadingLimitV1(CompanyA, line.OrderId, line.LineId, line.OrderUnitId, line.Version,
+                            shippingCap, SalesOrderLineLoadingLimitSourcesV1.ReapprovalShippingCap, line.LineId.ToString("D"), "4", effectiveOn),
+                        ShippingCapQuantityText = shippingCap,
+                    },
+                };
+        }
+
         public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineAsync(
             Guid orderId,
             Guid lineId,

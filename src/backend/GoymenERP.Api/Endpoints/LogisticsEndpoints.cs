@@ -326,6 +326,9 @@ public static class LogisticsEndpoints
             .ProducesErpConflict(LogisticsProblemCodesV1.VersionConflict, LogisticsProblemCodesV1.InstructionState,
                 LogisticsProblemCodesV1.LineBlocked, LogisticsProblemCodesV1.DuplicateShare,
                 LogisticsRealizationCodesV1.AllocationSourceMismatch, LogisticsRealizationCodesV1.ShipmentExceedsLoaded,
+                // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): the Sales order line is no longer approved / no longer this source,
+                // or the shipment would take the line's total shipped above the Sales owner's current loading limit.
+                LogisticsProblemCodesV1.OrderLineState, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,
                 LogisticsProblemCodesV1.SameKeyPayloadMismatch, LogisticsProblemCodesV1.ConcurrentChange,
                 InventoryDefiniteShipmentCodesV1.AllocationVersionConflict, InventoryDefiniteShipmentCodesV1.LabelVersionConflict,
                 InventoryDefiniteShipmentCodesV1.AllocationState, InventoryDefiniteShipmentCodesV1.AllocationLabelMismatch,

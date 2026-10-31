@@ -16,7 +16,7 @@ internal sealed class UserDirectoryReadPortV1(
     IdentityDbContext dbContext,
     ICompanyContext companyContext,
     ICurrentUser currentUser)
-    : IUserDirectoryReadPortV1
+    : IUserDirectoryReadPortV1, IUserCompanyMembershipReadPortV1
 {
     public async Task<UserDirectoryResolveAnswerV1> ResolveAsync(
         UserDirectoryResolveRequestV1 request,
@@ -161,6 +161,57 @@ internal sealed class UserDirectoryReadPortV1(
         catch (Exception)
         {
             return new UserDirectorySearchAnswerV1(UserDirectoryOutcomeV1.Unavailable, [], false);
+        }
+    }
+
+    /// <summary>
+    /// SAT-D66: the requested companies where the person is an active member now. The caller must be able to access, and be an
+    /// active member of, every requested company; the context company must be the server-resolved one.
+    /// </summary>
+    public async Task<UserCompanyMembershipAnswerV1> GetActiveCompaniesAsync(
+        UserCompanyMembershipRequestV1 request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (request?.CompanyIds is null
+            || request.UserId == Guid.Empty
+            || request.CompanyIds.Count is 0 or > UserDirectoryLimitsV1.MaximumResolveCount
+            || request.CompanyIds.Any(id => id == Guid.Empty)
+            || request.CompanyIds.Distinct().Count() != request.CompanyIds.Count
+            || !TryFence(request.ContextCompanyId, request.ActorId, out var fence)
+            || request.CompanyIds.Any(company => !currentUser.CanAccessCompany(company)))
+        {
+            return new UserCompanyMembershipAnswerV1(UserDirectoryOutcomeV1.Denied, []);
+        }
+
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var active = new List<Guid>();
+            foreach (var company in request.CompanyIds.Order())
+            {
+                if (!await IsActiveMemberAsync(fence.ActorUserId, company, now, cancellationToken))
+                {
+                    return new UserCompanyMembershipAnswerV1(UserDirectoryOutcomeV1.Denied, []);
+                }
+
+                if (await IsActiveMemberAsync(request.UserId, company, now, cancellationToken))
+                {
+                    active.Add(company);
+                }
+            }
+
+            return StillFenced(fence)
+                ? new UserCompanyMembershipAnswerV1(UserDirectoryOutcomeV1.Found, active)
+                : new UserCompanyMembershipAnswerV1(UserDirectoryOutcomeV1.Denied, []);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return new UserCompanyMembershipAnswerV1(UserDirectoryOutcomeV1.Unavailable, []);
         }
     }
 

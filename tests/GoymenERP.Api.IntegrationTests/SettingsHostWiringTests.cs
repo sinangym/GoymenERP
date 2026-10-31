@@ -99,14 +99,15 @@ public sealed class SettingsHostWiringTests
     }
 
     [Fact]
-    public void The_host_registers_the_approved_provider_as_the_one_sales_policy_port()
+    public void The_host_registers_one_sales_policy_port_over_the_approved_catalog_and_the_limit_group_store()
     {
         using var factory = Host(Gdc);
         using var scope = factory.Services.CreateScope();
 
         var provider = scope.ServiceProvider.GetRequiredService<ISettingsSalesPolicyProviderV1>();
 
-        Assert.IsType<ApprovedSettingsPrerequisiteProvider>(provider);
+        // SAT-D61…D64: the catalog stays the source of every approved value; the store adds the discount limit groups.
+        Assert.IsType<SettingsSalesPolicyProviderV1>(provider);
         Assert.Single(scope.ServiceProvider.GetServices<ISettingsSalesPolicyProviderV1>());
     }
 

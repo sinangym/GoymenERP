@@ -922,6 +922,18 @@ public sealed partial class SalesStore(
         row.State = (int)draft.State;
         row.Version = draft.Version;
         row.UpdatedAtUtc = draft.UpdatedAtUtc;
+        if (row.SourceQuoteId is { } sourceQuoteId)
+        {
+            // SAT-D72: the cancelled order no longer holds the requests its source quote covered — in this same save the quote's
+            // links are released (IsActive 1 → 0, the write guard's only allowed change), so a NEW quote may cover them and be
+            // converted again. The source quote stays Converted with this order (No 162: one order per quote, unchanged).
+            foreach (var link in await dbContext.QuoteRequests
+                         .Where(candidate => candidate.QuoteId == sourceQuoteId && candidate.IsActive).ToListAsync(cancellationToken))
+            {
+                link.IsActive = false;
+            }
+        }
+
         dbContext.DraftAttempts.Add(new DraftAttemptRow
         {
             CompanyId = companyId,

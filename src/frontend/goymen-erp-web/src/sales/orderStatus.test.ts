@@ -71,6 +71,7 @@ describe('decodeOrderStatus', () => {
       draftVersion: '4', revision: 'Rev.0', lifecycle: 'Active', internalApproval: 'Approved',
       customerAcceptance: { state: 'NotRequired', acceptedRevision: null },
       source: 'NoSource', invoicing: 'NoSource', financialClosure: 'NoSource', readyToClose: false,
+      invoicingGate: { gate: 'Open', priceBasisRevision: 'Rev.0' },
     })
     expect(decoded?.realization).toMatchObject({
       state: 'Partial', warning: true, basisRevision: 'Rev.0',
@@ -111,6 +112,7 @@ describe('decodeOrderStatus', () => {
     const body = status()
     body.revision = 'Rev.1'
     body.internalApproval.state = 'PendingApproval'
+    body.invoicing = { state: 'NoSource', gate: 'AwaitingReapproval', priceBasisRevision: null }
     body.realization.basisRevision = 'Rev.0'
     // The basis quantity may differ from the current (unapproved) one.
     body.realization.lines[1].ordered = '20'
@@ -118,6 +120,64 @@ describe('decodeOrderStatus', () => {
     const decoded = decodeOrderStatus(body, pendingDetail())
     expect(decoded?.realization.basisRevision).toBe('Rev.0')
     expect(decoded?.realization.lines[1].ordered).toBe('20')
+  })
+
+  it('reads the SAT-D103 invoicing gate bound to the detail: open, waiting for re-approval, open at the last approved after a rejection', () => {
+    const waiting = status()
+    Object.assign(waiting, { revision: 'Rev.1' })
+    waiting.internalApproval.state = 'PendingApproval'
+    waiting.realization.basisRevision = 'Rev.0'
+    waiting.invoicing = { state: 'NoSource', gate: 'AwaitingReapproval', priceBasisRevision: null }
+    expect(decodeOrderStatus(waiting, pendingDetail())?.invoicingGate).toEqual({ gate: 'AwaitingReapproval', priceBasisRevision: null })
+    // While waiting, no price basis may be answered — not even the last approved one.
+    expect(decodeOrderStatus({ ...waiting, invoicing: { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.0' } }, pendingDetail())).toBeNull()
+
+    const rejectedDetail = decodeDetail({
+      ...detailBody({ approvalState: 'Rejected', revision: 'Rev.3' }),
+      approval: { ...APPROVED, rejectionReason: 'SENTETIK' },
+    })
+    const rejected = status()
+    Object.assign(rejected, { revision: 'Rev.3' })
+    rejected.internalApproval.state = 'Rejected'
+    rejected.realization.basisRevision = 'Rev.2'
+    rejected.invoicing = { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.2' }
+    expect(decodeOrderStatus(rejected, rejectedDetail)?.invoicingGate).toEqual({ gate: 'Open', priceBasisRevision: 'Rev.2' })
+    expect(decodeOrderStatus({ ...rejected, invoicing: { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.3' } }, rejectedDetail)).toBeNull()
+
+    const preparing = decodeDetail({ ...detailBody({ approvalState: 'Preparing' }), approval: { submittedBy: null, submittedAtUtc: null, decidedBy: null, decidedAtUtc: null, rejectionReason: null } })
+    const never = status()
+    never.lifecycle.state = 'Draft'
+    never.internalApproval.state = 'Preparing'
+    never.invoicing = { state: 'NoSource', gate: 'NotApproved', priceBasisRevision: null }
+    expect(decodeOrderStatus(never, preparing)?.invoicingGate).toEqual({ gate: 'NotApproved', priceBasisRevision: null })
+  })
+
+  it('reads the SAT-D114 gate: an approved revision the customer has not accepted keeps invoicing waiting, with no basis', () => {
+    const notAccepted = decodeDetail({
+      ...detailBody(),
+      customerAcceptance: { required: true, acceptedRevision: null, acceptedBy: null, acceptedAtUtc: null, isCurrentRevisionAccepted: false },
+    })
+    const waiting = status()
+    waiting.customerAcceptance = { state: 'Pending', acceptedRevision: null }
+    waiting.invoicing = { state: 'NoSource', gate: 'AwaitingCustomerAcceptance', priceBasisRevision: null }
+    expect(decodeOrderStatus(waiting, notAccepted)?.invoicingGate).toEqual({ gate: 'AwaitingCustomerAcceptance', priceBasisRevision: null })
+    // Open at an unaccepted revision is a contradiction and refused.
+    expect(decodeOrderStatus({ ...waiting, invoicing: { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.0' } }, notAccepted)).toBeNull()
+
+    // Rejected after an unaccepted last approved revision: still waiting for the customer, never Open at it.
+    const rejectedUnaccepted = decodeDetail({
+      ...detailBody({ approvalState: 'Rejected', revision: 'Rev.2' }),
+      approval: { ...APPROVED, rejectionReason: 'SENTETIK' },
+      customerAcceptance: { required: true, acceptedRevision: 'Rev.0', acceptedBy: 'musteri', acceptedAtUtc: '2026-09-19T10:00:00Z', isCurrentRevisionAccepted: false },
+    })
+    const rejected = status()
+    Object.assign(rejected, { revision: 'Rev.2' })
+    rejected.internalApproval.state = 'Rejected'
+    rejected.customerAcceptance = { state: 'Pending', acceptedRevision: 'Rev.0' }
+    rejected.realization.basisRevision = 'Rev.1'
+    rejected.invoicing = { state: 'NoSource', gate: 'AwaitingCustomerAcceptance', priceBasisRevision: null }
+    expect(decodeOrderStatus(rejected, rejectedUnaccepted)?.invoicingGate.gate).toBe('AwaitingCustomerAcceptance')
+    expect(decodeOrderStatus({ ...rejected, invoicing: { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.1' } }, rejectedUnaccepted)).toBeNull()
   })
 
   it('reads PendingReapproval, Unreadable and PolicyUnavailable in their one shape', () => {
@@ -135,6 +195,7 @@ describe('decodeOrderStatus', () => {
     const pending = unjudged('PendingReapproval', null)
     pending.revision = 'Rev.1'
     pending.internalApproval.state = 'PendingApproval'
+    pending.invoicing = { state: 'NoSource', gate: 'AwaitingReapproval', priceBasisRevision: null }
     expect(decodeOrderStatus(pending, pendingDetail())?.realization.state).toBe('PendingReapproval')
     expect(decodeOrderStatus(unjudged('Unreadable', 'Rev.0'), detail)?.realization.state).toBe('Unreadable')
 
@@ -164,6 +225,10 @@ describe('decodeOrderStatus', () => {
     ['a missing accepted revision', (b) => { delete b.customerAcceptance.acceptedRevision }],
     ['an owner-less axis with a state this screen does not name', (b) => { b.source.state = 'FullySourced' }],
     ['a null invoicing axis', (b) => { b.invoicing = null }],
+    ['an invoicing axis without its gate (SAT-D103)', (b) => { delete b.invoicing.gate }],
+    ['an unknown invoicing gate', (b) => { b.invoicing.gate = 'Blocked' }],
+    ['a waiting gate on an approved revision', (b) => { b.invoicing.gate = 'AwaitingReapproval'; b.invoicing.priceBasisRevision = null }],
+    ['a price basis other than the approved revision', (b) => { b.invoicing.priceBasisRevision = 'Rev.1' }],
     ['a financial closure with a number', (b) => { b.financialClosure.amount = '0' }],
     ['an unknown realization state', (b) => { b.realization.state = 'Done' }],
     ['a realization without lines', (b) => { delete b.realization.lines }],
@@ -290,6 +355,7 @@ describe('API-08 OpenAPI pin', () => {
     ['SalesOrderDraftStatusResponse', ['customerAcceptance', 'draftVersion', 'financialClosure', 'internalApproval', 'invoicing',
       'lifecycle', 'readyToClose', 'realization', 'revision', 'source']],
     ['SalesDraftStatusAxisV1', ['state']],
+    ['SalesDraftInvoicingAxisV1', ['gate', 'priceBasisRevision', 'state']],
     ['SalesDraftCustomerAcceptanceAxisV1', ['acceptedRevision', 'state']],
     ['SalesDraftRealizationAxisV1', ['basisRevision', 'lines', 'state', 'tolerance', 'warning']],
     ['SalesDraftDeliveryToleranceV1', ['approvalPercent', 'blockPercent', 'effectiveFrom', 'effectiveThrough', 'evaluatedOn',
@@ -308,6 +374,7 @@ describe('API-08 OpenAPI pin', () => {
     }
     fits(example, 'SalesOrderDraftStatusResponse')
     fits(example.lifecycle, 'SalesDraftStatusAxisV1')
+    fits(example.invoicing, 'SalesDraftInvoicingAxisV1')
     fits(example.customerAcceptance, 'SalesDraftCustomerAcceptanceAxisV1')
     fits(example.realization, 'SalesDraftRealizationAxisV1')
     fits(example.realization.tolerance, 'SalesDraftDeliveryToleranceV1')

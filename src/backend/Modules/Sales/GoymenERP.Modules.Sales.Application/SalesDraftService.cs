@@ -60,7 +60,8 @@ public sealed partial class SalesDraftService(
     ISalesQuoteStore? quotes = null,
     ISettingsSalesPolicyProviderV1? salesPolicies = null,
     ISalesDiscountLimitGroupSourceV1? discountLimitGroups = null,
-    ISalesPartyRiskReadPortV1? partyRisk = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
+    ISalesPartyRiskReadPortV1? partyRisk = null,
+    ISettingsSalesQuotePolicyProviderV1? quotePolicies = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -114,6 +115,10 @@ public sealed partial class SalesDraftService(
         SalesDraftWriteEnvelope envelope, string requestHash, string commandName, IReadOnlyList<SalesDraftFieldError> priced,
         Func<Func<string, SalesOrderDraft>, Task<SalesDraftStoreResult>> save, CancellationToken cancellationToken)
     {
+        // SAT-D71: the order's business date is never before the SERVER's business day (Europe/Istanbul) — the client's clock
+        // decides nothing. Asked after the replay (a recorded answer stays the answer) and before any owner is read; not recorded.
+        RequireOrderBusinessDate(request.BusinessDate);
+
         // 4. The owners, each answered for this company and business date. A stale product version
         // is recorded as the key's terminal result; if another caller of the same key wins that
         // record meanwhile, the winner's result is answered instead (ADR-011 §8; RaceWon).
@@ -141,7 +146,8 @@ public sealed partial class SalesDraftService(
         var discountLimit = SalesDiscountLimit.Undefined;
         if (lineInputs.Any(input => input.Commercial is { } commercial && SalesOrderDraft.IsMeasurablyDiscounted(commercial)))
         {
-            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, bindings.CreatePermission, request.BusinessDate,
+            // SAT-D81: the limit of the day the order is entered (the server's business day), not of its business date.
+            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, bindings.CreatePermission, DiscountLimitCheckDay(),
                 cancellationToken);
         }
 
@@ -205,6 +211,20 @@ public sealed partial class SalesDraftService(
         // a 403 — the caller would drop its key and create a second draft (S03, ORG #321 P3-1). The
         // next request of this key meets the fence again before the replay is read (ADR-011 §5).
         return Response(scope, stored.Draft, stored.Outcome == SalesDraftWriteOutcome.Replayed, stored.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
+    /// <summary>
+    /// SAT-D71: an order opens today or later on the server's Europe/Istanbul business day; an earlier date is 422
+    /// <c>validation_failed</c> with <c>businessDate</c> → <see cref="SalesDraftProblemCodesV1.BusinessDateBeforeBusinessDay"/>,
+    /// and an unresolvable zone is 503 (never a UTC fallback).
+    /// </summary>
+    private void RequireOrderBusinessDate(DateOnly businessDate)
+    {
+        if (businessDate < ServerBusinessDay())
+        {
+            throw new SalesDraftServiceException(422, "validation_failed",
+                [new("businessDate", SalesDraftProblemCodesV1.BusinessDateBeforeBusinessDay)]);
+        }
     }
 
     /// <summary>
@@ -496,13 +516,13 @@ public sealed partial class SalesDraftService(
                 line.SurchargeAmount)))
             .ToArray();
 
-        // SAT-D2 / SAT-D34 / SAT-D35: the reviser's discount limit on the draft's business date, read only when a line is
-        // discounted against its list-price reference (only then does a limit decide anything).
+        // SAT-D2 / SAT-D34 / SAT-D35 / SAT-D81: the reviser's discount limit on the day of the commercial revision (the
+        // server's business day, not the draft's business date), read only when a line is discounted against its list-price
+        // reference (only then does a limit decide anything).
         var discountLimit = SalesDiscountLimit.Undefined;
         if (inputs.Any(input => SalesOrderDraft.IsMeasurablyDiscounted(input.Commercial)))
         {
-            var current = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
-            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, permission, current.Money.EffectiveOn, cancellationToken);
+            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, permission, DiscountLimitCheckDay(), cancellationToken);
         }
         var audit = new SalesDraftStateAudit("sales.order-draft.commercial-revised.v1", "ReviseCommercial",
             "Satış sipariş taslağının fiyat ve iskontosu revize edildi");
@@ -903,6 +923,14 @@ public sealed partial class SalesDraftService(
         if (current is null)
         {
             throw new SalesDraftServiceException(404, "not_found");
+        }
+
+        // SAT-D111 / SAT-D112 (EK13 / EK14; K3-REVIEW-B P1-1): during a re-approval the submission and the approval measure
+        // the CURRENT quantities against Logistics' loaded total again — a revision rejected and then resubmitted unchanged
+        // must not be approved below what was loaded meanwhile under the restored cap.
+        if (commandName is SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1)
+        {
+            await RequireReapprovalFloorAsync(scope, permission, current, expectedVersion, commandName, cancellationToken);
         }
 
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).

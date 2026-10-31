@@ -639,6 +639,29 @@ public sealed partial class LogisticsInstructionServiceTests
         public string Fault { get; set; } = "";
         public int Calls { get; set; }
 
+        /// <summary>The approved commercial revision the owner answers (SAT-D103: it may grow while an instruction stands).</summary>
+        public int Revision { get; set; }
+
+        /// <summary>SAT-D111: when set, the loading read answers this owner-resolved limit (the current shipping cap).</summary>
+        public string? ShippingCap { get; set; }
+
+        public Task<SalesOrderLineReferenceAnswerV1> GetApprovedLineForLoadingAsync(Guid orderId, Guid lineId, DateOnly effectiveOn,
+            CancellationToken cancellationToken = default)
+        {
+            var answer = GetApprovedLineAsync(orderId, lineId, cancellationToken).Result;
+            return Task.FromResult(ShippingCap is { } cap && answer.Line is { } line && line.LoadingLimit is null
+                ? answer with
+                {
+                    Line = line with
+                    {
+                        LoadingLimit = new SalesOrderLineLoadingLimitV1(line.CompanyId, orderId, lineId, line.OrderUnitId, line.Version, cap,
+                            SalesOrderLineLoadingLimitSourcesV1.ReapprovalShippingCap, lineId.ToString("D"), "7", effectiveOn),
+                        ShippingCapQuantityText = cap,
+                    },
+                }
+                : answer);
+        }
+
         /// <summary>LOG-4b: the price-free picker page the Sales owner answers; "other-company" answers a foreign row, "throws" an outage.</summary>
         public Task<SalesApprovedLinePageV1> ListApprovedLinesAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
         {
@@ -691,7 +714,7 @@ public sealed partial class LogisticsInstructionServiceTests
                         Fault == "other-customer" ? Guid.NewGuid() : Party, Account, Product, "7", KgUnit,
                         // The generic approved line must cover the pre-existing weighbridge fixtures (up to 24,000 kg).
                         // The dedicated revised case remains deliberately capped at 2 kg.
-                        Fault == "remainder-revised" ? "2" : "100000", 0,
+                        Fault == "remainder-revised" ? "2" : "100000", Revision,
                         Fault == "limit-version-race" && Calls > 1 ? 8 : 7,
                         Fault == "remainder-cancelled" ? SalesRemainderChangeNamesV1.Cancelled
                             : Fault is "remainder-revised" or "load-limit-revised" ? SalesRemainderChangeNamesV1.Revised : SalesRemainderChangeNamesV1.Open,
@@ -847,6 +870,14 @@ public sealed partial class LogisticsInstructionServiceTests
 
         public Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default) =>
             Task.FromResult(_instructions.SingleOrDefault(candidate => candidate.Instruction.Id == instructionId));
+
+        /// <summary>SAT-D111 (K3-REVIEW-A P1-1 b): the shipped total of every stored instruction line of the Sales line, plus a planted extra.</summary>
+        public decimal ExtraShipped { get; set; }
+
+        public Task<decimal> SumShippedForOrderLineAsync(Guid orderId, Guid orderLineId, Guid unitId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(ExtraShipped + _instructions.SelectMany(stored => stored.Instruction.Lines)
+                .Where(line => line.Source.OrderId == orderId && line.Source.LineId == orderLineId && line.UnitId == unitId)
+                .Sum(line => line.ShippedQuantity.Value));
 
         public Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
             CancellationToken cancellationToken = default) =>

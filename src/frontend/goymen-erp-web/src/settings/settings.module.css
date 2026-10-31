@@ -1,0 +1,122 @@
+.page {
+  display: grid;
+  gap: var(--goy-ds-space-4);
+  max-width: 72rem;
+}
+
+.section {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  padding: var(--goy-ds-space-4);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+  background: var(--goy-ds-color-surface);
+}
+
+.muted {
+  color: var(--goy-ds-color-text-secondary);
+  margin: 0;
+}
+
+.notice {
+  margin: 0;
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border-left: 4px solid var(--goy-ds-color-success);
+  background: var(--goy-ds-color-surface-muted);
+}
+
+.error {
+  margin: 0;
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+  border-left: 4px solid var(--goy-ds-color-danger);
+  background: var(--goy-ds-color-danger-soft);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--goy-ds-space-2);
+  border-bottom: 1px solid var(--goy-ds-color-border);
+  vertical-align: top;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--goy-ds-space-2);
+}
+
+.form {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+  max-width: 40rem;
+  padding: var(--goy-ds-space-3);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-md);
+}
+
+.form h3 {
+  margin: 0;
+}
+
+.fieldset {
+  display: grid;
+  gap: var(--goy-ds-space-2);
+  border: 1px solid var(--goy-ds-color-border);
+  border-radius: var(--goy-ds-radius-sm);
+  padding: var(--goy-ds-space-2) var(--goy-ds-space-3);
+}
+
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--goy-ds-space-2);
+}
+
+.searchRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--goy-ds-space-2);
+}
+
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--goy-ds-space-1);
+}
+
+.people li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--goy-ds-space-2);
+}
+
+.binding {
+  display: grid;
+  gap: var(--goy-ds-space-3);
+}
+
+/* SAT-D78: the scheduled changes of a group, one per line inside its table cell. */
+.plainList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--goy-ds-space-1);
+}
+
+.plainList li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--goy-ds-space-2);
+}

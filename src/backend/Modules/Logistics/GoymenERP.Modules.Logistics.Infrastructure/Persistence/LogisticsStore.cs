@@ -608,6 +608,14 @@ public sealed class LogisticsStore(LogisticsDbContext dbContext, ICompanyContext
         }, Json);
     }
 
+    public async Task<decimal> SumShippedForOrderLineAsync(Guid orderId, Guid orderLineId, Guid unitId, CancellationToken cancellationToken = default)
+    {
+        RequireResolvedCompany();
+        return await dbContext.Lines.AsNoTracking()
+            .Where(row => row.SourceOrderId == orderId && row.SourceOrderLineId == orderLineId && row.UnitId == unitId)
+            .SumAsync(row => (decimal?)row.Shipped, cancellationToken) ?? 0m;
+    }
+
     public async Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();

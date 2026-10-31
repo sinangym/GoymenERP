@@ -15,6 +15,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// <see cref="SalesOrderLineReferenceOutcomeV1.NotApproved"/> with the state's name; another
 /// company's draft is invisible under the tenant filter and answers
 /// <see cref="SalesOrderLineReferenceOutcomeV1.NotFound"/>, never 403.
+/// SAT-D103 / SAT-D104 / SAT-D111 (EK13): while a newer revision waits for re-approval or after it was rejected, a line the
+/// LAST APPROVED revision holds answers that revision (its number and approved quantity) with the shipping cap — see
+/// <see cref="Stand"/>; the newer revision's values are never answered before its approval.
 /// </summary>
 public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICompanyContext companyContext) : ISalesOrderLineReferencePortV1
 {
@@ -42,36 +45,104 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             return NotFound;
         }
 
-        // DEC-SAL-005: a cancelled order keeps its approval facts (history), but its lines are no longer an approved demand —
-        // a consumer's NEW allocation or loading line for it is refused by that consumer (NotApproved, state "Cancelled").
-        // No 30 / SAT-D12: a force-closed order likewise (NotApproved, state "Closed") — its remainder is closed, so no owner
-        // may create a new link to it; the delivered/shipped history stays the owners'.
-        if (draft.State is SalesDraftState.Cancelled or SalesDraftState.Closed)
+        var standing = Stand(draft, line);
+        if (standing.RefusedState is { } refused)
         {
-            return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, draft.State.ToString());
-        }
-
-        if (draft.ApprovalState != InternalApprovalState.Approved)
-        {
-            return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, draft.ApprovalState.ToString());
-        }
-
-        if (!draft.IsCustomerAccepted)
-        {
-            return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, "CustomerAcceptancePending");
+            return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.NotApproved, null, refused);
         }
 
         return new SalesOrderLineReferenceAnswerV1(SalesOrderLineReferenceOutcomeV1.Approved, new SalesOrderLineReferenceV1(
             draft.CompanyId, draft.Id, line.Id, line.LineNo, draft.Header.PartyId, draft.Header.CompanyAccountId,
-            line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, line.QuantityText, draft.Revision, draft.Version,
+            line.Product.ProductId, line.Product.ProductVersion, line.OrderUnit.UnitId, standing.QuantityText!, standing.Revision, draft.Version,
             RemainderState(line.Remainder), effectiveOn is not { } on ? null : new SalesOrderLineLoadingLimitV1(
-                draft.CompanyId, draft.Id, line.Id, line.OrderUnit.UnitId, draft.Version, line.QuantityText,
-                SalesOrderLineLoadingLimitSourcesV1.ApprovedOrderQuantity, line.Id.ToString("D"),
-                draft.Version.ToString(CultureInfo.InvariantCulture), on)), null);
+                draft.CompanyId, draft.Id, line.Id, line.OrderUnit.UnitId, draft.Version, standing.ShippingCapText!,
+                standing.Basis == SalesOrderLineRevisionBasisV1.CurrentRevision
+                    ? SalesOrderLineLoadingLimitSourcesV1.ApprovedOrderQuantity
+                    : SalesOrderLineLoadingLimitSourcesV1.ReapprovalShippingCap,
+                line.Id.ToString("D"), draft.Version.ToString(CultureInfo.InvariantCulture), on),
+            standing.Basis!, standing.PendingApprovalState, standing.ShippingCapText), null);
     }
 
     /// <summary>
-    /// LOG-4b: the APPROVED drafts' lines as a LINE page (FİNANS #358 P2): <paramref name="pageSize"/> caps the
+    /// What a line answers to a physical-shipping consumer, or the state it is refused with (fail-closed).
+    /// <list type="bullet">
+    /// <item>DEC-SAL-005: a cancelled order keeps its approval facts (history), but its lines are no longer an approved demand —
+    /// a consumer's NEW allocation or loading line for it is refused by that consumer (state "Cancelled"). No 30 / SAT-D12: a
+    /// force-closed order likewise (state "Closed") — its remainder is closed, so no owner may create a new link to it; the
+    /// delivered/shipped history stays the owners'.</item>
+    /// <item>The current revision approved (and accepted by the customer when that is required): that revision, its quantity
+    /// as the cap.</item>
+    /// <item>SAT-D103 (EK13; AT-023 narrowed): a newer revision in <c>Preparing</c> / <c>PendingApproval</c> / <c>Rejected</c>
+    /// after an approved one was archived — the LAST APPROVED revision (its number and quantity) for physical shipping. The cap
+    /// (SAT-D104 / SAT-D111): an increase is never shipped before its approval (the cap stays the last approved quantity); a
+    /// decrease waiting for approval caps at min(last approved, requested); after a rejection the cap is the last approved
+    /// quantity again — until the rejected revision is changed again, when it caps like a pending decrease. A line the archived revision does not hold (added in the newer revision) or holds differently (product,
+    /// unit, an unreadable quantity), and a last approved revision the customer did not accept while acceptance is required,
+    /// are refused with the pending state — never repaired.</item>
+    /// <item>Any other state (a draft never approved, withdrawn): refused with the approval state.</item>
+    /// </list>
+    /// </summary>
+    internal static LineStanding Stand(SalesOrderDraft draft, SalesOrderDraftLine line)
+    {
+        if (draft.State is SalesDraftState.Cancelled or SalesDraftState.Closed)
+        {
+            return LineStanding.Refused(draft.State.ToString());
+        }
+
+        if (draft.ApprovalState == InternalApprovalState.Approved)
+        {
+            return draft.IsCustomerAccepted
+                ? new LineStanding(null, draft.Revision, line.QuantityText, line.QuantityText, SalesOrderLineRevisionBasisV1.CurrentRevision, null)
+                : LineStanding.Refused(CustomerAcceptancePending);
+        }
+
+        if (draft.ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.PendingApproval or InternalApprovalState.Rejected)
+            || draft.ArchivedRevisions.Count == 0)
+        {
+            return LineStanding.Refused(draft.ApprovalState.ToString());
+        }
+
+        var lastApproved = draft.ArchivedRevisions[^1];
+        if (draft.CustomerAcceptanceRequired && draft.CustomerAcceptance?.Revision != lastApproved.Revision)
+        {
+            return LineStanding.Refused(CustomerAcceptancePending);
+        }
+
+        var archived = lastApproved.Lines.FirstOrDefault(candidate => candidate.LineId == line.Id);
+        if (archived is null || archived.ProductId != line.Product.ProductId
+            || !string.Equals(archived.ProductVersion, line.Product.ProductVersion, StringComparison.Ordinal)
+            || archived.OrderUnitId != line.OrderUnit.UnitId
+            || !decimal.TryParse(archived.QuantityText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var approvedQuantity)
+            || approvedQuantity <= 0m)
+        {
+            return LineStanding.Refused(draft.ApprovalState.ToString());
+        }
+
+        // SAT-D111: a decrease waiting for approval stops shipping at the requested quantity; a rejection restores the last
+        // approved one. SAT-D104: an increase never raises the cap before its approval. K3-REVIEW-B P1-1 (second path): a
+        // rejected revision CHANGED after its rejection (any recorded change later than the decision) is a decrease being
+        // prepared again, so it caps like a pending one (fail-closed); only the rejected revision as it was decided restores
+        // the last approved quantity.
+        var restoredByRejection = draft.ApprovalState == InternalApprovalState.Rejected
+            && draft.Approval.DecidedAtUtc is { } decidedAt && draft.UpdatedAtUtc <= decidedAt;
+        var cap = !restoredByRejection && line.Quantity.Value < approvedQuantity
+            ? line.QuantityText
+            : archived.QuantityText;
+        return new LineStanding(null, lastApproved.Revision, archived.QuantityText, cap, SalesOrderLineRevisionBasisV1.LastApprovedRevision,
+            draft.ApprovalState.ToString());
+    }
+
+    private const string CustomerAcceptancePending = "CustomerAcceptancePending";
+
+    /// <summary>A line's standing for physical shipping: refused with a state, or the revision, quantity, cap and basis it answers.</summary>
+    internal sealed record LineStanding(string? RefusedState, int Revision, string? QuantityText, string? ShippingCapText, string? Basis,
+        string? PendingApprovalState)
+    {
+        public static LineStanding Refused(string state) => new(state, -1, null, null, null, null);
+    }
+
+    /// <summary>
+    /// LOG-4b: the APPROVED drafts' lines (SAT-D103: and, during a re-approval, the last approved revision's lines) as a LINE page (FİNANS #358 P2): <paramref name="pageSize"/> caps the
     /// lines actually returned (1–<see cref="MaximumLinePageSize"/>), never the drafts read — so a page is
     /// bounded whatever the drafts' line counts. The drafts come newest first through the store's approval
     /// filter and its company-bound cursor; the page's own cursor is COMPOSITE (the store cursor that lists the
@@ -109,7 +180,7 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             try
             {
                 // Drafts are read pageSize at a time: at least one line per draft, so one draft page always fills a line page.
-                page = await store.ListDraftsAsync(pageSize, draftCursor, cancellationToken, InternalApprovalState.Approved);
+                page = await store.ListShippableDraftsAsync(pageSize, draftCursor, cancellationToken);
             }
             catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.InvalidCursor)
             {
@@ -127,10 +198,9 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             SalesOrderDraft? previous = null;
             foreach (var draft in page.Items)
             {
-                // DEC-SAL-005: a cancelled order is still listed as Approved by the store's approval filter (its facts stay), but
-                // its lines are no longer offered to a consumer's picker.
-                if (draft.ApprovalState != InternalApprovalState.Approved || draft.State != SalesDraftState.Draft
-                    || !draft.IsCustomerAccepted)
+                // DEC-SAL-005 / No 30: a cancelled or closed order is not offered (the store filters it too); each line answers its
+                // own standing below (SAT-D103: the last approved revision during a re-approval).
+                if (draft.State != SalesDraftState.Draft)
                 {
                     previous = draft;
                     continue;
@@ -154,6 +224,12 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
                         continue;
                     }
 
+                    var standing = Stand(draft, line);
+                    if (standing.RefusedState is not null)
+                    {
+                        continue;
+                    }
+
                     if (items.Count == pageSize)
                     {
                         // The cap is reached with lines of this draft still unanswered: resume in this draft after the last answered line.
@@ -165,8 +241,9 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
 
                     items.Add(new SalesApprovedLineReferenceV1(draft.CompanyId, draft.Id, draft.DocumentNo, line.Id, line.LineNo,
                         draft.Header.PartyId, draft.Header.CompanyAccountId, line.Product.ProductId, line.Product.ProductVersion,
-                        line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.OrderUnit.UnitCode, line.QuantityText,
-                        line.RequestedDeliveryDate, draft.Revision, RemainderState(line.Remainder)));
+                        line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.OrderUnit.UnitCode, standing.QuantityText!,
+                        line.RequestedDeliveryDate, standing.Revision, RemainderState(line.Remainder), standing.Basis!,
+                        standing.PendingApprovalState, standing.ShippingCapText));
                 }
 
                 previous = draft;

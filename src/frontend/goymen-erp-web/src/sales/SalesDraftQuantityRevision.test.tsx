@@ -138,6 +138,57 @@ describe('S-04 quantity revision (DEC-SAL-002, AT-023)', () => {
     expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
   })
 
+  it('says why a decrease below the shipped or loaded quantity was refused and that links do not block it (SAT-D104 / D111)', async () => {
+    const harness = installFetch({
+      capabilities: WITH_QUANTITY,
+      onDetail: () => json(detail()),
+      onQuantityRevision: () => json({
+        status: 422, title: 'Unprocessable', code: 'validation_failed', correlationId: 'c-3',
+        errors: [{ field: 'lines[0].quantity', code: 'sales_revision_below_shipped' }],
+      }, 422),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    fireEvent.click(within(await screen.findByTestId('sales-quantity-revision')).getByRole('button', { name: T.open }))
+    const form = await screen.findByTestId('sales-quantity-revision-form')
+    // The form says links no longer block and Sales releases no allocation.
+    expect(within(form).getByText(T.linkedWarning)).toBeTruthy()
+    expect(T.linkedWarning).toContain('engellemez')
+    expect(T.linkedWarning).toContain('Satış tahsisi serbest bırakmaz')
+    expect(T.approvedWarning).toContain('sevkiyat son onaylı miktara kadar sürer')
+    expect(T.approvedWarning).toContain('Fatura onay gelene kadar bekler')
+    fireEvent.change(within(form).getByLabelText(T.quantity('44444444-4444-4444-4444-444444444444')), { target: { value: '400' } })
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'neden' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.submit }))
+
+    const alert = await within(form).findByRole('alert')
+    expect(alert.textContent).toContain(T.belowShipped(1))
+    expect(alert.textContent).not.toContain(T.belowLoaded(1))
+    expect(revisionPosts(harness.calls)).toHaveLength(1)
+    expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
+  })
+
+  it('tells the reader that shipping goes on and invoicing waits while Rev.1 waits, and what a rejection keeps (SAT-D103)', async () => {
+    installFetch({ capabilities: WITH_QUANTITY, onDetail: () => json(detail('Preparing', '5', 'Rev.1', '1200')) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const note = await screen.findByTestId('sales-reapproval-note')
+    expect(note.textContent).toBe(ORDER_DETAIL_TEXT.approval.reapprovalNote('Rev.0'))
+    expect(note.textContent).toContain('fiziksel sevkiyat son onaylı revizyonla (Rev.0) sürer')
+    expect(note.textContent).toContain('faturası onay gelene kadar bekler')
+    // K3-REVIEW-B P3-4: the two exceptions are named.
+    expect(note.textContent).toContain('müşteri tarafından onaylanmamışsa sevk edilmez')
+    expect(note.textContent).toContain('eklenen satırlar onaydan önce sevk edilmez')
+    expect(screen.queryByTestId('sales-reapproval-rejected-note')).toBeNull()
+    cleanup()
+
+    const rejected = detail('Rejected', '7', 'Rev.2', '1200')
+    rejected.approval = { ...APPROVED, rejectionReason: 'SENTETIK' }
+    installFetch({ capabilities: WITH_QUANTITY, onDetail: () => json(rejected) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    expect((await screen.findByTestId('sales-reapproval-rejected-note')).textContent).toBe(ORDER_DETAIL_TEXT.approval.reapprovalRejectedNote('Rev.1'))
+    expect(screen.queryByTestId('sales-reapproval-note')).toBeNull()
+    expect(screen.queryByText(ORDER_DETAIL_TEXT.approval.rejectedNote)).toBeNull()
+  })
+
   it('is closed while the order waits for a decision', async () => {
     installFetch({ capabilities: WITH_QUANTITY, onDetail: () => json(detail('PendingApproval', '3')) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)

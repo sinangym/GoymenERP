@@ -119,7 +119,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddDraftForceClosures", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesRequests", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesQuotes", StringComparison.Ordinal));
-        Assert.Equal("20261027134109_AddSalesDiscountExceptionApprovalReplayResults", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesDiscountExceptionApprovalReplayResults", StringComparison.Ordinal));
+        Assert.Equal("20261027222533_AddSalesQuoteExpiryApprovalsAndLossReasons", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 

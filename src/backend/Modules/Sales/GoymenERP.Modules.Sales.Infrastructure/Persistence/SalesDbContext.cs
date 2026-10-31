@@ -84,10 +84,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         + "OR ([Outcome] = 2 AND ([QuoteId] IS NULL OR [QuoteId] <> '00000000-0000-0000-0000-000000000000') "
         + "AND [RefusalJson] IS NOT NULL AND ISJSON([RefusalJson]) = 1)";
 
-    /// <summary>CK_QuoteAttempts_Command: only the quote's own versioned commands record here (never the conversion).</summary>
+    /// <summary>
+    /// CK_QuoteAttempts_Command: only the quote's own versioned commands record here (never the conversion). The retired
+    /// <c>sales.quote.lose.v1</c> stays admitted: its recorded attempts are history and are never rewritten (SAT-D25 added v2).
+    /// </summary>
     internal const string QuoteAttemptCommandConstraint =
         "[CommandName] IN (N'" + SalesQuoteCommands.CreateV1 + "', N'" + SalesQuoteCommands.ReviseV1 + "', N'"
-        + SalesQuoteCommands.LoseV1 + "')";
+        + SalesQuoteCommands.LoseV1 + "', N'" + SalesQuoteCommands.LoseV2 + "', N'" + SalesQuoteCommands.ApproveExpiredConversionV1 + "')";
 
     /// <summary>CK_QuoteAttempts_Result (ADR-SAL-001 §2/§4): no quote command stores a response snapshot.</summary>
     internal const string QuoteAttemptResultConstraint = "[ResultJson] IS NULL";
@@ -108,15 +111,24 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     internal const string ActiveQuoteRequestFilter = "[IsActive] = 1";
 
     /// <summary>
-    /// CK_Quotes_Lifecycle: Open (1) carries neither a loss nor a conversion; Lost (3) the loss only (non-blank reason);
-    /// Converted (2) the conversion only. The rule the domain restores by.
+    /// CK_Quotes_Lifecycle: Open (1) carries neither a loss nor a conversion; Lost (3) the loss only — either a SAT-D25 list
+    /// entry with its complete snapshot (the explanation optional, never blank) or, recorded before SAT-D25, a non-blank
+    /// free-text reason without an entry; Converted (2) the conversion only. The rule the domain restores by.
     /// </summary>
     internal const string QuoteLifecycleConstraint =
-        "([State] = 1 AND [LossReason] IS NULL AND [LostBy] IS NULL AND [LostAtUtc] IS NULL AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) "
-        + "OR ([State] = 3 AND [LossReason] IS NOT NULL AND LEN([LossReason]) > 0 AND [LostBy] IS NOT NULL AND LEN([LostBy]) > 0 AND [LostAtUtc] IS NOT NULL "
+        "([State] = 1 AND [LossReason] IS NULL AND " + NoLossReasonEntry + " AND [LostBy] IS NULL AND [LostAtUtc] IS NULL AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) "
+        + "OR ([State] = 3 AND [LostBy] IS NOT NULL AND LEN([LostBy]) > 0 AND [LostAtUtc] IS NOT NULL "
+        + "AND (([LossReasonId] IS NULL AND [LossReason] IS NOT NULL AND LEN([LossReason]) > 0 AND " + NoLossReasonEntry + ") "
+        + "OR ([LossReasonId] IS NOT NULL AND [LossReasonId] <> '00000000-0000-0000-0000-000000000000' AND [LossReasonCode] IS NOT NULL AND LEN([LossReasonCode]) > 0 "
+        + "AND [LossReasonLabel] IS NOT NULL AND LEN([LossReasonLabel]) > 0 AND [LossReasonProfileId] IS NOT NULL "
+        + "AND [LossReasonProfileId] <> '00000000-0000-0000-0000-000000000000' AND [LossReasonProfileVersion] IS NOT NULL AND [LossReasonProfileVersion] > 0 "
+        + "AND ([LossReason] IS NULL OR LEN([LossReason]) > 0))) "
         + "AND [ConvertedDraftId] IS NULL AND [ConvertedBy] IS NULL AND [ConvertedAtUtc] IS NULL) "
         + "OR ([State] = 2 AND [ConvertedDraftId] IS NOT NULL AND [ConvertedDraftId] <> '00000000-0000-0000-0000-000000000000' AND [ConvertedBy] IS NOT NULL "
-        + "AND LEN([ConvertedBy]) > 0 AND [ConvertedAtUtc] IS NOT NULL AND [LossReason] IS NULL AND [LostBy] IS NULL AND [LostAtUtc] IS NULL)";
+        + "AND LEN([ConvertedBy]) > 0 AND [ConvertedAtUtc] IS NOT NULL AND [LossReason] IS NULL AND " + NoLossReasonEntry + " AND [LostBy] IS NULL AND [LostAtUtc] IS NULL)";
+
+    private const string NoLossReasonEntry =
+        "[LossReasonId] IS NULL AND [LossReasonCode] IS NULL AND [LossReasonLabel] IS NULL AND [LossReasonProfileId] IS NULL AND [LossReasonProfileVersion] IS NULL";
 
 
     /// <summary>
@@ -227,6 +239,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     /// <summary>API-22 / API-24 (ADR-SAL-001 §2): the quote commands' own attempt records (append-only).</summary>
     internal DbSet<QuoteAttemptRow> QuoteAttempts => Set<QuoteAttemptRow>();
+
+    /// <summary>SAT-D24 / SAT-D44: the expired-quote approvals, one per quote revision, append-only.</summary>
+    internal DbSet<QuoteExpiryApprovalRow> QuoteExpiryApprovals => Set<QuoteExpiryApprovalRow>();
 
     /// <summary>API-20 / API-21 (ADR-SAL-001 §2): the request commands' own attempt records (append-only).</summary>
     internal DbSet<RequestAttemptRow> RequestAttempts => Set<RequestAttemptRow>();
@@ -528,6 +543,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         quote.Property(x => x.MoneyEffectiveFrom).HasColumnType("date");
         quote.Property(x => x.MoneyEffectiveThrough).HasColumnType("date");
         quote.Property(x => x.LossReason).HasMaxLength(SalesQuote.MaximumReasonLength);
+        quote.Property(x => x.LossReasonCode).HasMaxLength(SalesQuote.MaximumLossReasonCodeLength);
+        quote.Property(x => x.LossReasonLabel).HasMaxLength(SalesQuote.MaximumLossReasonLabelLength);
         quote.Property(x => x.LostBy).HasMaxLength(SalesQuote.MaximumActorLength);
         quote.Property(x => x.ConvertedBy).HasMaxLength(SalesQuote.MaximumActorLength);
         quote.Property(x => x.CreatedBy).HasMaxLength(SalesQuote.MaximumActorLength).IsRequired();
@@ -614,6 +631,26 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
             .OnDelete(DeleteBehavior.Restrict);
         link.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // SAT-D24 / SAT-D44: the expired-quote approvals — one per (quote, revision), append-only.
+        var approval = modelBuilder.Entity<QuoteExpiryApprovalRow>();
+        approval.ToTable("QuoteExpiryApprovals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_QuoteExpiryApprovals_Identity",
+                "[QuoteId] <> '00000000-0000-0000-0000-000000000000' AND [Revision] >= 0 AND LEN([ApprovedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            table.HasCheckConstraint("CK_QuoteExpiryApprovals_Expired", "[ValidUntil] < [BusinessDay]");
+            table.HasCheckConstraint("CK_QuoteExpiryApprovals_Note", "[Note] IS NULL OR LEN([Note]) > 0");
+        });
+        approval.HasKey(x => new { x.CompanyId, x.QuoteId, x.Revision });
+        approval.Property(x => x.ValidUntil).HasColumnType("date");
+        approval.Property(x => x.BusinessDay).HasColumnType("date");
+        approval.Property(x => x.ApprovedBy).HasMaxLength(SalesQuote.MaximumActorLength).IsRequired();
+        approval.Property(x => x.Note).HasMaxLength(SalesQuote.MaximumNoteLength);
+        approval.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        approval.HasOne<QuoteRevisionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.QuoteId, x.Revision })
+            .OnDelete(DeleteBehavior.Restrict);
+        approval.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 
         // ADR-SAL-001 §2/§6: the quote commands' own attempt table, the draft attempt's shape, append-only in EF and in SQL.
         var attempt = modelBuilder.Entity<QuoteAttemptRow>();
@@ -1053,8 +1090,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(QuoteRow.State), nameof(QuoteRow.Revision), nameof(QuoteRow.LossReason), nameof(QuoteRow.LostBy),
                         nameof(QuoteRow.LostAtUtc), nameof(QuoteRow.ConvertedDraftId), nameof(QuoteRow.ConvertedBy),
                         nameof(QuoteRow.ConvertedAtUtc), nameof(QuoteRow.UpdatedAtUtc),
+                        // SAT-D25: the chosen list entry's snapshot moves with the loss (Open → Lost only, checked below).
+                        nameof(QuoteRow.LossReasonId), nameof(QuoteRow.LossReasonCode), nameof(QuoteRow.LossReasonLabel),
+                        nameof(QuoteRow.LossReasonProfileId), nameof(QuoteRow.LossReasonProfileVersion),
                     ],
                     QuoteRevisionRow => [],
+                    // SAT-D24 / SAT-D44: a recorded expired-quote approval is APPEND-ONLY — no column may change afterwards.
+                    QuoteExpiryApprovalRow => [],
                     QuoteLineRow => [],
                     QuoteRequestRow => [nameof(QuoteRequestRow.IsActive)],
                     // ADR-SAL-001 §2: a quote attempt is APPEND-ONLY (the SQL trigger refuses the same).
