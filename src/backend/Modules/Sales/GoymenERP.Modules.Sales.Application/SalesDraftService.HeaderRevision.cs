@@ -82,8 +82,14 @@ public sealed partial class SalesDraftService
             throw new SalesDraftServiceException(404, "not_found");
         }
 
+        // SAT-D126 (EK18): every header revision — an approved order's in-place owner/delivery change, a Preparing/Rejected
+        // order's in-place change and a re-approving one alike — is recorded WITH the user's own (trimmed) reason: it is the
+        // audit event's reason (and the "after" picture's `reason`). A blank reason never reaches a save: the domain refuses it
+        // (422) inside the store before anything is written; the fixed text only keeps the audit draft well-formed until then.
         var audit = new SalesDraftStateAudit("sales.order-draft.header-revised.v1", "ReviseHeader",
-            "Satış siparişinin başlığı (cari, para birimi, vade, satış sorumlusu, teslim bilgisi) gerekçeyle revize edildi (DEC-SAL-002; onaylı sipariş yeniden onaya girer)");
+            string.IsNullOrWhiteSpace(request.Reason)
+                ? "Satış siparişinin başlığı gerekçeyle revize edildi (DEC-SAL-002, SAT-D126)"
+                : request.Reason.Trim());
 
         SalesDraftStateResult? result;
         try

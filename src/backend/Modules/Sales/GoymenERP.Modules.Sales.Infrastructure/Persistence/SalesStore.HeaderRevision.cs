@@ -71,7 +71,7 @@ public sealed partial class SalesStore
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
         var input = await beforeWrite(draft, cancellationToken)
             ?? throw new InvalidOperationException("Başlık revizyonu girdisi boş olamaz.");
-        var before = HeaderPicture(draft);
+        var before = HeaderPicture(draft, reason: null, supersededReason: null);
         var versionBefore = draft.Version;
         var revisionBefore = draft.Revision;
         var linesBefore = draft.Lines.Select(line => (line.QuantityText, line.Commercial)).ToArray();
@@ -125,7 +125,7 @@ public sealed partial class SalesStore
         Assign(row.MoneyScale, money.Scale, value => row.MoneyScale = value);
 
         AddAttemptAndAudit(companyId, keyHash, actorId, commandName, requestHash, envelope, draft, null, now, audit, versionBefore,
-            before, HeaderPicture(draft));
+            before, HeaderPicture(draft, audit.Reason, archived?.Reason));
         await SaveAsync(cancellationToken);
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
@@ -140,15 +140,17 @@ public sealed partial class SalesStore
 
     /// <summary>
     /// API-04: the audit picture of a draft's revisable header — revision, approval axis, customer, currency with its money
-    /// profile, delivery references, sales owner and due terms, and after an archive the reason the last approved revision was
-    /// superseded.
+    /// profile, delivery references, sales owner and due terms. The "after" picture carries THIS revision's reason (SAT-D126:
+    /// recorded on every header revision, in place or not) and, only when THIS revision archived the approved one, the
+    /// archive's reason — never an earlier archive's (no stale attribution on an in-place change).
     /// </summary>
-    private static object HeaderPicture(SalesOrderDraft draft) => new
+    private static object HeaderPicture(SalesOrderDraft draft, string? reason, string? supersededReason) => new
     {
         revision = draft.Revision,
         state = draft.ApprovalState.ToString(),
         approval = draft.Approval,
-        supersededReason = draft.ArchivedRevisions.Count == 0 ? null : draft.ArchivedRevisions[^1].Reason,
+        reason,
+        supersededReason,
         partyId = draft.Header.PartyId,
         companyAccountId = draft.Header.CompanyAccountId,
         currencyId = draft.Header.CurrencyId,

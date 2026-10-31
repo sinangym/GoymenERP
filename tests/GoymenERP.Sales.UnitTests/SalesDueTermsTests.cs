@@ -119,6 +119,10 @@ public sealed class SalesDueTermsTests
     [InlineData("0.05", 2, new[] { "30", "30", "40" }, new[] { "0.02", "0.02", "0.01" })]
     [InlineData("7", 0, new[] { "50", "50" }, new[] { "4", "3" })]
     [InlineData("1234.56", 2, new[] { "100" }, new[] { "1234.56" })]
+    [InlineData("10.000", 3, new[] { "33.33", "33.33", "33.34" }, new[] { "3.333", "3.333", "3.334" })]
+    [InlineData("0.01", 3, new[] { "50", "50" }, new[] { "0.005", "0.005" })]
+    [InlineData("0.00", 2, new[] { "50", "50" }, new[] { "0.00", "0.00" })]
+    [InlineData("0", 0, new[] { "25", "25", "50" }, new[] { "0", "0", "0" })]
     public void SAT_D124_instalment_amounts_are_rounded_to_the_scale_and_the_remainder_goes_to_the_last(string total, int scale,
         string[] shares, string[] expected)
     {

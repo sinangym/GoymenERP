@@ -144,6 +144,57 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task SAT_D126_every_header_revision_records_its_own_reason_in_the_audit_and_never_an_earlier_archives_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k");
+        var (subject, actorId) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.OrdersApprove, SalesPermissionManifestV1.OrdersHeaderWrite,
+            SalesPermissionManifestV1.OrdersPriceRead);
+        using var client = run.Client(subject, CompanyA);
+        var draftPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
+        var terms = new SalesDueTermsV1([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.OrderDate, 45, "100")]);
+        SalesDraftHeaderRevisionRequest Body(string version, string reason, Guid? owner) => new(version, reason, draft.Header.PartyId,
+            draft.Header.CompanyAccountId, Currency, null, null, owner, terms);
+        async Task SendAsync(HttpRequestMessage request)
+        {
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        // An earlier commercial revision archives Rev.0 with ITS reason (v4 → v5, Rev.1, Preparing).
+        await SendAsync(Post($"{draftPath}/header-revision", "SENTETIK-r-archive", Body("4", "SENTETIK-ESKI-ARSIV-GEREKCESI", null)));
+        // (b) A Preparing order's in-place change: its own reason, trimmed (v5 → v6).
+        await SendAsync(Post($"{draftPath}/header-revision", "SENTETIK-r-preparing", Body("5", "  SENTETIK-HAZIRLIK-GEREKCESI  ", actorId)));
+        await SendAsync(State($"{draftPath}/submission", "SENTETIK-r-submit", "6"));
+        await SendAsync(State($"{draftPath}/approval", "SENTETIK-r-approve", "7"));
+        // (a) SAT-D126: the approved order (with an earlier archive) changes only its sales owner — in place, still approved (v8 → v9).
+        await SendAsync(Post($"{draftPath}/header-revision", "SENTETIK-r-d126", Body("8", "SENTETIK-D126-GEREKCESI", null)));
+        Assert.Equal(("Approved", 1, 1), (
+            await run.ScalarAsync<string>("SELECT CASE [ApprovalState] WHEN 3 THEN N'Approved' ELSE N'Other' END FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisions] WHERE [DraftId] = @id", ("@id", draft.Id))));
+
+        // "-" stands for a JSON null (no value).
+        async Task<(string Reason, string AfterReason, string Superseded)> AuditAsync(int versionAfter)
+        {
+            const string Where = "FROM [audit].[AuditEvents] WHERE [EventType] = N'sales.order-draft.header-revised.v1' AND [EntityId] = @id AND [EntityVersionAfter] = @v";
+            (string, object)[] parameters = [("@id", draft.Id.ToString("D")), ("@v", versionAfter)];
+            Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) " + Where, parameters));
+            return (await run.ScalarAsync<string>("SELECT [Reason] " + Where, parameters),
+                await run.ScalarAsync<string>("SELECT ISNULL(JSON_VALUE([AfterJson], '$.reason'), N'-') " + Where, parameters),
+                await run.ScalarAsync<string>("SELECT ISNULL(JSON_VALUE([AfterJson], '$.supersededReason'), N'-') " + Where, parameters));
+        }
+
+        Assert.Equal(("SENTETIK-ESKI-ARSIV-GEREKCESI", "SENTETIK-ESKI-ARSIV-GEREKCESI", "SENTETIK-ESKI-ARSIV-GEREKCESI"), await AuditAsync(5));
+        Assert.Equal(("SENTETIK-HAZIRLIK-GEREKCESI", "SENTETIK-HAZIRLIK-GEREKCESI", "-"), await AuditAsync(6));
+        Assert.Equal(("SENTETIK-D126-GEREKCESI", "SENTETIK-D126-GEREKCESI", "-"), await AuditAsync(9));
+        // The earlier archive's reason is attributed to no in-place change.
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'sales.order-draft.header-revised.v1' "
+            + "AND [EntityId] = @id AND ([AfterJson] LIKE N'%ESKI-ARSIV%' OR [Reason] LIKE N'%ESKI-ARSIV%')", ("@id", draft.Id.ToString("D"))));
+    }
+
+    [SqlServerFact]
     public async Task A_customer_and_currency_change_through_the_real_store_moves_the_money_profile_archives_the_old_header_and_stops_shipping_on_real_sql()
     {
         await using var run = await Run.StartAsync();
@@ -268,11 +319,54 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
             var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
             Assert.Equal(51133, error.Number);
             Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
-        }
 
-        await using var reader = run.SalesStore(CompanyA);
-        var reread = await reader.Store.FindDraftAsync(draft.Id);
-        Assert.Equal((1, 15), (reread!.Revision, reread.Header.DueTerms!.Instalments[0].DaysAfter));
+            await using (var reader = run.SalesStore(CompanyA))
+            {
+                var reread = await reader.Store.FindDraftAsync(draft.Id);
+                Assert.Equal((1, 15), (reread!.Revision, reread.Header.DueTerms!.Instalments[0].DaysAfter));
+            }
+
+            // The recorded-attempt arm alone: with no draft carrying a sales owner or due terms, the recorded header revision
+            // still refuses the rollback.
+            await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL, [SalesOwnerUserId] = NULL; SELECT @@ROWCOUNT");
+            var attemptArm = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
+            Assert.Equal(51133, attemptArm.Number);
+            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        }
+    }
+
+    [SqlServerFact]
+    public async Task The_header_migration_refuses_to_roll_back_over_a_draft_carrying_only_a_sales_owner_or_only_due_terms()
+    {
+        // The column arms alone: no header revision was ever recorded here (approved through the store, no revise-header attempt).
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k");
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-header.v1'"));
+        await using var context = run.SalesContext(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var headers = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftHeaderRevisions", StringComparison.Ordinal));
+        Assert.True(headers > 0);
+        var migrator = context.GetService<IMigrator>();
+        // Every later migration is empty and rolls back first; stop on this one so each arm hits exactly its guard.
+        await migrator.MigrateAsync(applied[headers]);
+
+        // Only due terms (SAT-D123: the approved order carries them; no sales owner).
+        var dueTermsArm = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
+        Assert.Equal(51133, dueTermsArm.Number);
+
+        // Only a sales owner.
+        await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL, [SalesOwnerUserId] = @owner WHERE [Id] = @id; SELECT @@ROWCOUNT",
+            ("@owner", Guid.NewGuid()), ("@id", draft.Id));
+        var ownerArm = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
+        Assert.Equal(51133, ownerArm.Number);
+        Assert.Equal(applied[..(headers + 1)], await context.Database.GetAppliedMigrationsAsync());
+
+        // Neither: the rollback is free, and the migration re-applies.
+        await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [SalesOwnerUserId] = NULL WHERE [Id] = @id; SELECT @@ROWCOUNT", ("@id", draft.Id));
+        await migrator.MigrateAsync(applied[headers - 1]);
+        Assert.Equal(applied[..headers], await context.Database.GetAppliedMigrationsAsync());
+        await context.Database.MigrateAsync();
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
     // ---- helpers --------------------------------------------------------------------------------

@@ -1179,7 +1179,6 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
             await Service(scope, Approver).ApproveRequestAsync(requestId, new("1"), Metadata(key));
         }
 
-        /// <summary>The REAL draft service over this scope's real store, with SYNTHETIC owner ports and every Sales name granted.</summary>
         /// <summary>
         /// SAT-D123 / SAT-D132: a converted order carries no due terms (a quote has none yet), so the seller enters them by the
         /// header revision before the approval; everything else in the header stays as it is. Returns the new draft version.
@@ -1193,6 +1192,7 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
             return revised.Detail.Draft.Version;
         }
 
+        /// <summary>The REAL draft service over this scope's real store, with SYNTHETIC owner ports and every Sales name granted.</summary>
         public SalesDraftService Service(StoreScope scope, string actor, Func<Task>? onProductRead = null)
         {
             var companyContext = new CompanyContext();

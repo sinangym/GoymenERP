@@ -378,7 +378,7 @@ public sealed partial class SalesDraftServiceTests
         var port = LinePort(world);
 
         var revised = await world.Service().ReviseHeaderAsync(approved.Id,
-            HeaderRevision("5", owner: Owner, address: new SalesDraftOwnerReferenceV1(AddressId, AddressVersion), reason: "SENTETIK sorumlu değişti"),
+            HeaderRevision("5", owner: Owner, address: new SalesDraftOwnerReferenceV1(AddressId, AddressVersion), reason: "  SENTETIK sorumlu değişti  "),
             Metadata("k-simple"));
 
         // No re-approval and no commercial revision: still Approved at Rev.0, one version step, nothing archived.
@@ -390,6 +390,8 @@ public sealed partial class SalesDraftServiceTests
         var transition = world.Store.Transitions[^1];
         Assert.Equal((SalesDraftCommands.ReviseHeaderV1, "sales.order-draft.header-revised.v1", 5L, 6L),
             (transition.Command, transition.Audit.EventType, transition.VersionBefore, transition.VersionAfter));
+        // SAT-D126: the user's own (trimmed) reason is the audit's reason, not a fixed service text.
+        Assert.Equal("SENTETIK sorumlu değişti", transition.Audit.Reason);
         // Shipping and invoicing are untouched: the current approved revision ships, invoicing is open at Rev.0.
         var answer = await port.GetApprovedLineAsync(approved.Id, line);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, SalesOrderLineRevisionBasisV1.CurrentRevision),
