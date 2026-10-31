@@ -158,6 +158,13 @@ public interface ILogisticsInstructionStore
 
     Task<StoredLoadingInstruction?> FindInstructionAsync(Guid instructionId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): the SHIPPED total of every instruction line of the context company linked to
+    /// one Sales order line in one unit — read inside the shipment's own transaction, so the shipment can be capped by the
+    /// Sales owner's current shipping cap. Read-only; zero when nothing is linked.
+    /// </summary>
+    Task<decimal> SumShippedForOrderLineAsync(Guid orderId, Guid orderLineId, Guid unitId, CancellationToken cancellationToken = default);
+
     /// <summary>The company's instructions, newest first, by opaque company-bound cursor; <paramref name="status"/> narrows to one status.</summary>
     Task<LogisticsInstructionPage> ListInstructionsAsync(int pageSize, string? cursor, LoadingInstructionStatus? status = null,
         CancellationToken cancellationToken = default);

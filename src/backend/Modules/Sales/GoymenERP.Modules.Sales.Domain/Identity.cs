@@ -188,6 +188,18 @@ public static class SalesRuleCodes
     public const string RemainderNone = "sales_remainder_none";
     /// <summary>The new quantity is below what the delivery owner has loaded (loaded ≥ shipped ≥ delivered): never reduced below it.</summary>
     public const string RemainderBelowFloor = "sales_remainder_below_floor";
+    /// <summary>
+    /// SAT-D104 (EK13): a quantity revision may not take a line below what the delivery owner (Logistics) has already SHIPPED
+    /// for it; refused on that line.
+    /// </summary>
+    public const string RevisionBelowShipped = "sales_revision_below_shipped";
+    /// <summary>
+    /// SAT-D112 (EK14): a decrease may not take a line below its LOADED total (shipped + waiting on the vehicle, Logistics'
+    /// cumulative loaded): a load already on the vehicle above the new quantity would otherwise only be stopped by Logistics'
+    /// shipment-time cap (the safety net). Refused on that line, at the revision and again at the re-approval's submission and
+    /// approval.
+    /// </summary>
+    public const string RevisionBelowLoaded = "sales_revision_below_loaded";
     /// <summary>The revised quantity equals the current one: an approval is not asked for nothing.</summary>
     public const string RemainderNoChange = "sales_remainder_no_change";
     /// <summary>The command names a line the order does not have.</summary>

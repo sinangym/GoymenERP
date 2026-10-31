@@ -10,6 +10,21 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// <see cref="SalesOrderLineReferenceOutcomeV1.NotFound"/> (never 403). Reading here creates nothing:
 /// no allocation, loading, stock or money record — the consumer's own command does that under its
 /// own authority, idempotency and audit, and a replay of that command creates no second need.
+/// <para>
+/// <b>Contract delta SAT-D103 / SAT-D104 / SAT-D111 (EK13, K3).</b> AT-023 is narrowed by Sinan's decision: while a newer
+/// commercial revision of an approved order waits for re-approval (<c>Preparing</c> / <c>PendingApproval</c>) or after it
+/// was <c>Rejected</c>, the port no longer answers <see cref="SalesOrderLineReferenceOutcomeV1.NotApproved"/> for a line the
+/// LAST APPROVED revision holds: it answers <see cref="SalesOrderLineReferenceOutcomeV1.Approved"/> with that revision's
+/// identity (<c>Revision</c> = the archived revision's number, <c>QuantityText</c> = its approved quantity), marked
+/// <see cref="SalesOrderLineRevisionBasisV1.LastApprovedRevision"/> with the pending revision's approval state, and with the
+/// shipping cap (<c>ShippingCapQuantityText</c>, and the loading limit's maximum): the last approved quantity, or while a
+/// DECREASE waits for approval min(last approved, requested) (SAT-D111); after a rejection the last approved quantity again.
+/// An INCREASE is never shipped before its approval (SAT-D104). Nothing else of the newer revision — price, discount, rate,
+/// the increased quantity — reaches a consumer before its approval. A line the last approved revision does not hold (added
+/// in the newer revision), a cancelled or closed order, and a customer acceptance missing for the last approved revision
+/// stay <see cref="SalesOrderLineReferenceOutcomeV1.NotApproved"/> (fail-closed). Physical shipping only: invoicing waits
+/// during re-approval (the order status axis carries that gate; no invoicing consumer reads this port).
+/// </para>
 /// </summary>
 public interface ISalesOrderLineReferencePortV1
 {
@@ -42,7 +57,9 @@ public sealed record SalesApprovedLinePageV1(IReadOnlyList<SalesApprovedLineRefe
 /// One APPROVED line as the Sales owner stored it, for a loading picker: the order (id + document no), the
 /// line (id, no), the customer (party + company account), the product (id, version, code, name), the order
 /// unit (id + code), the exact quantity text (Ö2), the requested delivery date, the commercial revision.
-/// No price, discount, currency or payment member — a contract test pins that.
+/// No price, discount, currency or payment member — a contract test pins that. SAT-D103 (contract delta): during a
+/// re-approval the line of the LAST APPROVED revision is listed (<c>RevisionBasis</c> <c>LastApprovedRevision</c>, its
+/// revision and quantity, the pending revision's approval state and the SAT-D104/D111 shipping cap).
 /// </summary>
 public sealed record SalesApprovedLineReferenceV1(
     Guid CompanyId,
@@ -61,7 +78,27 @@ public sealed record SalesApprovedLineReferenceV1(
     string QuantityText,
     DateOnly? RequestedDeliveryDate,
     int Revision,
-    string RemainderState = SalesRemainderChangeNamesV1.Open);
+    string RemainderState = SalesRemainderChangeNamesV1.Open,
+    string RevisionBasis = SalesOrderLineRevisionBasisV1.CurrentRevision,
+    string? PendingApprovalState = null,
+    string? ShippingCapQuantityText = null);
+
+/// <summary>
+/// SAT-D103 (EK13, contract delta): which commercial revision a line answer stands for. The Sales owner always sets it. It is
+/// informational for the consumers of today (Logistics, Inventory): they do not read it and need not, because
+/// <c>Revision</c>, <c>QuantityText</c> and the loading limit already carry the last approved identity and the shipping cap.
+/// </summary>
+public static class SalesOrderLineRevisionBasisV1
+{
+    /// <summary>The order's current revision is approved; the answer is that revision.</summary>
+    public const string CurrentRevision = "CurrentRevision";
+
+    /// <summary>
+    /// A newer revision waits for re-approval or was rejected: the answer is the LAST APPROVED revision, valid for physical
+    /// shipping only, capped by SAT-D104 / SAT-D111. <c>PendingApprovalState</c> names the newer revision's approval state.
+    /// </summary>
+    public const string LastApprovedRevision = "LastApprovedRevision";
+}
 
 public enum SalesOrderLineReferenceOutcomeV1
 {
@@ -85,7 +122,8 @@ public sealed record SalesOrderLineReferenceAnswerV1(
 /// OPEN-004 consumer boundary: Sales has already resolved the line override or the versioned Settings
 /// product-group default into one maximum total loading-instruction quantity in the order unit. Logistics
 /// never calculates a percentage, chooses a default or converts a unit. Null on the line means that the
-/// source is unavailable; it is never repaired into zero.
+/// source is unavailable; it is never repaired into zero. During a re-approval (SAT-D103) the maximum is the SAT-D104 /
+/// SAT-D111 shipping cap under the source <see cref="SalesOrderLineLoadingLimitSourcesV1.ReapprovalShippingCap"/>.
 /// </summary>
 public sealed record SalesOrderLineLoadingLimitV1(
     Guid CompanyId,
@@ -103,13 +141,23 @@ public static class SalesOrderLineLoadingLimitSourcesV1
 {
     /// <summary>User decision 5917438293 option 7B: without a defined profile, the approved order quantity is the cap.</summary>
     public const string ApprovedOrderQuantity = "SalesOrderQuantity";
+
+    /// <summary>
+    /// SAT-D104 / SAT-D111 (EK13): a newer revision waits for re-approval or was rejected — the cap is the last approved
+    /// quantity, or min(last approved, requested) while a decrease waits for approval.
+    /// </summary>
+    public const string ReapprovalShippingCap = "SalesOrderReapprovalShippingCap";
 }
 
 /// <summary>
 /// The approved line's identity facts as stored: the company, the order and the line, the
 /// customer (party + company account), the product and its version as the Product owner answered
 /// it, the order unit, the exact quantity text (Ö2: kept verbatim), the commercial revision and the
-/// draft's concurrency version. Identities and text only — no price, no stock, no availability.
+/// draft's concurrency version. Identities and text only — no price, no stock, no availability. SAT-D103 (contract delta):
+/// <c>RevisionBasis</c> says whether this is the current revision or the last approved one during a re-approval;
+/// <c>PendingApprovalState</c> is the newer revision's approval state (null for the current revision);
+/// <c>ShippingCapQuantityText</c> is the most that may be shipped for the line under this answer (the quantity itself for
+/// the current revision; SAT-D104/D111 during a re-approval).
 /// </summary>
 public sealed record SalesOrderLineReferenceV1(
     Guid CompanyId,
@@ -125,4 +173,7 @@ public sealed record SalesOrderLineReferenceV1(
     int Revision,
     long Version,
     string RemainderState = SalesRemainderChangeNamesV1.Open,
-    SalesOrderLineLoadingLimitV1? LoadingLimit = null);
+    SalesOrderLineLoadingLimitV1? LoadingLimit = null,
+    string RevisionBasis = SalesOrderLineRevisionBasisV1.CurrentRevision,
+    string? PendingApprovalState = null,
+    string? ShippingCapQuantityText = null);

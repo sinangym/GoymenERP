@@ -924,6 +924,14 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(404, "not_found");
         }
 
+        // SAT-D111 / SAT-D112 (EK13 / EK14; K3-REVIEW-B P1-1): during a re-approval the submission and the approval measure
+        // the CURRENT quantities against Logistics' loaded total again — a revision rejected and then resubmitted unchanged
+        // must not be approved below what was loaded meanwhile under the restored cap.
+        if (commandName is SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1)
+        {
+            await RequireReapprovalFloorAsync(scope, permission, current, expectedVersion, commandName, cancellationToken);
+        }
+
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);

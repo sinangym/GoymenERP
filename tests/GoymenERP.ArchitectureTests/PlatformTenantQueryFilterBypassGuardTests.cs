@@ -270,8 +270,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-055 lifecycle (#518, user decision 2026-09-30): +6 approve/cancel/e-İrsaliye/numbering SQL facts (010fcbd6… -> c5969829…).
             // #527: +3 cross-instruction Sales line-limit atomicity facts (c5969829… -> fc08c53d…).
             // I01.2: +3 transfer outgoing-document schema/idempotency/version SQL facts (459c5cf8… -> e8a7ea83…).
+            // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): +1 shipment-time Sales cap fact (e8a7ea83… -> 576e58f6…).
             ["tools/relational_inventory/logistics.txt"] =
-                "e8a7ea8323e3d83869456e89faadde0cffe2ea03ca6c6af55111ddfb7e3e059c",
+                "576e58f6c9fe6c9925d85c3979eb02f53bf38825fe0adfe766bba5919f84e4d1",
 
             // manufacturing
             // MFG close: owner-added closure/tolerance SQL facts extend the exact Manufacturing discovery inventory.
@@ -341,8 +342,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (78eb83d7… -> 9587a78b…).
             // SAT-D24/D44, SAT-D25 (+2) and SAT-D71/D72 (+1) SalesQuoteSqlServerRelationalAcceptanceTests facts merged over API-03 and
             // API-30 / API-31, kept ordinal-sorted (9587a78b… -> 2b0ee4d9…).
+            // SAT-D103 / SAT-D104 / SAT-D111 / SAT-D112 (EK13, EK14), merged over #849's quote facts: the quantity revision's "a
+            // loading line blocks" fact replaced by the shipped/loaded floor and re-approval cap fact, +1 price re-approval fact,
+            // +1 rejected decrease resubmission fact (K3-REVIEW-B P1-1), kept ordinal-sorted (2b0ee4d9… -> ece55741…).
             ["tools/relational_inventory/sales.txt"] =
-                "2b0ee4d9bc7d3f9cef20fe80b14e91cf60650a5793faf275854c36ef9b60e719",
+                "ece557412bf412ae5f8be947fdef08df7c2e50bebcdf0442707c0a607e329159",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1205,7 +1209,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // the company series moved under its token, every step replayed in order; SqlClient count unchanged.
                         // Re-fingerprinted for the cross-instruction aggregate deadlock closure: SQL 1205 is mapped through
                         // the existing replay-safe wrapper chain; no new database API and SqlClient count unchanged.
-                        "2e19c8adc7f83d82a3685adb47572f00681c4e2434e00567c6aa379c46df64b9",
+                        // Re-fingerprinted for SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b): one untracked, company-resolved sum of
+                        // a Sales line's shipped total through the filtered context; no new database API, SqlClient count unchanged.
+                        "43e2b056c56c0d24365561505109876a1591f2e7fb8070a59decbca812b82176",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1

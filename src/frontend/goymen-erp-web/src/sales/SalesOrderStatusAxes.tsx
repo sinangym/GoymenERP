@@ -17,6 +17,7 @@ import { SALES_CAPABILITY } from './capabilities'
 import { APPROVAL_STATE, decodeProblem, type ApprovalState, type DraftDetail } from './contract'
 import { formatBusinessDate } from './format'
 import {
+  INVOICING_GATE,
   OWNERLESS_AXES,
   STATUS_AXIS_STATE,
   type AcceptanceAxisState,
@@ -233,7 +234,7 @@ function StatusBody({ detail, status }: { readonly detail: DraftDetail; readonly
             testId="sales-status-realization"
           />
         </Axis>
-        <OwnerlessAxisItem axis="invoicing" status={status} />
+        <InvoicingAxisItem status={status} />
         <OwnerlessAxisItem axis="financialClosure" status={status} />
       </ul>
 
@@ -264,6 +265,35 @@ function OwnerlessAxisItem({ axis, status }: { readonly axis: (typeof OWNERLESS_
       note={state === STATUS_AXIS_STATE.noSource ? T.ownerlessNote[axis] : null}
     >
       <StatusIndicator tone="neutral">{T.ownerless[state]}</StatusIndicator>
+    </Axis>
+  )
+}
+
+/**
+ * SAT-D103 (EK13): the invoicing axis has no owner yet (`NoSource`), but Sales owns its gate — while a newer revision waits
+ * for re-approval the order's invoicing waits (shipping goes on under the last approved revision); after a rejection the
+ * last approved revision's prices apply.
+ */
+function InvoicingAxisItem({ status }: { readonly status: OrderStatus }) {
+  const state = status.invoicing
+  const { gate, priceBasisRevision } = status.invoicingGate
+  const tone: StatusTone = gate === INVOICING_GATE.awaitingReapproval ? 'warning' : 'neutral'
+  return (
+    <Axis
+      axisKey="invoicing"
+      label={T.axis.invoicing}
+      state={state}
+      note={
+        <>
+          {state === STATUS_AXIS_STATE.noSource ? <>{T.ownerlessNote.invoicing} </> : null}
+          <span data-testid="sales-status-invoicing-gate-note">{T.invoicingGateNote[gate](priceBasisRevision ?? '')}</span>
+        </>
+      }
+    >
+      <StatusIndicator tone="neutral">{T.ownerless[state]}</StatusIndicator>{' '}
+      <span data-testid="sales-status-invoicing-gate" data-gate={gate}>
+        <StatusIndicator tone={tone}>{T.invoicingGate[gate]}</StatusIndicator>
+      </span>
     </Axis>
   )
 }

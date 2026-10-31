@@ -61331,7 +61331,9 @@
               "logistics_duplicate_share_id",
               "logistics_instruction_state",
               "logistics_line_blocked",
+              "logistics_order_line_aggregate_limit_exceeded",
               "logistics_shipment_exceeds_loaded",
+              "order_line_state",
               "same_key_payload_mismatch",
               "version_conflict"
             ]
@@ -91991,6 +91993,28 @@
           }
         }
       },
+      "SalesDraftInvoicingAxisV1": {
+        "required": [
+          "state",
+          "gate",
+          "priceBasisRevision"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string"
+          },
+          "gate": {
+            "type": "string"
+          },
+          "priceBasisRevision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SalesDraftLineCommercialV1": {
         "required": [
           "lineId",
@@ -94847,7 +94871,7 @@
             "$ref": "#/components/schemas/SalesDraftRealizationAxisV1"
           },
           "invoicing": {
-            "$ref": "#/components/schemas/SalesDraftStatusAxisV1"
+            "$ref": "#/components/schemas/SalesDraftInvoicingAxisV1"
           },
           "financialClosure": {
             "$ref": "#/components/schemas/SalesDraftStatusAxisV1"

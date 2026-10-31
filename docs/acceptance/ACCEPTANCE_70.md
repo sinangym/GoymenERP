@@ -24,6 +24,7 @@ Master Rapor v3.0’dan **70 kabul senaryosu** çıkarılmıştır. Her senaryo 
 - **AT-021:** Satış siparişi fiyat alt sınırını aşarsa doğru onaya gider.
 - **AT-022:** Risk limiti aşımı siparişi sessizce serbest bırakmaz.
 - **AT-023:** Onaylı siparişte kritik satır değişikliği eski onayı geçersizleştirir.
+  - Daraltma (SAT-D103, `docs/decisions/SINAN_KARARLARI_2026-10-28_SATIS_EK13.md`): yeniden onay süresince geçersizleşme yalnız yeni değerler içindir; son onaylı revizyon yalnız fiziksel sevk için (miktar SAT-D104/SAT-D111 sınırıyla) ve revizyon reddedilirse faturalama için geçerli kalır; siparişin faturası onay gelene kadar bekler; yeni değerler onaydan önce hiçbir tüketiciye ulaşmaz.
 - **AT-024:** Kısmi teslimat sipariş kalanını doğru tutar.
 - **AT-025:** Satış ve satın alma belgeleri operasyon listelerinde karışmaz.
 - **AT-026:** Satın alma siparişi fazla/eksik teslimat toleransını uygular.

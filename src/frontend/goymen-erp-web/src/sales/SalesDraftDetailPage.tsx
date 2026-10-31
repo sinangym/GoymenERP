@@ -117,6 +117,7 @@ import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleH
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
 import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
 import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
+import { previousRevision } from './orderStatus'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
@@ -348,6 +349,7 @@ export function SalesDraftDetailPage() {
             salesOrderId={outcome.data.draft.id}
             draftVersion={outcome.data.draft.version}
             lines={outcome.data.lines}
+            revised={outcome.data.draft.revision !== REV_0}
           />
         ) : null
       }
@@ -511,6 +513,8 @@ export function DraftView({
   const withdrawn = draft.approvalState === APPROVAL_STATE.withdrawn
   const cancelled = draft.state === CANCELLED_STATE
   const closed = draft.state === CLOSED_STATE
+  // SAT-D103: above Rev.0 the previous revision is the last approved one (a revision is archived only from Approved).
+  const lastApproved = previousRevision(draft.revision)
   const lifecycleText = cancelled ? T.stateCancelled : closed ? T.stateClosed : T.stateDraft
   return (
     <article className={styles.page} aria-labelledby="sales-detail-heading">
@@ -652,7 +656,12 @@ export function DraftView({
         </dl>
         {linkedEffects ?? <SalesDraftLinkedEffectsUnbound />}
         {draft.approvalState === APPROVAL_STATE.approved && !cancelled && !closed ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
-        {draft.approvalState === APPROVAL_STATE.rejected ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
+        {draft.approvalState === APPROVAL_STATE.rejected && lastApproved === null ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
+        {/* SAT-D103 / SAT-D104 / SAT-D111 (EK13): a newer revision of an approved order waits for, or was refused, its approval. */}
+        {lastApproved !== null && !cancelled && !closed && (draft.approvalState === APPROVAL_STATE.preparing || draft.approvalState === APPROVAL_STATE.pendingApproval)
+          ? <p className={styles.notice} role="note" data-testid="sales-reapproval-note">{T.approval.reapprovalNote(lastApproved)}</p> : null}
+        {lastApproved !== null && !cancelled && !closed && draft.approvalState === APPROVAL_STATE.rejected
+          ? <p className={styles.notice} role="note" data-testid="sales-reapproval-rejected-note">{T.approval.reapprovalRejectedNote(lastApproved)}</p> : null}
         {withdrawn ? <p className={styles.muted}>{T.approval.withdrawnNote}</p> : null}
         {commands}
       </section>
@@ -1063,7 +1072,12 @@ function commandNotice(attempt: CommandAttempt): string | null {
                 : attempt.failure === 'validation'
                   ? T.approval.validation
                   : T.approval.unexpected
-      const text = codeText === null ? base : `${base} ${codeText}`
+      // SAT-D111 / SAT-D112: a submission or approval of a revised order refused below the shipped or loaded total.
+      const floor = (attempt.problem?.errors ?? []).map((error) =>
+        error.code === 'sales_revision_below_shipped' ? T.approval.belowShipped
+          : error.code === 'sales_revision_below_loaded' ? T.approval.belowLoaded : null).filter((part) => part !== null)
+      const withCode = codeText === null ? base : `${base} ${codeText}`
+      const text = floor.length === 0 ? withCode : `${withCode} ${floor.join(' ')}`
       return attempt.unresolvedSince === undefined ? text : `${text} ${T.approval.refusedAfterUnknown}`
     }
     default:

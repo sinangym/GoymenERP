@@ -465,10 +465,29 @@ export function statusOf(detail: unknown): Response {
         approvedOverDelivery: false, closedRemainder: null, approvedReturned: '0',
       })),
     },
-    invoicing: { state: 'NoSource' },
+    invoicing: { state: 'NoSource', ...invoicingGateOf(draft.approvalState, draft.revision, acceptance) },
     financialClosure: { state: 'NoSource' },
     readyToClose: false,
   })
+}
+
+/** SAT-D103: the gate the server answers for the detail (the backend's `InvoicingGate`). */
+function invoicingGateOf(
+  approvalState: string | undefined,
+  revision: string | undefined,
+  acceptance: { required?: boolean; isCurrentRevisionAccepted?: boolean; acceptedRevision?: string | null },
+): { gate: string; priceBasisRevision: string | null } {
+  const revised = revision !== undefined && revision !== 'Rev.0'
+  const waiting = { gate: 'AwaitingCustomerAcceptance', priceBasisRevision: null }
+  if (approvalState === 'Approved') {
+    return acceptance.required && !acceptance.isCurrentRevisionAccepted ? waiting : { gate: 'Open', priceBasisRevision: revision ?? null }
+  }
+  if (revised && (approvalState === 'Preparing' || approvalState === 'PendingApproval')) return { gate: 'AwaitingReapproval', priceBasisRevision: null }
+  if (revised && approvalState === 'Rejected') {
+    const last = `Rev.${Number(revision.slice(4)) - 1}`
+    return acceptance.required && acceptance.acceptedRevision !== last ? waiting : { gate: 'Open', priceBasisRevision: last }
+  }
+  return { gate: 'NotApproved', priceBasisRevision: null }
 }
 
 /** Exact decimal text → (digits, scale) for the fake server's fixture amounts; never a JS number. */

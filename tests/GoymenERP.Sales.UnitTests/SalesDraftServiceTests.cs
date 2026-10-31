@@ -1234,6 +1234,8 @@ public sealed partial class SalesDraftServiceTests
             Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, ApprovePermission, PricePermission,
                 PriceReadPermission, SchedulePermission, CancelPermission, QuantityPermission, ApprovePermission),
         }.AllowDiscountsUpTo(10m);
+        // SAT-D111/D112: the resubmission of a revised order reads Logistics' floor — the owners answer nothing here.
+        Owners(world);
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         Assert.Equal((true, (string?)null, false), (created.CustomerAcceptance.Required,
             created.CustomerAcceptance.AcceptedRevision, created.CustomerAcceptance.IsCurrentRevisionAccepted));
@@ -2222,6 +2224,14 @@ public sealed partial class SalesDraftServiceTests
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
             var drafts = _drafts.Where(draft => approvalState is null || draft.ApprovalState == approvalState);
+            return Task.FromResult(new SalesDraftPage([.. drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
+        }
+
+        public Task<SalesDraftPage> ListShippableDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
+        {
+            if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            var drafts = _drafts.Where(draft => draft.State == SalesDraftState.Draft
+                && (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count > 0));
             return Task.FromResult(new SalesDraftPage([.. drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
         }
 

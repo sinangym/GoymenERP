@@ -38,7 +38,7 @@
       }
     ]
   },
-  "invoicing": { "state": "NoSource" },
+  "invoicing": { "state": "NoSource", "gate": "Open", "priceBasisRevision": "Rev.0" },
   "financialClosure": { "state": "NoSource" },
   "readyToClose": false
 }
