@@ -515,6 +515,47 @@ public sealed class SettingsHostWiringTests
             scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>().ProductPermission);
     }
 
+    [Fact]
+    public void The_host_composes_the_tax_master_ports_once_and_the_product_tax_class_adapter()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsTaxMasterAdministrationV1>());
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsLineTaxResolverV1>());
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsTaxCategoryReaderV1>());
+        Assert.IsType<GoymenERP.Api.Endpoints.SettingsProductTaxClassHost>(
+            Assert.Single(scope.ServiceProvider.GetServices<ISettingsProductTaxClassSourceV1>()));
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IProductTaxClassificationReaderV1>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IProductTaxClassificationServiceV1>());
+    }
+
+    [Fact]
+    public async Task The_line_tax_port_fails_closed_without_a_product_source_and_denies_an_actor_outside_the_company()
+    {
+        // The broad host has no Product runtime: the product's classes are unavailable, so the port answers 503 — never a
+        // default rate and never "no tax".
+        using (var factory = Host(Gdc))
+        using (var scope = factory.Services.CreateScope())
+        {
+            var port = scope.ServiceProvider.GetRequiredService<ISettingsLineTaxResolverV1>();
+            var unavailable = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.ResolveAsync(Guid.NewGuid(), null, ExtraApproval));
+            Assert.Equal(TaxMasterProblemCodesV1.ProviderUnavailable, unavailable.Code);
+        }
+
+        using (var factory = Host(Gdc, actorAllowedIn: Gsp))
+        using (var scope = factory.Services.CreateScope())
+        {
+            var port = scope.ServiceProvider.GetRequiredService<ISettingsLineTaxResolverV1>();
+            var denied = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.ResolveAsync(Guid.NewGuid(), null, ExtraApproval));
+            Assert.Equal(TaxMasterProblemCodesV1.AccessDenied, denied.Code);
+            Assert.Equal(TaxMasterProblemCodesV1.AccessDenied, (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.GetCodeListAsync(TaxCodeListKindsV1.Exemption, ExtraApproval))).Code);
+        }
+    }
+
     private static WebApplicationFactoryWithFixedContext Host(Guid company, Guid? actorAllowedIn = null) =>
         new(company, actorAllowedIn ?? company);
 

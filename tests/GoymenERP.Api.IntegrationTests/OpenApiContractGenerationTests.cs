@@ -1078,6 +1078,43 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
             "#/components/schemas/SetSalesDiscountLimitBindingRequestV1",
             ["path:userId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        // MOD-03 (SAT-D73/D74/D82/D83): the Settings tax master and the Product tax classification.
+        new("get", "/api/v1/settings/tax-master", "GetSettingsTaxMasterV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("post", "/api/v1/settings/tax-master/categories", "CreateSettingsTaxCategoryV1",
+            AuthenticatedResponses("201:application/json", "400:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/CreateTaxCategoryRequestV1"),
+        new("put", "/api/v1/settings/tax-master/categories/{categoryId}/name", "RenameSettingsTaxCategoryV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/RenameTaxCategoryRequestV1",
+            ["path:categoryId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("post", "/api/v1/settings/tax-master/vat-classes/{classId}/rates", "RecordSettingsVatRateV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordVatRateRequestV1",
+            ["path:classId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("post", "/api/v1/settings/tax-master/withholding-classes/{classId}/rates", "RecordSettingsWithholdingRateV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/RecordWithholdingRateRequestV1",
+            ["path:classId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("post", "/api/v1/settings/tax-master/rate-records/{recordId}/withdrawal", "WithdrawSettingsTaxRateRecordV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/WithdrawTaxRateRecordRequestV1",
+            ["path:recordId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("post", "/api/v1/settings/tax-master/code-lists/{listKind}/versions", "PublishSettingsTaxCodeListV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/PublishTaxCodeListRequestV1",
+            ["path:listKind:true:type:string"]),
+        new("post", "/api/v1/settings/tax-master/code-lists/{listKind}/versions/{listVersion}/withdrawal", "WithdrawSettingsTaxCodeListV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/WithdrawTaxCodeListRequestV1",
+            ["path:listKind:true:type:string", "path:listVersion:true:type:integer;format:int64;pattern:^-?(?:0|[1-9]\\d*)$"]),
+        new("get", "/api/v1/product-tax-classifications/{productId}", "GetProductTaxClassificationV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
+            ParameterValues: ["path:productId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("put", "/api/v1/product-tax-classifications/{productId}", "SetProductTaxClassificationV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SetProductTaxClassificationRequestV1",
+            ["path:productId:true:type:string;format:uuid;non-empty-uuid:true"]),
         .. ProductOperations,
     ];
 
@@ -1357,6 +1394,16 @@ public sealed partial class OpenApiContractGenerationTests
             ["SearchSettingsSalesDiscountLimitPeopleV1"] = "ref:SalesDiscountLimitPersonListV1",
             ["GetSettingsSalesDiscountLimitBindingV1"] = "ref:SalesDiscountLimitBindingViewV1",
             ["SetSettingsSalesDiscountLimitBindingV1"] = "none",
+            ["GetSettingsTaxMasterV1"] = "ref:TaxMasterViewV1",
+            ["CreateSettingsTaxCategoryV1"] = "ref:TaxCategoryCreatedV1",
+            ["RenameSettingsTaxCategoryV1"] = "none",
+            ["RecordSettingsVatRateV1"] = "none",
+            ["RecordSettingsWithholdingRateV1"] = "none",
+            ["WithdrawSettingsTaxRateRecordV1"] = "none",
+            ["PublishSettingsTaxCodeListV1"] = "none",
+            ["WithdrawSettingsTaxCodeListV1"] = "none",
+            ["GetProductTaxClassificationV1"] = "ref:ProductTaxClassificationViewV1",
+            ["SetProductTaxClassificationV1"] = "none",
         };
 
     private static readonly HashSet<string> RequiredCompanyOperations =
@@ -1621,6 +1668,16 @@ public sealed partial class OpenApiContractGenerationTests
         "SearchSettingsSalesDiscountLimitPeopleV1",
         "GetSettingsSalesDiscountLimitBindingV1",
         "SetSettingsSalesDiscountLimitBindingV1",
+        "GetSettingsTaxMasterV1",
+        "CreateSettingsTaxCategoryV1",
+        "RenameSettingsTaxCategoryV1",
+        "RecordSettingsVatRateV1",
+        "RecordSettingsWithholdingRateV1",
+        "WithdrawSettingsTaxRateRecordV1",
+        "PublishSettingsTaxCodeListV1",
+        "WithdrawSettingsTaxCodeListV1",
+        "GetProductTaxClassificationV1",
+        "SetProductTaxClassificationV1",
     ];
 
     private static readonly HashSet<string> OptionalCompanyOperations =
@@ -1756,6 +1813,14 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsSalesDiscountLimitV1",
         "CorrectSettingsSalesDiscountLimitV1",
         "SetSettingsSalesDiscountLimitBindingV1",
+        "CreateSettingsTaxCategoryV1",
+        "RenameSettingsTaxCategoryV1",
+        "RecordSettingsVatRateV1",
+        "RecordSettingsWithholdingRateV1",
+        "WithdrawSettingsTaxRateRecordV1",
+        "PublishSettingsTaxCodeListV1",
+        "WithdrawSettingsTaxCodeListV1",
+        "SetProductTaxClassificationV1",
     ];
 
     private static readonly IReadOnlyDictionary<string, HashSet<int>>
@@ -2006,6 +2071,15 @@ public sealed partial class OpenApiContractGenerationTests
                 ],
                 ["SetSettingsSalesDiscountLimitBindingV1"] =
                     [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                // MOD-03: every stored terminal answer of the tax master and product tax classification commands replays.
+                ["CreateSettingsTaxCategoryV1"] = [StatusCodes.Status201Created, StatusCodes.Status409Conflict],
+                ["RenameSettingsTaxCategoryV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["RecordSettingsVatRateV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["RecordSettingsWithholdingRateV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["WithdrawSettingsTaxRateRecordV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["PublishSettingsTaxCodeListV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["WithdrawSettingsTaxCodeListV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["SetProductTaxClassificationV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
             };
 
     private static readonly HashSet<string> EmptyBodyPossible400Operations =
@@ -2190,6 +2264,14 @@ public sealed partial class OpenApiContractGenerationTests
         "CorrectSettingsSalesDiscountLimitV1",
         "SetSettingsSalesDiscountLimitBindingV1",
         "SearchSettingsSalesDiscountLimitPeopleV1",
+        "CreateSettingsTaxCategoryV1",
+        "RenameSettingsTaxCategoryV1",
+        "RecordSettingsVatRateV1",
+        "RecordSettingsWithholdingRateV1",
+        "WithdrawSettingsTaxRateRecordV1",
+        "PublishSettingsTaxCodeListV1",
+        "WithdrawSettingsTaxCodeListV1",
+        "SetProductTaxClassificationV1",
     ];
 
     private static readonly HashSet<string> CodeLessProblemResponses =
@@ -2339,6 +2421,13 @@ public sealed partial class OpenApiContractGenerationTests
         "SetSettingsSalesDiscountLimitV1:404",
         "WithdrawSettingsSalesDiscountLimitV1:404",
         "CorrectSettingsSalesDiscountLimitV1:404",
+        "RenameSettingsTaxCategoryV1:404",
+        "RecordSettingsVatRateV1:404",
+        "RecordSettingsWithholdingRateV1:404",
+        "WithdrawSettingsTaxRateRecordV1:404",
+        "WithdrawSettingsTaxCodeListV1:404",
+        "GetProductTaxClassificationV1:404",
+        "SetProductTaxClassificationV1:404",
     ];
 
     private static readonly HashSet<string> MixedProblemResponses =
@@ -2413,6 +2502,14 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsSalesDiscountLimitV1:400",
         "CorrectSettingsSalesDiscountLimitV1:400",
         "SetSettingsSalesDiscountLimitBindingV1:400",
+        "CreateSettingsTaxCategoryV1:400",
+        "RenameSettingsTaxCategoryV1:400",
+        "RecordSettingsVatRateV1:400",
+        "RecordSettingsWithholdingRateV1:400",
+        "WithdrawSettingsTaxRateRecordV1:400",
+        "PublishSettingsTaxCodeListV1:400",
+        "WithdrawSettingsTaxCodeListV1:400",
+        "SetProductTaxClassificationV1:400",
     ];
 
     // MFG-API (#313): every Manufacturing write advertises the endpoint's one conflict and one
@@ -3036,6 +3133,39 @@ public sealed partial class OpenApiContractGenerationTests
                 ["settings_discount_limit_binding_companies_mismatch", "settings_discount_limit_binding_group_inactive",
                  "settings_discount_limit_binding_group_not_found", "settings_discount_limit_binding_person_not_member"],
             ["SetSettingsSalesDiscountLimitBindingV1:503"] = ["settings_provider_unavailable"],
+            // MOD-03: the tax master and product tax classification routes.
+            ["GetSettingsTaxMasterV1:400"] = ["settings_tax_master_request_invalid"],
+            ["GetSettingsTaxMasterV1:503"] = ["settings_provider_unavailable"],
+            ["CreateSettingsTaxCategoryV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["CreateSettingsTaxCategoryV1:409"] = ["settings_tax_master_category_code_taken", "settings_tax_master_category_name_taken", "settings_tax_master_idempotency_conflict"],
+            ["CreateSettingsTaxCategoryV1:503"] = ["settings_provider_unavailable"],
+            ["RenameSettingsTaxCategoryV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["RenameSettingsTaxCategoryV1:409"] = ["settings_tax_master_category_name_taken", "settings_tax_master_idempotency_conflict", "settings_tax_master_version_conflict"],
+            ["RenameSettingsTaxCategoryV1:503"] = ["settings_provider_unavailable"],
+            ["RecordSettingsVatRateV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["RecordSettingsVatRateV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_version_conflict"],
+            ["RecordSettingsVatRateV1:422"] = ["settings_tax_master_category_kind_mismatch", "settings_tax_master_effective_from_past"],
+            ["RecordSettingsVatRateV1:503"] = ["settings_provider_unavailable"],
+            ["RecordSettingsWithholdingRateV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["RecordSettingsWithholdingRateV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_version_conflict"],
+            ["RecordSettingsWithholdingRateV1:422"] = ["settings_tax_master_buyer_category_not_found", "settings_tax_master_category_kind_mismatch", "settings_tax_master_effective_from_past", "settings_tax_master_withholding_code_unknown"],
+            ["RecordSettingsWithholdingRateV1:503"] = ["settings_provider_unavailable"],
+            ["WithdrawSettingsTaxRateRecordV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["WithdrawSettingsTaxRateRecordV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_record_in_effect", "settings_tax_master_record_withdrawn", "settings_tax_master_version_conflict"],
+            ["WithdrawSettingsTaxRateRecordV1:503"] = ["settings_provider_unavailable"],
+            ["PublishSettingsTaxCodeListV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["PublishSettingsTaxCodeListV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_version_conflict"],
+            ["PublishSettingsTaxCodeListV1:422"] = ["settings_tax_master_effective_from_past"],
+            ["PublishSettingsTaxCodeListV1:503"] = ["settings_provider_unavailable"],
+            ["WithdrawSettingsTaxCodeListV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["WithdrawSettingsTaxCodeListV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_record_in_effect", "settings_tax_master_record_withdrawn", "settings_tax_master_version_conflict"],
+            ["WithdrawSettingsTaxCodeListV1:503"] = ["settings_provider_unavailable"],
+            ["GetProductTaxClassificationV1:400"] = ["product_tax_classification_request_invalid"],
+            ["GetProductTaxClassificationV1:503"] = ["product_tax_classification_provider_unavailable"],
+            ["SetProductTaxClassificationV1:400"] = ["product_tax_classification_command_metadata_invalid", "product_tax_classification_reason_required", "product_tax_classification_reason_too_long", "product_tax_classification_request_invalid"],
+            ["SetProductTaxClassificationV1:409"] = ["product_tax_classification_idempotency_conflict", "product_tax_classification_version_conflict"],
+            ["SetProductTaxClassificationV1:422"] = ["product_tax_classification_vat_class_invalid", "product_tax_classification_withholding_class_invalid"],
+            ["SetProductTaxClassificationV1:503"] = ["product_tax_classification_provider_unavailable"],
         };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -6398,6 +6528,70 @@ public sealed partial class OpenApiContractGenerationTests
                     ["userId", "displayName"],
                     ("userId", "type:string;format:uuid"),
                     ("displayName", "type:string")),
+                // MOD-03: the tax master and product tax classification reads.
+                ["TaxMasterViewV1"] = ObjectSchema(
+                    ["companyId", "businessDate", "categories", "rateSeries", "codeLists"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("businessDate", "type:string;format:date"),
+                    ("categories", "type:array;items:ref:TaxCategoryViewV1"),
+                    ("rateSeries", "type:array;items:ref:TaxRateSeriesViewV1"),
+                    ("codeLists", "type:array;items:ref:TaxCodeListViewV1")),
+                ["TaxCategoryViewV1"] = ObjectSchema(
+                    ["id", "kind", "code", "name", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("kind", "type:string"),
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("version", "type:string")),
+                ["TaxRateSeriesViewV1"] = ObjectSchema(
+                    ["kind", "classId", "buyerCategoryId", "inForce", "scheduled"],
+                    ("kind", "type:string"),
+                    ("classId", "type:string;format:uuid"),
+                    ("buyerCategoryId", "type:null|string;format:uuid"),
+                    ("inForce", "oneOf:ref:TaxRateRecordViewV1|type:null"),
+                    ("scheduled", "type:array;items:ref:TaxRateRecordViewV1")),
+                ["TaxRateRecordViewV1"] = ObjectSchema(
+                    ["recordId", "recordVersion", "effectiveFrom", "applies", "ratePercent", "withholdingCode", "recordedBy", "recordedAtUtc", "reason"],
+                    ("recordId", "type:string;format:uuid"),
+                    ("recordVersion", "type:string"),
+                    ("effectiveFrom", "type:string;format:date"),
+                    ("applies", "type:boolean"),
+                    ("ratePercent", "type:null|string"),
+                    ("withholdingCode", "type:null|string"),
+                    ("recordedBy", "type:string"),
+                    ("recordedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string")),
+                ["TaxCodeListViewV1"] = ObjectSchema(
+                    ["kind", "version", "inForce", "scheduled"],
+                    ("kind", "type:string"),
+                    ("version", "type:string"),
+                    ("inForce", "oneOf:ref:TaxCodeListVersionViewV1|type:null"),
+                    ("scheduled", "type:array;items:ref:TaxCodeListVersionViewV1")),
+                ["TaxCodeListVersionViewV1"] = ObjectSchema(
+                    ["listVersion", "effectiveFrom", "entries", "recordedBy", "recordedAtUtc", "reason"],
+                    ("listVersion", "type:string"),
+                    ("effectiveFrom", "type:string;format:date"),
+                    ("entries", "type:array;items:ref:TaxCodeListEntryViewV1"),
+                    ("recordedBy", "type:string"),
+                    ("recordedAtUtc", "type:string;format:date-time"),
+                    ("reason", "type:string")),
+                ["TaxCodeListEntryViewV1"] = ObjectSchema(
+                    ["code", "name"],
+                    ("code", "type:string"),
+                    ("name", "type:string")),
+                ["TaxCategoryCreatedV1"] = ObjectSchema(
+                    ["id", "version"],
+                    ("id", "type:string;format:uuid"),
+                    ("version", "type:string")),
+                ["ProductTaxClassificationViewV1"] = ObjectSchema(
+                    ["companyId", "productId", "version", "vatClassId", "withholdingClassId", "updatedAtUtc", "updatedBy"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("productId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("vatClassId", "type:null|string;format:uuid"),
+                    ("withholdingClassId", "type:null|string;format:uuid"),
+                    ("updatedAtUtc", "type:null|string;format:date-time"),
+                    ("updatedBy", "type:null|string")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -7276,6 +7470,57 @@ public sealed partial class OpenApiContractGenerationTests
                     ["companyId", "expectedVersion"],
                     ("companyId", "type:string;format:uuid"),
                     ("expectedVersion", "type:null|string")),
+                // MOD-03: the tax master and product tax classification commands.
+                ["CreateTaxCategoryRequestV1"] = ObjectSchema(
+                    ["kind", "code", "name", "reason"],
+                    ("kind", "type:null|string"),
+                    ("code", "type:null|string"),
+                    ("name", "type:null|string"),
+                    ("reason", "type:null|string")),
+                ["RenameTaxCategoryRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "name", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("name", "type:null|string"),
+                    ("reason", "type:null|string")),
+                ["RecordVatRateRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "ratePercent", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("ratePercent", "type:null|string"),
+                    ("reason", "type:null|string"),
+                    ("effectiveFrom", "type:null|string;format:date")),
+                ["RecordWithholdingRateRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "buyerCategoryId", "applies", "ratePercent", "withholdingCode", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("buyerCategoryId", "type:null|string;format:uuid"),
+                    ("applies", "type:boolean|null"),
+                    ("ratePercent", "type:null|string"),
+                    ("withholdingCode", "type:null|string"),
+                    ("reason", "type:null|string"),
+                    ("effectiveFrom", "type:null|string;format:date")),
+                ["WithdrawTaxRateRecordRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("reason", "type:null|string")),
+                ["PublishTaxCodeListRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "entries", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("entries", "type:array|null;items:ref:TaxCodeListEntryV1"),
+                    ("reason", "type:null|string"),
+                    ("effectiveFrom", "type:null|string;format:date")),
+                ["TaxCodeListEntryV1"] = ObjectSchema(
+                    ["code", "name"],
+                    ("code", "type:null|string"),
+                    ("name", "type:null|string")),
+                ["WithdrawTaxCodeListRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("reason", "type:null|string")),
+                ["SetProductTaxClassificationRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "vatClassId", "withholdingClassId", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("vatClassId", "type:null|string;format:uuid"),
+                    ("withholdingClassId", "type:null|string;format:uuid"),
+                    ("reason", "type:null|string")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
