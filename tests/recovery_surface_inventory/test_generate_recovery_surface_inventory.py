@@ -2258,7 +2258,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1179, len(source_paths))
+        self.assertEqual(1180, len(source_paths))
         # MOD-02 (SAT-D9 / SAT-D10): the Product price tier chain, its contracts, the Cari customer port adapter
         # and the AddPriceListScope migration.
         for mod02_source in (
@@ -2290,13 +2290,15 @@ internal {{declaration}} : IDocumentObjectStoreV1
             "20261027202534_AddCounterpartyCustomerGroups.cs",
         ):
             self.assertIn(sat_d57_source, source_paths)
-        # SAT-D102: the Settings e-Fatura scenario port and catalog, the Cari e-belge status, contracts, read port,
-        # Settings reader, service, endpoints, OpenAPI schema hook and the AddCounterpartyAccountEDocumentProfile migration.
+        # SAT-D102 / SAT-D119: the Settings e-Fatura scenario port and catalog, the VKN-shared Cari e-belge profile
+        # (domain + status enum), contracts, read port, Settings reader, service, endpoints, OpenAPI schema hook and
+        # the AddCustomerEDocumentProfiles migration.
         for sat_d102_source in (
             "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/Contracts/V1/"
             "ISettingsEInvoiceScenarioPolicyProviderV1.cs",
             "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/ApprovedEInvoiceScenarioCatalog.cs",
             "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/Accounts/EDocumentStatus.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/Accounts/CustomerEDocumentProfile.cs",
             "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/"
             "CounterpartyEDocumentProfile.cs",
             "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/"
@@ -2310,7 +2312,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
             "src/backend/GoymenERP.Api/Endpoints/CounterpartyEndpoints.EDocumentProfile.cs",
             "src/backend/GoymenERP.Api/OpenApi/ErpOpenApiContract.EDocumentProfile.cs",
             "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/"
-            "20261028231320_AddCounterpartyAccountEDocumentProfile.cs",
+            "20261031091827_AddCustomerEDocumentProfiles.cs",
         ):
             self.assertIn(sat_d102_source, source_paths)
         for shared_value_object in (
