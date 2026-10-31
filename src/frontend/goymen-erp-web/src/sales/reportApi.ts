@@ -30,6 +30,9 @@ export interface ReportFilter {
 
 export const NO_REPORT_FILTER: ReportFilter = { from: null, to: null, companyAccountId: null }
 
+/** UI-80 address members: the tab (`rapor`), the date range (`baslangic`, `bitis`) and one customer account (`cari`). */
+export const REPORT_PARAM = { tab: 'rapor', from: 'baslangic', to: 'bitis', account: 'cari' } as const
+
 /** The filter as one stable string (the paging hook's filter identity: changing it restarts the list). */
 export function reportFilterKey(filter: ReportFilter): string {
   return [filter.from ?? '-', filter.to ?? '-', filter.companyAccountId ?? '-'].join('|')

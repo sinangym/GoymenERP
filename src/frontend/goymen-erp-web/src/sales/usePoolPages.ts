@@ -5,7 +5,7 @@
  * resend. Rows are never sorted, filtered or counted on the client (LF-01).
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -56,7 +56,7 @@ export function usePoolPages<P extends PoolPageData<{ readonly id: string }>, S 
 
   const current = more.filter === filter ? more : { filter, rows: [] as readonly T[], cursor: undefined }
   const firstPage = first.data?.type === 'ok-single' ? first.data.data : null
-  const firstItems: readonly T[] = firstPage?.items ?? []
+  const firstItems: readonly T[] = useMemo(() => firstPage?.items ?? [], [firstPage])
   const nextCursor = current.cursor === undefined ? (firstPage?.nextCursor ?? null) : current.cursor
 
   const loadMore = useCallback(async () => {
@@ -75,7 +75,7 @@ export function usePoolPages<P extends PoolPageData<{ readonly id: string }>, S 
       return
     }
     setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
-  }, [boundary, companyId, current.rows, fetchPage, filter, firstPage, nextCursor])
+  }, [boundary, companyId, current.rows, fetchPage, filter, firstItems, nextCursor])
 
   const firstState: RemoteViewState<unknown> | null =
     firstPage !== null ? null : first.data === undefined ? { kind: 'initial-loading' } : (classifyOutcome(first.data) as RemoteViewState<unknown>)

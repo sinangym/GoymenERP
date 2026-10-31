@@ -19,6 +19,7 @@ import { PoolContinuation } from './SalesPoolShared'
 import { usePoolPages } from './usePoolPages'
 import {
   NO_REPORT_FILTER,
+  REPORT_PARAM,
   fetchLostOpportunityReport,
   fetchOpenOrderReport,
   fetchPriceVarianceReport,
@@ -43,9 +44,6 @@ import styles from './SalesPool.module.css'
 import tabStyles from './SalesDraftDetailPage.module.css'
 
 const T = REPORT_TEXT
-
-/** The address members: the tab (`rapor`), the date range (`baslangic`, `bitis`) and one customer account (`cari`). */
-export const REPORT_PARAM = { tab: 'rapor', from: 'baslangic', to: 'bitis', account: 'cari' } as const
 
 export function SalesReportsPage() {
   const shell = useShellState()
