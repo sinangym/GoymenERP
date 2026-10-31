@@ -435,7 +435,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 106, "durableStores": 24},
+            {"dbContexts": 18, "migrations": 107, "durableStores": 24},
             self.inventory["counts"],
         )
         actual = {
@@ -1920,7 +1920,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(106, len(migrations))
+        self.assertEqual(107, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -2319,6 +2319,33 @@ internal {{declaration}} : IDocumentObjectStoreV1
             "20261027202534_AddCounterpartyCustomerGroups.cs",
         ):
             self.assertIn(sat_d57_source, source_paths)
+        # SAT-D102 / SAT-D119: the Settings e-Fatura scenario port and catalog, the VKN-shared Cari e-belge profile
+        # (domain + status enum), contracts, read port, Settings reader, service, endpoints, OpenAPI schema hook and
+        # the AddCustomerEDocumentProfiles migration.
+        for sat_d102_source in (
+            "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/Contracts/V1/"
+            "ISettingsEInvoiceScenarioPolicyProviderV1.cs",
+            "src/backend/Modules/Settings/GoymenERP.Modules.Settings.Application/ApprovedEInvoiceScenarioCatalog.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/Accounts/EDocumentStatus.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Domain/Accounts/CustomerEDocumentProfile.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/"
+            "CounterpartyEDocumentProfile.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/"
+            "ICounterpartyAccountEDocumentProfileSourceV1.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyAccountEDocumentProfileSourceV1.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyEInvoiceScenarioSettings.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyEDocumentProfileToken.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyCommandService.EDocumentProfile.cs",
+            "src/backend/GoymenERP.Api/Endpoints/CounterpartyEndpoints.EDocumentProfile.cs",
+            "src/backend/GoymenERP.Api/OpenApi/ErpOpenApiContract.EDocumentProfile.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/"
+            "20261031143822_AddCustomerEDocumentProfiles.cs",
+        ):
+            self.assertIn(sat_d102_source, source_paths)
         for shared_value_object in (
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/Money.cs",
             "src/backend/BuildingBlocks/GoymenERP.BuildingBlocks/Monetary/ExchangeRate.cs",
