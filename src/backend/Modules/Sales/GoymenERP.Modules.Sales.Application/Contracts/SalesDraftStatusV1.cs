@@ -48,8 +48,48 @@ public static class SalesDraftStatusAxisStatesV1
     public const string PendingReapproval = "PendingReapproval";
 }
 
-/// <summary>An axis that carries only its state (lifecycle, internal approval, and the three "NoSource" axes).</summary>
+/// <summary>An axis that carries only its state (lifecycle, internal approval, source and financial closure).</summary>
 public sealed record SalesDraftStatusAxisV1(string State);
+
+/// <summary>
+/// SAT-D103 (EK13): the Sales-owned gate of the order's invoicing — the <c>gate</c> member of the invoicing axis. Invoicing
+/// itself (S5 API-32) does not exist yet; the gate is what it must obey.
+/// </summary>
+public static class SalesDraftInvoicingGatesV1
+{
+    /// <summary>No approved revision exists (never approved, or withdrawn): nothing may be invoiced.</summary>
+    public const string NotApproved = "NotApproved";
+
+    /// <summary>
+    /// An approved (and, when required, customer-accepted — SAT-D114) revision is the price basis (<c>priceBasisRevision</c>):
+    /// the current revision once approved, or — after the newer revision was REJECTED — the last approved revision ("red
+    /// gelirse son onaylı fiyatla faturalanır"). The gate is the approval gate only: the lifecycle (a cancelled or closed
+    /// order) and the shipments are the invoicing owner's own preconditions (S5 API-32).
+    /// </summary>
+    public const string Open = "Open";
+
+    /// <summary>
+    /// A newer revision (price, discount, rate or quantity) waits for re-approval: physical shipping goes on under the last
+    /// approved revision, but the order's invoicing WAITS until the decision ("faturası onay gelene kadar bekler").
+    /// </summary>
+    public const string AwaitingReapproval = "AwaitingReapproval";
+
+    /// <summary>
+    /// SAT-D114 (EK14, PR #858) / SAT-D121 (EK17, PR #862): customer acceptance is required and the revision invoicing would
+    /// use is internally approved but not accepted by the customer — invoicing WAITS (already shipped goods included;
+    /// "approval" in SAT-D103 means the internal approval AND the customer acceptance when it is required). This holds for
+    /// EVERY revision type — a price, a quantity-only (SAT-D104/D111) or a VAT/withholding (SAT-D105) revision alike. No price basis.
+    /// </summary>
+    public const string AwaitingCustomerAcceptance = "AwaitingCustomerAcceptance";
+}
+
+/// <summary>
+/// The invoicing axis: <c>state</c> as every owner-less axis (<c>NoSource</c> until the S5 invoicing owner exists — never
+/// complete or zero), plus the SAT-D103 <c>gate</c> Sales owns (<see cref="SalesDraftInvoicingGatesV1"/>) and the revision
+/// whose approved prices an invoice uses (<c>priceBasisRevision</c>, "Rev.N"; null unless the gate is <c>Open</c>). Contract
+/// delta (EK13): the axis was <c>{state}</c>.
+/// </summary>
+public sealed record SalesDraftInvoicingAxisV1(string State, string Gate, string? PriceBasisRevision);
 
 /// <summary>
 /// The customer-acceptance axis: <c>NotRequired</c>, <c>Pending</c> or <c>Accepted</c> (of the CURRENT commercial revision).
@@ -123,7 +163,7 @@ public sealed record SalesDraftRealizationAxisV1(
 /// <summary>
 /// DEC-SAL-001 / API-08: GET …/{id}/status — the seven axes, read afresh on every request under the draft read; nothing is
 /// written or cached. <c>draftVersion</c> is the concurrency version the axes were read against; <c>revision</c> is the
-/// commercial revision ("Rev.N"). <c>readyToClose</c> (SAT-D32, "kapanmaya hazır") is true only when ALL seven axes are
+/// commercial revision ("Rev.N"). The invoicing axis carries the SAT-D103 gate (<see cref="SalesDraftInvoicingAxisV1"/>). <c>readyToClose</c> (SAT-D32, "kapanmaya hazır") is true only when ALL seven axes are
 /// complete: lifecycle <c>Active</c>, internal approval <c>Approved</c>, customer acceptance <c>Accepted</c> or
 /// <c>NotRequired</c>, realization <c>Completed</c>, and source, invoicing and financial closure complete. An axis that is
 /// <c>NoSource</c>, <c>Unreadable</c> or <c>PolicyUnavailable</c> is never complete, so while those three owners do not exist
@@ -137,6 +177,6 @@ public sealed record SalesOrderDraftStatusResponse(
     SalesDraftCustomerAcceptanceAxisV1 CustomerAcceptance,
     SalesDraftStatusAxisV1 Source,
     SalesDraftRealizationAxisV1 Realization,
-    SalesDraftStatusAxisV1 Invoicing,
+    SalesDraftInvoicingAxisV1 Invoicing,
     SalesDraftStatusAxisV1 FinancialClosure,
     bool ReadyToClose);

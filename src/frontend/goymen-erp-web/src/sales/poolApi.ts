@@ -17,9 +17,12 @@ import type { OrderCommandOutcome } from './orderAttempt'
 import {
   POOL_COMMAND_STATUS,
   POOL_CREATED_STATUS,
+  SALES_QUOTE_LOSS_REASONS_PATH,
   SALES_QUOTE_PATH,
   SALES_REQUEST_PATH,
   decodeQuoteDetail,
+  decodeQuoteLossReasons,
+  decodeQuoteValiditySuggestion,
   decodeQuoteMutation,
   decodeQuotePage,
   decodeRequestDetail,
@@ -27,6 +30,7 @@ import {
   decodeRequestPage,
   salesQuoteCommandPath,
   salesQuoteDetailPath,
+  salesQuoteValiditySuggestionPath,
   salesRequestDecisionPath,
   salesRequestDetailPath,
   type CreateSalesQuoteBody,
@@ -35,11 +39,14 @@ import {
   type RequestState,
   type SalesQuoteConversionBody,
   type SalesQuoteDetail,
+  type SalesQuoteExpiryApprovalBody,
   type SalesQuoteLineBody,
   type SalesQuoteLossBody,
+  type SalesQuoteLossReasons,
   type SalesQuoteMutation,
   type SalesQuotePage,
   type SalesQuoteRevisionBody,
+  type SalesQuoteValiditySuggestion,
   type SalesRequestDecisionBody,
   type SalesRequestDecisionCommand,
   type SalesRequestDetail,
@@ -104,6 +111,21 @@ export function fetchQuotePage(
 export function fetchQuoteDetail(quoteId: string, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<SalesQuoteDetail>> {
   return read(salesQuoteDetailPath(quoteId), companyId, signal, (body) => decodeQuoteDetail(body, quoteId),
     (detail) => detail.quote.companyId === companyId)
+}
+
+/** SAT-D25: the company's loss reason list (company-scoped on the server; no record to bind, the context is the header). */
+export function fetchQuoteLossReasons(companyId: string, signal?: AbortSignal): Promise<ViewOutcome<SalesQuoteLossReasons>> {
+  return read(SALES_QUOTE_LOSS_REASONS_PATH, companyId, signal, decodeQuoteLossReasons, () => true)
+}
+
+/** SAT-D39: the default validity suggested for a quote on `businessDate` — the answer must name that same date. */
+export function fetchQuoteValiditySuggestion(
+  businessDate: string,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<SalesQuoteValiditySuggestion>> {
+  return read(salesQuoteValiditySuggestionPath(businessDate), companyId, signal,
+    (body) => decodeQuoteValiditySuggestion(body, businessDate), () => true)
 }
 
 /* ── Commands ─────────────────────────────────────────────────────────────── */
@@ -282,7 +304,7 @@ type QuoteContext = PoolCommandContext & { readonly quoteId: string }
 
 async function sendQuoteMutation(
   path: string,
-  payload: SalesQuoteRevisionBody | SalesQuoteLossBody,
+  payload: SalesQuoteRevisionBody | SalesQuoteLossBody | SalesQuoteExpiryApprovalBody,
   context: QuoteContext,
   signal: AbortSignal | undefined,
 ): Promise<OrderCommandOutcome<SalesQuoteMutation>> {
@@ -306,6 +328,10 @@ export const reviseQuote = (payload: SalesQuoteRevisionBody, context: QuoteConte
 
 export const recordQuoteLoss = (payload: SalesQuoteLossBody, context: QuoteContext, signal?: AbortSignal) =>
   sendQuoteMutation(salesQuoteCommandPath(context.quoteId, 'loss'), payload, context, signal)
+
+/** SAT-D24 / SAT-D44: approve converting the expired quote's current revision (its own permission on the server). */
+export const approveExpiredQuote = (payload: SalesQuoteExpiryApprovalBody, context: QuoteContext, signal?: AbortSignal) =>
+  sendQuoteMutation(salesQuoteCommandPath(context.quoteId, 'expiry-approval'), payload, context, signal)
 
 /**
  * No 162: whether the created order is THIS quote's — the same company, customer and currency, the business date that

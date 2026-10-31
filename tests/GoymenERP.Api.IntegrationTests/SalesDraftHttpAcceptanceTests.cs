@@ -1219,7 +1219,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 new SalesDraftRealizationAxisV1("ClosedWithRemainder", false, "Rev.0",
                     new SalesDraftDeliveryToleranceV1(profileId, 1, "1", "2", "3", new DateOnly(2026, 10, 25), null, new DateOnly(2026, 10, 26)),
                     [new SalesDraftLineRealizationV1(lineId, 1, unitId, "100", "97", "90", "ClosedWithRemainder", "Under", "3", "Block", false, false, "3", "1.5")]),
-                new SalesDraftStatusAxisV1("NoSource"), new SalesDraftStatusAxisV1("NoSource"), false)),
+                new SalesDraftInvoicingAxisV1("NoSource", "Open", "Rev.0"), new SalesDraftStatusAxisV1("NoSource"), false)),
         };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
@@ -1238,10 +1238,16 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
                 body.GetProperty("revision").GetString(), body.GetProperty("lifecycle").GetProperty("state").GetString(),
                 body.GetProperty("internalApproval").GetProperty("state").GetString()));
             Assert.Equal(["state", "acceptedRevision"], body.GetProperty("customerAcceptance").EnumerateObject().Select(member => member.Name));
-            foreach (var axis in new[] { "source", "invoicing", "financialClosure" })
+            foreach (var axis in new[] { "source", "financialClosure" })
             {
                 Assert.Equal("NoSource", Assert.Single(body.GetProperty(axis).EnumerateObject()).Value.GetString());
             }
+
+            // SAT-D103 (EK13): the invoicing axis carries the Sales-owned gate and the price-basis revision beside its state.
+            var invoicing = body.GetProperty("invoicing");
+            Assert.Equal(["state", "gate", "priceBasisRevision"], invoicing.EnumerateObject().Select(member => member.Name));
+            Assert.Equal(("NoSource", "Open", "Rev.0"), (invoicing.GetProperty("state").GetString(), invoicing.GetProperty("gate").GetString(),
+                invoicing.GetProperty("priceBasisRevision").GetString()));
 
             var realization = body.GetProperty("realization");
             Assert.Equal(["state", "warning", "basisRevision", "tolerance", "lines"], realization.EnumerateObject().Select(member => member.Name));

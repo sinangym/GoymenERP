@@ -45,7 +45,7 @@ public sealed class SettingsShellAuthorityTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
 
         Assert.True(string.Equals(
-                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesDispatchAndSettingsV10,
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV10,
                 actual,
                 StringComparison.Ordinal),
             $"Settings normal-host authority drifted. Actual: {actual}");

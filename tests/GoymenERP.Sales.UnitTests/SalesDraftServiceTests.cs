@@ -1234,6 +1234,8 @@ public sealed partial class SalesDraftServiceTests
             Bindings = new SalesDraftServiceBindings(CreatePermission, ReadPermission, ApprovePermission, PricePermission,
                 PriceReadPermission, SchedulePermission, CancelPermission, QuantityPermission, ApprovePermission),
         }.AllowDiscountsUpTo(10m);
+        // SAT-D111/D112: the resubmission of a revised order reads Logistics' floor — the owners answer nothing here.
+        Owners(world);
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("k-create"))).Detail;
         Assert.Equal((true, (string?)null, false), (created.CustomerAcceptance.Required,
             created.CustomerAcceptance.AcceptedRevision, created.CustomerAcceptance.IsCurrentRevisionAccepted));
@@ -1650,6 +1652,10 @@ public sealed partial class SalesDraftServiceTests
         /// <summary>MOD-01 / API-06: the customer-finance owner's risk-input port; null = not composed.</summary>
         public ISalesPartyRiskReadPortV1? PartyRisk { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
+        /// <summary>SAT-D25 / SAT-D39: the Settings quote policy port; null = not composed.</summary>
+        public ISettingsSalesQuotePolicyProviderV1? QuotePolicies { get; set; }
+        /// <summary>The server clock of the service and of the in-memory quote store (SAT-D24: the business day comes from it).</summary>
+        public TimeProvider Clock { get; set; } = QuoteClock(); // SAT-D71: a fixed server day (Day, Europe/Istanbul) — orders open on or after it.
 
         /// <summary>
         /// SAT-D2: a SENTETIK approved limit of <paramref name="percent"/> for one limit group of every actor, for the tests
@@ -1664,17 +1670,14 @@ public sealed partial class SalesDraftServiceTests
         public SalesDraftServiceBindings Bindings { get; set; } = new(CreatePermission, ReadPermission, ApprovePermission, PricePermission, PriceReadPermission, SchedulePermission,
             CancelPermission, QuantityPermission);
 
-        /// <summary>The service's clock (SAT-D81: the discount limit is read on its Europe/Istanbul business day).</summary>
-        public TimeProvider Clock { get; set; } = TimeProvider.System;
-
         public SalesDraftService Service()
         {
             var company = new CompanyContext();
             company.Set(Company);
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
-                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests), SalesPolicies,
-                DiscountLimitGroups, PartyRisk);
+                Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
+                SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies);
         }
 
         public SalesDraftReadServiceV1 ReadService()
@@ -2221,6 +2224,14 @@ public sealed partial class SalesDraftServiceTests
         {
             if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
             var drafts = _drafts.Where(draft => approvalState is null || draft.ApprovalState == approvalState);
+            return Task.FromResult(new SalesDraftPage([.. drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
+        }
+
+        public Task<SalesDraftPage> ListShippableDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default)
+        {
+            if (Fault is not null) throw new SalesDraftStoreException(Fault, "synthetic");
+            var drafts = _drafts.Where(draft => draft.State == SalesDraftState.Draft
+                && (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count > 0));
             return Task.FromResult(new SalesDraftPage([.. drafts.OrderByDescending(draft => draft.CreatedAtUtc).Take(pageSize)], null));
         }
 

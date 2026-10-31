@@ -234,6 +234,7 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expectFits(contactInformationResponse, 'SalesContactInformationOptionsV1')
     expectFits(statusResponse, 'SalesOrderDraftStatusResponse')
     expectFits(statusResponse.lifecycle, 'SalesDraftStatusAxisV1')
+    expectFits(statusResponse.invoicing, 'SalesDraftInvoicingAxisV1')
     expectFits(statusResponse.customerAcceptance, 'SalesDraftCustomerAcceptanceAxisV1')
     expectFits(statusResponse.realization, 'SalesDraftRealizationAxisV1')
     expectFits(statusResponse.realization.tolerance, 'SalesDraftDeliveryToleranceV1')

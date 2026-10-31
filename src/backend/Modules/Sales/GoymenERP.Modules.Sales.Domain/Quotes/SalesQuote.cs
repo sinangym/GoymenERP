@@ -82,8 +82,30 @@ public sealed class SalesQuoteLine
     public string? Note { get; }
 }
 
-/// <summary>The recorded loss: the free-text reason (SAT-D25's closed Settings list is a follow-up), who recorded it and when.</summary>
-public sealed record SalesQuoteLoss(string Reason, string LostBy, DateTimeOffset LostAtUtc);
+/// <summary>
+/// SAT-D25: the entry of the company's closed Settings loss reason list a loss chose, as a snapshot of what was shown — its
+/// stable id and code, its label and the Settings list version it came from (DEC-SET-001: the applied version and value are
+/// kept; a later list change does not rewrite the quote).
+/// </summary>
+public sealed record SalesQuoteLossReason(Guid ReasonId, string Code, string Label, Guid ProfileId, long ProfileVersion);
+
+/// <summary>
+/// The recorded loss, who recorded it and when. <see cref="ListReason"/> is the SAT-D25 list entry; <see cref="Reason"/> is
+/// the free-text explanation (required when the entry asks for one, otherwise optional). A loss recorded before SAT-D25 (the
+/// retired v1 command) has no list entry and its free text is its reason.
+/// </summary>
+public sealed record SalesQuoteLoss(string? Reason, string LostBy, DateTimeOffset LostAtUtc, SalesQuoteLossReason? ListReason = null);
+
+/// <summary>SAT-D44 (1): one recorded revision of the quote — who wrote it (Rev.0: who created the quote), when, and its validity date.</summary>
+public sealed record SalesQuoteRevisionRecord(int Revision, DateOnly? ValidUntil, string RevisedBy, DateTimeOffset RevisedAtUtc);
+
+/// <summary>
+/// SAT-D24 / SAT-D44: the manager approval that lets an EXPIRED quote be converted — for exactly one revision (its validity
+/// date is the one approved), recorded with the server business day it was given on, who gave it, when, and an optional note.
+/// A later revision needs its own approval.
+/// </summary>
+public sealed record SalesQuoteExpiryApproval(int Revision, DateOnly ValidUntil, DateOnly BusinessDay, string ApprovedBy,
+    DateTimeOffset ApprovedAtUtc, string? Note);
 
 /// <summary>The recorded conversion: the one order the quote became (No 162), who converted it and when.</summary>
 public sealed record SalesQuoteConversion(Guid DraftId, string ConvertedBy, DateTimeOffset ConvertedAtUtc);
@@ -96,10 +118,12 @@ public sealed record SalesQuoteConversion(Guid DraftId, string ConvertedBy, Date
 /// <list type="bullet">
 /// <item><b>Revision:</b> <see cref="Revise"/> replaces the lines and terms of an open quote as the next revision
 /// (Rev.0, Rev.1, …); the earlier revisions are kept by the store, never rewritten.</item>
-/// <item><b>Loss:</b> <see cref="RecordLoss"/> closes an open quote with its reason.</item>
+/// <item><b>Loss:</b> <see cref="RecordLoss"/> closes an open quote with its SAT-D25 list reason (and explanation).</item>
+/// <item><b>Expiry (SAT-D24 / SAT-D44):</b> a quote whose validity date precedes the SERVER's business day is expired; it is
+/// converted only after <see cref="ApproveExpiredConversion"/> recorded an approval for its current revision.</item>
 /// <item><b>Conversion (No 162):</b> <see cref="Convert"/> records the one order the quote became; the order itself is built
 /// by the draft's own path with the quote's price/quantity snapshot.</item>
-/// <item><b>Version:</b> the concurrency token; 1 at creation, +1 per recorded revision, loss or conversion.</item>
+/// <item><b>Version:</b> the concurrency token; 1 at creation, +1 per recorded revision, expiry approval, loss or conversion.</item>
 /// </list>
 /// </summary>
 public sealed class SalesQuote
@@ -117,8 +141,14 @@ public sealed class SalesQuote
     public const int MaximumDocumentNoLength = SalesOrderDraft.MaximumDocumentNoLength;
     public const int MaximumActorLength = SalesOrderDraft.MaximumActorLength;
 
+    /// <summary>The stored snapshot bounds of a SAT-D25 list entry (the Settings catalog refuses longer values).</summary>
+    public const int MaximumLossReasonCodeLength = 64;
+    public const int MaximumLossReasonLabelLength = 200;
+
     private readonly List<SalesQuoteLine> lines = [];
     private readonly List<Guid> requestIds = [];
+    private readonly List<SalesQuoteRevisionRecord> revisions = [];
+    private readonly List<SalesQuoteExpiryApproval> expiryApprovals = [];
     private bool restored;
 
     private SalesQuote(Guid id, Guid companyId, string documentNo, SalesQuoteHeader header, MoneyProfileSnapshot money,
@@ -162,6 +192,15 @@ public sealed class SalesQuote
 
     public SalesQuoteConversion? Conversion { get; private set; }
 
+    /// <summary>SAT-D44 (1): every recorded revision (Rev.0 = the creation), in order — who created and who revised the quote.</summary>
+    public IReadOnlyList<SalesQuoteRevisionRecord> Revisions => revisions.AsReadOnly();
+
+    /// <summary>SAT-D24 / SAT-D44: every recorded expired-quote approval, in order (at most one per revision).</summary>
+    public IReadOnlyList<SalesQuoteExpiryApproval> ExpiryApprovals => expiryApprovals.AsReadOnly();
+
+    /// <summary>The expired-quote approval of the CURRENT revision, if one is recorded.</summary>
+    public SalesQuoteExpiryApproval? CurrentExpiryApproval => expiryApprovals.LastOrDefault(approval => approval.Revision == Revision);
+
     public string CreatedBy { get; }
 
     public DateTimeOffset CreatedAtUtc { get; }
@@ -189,13 +228,19 @@ public sealed class SalesQuote
         var quote = new SalesQuote(id, companyId, documentNo, header, money, createdBy, now);
         quote.requestIds.AddRange(requests.Order());
         quote.Apply(terms, inputs);
+        quote.revisions.Add(new SalesQuoteRevisionRecord(0, quote.Terms.ValidUntil, quote.CreatedBy, quote.CreatedAtUtc));
         return quote;
     }
 
-    /// <summary>Replaces the lines and terms of an OPEN quote as the next revision; a converted or lost quote is a state conflict.</summary>
-    public void Revise(long expectedVersion, SalesQuoteTerms terms, IReadOnlyList<SalesQuoteLineInput> inputs, DateTimeOffset now)
+    /// <summary>
+    /// Replaces the lines and terms of an OPEN quote as the next revision written by <paramref name="actorId"/>; a converted or
+    /// lost quote is a state conflict. An expired-quote approval belongs to the revision it was given for: the new revision
+    /// has none.
+    /// </summary>
+    public void Revise(long expectedVersion, string actorId, SalesQuoteTerms terms, IReadOnlyList<SalesQuoteLineInput> inputs, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
+        var actor = RequireText(actorId, MaximumActorLength, nameof(actorId));
         RequireOpen("Yalnız açık teklif revize edilir");
         var revised = new List<SalesQuoteLine>(lines);
         var revisedTerms = Terms;
@@ -213,41 +258,92 @@ public sealed class SalesQuote
 
         Revision = checked(Revision + 1);
         Touch(now);
+        revisions.Add(new SalesQuoteRevisionRecord(Revision, Terms.ValidUntil, actor, UpdatedAtUtc));
     }
 
-    /// <summary>Master §7.2: records the loss of an OPEN quote with its free-text reason (required, never defaulted or cut).</summary>
-    public void RecordLoss(long expectedVersion, string actorId, string? reason, DateTimeOffset now)
+    /// <summary>
+    /// Master §7.2 / SAT-D25: records the loss of an OPEN quote with the chosen entry of the company's closed Settings list
+    /// (<paramref name="reason"/>, already checked by the caller to be a selectable entry of the list in force) and the free-text
+    /// <paramref name="explanation"/> — required when the list flags the entry as needing one
+    /// (<paramref name="explanationRequired"/>), optional otherwise; never defaulted or cut.
+    /// </summary>
+    public void RecordLoss(long expectedVersion, string actorId, SalesQuoteLossReason reason, bool explanationRequired, string? explanation,
+        DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         var actor = RequireText(actorId, MaximumActorLength, nameof(actorId));
-        RequireOpen("Yalnız açık teklif kaybedildi olarak kaydedilir");
-        if (string.IsNullOrWhiteSpace(reason))
+        ArgumentNullException.ThrowIfNull(reason);
+        Identity.Require(reason.ReasonId, nameof(reason));
+        Identity.Require(reason.ProfileId, nameof(reason));
+        var code = RequireText(reason.Code, MaximumLossReasonCodeLength, nameof(reason));
+        var label = RequireText(reason.Label, MaximumLossReasonLabelLength, nameof(reason));
+        if (reason.ProfileVersion <= 0)
         {
-            throw new SalesRuleException(SalesRuleCodes.QuoteLossReasonRequired, "Teklif kaybı gerekçe ister.");
+            throw new ArgumentException("Kayıp nedeni listesinin sürümü pozitif olmalıdır.", nameof(reason));
         }
 
-        if (reason.Length > MaximumReasonLength)
+        RequireOpen("Yalnız açık teklif kaybedildi olarak kaydedilir");
+        var text = string.IsNullOrWhiteSpace(explanation) ? null : explanation;
+        if (text is null && explanationRequired)
+        {
+            throw new SalesRuleException(SalesRuleCodes.QuoteLossReasonRequired, "Seçilen kayıp nedeni açıklama ister.");
+        }
+
+        if (text is not null && text.Length > MaximumReasonLength)
         {
             throw new SalesRuleException(SalesRuleCodes.QuoteLossReasonTooLong,
-                $"Kayıp gerekçesi en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
+                $"Kayıp açıklaması en fazla {MaximumReasonLength} karakterdir; fazlası kesilmez, reddedilir.");
         }
 
         State = SalesQuoteState.Lost;
-        Loss = new SalesQuoteLoss(reason, actor, now.ToUniversalTime());
+        Loss = new SalesQuoteLoss(text, actor, now.ToUniversalTime(), reason with { Code = code, Label = label });
         Touch(now);
     }
 
     /// <summary>
-    /// No 162: records the ONE order an OPEN quote became on the order's <paramref name="businessDate"/>; a converted or lost
-    /// quote is a state conflict and an expired one is refused (<see cref="RequireValidOn"/>, SAT-D24 interim).
+    /// SAT-D24 / SAT-D44: records the approval that lets this EXPIRED quote's CURRENT revision be converted. The quote must be
+    /// open and expired on <paramref name="businessDay"/> — the server's Europe/Istanbul business day, never a client date
+    /// (409 <see cref="SalesRuleCodes.QuoteNotExpired"/> otherwise) — and its current revision must not carry an approval yet
+    /// (<see cref="SalesRuleCodes.QuoteExpiryAlreadyApproved"/>). SAT-D44 (2): whoever holds the approval permission may
+    /// approve, the quote's creator or reviser included — an explicit exception to P6 for this approval only; the caller
+    /// measures the permission. One version step; prices, lines and terms do not move.
     /// </summary>
-    public void Convert(long expectedVersion, Guid draftId, string actorId, DateOnly businessDate, DateTimeOffset now)
+    public void ApproveExpiredConversion(long expectedVersion, string actorId, DateOnly businessDay, string? note, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
+        var actor = RequireText(actorId, MaximumActorLength, nameof(actorId));
+        RequireOpen("Yalnız açık teklifin süresi geçmiş dönüşümü onaylanır");
+        RequireNote(note);
+        if (Terms.ValidUntil is not { } validUntil || validUntil >= businessDay)
+        {
+            throw new SalesRuleException(SalesRuleCodes.QuoteNotExpired, "Teklifin geçerlilik süresi dolmamış; onay gerekmez.");
+        }
+
+        if (CurrentExpiryApproval is not null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.QuoteExpiryAlreadyApproved, "Teklifin bu revizyonu için süre onayı zaten verilmiş.");
+        }
+
+        Touch(now);
+        expiryApprovals.Add(new SalesQuoteExpiryApproval(Revision, validUntil, businessDay, actor, UpdatedAtUtc,
+            string.IsNullOrWhiteSpace(note) ? null : note));
+    }
+
+    /// <summary>Whether the quote's validity date precedes <paramref name="businessDay"/> (a quote without one never expires).</summary>
+    public bool IsExpiredOn(DateOnly businessDay) => Terms.ValidUntil is { } validUntil && validUntil < businessDay;
+
+    /// <summary>
+    /// No 162: records the ONE order an OPEN quote became; a converted or lost quote is a state conflict and an expired one
+    /// without an approval for its current revision is refused (<see cref="RequireValidOn"/>, SAT-D24) on
+    /// <paramref name="businessDay"/> — the SERVER's business day, never the order's client-chosen business date.
+    /// </summary>
+    public void Convert(long expectedVersion, Guid draftId, string actorId, DateOnly businessDay, DateTimeOffset now)
     {
         RequireVersion(expectedVersion);
         Identity.Require(draftId, nameof(draftId));
         var actor = RequireText(actorId, MaximumActorLength, nameof(actorId));
         RequireOpen("Yalnız açık teklif siparişe dönüştürülür");
-        RequireValidOn(businessDate);
+        RequireValidOn(businessDay);
         State = SalesQuoteState.Converted;
         Conversion = new SalesQuoteConversion(draftId, actor, now.ToUniversalTime());
         Touch(now);
@@ -261,17 +357,17 @@ public sealed class SalesQuote
     }
 
     /// <summary>
-    /// SAT-D24 (interim, fail-closed): a quote whose validity date precedes the conversion's business date is expired and is
-    /// not converted. SAT-D24 lets a MANAGER APPROVAL convert it; that approval step does not exist yet (follow-up), so today
-    /// an expired quote is refused outright. A quote without a validity date never expires (no default validity is decided);
-    /// the validity date itself is the last valid day.
+    /// SAT-D24: a quote whose validity date precedes <paramref name="businessDay"/> — the SERVER's Europe/Istanbul business day
+    /// (SAT-D10), which the caller derives from its own clock; a client-sent date never decides it — is expired and is converted
+    /// only with a recorded manager approval for its CURRENT revision (<see cref="ApproveExpiredConversion"/>). A quote without
+    /// a validity date never expires (SAT-D39: the date is not mandatory); the validity date itself is the last valid day.
     /// </summary>
-    public void RequireValidOn(DateOnly businessDate)
+    public void RequireValidOn(DateOnly businessDay)
     {
-        if (Terms.ValidUntil is { } validUntil && validUntil < businessDate)
+        if (IsExpiredOn(businessDay) && CurrentExpiryApproval is null)
         {
             throw new SalesRuleException(SalesRuleCodes.QuoteExpired,
-                "Teklifin geçerlilik süresi dolmuş; yönetici onayı adımı gelene kadar siparişe dönüştürülmez.");
+                "Teklifin geçerlilik süresi dolmuş; bu revizyon için yönetici onayı olmadan siparişe dönüştürülmez.");
         }
     }
 
@@ -281,7 +377,8 @@ public sealed class SalesQuote
     /// must be at least the recorded steps. A corrupt row is refused, never repaired. Runs once.
     /// </summary>
     public void Restore(SalesQuoteState state, int revision, SalesQuoteLoss? loss, SalesQuoteConversion? conversion, long storedVersion,
-        DateTimeOffset updatedAtUtc)
+        DateTimeOffset updatedAtUtc, IReadOnlyList<SalesQuoteRevisionRecord>? revisionHistory = null,
+        IReadOnlyList<SalesQuoteExpiryApproval>? approvals = null)
     {
         if (restored || Version != 1 || Revision != 0 || State != SalesQuoteState.Open)
         {
@@ -291,16 +388,34 @@ public sealed class SalesQuote
         var consistent = state switch
         {
             SalesQuoteState.Open => loss is null && conversion is null,
-            SalesQuoteState.Lost => loss is { Reason.Length: > 0 and <= MaximumReasonLength } && conversion is null,
+            SalesQuoteState.Lost => IsConsistentLoss(loss) && conversion is null,
             SalesQuoteState.Converted => loss is null && conversion is { } converted && converted.DraftId != Guid.Empty,
             _ => false,
         };
-        var steps = (long)revision + (state == SalesQuoteState.Open ? 0 : 1);
-        if (!consistent || revision < 0 || storedVersion < 1 + steps)
+        var history = revisionHistory ?? [];
+        var approved = approvals ?? [];
+        var historyConsistent = revisionHistory is null
+            || (history.Count == revision + 1
+                && history.Select((record, index) => record is not null && record.Revision == index
+                    && !string.IsNullOrWhiteSpace(record.RevisedBy)).All(ok => ok)
+                && history[^1].ValidUntil == Terms.ValidUntil);
+        var approvalsConsistent = approved.All(approval => approval is not null && approval.Revision >= 0 && approval.Revision <= revision
+                && !string.IsNullOrWhiteSpace(approval.ApprovedBy) && approval.ValidUntil < approval.BusinessDay)
+            && approved.Select(approval => approval.Revision).Distinct().Count() == approved.Count
+            && approved.Where(approval => approval.Revision == revision).All(approval => approval.ValidUntil == Terms.ValidUntil);
+        var steps = (long)revision + approved.Count + (state == SalesQuoteState.Open ? 0 : 1);
+        if (!consistent || !historyConsistent || !approvalsConsistent || revision < 0 || storedVersion < 1 + steps)
         {
             throw new InvalidOperationException("Kayıtlı teklif durumu, revizyonu ya da sürümü kendiyle uyuşmuyor.");
         }
 
+        if (revisionHistory is not null)
+        {
+            revisions.Clear();
+            revisions.AddRange(history);
+        }
+
+        expiryApprovals.AddRange(approved.OrderBy(approval => approval.Revision));
         State = state;
         Revision = revision;
         Loss = loss;
@@ -309,6 +424,19 @@ public sealed class SalesQuote
         UpdatedAtUtc = updatedAtUtc.ToUniversalTime();
         restored = true;
     }
+
+    /// <summary>
+    /// A stored loss is either SAT-D25's (a list entry with a complete snapshot; the explanation optional but never blank) or a
+    /// loss recorded before it (no entry; the free-text reason is its reason and is never blank).
+    /// </summary>
+    private static bool IsConsistentLoss(SalesQuoteLoss? loss) => loss switch
+    {
+        null => false,
+        { ListReason: null } => loss.Reason is { Length: > 0 and <= MaximumReasonLength },
+        { ListReason: { } entry } => entry.ReasonId != Guid.Empty && entry.ProfileId != Guid.Empty && entry.ProfileVersion > 0
+            && entry.Code is { Length: > 0 and <= MaximumLossReasonCodeLength } && entry.Label is { Length: > 0 and <= MaximumLossReasonLabelLength }
+            && (loss.Reason is null || loss.Reason.Length is > 0 and <= MaximumReasonLength),
+    };
 
     private void Apply(SalesQuoteTerms terms, IReadOnlyList<SalesQuoteLineInput> inputs)
     {

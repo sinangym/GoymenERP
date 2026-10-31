@@ -455,3 +455,22 @@ Closed by EK12 (2026-10-28) and EK15 (2026-10-29): SAT-D116 (bindings only where
 SAT-D81 (the limit of the day the order is entered or revised) and SAT-D84 (withdraw/correct before the date). Open (not
 chosen here): from which screen bindings are managed long-term (a Settings screen is provided); the first value of the
 Müdür's extra points; company-specific bindings (the schema allows them; only the all-companies write is exposed).
+
+## Sales quote policies (SAT-D25, SAT-D39)
+
+Source: `docs/decisions/SINAN_KARARLARI_2026-10-27_SATIS_EK3.md` (SAT-D25) and `…_EK4.md` (SAT-D39).
+
+`ISettingsSalesQuotePolicyProviderV1` is a separate V1 port beside `ISettingsSalesPolicyProviderV1` (so no existing implementer
+changes): the company's closed **quote loss reason list** (`GetSalesQuoteLossReasonsAsync`: per entry a stable id, code, Turkish
+label, the list's own `RequiresExplanation` flag — SAT-D25's "Diğer seçilirse açıklama zorunlu" is a flag of the entry, never a
+recognised label — and `IsActive`) and the **default quote validity** in days (`GetSalesQuoteDefaultValidityAsync`), both versioned
+and company-scoped with a window. `ApprovedSettingsSalesQuotePolicyProvider` serves `ApprovedSalesQuotePolicyCatalog` in the Sales
+policy port's order: access → `settings_access_denied`; a company without an approved Sales policy source →
+`settings_provider_unavailable`; no record → `settings_sales_policy_not_found`; otherwise the exact version with its real window.
+
+The reviewed catalog is **empty on purpose**: the list content and the day count are Settings records Sinan enters (EK4 "açık
+kalanlar"); no value is seeded or a code constant. The served companies (GDC, GSP, GIN — SAT-D14) therefore answer "not found":
+Sales refuses a loss (fail-closed) and suggests no validity. A malformed catalog (empty ids, blank or untrimmed code / label, too
+long for the consumer's snapshot, repeated id or code, a list without entries, a non-positive day count, overlapping windows) is
+refused as a whole with `settings_profile_invalid`. Host registration: `Program.cs`, scoped. Evidence:
+`tests/GoymenERP.Settings.UnitTests/ApprovedSalesQuotePolicyProviderTests.cs`.

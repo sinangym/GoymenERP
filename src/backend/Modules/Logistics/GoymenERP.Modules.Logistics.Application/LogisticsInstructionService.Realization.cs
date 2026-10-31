@@ -35,7 +35,7 @@ public sealed partial class LogisticsInstructionService
                 var line = stored.Instruction.Lines.SingleOrDefault(candidate => candidate.Id == lineId)
                     ?? throw new LogisticsInstructionServiceException(404, "not_found");
                 var quantity = await VerifyUnitAsync(scope, permission, line.UnitId, request.Quantity, stored.EffectiveOn, "shipment", token);
-                await RequireShipmentSourceAsync(scope, permission, stored, line, token);
+                await RequireShipmentSourceAsync(scope, permission, stored, line, quantity.Value, token);
                 var allocation = await GuardedAsync(scope, permission,
                     () => stock.FindAllocationAsync(line.Source.OrderId, line.Source.LineId, request.AllocationId, token), token);
                 if (allocation is null) throw new LogisticsInstructionServiceException(404, "not_found");
@@ -130,13 +130,14 @@ public sealed partial class LogisticsInstructionService
         ?? throw new LogisticsInstructionServiceException(404, "not_found");
 
     private async Task RequireShipmentSourceAsync(Scope scope, string? permission, StoredLoadingInstruction stored,
-        LoadingInstructionLine line, CancellationToken cancellationToken)
+        LoadingInstructionLine line, decimal shipmentQuantity, CancellationToken cancellationToken)
     {
         SalesOrderLineReferenceAnswerV1 answer;
         try
         {
             answer = await GuardedAsync(scope, permission,
-                () => orderLines.GetApprovedLineAsync(line.Source.OrderId, line.Source.LineId, cancellationToken), cancellationToken);
+                () => orderLines.GetApprovedLineForLoadingAsync(line.Source.OrderId, line.Source.LineId, stored.EffectiveOn, cancellationToken),
+                cancellationToken);
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or LogisticsInstructionServiceException))
         {
@@ -160,10 +161,45 @@ public sealed partial class LogisticsInstructionService
             throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
         }
 
+        // SAT-D103 / SAT-D104 (EK13): physical shipping goes on across a Sales re-approval. The Sales owner answers only an
+        // APPROVED revision — during a re-approval the last approved one (never the pending values), after the approval the
+        // new one — and revisions only grow, so an instruction made under an earlier approved revision of the SAME line,
+        // customer, product and unit still ships; the quantity caps stay the Sales loading limit's (checked at every load). An
+        // answer BELOW the instruction's revision cannot come from the owner and is refused.
         if (approved.PartyId != stored.Instruction.CustomerPartyId || approved.CompanyAccountId != stored.Instruction.CompanyAccountId
-            || approved.ProductId != line.ProductId || approved.OrderUnitId != line.UnitId || approved.Revision != line.Source.Revision)
+            || approved.ProductId != line.ProductId || approved.OrderUnitId != line.UnitId || approved.Revision < line.Source.Revision)
         {
             throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineState);
+        }
+
+        // SAT-D103 / SAT-D111 (K3-REVIEW-A P1-1 b, defense in depth): the Sales owner's CURRENT loading limit bounds the line's
+        // total shipped across every instruction — a load admitted under an earlier, higher cap (a race with a decrease, or a
+        // rejection followed by a resubmission) never ships above the quantity Sales now answers. The SAT-D112 floor policy
+        // is unchanged (Sales still refuses a decrease below the loaded total); this is only the safety net. The cap is the
+        // same owner-resolved loading limit every load is held to (its SAT-D104/D111 value during a re-approval); a producer
+        // that answers no limit is not capped here, exactly like the load path's missing limit.
+        if (approved.LoadingLimit is { } limit)
+        {
+            if (limit.CompanyId != approved.CompanyId || limit.OrderId != approved.OrderId || limit.LineId != approved.LineId
+                || limit.UnitId != approved.OrderUnitId || limit.SalesOrderVersion != approved.Version || limit.EffectiveOn != stored.EffectiveOn
+                || string.IsNullOrWhiteSpace(limit.MaximumAggregateQuantityText))
+            {
+                throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+            }
+
+            var cap = SalesLineQuantity(limit.MaximumAggregateQuantityText);
+            var shipped = await GuardedAsync(scope, permission,
+                () => store.SumShippedForOrderLineAsync(line.Source.OrderId, line.Source.LineId, line.UnitId, cancellationToken), cancellationToken);
+            if (shipped < 0m)
+            {
+                throw new LogisticsInstructionServiceException(503, LogisticsProblemCodesV1.ReferenceProviderInvalid);
+            }
+
+            if (shipped + shipmentQuantity > cap)
+            {
+                throw new LogisticsInstructionServiceException(409, LogisticsProblemCodesV1.OrderLineAggregateLimitExceeded,
+                    [new("quantity", "sales_shipping_cap_exceeded")]);
+            }
         }
     }
 

@@ -126,7 +126,7 @@ export function SalesDraftQuantityRevisionForm({
   }
 
   const frozen = attempt.phase === 'submitting' || isOutcomeStillUnknown(attempt)
-  const notice = revisionNotice(attempt)
+  const notice = revisionNotice(attempt, rows)
 
   if (!open) {
     return (
@@ -188,7 +188,22 @@ export function SalesDraftQuantityRevisionForm({
   )
 }
 
-function revisionNotice(attempt: RevisionAttempt): string | null {
+/** SAT-D104 / SAT-D111: the server's per-line floor refusals, by their stable rule codes. */
+const FLOOR_CODES = { below_shipped: 'sales_revision_below_shipped', below_loaded: 'sales_revision_below_loaded' } as const
+
+function floorText(errors: readonly { readonly field: string; readonly code: string }[], rows: readonly QuantityRevisionRow[]): string {
+  const text = T.quantityRevision
+  return errors
+    .filter((error) => error.code === FLOOR_CODES.below_shipped || error.code === FLOOR_CODES.below_loaded)
+    .map((error) => {
+      const index = /^lines\[(\d+)\]\.quantity$/.exec(error.field)
+      const lineNo = index === null ? null : rows[Number(index[1])]?.lineNo ?? null
+      return error.code === FLOOR_CODES.below_shipped ? text.belowShipped(lineNo) : text.belowLoaded(lineNo)
+    })
+    .join(' ')
+}
+
+function revisionNotice(attempt: RevisionAttempt, rows: readonly QuantityRevisionRow[]): string | null {
   const text = T.quantityRevision
   switch (attempt.phase) {
     case 'idle': return null
@@ -212,7 +227,8 @@ function revisionNotice(attempt: RevisionAttempt): string | null {
             : attempt.failure === 'conflict' ? text.conflict
               : attempt.failure === 'validation' ? text.validation
                 : text.unexpected
-      return [base, codeText, blocked].filter((part) => part !== null && part !== '').join(' ')
+      const floor = attempt.failure === 'validation' ? floorText(attempt.problem?.errors ?? [], rows) : ''
+      return [base, codeText, blocked, floor].filter((part) => part !== null && part !== '').join(' ')
     }
     default: return null
   }

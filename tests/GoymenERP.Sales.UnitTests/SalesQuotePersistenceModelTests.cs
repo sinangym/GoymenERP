@@ -26,7 +26,7 @@ public sealed class SalesQuotePersistenceModelTests
     public void The_quote_tables_are_in_the_sales_schema_filtered_by_the_company_and_keyed_by_their_identities()
     {
         using var context = Context();
-        foreach (var type in new[] { typeof(QuoteRow), typeof(QuoteRevisionRow), typeof(QuoteLineRow), typeof(QuoteRequestRow) })
+        foreach (var type in new[] { typeof(QuoteRow), typeof(QuoteRevisionRow), typeof(QuoteLineRow), typeof(QuoteRequestRow), typeof(QuoteExpiryApprovalRow) })
         {
             var entity = context.Model.FindEntityType(type)!;
             Assert.Equal(SalesDbContext.Schema, entity.GetSchema());
@@ -45,6 +45,13 @@ public sealed class SalesQuotePersistenceModelTests
         Assert.Equal(["CompanyId", "QuoteId", "Revision", "LineNo"], lines.FindPrimaryKey()!.Properties.Select(property => property.Name));
         Assert.True(UniqueIndex(lines, "UX_QuoteLines_LineId"));
         Assert.Contains(lines.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(QuoteRevisionRow));
+
+        // SAT-D24 / SAT-D44: at most one expired-quote approval per quote revision, bound to that revision.
+        var approvals = context.Model.FindEntityType(typeof(QuoteExpiryApprovalRow))!;
+        Assert.Equal(("QuoteExpiryApprovals", SalesDbContext.Schema), (approvals.GetTableName(), approvals.GetSchema()));
+        Assert.Equal(["CompanyId", "QuoteId", "Revision"], approvals.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        Assert.Contains(approvals.GetForeignKeys(), key => key.PrincipalEntityType.ClrType == typeof(QuoteRevisionRow)
+            && key.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "QuoteId", "Revision"]));
 
         // No 163: a request is under at most ONE open or converted quote (a lost quote's link is inactive).
         var links = context.Model.FindEntityType(typeof(QuoteRequestRow))!;
@@ -93,11 +100,21 @@ public sealed class SalesQuotePersistenceModelTests
         var quoteChecks = design.FindEntityType(typeof(QuoteRow))!.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
         Assert.Equal(SalesDbContext.QuoteLifecycleConstraint, quoteChecks["CK_Quotes_Lifecycle"]);
         Assert.Contains("CK_Drafts_SourceQuote", design.FindEntityType(typeof(DraftRow))!.GetCheckConstraints().Select(check => check.Name));
+        // SAT-D25 / SAT-D24: the two new quote commands record in the quote's attempt table; the retired v1 loss stays admitted.
+        foreach (var command in new[] { SalesQuoteCommands.LoseV1, SalesQuoteCommands.LoseV2, SalesQuoteCommands.ApproveExpiredConversionV1 })
+        {
+            Assert.Contains($"N'{command}'", SalesDbContext.QuoteAttemptCommandConstraint, StringComparison.Ordinal);
+        }
+
+        var approvalChecks = design.FindEntityType(typeof(QuoteExpiryApprovalRow))!.GetCheckConstraints().ToDictionary(check => check.Name!, check => check.Sql);
+        Assert.Equal("[ValidUntil] < [BusinessDay]", approvalChecks["CK_QuoteExpiryApprovals_Expired"]);
     }
 
     [Theory]
     [InlineData("revise")]
     [InlineData("lose")]
+    [InlineData("lose-with-list-reason")]
+    [InlineData("approve-expired")]
     [InlineData("convert")]
     [InlineData("deactivate-link")]
     public void A_lifecycle_step_passes_the_write_guard(string step)
@@ -119,6 +136,25 @@ public sealed class SalesQuotePersistenceModelTests
                 lost.LostAtUtc = At.AddMinutes(1);
                 lost.Version = 2;
                 lost.UpdatedAtUtc = At.AddMinutes(1);
+                break;
+            case "lose-with-list-reason":
+                var listed = Attach(context, Quote(1));
+                listed.State = 3;
+                listed.LossReasonId = Guid.NewGuid();
+                listed.LossReasonCode = "SENTETIK-FIYAT";
+                listed.LossReasonLabel = "Sentetik fiyat";
+                listed.LossReasonProfileId = Guid.NewGuid();
+                listed.LossReasonProfileVersion = 1;
+                listed.LostBy = "SENTETIK-seller";
+                listed.LostAtUtc = At.AddMinutes(1);
+                listed.Version = 2;
+                listed.UpdatedAtUtc = At.AddMinutes(1);
+                break;
+            case "approve-expired":
+                var approved = Attach(context, Quote(1));
+                approved.Version = 2;
+                approved.UpdatedAtUtc = At.AddMinutes(1);
+                context.QuoteExpiryApprovals.Add(Approval());
                 break;
             case "convert":
                 var converted = Attach(context, Quote(1));
@@ -152,6 +188,9 @@ public sealed class SalesQuotePersistenceModelTests
     [InlineData("other-company")]
     [InlineData("attempt-update")]
     [InlineData("attempt-delete")]
+    [InlineData("approval-update")]
+    [InlineData("approval-delete")]
+    [InlineData("loss-reason-on-open")]
     public void Anything_else_on_a_quote_its_revisions_lines_links_or_an_orders_source_is_refused_before_the_database(string fault)
     {
         using var context = Context();
@@ -207,6 +246,18 @@ public sealed class SalesQuotePersistenceModelTests
             case "attempt-delete":
                 context.Remove(Attach(context, Attempt()));
                 break;
+            case "approval-update":
+                Attach(context, Approval()).Note = "SENTETIK sonradan";
+                break;
+            case "approval-delete":
+                context.Remove(Attach(context, Approval()));
+                break;
+            case "loss-reason-on-open":
+                // SAT-D25's entry snapshot moves only with the loss (Open → Lost); reopening a lost quote is refused before the database.
+                var reopened = Attach(context, Quote(3));
+                reopened.State = 1;
+                reopened.LossReasonId = Guid.NewGuid();
+                break;
         }
 
         Assert.Throws<InvalidOperationException>(() => context.SaveChanges());
@@ -238,6 +289,23 @@ public sealed class SalesQuotePersistenceModelTests
         Assert.Contains("CREATE TRIGGER [sales].[TR_QuoteAttempts_RejectMutation]", trigger.Sql, StringComparison.Ordinal);
         Assert.Contains("AFTER UPDATE, DELETE", trigger.Sql, StringComparison.Ordinal);
         Assert.Contains("THROW 51068,", trigger.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void The_follow_up_migration_down_refuses_with_51117_before_it_drops_anything_and_its_up_rewrites_no_row()
+    {
+        var down = new AddSalesQuoteExpiryApprovalsAndLossReasons().DownOperations;
+        var guard = Assert.IsType<SqlOperation>(down[0]);
+        Assert.Contains("EXISTS (SELECT 1 FROM [sales].[QuoteExpiryApprovals])", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[LossReasonId] IS NOT NULL", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("N'sales.quote.lose.v2'", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("N'sales.quote.approve-expired-conversion.v1'", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("THROW 51117,", guard.Sql, StringComparison.Ordinal);
+        Assert.All(down.Skip(1), operation => Assert.IsNotType<SqlOperation>(operation));
+        var up = new AddSalesQuoteExpiryApprovalsAndLossReasons().UpOperations;
+        Assert.Contains(up, operation => operation is CreateTableOperation { Schema: "sales", Name: "QuoteExpiryApprovals" });
+        Assert.All(up.OfType<AddColumnOperation>(), column => Assert.True(column.IsNullable && column.Table == "Quotes"));
+        Assert.DoesNotContain(up, operation => operation is SqlOperation or UpdateDataOperation or DeleteDataOperation);
     }
 
     [Fact]
@@ -280,6 +348,12 @@ public sealed class SalesQuotePersistenceModelTests
         CompanyId = CompanyA, CommandName = SalesQuoteCommands.CreateV1, IdempotencyKeyHash = new string('A', 64),
         RequestHash = new string('0', 64), ActorId = "SENTETIK-preparer", Outcome = 1, QuoteId = Guid.NewGuid(),
         CorrelationId = "SENTETIK-correlation", RecordedAtUtc = At,
+    };
+
+    private static QuoteExpiryApprovalRow Approval() => new()
+    {
+        CompanyId = CompanyA, QuoteId = Guid.NewGuid(), Revision = 0, ValidUntil = new DateOnly(2026, 10, 28),
+        BusinessDay = new DateOnly(2026, 10, 30), ApprovedBy = "SENTETIK-manager", ApprovedAtUtc = At, CorrelationId = "SENTETIK-correlation",
     };
 
     private static QuoteRevisionRow Revision() => new()

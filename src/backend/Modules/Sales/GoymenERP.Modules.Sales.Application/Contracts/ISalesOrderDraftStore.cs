@@ -316,6 +316,15 @@ public interface ISalesOrderDraftStore
         InternalApprovalState? approvalState = null);
 
     /// <summary>
+    /// SAT-D103 (EK13): the company's drafts whose lines physical shipping may act on — lifecycle
+    /// <see cref="SalesDraftState.Draft"/> and either the current revision approved or an earlier approved revision archived
+    /// (a revision awaiting re-approval, or rejected) — newest first, by the same opaque company-bound cursor as
+    /// <see cref="ListDraftsAsync"/> (pageSize 1–100). Read-only; another company's drafts are invisible. The Sales line port
+    /// decides per line what it answers.
+    /// </summary>
+    Task<SalesDraftPage> ListShippableDraftsAsync(int pageSize, string? cursor, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// MOD-01 / API-06: the company's orders of one customer account whose APPROVED commitment is still open — lifecycle
     /// <see cref="SalesDraftState.Draft"/> (neither cancelled nor closed) and either the current revision approved or an earlier
     /// approved revision archived (a revision awaiting re-approval) — oldest first, at most <paramref name="take"/> (the caller

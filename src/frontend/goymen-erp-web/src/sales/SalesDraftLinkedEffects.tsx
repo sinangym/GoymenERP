@@ -44,6 +44,8 @@ export interface SalesDraftLinkedEffectsProps {
   /** The version of the detail these lines came from: a loading answer of any other version is not this order's. */
   readonly draftVersion: string
   readonly lines: readonly DraftLine[]
+  /** SAT-D104: the detail is above Rev.0 (instructions of an earlier approved quantity may stand above the current one). */
+  readonly revised?: boolean
 }
 
 export function SalesDraftLinkedEffects(props: SalesDraftLinkedEffectsProps) {
@@ -168,7 +170,7 @@ function LinkedAllocationLine({ companyId, namespace, routeEntryGeneration, sale
 }
 
 /** The order's loading facts: one read for all lines, shown only as the facts of this exact detail. */
-function LinkedLoading({ companyId, namespace, routeEntryGeneration, salesOrderId, draftVersion, lines }: SalesDraftLinkedEffectsProps) {
+function LinkedLoading({ companyId, namespace, routeEntryGeneration, salesOrderId, draftVersion, lines, revised }: SalesDraftLinkedEffectsProps) {
   const boundary = useAuthBoundary()
   const query = useQuery({
     queryKey: [namespace, routeEntryGeneration, 'sales-draft-loading-progress', salesOrderId, draftVersion] as const,
@@ -179,7 +181,7 @@ function LinkedLoading({ companyId, namespace, routeEntryGeneration, salesOrderI
     refetchOnWindowFocus: false,
     queryFn: async ({ signal }) => {
       const snapshot = boundary.capture()
-      const outcome = await fetchDraftLoadingProgress(salesOrderId, { draftVersion, lines }, companyId, signal)
+      const outcome = await fetchDraftLoadingProgress(salesOrderId, { draftVersion, lines, revised }, companyId, signal)
       if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
       return signal.aborted ? { type: 'fence-stale' as const } : outcome
     },

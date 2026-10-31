@@ -188,6 +188,18 @@ public static class SalesRuleCodes
     public const string RemainderNone = "sales_remainder_none";
     /// <summary>The new quantity is below what the delivery owner has loaded (loaded ≥ shipped ≥ delivered): never reduced below it.</summary>
     public const string RemainderBelowFloor = "sales_remainder_below_floor";
+    /// <summary>
+    /// SAT-D104 (EK13): a quantity revision may not take a line below what the delivery owner (Logistics) has already SHIPPED
+    /// for it; refused on that line.
+    /// </summary>
+    public const string RevisionBelowShipped = "sales_revision_below_shipped";
+    /// <summary>
+    /// SAT-D112 (EK14): a decrease may not take a line below its LOADED total (shipped + waiting on the vehicle, Logistics'
+    /// cumulative loaded): a load already on the vehicle above the new quantity would otherwise only be stopped by Logistics'
+    /// shipment-time cap (the safety net). Refused on that line, at the revision and again at the re-approval's submission and
+    /// approval.
+    /// </summary>
+    public const string RevisionBelowLoaded = "sales_revision_below_loaded";
     /// <summary>The revised quantity equals the current one: an approval is not asked for nothing.</summary>
     public const string RemainderNoChange = "sales_remainder_no_change";
     /// <summary>The command names a line the order does not have.</summary>
@@ -219,17 +231,24 @@ public static class SalesRuleCodes
     public const string QuoteValidUntilBeforeDate = "sales_quote_valid_until_before_date";
     /// <summary>A quote names the same request twice, or more requests than the technical bound.</summary>
     public const string QuoteRequestsInvalid = "sales_quote_requests_invalid";
-    /// <summary>A loss carries its reason (free text today; SAT-D25's closed Settings list is a follow-up); a blank reason is refused, never defaulted.</summary>
+    /// <summary>
+    /// A loss carries its reason: SAT-D25's entry of the Settings list, and the free-text explanation when that entry asks for
+    /// one (the list's own flag); a blank explanation where one is required is refused, never defaulted.
+    /// </summary>
     public const string QuoteLossReasonRequired = "sales_quote_loss_reason_required";
-    /// <summary>A loss reason over the technical bound (the note's) is refused, never cut.</summary>
+    /// <summary>A loss explanation over the technical bound (the note's) is refused, never cut.</summary>
     public const string QuoteLossReasonTooLong = "sales_quote_loss_reason_too_long";
     /// <summary>No 160: an order is not opened from a quote while any request it covers is not approved (default-deny).</summary>
     public const string QuoteRequestNotApproved = "sales_quote_request_not_approved";
     /// <summary>
-    /// SAT-D24 (interim): the quote's validity date precedes the conversion's business date. SAT-D24 converts such a quote only
-    /// with a manager approval, which is a follow-up; until it exists the conversion is refused (fail-closed).
+    /// SAT-D24: the quote's validity date precedes the SERVER's business day (Europe/Istanbul, SAT-D10 — never a client date)
+    /// and its current revision carries no recorded expired-quote approval (SAT-D44); the conversion is refused.
     /// </summary>
     public const string QuoteExpired = "sales_quote_expired";
+    /// <summary>SAT-D24: an expired-quote approval is asked for a quote that is not expired on the server's business day.</summary>
+    public const string QuoteNotExpired = "sales_quote_not_expired";
+    /// <summary>SAT-D24: the quote's current revision already carries an expired-quote approval (one per revision).</summary>
+    public const string QuoteExpiryAlreadyApproved = "sales_quote_expiry_already_approved";
 
     public const string TooManySlices = "sales_too_many_slices";
     public const string DuplicateSliceId = "sales_duplicate_slice_id";

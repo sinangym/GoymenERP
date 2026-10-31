@@ -269,6 +269,11 @@ export interface CustomerReturns {
 export interface LoadingProgressBinding {
   readonly draftVersion: string
   readonly lines: readonly Pick<DraftLine, 'lineId' | 'lineNo' | 'orderUnitId' | 'quantity'>[]
+  /**
+   * SAT-D104 (EK13): the detail is above Rev.0 — a loading instruction made under an earlier APPROVED quantity may stand
+   * above the current (e.g. a decreased, pending) one, so `instructed ≤ ordered` is not required; the rest of the chain is.
+   */
+  readonly revised?: boolean
 }
 
 /** `SalesDraftApprovalV1`: who submitted / decided and when; null until it happened. Facts, never derived. */
@@ -553,6 +558,9 @@ export const SALES_PROBLEM_CODE = {
   // longer is the preview the command named.
   forceCloseBlocked: 'sales_force_close_blocked',
   forceCloseImpactChanged: 'sales_force_close_impact_changed',
+  // SAT-D71 (EK12): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at an order create and
+  // at a quote conversion (422 `validation_failed`, field `businessDate`); today or a later date is accepted.
+  businessDateBeforeBusinessDay: 'sales_business_date_before_business_day',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]
@@ -1303,7 +1311,8 @@ const isCountOfLines = (v: unknown): v is number =>
  * DEC-SAL-005: `SalesOrderDraftLoadingProgressResponse` (#684), read exactly — and only as the loading facts OF the
  * detail on screen: the same version, and every line of that detail exactly once with its own number, order unit and
  * quantity text (a missing, extra, repeated or foreign line refuses the whole answer). Decimal text stays text. The
- * owner's order holds on every line — delivered ≤ shipped ≤ loaded ≤ instructed ≤ ordered — and a line has instruction
+ * owner's order holds on every line — delivered ≤ shipped ≤ loaded ≤ instructed ≤ ordered (above Rev.0 the last step is not
+ * required, SAT-D104: an instruction made under an earlier approved quantity may exceed a decreased one) — and a line has instruction
  * lines exactly when something was instructed. A body that does not fit is not shown as quantities.
  */
 export function decodeLoadingProgress(value: unknown, bound: LoadingProgressBinding): LoadingProgress | null {
@@ -1323,7 +1332,7 @@ export function decodeLoadingProgress(value: unknown, bound: LoadingProgressBind
       !isRevisionDecimal(o.instructed, false) || !isRevisionDecimal(o.loaded, false) ||
       !isRevisionDecimal(o.shipped, false) || !isRevisionDecimal(o.delivered, false) ||
       compareDecimalText(o.delivered, o.shipped) > 0 || compareDecimalText(o.shipped, o.loaded) > 0 ||
-      compareDecimalText(o.loaded, o.instructed) > 0 || compareDecimalText(o.instructed, o.ordered) > 0 ||
+      compareDecimalText(o.loaded, o.instructed) > 0 || (bound.revised !== true && compareDecimalText(o.instructed, o.ordered) > 0) ||
       // Instruction lines exist exactly when a quantity was instructed.
       (o.loadingInstructionLines === 0) !== !/[1-9]/.test(o.instructed)
     ) return null

@@ -12,8 +12,9 @@
  *
  * A decoder returns null for anything it cannot vouch for; the caller fails closed.
  *
- * Open policies are NOT encoded here (no approver count, no quote validity enforcement, no closed loss-reason list, no
- * price permission choice): the server decides and these decoders only read what it answers.
+ * Open policies are NOT encoded here (no approver count, no validity day count, no loss-reason values, no price permission
+ * choice): the server decides — the SAT-D25 loss reasons and the SAT-D39 default validity are Settings records the server
+ * reads — and these decoders only read what it answers.
  */
 
 import { LIMITS, type PriceDisclosure } from './contract'
@@ -29,8 +30,13 @@ export const salesRequestDecisionPath = (id: string, command: SalesRequestDecisi
 
 export const SALES_QUOTE_PATH = '/sales/quotes'
 export const salesQuoteDetailPath = (id: string) => `${SALES_QUOTE_PATH}/${encodeURIComponent(id)}`
-export type SalesQuoteCommand = 'revision' | 'loss' | 'conversion'
+export type SalesQuoteCommand = 'revision' | 'loss' | 'conversion' | 'expiry-approval'
 export const salesQuoteCommandPath = (id: string, command: SalesQuoteCommand) => `${salesQuoteDetailPath(id)}/${command}`
+/** SAT-D25: the company's closed loss reason list in force on the server's business day. */
+export const SALES_QUOTE_LOSS_REASONS_PATH = `${SALES_QUOTE_PATH}/loss-reasons`
+/** SAT-D39: the default validity suggested for a new quote on its business date. */
+export const salesQuoteValiditySuggestionPath = (businessDate: string) =>
+  `${SALES_QUOTE_PATH}/validity-suggestion?${new URLSearchParams({ businessDate }).toString()}`
 
 /** `SalesRequestApiV1` / `SalesQuoteApiV1`: a create (and the conversion) answers 201; every other command 200. */
 export const POOL_CREATED_STATUS = 201
@@ -124,10 +130,20 @@ export interface SalesQuoteRevisionBody {
   readonly note: string | null
 }
 
-/** `SalesQuoteLossRequest`: the free-text reason is required (no closed reason list is decided). */
+/**
+ * `SalesQuoteLossRequestV2` (SAT-D25; retires the free-text v1): an entry of the Settings loss reason list and the
+ * explanation — required when the entry says so (`requiresExplanation`), otherwise optional (null).
+ */
 export interface SalesQuoteLossBody {
   readonly expectedVersion: string
-  readonly reason: string
+  readonly reasonId: string
+  readonly explanation: string | null
+}
+
+/** `SalesQuoteExpiryApprovalRequest` (SAT-D24 / SAT-D44): approve converting the expired quote's current revision. */
+export interface SalesQuoteExpiryApprovalBody {
+  readonly expectedVersion: string
+  readonly note: string | null
 }
 
 /** `SalesQuoteConversionRequest`: "Siparişe dönüştür" — the quote's version and the order's business date. */
@@ -226,10 +242,42 @@ export interface SalesQuoteLine {
   readonly note: string | null
 }
 
+/**
+ * The recorded loss. SAT-D25: `reasonId` / `reasonCode` / `reasonLabel` name the Settings list entry and `reason` is the
+ * explanation (null when none was needed). A loss recorded before SAT-D25 has no entry and its free text is `reason`.
+ */
 export interface SalesQuoteLoss {
-  readonly reason: string
+  readonly reason: string | null
   readonly lostBy: string
   readonly lostAtUtc: string
+  readonly reasonId: string | null
+  readonly reasonCode: string | null
+  readonly reasonLabel: string | null
+}
+
+/** SAT-D44 (1): one recorded revision — who wrote it (Rev.0: who created the quote), when, and its validity date. */
+export interface SalesQuoteRevisionRecord {
+  readonly revision: string
+  readonly validUntil: string | null
+  readonly revisedBy: string
+  readonly revisedAtUtc: string
+}
+
+/** SAT-D24 / SAT-D44 (1): one recorded expired-quote approval. */
+export interface SalesQuoteExpiryApproval {
+  readonly revision: string
+  readonly validUntil: string
+  readonly businessDay: string
+  readonly approvedBy: string
+  readonly approvedAtUtc: string
+  readonly note: string | null
+}
+
+/** SAT-D24, measured by the server at the read on ITS business day (Europe/Istanbul). */
+export interface SalesQuoteExpiry {
+  readonly businessDay: string
+  readonly isExpired: boolean
+  readonly isApproved: boolean
 }
 
 export interface SalesQuoteConversion {
@@ -246,6 +294,36 @@ export interface SalesQuoteDetail {
   readonly lines: readonly SalesQuoteLine[]
   readonly loss: SalesQuoteLoss | null
   readonly conversion: SalesQuoteConversion | null
+  readonly createdBy: string
+  readonly revisions: readonly SalesQuoteRevisionRecord[]
+  readonly expiryApprovals: readonly SalesQuoteExpiryApproval[]
+  readonly expiry: SalesQuoteExpiry
+}
+
+/** SAT-D25: one selectable loss reason (an active entry of the list in force). */
+export interface SalesQuoteLossReasonOption {
+  readonly reasonId: string
+  readonly code: string
+  readonly label: string
+  readonly requiresExplanation: boolean
+}
+
+/** SAT-D25: `isDefined` false (no reasons) when Settings holds no list — the loss is then refused by the server. */
+export interface SalesQuoteLossReasons {
+  readonly businessDay: string
+  readonly isDefined: boolean
+  readonly profileId: string | null
+  readonly profileVersion: string | null
+  readonly reasons: readonly SalesQuoteLossReasonOption[]
+}
+
+/** SAT-D39: the default validity suggestion; every member but the date null = Settings holds no value (no suggestion). */
+export interface SalesQuoteValiditySuggestion {
+  readonly businessDate: string
+  readonly validityDays: number | null
+  readonly suggestedValidUntil: string | null
+  readonly profileId: string | null
+  readonly profileVersion: string | null
 }
 
 export interface SalesQuoteMutation {
@@ -274,8 +352,12 @@ export const POOL_PROBLEM_CODE = {
   quoteLossReasonTooLong: 'sales_quote_loss_reason_too_long',
   quoteValidUntilBeforeDate: 'sales_quote_valid_until_before_date',
   quoteWithoutLines: 'sales_quote_without_lines',
-  // SAT-D24 interim (#828): a quote past its validity date is not converted until the manager-approval step exists.
+  // SAT-D24: a quote past its validity date (on the SERVER's business day) converts only with a recorded approval.
   quoteExpired: 'sales_quote_expired',
+  quoteNotExpired: 'sales_quote_not_expired',
+  quoteExpiryAlreadyApproved: 'sales_quote_expiry_already_approved',
+  // SAT-D25: the loss names an active entry of the Settings list.
+  quoteLossReasonUnknown: 'sales_quote_loss_reason_unknown',
 } as const
 export type PoolProblemCode = (typeof POOL_PROBLEM_CODE)[keyof typeof POOL_PROBLEM_CODE]
 
@@ -562,9 +644,74 @@ function decodeQuoteLine(value: unknown): SalesQuoteLine | null {
 }
 
 function decodeLoss(value: unknown): SalesQuoteLoss | null {
-  const o = exact(value, ['reason', 'lostBy', 'lostAtUtc'])
-  if (o === null || !isFilledText(o.reason, LIMITS.note) || !isActor(o.lostBy) || !isInstant(o.lostAtUtc)) return null
-  return { reason: o.reason, lostBy: o.lostBy, lostAtUtc: o.lostAtUtc }
+  const o = exact(value, ['reason', 'lostBy', 'lostAtUtc', 'reasonId', 'reasonCode', 'reasonLabel'])
+  if (o === null || !isNullable(o.reason, (v): v is string => isFilledText(v, LIMITS.note)) || !isActor(o.lostBy) || !isInstant(o.lostAtUtc)) return null
+  // Either a SAT-D25 entry with its code and label (the explanation optional), or a loss recorded before it (no entry,
+  // its free text is the reason). Half an entry is neither.
+  const listed = isReferenceId(o.reasonId) && isFilledText(o.reasonCode, 64) && isFilledText(o.reasonLabel, 200)
+  const legacy = o.reasonId === null && o.reasonCode === null && o.reasonLabel === null && o.reason !== null
+  if (!listed && !legacy) return null
+  return {
+    reason: o.reason as string | null,
+    lostBy: o.lostBy,
+    lostAtUtc: o.lostAtUtc,
+    reasonId: listed ? (o.reasonId as string) : null,
+    reasonCode: listed ? (o.reasonCode as string) : null,
+    reasonLabel: listed ? (o.reasonLabel as string) : null,
+  }
+}
+
+function decodeRevisionRecords(value: unknown, currentRevision: string): readonly SalesQuoteRevisionRecord[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  const records: SalesQuoteRevisionRecord[] = []
+  for (const [index, entry] of value.entries()) {
+    const o = exact(entry, ['revision', 'validUntil', 'revisedBy', 'revisedAtUtc'])
+    // Rev.0, Rev.1, … in order: who created the quote and who wrote each revision.
+    if (o === null || o.revision !== `Rev.${index}` || !isNullable(o.validUntil, isDateOnly) || !isActor(o.revisedBy) || !isInstant(o.revisedAtUtc)) {
+      return null
+    }
+    records.push({ revision: o.revision, validUntil: o.validUntil, revisedBy: o.revisedBy, revisedAtUtc: o.revisedAtUtc })
+  }
+  return records[records.length - 1].revision === currentRevision ? records : null
+}
+
+function decodeExpiryApprovals(value: unknown): readonly SalesQuoteExpiryApproval[] | null {
+  if (!Array.isArray(value)) return null
+  const approvals: SalesQuoteExpiryApproval[] = []
+  const revisions = new Set<string>()
+  for (const entry of value) {
+    const o = exact(entry, ['revision', 'validUntil', 'businessDay', 'approvedBy', 'approvedAtUtc', 'note'])
+    if (
+      o === null ||
+      !isText(o.revision, 20) ||
+      !REVISION_RE.test(o.revision) ||
+      revisions.has(o.revision) ||
+      !isDateOnly(o.validUntil) ||
+      !isDateOnly(o.businessDay) ||
+      !(o.validUntil < o.businessDay) ||
+      !isActor(o.approvedBy) ||
+      !isInstant(o.approvedAtUtc) ||
+      !isNullable(o.note, (v): v is string => isFilledText(v, LIMITS.note))
+    ) {
+      return null
+    }
+    revisions.add(o.revision)
+    approvals.push({
+      revision: o.revision,
+      validUntil: o.validUntil,
+      businessDay: o.businessDay,
+      approvedBy: o.approvedBy,
+      approvedAtUtc: o.approvedAtUtc,
+      note: o.note as string | null,
+    })
+  }
+  return approvals
+}
+
+function decodeExpiry(value: unknown): SalesQuoteExpiry | null {
+  const o = exact(value, ['businessDay', 'isExpired', 'isApproved'])
+  if (o === null || !isDateOnly(o.businessDay) || typeof o.isExpired !== 'boolean' || typeof o.isApproved !== 'boolean') return null
+  return { businessDay: o.businessDay, isExpired: o.isExpired, isApproved: o.isApproved }
 }
 
 function decodeConversion(value: unknown): SalesQuoteConversion | null {
@@ -585,7 +732,10 @@ function decodeRequestIds(value: unknown): readonly string[] | null {
 
 /** `expectedId`: the record the caller asked for. A detail of another record is not an answer. */
 export function decodeQuoteDetail(value: unknown, expectedId: string | null): SalesQuoteDetail | null {
-  const o = exact(value, ['quote', 'requestIds', 'requestedDeliveryDate', 'note', 'lines', 'loss', 'conversion'])
+  const o = exact(value, [
+    'quote', 'requestIds', 'requestedDeliveryDate', 'note', 'lines', 'loss', 'conversion', 'createdBy', 'revisions', 'expiryApprovals',
+    'expiry',
+  ])
   if (o === null) return null
   const quote = decodeQuoteSummary(o.quote)
   if (quote === null || (expectedId !== null && quote.id !== expectedId)) return null
@@ -604,8 +754,80 @@ export function decodeQuoteDetail(value: unknown, expectedId: string | null): Sa
       : quote.state === QUOTE_STATE.lost
         ? loss !== null && conversion === null
         : loss === null && conversion !== null && conversion.draftId === quote.convertedDraftId
-  if (!consistent) return null
-  return { quote, requestIds, requestedDeliveryDate: o.requestedDeliveryDate, note: o.note, lines, loss, conversion }
+  if (!consistent || !isActor(o.createdBy)) return null
+  const revisions = decodeRevisionRecords(o.revisions, quote.revision)
+  const expiryApprovals = decodeExpiryApprovals(o.expiryApprovals)
+  const expiry = decodeExpiry(o.expiry)
+  if (revisions === null || expiryApprovals === null || expiry === null || revisions[0].revisedBy !== o.createdBy) return null
+  // SAT-D24: "approved" means an approval of the CURRENT revision is on record; the two answers agree or neither is shown.
+  if (expiry.isApproved !== expiryApprovals.some((approval) => approval.revision === quote.revision)) return null
+  // Expired is the server's word, on its own day; a quote without a validity date never expires.
+  if (expiry.isExpired !== (quote.validUntil !== null && quote.validUntil < expiry.businessDay)) return null
+  return {
+    quote,
+    requestIds,
+    requestedDeliveryDate: o.requestedDeliveryDate,
+    note: o.note,
+    lines,
+    loss,
+    conversion,
+    createdBy: o.createdBy,
+    revisions,
+    expiryApprovals,
+    expiry,
+  }
+}
+
+/** SAT-D25: the list read; a malformed entry or a repeated id refuses the whole list. */
+export function decodeQuoteLossReasons(value: unknown): SalesQuoteLossReasons | null {
+  const o = exact(value, ['businessDay', 'isDefined', 'profileId', 'profileVersion', 'reasons'])
+  if (
+    o === null ||
+    !isDateOnly(o.businessDay) ||
+    typeof o.isDefined !== 'boolean' ||
+    !isNullable(o.profileId, isReferenceId) ||
+    !isNullable(o.profileVersion, (v): v is string => isText(v, 20)) ||
+    !Array.isArray(o.reasons)
+  ) {
+    return null
+  }
+  const reasons: SalesQuoteLossReasonOption[] = []
+  const ids = new Set<string>()
+  for (const entry of o.reasons) {
+    const r = exact(entry, ['reasonId', 'code', 'label', 'requiresExplanation'])
+    if (r === null || !isReferenceId(r.reasonId) || ids.has(r.reasonId) || !isFilledText(r.code, 64) || !isFilledText(r.label, 200)
+      || typeof r.requiresExplanation !== 'boolean') {
+      return null
+    }
+    ids.add(r.reasonId)
+    reasons.push({ reasonId: r.reasonId, code: r.code, label: r.label, requiresExplanation: r.requiresExplanation })
+  }
+  // Not defined ⇒ nothing to choose; defined ⇒ its version is named.
+  if (o.isDefined ? o.profileId === null || o.profileVersion === null : reasons.length > 0 || o.profileId !== null) return null
+  return { businessDay: o.businessDay, isDefined: o.isDefined, profileId: o.profileId, profileVersion: o.profileVersion, reasons }
+}
+
+/** SAT-D39: the suggestion read; all four Settings members are present together or absent together. */
+export function decodeQuoteValiditySuggestion(value: unknown, businessDate: string): SalesQuoteValiditySuggestion | null {
+  const o = exact(value, ['businessDate', 'validityDays', 'suggestedValidUntil', 'profileId', 'profileVersion'])
+  if (o === null || o.businessDate !== businessDate) return null
+  const none = o.validityDays === null && o.suggestedValidUntil === null && o.profileId === null && o.profileVersion === null
+  const some =
+    typeof o.validityDays === 'number' &&
+    Number.isInteger(o.validityDays) &&
+    o.validityDays > 0 &&
+    isDateOnly(o.suggestedValidUntil) &&
+    o.suggestedValidUntil > businessDate &&
+    isReferenceId(o.profileId) &&
+    isText(o.profileVersion, 20)
+  if (!none && !some) return null
+  return {
+    businessDate,
+    validityDays: some ? (o.validityDays as number) : null,
+    suggestedValidUntil: some ? (o.suggestedValidUntil as string) : null,
+    profileId: some ? (o.profileId as string) : null,
+    profileVersion: some ? (o.profileVersion as string) : null,
+  }
 }
 
 export function decodeQuoteMutation(value: unknown): SalesQuoteMutation | null {
