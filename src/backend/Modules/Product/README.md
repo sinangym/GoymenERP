@@ -628,17 +628,20 @@ operations); the tenant-bypass guard pins (the new DbContext and the AuditEvent 
 registration's MigrateAsync branch, the migration's reviewed `Sql`); `MODULE_DEPENDENCY_ALLOWLIST.json`
 (Product.Infrastructure → Audit.Infrastructure, ADR-009); the three relational-inventory names.
 
-## Product tax classification (MOD-03, SAT-D73/D74/D82)
+## Product item type (MOD-03, EK19 SAT-D134)
 
-Sources: `docs/decisions/SINAN_KARARLARI_2026-10-28_SATIS_EK12.md` (SAT-D73/D74/D82: the product card carries a VAT CLASS and a
-withholding class, never a rate; the rates are the Settings tax master's dated records) and `…_EK13.md` (SAT-D93/D110).
+Source: `docs/decisions/SINAN_KARARLARI_2026-10-31_SATIS_EK19.md` (SAT-D134: the product card holds NO tax class and NO tax
+exception, only an ITEM TYPE — demir / hurda / hizmet; the tax is the Settings default for that type, SAT-D139, changeable on
+the order line, SAT-D93). It replaces the EK12 classification (`ProductTaxClassifications`, `product.tax-classification.manage`),
+which never reached main and is removed.
 
 | Concern | Rule |
 |---|---|
-| Owner and scope | Product, **company-scoped** (like the price lists, in `ProductPriceListDbContext`): `product.ProductTaxClassifications` (company, product, `VatClassId` required, `WithholdingClassId` optional — null = the product bears no withholding, SAT-D74 — version, update facts). The classes are the company's Settings tax categories, checked through `ISettingsTaxCategoryReaderV1` (kind and company) before anything is stored; no foreign key crosses into the Settings schema. |
-| Authority | ONE name, `product.tax-classification.manage` (`ProductTaxClassificationPermissionsV1.Manage` = `ErpPermissions.ProductTaxClassificationManage`): company-wide, not Critical, granted to NO role (who receives it is a human gate, NEEDS-SINAN). Measured fresh first and before the answer / save. |
-| Command | `PUT /api/v1/product-tax-classifications/{productId}` `{expectedVersion ("0" = none), vatClassId, withholdingClassId, reason}`: Idempotency-Key (own `ProductTaxClassificationAttempts`, SHA-256 key under a binary collation; same key + body replays, another body 409), stale version 409, unknown card code-less 404, wrong kind / another company's class 422, Settings unreachable 503; ONE audit event `product.tax-classification.changed.v1` with the whole reason; a no-op writes none. `GET` answers the classification (version "0" while none). |
-| Read port | `IProductTaxClassificationReaderV1` (access only, no permission; never throws for a missing card or classification) — consumed by the host's `SettingsProductTaxClassHost` for the Settings line tax port. |
-| Rollback | Migration `20261031130728_AddProductTaxClassifications` (`dotnet ef`): `Down` refuses with `THROW 51132` while any classification or command answer exists (forward fix). |
+| Owner and scope | Product, **company-scoped** (like the price lists, in `ProductPriceListDbContext`; EK19 open item: company vs. the global card was not asked — kept here, reversible): `product.ProductItemTypes` (company, product, `ItemType` `[ItemType] IN ('Steel','Scrap','Service')`, version, update facts). No rate and no code is stored on the product. |
+| Authority | ONE name, `product.item-type.manage` (`ProductItemTypePermissionsV1.Manage` = `ErpPermissions.ProductItemTypeManage`): company-wide, not Critical, granted to NO role (who receives it is a human gate, NEEDS-SINAN). Measured fresh first and before the answer / save. |
+| Command | `PUT /api/v1/product-item-types/{productId}` `{expectedVersion ("0" = none), itemType, reason}`: Idempotency-Key (own `ProductItemTypeAttempts`, SHA-256 key under a binary collation; same key + body replays, another body 409), stale version 409, unknown card code-less 404, unknown type 400; ONE audit event `product.item-type.changed.v1` with the whole reason; a no-op writes none. `GET` answers the item type (version "0" and null while none). |
+| Read port | `IProductItemTypeReaderV1` (access only, no permission; never throws for a missing card or item type) — consumed by the host's `SettingsProductItemTypeHost` for the Settings line tax port (`ISettingsLineTaxResolverV1.ResolveAsync`). |
+| Screen | The product card shows the item type and changes it (`ProductItemTypePanel`); without the permission the server answers 403 and the panel is hidden. |
+| Rollback | Migration `20261031195253_AddProductItemTypes` (`dotnet ef`): `Down` refuses with `THROW 51132` while any item type or command answer exists (forward fix). |
 
-Not here: the product card UI for the classes (follow-up of the frontend lane); a global (all-company) classification.
+Not here: a global (all-company) item type; choosing the order's buyer situation (SAT-D140, Sales follow-up).
