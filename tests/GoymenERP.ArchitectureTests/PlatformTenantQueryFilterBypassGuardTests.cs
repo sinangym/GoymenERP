@@ -352,8 +352,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // +1 rejected decrease resubmission fact (K3-REVIEW-B P1-1), kept ordinal-sorted (2b0ee4d9… -> ece55741…).
             // API-04: +4 header revision facts (route + one save, customer/currency through the store, isolation/authority,
             // migration backfill and 51133 rollback refusal), kept ordinal-sorted (ece55741… -> dbddfceb…).
+            // SAT-D126 review fix: +2 header revision facts (every revision's own audit reason; 51133's column arms alone),
+            // kept ordinal-sorted (dbddfceb… -> 1cf2afde…).
             ["tools/relational_inventory/sales.txt"] =
-                "dbddfceb757b4e0588656c456441505823bf88175a16e0a4840505603cfd528f",
+                "1cf2afdee8e8f98eff6c44dc13ef0d978596b587210afef9be2cc9c5f60591c7",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
