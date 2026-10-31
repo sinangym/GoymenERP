@@ -9,18 +9,22 @@ using GoymenERP.Modules.Counterparty.Application.Contracts;
 namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
-/// SAT-D102 e-belge profile on the Cari card (Sinan, 2026-10-28). Under the Counterparty group, so the client-contract
-/// filter, company context and private no-store apply as for every Cari route.
+/// SAT-D102 / SAT-D119 / SAT-D120 e-belge profile on the Cari card. The profile is the customer's group-level,
+/// VKN-keyed record (no CompanyId), reached ONLY through the active company's account for the party. Under the
+/// Counterparty group, so the client-contract filter, company context and private no-store apply as for every Cari route.
 /// <list type="bullet">
-/// <item><c>GET …/{partyId}/company-account/e-document</c> — the active company's account: e-Fatura / e-Arşiv status
-/// (Unknown until checked), who checked it and when, the customer scenario override, the Settings code list and
-/// default for today, and the effective scenario (override → Settings default → Unresolved).</item>
+/// <item><c>GET …/{partyId}/company-account/e-document</c> — the VKN-shared e-Fatura / e-Arşiv status (Unknown until
+/// checked), when it was checked (who, only inside the checking company), the scenario override, the active company's
+/// Settings code list and default for today, the effective scenario (override → Settings default → Unresolved), and the
+/// fence: the PROFILE version and the opaque profile token.</item>
 /// <item><c>PUT …/{partyId}/company-account/e-document/status</c> — record the status a user checked (204).</item>
 /// <item><c>PUT …/{partyId}/company-account/e-document/scenario</c> — set a listed scenario code as the customer's
 /// override, or clear it with an explicit null (204).</item>
 /// </list>
-/// Commands carry one Idempotency-Key and the ACCOUNT version as decimal text; the stored terminal answers replay for
-/// the same key and body. A Settings read that fails while validating a new override is 503 and stores nothing.
+/// Commands carry one Idempotency-Key and the fence the read returned (PROFILE version as decimal text, "0" creates,
+/// plus the profile token); the stored terminal answers replay for the same key and body. A party with no VKN is 422; a
+/// read of another profile than the one the client saw (e.g. after a VKN change) is 409. A Settings read that fails
+/// while validating a new override is 503 and stores nothing.
 /// </summary>
 public static partial class CounterpartyEndpoints
 {

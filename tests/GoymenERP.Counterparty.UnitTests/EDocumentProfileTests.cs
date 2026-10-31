@@ -13,6 +13,8 @@ public sealed class EDocumentProfileTests
 {
     private const string Vkn = "1234567890";
     private static readonly DateTimeOffset CheckedAt = new(2026, 10, 31, 9, 30, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset CreatedAt = new(2026, 10, 30, 8, 0, 0, TimeSpan.Zero);
+    private static readonly Guid CompanyA = Guid.Parse("8e1d5a2c-41f3-4c35-9a5b-6c8a0d4f2b11");
 
     [Fact]
     public void A_new_profile_is_Unknown_at_version_zero_and_the_first_change_moves_it_to_one()
@@ -26,7 +28,7 @@ public sealed class EDocumentProfileTests
         Assert.Null(profile.EInvoiceScenarioOverrideCode);
         // Version 0: a profile is only persisted after its first real change (then version 1).
         Assert.Equal(0, profile.Version);
-        Assert.True(profile.SetScenarioOverride("TEMELFATURA"));
+        Assert.True(profile.SetScenarioOverride("TEMELFATURA", CheckedAt));
         Assert.Equal(1, profile.Version);
     }
 
@@ -38,20 +40,20 @@ public sealed class EDocumentProfileTests
     [InlineData("12345678901234")]
     [InlineData("12345abcde")]
     public void An_invalid_tax_identity_number_is_refused(string? vkn) =>
-        Assert.ThrowsAny<ArgumentException>(() => new CustomerEDocumentProfile(Guid.NewGuid(), vkn!));
+        Assert.ThrowsAny<ArgumentException>(() => new CustomerEDocumentProfile(Guid.NewGuid(), vkn!, CreatedAt));
 
     [Fact]
     public void A_known_status_records_the_check_and_every_recheck_moves_the_version()
     {
         var profile = NewProfile();
 
-        Assert.True(profile.RecordStatus(EDocumentStatus.EInvoiceTaxpayer, " checker-1 ", CheckedAt));
+        Assert.True(profile.RecordStatus(EDocumentStatus.EInvoiceTaxpayer, " checker-1 ", CompanyA, CheckedAt));
         Assert.Equal(EDocumentStatus.EInvoiceTaxpayer, profile.EDocumentStatus);
         Assert.Equal(CheckedAt, profile.EDocumentStatusCheckedAtUtc);
         Assert.Equal("checker-1", profile.EDocumentStatusCheckedByUserId);
         Assert.Equal(1, profile.Version);
 
-        Assert.True(profile.RecordStatus(EDocumentStatus.EInvoiceTaxpayer, "checker-2", CheckedAt.AddDays(1)));
+        Assert.True(profile.RecordStatus(EDocumentStatus.EInvoiceTaxpayer, "checker-2", CompanyA, CheckedAt.AddDays(1)));
         Assert.Equal("checker-2", profile.EDocumentStatusCheckedByUserId);
         Assert.Equal(2, profile.Version);
     }
@@ -60,16 +62,39 @@ public sealed class EDocumentProfileTests
     public void Reset_to_Unknown_clears_the_check_and_Unknown_to_Unknown_is_a_no_op()
     {
         var profile = NewProfile();
-        Assert.False(profile.RecordStatus(EDocumentStatus.Unknown, "checker", CheckedAt));
+        Assert.False(profile.RecordStatus(EDocumentStatus.Unknown, "checker", CompanyA, CheckedAt));
         Assert.Equal(0, profile.Version);
 
-        profile.RecordStatus(EDocumentStatus.EArchive, "checker", CheckedAt);
-        Assert.True(profile.RecordStatus(EDocumentStatus.Unknown, "checker", CheckedAt));
+        profile.RecordStatus(EDocumentStatus.EArchive, "checker", CompanyA, CheckedAt);
+        Assert.True(profile.RecordStatus(EDocumentStatus.Unknown, "checker", CompanyA, CheckedAt));
         Assert.Equal(EDocumentStatus.Unknown, profile.EDocumentStatus);
         Assert.Null(profile.EDocumentStatusCheckedAtUtc);
         Assert.Null(profile.EDocumentStatusCheckedByUserId);
         Assert.Equal(2, profile.Version);
     }
+
+    [Fact]
+    public void Timestamps_come_from_the_caller_clock_and_the_checking_company_is_kept_until_reset()
+    {
+        var profile = NewProfile();
+        Assert.Equal(CreatedAt, profile.CreatedAtUtc);
+        Assert.Equal(CreatedAt, profile.UpdatedAtUtc);
+
+        profile.RecordStatus(EDocumentStatus.EArchive, "checker", CompanyA, CheckedAt);
+        Assert.Equal(CompanyA, profile.EDocumentStatusCheckedInCompanyId);
+        Assert.Equal(CheckedAt, profile.EDocumentStatusCheckedAtUtc);
+        Assert.Equal(CheckedAt, profile.UpdatedAtUtc);
+
+        var later = CheckedAt.AddHours(2);
+        Assert.True(profile.RecordStatus(EDocumentStatus.Unknown, "checker", CompanyA, later));
+        Assert.Null(profile.EDocumentStatusCheckedInCompanyId);
+        Assert.Equal(later, profile.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void A_known_status_without_a_checking_company_is_refused() =>
+        Assert.Throws<ArgumentException>(
+            () => NewProfile().RecordStatus(EDocumentStatus.EInvoiceTaxpayer, "checker", Guid.Empty, CheckedAt));
 
     [Theory]
     [InlineData(null)]
@@ -77,25 +102,25 @@ public sealed class EDocumentProfileTests
     [InlineData("   ")]
     public void A_known_status_without_a_checker_is_refused(string? checker) =>
         Assert.Throws<ArgumentException>(
-            () => NewProfile().RecordStatus(EDocumentStatus.EInvoiceTaxpayer, checker!, CheckedAt));
+            () => NewProfile().RecordStatus(EDocumentStatus.EInvoiceTaxpayer, checker!, CompanyA, CheckedAt));
 
     [Fact]
     public void An_undefined_status_is_refused() =>
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => NewProfile().RecordStatus((EDocumentStatus)7, "checker", CheckedAt));
+            () => NewProfile().RecordStatus((EDocumentStatus)7, "checker", CompanyA, CheckedAt));
 
     [Fact]
     public void The_override_is_set_cleared_and_an_unchanged_value_is_a_no_op()
     {
         var profile = NewProfile();
 
-        Assert.True(profile.SetScenarioOverride("TICARIFATURA"));
+        Assert.True(profile.SetScenarioOverride("TICARIFATURA", CheckedAt));
         Assert.Equal("TICARIFATURA", profile.EInvoiceScenarioOverrideCode);
-        Assert.False(profile.SetScenarioOverride("TICARIFATURA"));
+        Assert.False(profile.SetScenarioOverride("TICARIFATURA", CheckedAt));
         Assert.Equal(1, profile.Version);
-        Assert.True(profile.SetScenarioOverride(null));
+        Assert.True(profile.SetScenarioOverride(null, CheckedAt));
         Assert.Null(profile.EInvoiceScenarioOverrideCode);
-        Assert.False(profile.SetScenarioOverride(null));
+        Assert.False(profile.SetScenarioOverride(null, CheckedAt));
         Assert.Equal(2, profile.Version);
     }
 
@@ -107,13 +132,13 @@ public sealed class EDocumentProfileTests
     [InlineData("TİCARİ")]
     [InlineData("CODE-A")]
     public void A_malformed_override_is_refused(string code) =>
-        Assert.Throws<ArgumentException>(() => NewProfile().SetScenarioOverride(code));
+        Assert.Throws<ArgumentException>(() => NewProfile().SetScenarioOverride(code, CheckedAt));
 
     [Fact]
     public void A_33_character_override_is_refused_and_32_is_kept()
     {
-        Assert.Throws<ArgumentException>(() => NewProfile().SetScenarioOverride(new string('A', 33)));
-        Assert.True(NewProfile().SetScenarioOverride(new string('A', 32)));
+        Assert.Throws<ArgumentException>(() => NewProfile().SetScenarioOverride(new string('A', 33), CheckedAt));
+        Assert.True(NewProfile().SetScenarioOverride(new string('A', 32), CheckedAt));
     }
 
     [Fact]
@@ -192,5 +217,5 @@ public sealed class EDocumentProfileTests
         string? defaultCode) =>
         CounterpartyEInvoiceScenarioResolverV1.Resolve(overrideCode, listState, codes, defaultState, defaultCode);
 
-    private static CustomerEDocumentProfile NewProfile() => new(Guid.NewGuid(), Vkn);
+    private static CustomerEDocumentProfile NewProfile() => new(Guid.NewGuid(), Vkn, CreatedAt);
 }

@@ -273,12 +273,15 @@ public sealed class CounterpartyDbContext(
             table.HasCheckConstraint(
                 "CK_CustomerEDocumentProfiles_Version",
                 "[Version] >= 1");
-            // An explicit status: Unknown (0) carries no check; a known status (1, 2) carries both the time and checker.
+            // An explicit status: Unknown (0) carries no check; a known status (1, 2) carries the time, the checker and
+            // the company the check was recorded in (which alone decides who sees the checker, P3-1).
             table.HasCheckConstraint(
                 "CK_CustomerEDocumentProfiles_Status",
-                "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL)"
+                "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL"
+                + " AND [EDocumentStatusCheckedInCompanyId] IS NULL)"
                 + " OR ([EDocumentStatus] IN (1, 2) AND [EDocumentStatusCheckedAtUtc] IS NOT NULL"
-                + " AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0)");
+                + " AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0"
+                + " AND [EDocumentStatusCheckedInCompanyId] IS NOT NULL)");
             // The override's lexical shape only; WHICH codes exist is the Settings code list's business.
             table.HasCheckConstraint(
                 "CK_CustomerEDocumentProfiles_ScenarioOverrideCode",
@@ -300,6 +303,13 @@ public sealed class CounterpartyDbContext(
         entity.HasIndex(x => x.TaxIdentityNumber)
             .IsUnique()
             .HasDatabaseName("UX_CustomerEDocumentProfiles_TaxIdentityNumber");
+
+        // The checking company is a real company (not a tenant key of this group-wide row).
+        entity.HasOne<OrganizationCompanyReference>()
+            .WithMany()
+            .HasForeignKey(x => x.EDocumentStatusCheckedInCompanyId)
+            .OnDelete(DeleteBehavior.Restrict)
+            .HasConstraintName("FK_CustomerEDocumentProfiles_Companies_CheckedInCompanyId");
     }
 
     private static void ConfigureOrganizationCompanyReference(ModelBuilder modelBuilder)

@@ -53,8 +53,9 @@ public static class ErpPermissions
     public const string CounterpartyAccountsCustomerGroupAssign = "counterparty.accounts.customer-group.assign";
 
     /// <summary>
-    /// SAT-D102 (Sinan, 2026-10-28): record the e-belge (e-Fatura / e-Arşiv) status check and set or clear the
-    /// customer's e-Fatura scenario override on a Cari card's company account — the Counterparty owner's name
+    /// SAT-D102 / SAT-D119 (Sinan, 2026-10-28 and 2026-10-31): record the e-belge (e-Fatura / e-Arşiv) status check and
+    /// set or clear the e-Fatura scenario override of the customer's group-level, VKN-shared profile, through the active
+    /// company's account for the Cari card — the Counterparty owner's name
     /// (CounterpartyEDocumentPermissionsV1). Registered, not granted: no role, seed or user receives it here (human
     /// gate). Company-wide only, as every Counterparty name. Not Critical: no source makes it a grant-time dual-control
     /// duty. Deliberately not counterparty.parties.update.basic, so existing basic-edit grants are not widened.

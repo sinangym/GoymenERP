@@ -3,9 +3,10 @@ using System.Text.Json.Serialization;
 namespace GoymenERP.Modules.Counterparty.Application.Contracts;
 
 /// <summary>
-/// SAT-D102 permission name, the Counterparty owner's spelling. The central catalogue (ErpPermissions) registers it;
-/// registering grants nothing — no role, seed or user receives it (human gate). Company-wide only: the e-belge profile
-/// belongs to the server-resolved company's account. Not Critical. It is NOT the basic Cari edit
+/// SAT-D102 / SAT-D119 permission name, the Counterparty owner's spelling. The central catalogue (ErpPermissions)
+/// registers it; registering grants nothing — no role, seed or user receives it (human gate). Company-wide only: the
+/// group-level, VKN-shared e-belge profile is reached only through the server-resolved company's account for the party,
+/// and the name is measured in that company. Not Critical. It is NOT the basic Cari edit
 /// (<c>counterparty.parties.update.basic</c>): the e-belge status decides which official invoice type a customer gets,
 /// so reusing an already granted name would silently widen existing grants.
 /// </summary>
@@ -66,21 +67,29 @@ public enum CounterpartyEDocumentStatusV1
 }
 
 /// <summary>
-/// <c>expectedVersion</c> is the company ACCOUNT version (decimal text). A known status records a new check (today's
-/// check, by the caller) even when the value is unchanged; <c>Unknown</c> resets the status and its check.
+/// The fence of the VKN-shared profile (SAT-D119) is the PAIR the read returned: <c>expectedProfileToken</c> — an opaque
+/// value naming WHICH profile the client saw (bound to the party's VKN and the profile's identity; it also stands for
+/// "no profile existed for this VKN") — and <c>expectedVersion</c>, the shared PROFILE version as decimal text ("0" = no
+/// profile yet; the first write creates it). If the party's VKN changed meanwhile (OPEN-030), the token no longer
+/// matches and the command is 409 <c>version_conflict</c> even when the numbers agree (no ABA overwrite of another
+/// taxpayer's record). A known status records a new check (by the caller, in the active company) even when the value
+/// is unchanged; <c>Unknown</c> resets the status and its check.
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RecordCounterpartyEDocumentStatus(
     [property: JsonRequired] string ExpectedVersion,
+    [property: JsonRequired] string ExpectedProfileToken,
     [property: JsonRequired] CounterpartyEDocumentStatusV1 Status);
 
 /// <summary>
-/// <c>expectedVersion</c> is the company ACCOUNT version (decimal text). <c>scenarioCode</c> must be present: a code of
-/// the Settings scenario list in force today, or an explicit null to clear the override (the Settings default applies).
+/// Fenced as <see cref="RecordCounterpartyEDocumentStatus"/> (profile token + PROFILE version). <c>scenarioCode</c>
+/// must be present: a code of the acting company's Settings scenario list in force today, or an explicit null to clear
+/// the override (the Settings default applies).
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record SetCounterpartyEInvoiceScenarioOverride(
     [property: JsonRequired] string ExpectedVersion,
+    [property: JsonRequired] string ExpectedProfileToken,
     [property: JsonRequired] string? ScenarioCode);
 
 /// <summary>What a Settings key answered: a value, an empty key ("kaynak yok"), or a read that failed.</summary>
@@ -217,21 +226,27 @@ public sealed record CounterpartyAccountEDocumentViewer(bool CanUpdate);
 /// <summary>
 /// The active company's account of a Cari card and the customer's VKN-shared e-belge profile (SAT-D119).
 /// <c>taxIdentityNumberPresent</c> is false when the party has no VKN/TCKN: no profile can exist, the status is
-/// Unknown and the scenario is Unresolved (fail-closed), and both commands answer 422. <c>version</c> is the shared
-/// PROFILE version the commands are fenced on; it is "0" when no profile exists yet (the first write creates it).
-/// <c>statusCheckedAtUtc</c>/<c>statusCheckedByUserId</c> are null exactly when the status is Unknown.
-/// <c>evaluatedOn</c> is the Europe/Istanbul business day the Settings keys were read for.
+/// Unknown, the scenario is Unresolved (fail-closed), <c>profileToken</c> is null and both commands answer 422.
+/// <c>version</c> + <c>profileToken</c> are the fence the commands send back: the shared PROFILE version ("0" when no
+/// profile exists yet) and an opaque token naming which profile this read showed. <c>statusCheckedAtUtc</c> and
+/// <c>statusCheckedInActiveCompany</c> are null exactly when the status is Unknown. The checker is shown only inside the
+/// company the check was recorded in (<c>statusCheckedInActiveCompany</c> true; <c>statusCheckedByDisplayName</c> from
+/// the Identity directory, null when it cannot be resolved); another company sees only the date (SAT-D119 shares the
+/// check; who checked stays in the checking company). <c>evaluatedOn</c> is the Europe/Istanbul business day the
+/// Settings keys were read for.
 /// </summary>
 public sealed record CounterpartyAccountEDocumentView(
     Guid PartyId,
     Guid AccountId,
     Guid CompanyId,
     string Version,
+    string? ProfileToken,
     bool AccountIsActive,
     bool TaxIdentityNumberPresent,
     CounterpartyEDocumentStatusV1 Status,
     DateTimeOffset? StatusCheckedAtUtc,
-    string? StatusCheckedByUserId,
+    bool? StatusCheckedInActiveCompany,
+    string? StatusCheckedByDisplayName,
     string? ScenarioOverrideCode,
     DateOnly EvaluatedOn,
     CounterpartyEInvoiceScenarioCodesView ScenarioCodes,

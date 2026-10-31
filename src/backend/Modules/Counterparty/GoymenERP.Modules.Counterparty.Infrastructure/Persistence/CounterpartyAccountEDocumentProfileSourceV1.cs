@@ -75,9 +75,9 @@ public sealed class CounterpartyAccountEDocumentProfileSourceV1(
                     .Where(row => row.TaxIdentityNumber == taxIdentityNumber)
                     .Select(row => new
                     {
+                        row.Id,
                         row.EDocumentStatus,
                         row.EDocumentStatusCheckedAtUtc,
-                        row.EDocumentStatusCheckedByUserId,
                         row.EInvoiceScenarioOverrideCode,
                         row.Version,
                     })
@@ -106,11 +106,13 @@ public sealed class CounterpartyAccountEDocumentProfileSourceV1(
                     !string.IsNullOrEmpty(taxIdentityNumber),
                     CounterpartyCommandService.ToContract(status),
                     profile?.EDocumentStatusCheckedAtUtc,
-                    profile?.EDocumentStatusCheckedByUserId,
                     overrideCode,
                     effectiveOn,
                     effective,
-                    (profile?.Version ?? 0L).ToString(CultureInfo.InvariantCulture)));
+                    (profile?.Version ?? 0L).ToString(CultureInfo.InvariantCulture),
+                    string.IsNullOrEmpty(taxIdentityNumber)
+                        ? null
+                        : CounterpartyEDocumentProfileToken.Compute(taxIdentityNumber, profile?.Id)));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

@@ -19,13 +19,13 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// SAT-D102 / SAT-D119 (Sinan, 2026-10-28 and 2026-10-31) — the customer's e-belge profile, shared across the group by
-/// VKN/TCKN, against real SQL Server through the real API: the explicit Unknown status, the recorded check (time +
-/// checker), the VKN-keyed sharing (a check in one company is seen and editable on the same-VKN customer in another),
-/// the scenario override that only a Settings-listed code may fill (SAT-D120 seeds the standard set), the effective
-/// scenario (override → Settings default → Unresolved), the critical-command shape (company-wide permission,
-/// Idempotency-Key replay, profile-version fence, one audit per real change), the no-VKN fail-closed, company reach via
-/// the caller's own account, the read port, and the refused rollback.
+/// SAT-D102 / SAT-D119 / SAT-D120 (Sinan, 2026-10-28 and 2026-10-31) — the customer's e-belge profile, shared across the
+/// group by VKN/TCKN, against real SQL Server through the real API: the explicit Unknown status, the recorded check, the
+/// VKN-keyed sharing and its narrow reach (only through the caller's own account), the profile-bound fence (token +
+/// version: a VKN change is 409, never an ABA overwrite), the checker shown only inside the checking company, the
+/// Settings-listed override and the effective scenario, the critical-command shape (permission, Idempotency-Key per
+/// company, one audit per real change), concurrent first creation from two companies, the no-VKN fail-closed, the read
+/// port, and the refused rollback.
 /// </summary>
 public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTests
 {
@@ -33,6 +33,7 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
     private const string OtherVkn = "9876543217";
     private const string StatusEvent = "counterparty.customer-e-document.status.recorded.v1";
     private const string ScenarioEvent = "counterparty.customer-e-document.e-invoice-scenario.changed.v1";
+    private static readonly string NoToken = new('0', 64);
 
     [SqlServerFact]
     public async Task The_status_is_recorded_rechecked_and_reset_on_the_shared_profile_with_replay_and_version_fence()
@@ -45,18 +46,21 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         Assert.True(initial.GetProperty("taxIdentityNumberPresent").GetBoolean());
         Assert.Equal("Unknown", initial.GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, initial.GetProperty("statusCheckedAtUtc").ValueKind);
+        Assert.Equal(JsonValueKind.Null, initial.GetProperty("statusCheckedInActiveCompany").ValueKind);
         Assert.Equal("0", initial.GetProperty("version").GetString());
+        Assert.Matches("^[0-9a-f]{64}$", initial.GetProperty("profileToken").GetString());
         Assert.True(initial.GetProperty("viewer").GetProperty("canUpdate").GetBoolean());
         // SAT-D120: the standard code list is served; SAT-D102: the default is empty, so the scenario is unresolved.
-        Assert.Equal("Set", initial.GetProperty("scenarioCodes").GetProperty("state").GetString());
         Assert.Equal(["TEMELFATURA", "TICARIFATURA", "EARSIVFATURA", "IHRACAT"],
             initial.GetProperty("scenarioCodes").GetProperty("codes").EnumerateArray().Select(code => code.GetString()!).ToArray());
         Assert.Equal("NotSet", initial.GetProperty("settingsDefault").GetProperty("state").GetString());
         AssertEffective(initial, "Unresolved", "None", null, "SettingsDefaultNotSet");
+        var noneToken = initial.GetProperty("profileToken").GetString()!;
 
-        // "0" creates the shared profile; a replay repeats the stored 204; the same key with another body is a conflict.
+        // "0" + the "no profile" token creates the shared profile; a replay repeats the stored 204; the same key with
+        // another body is a conflict.
         NewKey(admin);
-        var record = Body(new { expectedVersion = "0", status = "EInvoice" });
+        var record = Body(new { expectedVersion = "0", expectedProfileToken = noneToken, status = "EInvoice" });
         using (var created = await PutAsync(admin, StatusPath(party), record))
         {
             Assert.Equal(HttpStatusCode.NoContent, created.StatusCode);
@@ -68,50 +72,66 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
             Assert.True(replay.Headers.Contains("Idempotency-Replayed"));
         }
 
-        using (var reused = await PutAsync(admin, StatusPath(party), Body(new { expectedVersion = "0", status = "EArchive" })))
+        using (var reused = await PutAsync(admin, StatusPath(party),
+                   Body(new { expectedVersion = "0", expectedProfileToken = noneToken, status = "EArchive" })))
         {
             await AssertProblemAsync(reused, HttpStatusCode.Conflict, "idempotency_conflict");
         }
 
         var checkedOnce = await ReadAsync(test.Client(), ProfilePath(party));
         Assert.Equal("EInvoice", checkedOnce.GetProperty("status").GetString());
-        Assert.True(Guid.TryParse(checkedOnce.GetProperty("statusCheckedByUserId").GetString(), out _));
+        // Checked in this company: the reader is told so and sees the checker by display name (never the raw id).
+        Assert.True(checkedOnce.GetProperty("statusCheckedInActiveCompany").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(checkedOnce.GetProperty("statusCheckedByDisplayName").GetString()));
+        Assert.False(checkedOnce.TryGetProperty("statusCheckedByUserId", out _));
         var firstCheck = checkedOnce.GetProperty("statusCheckedAtUtc").GetDateTimeOffset();
         Assert.Equal("1", checkedOnce.GetProperty("version").GetString());
+        // The profile now exists, so its token is no longer the "no profile" token.
+        Assert.NotEqual(noneToken, checkedOnce.GetProperty("profileToken").GetString());
 
-        // The PROFILE version fences the command: the stale "0" is now a conflict.
+        // The stale "0" with the old token is a conflict.
         NewKey(admin);
-        using (var stale = await PutAsync(admin, StatusPath(party), Body(new { expectedVersion = "0", status = "EArchive" })))
+        using (var stale = await PutAsync(admin, StatusPath(party),
+                   Body(new { expectedVersion = "0", expectedProfileToken = noneToken, status = "EArchive" })))
         {
             await AssertProblemAsync(stale, HttpStatusCode.Conflict, "version_conflict");
         }
 
-        await RecordAsync(admin, party, "1", "EInvoice");
+        await RecordAsync(admin, party, "EInvoice");
         var rechecked = await ReadAsync(admin, ProfilePath(party));
         Assert.True(rechecked.GetProperty("statusCheckedAtUtc").GetDateTimeOffset() >= firstCheck);
         Assert.Equal("2", rechecked.GetProperty("version").GetString());
 
-        await RecordAsync(admin, party, "2", "EArchive");
-        await RecordAsync(admin, party, "3", "Unknown");
+        await RecordAsync(admin, party, "EArchive");
+        await RecordAsync(admin, party, "Unknown");
         var reset = await ReadAsync(admin, ProfilePath(party));
         Assert.Equal("Unknown", reset.GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, reset.GetProperty("statusCheckedAtUtc").ValueKind);
+        Assert.Equal(JsonValueKind.Null, reset.GetProperty("statusCheckedInActiveCompany").ValueKind);
         Assert.Equal("4", reset.GetProperty("version").GetString());
 
         // Unknown → Unknown is a fenced no-op: no version move, no audit.
-        await RecordAsync(admin, party, "4", "Unknown");
+        await RecordAsync(admin, party, "Unknown");
         Assert.Equal("4", (await ReadAsync(admin, ProfilePath(party))).GetProperty("version").GetString());
         Assert.Equal(4, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", StatusEvent));
         Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles];"));
+        // The VKN never reaches the audit payload.
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event AND ([BeforeJson] LIKE N'%1234567890%' OR [AfterJson] LIKE N'%1234567890%');",
+            StatusEvent));
 
+        var token = (await ReadAsync(admin, ProfilePath(party))).GetProperty("profileToken").GetString()!;
         foreach (var invalid in new[]
                  {
-                     """{"expectedVersion":"4","status":"Maybe"}""",
-                     """{"expectedVersion":"4","status":7}""",
-                     """{"expectedVersion":"4"}""",
-                     """{"expectedVersion":"04","status":"EInvoice"}""",
-                     """{"expectedVersion":"4","status":"EInvoice","checkedBy":"someone"}""",
+                     $$"""{"expectedVersion":"4","expectedProfileToken":"{{token}}","status":"Maybe"}""",
+                     $$"""{"expectedVersion":"4","expectedProfileToken":"{{token}}","status":7}""",
+                     $$"""{"expectedVersion":"4","expectedProfileToken":"{{token}}"}""",
+                     $$"""{"expectedVersion":"04","expectedProfileToken":"{{token}}","status":"EInvoice"}""",
+                     """{"expectedVersion":"4","status":"EInvoice"}""",
+                     """{"expectedVersion":"4","expectedProfileToken":"ABC","status":"EInvoice"}""",
+                     $$"""{"expectedVersion":"4","expectedProfileToken":"{{token.ToUpperInvariant()}}","status":"EInvoice"}""",
+                     $$"""{"expectedVersion":"4","expectedProfileToken":"{{token}}","status":"EInvoice","checkedBy":"someone"}""",
                  })
         {
             NewKey(admin);
@@ -121,7 +141,7 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
     }
 
     [SqlServerFact]
-    public async Task A_check_in_one_company_is_seen_and_editable_on_the_same_VKN_customer_in_another_company()
+    public async Task A_check_in_one_company_is_seen_and_editable_on_the_same_VKN_customer_in_another_company_without_the_checker()
     {
         await using var test = new EDocumentTest();
         using var adminA = test.Client();
@@ -131,45 +151,230 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         var partyB = await CreateCustomerAsync(adminB, "B", SharedVkn);
 
         // Company A records the check; the group-level profile is created once.
-        NewKey(adminA);
-        using (var recorded = await PutAsync(adminA, StatusPath(partyA), Body(new { expectedVersion = "0", status = "EInvoice" })))
-        {
-            Assert.Equal(HttpStatusCode.NoContent, recorded.StatusCode);
-        }
+        await RecordAsync(adminA, partyA, "EInvoice");
 
-        // Company B sees the same status on its own same-VKN customer (SAT-D119), with the same profile version.
+        // Company B sees the same status, date and version on its own same-VKN customer (SAT-D119) — but not the checker
+        // (P3-1): only that the check was made in another group company.
         var seenByB = await ReadAsync(adminB, ProfilePath(partyB));
         Assert.Equal("EInvoice", seenByB.GetProperty("status").GetString());
         Assert.Equal("1", seenByB.GetProperty("version").GetString());
         Assert.Equal(partyB, seenByB.GetProperty("partyId").GetGuid());
-
-        // Company B sets the scenario on the shared profile; company A sees it.
-        NewKey(adminB);
-        using (var scenario = await PutAsync(adminB, ScenarioPath(partyB), Body(new { expectedVersion = "1", scenarioCode = "TICARIFATURA" })))
-        {
-            Assert.Equal(HttpStatusCode.NoContent, scenario.StatusCode);
-        }
-
+        Assert.Equal(JsonValueKind.String, seenByB.GetProperty("statusCheckedAtUtc").ValueKind);
+        Assert.False(seenByB.GetProperty("statusCheckedInActiveCompany").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, seenByB.GetProperty("statusCheckedByDisplayName").ValueKind);
         var seenByA = await ReadAsync(adminA, ProfilePath(partyA));
+        Assert.True(seenByA.GetProperty("statusCheckedInActiveCompany").GetBoolean());
+        // Both companies read the same profile, so they hold the same token.
+        Assert.Equal(seenByA.GetProperty("profileToken").GetString(), seenByB.GetProperty("profileToken").GetString());
+
+        // Company B sets the scenario on the shared profile; company A sees it. B's check-of-record is still A's.
+        await SetScenarioAsync(adminB, partyB, "TICARIFATURA");
+        seenByA = await ReadAsync(adminA, ProfilePath(partyA));
         Assert.Equal("TICARIFATURA", seenByA.GetProperty("scenarioOverrideCode").GetString());
         AssertEffective(seenByA, "Resolved", "CustomerOverride", "TICARIFATURA", "None");
         Assert.Equal("2", seenByA.GetProperty("version").GetString());
+        Assert.True(seenByA.GetProperty("statusCheckedInActiveCompany").GetBoolean());
+
+        // When B records a new check, the checker moves to B: B sees its own checker, A no longer does.
+        await RecordAsync(adminB, partyB, "EArchive");
+        Assert.True((await ReadAsync(adminB, ProfilePath(partyB))).GetProperty("statusCheckedInActiveCompany").GetBoolean());
+        var afterB = await ReadAsync(adminA, ProfilePath(partyA));
+        Assert.False(afterB.GetProperty("statusCheckedInActiveCompany").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, afterB.GetProperty("statusCheckedByDisplayName").ValueKind);
 
         // One shared row, not one per company; both companies' accounts resolve to it through the port.
         Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles];"));
         var accountB = seenByB.GetProperty("accountId").GetGuid();
         var portB = await test.ReadPortAsync(accountB, new DateOnly(2026, 11, 2), company: TestCompanyIds.CompanyB, context: TestCompanyIds.CompanyB);
         Assert.Equal(CounterpartyAccountEDocumentProfileOutcomeV1.Found, portB.Outcome);
-        Assert.Equal(CounterpartyEDocumentStatusV1.EInvoice, portB.Account!.Status);
+        Assert.Equal(CounterpartyEDocumentStatusV1.EArchive, portB.Account!.Status);
         Assert.True(portB.Account.TaxIdentityNumberPresent);
         Assert.Equal("TICARIFATURA", portB.Account.EffectiveScenario.ScenarioCode);
+        Assert.Equal("3", portB.Account.ProfileVersion);
+        Assert.Equal(seenByA.GetProperty("profileToken").GetString(), portB.Account.ProfileToken);
 
         // A different customer with a different VKN has its own (absent) profile — the sharing is by VKN only.
         var other = await CreateCustomerAsync(adminA, "Other", OtherVkn);
         Assert.Equal("Unknown", (await ReadAsync(adminA, ProfilePath(other))).GetProperty("status").GetString());
+        // Audit is written in the acting company: A's check in A, B's scenario and check in B.
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event AND [CompanyId]=@CompanyA;",
+            StatusEvent, companyA: TestCompanyIds.CompanyA));
         Assert.Equal(2, await test.ScalarAsync<int>(
-            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] IN (@Event, @Scenario);",
-            StatusEvent, ScenarioEvent));
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] IN (@Event, @Scenario) AND [CompanyId]=@CompanyA;",
+            StatusEvent, ScenarioEvent, companyA: TestCompanyIds.CompanyB));
+    }
+
+    [SqlServerFact]
+    public async Task A_VKN_change_moves_the_card_to_the_new_number_keeps_the_old_profile_and_a_stale_post_is_409()
+    {
+        await using var test = new EDocumentTest(grantApprove: true);
+        using var adminA = test.Client();
+        using var checkerA = test.Client(TestCompanyIds.CompanyA, TestUsers.CompanyA);
+        using var adminB = test.Client(TestCompanyIds.CompanyB);
+        var party = await CreateCustomerAsync(adminA, "VKN değişen", SharedVkn);
+        var otherTaxpayer = await CreateCustomerAsync(adminB, "Diğer mükellef", OtherVkn);
+
+        // X (SharedVkn) and Y (OtherVkn) both get a profile at version 1 — the ABA set-up: equal numbers, other records.
+        await RecordAsync(adminA, party, "EInvoice");
+        await RecordAsync(adminB, otherTaxpayer, "EArchive");
+        var stale = await ReadAsync(adminA, ProfilePath(party));
+        Assert.Equal("1", stale.GetProperty("version").GetString());
+        var staleToken = stale.GetProperty("profileToken").GetString()!;
+
+        // AT-009 maker-checker changes the party's VKN from X to Y (OPEN-030).
+        var partyVersion = (await ReadAsync(adminA, $"/api/v1/counterparties/{party}/tax-identity")).GetProperty("version").GetString();
+        NewKey(adminA);
+        using (var requested = await PutAsync(adminA, $"/api/v1/counterparties/{party}/tax-identity/change-request",
+                   Body(new { expectedVersion = partyVersion, proposedTaxIdentityNumber = OtherVkn, reason = "Levha değişti" })))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, requested.StatusCode);
+        }
+
+        var requestId = (await ReadAsync(checkerA, $"/api/v1/counterparties/{party}/tax-identity"))
+            .GetProperty("pendingChange").GetProperty("id").GetGuid();
+        NewKey(checkerA);
+        using (var approved = await PutAsync(checkerA, $"/api/v1/counterparties/{party}/tax-identity/change-request/decision",
+                   Body(new { expectedVersion = partyVersion, changeRequestId = requestId, decision = "approve", note = "Levha görüldü" })))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, approved.StatusCode);
+        }
+
+        // A client still showing X posts with X's fence: the numbers match Y's profile (version 1), but the token names
+        // X's profile, so the command is refused — Y's record is not overwritten.
+        NewKey(adminA);
+        using (var abaPost = await PutAsync(adminA, StatusPath(party),
+                   Body(new { expectedVersion = "1", expectedProfileToken = staleToken, status = "EInvoice" })))
+        {
+            await AssertProblemAsync(abaPost, HttpStatusCode.Conflict, "version_conflict");
+        }
+
+        // The card now reads Y's profile; X's profile stays as it was (not moved, not deleted).
+        var afterChange = await ReadAsync(adminA, ProfilePath(party));
+        Assert.Equal("EArchive", afterChange.GetProperty("status").GetString());
+        Assert.Equal("1", afterChange.GetProperty("version").GetString());
+        Assert.NotEqual(staleToken, afterChange.GetProperty("profileToken").GetString());
+        Assert.Equal(2, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles];"));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles] WHERE [TaxIdentityNumber]=N'1234567890' AND [EDocumentStatus]=1 AND [Version]=1;"));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles] WHERE [TaxIdentityNumber]=N'9876543217' AND [EDocumentStatus]=2 AND [Version]=1;"));
+    }
+
+    [SqlServerFact]
+    public async Task An_existing_party_held_only_by_company_A_is_404_for_company_B_and_the_port_never_reaches_it()
+    {
+        await using var test = new EDocumentTest();
+        using var adminA = test.Client();
+        using var adminB = test.Client(TestCompanyIds.CompanyB);
+        var party = await CreateCustomerAsync(adminA, "Yalnız A", SharedVkn);
+        await RecordAsync(adminA, party, "EInvoice");
+        var view = await ReadAsync(adminA, ProfilePath(party));
+        var token = view.GetProperty("profileToken").GetString()!;
+        var accountA = view.GetProperty("accountId").GetGuid();
+        var auditBefore = await test.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] LIKE N'counterparty.customer-e-document.%';");
+
+        // B names A's REAL party id (not a random one): every route answers the same 404, nothing is written.
+        using (var read = await adminB.GetAsync(ProfilePath(party)))
+        {
+            await AssertProblemAsync(read, HttpStatusCode.NotFound, "not_found");
+        }
+
+        foreach (var (path, body) in new[]
+                 {
+                     (StatusPath(party), Body(new { expectedVersion = "1", expectedProfileToken = token, status = "EArchive" })),
+                     (StatusPath(party), Body(new { expectedVersion = "1", expectedProfileToken = token, status = "Unknown" })),
+                     (ScenarioPath(party), Body(new { expectedVersion = "1", expectedProfileToken = token, scenarioCode = "TEMELFATURA" })),
+                 })
+        {
+            NewKey(adminB);
+            using var refused = await PutAsync(adminB, path, body);
+            await AssertProblemAsync(refused, HttpStatusCode.NotFound, "not_found");
+        }
+
+        var unchanged = await ReadAsync(adminA, ProfilePath(party));
+        Assert.Equal("EInvoice", unchanged.GetProperty("status").GetString());
+        Assert.Equal("1", unchanged.GetProperty("version").GetString());
+        Assert.Equal(JsonValueKind.Null, unchanged.GetProperty("scenarioOverrideCode").ValueKind);
+        Assert.Equal(auditBefore, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] LIKE N'counterparty.customer-e-document.%';"));
+
+        // The port: company B's context with A's real account id is NotFound; asking for company B from A's context is
+        // Denied. Neither reveals the profile.
+        Assert.Equal(CounterpartyAccountEDocumentProfileOutcomeV1.NotFound,
+            (await test.ReadPortAsync(accountA, new DateOnly(2026, 11, 2), company: TestCompanyIds.CompanyB, context: TestCompanyIds.CompanyB)).Outcome);
+        Assert.Equal(CounterpartyAccountEDocumentProfileOutcomeV1.Denied,
+            (await test.ReadPortAsync(accountA, new DateOnly(2026, 11, 2), company: TestCompanyIds.CompanyB)).Outcome);
+        Assert.Equal(CounterpartyAccountEDocumentProfileOutcomeV1.Found,
+            (await test.ReadPortAsync(accountA, new DateOnly(2026, 11, 2))).Outcome);
+    }
+
+    [SqlServerFact]
+    public async Task Concurrent_first_creation_from_two_companies_leaves_one_row_and_answers_204_and_409()
+    {
+        await using var test = new EDocumentTest();
+        using var adminA = test.Client();
+        using var adminB = test.Client(TestCompanyIds.CompanyB);
+        var partyA = await CreateCustomerAsync(adminA, "Eşzamanlı A", SharedVkn);
+        var partyB = await CreateCustomerAsync(adminB, "Eşzamanlı B", SharedVkn);
+        var tokenA = (await ReadAsync(adminA, ProfilePath(partyA))).GetProperty("profileToken").GetString()!;
+        var tokenB = (await ReadAsync(adminB, ProfilePath(partyB))).GetProperty("profileToken").GetString()!;
+        Assert.Equal(tokenA, tokenB);
+
+        NewKey(adminA);
+        NewKey(adminB);
+        var responses = await Task.WhenAll(
+            PutAsync(adminA, StatusPath(partyA), Body(new { expectedVersion = "0", expectedProfileToken = tokenA, status = "EInvoice" })),
+            PutAsync(adminB, StatusPath(partyB), Body(new { expectedVersion = "0", expectedProfileToken = tokenB, status = "EArchive" })));
+        try
+        {
+            Assert.Equal([HttpStatusCode.NoContent, HttpStatusCode.Conflict],
+                responses.Select(response => response.StatusCode).OrderBy(code => (int)code).ToArray());
+            var loser = responses.Single(response => response.StatusCode == HttpStatusCode.Conflict);
+            await AssertProblemAsync(loser, HttpStatusCode.Conflict, "version_conflict");
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
+
+        Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles];"));
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", StatusEvent));
+        Assert.Equal("1", (await ReadAsync(adminA, ProfilePath(partyA))).GetProperty("version").GetString());
+    }
+
+    [SqlServerFact]
+    public async Task The_same_Idempotency_Key_in_two_companies_is_two_commands_and_the_second_is_a_stale_version_409()
+    {
+        await using var test = new EDocumentTest();
+        using var adminA = test.Client();
+        using var adminB = test.Client(TestCompanyIds.CompanyB);
+        var partyA = await CreateCustomerAsync(adminA, "Anahtar A", SharedVkn);
+        var partyB = await CreateCustomerAsync(adminB, "Anahtar B", SharedVkn);
+        var token = (await ReadAsync(adminA, ProfilePath(partyA))).GetProperty("profileToken").GetString()!;
+        var key = Guid.NewGuid().ToString("N");
+        UseKey(adminA, key);
+        UseKey(adminB, key);
+        var body = Body(new { expectedVersion = "0", expectedProfileToken = token, status = "EInvoice" });
+
+        using (var first = await PutAsync(adminA, StatusPath(partyA), body))
+        {
+            Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+        }
+
+        // Same key, same body, other company: not a replay of A's answer — B's own command, refused on the now-stale fence.
+        using (var second = await PutAsync(adminB, StatusPath(partyB), body))
+        {
+            await AssertProblemAsync(second, HttpStatusCode.Conflict, "version_conflict");
+            Assert.False(second.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[CustomerEDocumentProfiles];"));
+        Assert.Equal(2, await test.ScalarAsync<int>(
+            "SELECT COUNT(DISTINCT [CompanyId]) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=N'counterparty.customer-e-document.status.record.v1';"));
     }
 
     [SqlServerFact]
@@ -179,9 +384,11 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         await using var test = new EDocumentTest(settings: settings);
         using var admin = test.Client();
         var party = await CreateCustomerAsync(admin, "Senaryo", SharedVkn);
+        var noneToken = (await ReadAsync(admin, ProfilePath(party))).GetProperty("profileToken").GetString()!;
 
         NewKey(admin);
-        using (var notListed = await PutAsync(admin, ScenarioPath(party), Body(new { expectedVersion = "0", scenarioCode = "IHRACAT" })))
+        using (var notListed = await PutAsync(admin, ScenarioPath(party),
+                   Body(new { expectedVersion = "0", expectedProfileToken = noneToken, scenarioCode = "IHRACAT" })))
         {
             await AssertProblemAsync(notListed, HttpStatusCode.UnprocessableEntity, "einvoice_scenario_not_listed");
         }
@@ -189,19 +396,20 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         foreach (var malformed in new[] { "temelfatura", "", "CODE-A", new string('A', 33) })
         {
             NewKey(admin);
-            using var refused = await PutAsync(admin, ScenarioPath(party), Body(new { expectedVersion = "0", scenarioCode = malformed }));
+            using var refused = await PutAsync(admin, ScenarioPath(party),
+                Body(new { expectedVersion = "0", expectedProfileToken = noneToken, scenarioCode = malformed }));
             Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
         }
 
         NewKey(admin);
-        using (var omitted = await PutAsync(admin, ScenarioPath(party), Body(new { expectedVersion = "0" })))
+        using (var omitted = await PutAsync(admin, ScenarioPath(party), Body(new { expectedVersion = "0", expectedProfileToken = noneToken })))
         {
             Assert.Equal(HttpStatusCode.BadRequest, omitted.StatusCode);
         }
 
         // "0" creates the profile with the override (status stays Unknown).
         NewKey(admin);
-        var set = Body(new { expectedVersion = "0", scenarioCode = "TEMELFATURA" });
+        var set = Body(new { expectedVersion = "0", expectedProfileToken = noneToken, scenarioCode = "TEMELFATURA" });
         using (var applied = await PutAsync(admin, ScenarioPath(party), set))
         {
             Assert.Equal(HttpStatusCode.NoContent, applied.StatusCode);
@@ -220,23 +428,29 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
 
         // The Settings default applies once the override is cleared.
         settings.Default = "TICARIFATURA";
-        await SetScenarioAsync(admin, party, "1", null);
+        await SetScenarioAsync(admin, party, null);
         AssertEffective(await ReadAsync(admin, ProfilePath(party)), "Resolved", "SettingsDefault", "TICARIFATURA", "None");
 
         // An override the list later drops is NOT honoured and does NOT fall back to the default.
-        await SetScenarioAsync(admin, party, "2", "TEMELFATURA");
+        await SetScenarioAsync(admin, party, "TEMELFATURA");
         settings.Codes = ["TICARIFATURA"];
         AssertEffective(await ReadAsync(admin, ProfilePath(party)), "Unresolved", "CustomerOverride", null, "CustomerOverrideNotListed");
 
         // Settings that cannot be read: the read says Unavailable; a new override stores nothing (503); the same key
         // succeeds once Settings answers again.
+        var fence = await ReadAsync(admin, ProfilePath(party));
         settings.Fail = true;
         AssertEffective(await ReadAsync(admin, ProfilePath(party)), "Unavailable", "None", null, "None");
         const string ScenarioExecutions =
             "SELECT COUNT(*) FROM [idempotency].[CommandExecutions] WHERE [CommandName]=N'counterparty.customer-e-document.e-invoice-scenario.set.v1';";
         var storedBefore = await test.ScalarAsync<int>(ScenarioExecutions);
         var retryKey = NewKey(admin);
-        var change = Body(new { expectedVersion = "3", scenarioCode = "TICARIFATURA" });
+        var change = Body(new
+        {
+            expectedVersion = fence.GetProperty("version").GetString(),
+            expectedProfileToken = fence.GetProperty("profileToken").GetString(),
+            scenarioCode = "TICARIFATURA",
+        });
         using (var outage = await PutAsync(admin, ScenarioPath(party), change))
         {
             await AssertProblemAsync(outage, HttpStatusCode.ServiceUnavailable, "service_unavailable");
@@ -267,22 +481,26 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         Assert.False(view.GetProperty("taxIdentityNumberPresent").GetBoolean());
         Assert.Equal("Unknown", view.GetProperty("status").GetString());
         Assert.Equal("0", view.GetProperty("version").GetString());
+        Assert.Equal(JsonValueKind.Null, view.GetProperty("profileToken").ValueKind);
 
         NewKey(admin);
-        using (var status = await PutAsync(admin, StatusPath(noVkn), Body(new { expectedVersion = "0", status = "EInvoice" })))
+        using (var status = await PutAsync(admin, StatusPath(noVkn),
+                   Body(new { expectedVersion = "0", expectedProfileToken = NoToken, status = "EInvoice" })))
         {
             await AssertProblemAsync(status, HttpStatusCode.UnprocessableEntity, "e_document_tax_identity_required");
         }
 
         NewKey(admin);
-        using (var scenario = await PutAsync(admin, ScenarioPath(noVkn), Body(new { expectedVersion = "0", scenarioCode = "TEMELFATURA" })))
+        using (var scenario = await PutAsync(admin, ScenarioPath(noVkn),
+                   Body(new { expectedVersion = "0", expectedProfileToken = NoToken, scenarioCode = "TEMELFATURA" })))
         {
             await AssertProblemAsync(scenario, HttpStatusCode.UnprocessableEntity, "e_document_tax_identity_required");
         }
 
         // A party with no account in the company is 404; the GET of an unknown party is 404.
         NewKey(admin);
-        using (var missing = await PutAsync(admin, StatusPath(Guid.NewGuid()), Body(new { expectedVersion = "0", status = "EInvoice" })))
+        using (var missing = await PutAsync(admin, StatusPath(Guid.NewGuid()),
+                   Body(new { expectedVersion = "0", expectedProfileToken = NoToken, status = "EInvoice" })))
         {
             await AssertProblemAsync(missing, HttpStatusCode.NotFound, "not_found");
         }
@@ -292,17 +510,11 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
             Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
         }
 
-        // The port reaches the profile only through the caller's own account.
-        Assert.Equal(CounterpartyAccountEDocumentProfileOutcomeV1.NotFound,
-            (await test.ReadPortAsync(Guid.NewGuid(), new DateOnly(2026, 11, 2))).Outcome);
-        Assert.Equal(CounterpartyAccountEDocumentProfileOutcomeV1.Denied,
-            (await test.ReadPortAsync(Guid.NewGuid(), new DateOnly(2026, 11, 2), company: TestCompanyIds.CompanyB)).Outcome);
-
-        // The database repeats the rules: a known status needs its check, Unknown carries none, the override's shape,
-        // the VKN digits — a direct malformed insert is refused.
+        // The database repeats the rules: a known status needs its check and company, the override's shape, the VKN digits.
         foreach (var insert in new[]
                  {
                      "INSERT INTO [counterparty].[CustomerEDocumentProfiles] ([Id],[TaxIdentityNumber],[EDocumentStatus],[Version],[CreatedAtUtc],[UpdatedAtUtc]) VALUES (NEWID(), N'1234567890', 1, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());",
+                     "INSERT INTO [counterparty].[CustomerEDocumentProfiles] ([Id],[TaxIdentityNumber],[EDocumentStatus],[EDocumentStatusCheckedAtUtc],[EDocumentStatusCheckedByUserId],[Version],[CreatedAtUtc],[UpdatedAtUtc]) VALUES (NEWID(), N'1234567890', 1, SYSDATETIMEOFFSET(), N'x', 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());",
                      "INSERT INTO [counterparty].[CustomerEDocumentProfiles] ([Id],[TaxIdentityNumber],[EDocumentStatus],[EInvoiceScenarioOverrideCode],[Version],[CreatedAtUtc],[UpdatedAtUtc]) VALUES (NEWID(), N'1234567890', 0, N'temel', 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());",
                      "INSERT INTO [counterparty].[CustomerEDocumentProfiles] ([Id],[TaxIdentityNumber],[EDocumentStatus],[Version],[CreatedAtUtc],[UpdatedAtUtc]) VALUES (NEWID(), N'12A4567890', 0, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());",
                  })
@@ -326,13 +538,15 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         var accountId = view.GetProperty("accountId").GetGuid();
 
         NewKey(reader);
-        using (var status = await PutAsync(reader, StatusPath(party), Body(new { expectedVersion = "0", status = "EInvoice" })))
+        using (var status = await PutAsync(reader, StatusPath(party),
+                   Body(new { expectedVersion = "0", expectedProfileToken = NoToken, status = "EInvoice" })))
         {
             Assert.Equal(HttpStatusCode.Forbidden, status.StatusCode);
         }
 
         NewKey(reader);
-        using (var scenario = await PutAsync(reader, ScenarioPath(party), Body(new { expectedVersion = "0", scenarioCode = "TEMELFATURA" })))
+        using (var scenario = await PutAsync(reader, ScenarioPath(party),
+                   Body(new { expectedVersion = "0", expectedProfileToken = NoToken, scenarioCode = "TEMELFATURA" })))
         {
             Assert.Equal(HttpStatusCode.Forbidden, scenario.StatusCode);
         }
@@ -354,7 +568,7 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         await using var test = new EDocumentTest();
         using var admin = test.Client();
         var party = await CreateCustomerAsync(admin, "Geri Alma", SharedVkn);
-        await RecordAsync(admin, party, "0", "EArchive");
+        await RecordAsync(admin, party, "EArchive");
 
         var error = await Assert.ThrowsAnyAsync<SqlException>(
             () => test.MigrateCounterpartyToAsync("20261027202534_AddCounterpartyCustomerGroups"));
@@ -389,17 +603,31 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
 
     private static string Body(object value) => JsonSerializer.Serialize(value);
 
-    private static async Task RecordAsync(HttpClient client, Guid party, string version, string status)
+    /// <summary>Records a status on the fence the latest read returned (version + token).</summary>
+    private static async Task RecordAsync(HttpClient client, Guid party, string status)
     {
+        var fence = await ReadAsync(client, ProfilePath(party));
         NewKey(client);
-        using var response = await PutAsync(client, StatusPath(party), Body(new { expectedVersion = version, status }));
+        using var response = await PutAsync(client, StatusPath(party), Body(new
+        {
+            expectedVersion = fence.GetProperty("version").GetString(),
+            expectedProfileToken = fence.GetProperty("profileToken").GetString(),
+            status,
+        }));
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
-    private static async Task SetScenarioAsync(HttpClient client, Guid party, string version, string? scenarioCode)
+    /// <summary>Sets (or clears) the override on the fence the latest read returned.</summary>
+    private static async Task SetScenarioAsync(HttpClient client, Guid party, string? scenarioCode)
     {
+        var fence = await ReadAsync(client, ProfilePath(party));
         NewKey(client);
-        using var response = await PutAsync(client, ScenarioPath(party), Body(new { expectedVersion = version, scenarioCode }));
+        using var response = await PutAsync(client, ScenarioPath(party), Body(new
+        {
+            expectedVersion = fence.GetProperty("version").GetString(),
+            expectedProfileToken = fence.GetProperty("profileToken").GetString(),
+            scenarioCode,
+        }));
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
@@ -452,12 +680,18 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
     private static string NewKey(HttpClient client)
     {
         var key = Guid.NewGuid().ToString("N");
+        UseKey(client, key);
+        return key;
+    }
+
+    private static void UseKey(HttpClient client, string key)
+    {
         client.DefaultRequestHeaders.Remove("Idempotency-Key");
         client.DefaultRequestHeaders.Add("Idempotency-Key", key);
         client.DefaultRequestHeaders.Remove("X-Correlation-Id");
         client.DefaultRequestHeaders.Add("X-Correlation-Id", Guid.NewGuid().ToString("N"));
-        return key;
     }
+
 
     /// <summary>
     /// Test-only stand-in for the Settings owner's e-Fatura scenario keys, so a test can control the list/default or
@@ -503,7 +737,7 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         private readonly string _baseConnection = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-        public EDocumentTest(bool grant = true, SettingsDouble? settings = null)
+        public EDocumentTest(bool grant = true, SettingsDouble? settings = null, bool grantApprove = false)
         {
             Factory = new SqlServerRelationalApiFactory(_baseConnection, services =>
             {
@@ -524,6 +758,13 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
                     var administrator = options.Roles.Single(role => role.Code == "SYSTEM_ADMINISTRATOR");
                     administrator.Permissions.Add(CounterpartyEDocumentPermissionsV1.Update);
                     administrator.Permissions.Add(CounterpartyTaxIdentityPermissionsV1.Update);
+                    if (grantApprove)
+                    {
+                        // The AT-009 checker (a different person) approves the VKN change.
+                        var operatorRole = options.Roles.Single(role => role.Code == "ORGANIZATION_OPERATOR");
+                        operatorRole.Permissions.Add(ErpPermissions.CounterpartyPartiesRead);
+                        operatorRole.Permissions.Add(CounterpartyTaxIdentityPermissionsV1.Approve);
+                    }
                 });
             });
         }
@@ -567,7 +808,7 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
             await dbContext.GetService<IMigrator>().MigrateAsync(migration);
         }
 
-        public async Task<T> ScalarAsync<T>(string sql, string? eventType = null, string? scenario = null)
+        public async Task<T> ScalarAsync<T>(string sql, string? eventType = null, string? scenario = null, Guid? companyA = null)
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
             await connection.OpenAsync();
@@ -575,6 +816,7 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
             command.CommandText = sql;
             if (sql.Contains("@Event", StringComparison.Ordinal)) command.Parameters.AddWithValue("@Event", eventType!);
             if (sql.Contains("@Scenario", StringComparison.Ordinal)) command.Parameters.AddWithValue("@Scenario", scenario!);
+            if (sql.Contains("@CompanyA", StringComparison.Ordinal)) command.Parameters.AddWithValue("@CompanyA", companyA!.Value);
             return Assert.IsType<T>(await command.ExecuteScalarAsync());
         }
 

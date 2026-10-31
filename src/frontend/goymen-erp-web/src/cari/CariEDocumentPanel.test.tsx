@@ -26,6 +26,7 @@ const PARTY = '11111111-1111-1111-1111-111111111111'
 const COMPANY = 'aaaaaaaa-0000-0000-0000-000000000001'
 const ACCOUNT = '44444444-4444-4444-4444-444444444444'
 const CONTRACT = { origin: '/api/v1', namespace: 'ns-test' }
+const TOKEN = 'a'.repeat(64)
 const PROFILE_URL = `/api/v1/counterparties/${PARTY}/company-account/e-document`
 
 interface Call {
@@ -46,11 +47,13 @@ const profile = (over: Record<string, unknown> = {}) => ({
   accountId: ACCOUNT,
   companyId: COMPANY,
   version: '0',
+  profileToken: TOKEN,
   accountIsActive: true,
   taxIdentityNumberPresent: true,
   status: 'Unknown',
   statusCheckedAtUtc: null,
-  statusCheckedByUserId: null,
+  statusCheckedInActiveCompany: null,
+  statusCheckedByDisplayName: null,
   scenarioOverrideCode: null,
   evaluatedOn: '2026-10-29',
   scenarioCodes: { state: 'NotSet', codes: [] },
@@ -125,8 +128,24 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
     expect(calls[0].headers['X-Company-Id']).toBe(COMPANY)
   })
 
+  it('shows a check made in another group company with its date but without the checker', async () => {
+    install(() =>
+      json(
+        profile({
+          version: '2',
+          status: 'EArchive',
+          statusCheckedAtUtc: '2026-10-31T07:30:00+00:00',
+          statusCheckedInActiveCompany: false,
+        }),
+      ),
+    )
+    renderPanel()
+    expect(await screen.findByText(new RegExp(T.checkedInOtherCompany))).toBeTruthy()
+    expect(screen.getByText(T.status.EArchive, { selector: 'dd' })).toBeTruthy()
+  })
+
   it('shows the no-VKN note and offers no forms when the customer has no tax identity', async () => {
-    install(() => json(profile({ taxIdentityNumberPresent: false, scenarioCodes: listed })))
+    install(() => json(profile({ taxIdentityNumberPresent: false, profileToken: null, scenarioCodes: listed })))
     renderPanel()
     expect(await screen.findByText(T.noTaxIdentity)).toBeTruthy()
     expect(screen.queryByLabelText(T.statusSelectLabel)).toBeNull()
@@ -146,7 +165,8 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
               version: '1',
               status: 'EInvoice',
               statusCheckedAtUtc: '2026-10-31T07:30:00+00:00',
-              statusCheckedByUserId: 'actor-a',
+              statusCheckedInActiveCompany: true,
+              statusCheckedByDisplayName: 'Ayşe Yılmaz',
             })
           : profile(),
       )
@@ -159,10 +179,11 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
     expect(await screen.findByText(T.statusRecorded)).toBeTruthy()
     const [put] = puts(calls)
     expect(put.url).toBe(`${PROFILE_URL}/status`)
-    expect(put.body).toEqual({ status: 'EInvoice', expectedVersion: '0' })
+    expect(put.body).toEqual({ status: 'EInvoice', expectedVersion: '0', expectedProfileToken: TOKEN })
     expect(put.headers['Idempotency-Key']).toMatch(/^[0-9a-f]{32}$/)
     await waitFor(() => expect(screen.getByText(T.status.EInvoice, { selector: 'dd' })).toBeTruthy())
-    expect(screen.getByText(/actor-a/)).toBeTruthy()
+    // The checker is named (display name, never the raw id) because the check was recorded in this company.
+    expect(screen.getByText(/Ayşe Yılmaz/)).toBeTruthy()
     expect(reads(calls).length).toBeGreaterThanOrEqual(2)
   })
 
@@ -195,13 +216,13 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
     await user.selectOptions(select, 'CODE_B')
     await user.click(screen.getByRole('button', { name: T.saveScenario }))
     expect(await screen.findByText(T.scenarioSaved)).toBeTruthy()
-    expect(puts(calls)[0]).toMatchObject({ url: `${PROFILE_URL}/scenario`, body: { scenarioCode: 'CODE_B', expectedVersion: '0' } })
+    expect(puts(calls)[0]).toMatchObject({ url: `${PROFILE_URL}/scenario`, body: { scenarioCode: 'CODE_B', expectedVersion: '0', expectedProfileToken: TOKEN } })
     expect(await screen.findByText(T.effectiveFromOverride('CODE_B'))).toBeTruthy()
 
     await user.selectOptions(screen.getByLabelText(T.scenarioSelectLabel), '')
     await user.click(screen.getByRole('button', { name: T.saveScenario }))
     expect(await screen.findByText(T.scenarioCleared)).toBeTruthy()
-    expect(puts(calls)[1].body).toEqual({ scenarioCode: null, expectedVersion: '1' })
+    expect(puts(calls)[1].body).toEqual({ scenarioCode: null, expectedVersion: '1', expectedProfileToken: TOKEN })
   })
 
   it('keeps an override the list no longer carries visible and marked, and says the scenario is unresolved', async () => {

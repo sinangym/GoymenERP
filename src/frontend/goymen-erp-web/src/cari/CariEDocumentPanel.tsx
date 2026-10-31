@@ -116,12 +116,21 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
   const listedCodes = profile.scenarioCodes.state === 'Set' ? profile.scenarioCodes.codes : []
   const overrideNotListed = profile.scenarioOverrideCode !== null && !listedCodes.includes(profile.scenarioOverrideCode)
 
+  // The forms are offered only with a VKN, so a token exists whenever a command can be sent.
+  const profileToken = profile.profileToken ?? ''
+  const checkedText =
+    profile.statusCheckedAtUtc === null
+      ? T.notChecked
+      : profile.statusCheckedInActiveCompany === true
+        ? T.checkedValue(formatCheckedAt(profile.statusCheckedAtUtc), profile.statusCheckedByDisplayName ?? T.checkerUnknown)
+        : T.checkedValue(formatCheckedAt(profile.statusCheckedAtUtc), T.checkedInOtherCompany)
+
   const submitStatus = async (event: FormEvent) => {
     event.preventDefault()
-    if (!statusSubmittable || locked) return
+    if (!statusSubmittable || locked || profile.profileToken === null) return
     const ok = await command.run(
       `status:${partyId}`,
-      (context) => recordAccountEDocumentStatus(context, partyId, profile.version, selectedStatus),
+      (context) => recordAccountEDocumentStatus(context, partyId, profile.version, profileToken, selectedStatus),
       selectedStatus === 'Unknown' ? T.statusReset : T.statusRecorded,
     )
     if (ok) setStatusChoice(null)
@@ -129,11 +138,11 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
 
   const submitScenario = async (event: FormEvent) => {
     event.preventDefault()
-    if (!scenarioChanged || locked) return
+    if (!scenarioChanged || locked || profile.profileToken === null) return
     const target = selectedScenario === USE_DEFAULT ? null : selectedScenario
     const ok = await command.run(
       `scenario:${partyId}`,
-      (context) => setAccountEInvoiceScenario(context, partyId, profile.version, target),
+      (context) => setAccountEInvoiceScenario(context, partyId, profile.version, profileToken, target),
       target === null ? T.scenarioCleared : T.scenarioSaved,
     )
     if (ok) setScenarioChoice(null)
@@ -148,10 +157,16 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
         <dt>{T.statusLabel}</dt>
         <dd data-e-document-status={profile.status}>{T.status[profile.status]}</dd>
         <dt>{T.checkedLabel}</dt>
-        <dd data-e-document-checked={profile.statusCheckedAtUtc === null ? 'none' : 'recorded'}>
-          {profile.statusCheckedAtUtc === null || profile.statusCheckedByUserId === null
-            ? T.notChecked
-            : T.checkedValue(formatCheckedAt(profile.statusCheckedAtUtc), profile.statusCheckedByUserId)}
+        <dd
+          data-e-document-checked={
+            profile.statusCheckedAtUtc === null
+              ? 'none'
+              : profile.statusCheckedInActiveCompany === true
+                ? 'this-company'
+                : 'other-company'
+          }
+        >
+          {checkedText}
         </dd>
       </dl>
 

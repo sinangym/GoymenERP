@@ -4,6 +4,7 @@ using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
+using GoymenERP.Modules.Identity.Application.Contracts;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -25,9 +26,13 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 /// unreadable → 503, nothing stored. Re-sending the stored code is a no-op.</item>
 /// </list>
 /// Both commands run under <c>counterparty.accounts.e-document.update</c> (plus <c>counterparty.parties.read</c>),
-/// measured first and re-measured before the write; one Idempotency-Key (stored 204/404/409/422 replay); the PROFILE
-/// version as decimal text ("0" creates); one audit event per real change (in the acting company's context). No GİB or
-/// other external call.
+/// measured first and re-measured before the write; one Idempotency-Key (stored 204/404/409/422 replay); the fence is the
+/// PAIR the read returned — the opaque profile token (which profile, bound to the party's VKN) and the PROFILE version
+/// ("0" creates) — so a party whose VKN changed meanwhile (OPEN-030) is 409 <c>version_conflict</c>, never an ABA
+/// overwrite of another taxpayer's record; one audit event per real change, written in the acting company's context.
+/// After a VKN change the card reads the NEW VKN's profile and the old VKN's profile stays as it is (not moved, not
+/// deleted). The checker's identity is shown only inside the company the check was recorded in. No GİB or other
+/// external call.
 /// </summary>
 internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumentProfileService
 {
@@ -63,17 +68,30 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         var evaluatedOn = CounterpartyEInvoiceScenarioSettings.BusinessDateOf(timeProvider.GetUtcNow());
         var (codes, settingsDefault, effective) = await CounterpartyEInvoiceScenarioSettings.ResolveAsync(
             eInvoiceScenarioPolicy, companyId, profile?.EInvoiceScenarioOverrideCode, evaluatedOn, cancellationToken);
+
+        // P3-1: the check is shared group-wide (SAT-D119), the checker is not: only a reader in the company the check was
+        // recorded in sees who checked, as a directory display name (never a raw id); others see only the date.
+        bool? checkedInActiveCompany = profile?.EDocumentStatusCheckedInCompanyId is { } checkedIn
+            ? checkedIn == companyId
+            : null;
+        var checkerName = checkedInActiveCompany == true
+            ? await ResolveCheckerDisplayNameAsync(companyId, actorId, profile!.EDocumentStatusCheckedByUserId, cancellationToken)
+            : null;
         await RequireCustomerGroupReadStillAsync(companyId, actorId, cancellationToken);
         return new CounterpartyAccountEDocumentView(
             account.PartyId,
             account.Id,
             account.CompanyId,
             (profile?.Version ?? 0L).ToString(CultureInfo.InvariantCulture),
+            string.IsNullOrEmpty(taxIdentityNumber)
+                ? null
+                : CounterpartyEDocumentProfileToken.Compute(taxIdentityNumber, profile?.Id),
             account.IsActive,
             !string.IsNullOrEmpty(taxIdentityNumber),
             ToContract(profile?.EDocumentStatus ?? EDocumentStatus.Unknown),
             profile?.EDocumentStatusCheckedAtUtc,
-            profile?.EDocumentStatusCheckedByUserId,
+            checkedInActiveCompany,
+            checkerName,
             profile?.EInvoiceScenarioOverrideCode,
             evaluatedOn,
             new CounterpartyEInvoiceScenarioCodesView(codes.State, codes.Codes),
@@ -98,17 +116,19 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         RequirePartyId(partyId);
         var status = ToDomain(command.Status);
         var expectedVersion = ParseEDocumentExpectedVersion(command.ExpectedVersion);
+        var expectedToken = RequireProfileToken(command.ExpectedProfileToken);
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new
         {
-            PartyId = partyId, ExpectedVersion = expectedVersion, Status = status.ToString(),
+            PartyId = partyId, ExpectedVersion = expectedVersion, ExpectedProfileToken = expectedToken,
+            Status = status.ToString(),
         });
 
         return await UpsertEDocumentProfileAsync(
-            RecordEDocumentStatusCommandName, partyId, expectedVersion, keyHash, requestHash, metadata, beforeSave,
-            scope, EDocumentStatusRecordedEvent,
+            RecordEDocumentStatusCommandName, partyId, expectedVersion, expectedToken, keyHash, requestHash, metadata,
+            beforeSave, scope, EDocumentStatusRecordedEvent,
             ensureSettings: null,
-            apply: profile => profile.RecordStatus(status, metadata.ActorId, timeProvider.GetUtcNow()),
+            apply: (profile, now) => profile.RecordStatus(status, metadata.ActorId, metadata.CompanyId, now),
             createWhenAbsentAndNoop: status == EDocumentStatus.Unknown,
             operation: status == EDocumentStatus.Unknown ? "ResetEDocumentStatus" : "RecordEDocumentStatus",
             reason: "Müşteri e-belge durumu kontrolü",
@@ -139,10 +159,12 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         }
 
         var expectedVersion = ParseEDocumentExpectedVersion(command.ExpectedVersion);
+        var expectedToken = RequireProfileToken(command.ExpectedProfileToken);
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new
         {
-            PartyId = partyId, ExpectedVersion = expectedVersion, ScenarioCode = scenarioCode,
+            PartyId = partyId, ExpectedVersion = expectedVersion, ExpectedProfileToken = expectedToken,
+            ScenarioCode = scenarioCode,
         });
 
         // A NEW code must be one the acting company's Settings owner lists today. Re-sending the current code is a
@@ -170,10 +192,10 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         }
 
         return await UpsertEDocumentProfileAsync(
-            SetEInvoiceScenarioCommandName, partyId, expectedVersion, keyHash, requestHash, metadata, beforeSave,
-            scope, EInvoiceScenarioChangedEvent,
+            SetEInvoiceScenarioCommandName, partyId, expectedVersion, expectedToken, keyHash, requestHash, metadata,
+            beforeSave, scope, EInvoiceScenarioChangedEvent,
             ensureSettings: EnsureSettings,
-            apply: profile => profile.SetScenarioOverride(scenarioCode),
+            apply: (profile, now) => profile.SetScenarioOverride(scenarioCode, now),
             createWhenAbsentAndNoop: scenarioCode is null,
             operation: scenarioCode is null ? "ClearEInvoiceScenarioOverride" : "SetEInvoiceScenarioOverride",
             reason: "Müşteri e-Fatura senaryosu değişikliği",
@@ -183,13 +205,16 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
 
     /// <summary>
     /// The shared create-or-update for both e-belge commands: resolve the account (existence/company fence) and the
-    /// party's VKN, fence on the profile version ("0" = create), run the owner-supplied Settings precheck and change,
-    /// and audit one real change. Group-wide: the profile row carries no CompanyId.
+    /// party's VKN, fence on the PAIR (profile token = which profile; profile version, "0" = create), run the
+    /// owner-supplied Settings precheck and change, and audit one real change. Group-wide: the profile row carries no
+    /// CompanyId. Order of refusals: 404 (no account) → 422 (no VKN) → 409 (another profile than the one read, e.g.
+    /// after a VKN change) → 409 (stale version) → 422/503 (Settings).
     /// </summary>
     private async Task<CounterpartyCommandExecution> UpsertEDocumentProfileAsync(
         string commandName,
         Guid partyId,
         long expectedVersion,
+        string expectedToken,
         string keyHash,
         string requestHash,
         CounterpartyCommandMetadata metadata,
@@ -197,7 +222,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         PermissionScope scope,
         string eventType,
         Func<CustomerEDocumentProfile?, CancellationToken, Task<CounterpartyCommandResult?>>? ensureSettings,
-        Func<CustomerEDocumentProfile, bool> apply,
+        Func<CustomerEDocumentProfile, DateTimeOffset, bool> apply,
         bool createWhenAbsentAndNoop,
         string operation,
         string reason,
@@ -233,8 +258,11 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
                 keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
+        // P2-1: the numeric version alone cannot tell X's profile from Y's (ABA after a VKN change, OPEN-030). The token
+        // names the profile the client read; another profile — or a profile where "none" was read — is a conflict.
         var currentVersion = profile?.Version ?? 0L;
-        if (currentVersion != expectedVersion)
+        var currentToken = CounterpartyEDocumentProfileToken.Compute(taxIdentityNumber, profile?.Id);
+        if (!string.Equals(currentToken, expectedToken, StringComparison.Ordinal) || currentVersion != expectedVersion)
         {
             return await CompleteCommandAsync(commandName, Responses.VersionConflict(expectedVersion, currentVersion),
                 keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
@@ -256,8 +284,9 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
                     keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
             }
 
-            var created = new CustomerEDocumentProfile(Guid.NewGuid(), taxIdentityNumber);
-            apply(created);
+            var now = timeProvider.GetUtcNow();
+            var created = new CustomerEDocumentProfile(Guid.NewGuid(), taxIdentityNumber, now);
+            apply(created, now);
             dbContext.CustomerEDocumentProfiles.Add(created);
             await beforeSave(cancellationToken);
             EnqueueEDocumentAudit(metadata, scope, created, eventType, operation, versionBefore: null, beforeJson: "{}", reason);
@@ -269,10 +298,15 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             }
             catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
             {
-                // A concurrent create took the VKN between the check and the insert: it is now version 1, so the
-                // caller's "0" fence is stale.
+                // A concurrent create (possibly from another company) took the VKN between the check and the insert:
+                // the caller's "0" fence is stale. The conflict names the winner's real version.
                 dbContext.ChangeTracker.Clear();
-                createdResult = await CompleteCommandAsync(commandName, Responses.VersionConflict(expectedVersion, 1),
+                var winnerVersion = await dbContext.CustomerEDocumentProfiles.AsNoTracking()
+                    .Where(row => row.TaxIdentityNumber == taxIdentityNumber)
+                    .Select(row => (long?)row.Version)
+                    .SingleOrDefaultAsync(cancellationToken) ?? 1L;
+                createdResult = await CompleteCommandAsync(commandName,
+                    Responses.VersionConflict(expectedVersion, winnerVersion),
                     keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
             }
 
@@ -283,7 +317,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         var concurrency = new EDocumentProfileConcurrencyContext(profile.Id, expectedVersion);
         var beforeJson = SerializeEDocumentSnapshot(profile);
         var versionBefore = profile.Version;
-        if (!apply(profile))
+        if (!apply(profile, timeProvider.GetUtcNow()))
         {
             // A fenced no-op (Unknown→Unknown, or an unchanged override): no version move, no audit, but the same
             // Version + rowversion predicate still guards it. (A re-recorded known status is a real change — a new
@@ -299,6 +333,44 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             keyHash, requestHash, metadata, concurrency, cancellationToken, beforeSave);
         LogEDocumentCommand(logOperation, metadata, profile.Id, result);
         return result;
+    }
+
+    private static string RequireProfileToken(string? token) =>
+        CounterpartyEDocumentProfileToken.IsWellFormed(token)
+            ? token!
+            : throw new ArgumentException(
+                "expectedProfileToken, son okumanın döndürdüğü 64 karakterlik küçük harfli onaltılık değer olmalıdır.",
+                nameof(token));
+
+    /// <summary>
+    /// The checker's display name from the Identity directory (MOD-08), for a reader of the checking company only.
+    /// Any refusal, outage, unknown or non-GUID id is null — the screen then says the name could not be read; it never
+    /// falls back to the raw id.
+    /// </summary>
+    private async Task<string?> ResolveCheckerDisplayNameAsync(
+        Guid companyId, string actorId, string? checkerUserId, CancellationToken cancellationToken)
+    {
+        if (userDirectory is null || !Guid.TryParse(checkerUserId, out var checkerId) || checkerId == Guid.Empty)
+        {
+            return null;
+        }
+
+        try
+        {
+            var answer = await userDirectory.ResolveAsync(
+                new UserDirectoryResolveRequestV1(companyId, actorId, [checkerId]), cancellationToken);
+            return answer is { Outcome: UserDirectoryOutcomeV1.Found, Items: { } items }
+                ? items.FirstOrDefault(item => item.UserId == checkerId)?.DisplayName
+                : null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private Task<string?> ReadPartyTaxIdentityAsync(Guid partyId, CancellationToken cancellationToken) =>
@@ -396,6 +468,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             EDocumentStatus = profile.EDocumentStatus.ToString(),
             profile.EDocumentStatusCheckedAtUtc,
             profile.EDocumentStatusCheckedByUserId,
+            profile.EDocumentStatusCheckedInCompanyId,
             profile.EInvoiceScenarioOverrideCode,
             profile.Version,
         });

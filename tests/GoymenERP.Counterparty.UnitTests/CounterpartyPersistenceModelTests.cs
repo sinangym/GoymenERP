@@ -132,13 +132,21 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.False(profile.FindProperty(nameof(CustomerEDocumentProfile.EDocumentStatus))!.IsNullable);
         Assert.Equal(32, profile.FindProperty(nameof(CustomerEDocumentProfile.EInvoiceScenarioOverrideCode))!.GetMaxLength());
         Assert.Equal(128, profile.FindProperty(nameof(CustomerEDocumentProfile.EDocumentStatusCheckedByUserId))!.GetMaxLength());
+
+        // The checking company decides only who sees the checker; it is a real company (FK), not a tenant key.
+        Assert.Contains("[EDocumentStatusCheckedInCompanyId] IS NULL", status.Sql, StringComparison.Ordinal);
+        var checkedIn = Assert.Single(profile.GetForeignKeys());
+        Assert.Equal([nameof(CustomerEDocumentProfile.EDocumentStatusCheckedInCompanyId)],
+            checkedIn.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, checkedIn.DeleteBehavior);
+        Assert.False(checkedIn.IsRequired);
     }
 
     [Fact]
     public void SaveChanges_refuses_an_e_document_profile_delete_before_the_database_call()
     {
         using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
-        var profile = new CustomerEDocumentProfile(Guid.NewGuid(), "1234567890");
+        var profile = new CustomerEDocumentProfile(Guid.NewGuid(), "1234567890", DateTimeOffset.UnixEpoch);
         dbContext.CustomerEDocumentProfiles.Attach(profile);
         dbContext.CustomerEDocumentProfiles.Remove(profile);
         Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
@@ -225,7 +233,7 @@ public sealed class CounterpartyPersistenceModelTests
             "20261027202534_AddCounterpartyCustomerGroups",
             dbContext.Database.GetMigrations());
         Assert.Equal(
-            "20261031091827_AddCustomerEDocumentProfiles",
+            "20261031143822_AddCustomerEDocumentProfiles",
             dbContext.Database.GetMigrations().Last());
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }

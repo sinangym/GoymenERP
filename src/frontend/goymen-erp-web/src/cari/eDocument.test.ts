@@ -11,11 +11,13 @@ const profile = (over: Record<string, unknown> = {}) => ({
   accountId: ACCOUNT,
   companyId: COMPANY,
   version: '0',
+  profileToken: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
   accountIsActive: true,
   taxIdentityNumberPresent: true,
   status: 'Unknown',
   statusCheckedAtUtc: null,
-  statusCheckedByUserId: null,
+  statusCheckedInActiveCompany: null,
+  statusCheckedByDisplayName: null,
   scenarioOverrideCode: null,
   evaluatedOn: '2026-10-29',
   scenarioCodes: { state: 'NotSet', codes: [] },
@@ -35,9 +37,26 @@ describe('SAT-D102 e-belge profile decoder', () => {
   })
 
   it('accepts a customer with no VKN (status Unknown, version 0)', () => {
-    const decoded = decodeAccountEDocumentProfile(profile({ taxIdentityNumberPresent: false }), expected)
+    const decoded = decodeAccountEDocumentProfile(
+      profile({ taxIdentityNumberPresent: false, profileToken: null }),
+      expected,
+    )
     expect(decoded?.taxIdentityNumberPresent).toBe(false)
     expect(decoded?.version).toBe('0')
+  })
+
+  it('accepts a check recorded in another group company, without the checker', () => {
+    const decoded = decodeAccountEDocumentProfile(
+      profile({
+        status: 'EArchive',
+        version: '2',
+        statusCheckedAtUtc: '2026-10-29T07:30:00+00:00',
+        statusCheckedInActiveCompany: false,
+      }),
+      expected,
+    )
+    expect(decoded?.statusCheckedInActiveCompany).toBe(false)
+    expect(decoded?.statusCheckedByDisplayName).toBeNull()
   })
 
   it('accepts a shared profile at a positive version', () => {
@@ -53,7 +72,8 @@ describe('SAT-D102 e-belge profile decoder', () => {
       profile({
         status: 'EInvoice',
         statusCheckedAtUtc: '2026-10-29T07:30:00+00:00',
-        statusCheckedByUserId: 'actor-1',
+        statusCheckedInActiveCompany: true,
+        statusCheckedByDisplayName: 'Ayşe Yılmaz',
         scenarioOverrideCode: 'CODE_A',
         scenarioCodes: { state: 'Set', codes: ['CODE_A', 'CODE_B'] },
         effectiveScenario: { outcome: 'Resolved', source: 'CustomerOverride', scenarioCode: 'CODE_A', unresolvedReason: 'None' },
@@ -61,7 +81,8 @@ describe('SAT-D102 e-belge profile decoder', () => {
       expected,
     )
     expect(decoded?.scenarioOverrideCode).toBe('CODE_A')
-    expect(decoded?.statusCheckedByUserId).toBe('actor-1')
+    expect(decoded?.statusCheckedByDisplayName).toBe('Ayşe Yılmaz')
+    expect(decoded?.profileToken).toBe('a'.repeat(64))
   })
 
   it.each([
@@ -69,7 +90,20 @@ describe('SAT-D102 e-belge profile decoder', () => {
     ['another company', { companyId: 'bbbbbbbb-0000-0000-0000-000000000002' }],
     ['an unknown status', { status: 'Maybe' }],
     ['a number version', { version: 1 }],
-    ['an Unknown status with a check', { statusCheckedAtUtc: '2026-10-29T07:30:00Z', statusCheckedByUserId: 'x' }],
+    ['an Unknown status with a check', { statusCheckedAtUtc: '2026-10-29T07:30:00Z', statusCheckedInActiveCompany: true }],
+    ['a checker name for an Unknown status', { statusCheckedByDisplayName: 'Ayşe' }],
+    [
+      "another company's checker name",
+      {
+        status: 'EInvoice',
+        statusCheckedAtUtc: '2026-10-29T07:30:00Z',
+        statusCheckedInActiveCompany: false,
+        statusCheckedByDisplayName: 'Ayşe',
+      },
+    ],
+    ['a token without a VKN', { taxIdentityNumberPresent: false }],
+    ['a VKN without a token', { profileToken: null }],
+    ['a malformed token', { profileToken: 'ABC' }],
     ['a known status without its check', { status: 'EArchive' }],
     ['a lower-case override', { scenarioOverrideCode: 'code_a' }],
     ['a Set list without codes', { scenarioCodes: { state: 'Set', codes: [] } }],

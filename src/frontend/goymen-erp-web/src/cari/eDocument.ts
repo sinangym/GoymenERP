@@ -73,11 +73,16 @@ export interface AccountEDocumentProfile {
   readonly accountId: string
   readonly companyId: string
   readonly version: string
+  /** Opaque: which profile this read showed (bound to the VKN). Sent back with every command; null without a VKN. */
+  readonly profileToken: string | null
   readonly accountIsActive: boolean
   readonly taxIdentityNumberPresent: boolean
   readonly status: EDocumentStatus
   readonly statusCheckedAtUtc: string | null
-  readonly statusCheckedByUserId: string | null
+  /** True when the check was recorded in the selected company; null exactly when the status is Unknown. */
+  readonly statusCheckedInActiveCompany: boolean | null
+  /** The checker's display name — only for a reader of the checking company, and null when it cannot be resolved. */
+  readonly statusCheckedByDisplayName: string | null
   readonly scenarioOverrideCode: string | null
   readonly evaluatedOn: string
   readonly scenarioCodes: { readonly state: SettingsSourceState; readonly codes: readonly string[] }
@@ -89,6 +94,7 @@ export interface AccountEDocumentProfile {
 /** The server's lexical shape of a scenario code (1..32, A-Z first, then A-Z, 0-9 or `_`). */
 const SCENARIO_CODE = /^[A-Z][A-Z0-9_]{0,31}$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
+const PROFILE_TOKEN = /^[0-9a-f]{64}$/
 
 const isObject = (raw: unknown): raw is Record<string, unknown> => typeof raw === 'object' && raw !== null
 const oneOf = <T extends string>(values: readonly T[], raw: unknown): raw is T =>
@@ -125,6 +131,7 @@ export function decodeAccountEDocumentProfile(
     raw.companyId !== expected.companyId ||
     !isBoundUuid(raw.accountId) ||
     !isEDocumentVersion(raw.version) ||
+    !(raw.profileToken === null || (typeof raw.profileToken === 'string' && PROFILE_TOKEN.test(raw.profileToken))) ||
     typeof raw.accountIsActive !== 'boolean' ||
     typeof raw.taxIdentityNumberPresent !== 'boolean' ||
     !oneOf(E_DOCUMENT_STATUSES, raw.status) ||
@@ -143,13 +150,20 @@ export function decodeAccountEDocumentProfile(
   }
 
   // Unknown carries no check; a known status carries both its time and its checker (the server's own rule).
+  // Unknown carries no check; a known status carries its time and whether it was checked in this company. The checker's
+  // name exists only for a check of this company (the server never names another company's checker).
   const checkedAt = raw.statusCheckedAtUtc
-  const checkedBy = raw.statusCheckedByUserId
+  const inActive = raw.statusCheckedInActiveCompany
+  const checkerName = raw.statusCheckedByDisplayName
   if (raw.status === 'Unknown') {
-    if (checkedAt !== null || checkedBy !== null) return null
-  } else if (!isInstant(checkedAt) || typeof checkedBy !== 'string' || checkedBy.trim().length === 0) {
+    if (checkedAt !== null || inActive !== null || checkerName !== null) return null
+  } else if (!isInstant(checkedAt) || typeof inActive !== 'boolean') {
     return null
   }
+  if (!(checkerName === null || (typeof checkerName === 'string' && checkerName.trim().length > 0))) return null
+  if (inActive !== true && checkerName !== null) return null
+  // A token exists exactly when the party has a VKN.
+  if ((raw.profileToken === null) !== (raw.taxIdentityNumberPresent === false)) return null
 
   const codes: string[] = []
   for (const code of raw.scenarioCodes.codes) {
@@ -169,11 +183,13 @@ export function decodeAccountEDocumentProfile(
     accountId: raw.accountId,
     companyId: raw.companyId,
     version: raw.version,
+    profileToken: raw.profileToken as string | null,
     accountIsActive: raw.accountIsActive,
     taxIdentityNumberPresent: raw.taxIdentityNumberPresent,
     status: raw.status,
     statusCheckedAtUtc: checkedAt as string | null,
-    statusCheckedByUserId: checkedBy as string | null,
+    statusCheckedInActiveCompany: inActive as boolean | null,
+    statusCheckedByDisplayName: checkerName as string | null,
     scenarioOverrideCode: raw.scenarioOverrideCode,
     evaluatedOn: raw.evaluatedOn,
     scenarioCodes: { state: raw.scenarioCodes.state, codes },
@@ -223,6 +239,8 @@ export const E_DOCUMENT_TEXT = {
   } as Readonly<Record<EDocumentStatus, string>>,
   checkedLabel: 'Son kontrol',
   checkedValue: (when: string, who: string) => `${when} · ${who}`,
+  checkedInOtherCompany: 'başka bir grup şirketinde kontrol edildi',
+  checkerUnknown: 'kontrol eden kişinin adı okunamadı',
   notChecked: 'Henüz kontrol kaydı yok',
   statusSelectLabel: 'Kontrol sonucu',
   recordStatus: 'Kontrolü kaydet',

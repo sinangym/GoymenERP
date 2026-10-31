@@ -2334,11 +2334,13 @@ internal {{declaration}} : IDocumentObjectStoreV1
             "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
             "CounterpartyEInvoiceScenarioSettings.cs",
             "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
+            "CounterpartyEDocumentProfileToken.cs",
+            "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"
             "CounterpartyCommandService.EDocumentProfile.cs",
             "src/backend/GoymenERP.Api/Endpoints/CounterpartyEndpoints.EDocumentProfile.cs",
             "src/backend/GoymenERP.Api/OpenApi/ErpOpenApiContract.EDocumentProfile.cs",
             "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/Migrations/"
-            "20261031091827_AddCustomerEDocumentProfiles.cs",
+            "20261031143822_AddCustomerEDocumentProfiles.cs",
         ):
             self.assertIn(sat_d102_source, source_paths)
         for shared_value_object in (

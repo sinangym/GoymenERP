@@ -6,7 +6,8 @@
  *  - The READ is a side read of the Cari card: it sends the client-contract declaration and the selected company but
  *    deliberately does NOT move the card's readiness slot (the card's own detail read owns it).
  *  - COMMANDS go through `putVersionedCommand`: the write gate, one Idempotency-Key per attempt, the exact-204 rule,
- *    "no acknowledgment = unknown outcome", and the ACCOUNT version as lossless decimal text. A 503 (Settings could
+ *    "no acknowledgment = unknown outcome", and the fence the read returned: the VKN-shared PROFILE version as decimal
+ *    text ("0" = no profile yet, opted in via `allowZeroVersion`) plus the opaque profile token. A 503 (Settings could
  *    not be read; nothing stored) is an unknown outcome for the attempt model, so the same key is retried.
  */
 
@@ -110,11 +111,16 @@ const SCENARIO_REPLAYABLE = replayable([
   ]],
 ])
 
-/** Record the e-belge status a user checked; `expectedVersion` is the ACCOUNT version of the read the form opened on. */
+/**
+ * Record the e-belge status a user checked. The fence is the pair the read returned: `expectedVersion` (the VKN-shared
+ * PROFILE version, "0" when no profile exists yet) and `expectedProfileToken` (which profile the read showed — a VKN
+ * change in between makes the server answer 409 instead of writing another taxpayer's record).
+ */
 export function recordAccountEDocumentStatus(
   context: CommandContext,
   partyId: string,
   expectedVersion: string,
+  expectedProfileToken: string,
   status: EDocumentStatus,
   signal?: AbortSignal,
 ): Promise<CommandOutcome<null>> {
@@ -122,7 +128,7 @@ export function recordAccountEDocumentStatus(
     `${eDocumentPath(partyId)}/status`,
     context,
     expectedVersion,
-    { status },
+    { expectedProfileToken, status },
     signal,
     STATUS_REPLAYABLE,
     true,
@@ -137,6 +143,7 @@ export function setAccountEInvoiceScenario(
   context: CommandContext,
   partyId: string,
   expectedVersion: string,
+  expectedProfileToken: string,
   scenarioCode: string | null,
   signal?: AbortSignal,
 ): Promise<CommandOutcome<null>> {
@@ -144,7 +151,7 @@ export function setAccountEInvoiceScenario(
     `${eDocumentPath(partyId)}/scenario`,
     context,
     expectedVersion,
-    { scenarioCode },
+    { expectedProfileToken, scenarioCode },
     signal,
     SCENARIO_REPLAYABLE,
     true,

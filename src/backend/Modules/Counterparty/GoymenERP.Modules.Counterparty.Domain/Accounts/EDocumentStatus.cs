@@ -1,8 +1,9 @@
 namespace GoymenERP.Modules.Counterparty.Domain.Accounts;
 
 /// <summary>
-/// SAT-D102 (Sinan, 2026-10-28): the customer's e-belge status as checked when the Cari card is opened, held on the
-/// company's account. <see cref="Unknown"/> is an explicit state — nothing is inferred from the VKN, the party kind or
+/// SAT-D102 / SAT-D119 (Sinan, 2026-10-28 and 2026-10-31): the customer's e-belge status as checked when the Cari card is
+/// opened, held on the group-level, VKN-keyed <see cref="CustomerEDocumentProfile"/> (shared by every company that holds a
+/// customer with that VKN/TCKN). <see cref="Unknown"/> is an explicit state — nothing is inferred from the VKN, the party kind or
 /// any other field — and an invoice consumer must treat it as "not checked" (fail-closed). The GİB mükellef query that
 /// would fill it automatically is a follow-up; today a user records what they checked.
 /// </summary>

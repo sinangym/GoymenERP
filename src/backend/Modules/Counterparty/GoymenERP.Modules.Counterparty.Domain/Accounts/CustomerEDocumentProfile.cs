@@ -5,8 +5,11 @@ namespace GoymenERP.Modules.Counterparty.Domain.Accounts;
 /// across all Göymen companies — a check recorded in one company is seen on the same-VKN customer's Cari card in the
 /// others. It is therefore a GROUP-LEVEL Counterparty record keyed by the tax identity number, with no
 /// <c>CompanyId</c> (the same shape as <c>Party</c>, DEC-CAR-001), never a per-company-account field. It holds the
-/// e-Fatura / e-Arşiv status (SAT-D102: explicit <see cref="EDocumentStatus.Unknown"/>, never inferred), when and by
-/// whom it was last checked, and the optional e-Fatura scenario override. The allowed scenario codes are Settings
+/// e-Fatura / e-Arşiv status (SAT-D102: explicit <see cref="EDocumentStatus.Unknown"/>, never inferred), when, by whom
+/// and IN WHICH COMPANY it was last checked, and the optional e-Fatura scenario override. The checking company is kept
+/// so the checker's identity is shown only inside that company (other companies see the date and "checked in another
+/// group company"). After a party's VKN changes (OPEN-030), its card simply reads the NEW VKN's profile; the old VKN's
+/// profile stays as it is — never moved, merged or deleted — because the status is a fact of the VKN (SAT-D119). The allowed scenario codes are Settings
 /// data (validated by the command before <see cref="SetScenarioOverride"/>); this type only keeps the lexical shape.
 /// Read per company through an account that resolves to this VKN; company-private rows are never touched here.
 /// </summary>
@@ -21,14 +24,13 @@ public sealed class CustomerEDocumentProfile
     /// persisted after its first real change (<see cref="RecordStatus"/> / <see cref="SetScenarioOverride"/>), which
     /// moves it to version 1 — so the version counts real changes and a stored row is always at least 1.
     /// </summary>
-    public CustomerEDocumentProfile(Guid id, string taxIdentityNumber)
+    public CustomerEDocumentProfile(Guid id, string taxIdentityNumber, DateTimeOffset createdAtUtc)
     {
         Id = id == Guid.Empty ? throw new ArgumentException("Kimlik boş olamaz.", nameof(id)) : id;
         TaxIdentityNumber = NormalizeTaxIdentityNumber(taxIdentityNumber);
         EDocumentStatus = EDocumentStatus.Unknown;
-        var now = DateTimeOffset.UtcNow;
-        CreatedAtUtc = now;
-        UpdatedAtUtc = now;
+        CreatedAtUtc = createdAtUtc;
+        UpdatedAtUtc = createdAtUtc;
     }
 
     public Guid Id { get; private set; }
@@ -44,6 +46,12 @@ public sealed class CustomerEDocumentProfile
 
     /// <summary>Who recorded the last check (the authenticated actor id); null exactly when Unknown.</summary>
     public string? EDocumentStatusCheckedByUserId { get; private set; }
+
+    /// <summary>
+    /// The company in whose context the last check was recorded; null exactly when Unknown. It is NOT a tenant key of
+    /// the row (the row is group-wide): it only decides who may see the checker's identity (P3-1, SAT-D119).
+    /// </summary>
+    public Guid? EDocumentStatusCheckedInCompanyId { get; private set; }
 
     /// <summary>The customer's e-Fatura scenario code, overriding the Settings default; null = use the default.</summary>
     public string? EInvoiceScenarioOverrideCode { get; private set; }
@@ -61,7 +69,8 @@ public sealed class CustomerEDocumentProfile
     /// so the version moves and the change is audited) even when the value is unchanged; resetting to
     /// <see cref="EDocumentStatus.Unknown"/> clears the check. False only for Unknown → Unknown.
     /// </summary>
-    public bool RecordStatus(EDocumentStatus status, string checkedByUserId, DateTimeOffset checkedAtUtc)
+    public bool RecordStatus(
+        EDocumentStatus status, string checkedByUserId, Guid checkedInCompanyId, DateTimeOffset nowUtc)
     {
         if (!Enum.IsDefined(status))
         {
@@ -78,7 +87,8 @@ public sealed class CustomerEDocumentProfile
             EDocumentStatus = EDocumentStatus.Unknown;
             EDocumentStatusCheckedAtUtc = null;
             EDocumentStatusCheckedByUserId = null;
-            Touch();
+            EDocumentStatusCheckedInCompanyId = null;
+            Touch(nowUtc);
             return true;
         }
 
@@ -88,10 +98,16 @@ public sealed class CustomerEDocumentProfile
             throw new ArgumentException("Kontrol eden kullanıcı kimliği geçersiz.", nameof(checkedByUserId));
         }
 
+        if (checkedInCompanyId == Guid.Empty)
+        {
+            throw new ArgumentException("Kontrolün yapıldığı şirket boş olamaz.", nameof(checkedInCompanyId));
+        }
+
         EDocumentStatus = status;
-        EDocumentStatusCheckedAtUtc = checkedAtUtc;
+        EDocumentStatusCheckedAtUtc = nowUtc;
         EDocumentStatusCheckedByUserId = checker;
-        Touch();
+        EDocumentStatusCheckedInCompanyId = checkedInCompanyId;
+        Touch(nowUtc);
         return true;
     }
 
@@ -99,7 +115,7 @@ public sealed class CustomerEDocumentProfile
     /// Sets (or, with null, clears) the e-Fatura scenario override. The caller has already proven the code is in the
     /// Settings code list in force for its company; false when the value is unchanged (no version move).
     /// </summary>
-    public bool SetScenarioOverride(string? scenarioCode)
+    public bool SetScenarioOverride(string? scenarioCode, DateTimeOffset nowUtc)
     {
         if (scenarioCode is not null && !IsWellFormedScenarioCode(scenarioCode))
         {
@@ -112,13 +128,13 @@ public sealed class CustomerEDocumentProfile
         }
 
         EInvoiceScenarioOverrideCode = scenarioCode;
-        Touch();
+        Touch(nowUtc);
         return true;
     }
 
-    private void Touch()
+    private void Touch(DateTimeOffset nowUtc)
     {
-        UpdatedAtUtc = DateTimeOffset.UtcNow;
+        UpdatedAtUtc = nowUtc;
         Version = checked(Version + 1);
     }
 

@@ -270,6 +270,9 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<Guid?>("EDocumentStatusCheckedInCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("EInvoiceScenarioOverrideCode")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
@@ -295,6 +298,8 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("EDocumentStatusCheckedInCompanyId");
+
                     b.HasIndex("TaxIdentityNumber")
                         .IsUnique()
                         .HasDatabaseName("UX_CustomerEDocumentProfiles_TaxIdentityNumber");
@@ -303,7 +308,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("CK_CustomerEDocumentProfiles_ScenarioOverrideCode", "[EInvoiceScenarioOverrideCode] IS NULL OR (LEN([EInvoiceScenarioOverrideCode]) > 0 AND DATALENGTH([EInvoiceScenarioOverrideCode]) = 2 * LEN([EInvoiceScenarioOverrideCode]) AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 LIKE '[A-Z]%' AND [EInvoiceScenarioOverrideCode] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^A-Z0-9_]%')");
 
-                            t.HasCheckConstraint("CK_CustomerEDocumentProfiles_Status", "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL) OR ([EDocumentStatus] IN (1, 2) AND [EDocumentStatusCheckedAtUtc] IS NOT NULL AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0)");
+                            t.HasCheckConstraint("CK_CustomerEDocumentProfiles_Status", "([EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL AND [EDocumentStatusCheckedByUserId] IS NULL AND [EDocumentStatusCheckedInCompanyId] IS NULL) OR ([EDocumentStatus] IN (1, 2) AND [EDocumentStatusCheckedAtUtc] IS NOT NULL AND [EDocumentStatusCheckedByUserId] IS NOT NULL AND LEN([EDocumentStatusCheckedByUserId]) > 0 AND [EDocumentStatusCheckedInCompanyId] IS NOT NULL)");
 
                             t.HasCheckConstraint("CK_CustomerEDocumentProfiles_TaxIdentityNumber", "LEN([TaxIdentityNumber]) IN (10, 11) AND DATALENGTH([TaxIdentityNumber]) = LEN([TaxIdentityNumber]) AND [TaxIdentityNumber] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9]%'");
 
@@ -631,6 +636,15 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("FK_CompanyPartyAccounts_CustomerGroups_CompanyId_CustomerGroupId");
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.CustomerEDocumentProfile", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Counterparty.Infrastructure.Persistence.CounterpartyDbContext+OrganizationCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("EDocumentStatusCheckedInCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("FK_CustomerEDocumentProfiles_Companies_CheckedInCompanyId");
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Counterparty.Domain.Accounts.CustomerGroup", b =>

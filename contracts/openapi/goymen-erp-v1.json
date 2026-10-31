@@ -80401,11 +80401,13 @@
           "accountId",
           "companyId",
           "version",
+          "profileToken",
           "accountIsActive",
           "taxIdentityNumberPresent",
           "status",
           "statusCheckedAtUtc",
-          "statusCheckedByUserId",
+          "statusCheckedInActiveCompany",
+          "statusCheckedByDisplayName",
           "scenarioOverrideCode",
           "evaluatedOn",
           "scenarioCodes",
@@ -80433,6 +80435,15 @@
             "pattern": "^(0|[1-9][0-9]*)$",
             "type": "string"
           },
+          "profileToken": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "accountIsActive": {
             "type": "boolean"
           },
@@ -80449,7 +80460,13 @@
             ],
             "format": "date-time"
           },
-          "statusCheckedByUserId": {
+          "statusCheckedInActiveCompany": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "statusCheckedByDisplayName": {
             "type": [
               "null",
               "string"
@@ -80478,7 +80495,7 @@
             "$ref": "#/components/schemas/CounterpartyAccountEDocumentViewer"
           }
         },
-        "description": "The account's customer VKN-shared e-belge profile (SAT-D119): a check or scenario set in one company is seen on the same-VKN customer in the others. taxIdentityNumberPresent is false when the party has no VKN (then status Unknown, scenario Unresolved). version is the shared profile version (\"0\" = none yet). effectiveScenario is the override if present and listed, else the Settings default, else Unresolved; the default starts empty, so Unresolved is the normal start. evaluatedOn is the Europe/Istanbul business day the Settings keys were read for."
+        "description": "The account's customer VKN-shared e-belge profile (SAT-D119): a check or scenario set in one company is seen on the same-VKN customer in the others; the checker is shown only inside the company the check was recorded in (statusCheckedInActiveCompany, statusCheckedByDisplayName). taxIdentityNumberPresent is false when the party has no VKN (then status Unknown, scenario Unresolved, profileToken null). version + profileToken are the command fence (\"0\" = no profile yet). After a VKN change the card shows the NEW VKN's profile; the old one stays as it is. effectiveScenario is the override if present and listed, else the Settings default, else Unresolved; the default starts empty, so Unresolved is the normal start. evaluatedOn is the Europe/Istanbul business day the Settings keys were read for."
       },
       "CounterpartyAccountEDocumentViewer": {
         "required": [
@@ -94729,6 +94746,7 @@
       "RecordCounterpartyEDocumentStatus": {
         "required": [
           "expectedVersion",
+          "expectedProfileToken",
           "status"
         ],
         "type": "object",
@@ -94739,12 +94757,18 @@
             "pattern": "^(0|[1-9][0-9]*)$",
             "type": "string"
           },
+          "expectedProfileToken": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
           "status": {
             "$ref": "#/components/schemas/CounterpartyEDocumentStatusV1"
           }
         },
         "additionalProperties": false,
-        "description": "Records the e-belge status a user checked for the customer's VKN-shared profile (SAT-D102 / SAT-D119). A known status (EInvoice / EArchive) stamps the server time and the caller as the check, even when the value is unchanged; Unknown resets the status and its check. expectedVersion is the shared PROFILE version as canonical decimal TEXT (\"0\" = no profile yet; the first record creates it). A party with no VKN/TCKN is 422 e_document_tax_identity_required. No external (GİB) call.",
+        "description": "Records the e-belge status a user checked for the customer's VKN-shared profile (SAT-D102 / SAT-D119). A known status (EInvoice / EArchive) stamps the server time, the caller and the active company as the check, even when the value is unchanged; Unknown resets the status and its check. The fence is the pair the read returned: expectedVersion (the shared PROFILE version as canonical decimal TEXT, \"0\" = no profile yet; the first record creates it) and expectedProfileToken (which profile the read showed). Another profile than the one read — e.g. after the party's VKN changed — is 409 version_conflict. A party with no VKN/TCKN is 422 e_document_tax_identity_required. No external (GİB) call.",
         "x-erp-normalized-maximum-expectedVersion": "9223372036854775807"
       },
       "RecordDeliveryRequest": {
@@ -101498,6 +101522,7 @@
       "SetCounterpartyEInvoiceScenarioOverride": {
         "required": [
           "expectedVersion",
+          "expectedProfileToken",
           "scenarioCode"
         ],
         "type": "object",
@@ -101506,6 +101531,12 @@
             "maxLength": 19,
             "minLength": 1,
             "pattern": "^(0|[1-9][0-9]*)$",
+            "type": "string"
+          },
+          "expectedProfileToken": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[0-9a-f]{64}$",
             "type": "string"
           },
           "scenarioCode": {
@@ -101519,7 +101550,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Sets the customer's e-Fatura scenario override (VKN-shared) to a code of the writing company's Settings scenario list in force today, or clears it with an explicit null (scenarioCode must be present). expectedVersion is the shared PROFILE version (\"0\" creates). Settings without a list is 422 einvoice_scenario_code_list_missing; a code the list does not carry is 422 einvoice_scenario_not_listed; Settings that cannot be read is 503 service_unavailable (nothing stored); a party with no VKN is 422 e_document_tax_identity_required. Re-sending the current code is a no-op.",
+        "description": "Sets the customer's e-Fatura scenario override (VKN-shared) to a code of the writing company's Settings scenario list in force today, or clears it with an explicit null (scenarioCode must be present). Fenced on expectedVersion (the shared PROFILE version, \"0\" creates) and expectedProfileToken as the status command. Settings without a list is 422 einvoice_scenario_code_list_missing; a code the list does not carry is 422 einvoice_scenario_not_listed; Settings that cannot be read is 503 service_unavailable (nothing stored); a party with no VKN is 422 e_document_tax_identity_required. Re-sending the current code is a no-op.",
         "x-erp-normalized-maximum-expectedVersion": "9223372036854775807"
       },
       "SetEDispatchNumberRequest": {

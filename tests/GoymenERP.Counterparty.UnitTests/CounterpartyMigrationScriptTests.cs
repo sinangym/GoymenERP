@@ -49,13 +49,14 @@ public sealed class CounterpartyMigrationScriptTests
             script, StringComparison.Ordinal);
         Assert.DoesNotContain("INSERT INTO [counterparty].[CustomerGroups]", script, StringComparison.OrdinalIgnoreCase);
         // SAT-D119: the group-level, VKN-keyed, shared e-belge profile table (no CompanyId); nothing seeded.
-        Assert.Contains("20261031091827_AddCustomerEDocumentProfiles", script, StringComparison.Ordinal);
+        Assert.Contains("20261031143822_AddCustomerEDocumentProfiles", script, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE [counterparty].[CustomerEDocumentProfiles]", script, StringComparison.Ordinal);
         Assert.Contains(
             "CREATE UNIQUE INDEX [UX_CustomerEDocumentProfiles_TaxIdentityNumber] ON [counterparty].[CustomerEDocumentProfiles] ([TaxIdentityNumber])",
             script, StringComparison.Ordinal);
         Assert.Contains("CK_CustomerEDocumentProfiles_Status", script, StringComparison.Ordinal);
         Assert.Contains("CK_CustomerEDocumentProfiles_ScenarioOverrideCode", script, StringComparison.Ordinal);
+        Assert.Contains("FK_CustomerEDocumentProfiles_Companies_CheckedInCompanyId", script, StringComparison.Ordinal);
         // The e-belge profile table has no CompanyId column (group-wide, SAT-D119).
         Assert.DoesNotContain("[CustomerEDocumentProfiles] ([CompanyId]", script, StringComparison.Ordinal);
         Assert.DoesNotContain("INSERT INTO [counterparty].[CustomerEDocumentProfiles]", script, StringComparison.OrdinalIgnoreCase);
