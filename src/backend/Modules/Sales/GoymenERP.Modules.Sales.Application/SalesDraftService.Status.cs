@@ -93,7 +93,9 @@ public sealed partial class SalesDraftService
     /// </summary>
     private static (string Gate, string? PriceBasisRevision) InvoicingGate(SalesOrderDraft draft) => draft.ApprovalState switch
     {
-        // SAT-D114 (EK14): an internally approved revision the customer has not accepted (acceptance required) is no basis.
+        // SAT-D114 (EK14) / SAT-D121 (EK17, PR #862): an internally approved revision the customer has not accepted (acceptance
+        // required) is no basis — for EVERY revision type (price, quantity-only SAT-D104/D111, VAT/withholding SAT-D105), since
+        // the gate reads only the approval state and the acceptance of the basis revision, never the kind of change.
         InternalApprovalState.Approved when !draft.IsCustomerAccepted => (SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, null),
         InternalApprovalState.Approved => (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(draft.Revision)),
         InternalApprovalState.Preparing or InternalApprovalState.PendingApproval when draft.ArchivedRevisions.Count > 0 =>

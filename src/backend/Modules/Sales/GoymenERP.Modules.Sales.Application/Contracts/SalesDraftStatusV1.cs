@@ -75,9 +75,10 @@ public static class SalesDraftInvoicingGatesV1
     public const string AwaitingReapproval = "AwaitingReapproval";
 
     /// <summary>
-    /// SAT-D114 (EK14, PR #858): customer acceptance is required and the revision invoicing would use is internally approved
-    /// but not accepted by the customer — invoicing WAITS (already shipped goods included; "approval" in SAT-D103 means the
-    /// internal approval AND the customer acceptance when it is required). No price basis.
+    /// SAT-D114 (EK14, PR #858) / SAT-D121 (EK17, PR #862): customer acceptance is required and the revision invoicing would
+    /// use is internally approved but not accepted by the customer — invoicing WAITS (already shipped goods included;
+    /// "approval" in SAT-D103 means the internal approval AND the customer acceptance when it is required). This holds for
+    /// EVERY revision type — a price, a quantity-only (SAT-D104/D111) or a VAT/withholding (SAT-D105) revision alike. No price basis.
     /// </summary>
     public const string AwaitingCustomerAcceptance = "AwaitingCustomerAcceptance";
 }

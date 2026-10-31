@@ -1035,7 +1035,8 @@ export const ORDER_STATUS_TEXT = {
       'fiyatla faturalanır.',
     AwaitingCustomerAcceptance: () =>
       'Faturanın esas alacağı revizyon iç onaylı ama müşteri onayı henüz kaydedilmedi. Müşteri onayı gelene kadar sipariş ' +
-      'faturalanmaz (sevk edilmiş mallar dahil).',
+      'faturalanmaz (sevk edilmiş mallar dahil). Bu, revizyon türünden bağımsızdır: fiyat, miktar ya da KDV/tevkifat ' +
+      'revizyonu için aynı şekilde geçerlidir.',
   } as Readonly<Record<InvoicingGate, (revision: string) => string>>,
   ownerlessNote: {
     source: 'Kaynak stratejisi ve tahsis ekseninin sahibi modül henüz yok; eksen tamamlanmış ya da sıfır sayılmaz.',

@@ -190,6 +190,27 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_quantity_only_revision_approved_but_not_yet_accepted_keeps_invoicing_waiting_like_a_price_revision()
+    {
+        // SAT-D121 (EK17, PR #862): the SAT-D114 "invoicing waits until the customer accepts" rule is revision-type agnostic —
+        // a quantity-only revision (SAT-D104/D111) behaves exactly like a price revision.
+        var world = new World();
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        Owners(world);
+        Assert.Equal((SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.Rev0), await GateAsync(world, approved.Id));
+
+        await world.Service().ReviseQuantityAsync(approved.Id,
+            new SalesDraftQuantityRevisionRequest("5", "SENTETIK azaltma", [new SalesDraftLineQuantityV1(line, "1")]), Metadata("k-d121-down"));
+        Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingReapproval, (string?)null), await GateAsync(world, approved.Id));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-d121-submit"));
+        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d121-approve"));
+        // Internally approved but the customer has not accepted Rev.1 yet: invoicing waits, no price basis (SAT-D121).
+        Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, (string?)null), await GateAsync(world, approved.Id));
+        await world.Service().RecordCustomerAcceptanceAsync(approved.Id, Command("8"), Metadata("k-d121-accept"));
+        Assert.Equal((SalesDraftInvoicingGatesV1.Open, "Rev.1"), await GateAsync(world, approved.Id));
+    }
+
+    [Fact]
     public async Task A_rejected_decrease_resubmitted_after_loading_up_to_the_restored_cap_is_refused_at_submission_and_approval()
     {
         var world = new World();
