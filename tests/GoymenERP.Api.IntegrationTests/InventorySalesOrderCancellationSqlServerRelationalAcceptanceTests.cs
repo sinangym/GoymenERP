@@ -154,7 +154,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
 
         var draft = (await store.StoreDraftAsync(Envelope("cancel-create", "SENTETIK-preparer"), Hash("cancel-create"), documentNo =>
         {
-            var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), currency, day, day.AddDays(10));
+            var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), currency, day, day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
             var money = new MoneyProfileSnapshot(CompanyA, currency, SalesOrderDraft.MoneyOperation, Guid.Parse("9c3f4e5d-6c7b-48a9-9c2d-3e4f5a6b7e02"),
                 "3", day, true, from, null, 2);
             var created = SalesOrderDraft.Create(Guid.NewGuid(), CompanyA, documentNo, header, money, at);

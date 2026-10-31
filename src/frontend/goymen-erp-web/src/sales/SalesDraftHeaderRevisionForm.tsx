@@ -343,7 +343,7 @@ function HeaderRevisionEditor({
           <>
             <p className={styles.muted}>{T.noDueTerms}</p>
             <Button type="button" variant="secondary"
-              onClick={() => set({ instalments: [{ key: nextRowKey(), basis: 'InvoiceDate', daysAfter: '', sharePercent: '' }] })}>
+              onClick={() => set({ instalments: [{ key: nextRowKey(), basis: 'OrderDate', daysAfter: '', sharePercent: '' }] })}>
               {T.addDueTerms}
             </Button>
           </>
@@ -369,7 +369,7 @@ function HeaderRevisionEditor({
               </div>
             ))}
             <Button type="button" variant="secondary" disabled={values.instalments.length >= DUE_LIMITS.maximumInstalments}
-              onClick={() => set({ instalments: [...(values.instalments ?? []), { key: nextRowKey(), basis: 'InvoiceDate', daysAfter: '', sharePercent: '' }] })}>
+              onClick={() => set({ instalments: [...(values.instalments ?? []), { key: nextRowKey(), basis: 'OrderDate', daysAfter: '', sharePercent: '' }] })}>
               {T.addInstalment}
             </Button>
             <Button type="button" variant="ghost" className={styles.linkButton} onClick={() => set({ instalments: null })}>
@@ -418,9 +418,11 @@ function revisionNotice(attempt: HeaderAttempt): string | null {
     case 'unknown':
     case 'abandoned': return attempt.reason === 'service-unavailable' ? `${T.unavailable} ${T.unknown}` : T.unknown
     case 'completed':
+      // SAT-D126: an approved order whose ONLY change was the sales owner / delivery references stays approved.
       return attempt.result.isReplay ? T.replayed
-        : attempt.result.detail.draft.approvalState === APPROVAL_STATE.preparing && attempt.result.detail.draft.revision !== REV_0
-          ? T.completed : T.completedUnapproved
+        : attempt.result.detail.draft.approvalState === APPROVAL_STATE.approved ? T.completedNoReapproval
+          : attempt.result.detail.draft.approvalState === APPROVAL_STATE.preparing && attempt.result.detail.draft.revision !== REV_0
+            ? T.completed : T.completedUnapproved
     case 'failed': {
       const code = attempt.problem?.code ?? null
       const errors = attempt.problem?.errors ?? []

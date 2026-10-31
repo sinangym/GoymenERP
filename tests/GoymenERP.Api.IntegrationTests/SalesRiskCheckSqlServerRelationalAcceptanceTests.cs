@@ -238,7 +238,7 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
     /// <summary>A one-line priced draft (kg, 12.50 per kg, no list reference — SAT-D43) of the customer from SYNTHETIC owner snapshots: version 2.</summary>
     private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, string quantity)
     {
-        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, Day, Day.AddDays(10));
+        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

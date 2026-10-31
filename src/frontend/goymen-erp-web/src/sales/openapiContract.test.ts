@@ -179,7 +179,7 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expect(requestSchema(salesDraftHeaderRevisionPath('ID'))).toBe('SalesDraftHeaderRevisionRequest')
     const header: HeaderRevisionRequest = {
       expectedVersion: '4', reason: 'r', partyId: 'p', companyAccountId: 'a', currencyId: 'c', deliveryAddress: null, contact: null,
-      salesOwnerUserId: null, dueTerms: { instalments: [{ sequenceNo: 1, basis: 'InvoiceDate', daysAfter: 30, sharePercent: '100' }] },
+      salesOwnerUserId: null, dueTerms: { instalments: [{ sequenceNo: 1, basis: 'ShipmentDate', daysAfter: 30, sharePercent: '100' }] },
     }
     expectFits(header, 'SalesDraftHeaderRevisionRequest')
     expectFits(header.dueTerms!.instalments[0]!, 'SalesDueInstalmentV1')

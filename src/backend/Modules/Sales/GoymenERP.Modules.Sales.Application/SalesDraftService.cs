@@ -121,6 +121,17 @@ public sealed partial class SalesDraftService(
         // decides nothing. Asked after the replay (a recorded answer stays the answer) and before any owner is read; not recorded.
         RequireOrderBusinessDate(request.BusinessDate);
 
+        // SAT-D123 / SAT-D127: due terms entered by hand at create (optional; never defaulted) follow their own rules, asking no owner.
+        SalesDueTerms? dueTerms;
+        try
+        {
+            dueTerms = SalesDraftHeaderApiV1.ToDomain(request.DueTerms);
+        }
+        catch (SalesDueTermsException exception)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new(DueTermsField(exception), exception.Code)]);
+        }
+
         // 4. The owners, each answered for this company and business date. A stale product version
         // is recorded as the key's terminal result; if another caller of the same key wins that
         // record meanwhile, the winner's result is answered instead (ADR-011 §8; RaceWon).
@@ -161,7 +172,8 @@ public sealed partial class SalesDraftService(
 
         // 5. The domain builds the draft on the store's document number; the store keeps one save.
         var header = new SalesDraftHeader(request.PartyId, request.CompanyAccountId, request.CurrencyId, request.BusinessDate,
-            request.RequestedDeliveryDate, request.Note, DeliveryAddress: references.DeliveryAddress, Contact: references.Contact);
+            request.RequestedDeliveryDate, request.Note, DeliveryAddress: references.DeliveryAddress, Contact: references.Contact,
+            DueTerms: dueTerms);
         var now = timeProvider.GetUtcNow();
         SalesDraftStoreResult stored;
         try
@@ -965,6 +977,11 @@ public sealed partial class SalesDraftService(
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
         {
             throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, [new("reason", exception.Code)]);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.DueTermsRequired)
+        {
+            // SAT-D123 (EK18): no approval without due terms; not recorded (entering them with a header revision changes the answer).
+            throw new SalesDraftServiceException(422, "validation_failed", [new("dueTerms", exception.Code)]);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteRequestNotApproved)
         {

@@ -163,6 +163,9 @@ public static class SalesRuleCodes
     /// </summary>
     public const string HeaderRevisionPricedLines = "sales_header_revision_priced_lines";
 
+    /// <summary>SAT-D123 (EK18): an order is not approved without due terms; they are entered (or changed) by a header revision.</summary>
+    public const string DueTermsRequired = "sales_due_terms_required";
+
     /// <summary>DEC-SAL-003: a delivery-schedule update must name every current line exactly once and no other line.</summary>
     public const string ScheduleLinesMismatch = "sales_schedule_lines_mismatch";
     /// <summary>

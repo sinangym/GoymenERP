@@ -93,8 +93,12 @@ describe('S-04 header revision (API-04, DEC-SAL-002, DEC-SAL-008)', () => {
     fireEvent.click(within(form).getByRole('button', { name: T.submit }))
     expect(await within(form).findByText(T.localError({ kind: 'no-change' }))).toBeTruthy()
 
-    // Two instalments: 40 % thirty days after the invoice, 60 % sixty days after the shipment ("karma"); a decimal comma is read.
+    // Two instalments: 40 % thirty days after the order date, 60 % sixty days after the shipment ("karma"); a decimal comma is read.
     fireEvent.click(within(form).getByRole('button', { name: T.addDueTerms }))
+    // SAT-D129: exactly the two due types are offered (nokta vade, sevk vadesi); there is no invoice-date type.
+    expect(within(form).getAllByRole('option', { name: /vade/ }).map((option) => option.textContent))
+      .toEqual([T.basisName.OrderDate, T.basisName.ShipmentDate])
+    fireEvent.change(within(form).getByLabelText(T.basis), { target: { value: 'OrderDate' } })
     fireEvent.change(within(form).getByLabelText(T.daysAfter), { target: { value: '30' } })
     fireEvent.change(within(form).getByLabelText(T.sharePercent), { target: { value: '40' } })
     fireEvent.click(within(form).getByRole('button', { name: T.addInstalment }))
@@ -114,7 +118,7 @@ describe('S-04 header revision (API-04, DEC-SAL-002, DEC-SAL-008)', () => {
       expectedVersion: '4', reason: 'SENTETIK müşteri iki taksit istedi', partyId: PARTY, companyAccountId: ACCOUNT,
       currencyId: CURRENCY, deliveryAddress: null, contact: null, salesOwnerUserId: OWNER,
       dueTerms: { instalments: [
-        { sequenceNo: 1, basis: 'InvoiceDate', daysAfter: 30, sharePercent: '40' },
+        { sequenceNo: 1, basis: 'OrderDate', daysAfter: 30, sharePercent: '40' },
         { sequenceNo: 2, basis: 'ShipmentDate', daysAfter: 60, sharePercent: '60' },
       ] },
     })
@@ -175,7 +179,7 @@ describe('S-04 header revision (API-04, DEC-SAL-002, DEC-SAL-008)', () => {
     const harness = installFetch({
       capabilities: WITH_HEADER,
       onDetail: () => json(detail()),
-      onHeader: () => json(header({ dueTerms: { instalments: [{ sequenceNo: 1, basis: 'InvoiceDate', daysAfter: 30, sharePercent: '100' }] } })),
+      onHeader: () => json(header({ dueTerms: { instalments: [{ sequenceNo: 1, basis: 'ShipmentDate', daysAfter: 30, sharePercent: '100' }] } })),
       onHeaderRevision: () => {
         attempts += 1
         return attempts === 1
@@ -223,5 +227,29 @@ describe('S-04 header revision (API-04, DEC-SAL-002, DEC-SAL-008)', () => {
     const entry = await screen.findByTestId('sales-header-revision')
     expect((within(entry).getByRole('button', { name: T.open }) as HTMLButtonElement).disabled).toBe(true)
     expect(within(entry).getByText(T.stateUnavailable)).toBeTruthy()
+  })
+
+  it('SAT-D126: an approved order whose only change is the sales owner stays approved and says so', async () => {
+    let revised = false
+    installFetch({
+      capabilities: WITH_HEADER,
+      onDetail: () => json(revised ? detail('Approved', '5') : detail()),
+      onHeader: () => json(header({ dueTerms: { instalments: [{ sequenceNo: 1, basis: 'OrderDate', daysAfter: 30, sharePercent: '100' }] } })),
+      onSalesOwners: owners,
+      onHeaderRevision: () => {
+        revised = true
+        return json({ detail: detail('Approved', '5'), isReplay: false, originalCorrelationId: 'c-5' })
+      },
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await openForm()
+    const form = await screen.findByTestId('sales-header-revision-form')
+    expect(within(form).getByText(T.approvedWarning)).toBeTruthy()
+    await waitFor(() => expect(within(form).getByRole('option', { name: 'Sentetik Satışçı' })).toBeTruthy())
+    fireEvent.change(within(form).getByLabelText(T.salesOwner), { target: { value: OWNER } })
+    fireEvent.change(within(form).getByLabelText(T.reason), { target: { value: 'SENTETIK sorumlu değişti' } })
+    fireEvent.click(within(form).getByRole('button', { name: T.submit }))
+    expect(await screen.findByText(T.completedNoReapproval)).toBeTruthy()
+    expect(screen.getByTestId('sales-draft-revision').textContent).toBe('Rev.0')
   })
 })

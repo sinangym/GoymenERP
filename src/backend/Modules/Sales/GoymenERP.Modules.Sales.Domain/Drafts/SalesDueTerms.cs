@@ -1,24 +1,26 @@
 using System.Globalization;
+using GoymenERP.BuildingBlocks.Monetary;
 
 namespace GoymenERP.Modules.Sales.Domain.Drafts;
 
 /// <summary>
-/// DEC-SAL-008 (KILITLI, verbatim): "Sipariş bazında araç/sevkiyat, sipariş tarihli nokta vade, fatura vadesi, taksit veya
-/// karma model seçilebilir." — "Her sevkiyat kendi vadesini başlatabilir." The date an instalment's due date counts from:
+/// The due type ("vade tipi") an instalment counts from — the base date its due date is computed from. SAT-D129 (EK18): there
+/// are exactly TWO types; the invoice-date type ("fatura vadesi") of DEC-SAL-008 is removed by Sinan's explicit answer.
 /// <list type="bullet">
-/// <item><see cref="InvoiceDate"/> — "fatura vadesi": N days after the (official) invoice date (SAT-D86).</item>
-/// <item><see cref="ShipmentDate"/> — "araç/sevkiyat": N days after the shipment day, so every shipment starts its own due date.</item>
-/// <item><see cref="OrderDate"/> — "sipariş tarihli nokta vade": N days after the order's business date — one fixed point,
-/// whatever the invoice or shipment date.</item>
+/// <item><see cref="OrderDate"/> — "Nokta vade": the order's business date + N days, one due date for the order.</item>
+/// <item><see cref="ShipmentDate"/> — "Sevk vadesi": each shipment's (Europe/Istanbul) day + N days, every shipment its own due
+/// date. Sole exception SAT-D131: in the invoice-first flow (SAT-D94 (2)) it counts from the invoice date
+/// (<see cref="SalesDueDateCalculator.ComputeInvoiceFirst"/>); that is a calculation base, never a selectable type.</item>
 /// </list>
-/// "Taksit" is more than one instalment; "karma" is instalments of different bases. Nothing here is a default: an order
-/// without due terms has none, and its invoicing stays "vade eksik" (SAT-D101, fail-closed).
+/// "Taksit" (DEC-SAL-008) is more than one instalment; each instalment carries one of the two types and its own days (SAT-D129),
+/// so "karma" is instalments of different types — allowed: Sinan, 2026-10-31 ("Evet, karma olabilsin": every instalment carries
+/// its own type and days; DEC-SAL-008's "karma" model is kept; to be recorded in EK19). Nothing here is a default:
+/// SAT-D127 — a new order has no due terms. Persisted and sent by name (<c>SalesDueBasisNamesV1</c>), never by number.
 /// </summary>
 public enum SalesDueBasis
 {
-    InvoiceDate = 1,
+    OrderDate = 1,
     ShipmentDate = 2,
-    OrderDate = 3,
 }
 
 /// <summary>
@@ -55,6 +57,9 @@ public static class SalesDueTermsCodes
 
     /// <summary>The shares do not add up to exactly 100.</summary>
     public const string SharesNotWhole = "sales_due_terms_shares_not_whole";
+
+    /// <summary>SAT-D124: the rounded instalments leave a negative remainder for the last one (refused, never repaired).</summary>
+    public const string AmountNotSplittable = "sales_due_terms_amount_not_splittable";
 }
 
 /// <summary>
@@ -62,13 +67,13 @@ public static class SalesDueTermsCodes
 /// catalogue of payment terms exists on main). One or more instalments, each with its own basis (<see cref="SalesDueBasis"/>),
 /// whole calendar days after it and an exact share; the shares add up to exactly 100. Immutable; validated once, here.
 /// <para>
-/// What is NOT decided and therefore not chosen here (NEEDS-SINAN, fail-closed): whether a due date on a weekend or holiday
-/// moves (calendar days are counted, nothing moves); how an instalment's AMOUNT is rounded and which instalment takes the
-/// remainder cent (no amount is computed here — that is the invoice's, API-32/36); a default term per customer or company
-/// (none: an order without terms has none). The two bounds below are technical guards of the arithmetic, not policies.
+/// Decided (EK18): SAT-D125 — a due date on a weekend or a holiday does NOT move (whole calendar days are counted); SAT-D124 —
+/// an instalment's amount is rounded to the money scale and the remainder goes to the LAST instalment
+/// (<see cref="SalesDueDateCalculator.SplitAmount"/>); SAT-D127 — no default term per customer or company; SAT-D123 — an order
+/// is not approved without due terms. The two bounds below are technical guards of the arithmetic, not policies.
 /// </para>
 /// </summary>
-public sealed class SalesDueTerms
+public sealed class SalesDueTerms : IEquatable<SalesDueTerms>
 {
     /// <summary>Technical bound of one order's instalment count (the arithmetic and the wire stay bounded); not a business policy.</summary>
     public const int MaximumInstalments = 120;
@@ -109,7 +114,7 @@ public sealed class SalesDueTerms
 
             if (!Enum.IsDefined(instalment.Basis))
             {
-                throw new SalesDueTermsException(SalesDueTermsCodes.BasisInvalid, "Vade başlangıcı tanımlı değil.", index);
+                throw new SalesDueTermsException(SalesDueTermsCodes.BasisInvalid, "Vade tipi tanımlı değil.", index);
             }
 
             if (instalment.DaysAfter is < 0 or > MaximumDaysAfter)
@@ -156,6 +161,23 @@ public sealed class SalesDueTerms
                 && Share(pair.First) == Share(pair.Second));
     }
 
+    /// <summary>Value equality (a value object, so the header record compares by it): <see cref="SameTerms"/>.</summary>
+    public bool Equals(SalesDueTerms? other) => other is not null && SameTerms(this, other);
+
+    public override bool Equals(object? obj) => obj is SalesDueTerms other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        foreach (var instalment in Instalments)
+        {
+            // decimal hashes by value, so "50.0" and "50" hash alike, as SameTerms compares them.
+            hash.Add((instalment.SequenceNo, instalment.Basis, instalment.DaysAfter, Share(instalment)));
+        }
+
+        return hash.ToHashCode();
+    }
+
     private static decimal Share(SalesDueInstalment instalment) =>
         decimal.Parse(instalment.SharePercent, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
 
@@ -178,11 +200,8 @@ public enum SalesDueDateUnresolvedReason
     /// <summary>The order carries no due terms (SAT-D101: "vade eksik").</summary>
     NoTerms = 1,
 
-    /// <summary>An instalment counts from the invoice date and none was given.</summary>
-    InvoiceDateMissing = 2,
-
-    /// <summary>An instalment counts from the shipment day and none was given.</summary>
-    ShipmentDateMissing = 3,
+    /// <summary>An instalment is a "sevk vadesi" and no shipment day was given (nothing shipped yet for it).</summary>
+    ShipmentDateMissing = 2,
 }
 
 /// <summary>One instalment's computed due date with its sequence and share.</summary>
@@ -194,18 +213,37 @@ public sealed record SalesDueDateResult(IReadOnlyList<SalesDueDate> DueDates, Sa
     public bool IsResolved => Unresolved is null;
 }
 
+/// <summary>One instalment's amount (SAT-D124): its sequence and the amount at the money scale.</summary>
+public sealed record SalesDueAmount(int SequenceNo, Money Amount);
+
 /// <summary>
-/// SAT-D86 (EK13): "Vade, siparişin vade modelinden (DEC-SAL-008 anlık görüntüsü) ve resmî fatura tarihinden ERP tarafından
-/// hesaplanır." The ONE deterministic backend calculator of an order's due dates: per instalment, its basis date plus its
-/// whole calendar days. The invoice date is the official invoice date at matching (SAT-D86) or — for a proposal before any
-/// invoice exists (SAT-D101: "vade başlangıcı fatura tarihine bağlı modelde öneri tarihi olarak bugün alınır") — the caller's
-/// server business day; the shipment day is the shipment's Europe/Istanbul day (SAT-D10); the order date is the order's
-/// business date. A basis date the caller does not have is <see cref="SalesDueDateResult.Unresolved"/>, never a guess. No
-/// amount is computed (the invoice's, API-32/36) and nothing moves off a weekend or holiday (not decided; NEEDS-SINAN).
+/// The ONE deterministic backend calculator of an order's due dates and instalment amounts (SAT-D129, SAT-D131, SAT-D124,
+/// SAT-D125). Due date: per instalment its base date — the order's business date ("nokta vade") or the shipment's Europe/Istanbul
+/// day ("sevk vadesi", SAT-D10); in the invoice-first flow the invoice date stands in for the shipment day of a "sevk vadesi"
+/// (SAT-D131, <see cref="ComputeInvoiceFirst"/>) while a "nokta vade" stays the order's date — plus its whole calendar days;
+/// nothing moves off a weekend or holiday (SAT-D125). A base date the caller does not have (nothing shipped yet) is
+/// <see cref="SalesDueDateResult.Unresolved"/>, never a guess. Amount: every instalment but the last is the total × its share, rounded half away from zero to the total's money scale (SAT-D11's one
+/// rounding, <see cref="Money.Round"/>); the LAST instalment takes the remainder so the instalments add up to the total exactly
+/// (SAT-D124). The screen never computes either.
 /// </summary>
 public static class SalesDueDateCalculator
 {
-    public static SalesDueDateResult Compute(SalesDueTerms? terms, DateOnly orderDate, DateOnly? invoiceDate, DateOnly? shipmentDate)
+    /// <summary>
+    /// The shipment-first flow (the default, SAT-D94 (1)): a "nokta vade" counts from <paramref name="orderDate"/>, a "sevk vadesi"
+    /// from <paramref name="shipmentDate"/> (the shipment's Europe/Istanbul day; null while nothing is shipped → unresolved).
+    /// </summary>
+    public static SalesDueDateResult Compute(SalesDueTerms? terms, DateOnly orderDate, DateOnly? shipmentDate) =>
+        ComputeFrom(terms, orderDate, shipmentDate);
+
+    /// <summary>
+    /// SAT-D131: the invoice-first flow (depot delivery, SAT-D94 (2)), for the invoice draft (API-32). The invoice is cut before
+    /// the shipment, so a "sevk vadesi" instalment counts from <paramref name="invoiceDate"/> (the same logic as the rate being
+    /// taken at the invoice date in this flow, SAT-D90); a "nokta vade" instalment still counts from <paramref name="orderDate"/>.
+    /// </summary>
+    public static SalesDueDateResult ComputeInvoiceFirst(SalesDueTerms? terms, DateOnly orderDate, DateOnly invoiceDate) =>
+        ComputeFrom(terms, orderDate, invoiceDate);
+
+    private static SalesDueDateResult ComputeFrom(SalesDueTerms? terms, DateOnly orderDate, DateOnly? shipmentBaseDate)
     {
         if (terms is null)
         {
@@ -218,26 +256,57 @@ public static class SalesDueDateCalculator
             DateOnly basisDate;
             switch (instalment.Basis)
             {
-                case SalesDueBasis.InvoiceDate when invoiceDate is { } invoice:
-                    basisDate = invoice;
+                case SalesDueBasis.OrderDate:
+                    basisDate = orderDate;
                     break;
-                case SalesDueBasis.InvoiceDate:
-                    return new SalesDueDateResult([], SalesDueDateUnresolvedReason.InvoiceDateMissing);
-                case SalesDueBasis.ShipmentDate when shipmentDate is { } shipment:
+                case SalesDueBasis.ShipmentDate when shipmentBaseDate is { } shipment:
                     basisDate = shipment;
                     break;
                 case SalesDueBasis.ShipmentDate:
                     return new SalesDueDateResult([], SalesDueDateUnresolvedReason.ShipmentDateMissing);
-                case SalesDueBasis.OrderDate:
-                    basisDate = orderDate;
-                    break;
                 default:
-                    throw new InvalidOperationException("Vade başlangıcı tanımlı değil.");
+                    throw new InvalidOperationException("Vade tipi tanımlı değil.");
             }
 
             dueDates.Add(new SalesDueDate(instalment.SequenceNo, basisDate.AddDays(instalment.DaysAfter), instalment.SharePercent));
         }
 
         return new SalesDueDateResult(dueDates, null);
+    }
+
+    /// <summary>
+    /// SAT-D124: the total split over the instalments — each but the last rounded to the total's scale, the last the remainder.
+    /// A single instalment is the total itself (no rounding difference arises, EK18). The total must not be negative. Should the
+    /// remainder fall below zero (many tiny shares rounded up), the split is refused (<see cref="SalesDueTermsException"/>,
+    /// <see cref="SalesDueTermsCodes.AmountNotSplittable"/>), never repaired.
+    /// </summary>
+    public static IReadOnlyList<SalesDueAmount> SplitAmount(SalesDueTerms terms, Money total)
+    {
+        ArgumentNullException.ThrowIfNull(terms);
+        if (total.IsNegative)
+        {
+            throw new ArgumentOutOfRangeException(nameof(total), "Bölünecek tutar negatif olamaz.");
+        }
+
+        var amounts = new List<SalesDueAmount>(terms.Instalments.Count);
+        var allocated = Money.Zero(total.CurrencyId, total.Scale);
+        for (var index = 0; index < terms.Instalments.Count - 1; index++)
+        {
+            var instalment = terms.Instalments[index];
+            var share = decimal.Parse(instalment.SharePercent, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+            var amount = Money.Round(total.Amount * share / 100m, total.CurrencyId, total.Scale);
+            amounts.Add(new SalesDueAmount(instalment.SequenceNo, amount));
+            allocated = allocated.Add(amount);
+        }
+
+        var last = total.Subtract(allocated);
+        if (last.IsNegative)
+        {
+            throw new SalesDueTermsException(SalesDueTermsCodes.AmountNotSplittable,
+                "Taksit tutarları kuruşa yuvarlanınca son taksite negatif tutar kalıyor; tutar bu taksitlere bölünemez.");
+        }
+
+        amounts.Add(new SalesDueAmount(terms.Instalments[^1].SequenceNo, last));
+        return amounts;
     }
 }

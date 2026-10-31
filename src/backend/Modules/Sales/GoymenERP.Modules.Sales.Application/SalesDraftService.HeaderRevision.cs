@@ -11,9 +11,10 @@ namespace GoymenERP.Modules.Sales.Application;
 /// name <c>sales.orders.header.write</c> (granted to no role) — together with the price read <c>sales.orders.price.read</c>,
 /// because the request carries the whole header and its due terms are disclosed only with that read.
 /// <list type="bullet">
-/// <item><b>Re-approval:</b> an APPROVED order is archived first (approval facts, lines, money profile and — new — the header
-/// it was approved with, with the reason) and goes on as the next revision in <c>Preparing</c>; the existing submit/approve
-/// commands re-approve it. SAT-D103: during the re-approval shipping goes on under the LAST APPROVED revision and invoicing
+/// <item><b>Re-approval:</b> a change of the due terms, the customer or the currency of an APPROVED order archives it first
+/// (approval facts, lines, money profile and — new — the header it was approved with, with the reason) and goes on as the next
+/// revision in <c>Preparing</c>; the existing submit/approve commands re-approve it. SAT-D126 (EK18): a change of ONLY the sales
+/// owner and/or the delivery references is recorded in place (reason + audit, no Rev+1, no re-approval, gates untouched). SAT-D103: during the re-approval shipping goes on under the LAST APPROVED revision and invoicing
 /// waits (the status axis' <c>invoicing.gate</c>, unchanged) — except that a pending CUSTOMER or CURRENCY change stops shipping
 /// (the line port answers <c>HeaderRevisionPending</c>; SAT-D103 does not cover a currency change and no decision lets a
 /// customer change ship under the old customer).</item>
@@ -22,8 +23,9 @@ namespace GoymenERP.Modules.Sales.Application;
 /// profile on the order's business date through Settings; the sales owner through Identity's directory — active in the
 /// company AND holding the SAT-D27 eligibility name (<c>sales.drafts.create</c>); and, for a customer or currency change of an
 /// order that was ever approved, every owner record the cancellation preview reads (allocations, loading, approved dispatch
-/// notes): any record present → 409 <c>sales_revision_blocked</c> naming the sources, an unreadable owner → 503 (fail-closed;
-/// whether a decision allows a change despite records is NEEDS-SINAN). Neither is recorded (the owners move).</item>
+/// notes): SAT-D128 (EK18) — a started shipping locks the customer and the currency (any record present → 409
+/// <c>sales_revision_blocked</c> naming the sources, an unreadable owner → 503); a priced line locks them too (422). A wrong customer
+/// or currency means cancelling the order and opening a new one. Neither refusal is recorded (the owners move).</item>
 /// <item><b>Ordering</b> (the quantity revision's): fence → version shape → due terms' shape and rules (asks no owner) → the
 /// key's replay → the store reads the draft → fence → the domain's own preconditions (version, state, reason, priced lines) →
 /// each owner (fence after each) → last fence → ONE save. Terminal 409s recorded and replayed: <c>version_conflict</c>,

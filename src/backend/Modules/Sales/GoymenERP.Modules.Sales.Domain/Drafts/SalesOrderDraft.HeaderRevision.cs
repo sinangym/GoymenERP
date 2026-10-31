@@ -28,12 +28,13 @@ public sealed partial class SalesOrderDraft
     /// its HEADER as approved, with the reason — and only then does the draft advance to the next revision, back to
     /// <c>Preparing</c>; the existing submit/approve commands re-approve it (SAT-D103 machinery, unchanged). <c>PendingApproval</c>,
     /// <c>Withdrawn</c> and a cancelled or closed order are refused (<see cref="SalesRuleCodes.StateConflict"/>).</item>
-    /// <item>Every changed field re-enters approval — also the sales owner and the delivery references, which DEC-SAL-002 does
-    /// not list: whether those could change without re-approval is not decided (NEEDS-SINAN), so the stricter reading holds.</item>
-    /// <item>Customer or currency (fail-closed, NEEDS-SINAN): refused while any line is priced
-    /// (<see cref="SalesRuleCodes.HeaderRevisionPricedLines"/>); a currency change brings the new currency's money profile on the
-    /// order's business date (the create's money rules). Whether the order's owner records (allocations, loading, dispatch)
-    /// allow it is the caller's read, made BEFORE this runs.</item>
+    /// <item>SAT-D126 (EK18): a change of ONLY the sales owner and/or the delivery address / contact is recorded in place — no
+    /// archive, no Rev+1, the approval axis and the shipping / invoicing gates untouched — with the required reason and the audit.
+    /// A change of the due terms, the customer or the currency re-enters approval (DEC-SAL-002, SAT-D123).</item>
+    /// <item>Customer or currency (SAT-D128): refused while any line is priced (<see cref="SalesRuleCodes.HeaderRevisionPricedLines"/>)
+    /// — a wrong customer or currency means cancelling the order and opening a new one; a currency change brings the new
+    /// currency's money profile on the order's business date (the create's money rules). Whether shipping has started
+    /// (allocations, loading, dispatch notes) is the caller's read of the owners, made BEFORE this runs.</item>
     /// <item>A revision that changes nothing is refused (<see cref="SalesRuleCodes.RevisionNoChange"/>): an approval is never
     /// discarded for nothing. Due terms compare by value (<see cref="SalesDueTerms.SameTerms"/>).</item>
     /// </list>
@@ -66,7 +67,7 @@ public sealed partial class SalesOrderDraft
         if ((customerChanged || currencyChanged) && lines.Any(line => line.Commercial.UnitPrice is not null))
         {
             throw new SalesRuleException(SalesRuleCodes.HeaderRevisionPricedLines,
-                "Fiyatlı satırı olan siparişin carisi ya da para birimi değiştirilmez; fiyatların yeni cariye/para birimine geçişi karara bağlı değil.");
+                "Fiyatlı satırı olan siparişin carisi ya da para birimi değiştirilmez (SAT-D128); yanlışsa sipariş iptal edilip yeni sipariş açılır.");
         }
 
         var money = Money;
@@ -90,8 +91,12 @@ public sealed partial class SalesOrderDraft
                 "Başlık revizyonu hiçbir değeri değiştirmiyor; onay boşuna düşürülmez.");
         }
 
+        // SAT-D126 (EK18): a change of ONLY the sales owner and/or the delivery address / contact does not re-enter approval and
+        // opens no commercial revision — the order keeps its revision and approval axis; the reason and the audit record it. Any
+        // change of the due terms, the customer or the currency re-enters approval (DEC-SAL-002).
+        var commercialChange = customerChanged || currencyChanged || !SalesDueTerms.SameTerms(input.DueTerms, Header.DueTerms);
         ApprovedRevisionSnapshot? archived = null;
-        if (ApprovalState == InternalApprovalState.Approved)
+        if (commercialChange && ApprovalState == InternalApprovalState.Approved)
         {
             // The approved revision as it stands — its header included — archived BEFORE anything of it changes.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,

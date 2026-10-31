@@ -66,7 +66,7 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
         using var client = run.Client(subject, CompanyA);
         var draftPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
         var terms = new SalesDueTermsV1([
-            new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.InvoiceDate, 30, "40"),
+            new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.OrderDate, 30, "40"),
             new SalesDueInstalmentV1(2, SalesDueBasisNamesV1.ShipmentDate, 60, "60"),
         ]);
         var body = new SalesDraftHeaderRevisionRequest("4", "  SENTETIK iki taksit ", draft.Header.PartyId, draft.Header.CompanyAccountId,
@@ -89,7 +89,7 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
         Assert.Equal(2, stored.RootElement.GetProperty("instalments").GetArrayLength());
         Assert.Equal((1, 0, "SENTETIK iki taksit"), (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionHeaders] WHERE [DraftId] = @id AND [Revision] = 0 "
-                + "AND [CurrencyId] = @currency AND [SalesOwnerUserId] IS NULL AND [DueTermsJson] IS NULL", ("@id", draft.Id), ("@currency", Currency)),
+                + "AND [CurrencyId] = @currency AND [SalesOwnerUserId] IS NULL AND [DueTermsJson] IS NOT NULL", ("@id", draft.Id), ("@currency", Currency)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftRevisionHeaders] WHERE [DraftId] = @id AND [Revision] = 1", ("@id", draft.Id)),
             await run.ScalarAsync<string>("SELECT [Reason] FROM [sales].[DraftRevisions] WHERE [DraftId] = @id AND [Revision] = 0", ("@id", draft.Id))));
         Assert.Equal((1, 1), (
@@ -190,7 +190,7 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
         var draft = await run.ApprovedDraftAsync(CompanyA, "k");
         var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
         var body = new SalesDraftHeaderRevisionRequest("4", "neden", draft.Header.PartyId, draft.Header.CompanyAccountId, Currency, null, null, null,
-            new SalesDueTermsV1([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.InvoiceDate, 30, "100")]));
+            new SalesDueTermsV1([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.OrderDate, 30, "100")]));
 
         var (subjectOfB, _) = await run.GrantAsync(TestUsers.CompanyB, CompanyB, SalesPermissionManifestV1.DraftsRead,
             SalesPermissionManifestV1.OrdersHeaderWrite, SalesPermissionManifestV1.OrdersPriceRead);
@@ -235,6 +235,10 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
                 (_, _) => Task.CompletedTask);
         }
 
+        // An order approved before this migration had no due-terms column: SAT-D123 approvals now always carry them, so the
+        // pre-migration state is reproduced as SQL Server would have held it (no terms) before the rollback is tried.
+        await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL WHERE [Id] = @id; SELECT @@ROWCOUNT", ("@id", draft.Id));
+        await run.ScalarAsync<int>("UPDATE [sales].[DraftRevisionHeaders] SET [DueTermsJson] = NULL WHERE [DraftId] = @id; SELECT @@ROWCOUNT", ("@id", draft.Id));
         await using (var context = run.SalesContext(CompanyA))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
@@ -292,7 +296,7 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
     /// <summary>A one-line 6 kg draft from SYNTHETIC owner snapshots in the approved kg unit: version 2.</summary>
     private static SalesOrderDraft Draft(Guid company, string documentNo)
     {
-        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10));
+        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

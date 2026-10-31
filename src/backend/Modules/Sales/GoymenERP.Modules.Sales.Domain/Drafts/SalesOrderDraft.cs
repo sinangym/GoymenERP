@@ -633,6 +633,13 @@ public sealed partial class SalesOrderDraft
             throw StateConflict("Yalnız onay bekleyen taslak onaylanır.");
         }
 
+        // SAT-D123 (EK18): "Sipariş vade girilmeden onaylanamaz."
+        if (Header.DueTerms is null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.DueTermsRequired,
+                "Vade girilmeden sipariş onaylanamaz; vade başlık revizyonuyla girilir.");
+        }
+
         ApprovalState = InternalApprovalState.Approved;
         Approval = Approval with { DecidedBy = actor, DecidedAtUtc = now.ToUniversalTime(), RejectionReason = null };
         Touch(now);

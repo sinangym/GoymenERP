@@ -206,6 +206,9 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
         var schedule = Array.FindIndex(applied,
             migration => migration.EndsWith("_AddDeliverySchedules", StringComparison.Ordinal));
         Assert.True(schedule > 0);
+        // SAT-D123: approved orders carry due terms; clear them (this run's own database) so the later header-revision migration's
+        // 51133 guard does not stop the rollback before the guard under test.
+        await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL; SELECT @@ROWCOUNT");
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync(applied[schedule]);
         Assert.Equal(applied[..(schedule + 1)], await context.Database.GetAppliedMigrationsAsync());
@@ -237,7 +240,7 @@ public sealed class SalesDeliveryScheduleSqlServerRelationalAcceptanceTests
     /// <summary>A one-line draft (1.25 kg; slices 0.5 + 0.75; header date +10, line date +3) from SYNTHETIC owner snapshots: version 2.</summary>
     private static SalesOrderDraft Draft(Guid company, string documentNo)
     {
-        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10));
+        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

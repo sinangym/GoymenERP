@@ -366,6 +366,8 @@ export const ORDER_DETAIL_TEXT = {
     belowShipped: 'Bir satırın sipariş miktarı Lojistik\'te sevk edilmiş miktarın altında; miktar sevk edilenin altına inemez.',
     belowLoaded:
       'Bir satırın sipariş miktarı Lojistik\'te yüklenmiş miktarın altında; önce miktar revize edilmeli ya da yükleme düzeltilmelidir.',
+    /** SAT-D123 (EK18): the approval refuses an order without due terms. */
+    dueTermsRequired: 'Siparişin vadesi girilmemiş; vade girilmeden sipariş onaylanamaz. Vadeyi "Başlığı revize et" ile girin.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -1204,12 +1206,12 @@ export const HEADER_REVISION_TEXT = {
   description:
     'Cari hesabı, para birimini, vadeyi, satış sorumlusunu ve teslim bilgisini gerekçeyle değiştirin. Satırlar, fiyatlar ve termin bu revizyonda değişmez.',
   approvedWarning:
-    'Onaylı siparişte başlık değişikliği önceki onayı silmez; mevcut revizyon başlığıyla birlikte arşivlenir ve sipariş yeni ' +
-    'revizyonla yeniden onaya girer. Vade, satış sorumlusu veya teslim bilgisi değişirken sevkiyat son onaylı revizyonla sürer; ' +
-    'fatura onay gelene kadar bekler.',
+    'Onaylı siparişte yalnız satış sorumlusu veya teslim bilgisi değişirse sipariş onaylı kalır; değişiklik gerekçesiyle kaydedilir. ' +
+    'Vade, cari hesap veya para birimi değişirse mevcut revizyon başlığıyla arşivlenir ve sipariş yeni revizyonla yeniden onaya ' +
+    'girer; vade değişirken sevkiyat son onaylı revizyonla sürer, fatura onay gelene kadar bekler.',
   customerWarning:
-    'Cari hesap veya para birimi değişirse sipariş yeniden onaylanana kadar sevk edilmez. Satırlarında fiyat olan siparişte ve ' +
-    'bağlı tahsis, yükleme veya onaylı irsaliye varken cari hesap ve para birimi değiştirilemez.',
+    'Satırlarında fiyat olan ya da sevki (tahsis, yükleme, irsaliye) başlamış siparişte cari hesap ve para birimi değiştirilemez; ' +
+    'yanlışsa sipariş iptal edilip yeni sipariş açılır. Cari hesap veya para birimi değişirse sipariş yeniden onaylanana kadar sevk edilmez.',
   pendingCustomer: 'Bu siparişin onay bekleyen revizyonu cari hesabı veya para birimini değiştiriyor; onaylanana kadar sevk edilmez.',
   stateUnavailable: 'Onay bekleyen, geri çekilmiş, iptal edilmiş veya kapatılmış siparişte başlık revizyonu yapılamaz.',
   loading: 'Sipariş başlığı okunuyor…',
@@ -1235,23 +1237,22 @@ export const HEADER_REVISION_TEXT = {
   salesOwnersUnavailable: 'Satış sorumlusu listesi okunamadı; satış sorumlusu değiştirilemez.',
   salesOwnersMore: 'Daha fazla kişi var; aramayı daraltın.',
   dueTerms: 'Vade',
-  noDueTerms: 'Vade tanımlı değil. Vadesi olmayan siparişin sevkiyatları faturaya hazır listesinde "vade eksik" kalır ve faturalanamaz.',
+  noDueTerms: 'Vade tanımlı değil. Vade girilmeden sipariş onaylanamaz.',
   addDueTerms: 'Vade tanımla',
   removeDueTerms: 'Vadeyi kaldır',
   addInstalment: 'Taksit ekle',
   removeInstalment: (no: number) => `${no}. taksiti kaldır`,
   instalment: (no: number) => `${no}. taksit`,
-  basis: 'Vade başlangıcı',
+  basis: 'Vade tipi',
   basisName: {
-    InvoiceDate: 'Fatura tarihinden itibaren',
-    ShipmentDate: 'Sevk tarihinden itibaren',
-    OrderDate: 'Sipariş tarihinden itibaren',
+    OrderDate: 'Nokta vade (sipariş tarihi + gün)',
+    ShipmentDate: 'Sevk vadesi (her sevkin tarihi + gün)',
   },
   daysAfter: 'Gün',
   sharePercent: 'Pay (%)',
   dueTermsHint:
-    'Vade tarihi sunucuda, siparişin vade koşulundan ve fatura, sevk veya sipariş tarihinden hesaplanır; takvim günü sayılır. ' +
-    'Payların toplamı tam 100 olmalıdır.',
+    'Nokta vadede vade sipariş tarihinden, sevk vadesinde her sevkin kendi tarihinden hesaplanır; takvim günü sayılır, hafta sonu ' +
+    've tatil günü kaydırılmaz. Taksitlerde payların toplamı tam 100 olmalıdır; tutarlar kuruşa yuvarlanır, kalan fark son taksite eklenir.',
   reason: 'Revizyon gerekçesi',
   reasonHint: 'Zorunlu; en fazla 4000 karakter.',
   submit: 'Başlık revizyonunu kaydet',
@@ -1259,6 +1260,7 @@ export const HEADER_REVISION_TEXT = {
   unknown: 'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi aynı anahtarla tekrar deneyin.',
   completed: 'Başlık revizyonu kaydedildi. Sipariş yeniden onaya gönderilmelidir.',
   completedUnapproved: 'Başlık revizyonu kaydedildi.',
+  completedNoReapproval: 'Başlık değişikliği kaydedildi; yalnız satış sorumlusu veya teslim bilgisi değiştiği için sipariş onaylı kalır.',
   replayed: 'Bu başlık revizyonu daha önce kaydedilmişti; güncel sipariş gösteriliyor.',
   retry: 'Aynı revizyonu tekrar dene',
   abandon: 'Bu denemeyi bırak',
@@ -1277,7 +1279,9 @@ export const HEADER_REVISION_TEXT = {
           : `Bağlı kayıt: ${source}`,
   /** The server's field codes the screen explains (the field names the member). */
   fieldCode: {
-    sales_header_revision_priced_lines: 'Satırlarında fiyat olan siparişte cari hesap ve para birimi değiştirilemez.',
+    sales_header_revision_priced_lines:
+      'Satırlarında fiyat olan siparişte cari hesap ve para birimi değiştirilemez; yanlışsa sipariş iptal edilip yeni sipariş açılır.',
+    sales_due_terms_required: 'Vade girilmeden sipariş onaylanamaz.',
     sales_revision_no_change: 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
     owner_reference_invalid: 'Seçilen kayıt geçerli değil (pasif, bu cariye ait değil veya satış sorumlusu olamaz).',
     sales_due_terms_shares_not_whole: 'Taksit paylarının toplamı tam olarak 100 olmalıdır.',

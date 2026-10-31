@@ -201,8 +201,9 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
                 new SalesDraftDiscountExceptionApprovalRequest(converted.Detail.Draft.Version,
                     [.. converted.Detail.Lines.Select(line => new SalesDraftDiscountExceptionApprovalLineV1(line.LineId, "SENTETIK liste dışı fiyat"))]),
                 run.Metadata("q-discount-check"));
+            var withTerms = await run.EnterDueTermsAsync(scope, draftId, "q");
             var submitted = await run.Service(scope, run.Actor).SubmitDraftAsync(draftId,
-                new SalesDraftStateCommandRequest(checkedOrder.Detail.Draft.Version), run.Metadata("q-submit"));
+                new SalesDraftStateCommandRequest(withTerms), run.Metadata("q-submit"));
             var approved = await run.Service(scope, Approver).ApproveDraftAsync(draftId,
                 new SalesDraftStateCommandRequest(submitted.Detail.Draft.Version), run.Metadata("q-approve-order"));
             Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
@@ -365,8 +366,9 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
         {
             var checkedVersion = await ApproveDiscountChecksAsync(order, version, tag);
             await using var scope = run.Store(CompanyA);
+            var withTerms = await run.EnterDueTermsAsync(scope, order, tag);
             var submitted = await run.Service(scope, run.Actor).SubmitDraftAsync(order,
-                new SalesDraftStateCommandRequest(checkedVersion), run.Metadata(tag + "-submit"));
+                new SalesDraftStateCommandRequest(withTerms), run.Metadata(tag + "-submit"));
             var approved = await run.Service(scope, Approver).ApproveDraftAsync(order,
                 new SalesDraftStateCommandRequest(submitted.Detail.Draft.Version), run.Metadata(tag + "-approve-order"));
             Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
@@ -434,14 +436,18 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
         // direct edit, since the rejection itself is refused above) neither submits nor approves — refused, not recorded.
         var stale = await OrderFromApprovedRequestAsync("n-stale");
         var pending = await OrderFromApprovedRequestAsync("n-pending");
-        // Both orders carry an approved discount check, so the only thing left to refuse them is the request's state.
-        var staleVersion = await ApproveDiscountChecksAsync(stale.Order, stale.Detail.Draft.Version, "n-stale");
-        var pendingCheckedVersion = await ApproveDiscountChecksAsync(pending.Order, pending.Detail.Draft.Version, "n-pending");
+        // Both orders carry an approved discount check and due terms (SAT-D123), so the only thing left to refuse them is the
+        // request's state.
+        await ApproveDiscountChecksAsync(stale.Order, stale.Detail.Draft.Version, "n-stale");
+        await ApproveDiscountChecksAsync(pending.Order, pending.Detail.Draft.Version, "n-pending");
+        string staleVersion;
         string pendingVersion;
         await using (var scope = run.Store(CompanyA))
         {
+            staleVersion = await run.EnterDueTermsAsync(scope, stale.Order, "n-stale");
+            var pendingWithTerms = await run.EnterDueTermsAsync(scope, pending.Order, "n-pending");
             pendingVersion = (await run.Service(scope, run.Actor).SubmitDraftAsync(pending.Order,
-                new SalesDraftStateCommandRequest(pendingCheckedVersion), run.Metadata("n-pending-submit"))).Detail.Draft.Version;
+                new SalesDraftStateCommandRequest(pendingWithTerms), run.Metadata("n-pending-submit"))).Detail.Draft.Version;
         }
 
         foreach (var request in new[] { stale.Request, pending.Request })
@@ -1036,8 +1042,9 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
                 new SalesDraftDiscountExceptionApprovalRequest(order.Draft.Version,
                     [.. order.Lines.Select(line => new SalesDraftDiscountExceptionApprovalLineV1(line.LineId, "SENTETIK liste dışı fiyat"))]),
                 run.Metadata("d-discount-check"));
+            var withTerms = await run.EnterDueTermsAsync(scope, order.Draft.Id, "d");
             var submitted = await run.Service(scope, run.Actor).SubmitDraftAsync(order.Draft.Id,
-                new SalesDraftStateCommandRequest(checkedOrder.Detail.Draft.Version), run.Metadata("d-submit"));
+                new SalesDraftStateCommandRequest(withTerms), run.Metadata("d-submit"));
             var approved = await run.Service(scope, Approver).ApproveDraftAsync(order.Draft.Id,
                 new SalesDraftStateCommandRequest(submitted.Detail.Draft.Version), run.Metadata("d-approve-order"));
             var service = run.Service(scope, run.Actor);
@@ -1173,6 +1180,19 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>The REAL draft service over this scope's real store, with SYNTHETIC owner ports and every Sales name granted.</summary>
+        /// <summary>
+        /// SAT-D123 / SAT-D132: a converted order carries no due terms (a quote has none yet), so the seller enters them by the
+        /// header revision before the approval; everything else in the header stays as it is. Returns the new draft version.
+        /// </summary>
+        public async Task<string> EnterDueTermsAsync(StoreScope scope, Guid draftId, string tag)
+        {
+            var header = await Service(scope, Actor).GetDraftHeaderAsync(draftId);
+            var revised = await Service(scope, Actor).ReviseHeaderAsync(draftId, new SalesDraftHeaderRevisionRequest(header.DraftVersion,
+                "SENTETIK vade", header.PartyId, header.CompanyAccountId, header.CurrencyId, header.DeliveryAddress, header.Contact,
+                header.SalesOwnerUserId, TestDueTerms.PointDue30Wire), Metadata(tag + "-due-terms"));
+            return revised.Detail.Draft.Version;
+        }
+
         public SalesDraftService Service(StoreScope scope, string actor, Func<Task>? onProductRead = null)
         {
             var companyContext = new CompanyContext();

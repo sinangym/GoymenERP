@@ -335,7 +335,7 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
     {
         var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day,
             RequestedDeliveryDate: withReferences ? Day.AddDays(7) : null, Note: withReferences ? "SENTETIK not" : null,
-            DeliveryAddress: withReferences ? new OwnerReference(owners.Address, "2") : null);
+            DeliveryAddress: withReferences ? new OwnerReference(owners.Address, "2") : null, DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, documentNo, header, money, at);
         var unit = new UnitProfileSnapshot(owners.Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

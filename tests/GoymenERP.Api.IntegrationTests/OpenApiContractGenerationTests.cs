@@ -6740,7 +6740,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("responsible", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("paymentTerms", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
                     ("sourceStrategy", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
-                    ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null")),
+                    ("package", "oneOf:ref:SalesDraftOwnerReferenceV1|type:null"),
+                    // SAT-D123 / SAT-D127 (EK18): the due terms entered by hand at create (optional, never defaulted).
+                    ("dueTerms", "oneOf:ref:SalesDueTermsV1|type:null")),
                 ["SalesDraftStateCommandRequest"] = ObjectSchema(
                     ["expectedVersion"],
                     ("expectedVersion", "type:string"),

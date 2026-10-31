@@ -5,29 +5,31 @@ using GoymenERP.Modules.Sales.Domain.Drafts;
 namespace GoymenERP.Modules.Sales.Application.Contracts;
 
 /// <summary>
-/// DEC-SAL-008 / SAT-D86: one instalment of an order's due terms on the wire — its sequence (1..n), the basis it counts from
-/// (<see cref="SalesDueBasisNamesV1"/>), the whole calendar days after the basis and its share of the invoice as exact percent
-/// text. Strict: every member present.
+/// DEC-SAL-008 / SAT-D129: one instalment of an order's due terms on the wire — its sequence (1..n), its due type
+/// (<see cref="SalesDueBasisNamesV1"/>: <c>OrderDate</c> "nokta vade" or <c>ShipmentDate</c> "sevk vadesi"), the whole calendar days after that base date and its share of the invoice as exact percent text. Strict:
+/// every member present.
 /// </summary>
 public sealed record SalesDueInstalmentV1(int SequenceNo, string Basis, int DaysAfter, string SharePercent);
 
-/// <summary>DEC-SAL-008: an order's due terms — one instalment ("net N gün") or several ("taksit"; bases may differ: "karma").</summary>
+/// <summary>DEC-SAL-008 / SAT-D129: an order's due terms — one instalment or several ("taksit"; each with its own type and days).</summary>
 public sealed record SalesDueTermsV1(IReadOnlyList<SalesDueInstalmentV1> Instalments);
 
-/// <summary>The wire names of <see cref="SalesDueBasis"/> (exact, case-sensitive).</summary>
+/// <summary>
+/// The wire names of the due types (<see cref="SalesDueBasis"/>; exact, case-sensitive): <c>OrderDate</c> — "Nokta vade" (the
+/// order's date + N days) and <c>ShipmentDate</c> — "Sevk vadesi" (each shipment's date + N days). SAT-D129: no invoice-date type
+/// exists; any other name (an old "InvoiceDate" included) is a malformed request body (the strict reader refuses it).
+/// </summary>
 public static class SalesDueBasisNamesV1
 {
-    public const string InvoiceDate = "InvoiceDate";
-    public const string ShipmentDate = "ShipmentDate";
     public const string OrderDate = "OrderDate";
+    public const string ShipmentDate = "ShipmentDate";
 
-    public static IReadOnlyList<string> All { get; } = [InvoiceDate, ShipmentDate, OrderDate];
+    public static IReadOnlyList<string> All { get; } = [OrderDate, ShipmentDate];
 
     public static bool TryParse(string? name, out SalesDueBasis basis)
     {
         basis = name switch
         {
-            InvoiceDate => SalesDueBasis.InvoiceDate,
             ShipmentDate => SalesDueBasis.ShipmentDate,
             OrderDate => SalesDueBasis.OrderDate,
             _ => 0,
@@ -37,7 +39,6 @@ public static class SalesDueBasisNamesV1
 
     public static string Name(SalesDueBasis basis) => basis switch
     {
-        SalesDueBasis.InvoiceDate => InvoiceDate,
         SalesDueBasis.ShipmentDate => ShipmentDate,
         SalesDueBasis.OrderDate => OrderDate,
         _ => throw new ArgumentOutOfRangeException(nameof(basis)),
@@ -117,17 +118,23 @@ public static class SalesDraftHeaderApiV1
 
         if (request.DueTerms is { } terms)
         {
-            if (terms.Instalments is null || terms.Instalments.Count is < 1 or > SalesDueTerms.MaximumInstalments)
-                throw new JsonException("Invalid due terms.");
-            foreach (var instalment in terms.Instalments)
-            {
-                if (instalment is null || !SalesDueBasisNamesV1.TryParse(instalment.Basis, out _))
-                    throw new JsonException("Invalid due instalment.");
-                SalesDraftJson.RequireDecimalShape(instalment.SharePercent, positive: true);
-            }
+            RequireDueTermsShape(terms);
         }
 
         return request;
+    }
+
+    /// <summary>The due terms' wire shape (the create's and the revision's): 1..max instalments, a known type name, decimal share text.</summary>
+    internal static void RequireDueTermsShape(SalesDueTermsV1 terms)
+    {
+        if (terms.Instalments is null || terms.Instalments.Count is < 1 or > SalesDueTerms.MaximumInstalments)
+            throw new JsonException("Invalid due terms.");
+        foreach (var instalment in terms.Instalments)
+        {
+            if (instalment is null || !SalesDueBasisNamesV1.TryParse(instalment.Basis, out _))
+                throw new JsonException("Invalid due instalment.");
+            SalesDraftJson.RequireDecimalShape(instalment.SharePercent, positive: true);
+        }
     }
 
     /// <summary>The domain's due terms from the wire (shape already checked); a rule refusal names the instalment.</summary>

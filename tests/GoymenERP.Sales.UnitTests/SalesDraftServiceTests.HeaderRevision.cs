@@ -18,11 +18,14 @@ public sealed partial class SalesDraftServiceTests
     private static readonly Guid NewCurrency = Guid.Parse("5c5c5c5c-5c5c-45c5-85c5-5c5c5c5c5c5c");
     private static readonly Guid Owner = Guid.Parse("0e0e0e0e-0e0e-40e0-80e0-0e0e0e0e0e0e");
 
-    private static SalesDueTermsV1 NetDays(int days) => new([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.InvoiceDate, days, "100")]);
+    private static SalesDueTermsV1 NetDays(int days) => new([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.OrderDate, days, "100")]);
 
+    /// <summary>The whole header; the due terms default to the order's own (the create's <see cref="TestDueTerms.PointDue30Wire"/>).</summary>
     private static SalesDraftHeaderRevisionRequest HeaderRevision(string version, SalesDueTermsV1? terms = null, Guid? owner = null,
-        Guid? account = null, Guid? currency = null, SalesDraftOwnerReferenceV1? address = null, string reason = "SENTETIK vade değişti") =>
-        new(version, reason, Party, account ?? Account, currency ?? Currency, address, null, owner, terms);
+        Guid? account = null, Guid? currency = null, SalesDraftOwnerReferenceV1? address = null, string reason = "SENTETIK vade değişti",
+        bool clearTerms = false) =>
+        new(version, reason, Party, account ?? Account, currency ?? Currency, address, null, owner,
+            clearTerms ? null : terms ?? TestDueTerms.PointDue30Wire);
 
     [Fact]
     public async Task An_approved_orders_due_terms_and_sales_owner_revision_archives_rev0_with_its_header_and_ships_on_rev0_until_approved()
@@ -35,7 +38,7 @@ public sealed partial class SalesDraftServiceTests
         world.Authority.Measured.Clear();
         world.ResetOwnerCalls();
         var terms = new SalesDueTermsV1([
-            new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.InvoiceDate, 30, "40"),
+            new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.OrderDate, 30, "40"),
             new SalesDueInstalmentV1(2, SalesDueBasisNamesV1.ShipmentDate, 60, "60.00"),
         ]);
         var address = new SalesDraftOwnerReferenceV1(AddressId, AddressVersion);
@@ -65,17 +68,19 @@ public sealed partial class SalesDraftServiceTests
             (transition.Command, transition.Envelope.PermissionCode, transition.Audit.EventType, transition.Audit.Operation,
                 transition.VersionBefore, transition.VersionAfter));
 
-        // Rev.0 is archived with the header it was approved with (no due terms, no owner, no address) and the reason.
+        // Rev.0 is archived with the header it was approved with (its point due, no owner, no address) and the reason.
         var archived = Assert.Single(world.Store.Archived);
         Assert.Equal((0, "SENTETIK müşteri iki taksit istedi"), (archived.Revision, archived.Reason));
-        Assert.Equal(new RevisionHeaderSnapshot(Party, Account, Currency, null, null, null, null), archived.Header);
+        Assert.Equal((Party, Account, Currency, (OwnerReference?)null, (Guid?)null), (archived.Header!.PartyId, archived.Header.CompanyAccountId,
+            archived.Header.CurrencyId, archived.Header.DeliveryAddress, archived.Header.SalesOwnerUserId));
+        Assert.True(SalesDueTerms.SameTerms(TestDueTerms.PointDue30, archived.Header.DueTerms));
 
         // The revisable header read: the new values; the due terms because the price read is held.
         var header = await world.Service().GetDraftHeaderAsync(approved.Id);
         Assert.Equal(("6", "Rev.1", Owner, $"Kisi {Owner:N}", "Visible", false),
             (header.DraftVersion, header.Revision, header.SalesOwnerUserId, header.SalesOwnerDisplayName, header.DueTermsDisclosure,
                 header.CustomerOrCurrencyRevisionPending));
-        Assert.Equal([(1, "InvoiceDate", 30, "40"), (2, "ShipmentDate", 60, "60.00")],
+        Assert.Equal([(1, "OrderDate", 30, "40"), (2, "ShipmentDate", 60, "60.00")],
             header.DueTerms!.Instalments.Select(item => (item.SequenceNo, item.Basis, item.DaysAfter, item.SharePercent)));
 
         // SAT-D103: shipping goes on under Rev.0 (the customer is unchanged); invoicing waits for the decision.
@@ -218,8 +223,8 @@ public sealed partial class SalesDraftServiceTests
         world.ResetOwnerCalls();
         SalesDueTermsV1 terms = fault switch
         {
-            "shares" => new([new(1, "InvoiceDate", 30, "50"), new(2, "InvoiceDate", 60, "40")]),
-            "sequence" => new([new(1, "InvoiceDate", 30, "50"), new(3, "InvoiceDate", 60, "50")]),
+            "shares" => new([new(1, "OrderDate", 30, "50"), new(2, "ShipmentDate", 60, "40")]),
+            "sequence" => new([new(1, "OrderDate", 30, "50"), new(3, "ShipmentDate", 60, "50")]),
             "days" => new([new(1, "OrderDate", -1, "100")]),
             _ => new([new(1, "OrderDate", 10, "0"), new(2, "OrderDate", 20, "100")]),
         };
@@ -361,5 +366,89 @@ public sealed partial class SalesDraftServiceTests
             HeaderRevision("4", address: new SalesDraftOwnerReferenceV1(InactiveAddressId, "2")), Metadata("k-address-inactive")));
         Assert.Equal((422, SalesDraftProblemCodesV1.OwnerReferenceInvalid), Status(inactive));
         Assert.Single(world.Store.Refusals);
+    }
+
+    [Fact]
+    public async Task SAT_D126_a_change_of_only_the_sales_owner_and_delivery_references_of_an_approved_order_keeps_it_approved_at_its_revision()
+    {
+        var world = new World();
+        world.SalesOwners!.Eligible.Add(Owner);
+        Owners(world);
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        var port = LinePort(world);
+
+        var revised = await world.Service().ReviseHeaderAsync(approved.Id,
+            HeaderRevision("5", owner: Owner, address: new SalesDraftOwnerReferenceV1(AddressId, AddressVersion), reason: "SENTETIK sorumlu değişti"),
+            Metadata("k-simple"));
+
+        // No re-approval and no commercial revision: still Approved at Rev.0, one version step, nothing archived.
+        Assert.Equal(("Approved", "Rev.0", "6"), (revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Revision, revised.Detail.Draft.Version));
+        Assert.Empty(world.Store.Archived);
+        Assert.Equal(new SalesDraftOwnerReferenceV1(AddressId, AddressVersion), revised.Detail.DeliveryAddress);
+        Assert.Equal(Owner, (await world.Service().GetDraftHeaderAsync(approved.Id)).SalesOwnerUserId);
+        // The reason and the audit record it.
+        var transition = world.Store.Transitions[^1];
+        Assert.Equal((SalesDraftCommands.ReviseHeaderV1, "sales.order-draft.header-revised.v1", 5L, 6L),
+            (transition.Command, transition.Audit.EventType, transition.VersionBefore, transition.VersionAfter));
+        // Shipping and invoicing are untouched: the current approved revision ships, invoicing is open at Rev.0.
+        var answer = await port.GetApprovedLineAsync(approved.Id, line);
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, SalesOrderLineRevisionBasisV1.CurrentRevision),
+            (answer.Outcome, answer.Line!.Revision, answer.Line.RevisionBasis));
+        Assert.Equal((SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.Rev0), await GateAsync(world, approved.Id));
+
+        // A due-terms change on the same order re-enters approval (DEC-SAL-002, SAT-D123).
+        var commercial = await world.Service().ReviseHeaderAsync(approved.Id, HeaderRevision("6", NetDays(60), Owner,
+            address: new SalesDraftOwnerReferenceV1(AddressId, AddressVersion)), Metadata("k-terms-after"));
+        Assert.Equal(("Preparing", "Rev.1"), (commercial.Detail.Draft.ApprovalState, commercial.Detail.Draft.Revision));
+        Assert.Single(world.Store.Archived);
+    }
+
+    [Fact]
+    public async Task SAT_D123_an_order_without_due_terms_is_not_approved_until_a_header_revision_enters_them()
+    {
+        var world = new World();
+        Owners(world);
+        var created = (await world.Service().CreateDraftAsync(Request() with { DueTerms = null }, Metadata("k-no-terms"))).Detail.Draft;
+        await world.Service().SubmitDraftAsync(created.Id, Command("2"), Metadata("k-no-terms-submit"));
+
+        var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(created.Id, Command("3"), Metadata("k-no-terms-approve")));
+
+        Assert.Equal((422, "validation_failed", "dueTerms", SalesRuleCodes.DueTermsRequired),
+            (refused.Status, refused.Code, Assert.Single(refused.Errors).Field, refused.Errors[0].Code));
+        Assert.Empty(world.Store.Refusals);
+        Assert.Equal("PendingApproval", (await world.Service().GetDraftDetailAsync(created.Id)).Draft.ApprovalState);
+
+        // Rejected, given its due terms by a header revision (in place: never approved), resubmitted and approved.
+        await world.Service().RejectDraftAsync(created.Id, Command("3", "SENTETIK vade yok"), Metadata("k-no-terms-reject"));
+        var entered = await world.Service().ReviseHeaderAsync(created.Id, HeaderRevision("4"), Metadata("k-no-terms-header"));
+        Assert.Equal(("Rejected", "Rev.0", "5"), (entered.Detail.Draft.ApprovalState, entered.Detail.Draft.Revision, entered.Detail.Draft.Version));
+        await world.Service().SubmitDraftAsync(created.Id, Command("5"), Metadata("k-terms-submit"));
+        var approved = await world.Service().ApproveDraftAsync(created.Id, Command("6"), Metadata("k-terms-approve"));
+        Assert.Equal("Approved", approved.Detail.Draft.ApprovalState);
+
+        // Clearing the due terms of the approved order re-enters approval, and that approval is refused again.
+        var cleared = await world.Service().ReviseHeaderAsync(created.Id, HeaderRevision("7", clearTerms: true, reason: "SENTETIK vade kaldırıldı"),
+            Metadata("k-clear"));
+        Assert.Equal(("Preparing", "Rev.1"), (cleared.Detail.Draft.ApprovalState, cleared.Detail.Draft.Revision));
+        await world.Service().SubmitDraftAsync(created.Id, Command("8"), Metadata("k-clear-submit"));
+        var again = await Assert.ThrowsAsync<SalesDraftServiceException>(() =>
+            world.Service().ApproveDraftAsync(created.Id, Command("9"), Metadata("k-clear-approve")));
+        Assert.Equal(SalesRuleCodes.DueTermsRequired, Assert.Single(again.Errors).Code);
+    }
+
+    [Fact]
+    public async Task SAT_D127_the_create_keeps_the_due_terms_the_salesperson_entered_and_never_defaults_them()
+    {
+        var world = new World();
+        var none = (await world.Service().CreateDraftAsync(Request() with { DueTerms = null }, Metadata("k-none"))).Detail.Draft;
+        Assert.Null((await world.Service().GetDraftHeaderAsync(none.Id)).DueTerms);
+        var entered = (await world.Service().CreateDraftAsync(Request() with { DueTerms = NetDays(45) }, Metadata("k-entered"))).Detail.Draft;
+        Assert.Equal(45, (await world.Service().GetDraftHeaderAsync(entered.Id)).DueTerms!.Instalments[0].DaysAfter);
+
+        var invalid = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().CreateDraftAsync(
+            Request() with { DueTerms = new([new(1, "OrderDate", 30, "60"), new(2, "ShipmentDate", 30, "30")]) }, Metadata("k-invalid")));
+        Assert.Equal((422, "dueTerms.instalments", SalesDueTermsCodes.SharesNotWhole),
+            (invalid.Status, Assert.Single(invalid.Errors).Field, invalid.Errors[0].Code));
     }
 }

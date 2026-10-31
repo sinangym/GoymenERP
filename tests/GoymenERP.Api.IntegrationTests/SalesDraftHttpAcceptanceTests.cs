@@ -1088,21 +1088,21 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         {
             HeaderRevision = (_, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(draftId), true, "SENTETIK-header-first")),
             Header = id => Task.FromResult(new SalesDraftHeaderV1("5", "Rev.1", party, account, currency, null, null, null, null, "Visible",
-                new SalesDueTermsV1([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.InvoiceDate, 30, "100")]), false)),
+                new SalesDueTermsV1([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.OrderDate, 30, "100")]), false)),
         };
         using var host = CreateHost(service);
         using var client = CreateClient(host);
         var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/header-revision";
         var valid = $"{{\"expectedVersion\":\"4\",\"reason\":\"r\",\"partyId\":\"{party:D}\",\"companyAccountId\":\"{account:D}\",\"currencyId\":\"{currency:D}\","
             + "\"deliveryAddress\":null,\"contact\":null,\"salesOwnerUserId\":null,"
-            + "\"dueTerms\":{\"instalments\":[{\"sequenceNo\":1,\"basis\":\"InvoiceDate\",\"daysAfter\":30,\"sharePercent\":\"100\"}]}}";
+            + "\"dueTerms\":{\"instalments\":[{\"sequenceNo\":1,\"basis\":\"OrderDate\",\"daysAfter\":30,\"sharePercent\":\"100\"}]}}";
 
         foreach (var json in new[]
                  {
                      "{}",
                      valid.Replace("\"contact\":null,", "", StringComparison.Ordinal),
                      valid.Replace("\"contact\":null,", "\"contact\":null,\"responsible\":null,", StringComparison.Ordinal),
-                     valid.Replace("InvoiceDate", "invoiceDate", StringComparison.Ordinal),
+                     valid.Replace("OrderDate", "orderDate", StringComparison.Ordinal),
                      valid.Replace("\"100\"", "100", StringComparison.Ordinal),
                      valid.Replace("\"daysAfter\":30", "\"daysAfter\":\"30\"", StringComparison.Ordinal),
                      valid.Replace(party.ToString("D"), Guid.Empty.ToString("D"), StringComparison.Ordinal),
@@ -1160,7 +1160,7 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             Assert.Equal(HttpStatusCode.OK, read.StatusCode);
             Assert.Contains("no-store", read.Headers.CacheControl!.ToString(), StringComparison.Ordinal);
             var body = await read.Content.ReadFromJsonAsync<JsonElement>();
-            Assert.Equal(("5", "Visible", "InvoiceDate"), (body.GetProperty("draftVersion").GetString(), body.GetProperty("dueTermsDisclosure").GetString(),
+            Assert.Equal(("5", "Visible", "OrderDate"), (body.GetProperty("draftVersion").GetString(), body.GetProperty("dueTermsDisclosure").GetString(),
                 body.GetProperty("dueTerms").GetProperty("instalments")[0].GetProperty("basis").GetString()));
         }
 

@@ -7,21 +7,23 @@ const wire = (overrides: Record<string, unknown> = {}) => ({
   draftVersion: '4', revision: 'Rev.1', partyId: ID(1), companyAccountId: ID(2), currencyId: ID(3),
   deliveryAddress: { id: ID(4), expectedVersion: '2' }, contact: null, salesOwnerUserId: ID(5), salesOwnerDisplayName: 'Satışçı',
   dueTermsDisclosure: 'Visible',
-  dueTerms: { instalments: [{ sequenceNo: 1, basis: 'InvoiceDate', daysAfter: 30, sharePercent: '100' }] },
+  dueTerms: { instalments: [{ sequenceNo: 1, basis: 'ShipmentDate', daysAfter: 30, sharePercent: '100' }] },
   customerOrCurrencyRevisionPending: false, ...overrides,
 })
 
 describe('API-04 header contract', () => {
   it('decodes the revisable header exactly and refuses what it cannot vouch for', () => {
     const decoded = decodeDraftHeader(wire())
-    expect(decoded?.dueTerms?.instalments[0]).toEqual({ sequenceNo: 1, basis: 'InvoiceDate', daysAfter: 30, sharePercent: '100' })
+    expect(decoded?.dueTerms?.instalments[0]).toEqual({ sequenceNo: 1, basis: 'ShipmentDate', daysAfter: 30, sharePercent: '100' })
     expect(decodeDraftHeader({ ...wire(), extra: 1 })).toBeNull()
     expect(decodeDraftHeader(wire({ draftVersion: 4 }))).toBeNull()
     expect(decodeDraftHeader(wire({ dueTermsDisclosure: 'Withheld' }))).toBeNull()
     expect(decodeDraftHeader(wire({ dueTermsDisclosure: 'Withheld', dueTerms: null }))?.dueTerms).toBeNull()
-    expect(decodeDraftHeader(wire({ dueTerms: { instalments: [{ sequenceNo: 2, basis: 'InvoiceDate', daysAfter: 30, sharePercent: '100' }] } }))).toBeNull()
+    expect(decodeDraftHeader(wire({ dueTerms: { instalments: [{ sequenceNo: 2, basis: 'ShipmentDate', daysAfter: 30, sharePercent: '100' }] } }))).toBeNull()
     expect(decodeDraftHeader(wire({ dueTerms: { instalments: [{ sequenceNo: 1, basis: 'invoice', daysAfter: 30, sharePercent: '100' }] } }))).toBeNull()
-    expect(decodeDraftHeader(wire({ dueTerms: { instalments: [{ sequenceNo: 1, basis: 'InvoiceDate', daysAfter: -1, sharePercent: '100' }] } }))).toBeNull()
+    // SAT-D129: there is no invoice-date type; the old name is refused like any unknown one.
+    expect(decodeDraftHeader(wire({ dueTerms: { instalments: [{ sequenceNo: 1, basis: 'InvoiceDate', daysAfter: 30, sharePercent: '100' }] } }))).toBeNull()
+    expect(decodeDraftHeader(wire({ dueTerms: { instalments: [{ sequenceNo: 1, basis: 'ShipmentDate', daysAfter: -1, sharePercent: '100' }] } }))).toBeNull()
     expect(decodeDraftHeader(wire({ salesOwnerUserId: null }))).toBeNull()
   })
 
@@ -39,14 +41,14 @@ describe('API-04 header contract', () => {
     expect(buildHeaderRevisionRequest(header, values)).toEqual({ ok: false, error: { kind: 'reason-required' } })
     expect(buildHeaderRevisionRequest(header, { ...values, reason: 'r' })).toEqual({ ok: false, error: { kind: 'no-change' } })
     const instalments = [
-      { key: 'a', basis: 'InvoiceDate' as const, daysAfter: '30', sharePercent: '33,5' },
+      { key: 'a', basis: 'ShipmentDate' as const, daysAfter: '30', sharePercent: '33,5' },
       { key: 'b', basis: 'OrderDate' as const, daysAfter: '0', sharePercent: '66.5' },
     ]
     const built = buildHeaderRevisionRequest(header, { ...values, reason: 'r', instalments })
     expect(built).toEqual({ ok: true, payload: expect.objectContaining({
       expectedVersion: '4', partyId: ID(1), deliveryAddress: { id: ID(4), expectedVersion: '2' }, salesOwnerUserId: ID(5),
       dueTerms: { instalments: [
-        { sequenceNo: 1, basis: 'InvoiceDate', daysAfter: 30, sharePercent: '33.5' },
+        { sequenceNo: 1, basis: 'ShipmentDate', daysAfter: 30, sharePercent: '33.5' },
         { sequenceNo: 2, basis: 'OrderDate', daysAfter: 0, sharePercent: '66.5' },
       ] },
     }) })

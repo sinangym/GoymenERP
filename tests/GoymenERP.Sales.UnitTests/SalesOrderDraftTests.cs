@@ -25,7 +25,7 @@ public sealed class SalesOrderDraftTests
 
     private static string CodeOf(Action action) => Assert.Throws<SalesRuleException>(action).Code;
 
-    private static SalesDraftHeader Header() => new(Party, Account, Currency, Day);
+    private static SalesDraftHeader Header() => new(Party, Account, Currency, Day, DueTerms: TestDueTerms.PointDue30);
 
     private static MoneyProfileSnapshot Money(Guid? company = null, DateOnly? effectiveOn = null, string? operation = null,
         bool isActive = true, DateOnly? effectiveFrom = null, DateOnly? effectiveThrough = null, int scale = 2) =>

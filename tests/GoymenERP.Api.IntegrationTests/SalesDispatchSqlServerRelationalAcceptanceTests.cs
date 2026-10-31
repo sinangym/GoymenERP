@@ -264,7 +264,7 @@ public sealed class SalesDispatchSqlServerRelationalAcceptanceTests
     /// <summary>A draft of one line per given kg quantity for the Cari customer, from SYNTHETIC Product/Settings snapshots.</summary>
     private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, IReadOnlyList<string> quantities)
     {
-        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, Day, Day.AddDays(10));
+        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

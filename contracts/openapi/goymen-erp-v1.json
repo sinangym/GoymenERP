@@ -81490,6 +81490,16 @@
                 "$ref": "#/components/schemas/SalesDraftOwnerReferenceV1"
               }
             ]
+          },
+          "dueTerms": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDueTermsV1"
+              }
+            ]
           }
         }
       },

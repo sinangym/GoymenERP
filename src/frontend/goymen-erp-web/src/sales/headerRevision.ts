@@ -18,8 +18,11 @@ export const salesDraftHeaderPath = (id: string) => `${salesDraftDetailPath(id)}
 export const salesDraftHeaderRevisionPath = (id: string) => `${salesDraftDetailPath(id)}/header-revision`
 export const SALES_REFERENCE_SALES_OWNERS_PATH = '/sales/references/sales-owners'
 
-/** The bases a due date counts from (`SalesDueBasisNamesV1`). */
-export const DUE_BASES = ['InvoiceDate', 'ShipmentDate', 'OrderDate'] as const
+/**
+ * The two due types (`SalesDueBasisNamesV1`, SAT-D129): `OrderDate` "Nokta vade" (order date + N days) and `ShipmentDate`
+ * "Sevk vadesi" (each shipment's date + N days). There is no invoice-date type; any other name is refused by the decoder.
+ */
+export const DUE_BASES = ['OrderDate', 'ShipmentDate'] as const
 export type DueBasis = (typeof DUE_BASES)[number]
 
 /** Technical bounds the server enforces (`SalesDueTerms`); mirrored for the form, never a business default. */

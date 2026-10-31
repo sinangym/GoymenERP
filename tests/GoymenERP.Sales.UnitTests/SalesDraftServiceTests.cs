@@ -1434,7 +1434,8 @@ public sealed partial class SalesDraftServiceTests
             RequestedDeliverySlices: index == 0
                 ? [new(Guid.NewGuid(), KgUnit, "0.5", Day.AddDays(1)), new(Guid.NewGuid(), KgUnit, "0.5", Day.AddDays(2))]
                 : null)).ToArray();
-        return new CreateSalesOrderDraftRequest("Order", Party, Account, Day, Currency, list);
+        // SAT-D123: the order carries its due terms from the create, so the approval tests can approve it.
+        return new CreateSalesOrderDraftRequest("Order", Party, Account, Day, Currency, list, DueTerms: TestDueTerms.PointDue30Wire);
     }
 
     private static SalesCommandMetadata Metadata(string key, string? correlation = null) =>
