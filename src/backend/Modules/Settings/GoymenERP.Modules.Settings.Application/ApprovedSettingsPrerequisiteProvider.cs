@@ -70,7 +70,7 @@ namespace GoymenERP.Modules.Settings.Application;
 /// </summary>
 public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisiteProvider, ISettingsMoneyCandidateReader,
     ISettingsMoneyCandidateReaderV2,
-    ISettingsManufacturingToleranceProviderV1, ISettingsSalesPolicyProviderV1
+    ISettingsManufacturingToleranceProviderV1, ISettingsSalesPolicyProviderV1, ISettingsEInvoiceScenarioPolicyProviderV1
 {
     /// <summary>
     /// Kept as an alias so existing callers still compile. Consumers map the published contract
@@ -84,6 +84,7 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
     private readonly ApprovedMoneyProfileCatalog _money;
     private readonly ApprovedManufacturingToleranceCatalog _manufacturingTolerance;
     private readonly ApprovedSalesPolicyCatalog _sales;
+    private readonly ApprovedEInvoiceScenarioCatalog _eInvoiceScenarios;
     private readonly UnavailableSettingsPrerequisiteProvider _notApprovedYet;
 
     /// <summary>
@@ -145,6 +146,25 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
         ICompanyContext companyContext, ICurrentUser currentUser,
         ApprovedUnitProfileCatalog catalog, ApprovedMoneyProfileCatalog money,
         ApprovedManufacturingToleranceCatalog manufacturingTolerance, ApprovedSalesPolicyCatalog sales)
+        : this(companyContext, currentUser, catalog, money, manufacturingTolerance, sales,
+            ApprovedEInvoiceScenarioCatalog.Approved)
+    {
+    }
+
+    /// <summary>Settings-only synthetic e-Fatura scenario seam (SAT-D102).</summary>
+    internal ApprovedSettingsPrerequisiteProvider(
+        ICompanyContext companyContext, ICurrentUser currentUser, ApprovedEInvoiceScenarioCatalog eInvoiceScenarios)
+        : this(companyContext, currentUser, ApprovedUnitProfileCatalog.Approved,
+            ApprovedMoneyProfileCatalog.Approved, ApprovedManufacturingToleranceCatalog.Approved,
+            ApprovedSalesPolicyCatalog.Approved, eInvoiceScenarios)
+    {
+    }
+
+    internal ApprovedSettingsPrerequisiteProvider(
+        ICompanyContext companyContext, ICurrentUser currentUser,
+        ApprovedUnitProfileCatalog catalog, ApprovedMoneyProfileCatalog money,
+        ApprovedManufacturingToleranceCatalog manufacturingTolerance, ApprovedSalesPolicyCatalog sales,
+        ApprovedEInvoiceScenarioCatalog eInvoiceScenarios)
     {
         ArgumentNullException.ThrowIfNull(companyContext);
         ArgumentNullException.ThrowIfNull(currentUser);
@@ -152,12 +172,14 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
         ArgumentNullException.ThrowIfNull(money);
         ArgumentNullException.ThrowIfNull(manufacturingTolerance);
         ArgumentNullException.ThrowIfNull(sales);
+        ArgumentNullException.ThrowIfNull(eInvoiceScenarios);
         _companyContext = companyContext;
         _currentUser = currentUser;
         _catalog = catalog;
         _money = money;
         _manufacturingTolerance = manufacturingTolerance;
         _sales = sales;
+        _eInvoiceScenarios = eInvoiceScenarios;
         _notApprovedYet = new UnavailableSettingsPrerequisiteProvider(companyContext, currentUser);
     }
 
@@ -403,6 +425,72 @@ public sealed class ApprovedSettingsPrerequisiteProvider : ISettingsPrerequisite
                 entry.IsActive,
                 entry.EffectiveFrom,
                 entry.EffectiveThrough));
+    }
+
+    /// <summary>
+    /// SAT-D102: the company's e-Fatura scenario code list in force on the date. Access first
+    /// (<c>settings_access_denied</c>); every accessible company has the key, so an empty key or a date outside every
+    /// window is <see cref="SettingsPrerequisiteCodesV1.EInvoiceScenarioCodeListNotFound"/> — never an implicit list.
+    /// </summary>
+    public Task<EInvoiceScenarioCodeListV1> GetEInvoiceScenarioCodesAsync(
+        DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!HasCompanyAccess())
+        {
+            return Task.FromException<EInvoiceScenarioCodeListV1>(
+                new SettingsPrerequisiteException("settings_access_denied"));
+        }
+
+        var entry = _eInvoiceScenarios.CodeListFor(_companyContext.CompanyId, effectiveOn);
+        return entry is null
+            ? Task.FromException<EInvoiceScenarioCodeListV1>(
+                new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.EInvoiceScenarioCodeListNotFound))
+            : Task.FromResult(new EInvoiceScenarioCodeListV1(
+                entry.CompanyId,
+                new ProfileVersionV1(entry.ProfileId, entry.Version),
+                entry.Codes.ToArray(),
+                entry.EffectiveFrom,
+                entry.EffectiveThrough));
+    }
+
+    /// <summary>
+    /// SAT-D102: the company's default e-Fatura scenario in force on the date. Access first; an empty key (the
+    /// starting state: Sinan enters the value) or a date outside every window is
+    /// <see cref="SettingsPrerequisiteCodesV1.EInvoiceScenarioDefaultNotFound"/>; a default the list in force on the
+    /// same date does not carry is <c>settings_profile_invalid</c> (never served).
+    /// </summary>
+    public Task<EInvoiceScenarioDefaultV1> GetEInvoiceScenarioDefaultAsync(
+        DateOnly effectiveOn, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!HasCompanyAccess())
+        {
+            return Task.FromException<EInvoiceScenarioDefaultV1>(
+                new SettingsPrerequisiteException("settings_access_denied"));
+        }
+
+        var companyId = _companyContext.CompanyId;
+        var entry = _eInvoiceScenarios.DefaultFor(companyId, effectiveOn);
+        if (entry is null)
+        {
+            return Task.FromException<EInvoiceScenarioDefaultV1>(
+                new SettingsPrerequisiteException(SettingsPrerequisiteCodesV1.EInvoiceScenarioDefaultNotFound));
+        }
+
+        if (_eInvoiceScenarios.CodeListFor(companyId, effectiveOn) is not { } list
+            || !list.Codes.Contains(entry.ScenarioCode, StringComparer.Ordinal))
+        {
+            return Task.FromException<EInvoiceScenarioDefaultV1>(
+                new SettingsPrerequisiteException("settings_profile_invalid"));
+        }
+
+        return Task.FromResult(new EInvoiceScenarioDefaultV1(
+            entry.CompanyId,
+            new ProfileVersionV1(entry.ProfileId, entry.Version),
+            entry.ScenarioCode,
+            entry.EffectiveFrom,
+            entry.EffectiveThrough));
     }
 
     /// <summary>Not an approved source yet.</summary>

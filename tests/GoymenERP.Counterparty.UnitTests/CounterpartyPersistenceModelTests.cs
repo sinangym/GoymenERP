@@ -105,6 +105,85 @@ public sealed class CounterpartyPersistenceModelTests
     }
 
     [Fact]
+    public void Customer_e_document_profile_is_group_wide_VKN_keyed_with_an_explicit_status_and_a_shaped_override()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var model = dbContext.GetService<IDesignTimeModel>().Model;
+        var profile = model.FindEntityType(typeof(CustomerEDocumentProfile))!;
+        Assert.Equal("counterparty", profile.GetSchema());
+        Assert.Equal("CustomerEDocumentProfiles", profile.GetTableName());
+
+        // SAT-D119: a GROUP-LEVEL record — no CompanyId property and no query filter (the same shape as Party).
+        Assert.Null(profile.FindProperty("CompanyId"));
+        Assert.Empty(profile.GetDeclaredQueryFilters());
+
+        // One profile per taxpayer: the VKN/TCKN is unique across the group.
+        var unique = Assert.Single(profile.GetIndexes(), index => index.IsUnique);
+        Assert.Equal([nameof(CustomerEDocumentProfile.TaxIdentityNumber)], unique.Properties.Select(property => property.Name));
+        Assert.False(profile.FindProperty(nameof(CustomerEDocumentProfile.TaxIdentityNumber))!.IsUnicode());
+
+        // SAT-D102: Unknown (0) carries no check; a known status carries both the time and the checker.
+        var status = Assert.Single(profile.GetCheckConstraints(), check => check.Name == "CK_CustomerEDocumentProfiles_Status");
+        Assert.Contains("[EDocumentStatus] = 0 AND [EDocumentStatusCheckedAtUtc] IS NULL", status.Sql, StringComparison.Ordinal);
+        Assert.Contains("[EDocumentStatus] IN (1, 2)", status.Sql, StringComparison.Ordinal);
+        var code = Assert.Single(profile.GetCheckConstraints(),
+            check => check.Name == "CK_CustomerEDocumentProfiles_ScenarioOverrideCode");
+        Assert.Contains("NOT LIKE '%[^A-Z0-9_]%'", code.Sql, StringComparison.Ordinal);
+        Assert.False(profile.FindProperty(nameof(CustomerEDocumentProfile.EDocumentStatus))!.IsNullable);
+        Assert.Equal(32, profile.FindProperty(nameof(CustomerEDocumentProfile.EInvoiceScenarioOverrideCode))!.GetMaxLength());
+        Assert.Equal(128, profile.FindProperty(nameof(CustomerEDocumentProfile.EDocumentStatusCheckedByUserId))!.GetMaxLength());
+
+        // The checking company decides only who sees the checker; it is a real company (FK), not a tenant key.
+        Assert.Contains("[EDocumentStatusCheckedInCompanyId] IS NULL", status.Sql, StringComparison.Ordinal);
+        var checkedIn = Assert.Single(profile.GetForeignKeys());
+        Assert.Equal([nameof(CustomerEDocumentProfile.EDocumentStatusCheckedInCompanyId)],
+            checkedIn.Properties.Select(property => property.Name));
+        Assert.Equal(DeleteBehavior.Restrict, checkedIn.DeleteBehavior);
+        Assert.False(checkedIn.IsRequired);
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_e_document_profile_delete_before_the_database_call()
+    {
+        using var dbContext = CreateContext(ResolvedCompanyContext(Guid.NewGuid()));
+        var profile = new CustomerEDocumentProfile(Guid.NewGuid(), "1234567890", DateTimeOffset.UnixEpoch);
+        dbContext.CustomerEDocumentProfiles.Attach(profile);
+        dbContext.CustomerEDocumentProfiles.Remove(profile);
+        Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+    }
+
+    [Fact]
+    public void SaveChanges_refuses_an_e_document_check_recorded_for_another_company_before_the_database_call()
+    {
+        var active = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(active));
+
+        // A new profile whose check names another company is refused by the guard.
+        var created = new CustomerEDocumentProfile(Guid.NewGuid(), "1234567890", DateTimeOffset.UnixEpoch);
+        created.RecordStatus(EDocumentStatus.EInvoiceTaxpayer, "checker", other, DateTimeOffset.UnixEpoch);
+        dbContext.CustomerEDocumentProfiles.Add(created);
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("yalnız aktif şirkette", refused.Message, StringComparison.Ordinal);
+
+        // So is re-recording an existing profile's check for another company.
+        dbContext.ChangeTracker.Clear();
+        var existing = new CustomerEDocumentProfile(Guid.NewGuid(), "9876543217", DateTimeOffset.UnixEpoch);
+        dbContext.CustomerEDocumentProfiles.Attach(existing);
+        existing.RecordStatus(EDocumentStatus.EArchive, "checker", other, DateTimeOffset.UnixEpoch);
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("yalnız aktif şirkette", refused.Message, StringComparison.Ordinal);
+
+        // A check of the active company passes the guard (the absent database is what fails next).
+        dbContext.ChangeTracker.Clear();
+        var own = new CustomerEDocumentProfile(Guid.NewGuid(), "1234567890", DateTimeOffset.UnixEpoch);
+        dbContext.CustomerEDocumentProfiles.Attach(own);
+        own.RecordStatus(EDocumentStatus.EArchive, "checker", active, DateTimeOffset.UnixEpoch);
+        var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
+        Assert.DoesNotContain("yalnız aktif şirkette", passed.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SaveChanges_AllowsATaxIdentityOnlyPartyChangeAndStillRejectsAnyOtherPartyEdit()
     {
         var companyId = Guid.NewGuid();
@@ -181,8 +260,11 @@ public sealed class CounterpartyPersistenceModelTests
         Assert.Contains(
             "20260930150000_AddPartyTaxIdentity",
             dbContext.Database.GetMigrations());
-        Assert.Equal(
+        Assert.Contains(
             "20261027202534_AddCounterpartyCustomerGroups",
+            dbContext.Database.GetMigrations());
+        Assert.Equal(
+            "20261031143822_AddCustomerEDocumentProfiles",
             dbContext.Database.GetMigrations().Last());
         Assert.False(dbContext.Database.HasPendingModelChanges());
     }
