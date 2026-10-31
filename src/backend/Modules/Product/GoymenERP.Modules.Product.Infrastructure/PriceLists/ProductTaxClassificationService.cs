@@ -11,14 +11,14 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 
 /// <summary>
-/// MOD-03 (SAT-D73/D74/D82): the product's VAT class and withholding class in the server-resolved company.
+/// MOD-03 (SAT-D73/D74/D82): the VAT class and withholding class of a product in the server-resolved company.
 /// <list type="bullet">
 /// <item><b>Authority</b>: <see cref="ProductTaxClassificationPermissionsV1.Manage"/> company-wide, measured fresh first and
 /// again right before the answer / the save; granted to no role here.</item>
 /// <item><b>Classes</b>: checked with the Settings owner (<see cref="ISettingsTaxCategoryReaderV1"/>): the VAT class must be
 /// a <c>VatClass</c> of this company, the withholding class (optional; null = no withholding) a <c>WithholdingClass</c>.
 /// An absent or failing Settings port is 503; nothing is stored without that check.</item>
-/// <item><b>Command</b>: one person, a mandatory reason (≤ 4000), Idempotency-Key (the stored terminal answer replays),
+/// <item><b>Command</b>: one person, a mandatory reason (at most 4000), Idempotency-Key (the stored terminal answer replays),
 /// the version as decimal text ("0" = none yet), correlation/causation and ONE audit event per real change.</item>
 /// <item><b>Read port</b> (<see cref="IProductTaxClassificationReaderV1"/>): access only (authenticated member of the
 /// company), no permission: the consumer fences its own operation.</item>
@@ -302,7 +302,7 @@ internal sealed class ProductTaxClassificationService(
             CreatedAtUtc = timeProvider.GetUtcNow(),
         });
 
-    /// <summary>Stores a refusal or a no-op as the key's terminal answer; a concurrent same-key winner replays instead.</summary>
+    /// <summary>Stores a refusal or a no-op as the terminal answer of the key; a concurrent same-key winner replays instead.</summary>
     private async Task<ProductTaxClassificationResultV1> StoreAsync(ProductTaxClassificationAnswerV1 answer, Guid productId,
         string keyHash, string requestHash, ProductTaxClassificationCommandMetadataV1 metadata, Scope scope,
         CancellationToken cancellationToken)

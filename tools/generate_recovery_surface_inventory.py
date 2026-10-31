@@ -737,6 +737,10 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "RecordRefusalAsync",
     ): "e7244c5871505ce3c02b5b4d0cfec9a476dadcdcd94e0870e408b741b5b3b117",
     (
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductTaxClassificationService.cs",
+        "AddAttempt",
+    ): "ed37438e288667f15e494ff011e556d35340382ab70249f6e10aaeb89d496bb0",
+    (
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs",
         "StageAsync",
     ): "8fee79232dec4e0ddbb84f3693d11bcad7d8e79538a3d023ebe9f4429b377f6b",
@@ -785,6 +789,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "39b3481ad59125465d1b94d3bb2219372e907e5a5fe1128d66eb1bac8bce908f",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "0ec797ef39bd37ee97ffb8a945de0c7fd515a38d2ee6891914e6dac6e3e2362d",
+    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductTaxClassificationService.cs": "3a7fc461cb126b5462e2f26fbb72d5f5098fba25df8bf36b1376999cd5361103",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "8102573a0ed7a42ca9952cff9263abd594c4fb77ddb1f6eeb9ef36bf3f282d6a",
