@@ -93,20 +93,24 @@ export async function fetchAccountEDocumentProfile(
 const replayable = (entries: ReadonlyArray<readonly [number, readonly string[]]>): ReplayableFailures =>
   new Map(entries.map(([status, codes]) => [status, new Set<string>(codes)]))
 
-/** `RecordCounterpartyAccountEDocumentStatusV1` stores 204, 404 and 409 (version). */
+/** `RecordCounterpartyAccountEDocumentStatusV1` stores 204, 404, 409 (version) and 422 (passive account / no VKN). */
 const STATUS_REPLAYABLE = replayable([
   [404, [E_DOCUMENT_PROBLEM_CODE.notFound]],
   [409, [E_DOCUMENT_PROBLEM_CODE.versionConflict]],
-  [422, [E_DOCUMENT_PROBLEM_CODE.taxIdentityRequired]],
+  [422, [E_DOCUMENT_PROBLEM_CODE.accountInactive, E_DOCUMENT_PROBLEM_CODE.taxIdentityRequired]],
 ])
 
-/** `SetCounterpartyAccountEInvoiceScenarioV1` stores 204, 404, 409 (version) and 422 (no list / not listed). */
+/**
+ * `SetCounterpartyAccountEInvoiceScenarioV1` stores 204, 404, 409 (version) and 422 (no list / not listed / passive
+ * account / no VKN).
+ */
 const SCENARIO_REPLAYABLE = replayable([
   [404, [E_DOCUMENT_PROBLEM_CODE.notFound]],
   [409, [E_DOCUMENT_PROBLEM_CODE.versionConflict]],
   [422, [
     E_DOCUMENT_PROBLEM_CODE.codeListMissing,
     E_DOCUMENT_PROBLEM_CODE.notListed,
+    E_DOCUMENT_PROBLEM_CODE.accountInactive,
     E_DOCUMENT_PROBLEM_CODE.taxIdentityRequired,
   ]],
 ])

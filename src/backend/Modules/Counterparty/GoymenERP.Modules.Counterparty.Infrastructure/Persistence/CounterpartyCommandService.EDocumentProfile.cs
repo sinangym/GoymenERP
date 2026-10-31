@@ -1,3 +1,4 @@
+using System.Data;
 using System.Globalization;
 using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
@@ -207,8 +208,8 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
     /// The shared create-or-update for both e-belge commands: resolve the account (existence/company fence) and the
     /// party's VKN, fence on the PAIR (profile token = which profile; profile version, "0" = create), run the
     /// owner-supplied Settings precheck and change, and audit one real change. Group-wide: the profile row carries no
-    /// CompanyId. Order of refusals: 404 (no account) → 422 (no VKN) → 409 (another profile than the one read, e.g.
-    /// after a VKN change) → 409 (stale version) → 422/503 (Settings).
+    /// CompanyId. Order of refusals: 404 (no account) → 422 (passive account) → 422 (no VKN) → 409 (another profile
+    /// than the one read, e.g. after a VKN change) → 409 (stale version) → 422/503 (Settings).
     /// </summary>
     private async Task<CounterpartyCommandExecution> UpsertEDocumentProfileAsync(
         string commandName,
@@ -229,8 +230,11 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         string logOperation,
         CancellationToken cancellationToken)
     {
-        var accountExists = await dbContext.CompanyPartyAccounts.AsNoTracking().AnyAsync(
-            candidate => candidate.CompanyId == metadata.CompanyId && candidate.PartyId == partyId, cancellationToken);
+        var accountIsActive = await dbContext.CompanyPartyAccounts.AsNoTracking()
+            .Where(candidate => candidate.CompanyId == metadata.CompanyId && candidate.PartyId == partyId)
+            .Select(candidate => (bool?)candidate.IsActive)
+            .SingleOrDefaultAsync(cancellationToken);
+        var accountExists = accountIsActive is not null;
         var taxIdentityNumber = accountExists
             ? await ReadPartyTaxIdentityAsync(partyId, cancellationToken)
             : null;
@@ -248,6 +252,15 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
         if (!accountExists)
         {
             return await CompleteCommandAsync(commandName, Responses.NotFound(),
+                keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+        }
+
+        // ASSUMPTION-CARI-EDOC-4: a passive account of the acting company does not change the group-shared profile
+        // (review B-P3-4). Reading it stays allowed; reactivate the account first.
+        if (accountIsActive is false)
+        {
+            return await CompleteCommandAsync(commandName,
+                EDocumentResponses.Refused(CounterpartyCommandResult.EDocumentAccountInactive),
                 keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
         }
 
@@ -284,38 +297,41 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
                     keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
             }
 
-            var now = timeProvider.GetUtcNow();
-            var created = new CustomerEDocumentProfile(Guid.NewGuid(), taxIdentityNumber, now);
-            apply(created, now);
-            dbContext.CustomerEDocumentProfiles.Add(created);
-            await beforeSave(cancellationToken);
-            EnqueueEDocumentAudit(metadata, scope, created, eventType, operation, versionBefore: null, beforeJson: "{}", reason);
+            // B-P2-2: a concurrent create (possibly from another company) must lose BEFORE the insert. On a duplicate
+            // key SQL Server names the duplicate value — the VKN — and EF Core logs that message (Update[10000]) before
+            // any catch can run (AT-009: the number never reaches logs). So the create takes a key-range update lock on
+            // the VKN inside one transaction: the second creator waits, then sees the winner's row and answers 409.
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            var winnerVersion = await ReadEDocumentProfileVersionForCreateAsync(taxIdentityNumber, cancellationToken);
             CounterpartyCommandExecution createdResult;
-            try
+            Guid? createdId = null;
+            if (winnerVersion is { } version)
             {
+                // The caller's "0" fence is stale; the conflict names the winner's real version.
+                createdResult = await CompleteCommandAsync(commandName, Responses.VersionConflict(expectedVersion, version),
+                    keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+            }
+            else
+            {
+                var now = timeProvider.GetUtcNow();
+                var created = new CustomerEDocumentProfile(Guid.NewGuid(), taxIdentityNumber, now);
+                apply(created, now);
+                dbContext.CustomerEDocumentProfiles.Add(created);
+                await beforeSave(cancellationToken);
+                EnqueueEDocumentAudit(
+                    metadata, scope, created, eventType, operation, versionBefore: null, beforeJson: "{}", reason);
                 createdResult = await CompleteCommandAsync(commandName, Responses.Succeeded(),
                     keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
-            }
-            catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
-            {
-                // A concurrent create (possibly from another company) took the VKN between the check and the insert:
-                // the caller's "0" fence is stale. The conflict names the winner's real version.
-                dbContext.ChangeTracker.Clear();
-                var winnerVersion = await dbContext.CustomerEDocumentProfiles.AsNoTracking()
-                    .Where(row => row.TaxIdentityNumber == taxIdentityNumber)
-                    .Select(row => (long?)row.Version)
-                    .SingleOrDefaultAsync(cancellationToken) ?? 1L;
-                createdResult = await CompleteCommandAsync(commandName,
-                    Responses.VersionConflict(expectedVersion, winnerVersion),
-                    keyHash, requestHash, metadata, null, cancellationToken, beforeSave);
+                createdId = created.Id;
             }
 
-            LogEDocumentCommand(logOperation, metadata, created.Id, createdResult);
+            await transaction.CommitAsync(cancellationToken);
+            LogEDocumentCommand(logOperation, metadata, createdId, createdResult);
             return createdResult;
         }
 
         var concurrency = new EDocumentProfileConcurrencyContext(profile.Id, expectedVersion);
-        var beforeJson = SerializeEDocumentSnapshot(profile);
+        var beforeJson = SerializeEDocumentSnapshot(profile, metadata.CompanyId);
         var versionBefore = profile.Version;
         if (!apply(profile, timeProvider.GetUtcNow()))
         {
@@ -379,6 +395,23 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             .Select(party => party.TaxIdentityNumber)
             .SingleOrDefaultAsync(cancellationToken);
 
+    /// <summary>
+    /// The create path's locked probe: <c>UPDLOCK, HOLDLOCK</c> on the unique VKN index holds the key (or the empty key
+    /// range) until the surrounding transaction ends, so two creators of the same VKN serialize here instead of meeting
+    /// at the unique index. The VKN travels only as a typed parameter.
+    /// </summary>
+    private async Task<long?> ReadEDocumentProfileVersionForCreateAsync(
+        string taxIdentityNumber, CancellationToken cancellationToken)
+    {
+        var parameter = new SqlParameter("@taxIdentityNumber", SqlDbType.VarChar, 11) { Value = taxIdentityNumber };
+        var versions = await dbContext.Database.SqlQueryRaw<long>(
+                "SELECT [Version] AS [Value] FROM [counterparty].[CustomerEDocumentProfiles] WITH (UPDLOCK, HOLDLOCK) "
+                + "WHERE [TaxIdentityNumber] = @taxIdentityNumber",
+                parameter)
+            .ToListAsync(cancellationToken);
+        return versions.Count == 0 ? null : versions.Single();
+    }
+
     private Task<CustomerEDocumentProfile?> FindEDocumentProfileAsync(
         string taxIdentityNumber, bool tracking, CancellationToken cancellationToken)
     {
@@ -441,7 +474,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             CounterpartyEDocumentPermissionsV1.Update,
             scope.RoleCodes,
             beforeJson,
-            SerializeEDocumentSnapshot(profile),
+            SerializeEDocumentSnapshot(profile, metadata.CompanyId),
             reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -454,24 +487,35 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             metadata.IdempotencyKey));
 
     private void LogEDocumentCommand(
-        string operation, CounterpartyCommandMetadata metadata, Guid profileId, CounterpartyCommandExecution result) =>
+        string operation, CounterpartyCommandMetadata metadata, Guid? profileId, CounterpartyCommandExecution result) =>
         logger.LogInformation(
             "Counterparty e-document command completed. Operation={Operation} CompanyId={CompanyId} ProfileId={ProfileId} CorrelationId={CorrelationId} Result={Result} IsReplay={IsReplay}",
             operation, metadata.CompanyId, profileId, metadata.CorrelationId, result.Response.Result, result.IsReplay);
 
-    // The VKN is deliberately NOT written to the audit snapshot (AT-009: the number is kept out of logs); the profile
-    // is identified by its surrogate id.
-    private static string SerializeEDocumentSnapshot(CustomerEDocumentProfile profile) =>
-        JsonSerializer.Serialize(new
+    /// <summary>
+    /// The audit Before/After image, written under the ACTING company. The VKN is deliberately NOT in it (AT-009: the
+    /// number is kept out of logs and audit); the profile is identified by its surrogate id. The checker's user id and
+    /// the checking company are written only when the acting company IS the checking company — another group company's
+    /// audit reader learns that a check exists (and when), never who made it or in which company (review B-P2-1).
+    /// </summary>
+    private static string SerializeEDocumentSnapshot(CustomerEDocumentProfile profile, Guid actingCompanyId)
+    {
+        var checkedInActingCompany = profile.EDocumentStatusCheckedInCompanyId is { } checkingCompanyId
+            && checkingCompanyId == actingCompanyId;
+        return JsonSerializer.Serialize(new
         {
             profile.Id,
             EDocumentStatus = profile.EDocumentStatus.ToString(),
             profile.EDocumentStatusCheckedAtUtc,
-            profile.EDocumentStatusCheckedByUserId,
-            profile.EDocumentStatusCheckedInCompanyId,
+            EDocumentStatusCheckedInActingCompany = profile.EDocumentStatusCheckedInCompanyId is null
+                ? (bool?)null
+                : checkedInActingCompany,
+            EDocumentStatusCheckedByUserId = checkedInActingCompany ? profile.EDocumentStatusCheckedByUserId : null,
+            EDocumentStatusCheckedInCompanyId = checkedInActingCompany ? profile.EDocumentStatusCheckedInCompanyId : null,
             profile.EInvoiceScenarioOverrideCode,
             profile.Version,
         });
+    }
 
     private static class EDocumentResponses
     {
@@ -486,6 +530,9 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyEDocumen
             CounterpartyCommandResult.EDocumentTaxIdentityRequired => Problem(result,
                 "VKN/TCKN gerekli.",
                 "Müşterinin e-belge durumu VKN/TCKN'ye bağlıdır; önce cari karta geçerli bir VKN/TCKN girin."),
+            CounterpartyCommandResult.EDocumentAccountInactive => Problem(result,
+                "Cari hesap pasif.",
+                "Pasif cari hesap üzerinden grup genelindeki e-belge profili değiştirilemez; önce hesabı aktifleştirin."),
             _ => throw new InvalidOperationException($"SAT-D102/119 ret sonucu değil: {result}."),
         };
 

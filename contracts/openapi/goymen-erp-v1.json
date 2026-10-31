@@ -31438,6 +31438,7 @@
               }
             },
             "x-erp-problem-codes": [
+              "e_document_account_inactive",
               "e_document_tax_identity_required"
             ]
           },
@@ -31857,6 +31858,7 @@
               }
             },
             "x-erp-problem-codes": [
+              "e_document_account_inactive",
               "e_document_tax_identity_required",
               "einvoice_scenario_code_list_missing",
               "einvoice_scenario_not_listed"
@@ -94768,7 +94770,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Records the e-belge status a user checked for the customer's VKN-shared profile (SAT-D102 / SAT-D119). A known status (EInvoice / EArchive) stamps the server time, the caller and the active company as the check, even when the value is unchanged; Unknown resets the status and its check. The fence is the pair the read returned: expectedVersion (the shared PROFILE version as canonical decimal TEXT, \"0\" = no profile yet; the first record creates it) and expectedProfileToken (which profile the read showed). Another profile than the one read — e.g. after the party's VKN changed — is 409 version_conflict. A party with no VKN/TCKN is 422 e_document_tax_identity_required. No external (GİB) call.",
+        "description": "Records the e-belge status a user checked for the customer's VKN-shared profile (SAT-D102 / SAT-D119). A known status (EInvoice / EArchive) stamps the server time, the caller and the active company as the check, even when the value is unchanged; Unknown resets the status and its check. The fence is the pair the read returned: expectedVersion (the shared PROFILE version as canonical decimal TEXT, \"0\" = no profile yet; the first record creates it) and expectedProfileToken (which profile the read showed). Another profile than the one read — e.g. after the party's VKN changed — is 409 version_conflict. A party with no VKN/TCKN is 422 e_document_tax_identity_required; a passive account of the active company is 422 e_document_account_inactive. No external (GİB) call.",
         "x-erp-normalized-maximum-expectedVersion": "9223372036854775807"
       },
       "RecordDeliveryRequest": {
@@ -101550,7 +101552,7 @@
           }
         },
         "additionalProperties": false,
-        "description": "Sets the customer's e-Fatura scenario override (VKN-shared) to a code of the writing company's Settings scenario list in force today, or clears it with an explicit null (scenarioCode must be present). Fenced on expectedVersion (the shared PROFILE version, \"0\" creates) and expectedProfileToken as the status command. Settings without a list is 422 einvoice_scenario_code_list_missing; a code the list does not carry is 422 einvoice_scenario_not_listed; Settings that cannot be read is 503 service_unavailable (nothing stored); a party with no VKN is 422 e_document_tax_identity_required. Re-sending the current code is a no-op.",
+        "description": "Sets the customer's e-Fatura scenario override (VKN-shared) to a code of the writing company's Settings scenario list in force today, or clears it with an explicit null (scenarioCode must be present). Fenced on expectedVersion (the shared PROFILE version, \"0\" creates) and expectedProfileToken as the status command. Settings without a list is 422 einvoice_scenario_code_list_missing; a code the list does not carry is 422 einvoice_scenario_not_listed; Settings that cannot be read is 503 service_unavailable (nothing stored); a party with no VKN is 422 e_document_tax_identity_required; a passive account is 422 e_document_account_inactive. Re-sending the current code is a no-op.",
         "x-erp-normalized-maximum-expectedVersion": "9223372036854775807"
       },
       "SetEDispatchNumberRequest": {

@@ -153,6 +153,37 @@ public sealed class CounterpartyPersistenceModelTests
     }
 
     [Fact]
+    public void SaveChanges_refuses_an_e_document_check_recorded_for_another_company_before_the_database_call()
+    {
+        var active = Guid.NewGuid();
+        var other = Guid.NewGuid();
+        using var dbContext = CreateContext(ResolvedCompanyContext(active));
+
+        // A new profile whose check names another company is refused by the guard.
+        var created = new CustomerEDocumentProfile(Guid.NewGuid(), "1234567890", DateTimeOffset.UnixEpoch);
+        created.RecordStatus(EDocumentStatus.EInvoiceTaxpayer, "checker", other, DateTimeOffset.UnixEpoch);
+        dbContext.CustomerEDocumentProfiles.Add(created);
+        var refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("yalnız aktif şirkette", refused.Message, StringComparison.Ordinal);
+
+        // So is re-recording an existing profile's check for another company.
+        dbContext.ChangeTracker.Clear();
+        var existing = new CustomerEDocumentProfile(Guid.NewGuid(), "9876543217", DateTimeOffset.UnixEpoch);
+        dbContext.CustomerEDocumentProfiles.Attach(existing);
+        existing.RecordStatus(EDocumentStatus.EArchive, "checker", other, DateTimeOffset.UnixEpoch);
+        refused = Assert.Throws<InvalidOperationException>(() => dbContext.SaveChanges());
+        Assert.Contains("yalnız aktif şirkette", refused.Message, StringComparison.Ordinal);
+
+        // A check of the active company passes the guard (the absent database is what fails next).
+        dbContext.ChangeTracker.Clear();
+        var own = new CustomerEDocumentProfile(Guid.NewGuid(), "1234567890", DateTimeOffset.UnixEpoch);
+        dbContext.CustomerEDocumentProfiles.Attach(own);
+        own.RecordStatus(EDocumentStatus.EArchive, "checker", active, DateTimeOffset.UnixEpoch);
+        var passed = Assert.ThrowsAny<Exception>(() => dbContext.SaveChanges());
+        Assert.DoesNotContain("yalnız aktif şirkette", passed.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SaveChanges_AllowsATaxIdentityOnlyPartyChangeAndStillRejectsAnyOtherPartyEdit()
     {
         var companyId = Guid.NewGuid();

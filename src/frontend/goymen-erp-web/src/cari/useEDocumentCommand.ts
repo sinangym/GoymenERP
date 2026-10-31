@@ -35,6 +35,7 @@ const REFRESH_CODES = new Set<string>([
   E_DOCUMENT_PROBLEM_CODE.codeListMissing,
   E_DOCUMENT_PROBLEM_CODE.notListed,
   E_DOCUMENT_PROBLEM_CODE.notFound,
+  E_DOCUMENT_PROBLEM_CODE.accountInactive,
 ])
 
 export function eDocumentRefusalText(status: number, body: unknown): string {

@@ -28,6 +28,7 @@ export const E_DOCUMENT_PROBLEM_CODE = {
   codeListMissing: 'einvoice_scenario_code_list_missing',
   notListed: 'einvoice_scenario_not_listed',
   taxIdentityRequired: 'e_document_tax_identity_required',
+  accountInactive: 'e_document_account_inactive',
   versionConflict: 'version_conflict',
   notFound: 'not_found',
   idempotencyConflict: 'idempotency_conflict',
@@ -149,7 +150,6 @@ export function decodeAccountEDocumentProfile(
     return null
   }
 
-  // Unknown carries no check; a known status carries both its time and its checker (the server's own rule).
   // Unknown carries no check; a known status carries its time and whether it was checked in this company. The checker's
   // name exists only for a check of this company (the server never names another company's checker).
   const checkedAt = raw.statusCheckedAtUtc
@@ -271,7 +271,7 @@ export const E_DOCUMENT_TEXT = {
     'Ayarlar’da e-Fatura senaryo listesi tanımlı değil (kaynak yok); müşteriye özel senaryo seçilemez.',
   codeListUnavailable: 'Ayarlar’daki e-Fatura senaryo listesi okunamadı; senaryo şu an değiştirilemez.',
   readOnlyNote: 'e-Belge bilgisini değiştirme yetkiniz yok; yalnız görüntüleyebilirsiniz.',
-  passiveAccountNote: 'Bu cari hesap pasif.',
+  passiveAccountNote: 'Bu cari hesap pasif; e-Belge bilgisi yalnız görüntülenebilir.',
   saving: 'Kaydediliyor…',
   contractNotReady: 'Sunucu uyumluluğu doğrulanamadı. Sayfayı yenileyip tekrar deneyin.',
   unknownOutcome:
@@ -289,6 +289,8 @@ export const E_DOCUMENT_TEXT = {
     [E_DOCUMENT_PROBLEM_CODE.idempotencyConflict]: 'Aynı işlem anahtarı farklı bir istekte kullanılmış. Yeniden deneyin.',
     [E_DOCUMENT_PROBLEM_CODE.taxIdentityRequired]:
       'Bu carinin VKN/TCKN bilgisi yok; e-Belge durumu kaydedilemez. Önce cari kimlik bölümünden numara girin.',
+    [E_DOCUMENT_PROBLEM_CODE.accountInactive]:
+      'Bu cari hesap pasif; e-Belge bilgisi değiştirilemez. Önce hesabı aktifleştirin. Bilgiler yenilendi.',
     [E_DOCUMENT_PROBLEM_CODE.validationFailed]: 'Girilen bilgi geçersiz.',
   } as Readonly<Record<string, string>>,
 } as const

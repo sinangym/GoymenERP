@@ -2690,13 +2690,17 @@ public sealed partial class OpenApiContractGenerationTests
             ["RecordCounterpartyAccountEDocumentStatusV1:404"] = ["not_found"],
             ["RecordCounterpartyAccountEDocumentStatusV1:409"] =
                 ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
-            ["RecordCounterpartyAccountEDocumentStatusV1:422"] = ["e_document_tax_identity_required"],
+            ["RecordCounterpartyAccountEDocumentStatusV1:422"] =
+                ["e_document_account_inactive", "e_document_tax_identity_required"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:404"] = ["not_found"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:409"] =
                 ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
             ["SetCounterpartyAccountEInvoiceScenarioV1:422"] =
-                ["e_document_tax_identity_required", "einvoice_scenario_code_list_missing", "einvoice_scenario_not_listed"],
+                [
+                    "e_document_account_inactive", "e_document_tax_identity_required",
+                    "einvoice_scenario_code_list_missing", "einvoice_scenario_not_listed",
+                ],
             ["SetCounterpartyAccountEInvoiceScenarioV1:503"] = ["service_unavailable"],
             ["SaveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["SaveManufacturingPlanV1:409"] =

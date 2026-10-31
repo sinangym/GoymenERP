@@ -37,8 +37,8 @@ public static partial class ErpOpenApiContract
                 + "check. The fence is the pair the read returned: expectedVersion (the shared PROFILE version as "
                 + "canonical decimal TEXT, \"0\" = no profile yet; the first record creates it) and expectedProfileToken "
                 + "(which profile the read showed). Another profile than the one read — e.g. after the party's VKN "
-                + "changed — is 409 version_conflict. A party with no VKN/TCKN is 422 e_document_tax_identity_required. "
-                + "No external (GİB) call.";
+                + "changed — is 409 version_conflict. A party with no VKN/TCKN is 422 e_document_tax_identity_required; "
+                + "a passive account of the active company is 422 e_document_account_inactive. No external (GİB) call.";
         }
 
         if (type == typeof(SetCounterpartyEInvoiceScenarioOverride))
@@ -51,7 +51,8 @@ public static partial class ErpOpenApiContract
                 + "expectedProfileToken as the status command. Settings without a "
                 + "list is 422 einvoice_scenario_code_list_missing; a code the list does not carry is 422 "
                 + "einvoice_scenario_not_listed; Settings that cannot be read is 503 service_unavailable (nothing "
-                + "stored); a party with no VKN is 422 e_document_tax_identity_required. Re-sending the current code is a no-op.";
+                + "stored); a party with no VKN is 422 e_document_tax_identity_required; a passive account is 422 "
+                + "e_document_account_inactive. Re-sending the current code is a no-op.";
         }
 
         if (type == typeof(CounterpartyAccountEDocumentView))

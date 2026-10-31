@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -15,6 +16,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -311,7 +313,8 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
     [SqlServerFact]
     public async Task Concurrent_first_creation_from_two_companies_leaves_one_row_and_answers_204_and_409()
     {
-        await using var test = new EDocumentTest();
+        var logs = new ConcurrentQueue<string>();
+        await using var test = new EDocumentTest(logs: logs);
         using var adminA = test.Client();
         using var adminB = test.Client(TestCompanyIds.CompanyB);
         var partyA = await CreateCustomerAsync(adminA, "Eşzamanlı A", SharedVkn);
@@ -344,6 +347,122 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         Assert.Equal(1, await test.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType]=@Event;", StatusEvent));
         Assert.Equal("1", (await ReadAsync(adminA, ProfilePath(partyA))).GetProperty("version").GetString());
+
+        // B-P2-2 / AT-009: the loser waits on the create's key-range lock instead of meeting the unique index, so no
+        // duplicate-key message — which would name the VKN — is ever logged (by EF Core or anyone else).
+        Assert.NotEmpty(logs);
+        Assert.DoesNotContain(logs, entry => entry.Contains(SharedVkn, StringComparison.Ordinal));
+        Assert.DoesNotContain(logs, entry => entry.Contains("duplicate key", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [SqlServerFact]
+    public async Task Another_company_s_audit_never_carries_the_checker_or_the_checking_company_but_the_checking_company_s_does()
+    {
+        await using var test = new EDocumentTest();
+        using var adminA = test.Client();
+        using var adminB = test.Client(TestCompanyIds.CompanyB);
+        var partyA = await CreateCustomerAsync(adminA, "Denetim A", SharedVkn);
+        var partyB = await CreateCustomerAsync(adminB, "Denetim B", SharedVkn);
+        await RecordAsync(adminA, partyA, "EInvoice");
+        var checker = await test.ScalarAsync<string>(
+            "SELECT [EDocumentStatusCheckedByUserId] FROM [counterparty].[CustomerEDocumentProfiles];");
+        var companyA = TestCompanyIds.CompanyA.ToString("D");
+
+        // B changes the scenario (A's check is in Before and After) and resets the status (A's check is in Before).
+        await SetScenarioAsync(adminB, partyB, "TICARIFATURA");
+        await RecordAsync(adminB, partyB, "Unknown");
+
+        // B-P2-1: B's audit API shows that a check existed and when, never who made it or in which company.
+        const string history = "/api/v1/audit/events?entityType=Counterparty.CustomerEDocumentProfile";
+        var itemsB = (await ReadAsync(adminB, history)).GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(2, itemsB.Length);
+        foreach (var item in itemsB)
+        {
+            Assert.Equal(TestCompanyIds.CompanyB, item.GetProperty("companyId").GetGuid());
+            foreach (var image in new[] { item.GetProperty("beforeJson").GetString()!, item.GetProperty("afterJson").GetString()! })
+            {
+                Assert.DoesNotContain(checker, image, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(companyA, image, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain(SharedVkn, image, StringComparison.Ordinal);
+            }
+        }
+
+        var scenarioB = itemsB.Single(item => item.GetProperty("eventType").GetString() == ScenarioEvent);
+        using (var after = JsonDocument.Parse(scenarioB.GetProperty("afterJson").GetString()!))
+        {
+            Assert.False(after.RootElement.GetProperty("EDocumentStatusCheckedInActingCompany").GetBoolean());
+            Assert.Equal(JsonValueKind.Null, after.RootElement.GetProperty("EDocumentStatusCheckedByUserId").ValueKind);
+            Assert.Equal(JsonValueKind.Null, after.RootElement.GetProperty("EDocumentStatusCheckedInCompanyId").ValueKind);
+            Assert.Equal(JsonValueKind.String, after.RootElement.GetProperty("EDocumentStatusCheckedAtUtc").ValueKind);
+        }
+
+        // The checking company's own audit keeps its check of record.
+        var itemA = Assert.Single((await ReadAsync(adminA, history)).GetProperty("items").EnumerateArray());
+        using (var after = JsonDocument.Parse(itemA.GetProperty("afterJson").GetString()!))
+        {
+            Assert.True(after.RootElement.GetProperty("EDocumentStatusCheckedInActingCompany").GetBoolean());
+            Assert.Equal(checker, after.RootElement.GetProperty("EDocumentStatusCheckedByUserId").GetString());
+            Assert.Equal(TestCompanyIds.CompanyA, after.RootElement.GetProperty("EDocumentStatusCheckedInCompanyId").GetGuid());
+        }
+
+        // The stored rows say the same as the API: nothing of A's check under company B (@Event = the checker,
+        // @Scenario = company A, @CompanyA = company B here).
+        Assert.Equal(0, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType]=N'Counterparty.CustomerEDocumentProfile' "
+            + "AND [CompanyId]=@CompanyA AND ([BeforeJson] LIKE N'%' + @Event + N'%' OR [AfterJson] LIKE N'%' + @Event + N'%' "
+            + "OR [BeforeJson] LIKE N'%' + @Scenario + N'%' OR [AfterJson] LIKE N'%' + @Scenario + N'%');",
+            checker, companyA, companyA: TestCompanyIds.CompanyB));
+    }
+
+    [SqlServerFact]
+    public async Task A_passive_account_reads_the_shared_profile_but_both_commands_are_a_stored_422_that_change_nothing()
+    {
+        await using var test = new EDocumentTest();
+        using var admin = test.Client();
+        var party = await CreateCustomerAsync(admin, "Pasif", SharedVkn);
+        await RecordAsync(admin, party, "EInvoice");
+        var fence = await ReadAsync(admin, ProfilePath(party));
+        await test.ExecuteAsync(
+            $"UPDATE [counterparty].[CompanyPartyAccounts] SET [IsActive]=0 WHERE [PartyId]='{party:D}';");
+
+        var passive = await ReadAsync(admin, ProfilePath(party));
+        Assert.False(passive.GetProperty("accountIsActive").GetBoolean());
+        Assert.Equal("EInvoice", passive.GetProperty("status").GetString());
+        Assert.Equal("1", passive.GetProperty("version").GetString());
+
+        var key = NewKey(admin);
+        var body = Body(new
+        {
+            expectedVersion = "1", expectedProfileToken = fence.GetProperty("profileToken").GetString(), status = "EArchive",
+        });
+        using (var refused = await PutAsync(admin, StatusPath(party), body))
+        {
+            await AssertProblemAsync(refused, HttpStatusCode.UnprocessableEntity, "e_document_account_inactive");
+        }
+
+        UseKey(admin, key);
+        using (var replay = await PutAsync(admin, StatusPath(party), body))
+        {
+            await AssertProblemAsync(replay, HttpStatusCode.UnprocessableEntity, "e_document_account_inactive");
+            Assert.True(replay.Headers.Contains("Idempotency-Replayed"));
+        }
+
+        NewKey(admin);
+        using (var scenario = await PutAsync(admin, ScenarioPath(party), Body(new
+               {
+                   expectedVersion = "1", expectedProfileToken = fence.GetProperty("profileToken").GetString(),
+                   scenarioCode = "TICARIFATURA",
+               })))
+        {
+            await AssertProblemAsync(scenario, HttpStatusCode.UnprocessableEntity, "e_document_account_inactive");
+        }
+
+        var unchanged = await ReadAsync(admin, ProfilePath(party));
+        Assert.Equal("1", unchanged.GetProperty("version").GetString());
+        Assert.Equal("EInvoice", unchanged.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, unchanged.GetProperty("scenarioOverrideCode").ValueKind);
+        Assert.Equal(1, await test.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EntityType]=N'Counterparty.CustomerEDocumentProfile';"));
     }
 
     [SqlServerFact]
@@ -737,10 +856,16 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
         private readonly string _baseConnection = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-        public EDocumentTest(bool grant = true, SettingsDouble? settings = null, bool grantApprove = false)
+        public EDocumentTest(
+            bool grant = true, SettingsDouble? settings = null, bool grantApprove = false, ConcurrentQueue<string>? logs = null)
         {
             Factory = new SqlServerRelationalApiFactory(_baseConnection, services =>
             {
+                if (logs is not null)
+                {
+                    services.AddSingleton<ILoggerProvider>(new CapturingLoggerProvider(logs));
+                }
+
                 if (settings is not null)
                 {
                     services.RemoveAll<ISettingsEInvoiceScenarioPolicyProviderV1>();
@@ -845,6 +970,33 @@ public sealed class CounterpartyEDocumentProfileSqlServerRelationalAcceptanceTes
                 END;
                 """;
             await command.ExecuteNonQueryAsync();
+        }
+    }
+
+    /// <summary>Every log line the host writes (message, exception and structured values), for the AT-009 assertion.</summary>
+    private sealed class CapturingLoggerProvider(ConcurrentQueue<string> entries) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(entries, categoryName);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(ConcurrentQueue<string> entries, string categoryName) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+
+            public void Log<TState>(
+                LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                var values = state is IEnumerable<KeyValuePair<string, object?>> pairs
+                    ? string.Join(" ", pairs.Select(pair => $"{pair.Key}={pair.Value}"))
+                    : string.Empty;
+                entries.Enqueue($"{categoryName}[{eventId.Id}] {logLevel}: {formatter(state, exception)} {values} {exception}");
+            }
         }
     }
 

@@ -107,6 +107,8 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
 
   const profile = outcome.data
   const locked = command.busy || command.unresolved
+  // A passive account reads the shared profile but does not change it (the server answers 422 e_document_account_inactive).
+  const editable = profile.viewer.canUpdate && profile.accountIsActive
   const selectedStatus = statusChoice ?? profile.status
   // Unknown → Unknown changes nothing; every other choice records a new check (a re-check of the same status counts).
   const statusSubmittable = !(selectedStatus === 'Unknown' && profile.status === 'Unknown')
@@ -174,7 +176,7 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
         <p className={styles.notice} data-no-tax-identity role="note">
           {T.noTaxIdentity}
         </p>
-      ) : profile.viewer.canUpdate ? (
+      ) : editable ? (
         <form className={styles.form} onSubmit={(event) => void submitStatus(event)} aria-busy={command.busy}>
           <label htmlFor={statusSelectId}>{T.statusSelectLabel}</label>
           <select
@@ -196,7 +198,7 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
             </button>
           </div>
         </form>
-      ) : (
+      ) : profile.viewer.canUpdate ? null : (
         <p className={styles.muted}>{T.readOnlyNote}</p>
       )}
 
@@ -222,7 +224,7 @@ export function CariEDocumentPanel({ partyId, companyId, namespace, contractCont
       </dl>
       <p className={styles.muted}>{T.evaluatedOn(profile.evaluatedOn)}</p>
 
-      {profile.viewer.canUpdate && profile.taxIdentityNumberPresent ? (
+      {editable && profile.taxIdentityNumberPresent ? (
         profile.scenarioCodes.state === 'Unavailable' ? (
           <p className={styles.error} role="alert">
             {T.codeListUnavailable}

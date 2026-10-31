@@ -13,8 +13,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // the Party pattern), its config (unique VKN, status/override check constraints, the checking-company FK that only
     // scopes who sees the checker) and its write guard (no delete, id/VKN immutable, resolved-company required); the
     // CommandExecution tenant filter is unchanged.
+    // SAT-D119 review B-P3-3: + the write guard refuses a newly written checking company other than the active one
+    // (9090f0a5… -> 181bd248…); no filter, set or model change.
     private const string ReviewedCounterpartyDbContextFingerprint =
-        "9090f0a5864337438ca7b23f87eb873cf9118e34947f182856be6f0654be46bb";
+        "181bd2486c67c20c14670392988f1d8367836509bb4495ec231ff9129e80ab25";
     private const string ReviewedCounterpartyPurchasingRecordPartyDisplaySourcePath =
         "src/backend/Modules/Counterparty/"
         + "GoymenERP.Modules.Counterparty.Infrastructure/Persistence/"

@@ -407,6 +407,17 @@ public sealed class CounterpartyDbContext(
                 throw new InvalidOperationException(
                     "e-belge profili yazması aktif şirket bağlamı ister.");
             }
+
+            // A check is always recorded IN the writing company (review B-P3-3): a newly written checking company must
+            // be the active one. Clearing it (Unknown) and writes that leave it untouched are not checks.
+            var checkingCompany = entry.Property(x => x.EDocumentStatusCheckedInCompanyId);
+            if ((entry.State == EntityState.Added || checkingCompany.IsModified)
+                && entry.Entity.EDocumentStatusCheckedInCompanyId is { } checkedIn
+                && checkedIn != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "e-belge kontrolü yalnız aktif şirkette kaydedilebilir.");
+            }
         }
 
         foreach (var entry in ChangeTracker.Entries<CustomerGroup>())

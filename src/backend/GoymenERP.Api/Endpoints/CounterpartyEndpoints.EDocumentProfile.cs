@@ -91,7 +91,9 @@ public static partial class CounterpartyEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
             .ProducesErpConflict(EDocumentCommon409Codes)
-            .ProducesErpUnprocessableEntity(CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired)
+            .ProducesErpUnprocessableEntity(
+                CounterpartyProblemCodesV1.EDocumentAccountInactive,
+                CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired)
             .ProducesErpAuthenticatedProblems();
 
         group.MapPut(EDocumentPath + "/scenario", async (
@@ -117,6 +119,7 @@ public static partial class CounterpartyEndpoints
             .ProducesErpUnprocessableEntity(
                 CounterpartyProblemCodesV1.EInvoiceScenarioCodeListMissing,
                 CounterpartyProblemCodesV1.EInvoiceScenarioNotListed,
+                CounterpartyProblemCodesV1.EDocumentAccountInactive,
                 CounterpartyProblemCodesV1.EDocumentTaxIdentityRequired)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
@@ -178,7 +181,8 @@ public static partial class CounterpartyEndpoints
             CounterpartyCommandResult.NotFound => StatusCodes.Status404NotFound,
             CounterpartyCommandResult.EInvoiceScenarioCodeListMissing
                 or CounterpartyCommandResult.EInvoiceScenarioNotListed
-                or CounterpartyCommandResult.EDocumentTaxIdentityRequired => StatusCodes.Status422UnprocessableEntity,
+                or CounterpartyCommandResult.EDocumentTaxIdentityRequired
+                or CounterpartyCommandResult.EDocumentAccountInactive => StatusCodes.Status422UnprocessableEntity,
             CounterpartyCommandResult.VersionConflict
                 or CounterpartyCommandResult.IdempotencyConflict => StatusCodes.Status409Conflict,
             _ => throw new InvalidOperationException($"e-Belge komutu bu sonucu üretmez: {response.Result}."),

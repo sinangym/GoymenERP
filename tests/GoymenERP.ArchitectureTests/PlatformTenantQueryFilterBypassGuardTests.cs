@@ -225,9 +225,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D102/SAT-D119 e-belge profile: +10 VKN-shared status lifecycle, cross-company sharing without the
             // checker, VKN change (profile-bound fence, ABA 409), existing-party isolation + port, concurrent first creation,
             // per-company Idempotency-Key, Settings-listed override/effective scenario, no-VKN and DB checks, 403 and
-            // rollback facts (d8e2b013… -> 7b1a22af…).
+            // rollback facts (d8e2b013… -> 7b1a22af…). Review round 3: +2 facts — another company's audit carries
+            // neither the checker nor the checking company, and a passive account's commands are a stored 422
+            // (7b1a22af… -> 53063d1f…).
             ["tools/relational_inventory/counterparty.txt"] =
-                "7b1a22afdfadca7b03b9c2d71305c660be172b1ef980833e098d81c321006fa5",
+                "53063d1f05e0bb4f65f6c9c966fc04c4a433a455bba426d1c51018b3c0ce35b0",
 
             // finance
             // DEC-FIN-014: +3 POS collection SQL facts (b18c13d9… -> 7af8ecf1…).

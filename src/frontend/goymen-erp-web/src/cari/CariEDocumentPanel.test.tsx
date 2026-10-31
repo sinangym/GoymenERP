@@ -303,6 +303,30 @@ describe('SAT-D102 e-belge panel on the Cari card', () => {
     expect(screen.queryByLabelText(T.scenarioSelectLabel)).toBeNull()
   })
 
+  it('reads a passive account but offers no form, even with the update grant', async () => {
+    install(() => json(profile({ accountIsActive: false, scenarioCodes: listed })))
+    renderPanel()
+    expect(await screen.findByText(T.passiveAccountNote)).toBeTruthy()
+    expect(screen.getByText(T.status.Unknown, { selector: 'dd' })).toBeTruthy()
+    expect(screen.queryByLabelText(T.statusSelectLabel)).toBeNull()
+    expect(screen.queryByLabelText(T.scenarioSelectLabel)).toBeNull()
+    expect(screen.queryByText(T.readOnlyNote)).toBeNull()
+  })
+
+  it('names an account made passive in between (422) and reads the profile again', async () => {
+    const calls = install((call) =>
+      call.method === 'PUT'
+        ? json({ code: 'e_document_account_inactive' }, 422)
+        : json(profile({ scenarioCodes: listed })),
+    )
+    renderPanel()
+    const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText(T.scenarioSelectLabel), 'CODE_A')
+    await user.click(screen.getByRole('button', { name: T.saveScenario }))
+    expect(await screen.findByRole('alert')).toHaveProperty('textContent', T.refusal.e_document_account_inactive)
+    await waitFor(() => expect(reads(calls).length).toBeGreaterThanOrEqual(2))
+  })
+
   it('says Settings could not be read when the list is unavailable', async () => {
     install(() =>
       json(

@@ -105,6 +105,12 @@ public enum CounterpartyCommandResult
 
     /// <summary>SAT-D119: the party has no VKN/TCKN, so no VKN-keyed e-belge profile can exist (422).</summary>
     EDocumentTaxIdentityRequired = 20,
+
+    /// <summary>
+    /// SAT-D119 / ASSUMPTION-CARI-EDOC-4: the acting company's account is passive, so it does not change the group-shared
+    /// e-belge profile (422).
+    /// </summary>
+    EDocumentAccountInactive = 21,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -157,6 +163,9 @@ public static class CounterpartyProblemCodesV1
     /// <summary>SAT-D119: no VKN/TCKN on the party, so the shared e-belge profile cannot be recorded.</summary>
     public const string EDocumentTaxIdentityRequired = "e_document_tax_identity_required";
 
+    /// <summary>ASSUMPTION-CARI-EDOC-4: a passive account does not change the shared e-belge profile.</summary>
+    public const string EDocumentAccountInactive = "e_document_account_inactive";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -179,6 +188,7 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.EInvoiceScenarioCodeListMissing => EInvoiceScenarioCodeListMissing,
             CounterpartyCommandResult.EInvoiceScenarioNotListed => EInvoiceScenarioNotListed,
             CounterpartyCommandResult.EDocumentTaxIdentityRequired => EDocumentTaxIdentityRequired,
+            CounterpartyCommandResult.EDocumentAccountInactive => EDocumentAccountInactive,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };

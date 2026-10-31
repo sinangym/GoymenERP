@@ -49,9 +49,10 @@ public static class SettingsPrerequisiteCodesV1
     public const string SalesPolicyRequestInvalid = "settings_sales_policy_request_invalid";
 
     /// <summary>
-    /// SAT-D102: no e-Fatura scenario code list is in force for the company on the date. The key exists for every
-    /// company and starts empty; a consumer reads this as "kaynak yok" (no per-customer override can be chosen or
-    /// honoured), never as an implicit list.
+    /// SAT-D102: no e-Fatura scenario code list is in force for the company on the date. SAT-D120 seeds the standard
+    /// list for the group's companies from 2026-10-31, so this is a date before that version or a company without it; a
+    /// consumer reads it as "kaynak yok" (no per-customer override can be chosen or honoured), never as an implicit
+    /// list.
     /// </summary>
     public const string EInvoiceScenarioCodeListNotFound = "settings_einvoice_scenario_code_list_not_found";
 

@@ -496,4 +496,3 @@ Sales refuses a loss (fail-closed) and suggests no validity. A malformed catalog
 long for the consumer's snapshot, repeated id or code, a list without entries, a non-positive day count, overlapping windows) is
 refused as a whole with `settings_profile_invalid`. Host registration: `Program.cs`, scoped. Evidence:
 `tests/GoymenERP.Settings.UnitTests/ApprovedSalesQuotePolicyProviderTests.cs`.
-
