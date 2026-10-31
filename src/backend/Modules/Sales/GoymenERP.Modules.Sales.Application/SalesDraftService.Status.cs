@@ -197,7 +197,7 @@ public sealed partial class SalesDraftService
                     null, null, SalesDraftStatusAxisStatesV1.PendingReapproval, null, null, null, false, false, null, null))]);
         }
 
-        var recorded = await RecordedShipmentsAsync(scope, draft, cancellationToken);
+        var recorded = await RecordedShipmentsAsync(scope, bindings.ReadPermission, draft, cancellationToken);
         if (recorded is null)
         {
             return Unreadable(ordered, basis);
@@ -255,9 +255,10 @@ public sealed partial class SalesDraftService
 
     /// <summary>
     /// The delivery owner's shipped and delivered totals per line as exact quantities of the line's unit, or null when the owner
-    /// is not composed, fails or answers a malformed value (the AT-024 validation, the same port). A fence loss is 403.
+    /// is not composed, fails or answers a malformed value (the AT-024 validation, the same port). A fence loss is 403. The fence
+    /// re-measures <paramref name="permission"/>, the caller's own read name (the draft read, or the API-41 report read).
     /// </summary>
-    private async Task<Dictionary<Guid, (Quantity Shipped, Quantity Delivered)>?> RecordedShipmentsAsync(Scope scope,
+    private async Task<Dictionary<Guid, (Quantity Shipped, Quantity Delivered)>?> RecordedShipmentsAsync(Scope scope, string? permission,
         SalesOrderDraft draft, CancellationToken cancellationToken)
     {
         if (deliveries is not { } owner)
@@ -268,7 +269,7 @@ public sealed partial class SalesDraftService
         SalesOrderDeliveryReadAnswerV1? answer;
         try
         {
-            answer = await GuardedAsync(scope, bindings.ReadPermission,
+            answer = await GuardedAsync(scope, permission,
                 () => owner.ReadOrderDeliveriesAsync(draft.Id, cancellationToken), cancellationToken);
         }
         catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))

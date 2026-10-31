@@ -350,8 +350,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D103 / SAT-D104 / SAT-D111 / SAT-D112 (EK13, EK14), merged over #849's quote facts: the quantity revision's "a
             // loading line blocks" fact replaced by the shipped/loaded floor and re-approval cap fact, +1 price re-approval fact,
             // +1 rejected decrease resubmission fact (K3-REVIEW-B P1-1), kept ordinal-sorted (2b0ee4d9… -> ece55741…).
+            // API-41 / API-42: +2 SalesReportSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (ece55741… -> a85d5b59…).
             ["tools/relational_inventory/sales.txt"] =
-                "ece557412bf412ae5f8be947fdef08df7c2e50bebcdf0442707c0a607e329159",
+                "a85d5b59f6c53d9b4a0db6ba571bfc059a0fd9a797863e4871943ba95b261892",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1355,8 +1356,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // and the named service factory (DI-only, the owner ports optional); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D63 (limit-group source) merged over SAT-D25 / SAT-D39 (the draft service also
                     // receives the optional Settings quote policy port, DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for API-41 / API-42: the report store and report service registrations over the same Sales store
+                    // and draft service, and the draft service's optional Cari party display (DI-only); provider branch and token counts
+                    // are unchanged.
                     new(
-                        "dd90dbd593384dd7bda252031ff8ebfabfa0f1653f6b22cf202c5e92e8f82052",
+                        "3506f1828767d51ef4ca3f24515984f6057dc24247bb76992cc014416e684ae9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

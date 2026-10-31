@@ -6,7 +6,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 /// <summary>
 /// Publishes the three Sales draft screens of #260 (S-02 list, S-03 create, S-04 detail) — and, since shell contract 1.8,
 /// the six S-01 request / quote pool screens of UI-20 with their controls, and since 1.9 the S-07 dispatch list and the S-08
-/// invoice candidates (UI-60 / UI-61) — to the
+/// invoice candidates (UI-60 / UI-61), and since 1.11 the UI-80 Sales reports screen — to the
 /// shell — PUBLISHED (S03-c): every declaration is <c>ImplementationAvailable: true</c> since the
 /// draft API (#321) landed; the registry never publishes a staged declaration, so the browser suite
 /// <c>s03</c> is the acceptance of this flip, not its precondition (the Product #316 precedent; the
@@ -24,7 +24,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    public const string OwnerContractVersion = "1.10";
+    public const string OwnerContractVersion = "1.11";
 
     public const string ListCapabilityId = "sales.drafts.list";
     public const string ListRouteId = "sales.drafts.list";
@@ -141,6 +141,17 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
     public const string InvoiceCandidateListRouteId = "sales.invoice-candidates.list";
     public const string InvoiceCandidateListRoutePath = "/satis/faturaya-hazir";
     public const string InvoiceCandidateListScreenId = "S-08";
+
+    /// <summary>
+    /// UI-80 "Satış raporları" (shell contract 1.11; plan §3.4 API-41 / API-42): one read-only screen with three report tabs (open
+    /// orders, lost opportunities, price variance) under its own <see cref="SalesPermissionManifestV1.ReportsRead"/>, which no other
+    /// Sales name confers. Master v3 R-02 "Alan raporları" for the Sales area. No control: a report writes nothing; its amounts are
+    /// decided on the server by the price read, never by a screen grant.
+    /// </summary>
+    public const string ReportsCapabilityId = "sales.reports.view";
+    public const string ReportsRouteId = "sales.reports.view";
+    public const string ReportsRoutePath = "/satis/raporlar";
+    public const string ReportsScreenId = "R-02-SALES";
 
     public string Owner => OwnerId;
 
@@ -263,6 +274,16 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
             ShellCapabilityScopeRequirement.CompanyWide,
             [SalesPermissionManifestV1.InvoicesRead],
+            ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(
+            ReportsCapabilityId,
+            ReportsRouteId,
+            ReportsRoutePath,
+            ReportsScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.ReportsRead],
             ImplementationAvailable: true),
     ];
 

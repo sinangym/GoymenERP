@@ -253,6 +253,8 @@ public static partial class SalesEndpoints
         MapQuoteEndpoints(endpoints);
         // API-30 / API-31 (plan §3.3, S-07 / S-08): the read-only dispatch list and invoice candidates.
         MapDispatchEndpoints(endpoints);
+        // API-41 / API-42 (plan §3.4, UI-80): the read-only Sales reports.
+        MapReportEndpoints(endpoints);
         return endpoints;
     }
 

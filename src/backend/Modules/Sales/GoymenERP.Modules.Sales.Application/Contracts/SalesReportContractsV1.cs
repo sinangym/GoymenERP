@@ -1,0 +1,287 @@
+using System.Text.Json.Serialization;
+using GoymenERP.Modules.Sales.Domain.Drafts;
+
+namespace GoymenERP.Modules.Sales.Application.Contracts;
+
+/// <summary>
+/// API-41 / API-42 (Satış hazırlık planı v1 §3.4, UI-80): the wire constants of the three read-only Sales reports. All live under
+/// <c>/api/v1/sales/reports/</c> and need <see cref="SalesPermissionManifestV1.ReportsRead"/>; none writes anything in any module
+/// (no attempt, audit event or version effect).
+/// </summary>
+public static class SalesReportApiV1
+{
+    /// <summary>API-41 (KPI No 124): the open quantity of the approved, neither closed nor cancelled orders.</summary>
+    public const string OpenOrdersPath = "/api/v1/sales/reports/open-orders";
+
+    /// <summary>API-42 (SAT-D25): the lost quotes with their loss reason and their quoted net amount.</summary>
+    public const string LostOpportunitiesPath = "/api/v1/sales/reports/lost-opportunities";
+
+    /// <summary>API-42 (No 25): the invoice-to-order unit price variance. No invoice owner exists yet: <c>NoSource</c>.</summary>
+    public const string PriceVariancePath = "/api/v1/sales/reports/price-variance";
+
+    /// <summary>The page size default and maximum (the Sales list convention, 1–100).</summary>
+    public const int DefaultPageSize = 50;
+    public const int MaximumPageSize = 100;
+
+    /// <summary>
+    /// API-41: the most open orders one page of groups measures (each order's shipped totals are one Logistics read). A technical
+    /// read bound, not a business threshold: a page whose groups span more orders is refused with
+    /// <see cref="SalesReportProblemCodesV1.ReportScopeTooLarge"/> (422) and the screen narrows the page, the dates or the customer —
+    /// a group is never silently cut.
+    /// </summary>
+    public const int MaximumOrdersPerPage = 500;
+}
+
+/// <summary>API-41 / API-42 refusal codes beside the shared Sales ones.</summary>
+public static class SalesReportProblemCodesV1
+{
+    /// <summary>422: one page of open-order groups spans more orders than <see cref="SalesReportApiV1.MaximumOrdersPerPage"/>.</summary>
+    public const string ReportScopeTooLarge = "report_scope_too_large";
+}
+
+/// <summary>
+/// API-41 query. <paramref name="From"/> / <paramref name="To"/> bound the ORDER business date (inclusive, both optional);
+/// <paramref name="CompanyAccountId"/> narrows to one customer account.
+/// </summary>
+public sealed record SalesOpenOrderReportQuery(DateOnly? From, DateOnly? To, Guid? CompanyAccountId, int PageSize, string? Cursor);
+
+/// <summary>
+/// API-42 lost opportunities query. <paramref name="From"/> / <paramref name="To"/> bound the LOSS day (the Europe/Istanbul
+/// calendar day of the recorded loss, SAT-D10; inclusive, both optional); <paramref name="ReasonId"/> narrows to one SAT-D25 list
+/// reason.
+/// </summary>
+public sealed record SalesLostOpportunityReportQuery(DateOnly? From, DateOnly? To, Guid? CompanyAccountId, Guid? ReasonId, int PageSize,
+    string? Cursor);
+
+/// <summary>API-42 price variance query (the invoice date range and customer; validated now, answered by the invoice owner later).</summary>
+public sealed record SalesPriceVarianceReportQuery(DateOnly? From, DateOnly? To, Guid? CompanyAccountId, int PageSize, string? Cursor);
+
+/// <summary>The customer as the Cari owner presents it now (code, legal name, optional trade name) beside its identities.</summary>
+public sealed record SalesReportCustomerView(Guid PartyId, Guid CompanyAccountId, string Code, string LegalName, string? TradeName);
+
+/// <summary>
+/// API-41: what the open quantity measures. Only <see cref="ApprovedMinusShipped"/>: the approved (basis revision) quantity of the
+/// line minus the definitely shipped total the Logistics owner recorded, never below zero. No tolerance judges it (the realization
+/// axis does that) and nothing is converted between units.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesOpenOrderMeasureView>))]
+public enum SalesOpenOrderMeasureView
+{
+    ApprovedMinusShipped = 1,
+}
+
+/// <summary>Why an open order line is not in a group's sums.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesOpenOrderUnmeasuredReasonView>))]
+public enum SalesOpenOrderUnmeasuredReasonView
+{
+    /// <summary>
+    /// A revision awaits re-approval and the last approved revision does not hold the line in the same unit exactly (the API-08
+    /// basis rule): nothing is measured against unapproved quantities.
+    /// </summary>
+    PendingReapproval = 1,
+}
+
+/// <summary>
+/// API-41: one measured order line of a group — the order, the basis revision its approved quantity comes from, and the three
+/// quantities exactly in the line's order unit (Ö2 text: kilograms ≤ 3 decimals, pieces whole; never rounded).
+/// </summary>
+public sealed record SalesOpenOrderLineView(
+    Guid OrderId,
+    string DocumentNo,
+    DateOnly BusinessDate,
+    DateOnly? RequestedDeliveryDate,
+    string BasisRevision,
+    Guid LineId,
+    int LineNo,
+    string ApprovedQuantity,
+    string ShippedQuantity,
+    string RemainingQuantity);
+
+/// <summary>API-41: an open order line of the group that is NOT in its sums, and why.</summary>
+public sealed record SalesOpenOrderUnmeasuredLineView(
+    Guid OrderId,
+    string DocumentNo,
+    Guid LineId,
+    int LineNo,
+    SalesOpenOrderUnmeasuredReasonView Reason);
+
+/// <summary>
+/// API-41: one group — one customer account, one product, one order unit. The sums are taken in that ONE unit (different units are
+/// different groups, never added); <c>complete</c> is false whenever a line of the group is unmeasured, so a partial sum is never
+/// shown as the whole.
+/// </summary>
+public sealed record SalesOpenOrderGroupView(
+    SalesReportCustomerView Customer,
+    Guid ProductId,
+    string ProductCode,
+    string ProductName,
+    Guid UnitId,
+    string UnitCode,
+    int OrderCount,
+    string ApprovedQuantity,
+    string ShippedQuantity,
+    string RemainingQuantity,
+    bool Complete,
+    IReadOnlyList<SalesOpenOrderLineView> Lines,
+    IReadOnlyList<SalesOpenOrderUnmeasuredLineView> Unmeasured);
+
+/// <summary>API-41: one page of groups ordered by (customer account, product, unit) identities; <c>nextCursor</c> null at the end.</summary>
+public sealed record SalesOpenOrderReportResponse(
+    SalesOpenOrderMeasureView Measure,
+    IReadOnlyList<SalesOpenOrderGroupView> Groups,
+    string? NextCursor);
+
+/// <summary>API-42: the SAT-D25 Settings list entry the loss was recorded with, as the quote snapshotted it.</summary>
+public sealed record SalesLostReasonView(Guid ReasonId, string Code, string Label, Guid ProfileId, long ProfileVersion);
+
+/// <summary>
+/// API-42: the lost quote's NET amount (KDV hariç) — <see cref="SalesOrderTotalsCalculator"/>'s answer over the quote's current
+/// lines and its money profile snapshot, in the quote's own currency (never converted, never added to another quote's).
+/// <c>state</c> is the calculator's document state (<c>Computed</c> / <c>Incomplete</c> / <c>AmountOutOfRange</c>); the net is null
+/// unless computed.
+/// </summary>
+public sealed record SalesLostAmountView(
+    string State,
+    Guid CurrencyId,
+    int AmountScale,
+    string? NetAmount,
+    int UnpricedLineCount,
+    int PriceUnitNotOrderUnitLineCount);
+
+/// <summary>
+/// API-42: one lost quote. <c>reason</c> is null for a loss recorded before SAT-D25 (its free text is then the
+/// <c>explanation</c>); <c>amount</c> is null exactly when the response's <c>amountDisclosure</c> is <c>Withheld</c>.
+/// </summary>
+public sealed record SalesLostOpportunityView(
+    Guid QuoteId,
+    string DocumentNo,
+    string Revision,
+    DateOnly BusinessDate,
+    DateOnly? ValidUntil,
+    SalesReportCustomerView Customer,
+    Guid CurrencyId,
+    DateTimeOffset LostAtUtc,
+    DateOnly LostOn,
+    string LostBy,
+    SalesLostReasonView? Reason,
+    string? Explanation,
+    int LineCount,
+    SalesLostAmountView? Amount);
+
+/// <summary>
+/// API-42: one page of lost quotes, latest loss first. The amounts are prices: shown only to a holder of
+/// <see cref="SalesPermissionManifestV1.OrdersPriceRead"/> (<c>Visible</c>), otherwise <c>Withheld</c> and every amount null.
+/// </summary>
+public sealed record SalesLostOpportunityReportResponse(
+    SalesPriceDisclosure AmountDisclosure,
+    IReadOnlyList<SalesLostOpportunityView> Items,
+    string? NextCursor);
+
+/// <summary>
+/// API-42 (No 25): whether the invoice-to-order price variance has a source. Today <see cref="NoSource"/>: no Sales invoice owner
+/// exists (S5 API-32), so no variance is known — it is NOT "no variance". <see cref="Available"/> is the contract of the invoice
+/// owner's answer.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesPriceVarianceSourceStateView>))]
+public enum SalesPriceVarianceSourceStateView
+{
+    NoSource = 0,
+    Available = 1,
+}
+
+/// <summary>No 25 / SAT-D92: an invoice unit price below the order's (warning + variance record) or above it (needs an order revision).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<SalesPriceVarianceDirectionView>))]
+public enum SalesPriceVarianceDirectionView
+{
+    Below = 1,
+    Above = 2,
+}
+
+/// <summary>
+/// API-42 (No 25), the invoice owner's answer once it exists: one invoice line priced differently from its order line — both net
+/// unit prices exactly as recorded, their difference and the line's difference amount in the ORDER's currency (No 26: the invoice
+/// is issued in the order currency), all from the invoice calculator, never recomputed by the screen.
+/// </summary>
+public sealed record SalesPriceVarianceView(
+    Guid InvoiceId,
+    string InvoiceNo,
+    DateOnly InvoiceDate,
+    SalesReportCustomerView Customer,
+    Guid OrderId,
+    string OrderDocumentNo,
+    string OrderRevision,
+    Guid OrderLineId,
+    int OrderLineNo,
+    Guid ProductId,
+    string ProductCode,
+    string ProductName,
+    Guid UnitId,
+    string UnitCode,
+    string InvoicedQuantity,
+    Guid CurrencyId,
+    string OrderNetUnitPrice,
+    string InvoiceNetUnitPrice,
+    string UnitPriceDifference,
+    string DifferenceAmount,
+    SalesPriceVarianceDirectionView Direction);
+
+/// <summary>
+/// API-42 (No 25): <c>state</c> = <c>NoSource</c> carries null <c>items</c> and <c>nextCursor</c> — never an empty list that would
+/// read as "no variance"; <c>Available</c> carries the page.
+/// </summary>
+public sealed record SalesPriceVarianceReportResponse(
+    SalesPriceVarianceSourceStateView State,
+    IReadOnlyList<SalesPriceVarianceView>? Items,
+    string? NextCursor);
+
+/// <summary>The three report reads (all under <see cref="SalesPermissionManifestV1.ReportsRead"/>).</summary>
+public interface ISalesReportService
+{
+    Task<SalesOpenOrderReportResponse> GetOpenOrderReportAsync(SalesOpenOrderReportQuery query, CancellationToken cancellationToken = default);
+
+    Task<SalesLostOpportunityReportResponse> GetLostOpportunityReportAsync(SalesLostOpportunityReportQuery query,
+        CancellationToken cancellationToken = default);
+
+    Task<SalesPriceVarianceReportResponse> GetPriceVarianceReportAsync(SalesPriceVarianceReportQuery query,
+        CancellationToken cancellationToken = default);
+}
+
+/// <summary>API-41 store filter: the order business date range (inclusive) and an optional customer account.</summary>
+public sealed record SalesOpenOrderReportFilter(DateOnly? From, DateOnly? To, Guid? CompanyAccountId);
+
+/// <summary>API-41: the identity of one group (customer account of its party, product, order unit).</summary>
+public sealed record SalesOpenOrderGroupKey(Guid CompanyAccountId, Guid PartyId, Guid ProductId, Guid UnitId);
+
+/// <summary>
+/// API-41 store answer: one page of group keys and every open order with a current line in one of them (restored through the
+/// domain). <paramref name="OrdersExceeded"/> is true — and <paramref name="Orders"/> empty — when they are more than the caller's
+/// bound.
+/// </summary>
+public sealed record SalesOpenOrderGroupPage(
+    IReadOnlyList<SalesOpenOrderGroupKey> Groups,
+    IReadOnlyList<SalesOrderDraft> Orders,
+    bool OrdersExceeded,
+    string? NextCursor);
+
+/// <summary>API-42 store filter: the loss instant range [from, before) in UTC, an optional customer account and SAT-D25 reason.</summary>
+public sealed record SalesLostQuoteReportFilter(DateTimeOffset? LostFromUtc, DateTimeOffset? LostBeforeUtc, Guid? CompanyAccountId,
+    Guid? ReasonId);
+
+/// <summary>
+/// The Sales store's read-only report queries, under the tenant filter (another company's rows are invisible). Malformed, foreign or
+/// other-filter cursors are <see cref="SalesDraftStoreException"/> with <see cref="SalesDraftStoreCodes.InvalidCursor"/>.
+/// </summary>
+public interface ISalesReportReadStore
+{
+    /// <summary>
+    /// API-41: the open orders — lifecycle Draft (neither cancelled nor closed) and either the current revision approved or an earlier
+    /// approved revision archived — under <paramref name="filter"/>; one page of the distinct (account, party, product, order unit)
+    /// keys of their current lines in key order, and the orders those keys span (at most <paramref name="maximumOrders"/>).
+    /// </summary>
+    Task<SalesOpenOrderGroupPage> ListOpenOrderGroupsAsync(SalesOpenOrderReportFilter filter, int pageSize, string? cursor, int maximumOrders,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>API-42: the lost quotes under <paramref name="filter"/>, latest loss first (loss instant, then id).</summary>
+    Task<SalesQuotePage> ListLostQuotesAsync(SalesLostQuoteReportFilter filter, int pageSize, string? cursor,
+        CancellationToken cancellationToken = default);
+}
