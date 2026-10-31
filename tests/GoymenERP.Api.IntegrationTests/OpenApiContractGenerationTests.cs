@@ -332,6 +332,18 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
             "#/components/schemas/AssignCounterpartyCustomerGroup",
             ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        // SAT-D102 e-belge profile on the company account: read, status check record, scenario override.
+        new("get", "/api/v1/counterparties/{partyId}/company-account/e-document", "GetCounterpartyAccountEDocumentProfileV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json"),
+            ParameterValues: ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("put", "/api/v1/counterparties/{partyId}/company-account/e-document/status", "RecordCounterpartyAccountEDocumentStatusV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json"),
+            "#/components/schemas/RecordCounterpartyEDocumentStatus",
+            ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        new("put", "/api/v1/counterparties/{partyId}/company-account/e-document/scenario", "SetCounterpartyAccountEInvoiceScenarioV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/SetCounterpartyEInvoiceScenarioOverride",
+            ["path:partyId:true:type:string;format:uuid;non-empty-uuid:true"]),
         new("get", "/api/v1/shell/capabilities", "GetShellCapabilitiesV1",
             AuthenticatedResponses(
                 "200:application/json",
@@ -1159,6 +1171,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["SetCounterpartyCustomerGroupActiveStateV1"] = "none",
             ["GetCounterpartyAccountCustomerGroupV1"] = "ref:CounterpartyAccountCustomerGroupView",
             ["AssignCounterpartyAccountCustomerGroupV1"] = "none",
+            ["GetCounterpartyAccountEDocumentProfileV1"] = "ref:CounterpartyAccountEDocumentView",
+            ["RecordCounterpartyAccountEDocumentStatusV1"] = "none",
+            ["SetCounterpartyAccountEInvoiceScenarioV1"] = "none",
             ["GetShellCapabilitiesV1"] = "ref:ShellCapabilitySnapshot",
             ["GetFinanceManualReceiptDraftContextV1"] = "ref:DraftReadContextView",
             ["GetSalesAccountReferencesV1"] = "ref:SalesAccountOptionsV1",
@@ -1384,6 +1399,9 @@ public sealed partial class OpenApiContractGenerationTests
         "SetCounterpartyCustomerGroupActiveStateV1",
         "GetCounterpartyAccountCustomerGroupV1",
         "AssignCounterpartyAccountCustomerGroupV1",
+        "GetCounterpartyAccountEDocumentProfileV1",
+        "RecordCounterpartyAccountEDocumentStatusV1",
+        "SetCounterpartyAccountEInvoiceScenarioV1",
         "GetAuditEventsV1",
         "GetOrganizationContextV1",
         "GetOrganizationSitesV1",
@@ -1662,6 +1680,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RenameCounterpartyCustomerGroupV1",
         "SetCounterpartyCustomerGroupActiveStateV1",
         "AssignCounterpartyAccountCustomerGroupV1",
+        "RecordCounterpartyAccountEDocumentStatusV1",
+        "SetCounterpartyAccountEInvoiceScenarioV1",
         "SetOrganizationLocationActiveStateV1",
         "SetOrganizationLocationOperatorV1",
         "CreateOrganizationSiteV1",
@@ -1815,6 +1835,20 @@ public sealed partial class OpenApiContractGenerationTests
                 ["SetCounterpartyCustomerGroupActiveStateV1"] =
                 [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["AssignCounterpartyAccountCustomerGroupV1"] =
+                [
+                    StatusCodes.Status204NoContent,
+                    StatusCodes.Status404NotFound,
+                    StatusCodes.Status409Conflict,
+                    StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["RecordCounterpartyAccountEDocumentStatusV1"] =
+                [
+                    StatusCodes.Status204NoContent,
+                    StatusCodes.Status404NotFound,
+                    StatusCodes.Status409Conflict,
+                    StatusCodes.Status422UnprocessableEntity,
+                ],
+                ["SetCounterpartyAccountEInvoiceScenarioV1"] =
                 [
                     StatusCodes.Status204NoContent,
                     StatusCodes.Status404NotFound,
@@ -2042,6 +2076,8 @@ public sealed partial class OpenApiContractGenerationTests
         "RenameCounterpartyCustomerGroupV1",
         "SetCounterpartyCustomerGroupActiveStateV1",
         "AssignCounterpartyAccountCustomerGroupV1",
+        "RecordCounterpartyAccountEDocumentStatusV1",
+        "SetCounterpartyAccountEInvoiceScenarioV1",
         "GetAuditEventsV1",
         "RecordInventoryLabelTransformationV1",
         "ClassifyInventoryLabelV1",
@@ -2665,6 +2701,25 @@ public sealed partial class OpenApiContractGenerationTests
                 ["client_contract_required", "client_contract_unsupported", "customer_group_inactive",
                  "idempotency_conflict", "version_conflict"],
             ["AssignCounterpartyAccountCustomerGroupV1:422"] = ["customer_group_not_found"],
+            ["GetCounterpartyAccountEDocumentProfileV1:400"] = ["validation_failed"],
+            ["GetCounterpartyAccountEDocumentProfileV1:404"] = ["not_found"],
+            ["GetCounterpartyAccountEDocumentProfileV1:409"] = ["client_contract_required", "client_contract_unsupported"],
+            ["RecordCounterpartyAccountEDocumentStatusV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["RecordCounterpartyAccountEDocumentStatusV1:404"] = ["not_found"],
+            ["RecordCounterpartyAccountEDocumentStatusV1:409"] =
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
+            ["RecordCounterpartyAccountEDocumentStatusV1:422"] =
+                ["e_document_account_inactive", "e_document_tax_identity_required"],
+            ["SetCounterpartyAccountEInvoiceScenarioV1:400"] = ["command_metadata_invalid", "validation_failed"],
+            ["SetCounterpartyAccountEInvoiceScenarioV1:404"] = ["not_found"],
+            ["SetCounterpartyAccountEInvoiceScenarioV1:409"] =
+                ["client_contract_required", "client_contract_unsupported", "idempotency_conflict", "version_conflict"],
+            ["SetCounterpartyAccountEInvoiceScenarioV1:422"] =
+                [
+                    "e_document_account_inactive", "e_document_tax_identity_required",
+                    "einvoice_scenario_code_list_missing", "einvoice_scenario_not_listed",
+                ],
+            ["SetCounterpartyAccountEInvoiceScenarioV1:503"] = ["service_unavailable"],
             ["SaveManufacturingPlanV1:400"] = ["manufacturing_request_invalid"],
             ["SaveManufacturingPlanV1:409"] =
                 [.. ManufacturingConflictCodes, "inventory_label_version_conflict", "inventory_parent_roll_read_conflict"],
@@ -5528,6 +5583,51 @@ public sealed partial class OpenApiContractGenerationTests
                 ["CounterpartyAccountCustomerGroupViewer"] = ObjectSchema(
                     ["canAssign"],
                     ("canAssign", "type:boolean")),
+                ["CounterpartyEDocumentStatusV1"] = ScalarSchema("enum:Unknown|EInvoice|EArchive"),
+                ["CounterpartySettingsSourceStateV1"] = ScalarSchema("enum:Unavailable|NotSet|Set"),
+                ["CounterpartyEInvoiceScenarioOutcomeV1"] = ScalarSchema("enum:Unavailable|Unresolved|Resolved"),
+                ["CounterpartyEInvoiceScenarioSourceV1"] = ScalarSchema("enum:None|CustomerOverride|SettingsDefault"),
+                ["CounterpartyEInvoiceScenarioUnresolvedReasonV1"] =
+                    ScalarSchema("enum:None|SettingsDefaultNotSet|CustomerOverrideNotListed"),
+                ["CounterpartyAccountEDocumentView"] = ObjectSchema(
+                    ["partyId", "accountId", "companyId", "version", "profileToken", "accountIsActive",
+                     "taxIdentityNumberPresent", "status", "statusCheckedAtUtc", "statusCheckedInActiveCompany",
+                     "statusCheckedByDisplayName", "scenarioOverrideCode", "evaluatedOn", "scenarioCodes",
+                     "settingsDefault", "effectiveScenario", "viewer"],
+                    ("partyId", "type:string;format:uuid"),
+                    ("accountId", "type:string;format:uuid"),
+                    ("companyId", "type:string;format:uuid"),
+                    ("version", "type:string"),
+                    ("profileToken", "type:null|string"),
+                    ("accountIsActive", "type:boolean"),
+                    ("taxIdentityNumberPresent", "type:boolean"),
+                    ("status", "ref:CounterpartyEDocumentStatusV1"),
+                    ("statusCheckedAtUtc", "type:null|string;format:date-time"),
+                    ("statusCheckedInActiveCompany", "type:boolean|null"),
+                    ("statusCheckedByDisplayName", "type:null|string"),
+                    ("scenarioOverrideCode", "type:null|string"),
+                    ("evaluatedOn", "type:string;format:date"),
+                    ("scenarioCodes", "ref:CounterpartyEInvoiceScenarioCodesView"),
+                    ("settingsDefault", "ref:CounterpartyEInvoiceScenarioDefaultView"),
+                    ("effectiveScenario", "ref:CounterpartyEInvoiceScenarioResolutionV1"),
+                    ("viewer", "ref:CounterpartyAccountEDocumentViewer")),
+                ["CounterpartyEInvoiceScenarioCodesView"] = ObjectSchema(
+                    ["state", "codes"],
+                    ("state", "ref:CounterpartySettingsSourceStateV1"),
+                    ("codes", "type:array;items:type:string")),
+                ["CounterpartyEInvoiceScenarioDefaultView"] = ObjectSchema(
+                    ["state", "scenarioCode"],
+                    ("state", "ref:CounterpartySettingsSourceStateV1"),
+                    ("scenarioCode", "type:null|string")),
+                ["CounterpartyEInvoiceScenarioResolutionV1"] = ObjectSchema(
+                    ["outcome", "source", "scenarioCode", "unresolvedReason"],
+                    ("outcome", "ref:CounterpartyEInvoiceScenarioOutcomeV1"),
+                    ("source", "ref:CounterpartyEInvoiceScenarioSourceV1"),
+                    ("scenarioCode", "type:null|string"),
+                    ("unresolvedReason", "ref:CounterpartyEInvoiceScenarioUnresolvedReasonV1")),
+                ["CounterpartyAccountEDocumentViewer"] = ObjectSchema(
+                    ["canUpdate"],
+                    ("canUpdate", "type:boolean")),
                 ["CounterpartyTaxIdentityView"] = ObjectSchema(
                     ["partyId", "companyId", "version", "taxIdentityNumber", "kind", "duplicates", "pendingChange",
                      "lastDecidedChange", "viewer"],
