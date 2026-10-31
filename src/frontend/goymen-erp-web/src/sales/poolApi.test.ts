@@ -118,7 +118,7 @@ describe('quote commands', () => {
 
   it('a loss answer of another quote is not this command', async () => {
     answer(json(quoteMutation(quoteDetail({ id: 'b2b2b2b2-0000-4000-8000-000000000009', state: 'Lost' })), 200))
-    expect((await recordQuoteLoss({ expectedVersion: '1', reason: 'r' }, { ...CONTEXT, quoteId: QUOTE_ID })).type).toBe('malformed')
+    expect((await recordQuoteLoss({ expectedVersion: '1', reasonId: 'f6f6f6f6-0000-4000-8000-000000000001', explanation: null }, { ...CONTEXT, quoteId: QUOTE_ID })).type).toBe('malformed')
   })
 
   it('the conversion answers THIS quote’s order (201 + the order’s Location), else unknown', async () => {

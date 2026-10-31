@@ -122,8 +122,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // read factory, and registers one scoped in-process SalesOwnerCandidateHost, with comments (cae283bd… -> 2eae99cc…), then
     // a COMMENT-ONLY edit saying the sales-owner picker opens on the order create name alone (2eae99cc… -> 13f02f10…); no
     // OpenAPI-generation, network or hosted-service surface changes.
+    // SAT-D25 / SAT-D39 register one scoped in-process Settings quote policy provider (the reviewed, empty catalog) beside the
+    // Sales policy provider, with its comment (13f02f10… -> badc190e…); no OpenAPI-generation, network or hosted-service surface.
     private const string ReviewedOpenApiStartupFingerprint =
-        "13f02f10dd4cdd0a1a245c41326bfddfbc2f3454265be791f9d4c0d621ef08fb";
+        "badc190e8b7c8109d1c4aa9a2150d89eadd3eb6fdeba5f0ae88621dd44b99652";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -338,11 +340,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ordinal-sorted (d74f7c2d… -> 0d7854cc…); +1 out-of-range totals fact after review B P2-1 (0d7854cc… -> 78eb83d7…).
             // API-30 / API-31 / MOD-06: +2 SalesDispatchSqlServerRelationalAcceptanceTests facts, merged over API-03, kept ordinal-sorted
             // (78eb83d7… -> 9587a78b…).
-            // SAT-D103 / SAT-D104 / SAT-D111 / SAT-D112 (EK13, EK14), merged over API-30…31: the quantity revision's "a loading line
-            // blocks" fact is replaced by the shipped/loaded floor and re-approval cap fact, +1 price re-approval fact, +1 rejected
-            // decrease resubmission fact (K3-REVIEW-B P1-1), kept ordinal-sorted (9587a78b… -> 1c2cc1a7…).
+            // SAT-D24/D44, SAT-D25 (+2) and SAT-D71/D72 (+1) SalesQuoteSqlServerRelationalAcceptanceTests facts merged over API-03 and
+            // API-30 / API-31, kept ordinal-sorted (9587a78b… -> 2b0ee4d9…).
+            // SAT-D103 / SAT-D104 / SAT-D111 / SAT-D112 (EK13, EK14), merged over #849's quote facts: the quantity revision's "a
+            // loading line blocks" fact replaced by the shipped/loaded floor and re-approval cap fact, +1 price re-approval fact,
+            // +1 rejected decrease resubmission fact (K3-REVIEW-B P1-1), kept ordinal-sorted (2b0ee4d9… -> ece55741…).
             ["tools/relational_inventory/sales.txt"] =
-                "1c2cc1a74040724c677a1dbdebddd346879a0c8aca072f7e45f49394df13247b",
+                "ece557412bf412ae5f8be947fdef08df7c2e50bebcdf0442707c0a607e329159",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -418,9 +422,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // UX_Drafts_SourceQuoteId); the quote's lifecycle-only guard. DraftAttempts is unchanged.
             // Re-fingerprinted for SAT-D2 / API-12: CK_DraftAttempts_Result admits the discount-exception approval's replay
             // result on the same company-filtered attempt row; no query-filter bypass, direct database surface or tenant key changed.
+            // Re-fingerprinted for SAT-D24/D44 and SAT-D25: the company-filtered QuoteExpiryApprovals table (company-leading
+            // key and FK to the quote revision, append-only in the write guard), the nullable list-reason snapshot on Quotes and
+            // the widened CK_Quotes_Lifecycle / CK_QuoteAttempts_Command; no query-filter bypass or direct database surface.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "45b867ceca4a8398cac31315835efa8ff6d52aabdd33e9dd1c84b2b6fb9a9927",
+                "028658c63b5804aa8f0a580479e0648fd2884d7f6570aed60ce5019b029fe207",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1328,8 +1335,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // of the V1 reader (DI-only); the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for API-30 / API-31: the dispatch read service's bindings, the Sales-own order reference reader
                     // and the named service factory (DI-only, the owner ports optional); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D25 / SAT-D39 merged over API-30 / API-31: the draft service also receives the optional
+                    // Settings quote policy port (DI-only); the provider branch and its token counts are unchanged.
                     new(
-                        "14a11d1eb6ea8b1ce21976fcfb9916a93a6ea55365e1d42a6e70302e116185fe",
+                        "491c6b8d3dcddc5cf09fdf7e666bafc7f90e41076b6b095ff16bb6161dda94d1",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1364,8 +1373,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for MOD-01 / API-06 (merged over API-12): one untracked read of a customer's open approved
                     // orders through the same filtered context (explicit company predicate too, rebuilt through the domain); no write,
                     // connection, command, raw SQL or filter-bypass API; SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D72 (EK12): the cancellation's one save also deactivates its source quote's active
+                    // request links (tracked through the same filtered context, IsActive 1 -> 0 only); no connection, command, raw
+                    // SQL or filter-bypass API; SqlClient count unchanged.
                     new(
-                        "45545d4b2219b5ef1b893f6bf9de2eadf4b2c9ce6acca2da3a9d8d1c53fb7342",
+                        "8102573a0ed7a42ca9952cff9263abd594c4fb77ddb1f6eeb9ef36bf3f282d6a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1804,6 +1816,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // discount-exception approval replay result exists; the THROW precedes the constraint narrowing. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027134109_AddSalesDiscountExceptionApprovalReplayResults.cs"] =
                     new("d240f6b2dcb9cf474af621a47c84daa70881abda4bce6a665a005e80ddbb3cc4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D24/D44, SAT-D25: the Down's only raw SQL refuses rollback (51117, used by no other migration) while an
+                // expired-quote approval, a list loss reason or an attempt of the two new quote commands exists; the THROW precedes
+                // every drop and the constraint narrowing. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261027222533_AddSalesQuoteExpiryApprovalsAndLossReasons.cs"] =
+                    new("d89c457fd4f0abae21736f09ad6dd79023c266301bcbbe0875c8818b9065f739",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

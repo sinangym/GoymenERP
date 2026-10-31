@@ -315,7 +315,7 @@ public sealed partial class SalesDraftServiceTests
     {
         // SAT-D43: a quote conversion creates the order's lines through the draft's create path, without a list-price reference:
         // every priced line needs approval, whatever its discount; SAT-D45: its converter may approve it.
-        var world = new World().AllowDiscountsUpTo(100m);
+        var world = new World { Clock = QuoteClock() }.AllowDiscountsUpTo(100m);
         var policies = (FakeDiscountLimitPolicies)world.SalesPolicies!;
         var request = (await world.Service().CreateRequestAsync(RequestOf(), Metadata("r-1"))).Detail.Request.Id;
         var quote = (await world.Service().CreateQuoteAsync(QuoteOf([request], discount: null), Metadata("q-1"))).Detail.Quote.Id;

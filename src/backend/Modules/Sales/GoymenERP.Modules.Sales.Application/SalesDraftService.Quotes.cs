@@ -15,11 +15,12 @@ namespace GoymenERP.Modules.Sales.Application;
 /// profile of the currency for the ORDER operation (the prices become the order's), per line Product eligibility and the
 /// order-unit profile. No 163: the named requests must be this company's, of the SAME customer, not rejected and not
 /// covered by another live quote.</item>
-/// <item><b>Loss:</b> <c>sales.quotes.write</c>; a free-text reason (SAT-D25's closed Settings list is a follow-up).</item>
+/// <item><b>Loss (v2, SAT-D25):</b> <c>sales.quotes.write</c>; an entry of the Settings list (SalesDraftService.QuoteFollowUps).</item>
 /// <item><b>Conversion (No 162):</b> <c>sales.quotes.write</c> AND <c>sales.drafts.create</c>; the quote's current revision
 /// becomes the order through the draft's OWN creation path (the same owners, rules, price fence and idempotency) with the
 /// quote's price/quantity snapshot; the one save records the source quote (one order per quote, enforced by the database)
-/// and the quote's conversion. No 160: every request the quote covers must be approved.</item>
+/// and the quote's conversion. No 160: every request the quote covers must be approved. SAT-D24: an expired quote (validity
+/// date before the SERVER's business day) converts only with a recorded approval for its current revision.</item>
 /// <item><b>Prices on the wire</b> are disclosed under the order's narrow price read, as on the order detail.</item>
 /// </list>
 /// </summary>
@@ -169,7 +170,7 @@ public sealed partial class SalesDraftService
 
         return quote is null
             ? throw new SalesDraftServiceException(404, "not_found")
-            : QuoteDetail(quote, await DiscloseAsync(scope, cancellationToken));
+            : QuoteDetail(quote, await DiscloseAsync(scope, cancellationToken), ServerBusinessDay());
     }
 
     public async Task<SalesQuoteResponse> ReviseQuoteAsync(Guid quoteId, SalesQuoteRevisionRequest request, SalesCommandMetadata metadata,
@@ -212,31 +213,8 @@ public sealed partial class SalesDraftService
         await RequirePriceReadAsync(scope, [new("lines", SalesQuoteProblemCodesV1.PriceReadRequired)], cancellationToken);
         var terms = new SalesQuoteTerms(request.ValidUntil, request.RequestedDeliveryDate, request.Note);
         return await UpdateQuoteAsync(scope, permission, envelope, requestHash, SalesQuoteCommands.ReviseV1, quoteId,
-            (quote, now) => quote.Revise(expectedVersion, terms, lines, now),
+            (quote, now) => quote.Revise(expectedVersion, scope.ActorId, terms, lines, now),
             new SalesDraftStateAudit("sales.quote.revised.v1", "Revise", "Satış teklifi revize edildi"), request.Lines, cancellationToken);
-    }
-
-    public async Task<SalesQuoteResponse> RecordQuoteLossAsync(Guid quoteId, SalesQuoteLossRequest request, SalesCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(metadata);
-        cancellationToken.ThrowIfCancellationRequested();
-        var permission = bindings.QuoteWritePermission;
-        var scope = await RequireAsync(permission, cancellationToken);
-        QuoteStore();
-        var expectedVersion = ExpectedVersion(request.ExpectedVersion);
-        var requestHash = SalesQuoteHash.Compute(quoteId, request);
-        var envelope = Envelope(scope, metadata, permission!);
-        var replay = await FindQuoteReplayAsync(scope, permission, envelope, requestHash, SalesQuoteCommands.LoseV1, cancellationToken);
-        if (replay is not null)
-        {
-            return await QuoteReplayedAsync(scope, replay, cancellationToken);
-        }
-
-        return await UpdateQuoteAsync(scope, permission, envelope, requestHash, SalesQuoteCommands.LoseV1, quoteId,
-            (quote, now) => quote.RecordLoss(expectedVersion, scope.ActorId, request.Reason, now),
-            new SalesDraftStateAudit("sales.quote.lost.v1", "Lose", "Satış teklifi kaybedildi"), null, cancellationToken);
     }
 
     public async Task<SalesOrderDraftResponse> ConvertQuoteAsync(Guid quoteId, SalesQuoteConversionRequest request, SalesCommandMetadata metadata,
@@ -280,13 +258,14 @@ public sealed partial class SalesDraftService
                 cancellationToken, SalesQuoteCommands.ConvertV1);
         }
 
-        // SAT-D24 (interim, fail-closed): a quote whose validity date precedes the conversion's business date is refused (409
-        // sales_quote_expired) until the manager-approval step SAT-D24 names exists. Not recorded, like No 160 below: the
-        // refusal stands in for an approval that is meant to clear it for the SAME request, so the key must not be burned; nothing
-        // is written either way. The quote's version pins its validity date and the store checks it again inside the save.
+        // SAT-D24 / SAT-D44: a quote whose validity date precedes the SERVER's business day (Europe/Istanbul, SAT-D10 — the
+        // order's client-sent business date never decides it) converts only with a recorded approval for its current revision;
+        // otherwise 409 sales_quote_expired. Not recorded, like No 160 below: the approval clears it for the SAME request, so
+        // the key is not burned; nothing is written either way. The quote's version pins its validity date and its approvals,
+        // and the store checks again inside the save on the save's own clock.
         try
         {
-            quote.RequireValidOn(request.BusinessDate);
+            quote.RequireValidOn(ServerBusinessDay());
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteExpired)
         {
@@ -339,8 +318,12 @@ public sealed partial class SalesDraftService
                 }
                 catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteExpired)
                 {
-                    // SAT-D24 inside the save (the domain's Convert asks again on the order's business date). Not recorded.
+                    // SAT-D24 inside the save (the domain's Convert asks again on the server's business day). Not recorded.
                     throw QuoteExpired();
+                }
+                catch (SalesBusinessDayUnavailableException)
+                {
+                    throw new SalesDraftServiceException(503, SalesQuoteProblemCodesV1.BusinessDayUnavailable);
                 }
             },
             cancellationToken);
@@ -376,7 +359,27 @@ public sealed partial class SalesDraftService
         }
         catch (SalesRuleException exception) when (exception.Code is SalesRuleCodes.QuoteLossReasonRequired or SalesRuleCodes.QuoteLossReasonTooLong)
         {
-            throw new SalesDraftServiceException(422, exception.Code, [new("reason", exception.Code)]);
+            throw new SalesDraftServiceException(422, exception.Code, [new("explanation", exception.Code)]);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteNotExpired)
+        {
+            // SAT-D24: nothing to approve today. Not recorded: the quote may still expire and the same key then succeed.
+            throw new SalesDraftServiceException(409, SalesQuoteProblemCodesV1.NotExpired, [new("validUntil", SalesQuoteProblemCodesV1.NotExpired)]);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteExpiryAlreadyApproved)
+        {
+            // SAT-D24: the current revision is approved already — the key's recorded terminal answer (a retry cannot change it).
+            throw await QuoteTerminalAsync(scope, permission, envelope, requestHash, commandName, quoteId,
+                new SalesDraftTerminalRefusal(409, SalesQuoteProblemCodesV1.ExpiryAlreadyApproved,
+                    [new("expiryApproval", SalesQuoteProblemCodesV1.ExpiryAlreadyApproved)]), cancellationToken);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.NoteTooLong && commandName == SalesQuoteCommands.ApproveExpiredConversionV1)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new("note", exception.Code)]);
+        }
+        catch (SalesBusinessDayUnavailableException)
+        {
+            throw new SalesDraftServiceException(503, SalesQuoteProblemCodesV1.BusinessDayUnavailable);
         }
         catch (SalesRuleException exception)
         {
@@ -567,12 +570,13 @@ public sealed partial class SalesDraftService
                 originalCorrelationId: replay.OriginalCorrelationId);
         }
 
-        return new SalesQuoteResponse(QuoteDetail(replay.Quote!, await DiscloseAsync(scope, cancellationToken)), true, replay.OriginalCorrelationId);
+        return new SalesQuoteResponse(QuoteDetail(replay.Quote!, await DiscloseAsync(scope, cancellationToken), ServerBusinessDay()), true,
+            replay.OriginalCorrelationId);
     }
 
     private async Task<SalesQuoteResponse> QuoteResponseAsync(Scope scope, SalesQuoteStoreResult result, CancellationToken cancellationToken) =>
-        new(QuoteDetail(result.Quote, await DiscloseAsync(scope, cancellationToken)), result.Outcome == SalesDraftWriteOutcome.Replayed,
-            result.OriginalCorrelationId);
+        new(QuoteDetail(result.Quote, await DiscloseAsync(scope, cancellationToken), ServerBusinessDay()),
+            result.Outcome == SalesDraftWriteOutcome.Replayed, result.OriginalCorrelationId);
 
     private async Task<SalesDraftServiceException> QuoteTerminalAsync(Scope scope, string? permission, SalesDraftWriteEnvelope envelope,
         string requestHash, string commandName, Guid? quoteId, SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken)
@@ -610,12 +614,25 @@ public sealed partial class SalesDraftService
         SalesDraftApiV1.RevisionText(quote.Revision), quote.Header.PartyId, quote.Header.CompanyAccountId, quote.Header.CurrencyId,
         quote.Header.BusinessDate, quote.Terms.ValidUntil, quote.CreatedAtUtc, quote.Lines.Count, quote.Conversion?.DraftId);
 
-    private static SalesQuoteDetailView QuoteDetail(SalesQuote quote, SalesPriceDisclosure disclosure) => new(
+    /// <summary>
+    /// The quote as the wire describes it; <paramref name="businessDay"/> is the server's business day of this answer (SAT-D24:
+    /// whether the quote is expired today and whether its current revision is approved). SAT-D44 (1): the creator, every
+    /// reviser and every approver are shown as the stored actor ids.
+    /// </summary>
+    private static SalesQuoteDetailView QuoteDetail(SalesQuote quote, SalesPriceDisclosure disclosure, DateOnly businessDay) => new(
         QuoteSummary(quote), quote.RequestIds, quote.Terms.RequestedDeliveryDate, quote.Terms.Note,
         [.. quote.Lines.Select(line => new SalesQuoteLineView(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
             line.Product.Code, line.Product.Name, line.OrderUnit.UnitId, line.OrderUnit.UnitCode, line.QuantityText,
             Disclosed(disclosure, line.UnitPrice), disclosure == SalesPriceDisclosure.Visible ? line.PriceUnitId : null,
             Disclosed(disclosure, line.DiscountPercent), disclosure, line.RequestedDeliveryDate, line.Note))],
-        quote.Loss is { } loss ? new SalesQuoteLossV1(loss.Reason, loss.LostBy, loss.LostAtUtc) : null,
-        quote.Conversion is { } conversion ? new SalesQuoteConversionV1(conversion.DraftId, conversion.ConvertedBy, conversion.ConvertedAtUtc) : null);
+        quote.Loss is { } loss
+            ? new SalesQuoteLossV1(loss.Reason, loss.LostBy, loss.LostAtUtc, loss.ListReason?.ReasonId, loss.ListReason?.Code, loss.ListReason?.Label)
+            : null,
+        quote.Conversion is { } conversion ? new SalesQuoteConversionV1(conversion.DraftId, conversion.ConvertedBy, conversion.ConvertedAtUtc) : null,
+        quote.CreatedBy,
+        [.. quote.Revisions.Select(record => new SalesQuoteRevisionRecordV1(SalesDraftApiV1.RevisionText(record.Revision), record.ValidUntil,
+            record.RevisedBy, record.RevisedAtUtc))],
+        [.. quote.ExpiryApprovals.Select(approval => new SalesQuoteExpiryApprovalV1(SalesDraftApiV1.RevisionText(approval.Revision),
+            approval.ValidUntil, approval.BusinessDay, approval.ApprovedBy, approval.ApprovedAtUtc, approval.Note))],
+        new SalesQuoteExpiryV1(businessDay, quote.IsExpiredOn(businessDay), quote.CurrentExpiryApproval is not null));
 }

@@ -35,6 +35,7 @@ export const TEST_POOL: SalesPoolCapabilities = {
   quotesCreate: ['test.pool.quotes.create'],
   quotesWrite: ['test.pool.quotes.write'],
   quotesConvert: ['test.pool.quotes.convert'],
+  quotesApproveExpired: ['test.pool.quotes.approve-expired'],
 }
 
 /** Every test pool id plus the order detail (the conversion opens it). */
@@ -139,19 +140,56 @@ export function quoteLine(overrides: Json = {}): Json {
   }
 }
 
+export const LOSS_REASON_PRICE = 'f6f6f6f6-0000-4000-8000-000000000001'
+export const LOSS_REASON_OTHER = 'f6f6f6f6-0000-4000-8000-000000000002'
+
+/** SAT-D25: a SENTETIK Settings loss reason list (the real content is a Settings record). */
+export function lossReasons(overrides: Json = {}): Json {
+  return {
+    businessDay: '2026-10-23',
+    isDefined: true,
+    profileId: 'f6f6f6f6-0000-4000-8000-0000000000ff',
+    profileVersion: '1',
+    reasons: [
+      { reasonId: LOSS_REASON_PRICE, code: 'FIYAT', label: 'Fiyat', requiresExplanation: false },
+      { reasonId: LOSS_REASON_OTHER, code: 'DIGER', label: 'Diğer', requiresExplanation: true },
+    ],
+    ...overrides,
+  }
+}
+
+/** The server's SAT-D24 answer for the quote on `businessDay` (expired = validity date before it). */
+export function expiryOf(quote: Json, businessDay = '2026-10-23', isApproved = false): Json {
+  const validUntil = quote.validUntil as string | null
+  return { businessDay, isExpired: validUntil !== null && validUntil < businessDay, isApproved }
+}
+
 export function quoteDetail(summary: Json = {}, overrides: Json = {}): Json {
   const quote = quoteSummary(summary)
+  const revisionCount = Number(String(quote.revision).replace('Rev.', '')) + 1
   return {
     quote,
     requestIds: [REQUEST_ID],
     requestedDeliveryDate: null,
     note: null,
     lines: [quoteLine()],
-    loss: quote.state === 'Lost' ? { reason: 'Fiyat yüksek', lostBy: 'satis', lostAtUtc: '2026-10-23T08:00:00Z' } : null,
+    loss:
+      quote.state === 'Lost'
+        ? { reason: null, lostBy: 'satis', lostAtUtc: '2026-10-23T08:00:00Z', reasonId: LOSS_REASON_PRICE, reasonCode: 'FIYAT', reasonLabel: 'Fiyat' }
+        : null,
     conversion:
       quote.state === 'Converted'
         ? { draftId: quote.convertedDraftId, convertedBy: 'satis', convertedAtUtc: '2026-10-23T08:00:00Z' }
         : null,
+    createdBy: 'satis',
+    revisions: Array.from({ length: revisionCount }, (_, index) => ({
+      revision: `Rev.${index}`,
+      validUntil: quote.validUntil,
+      revisedBy: index === 0 ? 'satis' : 'revize-eden',
+      revisedAtUtc: '2026-10-22T08:00:00Z',
+    })),
+    expiryApprovals: [],
+    expiry: expiryOf(quote),
     ...overrides,
   }
 }

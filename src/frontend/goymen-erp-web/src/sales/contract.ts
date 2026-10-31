@@ -558,6 +558,9 @@ export const SALES_PROBLEM_CODE = {
   // longer is the preview the command named.
   forceCloseBlocked: 'sales_force_close_blocked',
   forceCloseImpactChanged: 'sales_force_close_impact_changed',
+  // SAT-D71 (EK12): the order's business date precedes the SERVER's business day (Europe/Istanbul) — at an order create and
+  // at a quote conversion (422 `validation_failed`, field `businessDate`); today or a later date is accepted.
+  businessDateBeforeBusinessDay: 'sales_business_date_before_business_day',
 } as const
 
 export type SalesProblemCode = (typeof SALES_PROBLEM_CODE)[keyof typeof SALES_PROBLEM_CODE]

@@ -60,7 +60,8 @@ public sealed partial class SalesDraftService(
     ISalesQuoteStore? quotes = null,
     ISettingsSalesPolicyProviderV1? salesPolicies = null,
     ISalesDiscountLimitGroupSourceV1? discountLimitGroups = null,
-    ISalesPartyRiskReadPortV1? partyRisk = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
+    ISalesPartyRiskReadPortV1? partyRisk = null,
+    ISettingsSalesQuotePolicyProviderV1? quotePolicies = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -114,6 +115,10 @@ public sealed partial class SalesDraftService(
         SalesDraftWriteEnvelope envelope, string requestHash, string commandName, IReadOnlyList<SalesDraftFieldError> priced,
         Func<Func<string, SalesOrderDraft>, Task<SalesDraftStoreResult>> save, CancellationToken cancellationToken)
     {
+        // SAT-D71: the order's business date is never before the SERVER's business day (Europe/Istanbul) — the client's clock
+        // decides nothing. Asked after the replay (a recorded answer stays the answer) and before any owner is read; not recorded.
+        RequireOrderBusinessDate(request.BusinessDate);
+
         // 4. The owners, each answered for this company and business date. A stale product version
         // is recorded as the key's terminal result; if another caller of the same key wins that
         // record meanwhile, the winner's result is answered instead (ADR-011 §8; RaceWon).
@@ -205,6 +210,20 @@ public sealed partial class SalesDraftService(
         // a 403 — the caller would drop its key and create a second draft (S03, ORG #321 P3-1). The
         // next request of this key meets the fence again before the replay is read (ADR-011 §5).
         return Response(scope, stored.Draft, stored.Outcome == SalesDraftWriteOutcome.Replayed, stored.OriginalCorrelationId, await DiscloseAsync(scope, cancellationToken));
+    }
+
+    /// <summary>
+    /// SAT-D71: an order opens today or later on the server's Europe/Istanbul business day; an earlier date is 422
+    /// <c>validation_failed</c> with <c>businessDate</c> → <see cref="SalesDraftProblemCodesV1.BusinessDateBeforeBusinessDay"/>,
+    /// and an unresolvable zone is 503 (never a UTC fallback).
+    /// </summary>
+    private void RequireOrderBusinessDate(DateOnly businessDate)
+    {
+        if (businessDate < ServerBusinessDay())
+        {
+            throw new SalesDraftServiceException(422, "validation_failed",
+                [new("businessDate", SalesDraftProblemCodesV1.BusinessDateBeforeBusinessDay)]);
+        }
     }
 
     /// <summary>

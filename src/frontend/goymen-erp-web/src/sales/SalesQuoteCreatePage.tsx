@@ -8,14 +8,15 @@
  * the person adds prices. Without requests the customer is chosen from the Cari owner's accounts.
  *
  * Price, price unit and discount are optional texts; the server judges scale, range and who may write a price (no
- * permission or discount policy is chosen here). The validity date is stored as typed — no default period yet
- * (SAT-D39 will suggest one from Settings); an expired quote is refused at conversion (SAT-D24 interim).
+ * permission or discount policy is chosen here). SAT-D39: the default validity of Settings is SUGGESTED for the business
+ * date (`GET …/quotes/validity-suggestion`, the server's own date arithmetic) and pre-fills an untouched, empty validity
+ * field; the person may change or clear it, and without a Settings value nothing is suggested. The date stays optional.
  */
 
 import { useEffect, useState } from 'react'
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { createQuote, fetchRequestDetail } from './poolApi'
+import { createQuote, fetchQuoteValiditySuggestion, fetchRequestDetail } from './poolApi'
 import {
   QUOTE_MAXIMUM_REQUESTS,
   REQUEST_STATE,
@@ -54,7 +55,8 @@ import {
 import { cssId, serverFieldErrors } from './poolView'
 import { browserIds } from './orderDraftForm'
 import { orderAttemptBinding } from './orderAttempt'
-import { isReferenceId } from './wirePrimitives'
+import { isDateOnly, isReferenceId } from './wirePrimitives'
+import { formatBusinessDate } from './format'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString } from '../shell/shellState'
@@ -186,6 +188,26 @@ function QuoteCreateForm({ companyId, requests }: { readonly companyId: string; 
   const currencies = usePoolCurrencies(companyId, values.businessDate)
   const fromRequests = requests.length > 0
   const requestIds = requests.map((detail) => detail.request.id)
+  // SAT-D39: the Settings default validity is a suggestion for an untouched, empty field — never a value the person did not see.
+  const [validityTouched, setValidityTouched] = useState(false)
+  const suggestion = useQuery({
+    queryKey: ['sales-quote-validity-suggestion', companyId, values.businessDate],
+    enabled: isDateOnly(values.businessDate),
+    queryFn: ({ signal }) => fetchQuoteValiditySuggestion(values.businessDate, companyId, signal),
+  })
+  const suggested =
+    suggestion.data?.type === 'ok-single' && suggestion.data.data.businessDate === values.businessDate ? suggestion.data.data : null
+  const shownValidUntil =
+    validityTouched || values.validUntil !== '' ? values.validUntil : (suggested?.suggestedValidUntil ?? '')
+  const validityHelp = !isDateOnly(values.businessDate)
+    ? undefined
+    : suggestion.isPending
+      ? F.validitySuggestionLoading
+      : suggestion.data !== undefined && suggestion.data.type !== 'ok-single'
+        ? F.validitySuggestionUnavailable
+        : suggested?.validityDays != null && suggested.suggestedValidUntil !== null
+          ? F.validitySuggested(suggested.validityDays, formatBusinessDate(suggested.suggestedValidUntil))
+          : F.validityNoDefault
 
   const attempt = usePoolAttempt<CreateSalesQuoteBody, SalesQuoteMutation>(
     scope,
@@ -211,7 +233,7 @@ function QuoteCreateForm({ companyId, requests }: { readonly companyId: string; 
   function submit() {
     // The customer of covered requests is the server's own record, not a choice from the accounts list.
     const accounts = fromRequests ? [{ partyId: values.partyId, companyAccountId: values.companyAccountId, label: '' }] : options.accounts
-    const result = validateQuoteForm(values, accounts, currencies.options, requestIds)
+    const result = validateQuoteForm({ ...values, validUntil: shownValidUntil }, accounts, currencies.options, requestIds)
     if (!result.ok) {
       setErrors(result.errors)
       setSummaryRequest((n) => n + 1)
@@ -315,10 +337,14 @@ function QuoteCreateForm({ companyId, requests }: { readonly companyId: string; 
               </select>
             )}
           </Field>
-          <Field id={cssId(POOL_FIELD.validUntil)} label={F.validUntil} error={errors[POOL_FIELD.validUntil]}>
+          <Field id={cssId(POOL_FIELD.validUntil)} label={F.validUntil} error={errors[POOL_FIELD.validUntil]} help={validityHelp}>
             {(control) => (
-              <input {...control} className={styles.control} type="date" value={values.validUntil} disabled={disabled}
-                onChange={(event) => update({ validUntil: event.target.value })} />
+              <input {...control} className={styles.control} type="date" value={shownValidUntil} disabled={disabled}
+                data-testid="pool-quote-valid-until-input"
+                onChange={(event) => {
+                  setValidityTouched(true)
+                  update({ validUntil: event.target.value })
+                }} />
             )}
           </Field>
           <Field id={cssId(POOL_FIELD.requestedDeliveryDate)} label={F.requestedDeliveryDate} error={errors[POOL_FIELD.requestedDeliveryDate]}>
