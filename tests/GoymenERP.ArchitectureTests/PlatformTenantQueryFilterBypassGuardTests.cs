@@ -127,7 +127,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
         // MOD-03 maps the tax master and product tax classification routes and registers one scoped in-process Settings product tax class adapter, with comments; no OpenAPI-generation, network or hosted-service surface changes.
-        "5fea3bda79b6aef022ae43796cc8cd1f3b2e269fa094d8d50a34004e415998c8";
+        "743e328ef4ec860e10c79e2bb897604a7b0ae4e7a96f33999a72a98cfaeaef83";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -303,10 +303,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (b384d836… -> 765b00e2…).
             // SAT-D78 / SAT-D84: +2 Settings discount limit SQL facts (future-dated records; withdraw/correct)
             // (765b00e2… -> e68b1182…).
-            // MOD-03: +2 Settings tax master SQL facts (tax master lifecycle; product tax classification → line tax port)
-            // (e68b1182… -> 5a0a2f43…).
+            // MOD-03 (EK19): +2 Settings tax master SQL facts (tax master lifecycle; product item type → line tax port)
+            // (e68b1182… -> 9c53f777…).
             ["tools/relational_inventory/platform.txt"] =
-                "5a0a2f43498179af77a35f2f055f0e6625aeccf8a8579f9d2afa7c1f9adf0e01",
+                "9c53f7779e22f44c965220f619acec5911a81b7c5183fd4436047cb7ad78f79d",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -415,7 +415,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for MOD-03: the company-filtered tax master sets (categories, immutable rate records and code list versions with insert-only withdrawals; company inside every key and foreign key) join the write fence (immutable rows, every row in the context company).
                 // Re-fingerprinted for SAT-D93 (Sinan 2026-10-31): the company-filtered VUK 232 withholding threshold fence, its
                 // immutable records and insert-only withdrawals join the write fence.
-                "1efd0a572a5e531303bdeb54499021ee4d004c6105e0da9df5fa0faab77c986e",
+                "5ffc96ad10f7e4b1bdfb9c49e6f1dd7d53dff77ade04e256314221b2649ae7fc",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -522,7 +522,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "PriceLists/ProductPriceListDbContext.cs"] =
                 // Re-fingerprinted for MOD-03: the company-filtered product tax classification (classes, version and update facts the only moving columns) and its insert-only command answers join the write guard.
-                "b7a07946cee22c11d30c8a26a38098a0f17599edeef18e1dbba7ab3a2bbebab3",
+                "9137cddcd78fc5b15916421dda0fcb447a4c3b2459c2096afae5e752c08cde60",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
             [ReviewedWorkDbContextPath] =
@@ -691,7 +691,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "PriceLists/ProductPriceListRegistration.cs"] =
                     new(
                         // Re-fingerprinted for MOD-03: the named product tax classification service factory and its two port registrations (DI-only, the Settings category reader optional); the database surface and its counts are unchanged.
-                        "75301a181beebe479cd4e4950f553b893adb130442e3b6c80d1295c466711958",
+                        "f4f2a5e316e01434602bd50e6c8453afb68d0c70a33b3f62f016693932c4375d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1457,7 +1457,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "SettingsModuleExtensions.cs"] =
                     new(
                         // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
-                        "3ea44059d0560e2ed146acf88e50bf8375a688c13f276354c493e72f9a5e7db7",
+                        "bc03b65e374c3c85d4f842fcea9c79762d62561659476e3436c037dfaf587392",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1617,30 +1617,23 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // MOD-02 (SAT-D9): the list scope; Down refuses (51072) while any customer-specific list remains, so dropping
                 // the scope columns never turns a customer's price into a company-wide one.
-                // MOD-03 (SAT-D73/D74/D82): Down refuses (51131) while any tax category or code list exists, before any
-                // drop, so a rollback never turns resolved VAT/withholding back into "kaynak yok" (forward fix).
+                // MOD-03 (EK19 SAT-D133/D135/D139): Down refuses (51131) while any item-type default record, code list or
+                // VUK 232 threshold exists, before any drop, so a rollback never turns a resolved tax back into "kaynak yok"
+                // (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
-                 + "Migrations/20261031130138_AddTaxMaster.cs"] =
+                 + "Migrations/20261031194631_AddTaxMaster.cs"] =
                     new(
-                        "3933f33833b89a796cfc434bc94706805449c2f1ec096a10a0b53ee770fd9a9c",
+                        "e71a390ac0fb2a4af2eae1ae6449e37006c7b7055e03795a06d18382ee292419",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
                         }),
-                // MOD-03 / SAT-D93: Down refuses (51141) while the VUK 232 withholding threshold exists (forward fix).
-                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
-                 + "Migrations/20261031180502_AddTaxWithholdingThreshold.cs"] =
-                    new(
-                        "602ae02967ceb2ec3329a10b2fe3df4bcd1d2c2fcbfe0de779e000180cceec2c",
-                        new Dictionary<string, int>(StringComparer.Ordinal)
-                        {
-                            ["Sql"] = 1
-                        }),
-                // MOD-03: Down refuses (51132) while any product tax classification or its command answer exists (forward fix).
+                // MOD-03 (EK19 SAT-D134): Down refuses (51132) while any product item type or its command answer exists
+                // (forward fix).
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
-                 + "Migrations/20261031130728_AddProductTaxClassifications.cs"] =
+                 + "Migrations/20261031195253_AddProductItemTypes.cs"] =
                     new(
-                        "d6373a5217aa0d55bacfd7514788018fa8a03549558e4d1526588c40effd1d0e",
+                        "94c66a0c670078d3a5068659653d5323a39402c7669d3d578cf529628ae4ea93",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

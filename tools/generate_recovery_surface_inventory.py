@@ -49,7 +49,7 @@ EXPECTED_DB_CONTEXT_COUNT = 18
 EXPECTED_DB_CONTEXT_DECLARATION_FINGERPRINT = (
     "2ee597539af89dc1882f755be2371a6567cd14ddbd5b7f0fbcb79f1ef6b3affa"
 )
-EXPECTED_MIGRATION_COUNT = 107
+EXPECTED_MIGRATION_COUNT = 106
 EXPECTED_MIGRATION_DECLARATION_FINGERPRINT = (
     "723481aa0c4a9d7ea3bb6a2e30ea40bfcdc4e8599d49dca0d4c6ded4a352a117"
 )
@@ -146,7 +146,7 @@ EXPECTED_IDEMPOTENCY_KEY_TABLES = (
     ("logistics", "TransferOutgoingDocumentAttempts"),
     ("manufacturing", "Commands"),
     ("product", "PriceListAttempts"),
-    ("product", "ProductTaxClassificationAttempts"),
+    ("product", "ProductItemTypeAttempts"),
     ("purchasing", "PurchaseAcceptanceShares"),
     ("purchasing", "PurchaseAttempts"),
     ("sales", "DraftAttempts"),
@@ -473,12 +473,12 @@ DURABLE_STORE_SPECS = (
         ("dbContext.Attempts.Add(row)",), mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
-        "product.tax-classification-attempts", "Product", "idempotency", "ProductPriceListDbContext",
-        "ProductTaxClassificationAttemptRow", "product", "ProductTaxClassificationAttempts",
+        "product.item-type-attempts", "Product", "idempotency", "ProductPriceListDbContext",
+        "ProductItemTypeAttemptRow", "product", "ProductItemTypeAttempts",
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListDbContext.cs",
-        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/Migrations/20261031130728_AddProductTaxClassifications.cs",
-        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductTaxClassificationService.cs",
-        ("database.TaxClassificationAttempts.Add(new ProductTaxClassificationAttemptRow",),
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/Migrations/20261031195253_AddProductItemTypes.cs",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs",
+        ("database.ItemTypeAttempts.Add(new ProductItemTypeAttemptRow",),
         mapping_tokens=("IdempotencyKeyHash",),
     ),
     _store(
@@ -600,8 +600,8 @@ WRITER_METHOD_SCOPES = {
         "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs",
     ): "RecordRefusalAsync",
     (
-        "product.tax-classification-attempts",
-        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductTaxClassificationService.cs",
+        "product.item-type-attempts",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs",
     ): "AddAttempt",
     (
         "purchasing.purchase-acceptance-shares",
@@ -737,9 +737,9 @@ REVIEWED_OPERATIVE_METHOD_FINGERPRINTS = {
         "RecordRefusalAsync",
     ): "e7244c5871505ce3c02b5b4d0cfec9a476dadcdcd94e0870e408b741b5b3b117",
     (
-        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductTaxClassificationService.cs",
+        "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs",
         "AddAttempt",
-    ): "ed37438e288667f15e494ff011e556d35340382ab70249f6e10aaeb89d496bb0",
+    ): "bbc4dc954237d291a25d1ffdc074972335b65240d7e3fcfea3141ece1dcd729c",
     (
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs",
         "StageAsync",
@@ -789,7 +789,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs": "39b3481ad59125465d1b94d3bb2219372e907e5a5fe1128d66eb1bac8bce908f",
     "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/Persistence/OrganizationService.cs": "c8225e56247f665a1aed783aca150d4f8d8a06ff33fa22eebf0b7812cc6c8389",
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductPriceListStore.cs": "0ec797ef39bd37ee97ffb8a945de0c7fd515a38d2ee6891914e6dac6e3e2362d",
-    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductTaxClassificationService.cs": "3a7fc461cb126b5462e2f26fbb72d5f5098fba25df8bf36b1376999cd5361103",
+    "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "889604741256464e2568aa3fa6f09d5c5195553c4fbc5d3a87a802b9cdc3f256",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "8102573a0ed7a42ca9952cff9263abd594c4fb77ddb1f6eeb9ef36bf3f282d6a",
