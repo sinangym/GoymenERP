@@ -36,9 +36,9 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
 
     internal DbSet<PriceListProductReference> Products => Set<PriceListProductReference>();
 
-    internal DbSet<ProductTaxClassificationRow> TaxClassifications => Set<ProductTaxClassificationRow>();
+    internal DbSet<ProductItemTypeRow> ItemTypes => Set<ProductItemTypeRow>();
 
-    internal DbSet<ProductTaxClassificationAttemptRow> TaxClassificationAttempts => Set<ProductTaxClassificationAttemptRow>();
+    internal DbSet<ProductItemTypeAttemptRow> ItemTypeAttempts => Set<ProductItemTypeAttemptRow>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -59,7 +59,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         ConfigureVersions(modelBuilder);
         ConfigureLines(modelBuilder);
         ConfigureAttempts(modelBuilder);
-        ConfigureTaxClassifications(modelBuilder);
+        ConfigureItemTypes(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -219,36 +219,35 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
     }
 
     /// <summary>
-    /// MOD-03 (SAT-D73/D74/D82): the company's product tax classification and its command answers. The Settings category
-    /// ids are checked through the Settings port at write; no foreign key crosses into the Settings schema.
+    /// SAT-D134: the company's product item type (demir / hurda / hizmet) and its command answers. The tax per item type is
+    /// the Settings owner's default (SAT-D139); nothing tax-related is stored here.
     /// </summary>
-    private void ConfigureTaxClassifications(ModelBuilder modelBuilder)
+    private void ConfigureItemTypes(ModelBuilder modelBuilder)
     {
-        var entity = modelBuilder.Entity<ProductTaxClassificationRow>();
-        entity.ToTable("ProductTaxClassifications", Schema, table =>
+        var entity = modelBuilder.Entity<ProductItemTypeRow>();
+        entity.ToTable("ProductItemTypes", Schema, table =>
         {
-            table.HasCheckConstraint("CK_ProductTaxClassifications_Identity",
-                $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND [VatClassId] <> {EmptyGuid}");
-            table.HasCheckConstraint("CK_ProductTaxClassifications_Withholding",
-                $"[WithholdingClassId] IS NULL OR ([WithholdingClassId] <> {EmptyGuid} AND [WithholdingClassId] <> [VatClassId])");
-            table.HasCheckConstraint("CK_ProductTaxClassifications_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
+            table.HasCheckConstraint("CK_ProductItemTypes_Identity", $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_ProductItemTypes_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
+            table.HasCheckConstraint("CK_ProductItemTypes_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
         });
         entity.HasKey(x => new { x.CompanyId, x.ProductId });
+        entity.Property(x => x.ItemType).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
         entity.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
 
-        var attempt = modelBuilder.Entity<ProductTaxClassificationAttemptRow>();
-        attempt.ToTable("ProductTaxClassificationAttempts", Schema, table =>
+        var attempt = modelBuilder.Entity<ProductItemTypeAttemptRow>();
+        attempt.ToTable("ProductItemTypeAttempts", Schema, table =>
         {
-            table.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Identity",
+            table.HasCheckConstraint("CK_ProductItemTypeAttempts_Identity",
                 $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND LEN([CommandName]) > 0 "
                 + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
-            table.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Hashes",
+            table.HasCheckConstraint("CK_ProductItemTypeAttempts_Hashes",
                 "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
-            table.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Answer",
+            table.HasCheckConstraint("CK_ProductItemTypeAttempts_Answer",
                 "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
         });
         attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
@@ -310,11 +309,11 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                 string[] allowed = entry.Entity switch
                 {
                     PriceListRow => [nameof(PriceListRow.Name), nameof(PriceListRow.UpdatedAtUtc)],
-                    // MOD-03: only the classes and the update facts of a classification move (its version is the token).
-                    ProductTaxClassificationRow =>
+                    // SAT-D134: only the item type and the update facts move (its version is the token).
+                    ProductItemTypeRow =>
                     [
-                        nameof(ProductTaxClassificationRow.VatClassId), nameof(ProductTaxClassificationRow.WithholdingClassId),
-                        nameof(ProductTaxClassificationRow.UpdatedAtUtc), nameof(ProductTaxClassificationRow.UpdatedBy),
+                        nameof(ProductItemTypeRow.ItemType), nameof(ProductItemTypeRow.UpdatedAtUtc),
+                        nameof(ProductItemTypeRow.UpdatedBy),
                     ],
                     PriceListVersionRow when (int)entry.OriginalValues[nameof(PriceListVersionRow.State)]! == 1 =>
                     [

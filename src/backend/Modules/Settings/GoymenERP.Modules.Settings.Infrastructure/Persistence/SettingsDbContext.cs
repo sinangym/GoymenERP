@@ -26,11 +26,11 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
     internal DbSet<SalesDiscountLimitMembershipGroupRow> SalesDiscountLimitMembershipGroups =>
         Set<SalesDiscountLimitMembershipGroupRow>();
 
-    internal DbSet<TaxCategoryRow> TaxCategories => Set<TaxCategoryRow>();
+    internal DbSet<TaxItemTypeDefaultSeriesRow> TaxItemTypeDefaultSeries => Set<TaxItemTypeDefaultSeriesRow>();
 
-    internal DbSet<TaxRateRecordRow> TaxRateRecords => Set<TaxRateRecordRow>();
+    internal DbSet<TaxItemTypeDefaultRecordRow> TaxItemTypeDefaultRecords => Set<TaxItemTypeDefaultRecordRow>();
 
-    internal DbSet<TaxRateRecordWithdrawalRow> TaxRateRecordWithdrawals => Set<TaxRateRecordWithdrawalRow>();
+    internal DbSet<TaxItemTypeDefaultWithdrawalRow> TaxItemTypeDefaultWithdrawals => Set<TaxItemTypeDefaultWithdrawalRow>();
 
     internal DbSet<TaxCodeListRow> TaxCodeLists => Set<TaxCodeListRow>();
 
@@ -207,90 +207,79 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
     }
 
     /// <summary>
-    /// MOD-03 tax master (SAT-D74/D82/D93): categories, immutable rate records and code list versions with insert-only
-    /// withdrawals, all company-scoped with the company inside every key and every foreign key. Nothing is seeded.
+    /// MOD-03 tax master (SAT-D93/D133/D135/D139): the per-item-type default series and their immutable records, code list
+    /// versions and the withholding threshold, with insert-only withdrawals, all company-scoped with the company inside every
+    /// key and foreign key. Nothing is seeded (the SAT-D139 defaults are the reviewed source catalog, not rows).
     /// </summary>
     private void ConfigureTaxMaster(ModelBuilder modelBuilder)
     {
         const string emptyGuid = "'00000000-0000-0000-0000-000000000000'";
         const string binaryCollation = "Latin1_General_100_BIN2";
 
-        var category = modelBuilder.Entity<TaxCategoryRow>();
-        category.ToTable("TaxCategories", Schema, table =>
+        var series = modelBuilder.Entity<TaxItemTypeDefaultSeriesRow>();
+        series.ToTable("TaxItemTypeDefaultSeries", Schema, table =>
         {
-            table.HasCheckConstraint("CK_SettingsTaxCategories_Company", $"[CompanyId] <> {emptyGuid}");
-            table.HasCheckConstraint("CK_SettingsTaxCategories_Id", $"[Id] <> {emptyGuid}");
-            table.HasCheckConstraint("CK_SettingsTaxCategories_Kind",
-                "[Kind] IN ('VatClass', 'WithholdingClass', 'BuyerCategory')");
-            table.HasCheckConstraint("CK_SettingsTaxCategories_Code",
-                "LEN([Code]) BETWEEN 1 AND 32 AND [Code] NOT LIKE '%[^A-Z0-9_-]%' AND LEFT([Code], 1) LIKE '[A-Z0-9]'");
-            table.HasCheckConstraint("CK_SettingsTaxCategories_Name", "LEN(LTRIM(RTRIM([Name]))) > 0");
-            table.HasCheckConstraint("CK_SettingsTaxCategories_Version", "[Version] > 0 AND [RecordVersion] >= 0");
-            table.HasCheckConstraint("CK_SettingsTaxCategories_Actors",
-                "LEN(LTRIM(RTRIM([CreatedBy]))) > 0 AND LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultSeries_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultSeries_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultSeries_Version", "[Version] > 0 AND [LastRecordVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultSeries_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
         });
-        category.HasKey(x => new { x.CompanyId, x.Id });
-        category.HasIndex(x => new { x.CompanyId, x.Kind, x.Code }).IsUnique();
-        category.HasIndex(x => new { x.CompanyId, x.Kind, x.Name }).IsUnique();
-        category.Property(x => x.Kind).HasMaxLength(24).IsUnicode(false).UseCollation(binaryCollation);
-        category.Property(x => x.Code).HasMaxLength(32).IsUnicode(false).UseCollation(binaryCollation);
-        category.Property(x => x.Name).HasMaxLength(100);
-        category.Property(x => x.Version).IsConcurrencyToken();
-        category.Property(x => x.CreatedBy).HasMaxLength(128);
-        category.Property(x => x.UpdatedBy).HasMaxLength(128);
-        category.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+        series.HasKey(x => new { x.CompanyId, x.ItemType });
+        series.Property(x => x.ItemType).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        series.Property(x => x.Version).IsConcurrencyToken();
+        series.Property(x => x.UpdatedBy).HasMaxLength(128);
+        series.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
 
-        var record = modelBuilder.Entity<TaxRateRecordRow>();
-        record.ToTable("TaxRateRecords", Schema, table =>
+        var record = modelBuilder.Entity<TaxItemTypeDefaultRecordRow>();
+        record.ToTable("TaxItemTypeDefaultRecords", Schema, table =>
         {
-            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Company", $"[CompanyId] <> {emptyGuid}");
-            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Id", $"[Id] <> {emptyGuid}");
-            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Version", "[RecordVersion] > 0");
-            // VAT: a class rate 0…100, no buyer category, no code. Withholding: a buyer category, either applying (a rate
-            // above 0 up to 100 and a UBL-TR code) or explicitly not applied (neither).
-            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Shape",
-                "([Kind] = 'Vat' AND [BuyerCategoryId] IS NULL AND [Applies] = 1 AND [RatePercent] IS NOT NULL "
-                + "AND [RatePercent] >= 0 AND [RatePercent] <= 100 AND [WithholdingCode] IS NULL) OR "
-                + "([Kind] = 'Withholding' AND [BuyerCategoryId] IS NOT NULL AND [BuyerCategoryId] <> [ClassId] AND ("
-                + "([Applies] = 1 AND [RatePercent] IS NOT NULL AND [RatePercent] > 0 AND [RatePercent] <= 100 "
-                + "AND [WithholdingCode] IS NOT NULL AND LEN([WithholdingCode]) BETWEEN 1 AND 16 "
-                + "AND [WithholdingCode] NOT LIKE '%[^A-Z0-9]%') OR "
-                + "([Applies] = 0 AND [RatePercent] IS NULL AND [WithholdingCode] IS NULL)))");
-            table.HasCheckConstraint("CK_SettingsTaxRateRecords_Recorded",
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Id", $"[Id] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Version", "[RecordVersion] > 0");
+            // VAT applies with a 0…100 rate and no exemption code, or not ("KDV yok") with an optional exemption code;
+            // withholding only with VAT: a rate above 0 up to 100 and an optional code, or neither.
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Vat",
+                "([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] >= 0 AND [VatPercent] <= 100 "
+                + "AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL)");
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Withholding",
+                "([WithholdingApplies] = 1 AND [VatApplies] = 1 AND [WithholdingPercent] IS NOT NULL "
+                + "AND [WithholdingPercent] > 0 AND [WithholdingPercent] <= 100) "
+                + "OR ([WithholdingApplies] = 0 AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL)");
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Codes",
+                "([ExemptionCode] IS NULL OR (LEN([ExemptionCode]) BETWEEN 1 AND 16 AND [ExemptionCode] NOT LIKE '%[^A-Z0-9]%')) "
+                + "AND ([WithholdingCode] IS NULL OR (LEN([WithholdingCode]) BETWEEN 1 AND 16 "
+                + "AND [WithholdingCode] NOT LIKE '%[^A-Z0-9]%'))");
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Recorded",
                 "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
         });
         record.HasKey(x => new { x.CompanyId, x.Id });
-        record.HasIndex(x => new { x.CompanyId, x.ClassId, x.RecordVersion }).IsUnique();
-        record.HasIndex(x => new { x.CompanyId, x.BuyerCategoryId });
-        record.Property(x => x.Kind).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
-        record.Property(x => x.RatePercent).HasPrecision(7, 4);
+        record.HasIndex(x => new { x.CompanyId, x.ItemType, x.RecordVersion }).IsUnique();
+        record.Property(x => x.ItemType).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        record.Property(x => x.VatPercent).HasPrecision(7, 4);
+        record.Property(x => x.WithholdingPercent).HasPrecision(7, 4);
+        record.Property(x => x.ExemptionCode).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
         record.Property(x => x.WithholdingCode).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
         record.Property(x => x.RecordedBy).HasMaxLength(128);
         record.Property(x => x.Reason).HasMaxLength(4000);
-        record.HasOne<TaxCategoryRow>().WithMany()
-            .HasForeignKey(x => new { x.CompanyId, x.ClassId })
-            .OnDelete(DeleteBehavior.Restrict);
-        record.HasOne<TaxCategoryRow>().WithMany()
-            .HasForeignKey(x => new { x.CompanyId, x.BuyerCategoryId })
+        record.HasOne<TaxItemTypeDefaultSeriesRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ItemType })
             .OnDelete(DeleteBehavior.Restrict);
         record.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
 
-        var recordWithdrawal = modelBuilder.Entity<TaxRateRecordWithdrawalRow>();
-        recordWithdrawal.ToTable("TaxRateRecordWithdrawals", Schema, table =>
+        var recordWithdrawal = modelBuilder.Entity<TaxItemTypeDefaultWithdrawalRow>();
+        recordWithdrawal.ToTable("TaxItemTypeDefaultWithdrawals", Schema, table =>
         {
-            table.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Company", $"[CompanyId] <> {emptyGuid}");
-            table.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Replacement",
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultWithdrawals_Replacement",
                 "[ReplacedByRecordId] IS NULL OR [ReplacedByRecordId] <> [RecordId]");
-            table.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Recorded",
+            table.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultWithdrawals_Recorded",
                 "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
         });
         recordWithdrawal.HasKey(x => new { x.CompanyId, x.RecordId });
         recordWithdrawal.Property(x => x.WithdrawnBy).HasMaxLength(128);
         recordWithdrawal.Property(x => x.Reason).HasMaxLength(4000);
-        recordWithdrawal.HasOne<TaxRateRecordRow>().WithMany()
+        recordWithdrawal.HasOne<TaxItemTypeDefaultRecordRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.RecordId })
             .OnDelete(DeleteBehavior.Restrict);
-        recordWithdrawal.HasOne<TaxRateRecordRow>().WithMany()
+        recordWithdrawal.HasOne<TaxItemTypeDefaultRecordRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.ReplacedByRecordId })
             .OnDelete(DeleteBehavior.Restrict);
         recordWithdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
@@ -468,7 +457,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
             }
 
             if (entry.State == EntityState.Modified
-                && entry.Entity is TaxRateRecordRow or TaxRateRecordWithdrawalRow or TaxCodeListVersionRow
+                && entry.Entity is TaxItemTypeDefaultRecordRow or TaxItemTypeDefaultWithdrawalRow or TaxCodeListVersionRow
                     or TaxCodeListEntryRow or TaxCodeListWithdrawalRow or TaxWithholdingThresholdRecordRow
                     or TaxWithholdingThresholdWithdrawalRow)
             {
@@ -482,9 +471,9 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 SalesDiscountLimitWithdrawalRow row => row.CompanyId,
                 SalesDiscountLimitMembershipRow row => row.CompanyId,
                 SalesDiscountLimitMembershipGroupRow row => row.CompanyId,
-                TaxCategoryRow row => row.CompanyId,
-                TaxRateRecordRow row => row.CompanyId,
-                TaxRateRecordWithdrawalRow row => row.CompanyId,
+                TaxItemTypeDefaultSeriesRow row => row.CompanyId,
+                TaxItemTypeDefaultRecordRow row => row.CompanyId,
+                TaxItemTypeDefaultWithdrawalRow row => row.CompanyId,
                 TaxCodeListRow row => row.CompanyId,
                 TaxCodeListVersionRow row => row.CompanyId,
                 TaxCodeListEntryRow row => row.CompanyId,

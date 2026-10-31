@@ -578,82 +578,6 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxCategoryRow", b =>
-                {
-                    b.Property<Guid>("CompanyId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(32)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<DateTimeOffset>("CreatedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(24)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(24)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)");
-
-                    b.Property<long>("RecordVersion")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTimeOffset>("UpdatedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("UpdatedBy")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<long>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("bigint");
-
-                    b.HasKey("CompanyId", "Id");
-
-                    b.HasIndex("CompanyId", "Kind", "Code")
-                        .IsUnique();
-
-                    b.HasIndex("CompanyId", "Kind", "Name")
-                        .IsUnique();
-
-                    b.ToTable("TaxCategories", "settings", t =>
-                        {
-                            t.HasCheckConstraint("CK_SettingsTaxCategories_Actors", "LEN(LTRIM(RTRIM([CreatedBy]))) > 0 AND LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
-
-                            t.HasCheckConstraint("CK_SettingsTaxCategories_Code", "LEN([Code]) BETWEEN 1 AND 32 AND [Code] NOT LIKE '%[^A-Z0-9_-]%' AND LEFT([Code], 1) LIKE '[A-Z0-9]'");
-
-                            t.HasCheckConstraint("CK_SettingsTaxCategories_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
-
-                            t.HasCheckConstraint("CK_SettingsTaxCategories_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'");
-
-                            t.HasCheckConstraint("CK_SettingsTaxCategories_Kind", "[Kind] IN ('VatClass', 'WithholdingClass', 'BuyerCategory')");
-
-                            t.HasCheckConstraint("CK_SettingsTaxCategories_Name", "LEN(LTRIM(RTRIM([Name]))) > 0");
-
-                            t.HasCheckConstraint("CK_SettingsTaxCategories_Version", "[Version] > 0 AND [RecordVersion] >= 0");
-                        });
-                });
-
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxCodeListEntryRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -811,7 +735,7 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxRateRecordRow", b =>
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxItemTypeDefaultRecordRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
@@ -819,28 +743,21 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<bool>("Applies")
-                        .HasColumnType("bit");
-
-                    b.Property<Guid?>("BuyerCategoryId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ClassId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<DateOnly>("EffectiveFrom")
                         .HasColumnType("date");
 
-                    b.Property<string>("Kind")
-                        .IsRequired()
+                    b.Property<string>("ExemptionCode")
                         .HasMaxLength(16)
                         .IsUnicode(false)
                         .HasColumnType("varchar(16)")
                         .UseCollation("Latin1_General_100_BIN2");
 
-                    b.Property<decimal?>("RatePercent")
-                        .HasPrecision(7, 4)
-                        .HasColumnType("decimal(7,4)");
+                    b.Property<string>("ItemType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<string>("Reason")
                         .IsRequired()
@@ -858,34 +775,88 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<bool>("VatApplies")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("VatPercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("decimal(7,4)");
+
+                    b.Property<bool>("WithholdingApplies")
+                        .HasColumnType("bit");
+
                     b.Property<string>("WithholdingCode")
                         .HasMaxLength(16)
                         .IsUnicode(false)
                         .HasColumnType("varchar(16)")
                         .UseCollation("Latin1_General_100_BIN2");
 
+                    b.Property<decimal?>("WithholdingPercent")
+                        .HasPrecision(7, 4)
+                        .HasColumnType("decimal(7,4)");
+
                     b.HasKey("CompanyId", "Id");
 
-                    b.HasIndex("CompanyId", "BuyerCategoryId");
-
-                    b.HasIndex("CompanyId", "ClassId", "RecordVersion")
+                    b.HasIndex("CompanyId", "ItemType", "RecordVersion")
                         .IsUnique();
 
-                    b.ToTable("TaxRateRecords", "settings", t =>
+                    b.ToTable("TaxItemTypeDefaultRecords", "settings", t =>
                         {
-                            t.HasCheckConstraint("CK_SettingsTaxRateRecords_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Codes", "([ExemptionCode] IS NULL OR (LEN([ExemptionCode]) BETWEEN 1 AND 16 AND [ExemptionCode] NOT LIKE '%[^A-Z0-9]%')) AND ([WithholdingCode] IS NULL OR (LEN([WithholdingCode]) BETWEEN 1 AND 16 AND [WithholdingCode] NOT LIKE '%[^A-Z0-9]%'))");
 
-                            t.HasCheckConstraint("CK_SettingsTaxRateRecords_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'");
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_SettingsTaxRateRecords_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
 
-                            t.HasCheckConstraint("CK_SettingsTaxRateRecords_Shape", "([Kind] = 'Vat' AND [BuyerCategoryId] IS NULL AND [Applies] = 1 AND [RatePercent] IS NOT NULL AND [RatePercent] >= 0 AND [RatePercent] <= 100 AND [WithholdingCode] IS NULL) OR ([Kind] = 'Withholding' AND [BuyerCategoryId] IS NOT NULL AND [BuyerCategoryId] <> [ClassId] AND (([Applies] = 1 AND [RatePercent] IS NOT NULL AND [RatePercent] > 0 AND [RatePercent] <= 100 AND [WithholdingCode] IS NOT NULL AND LEN([WithholdingCode]) BETWEEN 1 AND 16 AND [WithholdingCode] NOT LIKE '%[^A-Z0-9]%') OR ([Applies] = 0 AND [RatePercent] IS NULL AND [WithholdingCode] IS NULL)))");
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Vat", "([VatApplies] = 1 AND [VatPercent] IS NOT NULL AND [VatPercent] >= 0 AND [VatPercent] <= 100 AND [ExemptionCode] IS NULL) OR ([VatApplies] = 0 AND [VatPercent] IS NULL)");
 
-                            t.HasCheckConstraint("CK_SettingsTaxRateRecords_Version", "[RecordVersion] > 0");
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Version", "[RecordVersion] > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultRecords_Withholding", "([WithholdingApplies] = 1 AND [VatApplies] = 1 AND [WithholdingPercent] IS NOT NULL AND [WithholdingPercent] > 0 AND [WithholdingPercent] <= 100) OR ([WithholdingApplies] = 0 AND [WithholdingPercent] IS NULL AND [WithholdingCode] IS NULL)");
                         });
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxRateRecordWithdrawalRow", b =>
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxItemTypeDefaultSeriesRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ItemType")
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<long>("LastRecordVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "ItemType");
+
+                    b.ToTable("TaxItemTypeDefaultSeries", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultSeries_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultSeries_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultSeries_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
+
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultSeries_Version", "[Version] > 0 AND [LastRecordVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxItemTypeDefaultWithdrawalRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
@@ -913,13 +884,11 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CompanyId", "ReplacedByRecordId");
 
-                    b.ToTable("TaxRateRecordWithdrawals", "settings", t =>
+                    b.ToTable("TaxItemTypeDefaultWithdrawals", "settings", t =>
                         {
-                            t.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultWithdrawals_Recorded", "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
 
-                            t.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Recorded", "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
-
-                            t.HasCheckConstraint("CK_SettingsTaxRateRecordWithdrawals_Replacement", "[ReplacedByRecordId] IS NULL OR [ReplacedByRecordId] <> [RecordId]");
+                            t.HasCheckConstraint("CK_SettingsTaxItemTypeDefaultWithdrawals_Replacement", "[ReplacedByRecordId] IS NULL OR [ReplacedByRecordId] <> [RecordId]");
                         });
                 });
 
@@ -1125,29 +1094,24 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxRateRecordRow", b =>
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxItemTypeDefaultRecordRow", b =>
                 {
-                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxCategoryRow", null)
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxItemTypeDefaultSeriesRow", null)
                         .WithMany()
-                        .HasForeignKey("CompanyId", "BuyerCategoryId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxCategoryRow", null)
-                        .WithMany()
-                        .HasForeignKey("CompanyId", "ClassId")
+                        .HasForeignKey("CompanyId", "ItemType")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxRateRecordWithdrawalRow", b =>
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxItemTypeDefaultWithdrawalRow", b =>
                 {
-                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxRateRecordRow", null)
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxItemTypeDefaultRecordRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "RecordId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxRateRecordRow", null)
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxItemTypeDefaultRecordRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "ReplacedByRecordId")
                         .OnDelete(DeleteBehavior.Restrict);

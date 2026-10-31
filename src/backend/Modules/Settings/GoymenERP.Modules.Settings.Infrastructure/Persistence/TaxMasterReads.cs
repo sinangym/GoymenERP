@@ -6,9 +6,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>The stored rows of one company's tax master, read under the company filter.</summary>
 internal sealed record TaxMasterRows(
-    IReadOnlyList<TaxCategoryRow> Categories,
-    IReadOnlyList<TaxRateRecordRow> Records,
-    IReadOnlyList<TaxRateRecordWithdrawalRow> RecordWithdrawals,
+    IReadOnlyList<TaxItemTypeDefaultSeriesRow> Series,
+    IReadOnlyList<TaxItemTypeDefaultRecordRow> Records,
+    IReadOnlyList<TaxItemTypeDefaultWithdrawalRow> RecordWithdrawals,
     IReadOnlyList<TaxCodeListRow> Lists,
     IReadOnlyList<TaxCodeListVersionRow> ListVersions,
     IReadOnlyList<TaxCodeListEntryRow> ListEntries,
@@ -17,30 +17,31 @@ internal sealed record TaxMasterRows(
     IReadOnlyList<TaxWithholdingThresholdRecordRow> ThresholdRecords,
     IReadOnlyList<TaxWithholdingThresholdWithdrawalRow> ThresholdWithdrawals)
 {
-    public static async Task<TaxMasterRows> ReadAsync(SettingsDbContext database, bool trackCategoriesAndLists,
+    public static async Task<TaxMasterRows> ReadAsync(SettingsDbContext database, bool track,
         CancellationToken cancellationToken)
     {
-        var categories = trackCategoriesAndLists
-            ? await database.TaxCategories.ToListAsync(cancellationToken)
-            : await database.TaxCategories.AsNoTracking().ToListAsync(cancellationToken);
-        var records = await database.TaxRateRecords.AsNoTracking().ToListAsync(cancellationToken);
-        var recordWithdrawals = await database.TaxRateRecordWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
-        var lists = trackCategoriesAndLists
+        var series = track
+            ? await database.TaxItemTypeDefaultSeries.ToListAsync(cancellationToken)
+            : await database.TaxItemTypeDefaultSeries.AsNoTracking().ToListAsync(cancellationToken);
+        var records = await database.TaxItemTypeDefaultRecords.AsNoTracking().ToListAsync(cancellationToken);
+        var recordWithdrawals = await database.TaxItemTypeDefaultWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
+        var lists = track
             ? await database.TaxCodeLists.ToListAsync(cancellationToken)
             : await database.TaxCodeLists.AsNoTracking().ToListAsync(cancellationToken);
         var listVersions = await database.TaxCodeListVersions.AsNoTracking().ToListAsync(cancellationToken);
         var listEntries = await database.TaxCodeListEntries.AsNoTracking().ToListAsync(cancellationToken);
         var listWithdrawals = await database.TaxCodeListWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
-        var threshold = trackCategoriesAndLists
+        var threshold = track
             ? await database.TaxWithholdingThresholds.SingleOrDefaultAsync(cancellationToken)
             : await database.TaxWithholdingThresholds.AsNoTracking().SingleOrDefaultAsync(cancellationToken);
         var thresholdRecords = await database.TaxWithholdingThresholdRecords.AsNoTracking().ToListAsync(cancellationToken);
         var thresholdWithdrawals = await database.TaxWithholdingThresholdWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
-        return new TaxMasterRows(categories, records, recordWithdrawals, lists, listVersions, listEntries, listWithdrawals,
+        return new TaxMasterRows(series, records, recordWithdrawals, lists, listVersions, listEntries, listWithdrawals,
             threshold, thresholdRecords, thresholdWithdrawals);
     }
 
-    public TaxMasterDataV1 ToData()
+    /// <summary>The company's data, the reviewed SAT-D139 catalog entries of <paramref name="companyId"/> included.</summary>
+    public TaxMasterDataV1 ToData(Guid companyId)
     {
         var withdrawnRecords = RecordWithdrawals.Select(withdrawal => withdrawal.RecordId).ToHashSet();
         var withdrawnThresholds = ThresholdWithdrawals.Select(withdrawal => withdrawal.RecordId).ToHashSet();
@@ -51,10 +52,13 @@ internal sealed record TaxMasterRows(
                 .OrderBy(entry => entry.Code, StringComparer.Ordinal)
                 .Select(entry => new TaxCodeListEntryViewV1(entry.Code, entry.Name))
                 .ToArray());
+        var defaults = ApprovedTaxItemTypeDefaultCatalog.For(companyId)
+            .Concat(Records.Select(row => new TaxItemTypeDefaultDataV1(row.Id, row.CompanyId, row.ItemType,
+                TaxDefaultSourcesV1.Record, row.RecordVersion, row.EffectiveFrom, row.VatApplies, row.VatPercent, row.ExemptionCode,
+                row.WithholdingApplies, row.WithholdingPercent, row.WithholdingCode, withdrawnRecords.Contains(row.Id))))
+            .ToArray();
         return new TaxMasterDataV1(
-            Categories.ToDictionary(row => row.Id, row => new TaxCategoryDataV1(row.Id, row.Kind, row.Code, row.Name)),
-            Records.Select(row => new TaxRateRecordDataV1(row.Id, row.Kind, row.ClassId, row.BuyerCategoryId, row.RecordVersion,
-                row.EffectiveFrom, row.Applies, row.RatePercent, row.WithholdingCode, withdrawnRecords.Contains(row.Id))).ToArray(),
+            defaults,
             ListVersions.Select(row => new TaxCodeListVersionDataV1(row.Kind, row.ListVersion, row.EffectiveFrom,
                 entries.GetValueOrDefault((row.Kind, row.ListVersion)) ?? [],
                 withdrawnLists.Contains((row.Kind, row.ListVersion)))).ToArray(),

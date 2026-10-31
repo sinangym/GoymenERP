@@ -12,11 +12,13 @@ using Microsoft.Extensions.Logging;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
-/// MOD-03 tax master (SAT-D73/D74/D82/D83, EK12; SAT-D93/D110, EK13): the company's VAT classes, withholding classes and
-/// buyer categories, their effective-dated rate records and the UBL-TR exemption / withholding code lists.
+/// MOD-03 tax master (SAT-D83, EK12; SAT-D93, EK13; SAT-D133…D139, EK19): the company's per-item-type default tax (the reviewed
+/// SAT-D139 catalog as the base, Settings records over it), the UBL-TR exemption / withholding code lists and the VUK 232
+/// withholding amount threshold.
 /// <list type="bullet">
-/// <item><b>Nothing is seeded</b>: every rate and code needs the mali müşavir's confirmation (EK13 research note); until a
-/// value is entered every read answers "kaynak yok" (<see cref="TaxResolutionStatesV1.Unresolved"/>).</item>
+/// <item><b>Nothing is seeded</b>: the only shipped values are Sinan's SAT-D139 defaults, as a reviewed source catalog; every
+/// code, the threshold and any other value needs the mali müşavir's confirmation (EK13/EK19) and answers "kaynak yok"
+/// (<see cref="TaxResolutionStatesV1.Unresolved"/>) until entered.</item>
 /// <item><b>Authority</b> (SAT-D83): ONE name, <see cref="SettingsTaxMasterPermissionManifestV1.TaxMasterManage"/>,
 /// company-wide, measured first and re-measured fresh right before every save; granted to no role here.</item>
 /// <item><b>Every command</b> (SAT-D68 precedent): one person, a mandatory reason (≤ 4000), one Idempotency-Key (the stored
@@ -40,10 +42,8 @@ internal sealed partial class SettingsTaxMasterAdministration(
 {
     private const string Permission = SettingsTaxMasterPermissionManifestV1.TaxMasterManage;
     private const int CommandExecutionSchemaVersion = 1;
-    private const string CategoryEntityType = "Settings.TaxCategory";
+    private const string DefaultEntityType = "Settings.TaxItemTypeDefault";
     private const string CodeListEntityType = "Settings.TaxCodeList";
-    private const string CategoryCreateCommandName = "settings.tax-category.create.v1";
-    private const string CategoryRenameCommandName = "settings.tax-category.rename.v1";
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<TaxMasterViewV1> GetAsync(CancellationToken cancellationToken = default)
@@ -53,7 +53,7 @@ internal sealed partial class SettingsTaxMasterAdministration(
         TaxMasterRows rows;
         try
         {
-            rows = await TaxMasterRows.ReadAsync(database, trackCategoriesAndLists: false, cancellationToken);
+            rows = await TaxMasterRows.ReadAsync(database, track: false, cancellationToken);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -62,25 +62,18 @@ internal sealed partial class SettingsTaxMasterAdministration(
 
         await RequireStillAsync(companyId, cancellationToken);
         var today = SettingsBusinessDate.Today(timeProvider);
-        var data = rows.ToData();
+        var data = rows.ToData(companyId);
         var recordRows = rows.Records.ToDictionary(row => row.Id);
-        var series = data.Records
-            .Where(record => !record.IsWithdrawn)
-            .Select(record => (record.Kind, record.ClassId, record.BuyerCategoryId))
-            .Distinct()
-            .Select(key => new TaxRateSeriesViewV1(
-                key.Kind,
-                key.ClassId,
-                key.BuyerCategoryId,
-                TaxMasterCalculatorV1.RateInForce(data, key.Kind, key.ClassId, key.BuyerCategoryId, today) is { } inForce
-                    ? RecordView(recordRows[inForce.RecordId])
+        var defaults = TaxItemTypesV1.All
+            .Select(itemType => new TaxItemTypeDefaultSeriesViewV1(
+                itemType,
+                Text(rows.Series.SingleOrDefault(series => series.ItemType == itemType)?.Version ?? 0),
+                TaxMasterCalculatorV1.DefaultInForce(data, itemType, today) is { } inForce
+                    ? DefaultView(inForce, recordRows)
                     : null,
-                TaxMasterCalculatorV1.ScheduledRates(data, key.Kind, key.ClassId, key.BuyerCategoryId, today)
-                    .Select(record => RecordView(recordRows[record.RecordId]))
+                TaxMasterCalculatorV1.ScheduledDefaults(data, itemType, today)
+                    .Select(record => DefaultView(record, recordRows))
                     .ToArray()))
-            .OrderBy(view => view.Kind, StringComparer.Ordinal)
-            .ThenBy(view => view.ClassId)
-            .ThenBy(view => view.BuyerCategoryId)
             .ToArray();
         var versionRows = rows.ListVersions.ToDictionary(row => (row.Kind, row.ListVersion));
         var lists = new[] { TaxCodeListKindsV1.Exemption, TaxCodeListKindsV1.Withholding }
@@ -94,11 +87,6 @@ internal sealed partial class SettingsTaxMasterAdministration(
                     .Select(list => ListView(versionRows[(kind, list.ListVersion)], list))
                     .ToArray()))
             .ToArray();
-        var categories = rows.Categories
-            .OrderBy(row => row.Kind, StringComparer.Ordinal)
-            .ThenBy(row => row.Code, StringComparer.Ordinal)
-            .Select(row => new TaxCategoryViewV1(row.Id, row.Kind, row.Code, row.Name, Text(row.Version)))
-            .ToArray();
         var thresholdRows = rows.ThresholdRecords.ToDictionary(row => row.Id);
         var threshold = new TaxWithholdingThresholdViewV1(
             Text(rows.Threshold?.Version ?? 0),
@@ -108,157 +96,7 @@ internal sealed partial class SettingsTaxMasterAdministration(
             TaxMasterCalculatorV1.ScheduledThresholds(data, today)
                 .Select(record => ThresholdView(thresholdRows[record.RecordId]))
                 .ToArray());
-        return new TaxMasterViewV1(companyId, today, categories, series, lists, threshold);
-    }
-
-    public async Task<TaxMasterCommandResultV1> CreateCategoryAsync(CreateTaxCategoryRequestV1 request,
-        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ValidateMetadata(metadata);
-        var companyId = RequireContextCompany();
-        var scope = await RequireAsync(companyId, cancellationToken);
-        if (!TaxCategoryKindsV1.IsKnown(request.Kind))
-        {
-            return Unstored(Answers.Invalid("Tür 'VatClass', 'WithholdingClass' veya 'BuyerCategory' olmalıdır."), metadata);
-        }
-
-        if (!TaxMasterCalculatorV1.TryNormalizeCategoryCode(request.Code, out var code))
-        {
-            return Unstored(Answers.Invalid(
-                "Kod 1-32 karakter olmalı; yalnız büyük harf (A-Z), rakam, '_' ve '-' içerebilir."), metadata);
-        }
-
-        if (!TryNormalizeName(request.Name, TaxMasterInputLimitsV1.CategoryNameMaximumLength, out var name))
-        {
-            return Unstored(Answers.Invalid("Ad 1-100 karakter olmalı ve kontrol karakteri içermemelidir."), metadata);
-        }
-
-        if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
-        {
-            return Unstored(reasonRefusal, metadata);
-        }
-
-        var kind = request.Kind!;
-        var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var requestHash = IdempotencyHash.ComputePayload(new { Kind = kind, Code = code, Name = name, Reason = reason });
-        if (await FindExecutionAsync(CategoryCreateCommandName, keyHash, cancellationToken) is { } existing)
-        {
-            await RequireStillAsync(companyId, cancellationToken);
-            return Done("category-create", metadata, code, Replay(existing, requestHash, metadata));
-        }
-
-        if (await TakenRefusalAsync(kind, code, name, exceptId: null, cancellationToken) is { } taken)
-        {
-            return Done("category-create", metadata, code,
-                await StoreRefusalAsync(CategoryCreateCommandName, taken, keyHash, requestHash, metadata, cancellationToken));
-        }
-
-        var now = timeProvider.GetUtcNow();
-        var row = new TaxCategoryRow
-        {
-            CompanyId = companyId,
-            Id = Guid.NewGuid(),
-            Kind = kind,
-            Code = code,
-            Name = name,
-            Version = 1,
-            RecordVersion = 0,
-            CreatedAtUtc = now,
-            CreatedBy = metadata.ActorId,
-            UpdatedAtUtc = now,
-            UpdatedBy = metadata.ActorId,
-        };
-        database.TaxCategories.Add(row);
-        Audit(companyId, "settings.tax-category.created.v1", CategoryEntityType, row.Id.ToString("D"), "Create", null,
-            row.Version, scope, null, CategorySnapshot(row), reason, metadata);
-        await RequireStillAsync(companyId, cancellationToken);
-        return Done("category-create", metadata, code, await SaveChangeAsync(CategoryCreateCommandName,
-            Answers.Created(row.Id), keyHash, requestHash, metadata,
-            async token => await TakenRefusalAsync(kind, code, name, exceptId: null, token) ?? Answers.VersionConflict(),
-            cancellationToken));
-    }
-
-    public async Task<TaxMasterCommandResultV1> RenameCategoryAsync(Guid categoryId, RenameTaxCategoryRequestV1 request,
-        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ValidateMetadata(metadata);
-        var companyId = RequireContextCompany();
-        var scope = await RequireAsync(companyId, cancellationToken);
-        if (categoryId == Guid.Empty || !TryParseVersion(request.ExpectedVersion, 1, out var expectedVersion))
-        {
-            return Unstored(Answers.Invalid("Kategori ve beklenen sürüm (pozitif tam sayı metni) zorunludur."), metadata);
-        }
-
-        if (!TryNormalizeName(request.Name, TaxMasterInputLimitsV1.CategoryNameMaximumLength, out var name))
-        {
-            return Unstored(Answers.Invalid("Ad 1-100 karakter olmalı ve kontrol karakteri içermemelidir."), metadata);
-        }
-
-        if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
-        {
-            return Unstored(reasonRefusal, metadata);
-        }
-
-        var subject = categoryId.ToString("D");
-        var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var requestHash = IdempotencyHash.ComputePayload(new
-        {
-            CategoryId = categoryId, ExpectedVersion = expectedVersion, Name = name, Reason = reason,
-        });
-        if (await FindExecutionAsync(CategoryRenameCommandName, keyHash, cancellationToken) is { } existing)
-        {
-            await RequireStillAsync(companyId, cancellationToken);
-            return Done("category-rename", metadata, subject, Replay(existing, requestHash, metadata));
-        }
-
-        var row = await database.TaxCategories.SingleOrDefaultAsync(category => category.Id == categoryId, cancellationToken);
-        var refusal = row is null ? Answers.NotFound()
-            : row.Version != expectedVersion ? Answers.VersionConflict()
-            : string.Equals(row.Name, name, StringComparison.Ordinal) ? null
-            : await TakenRefusalAsync(row.Kind, null, name, categoryId, cancellationToken);
-        if (refusal is not null)
-        {
-            return Done("category-rename", metadata, subject,
-                await StoreRefusalAsync(CategoryRenameCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
-        }
-
-        if (string.Equals(row!.Name, name, StringComparison.Ordinal))
-        {
-            await RequireStillAsync(companyId, cancellationToken);
-            return Done("category-rename", metadata, subject, await StoreRefusalAsync(CategoryRenameCommandName,
-                Answers.NoContent(), keyHash, requestHash, metadata, cancellationToken));
-        }
-
-        var before = CategorySnapshot(row);
-        row.Name = name;
-        Touch(row, metadata);
-        Audit(companyId, "settings.tax-category.renamed.v1", CategoryEntityType, subject, "Rename", expectedVersion,
-            row.Version, scope, before, CategorySnapshot(row), reason, metadata);
-        await RequireStillAsync(companyId, cancellationToken);
-        var kind = row.Kind;
-        return Done("category-rename", metadata, subject, await SaveChangeAsync(CategoryRenameCommandName, Answers.NoContent(),
-            keyHash, requestHash, metadata,
-            async token => await TakenRefusalAsync(kind, null, name, categoryId, token) ?? Answers.VersionConflict(),
-            cancellationToken));
-    }
-
-    private async Task<TaxMasterCommandAnswerV1?> TakenRefusalAsync(string kind, string? code, string name, Guid? exceptId,
-        CancellationToken cancellationToken)
-    {
-        if (code is not null && await database.TaxCategories.AsNoTracking()
-                .AnyAsync(category => category.Kind == kind && category.Code == code && category.Id != exceptId, cancellationToken))
-        {
-            return Answers.Problem(409, TaxMasterProblemCodesV1.CategoryCodeTaken, "Kod kullanılıyor.",
-                "Bu türde aynı kodla bir kategori zaten var.");
-        }
-
-        return await database.TaxCategories.AsNoTracking()
-            .AnyAsync(category => category.Kind == kind && category.Name == name && category.Id != exceptId, cancellationToken)
-            ? Answers.Problem(409, TaxMasterProblemCodesV1.CategoryNameTaken, "Ad kullanılıyor.",
-                "Bu türde aynı adla bir kategori zaten var.")
-            : null;
+        return new TaxMasterViewV1(companyId, today, defaults, lists, threshold);
     }
 
     private Guid RequireContextCompany()
@@ -406,7 +244,6 @@ internal sealed partial class SettingsTaxMasterAdministration(
 
     private static string Outcome(TaxMasterCommandAnswerV1 answer) => answer.Code ?? answer.StatusCode switch
     {
-        201 => "Created",
         204 => "Succeeded",
         404 => "NotFound",
         _ => "Refused",
@@ -453,11 +290,11 @@ internal sealed partial class SettingsTaxMasterAdministration(
 
     private static string AuditDescription(string eventType) => eventType switch
     {
-        "settings.tax-category.created.v1" => "Vergi kategorisi oluşturuldu; gerekçe kayıt içeriğindedir",
-        "settings.tax-category.renamed.v1" => "Vergi kategorisinin adı değiştirildi; gerekçe kayıt içeriğindedir",
-        "settings.tax-rate.recorded.v1" => "Vergi oranı kaydı girildi; gerekçe kayıt içeriğindedir",
-        "settings.tax-rate.corrected.v1" => "Yürürlüğe girmemiş vergi oranı kaydı düzeltildi; gerekçe kayıt içeriğindedir",
-        "settings.tax-rate.withdrawn.v1" => "Yürürlüğe girmemiş vergi oranı kaydı geri çekildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-item-type-default.recorded.v1" => "Kalem tipi varsayılan vergisi kaydedildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-item-type-default.corrected.v1" =>
+            "Yürürlüğe girmemiş kalem tipi varsayılan vergisi düzeltildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-item-type-default.withdrawn.v1" =>
+            "Yürürlüğe girmemiş kalem tipi varsayılan vergisi geri çekildi; gerekçe kayıt içeriğindedir",
         "settings.tax-code-list.published.v1" => "Vergi kod listesi sürümü yayımlandı; gerekçe kayıt içeriğindedir",
         "settings.tax-code-list.corrected.v1" => "Yürürlüğe girmemiş kod listesi sürümü düzeltildi; gerekçe kayıt içeriğindedir",
         "settings.tax-code-list.withdrawn.v1" => "Yürürlüğe girmemiş kod listesi sürümü geri çekildi; gerekçe kayıt içeriğindedir",
@@ -479,33 +316,25 @@ internal sealed partial class SettingsTaxMasterAdministration(
         return result;
     }
 
-    private void Touch(TaxCategoryRow row, SettingsCommandMetadataV1 metadata)
+    private static TaxItemTypeDefaultRecordViewV1 DefaultView(TaxItemTypeDefaultDataV1 record,
+        IReadOnlyDictionary<Guid, TaxItemTypeDefaultRecordRow> rows)
     {
-        row.Version = checked(row.Version + 1);
-        row.UpdatedAtUtc = timeProvider.GetUtcNow();
-        row.UpdatedBy = metadata.ActorId;
+        var row = rows.GetValueOrDefault(record.RecordId);
+        return new TaxItemTypeDefaultRecordViewV1(
+            record.RecordId,
+            record.Source,
+            Text(record.RecordVersion),
+            record.EffectiveFrom,
+            record.VatApplies,
+            record.VatPercent is { } vat ? TaxMasterCalculatorV1.Format(vat) : null,
+            record.ExemptionCode,
+            record.WithholdingApplies,
+            record.WithholdingPercent is { } withholding ? TaxMasterCalculatorV1.Format(withholding) : null,
+            record.WithholdingCode,
+            row?.RecordedBy,
+            row?.RecordedAtUtc,
+            row?.Reason ?? ApprovedTaxItemTypeDefaultCatalog.Source);
     }
-
-    private static object CategorySnapshot(TaxCategoryRow row) => new
-    {
-        CategoryId = row.Id,
-        row.CompanyId,
-        row.Kind,
-        row.Code,
-        row.Name,
-        row.Version,
-    };
-
-    private static TaxRateRecordViewV1 RecordView(TaxRateRecordRow row) => new TaxRateRecordViewV1(
-        row.Id,
-        Text(row.RecordVersion),
-        row.EffectiveFrom,
-        row.Applies,
-        row.RatePercent is { } rate ? TaxMasterCalculatorV1.Format(rate) : null,
-        row.WithholdingCode,
-        row.RecordedBy,
-        row.RecordedAtUtc,
-        row.Reason);
 
     private static TaxWithholdingThresholdRecordViewV1 ThresholdView(TaxWithholdingThresholdRecordRow row) =>
         new TaxWithholdingThresholdRecordViewV1(
@@ -564,9 +393,6 @@ internal sealed partial class SettingsTaxMasterAdministration(
     private static class Answers
     {
         public static TaxMasterCommandAnswerV1 NoContent() => new TaxMasterCommandAnswerV1(204, null, "Kaydedildi.", "Değişiklik kaydedildi.");
-
-        public static TaxMasterCommandAnswerV1 Created(Guid id) => new TaxMasterCommandAnswerV1(201, null, "Oluşturuldu.", "Vergi kategorisi oluşturuldu.",
-            new TaxCategoryCreatedV1(id, "1"));
 
         public static TaxMasterCommandAnswerV1 NotFound() => new TaxMasterCommandAnswerV1(404, null, "Kayıt bulunamadı.",
             "İstenen vergi kaydı bu şirkette bulunamadı.");

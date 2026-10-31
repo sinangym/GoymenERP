@@ -6,19 +6,18 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
 {
     /// <summary>
-    /// MOD-03 (SAT-D73/D74/D82): the company's product tax classification (VAT class, optional withholding class) and its
-    /// command answers. <c>Down</c> refuses (<c>THROW 51132</c>, used by no other migration on main or any remote branch at
-    /// the time of writing) while any classification or command answer exists — dropping them would silently turn every
-    /// classified product's tax back into "kaynak yok" and lose the recorded answers (forward fix); on an empty store the
-    /// tables drop freely.
+    /// SAT-D134 (EK19): the company product item type (demir / hurda / hizmet) and its command answers. <c>Down</c> refuses
+    /// (<c>THROW 51132</c>, used by no other migration on main or any remote branch at the time of writing) while any item type
+    /// or command answer exists — dropping them would silently turn every typed product back to "kaynak yok" and lose the
+    /// recorded answers (forward fix); on an empty store the tables drop freely.
     /// </summary>
-    public partial class AddProductTaxClassifications : Migration
+    public partial class AddProductItemTypes : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "ProductTaxClassificationAttempts",
+                name: "ProductItemTypeAttempts",
                 schema: "product",
                 columns: table => new
                 {
@@ -35,12 +34,12 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_ProductTaxClassificationAttempts", x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
-                    table.CheckConstraint("CK_ProductTaxClassificationAttempts_Answer", "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
-                    table.CheckConstraint("CK_ProductTaxClassificationAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
-                    table.CheckConstraint("CK_ProductTaxClassificationAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+                    table.PrimaryKey("PK_ProductItemTypeAttempts", x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+                    table.CheckConstraint("CK_ProductItemTypeAttempts_Answer", "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
+                    table.CheckConstraint("CK_ProductItemTypeAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+                    table.CheckConstraint("CK_ProductItemTypeAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
                     table.ForeignKey(
-                        name: "FK_ProductTaxClassificationAttempts_Companies_CompanyId",
+                        name: "FK_ProductItemTypeAttempts_Companies_CompanyId",
                         column: x => x.CompanyId,
                         principalSchema: "organization",
                         principalTable: "Companies",
@@ -49,33 +48,32 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ProductTaxClassifications",
+                name: "ProductItemTypes",
                 schema: "product",
                 columns: table => new
                 {
                     CompanyId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     ProductId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    VatClassId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    WithholdingClassId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    ItemType = table.Column<string>(type: "varchar(16)", unicode: false, maxLength: 16, nullable: false, collation: "Latin1_General_100_BIN2"),
                     Version = table.Column<long>(type: "bigint", nullable: false),
                     UpdatedAtUtc = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     UpdatedBy = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_ProductTaxClassifications", x => new { x.CompanyId, x.ProductId });
-                    table.CheckConstraint("CK_ProductTaxClassifications_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [VatClassId] <> '00000000-0000-0000-0000-000000000000'");
-                    table.CheckConstraint("CK_ProductTaxClassifications_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
-                    table.CheckConstraint("CK_ProductTaxClassifications_Withholding", "[WithholdingClassId] IS NULL OR ([WithholdingClassId] <> '00000000-0000-0000-0000-000000000000' AND [WithholdingClassId] <> [VatClassId])");
+                    table.PrimaryKey("PK_ProductItemTypes", x => new { x.CompanyId, x.ProductId });
+                    table.CheckConstraint("CK_ProductItemTypes_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
+                    table.CheckConstraint("CK_ProductItemTypes_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
+                    table.CheckConstraint("CK_ProductItemTypes_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
                     table.ForeignKey(
-                        name: "FK_ProductTaxClassifications_Companies_CompanyId",
+                        name: "FK_ProductItemTypes_Companies_CompanyId",
                         column: x => x.CompanyId,
                         principalSchema: "organization",
                         principalTable: "Companies",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
-                        name: "FK_ProductTaxClassifications_Products_ProductId",
+                        name: "FK_ProductItemTypes_Products_ProductId",
                         column: x => x.ProductId,
                         principalSchema: "product",
                         principalTable: "Products",
@@ -84,9 +82,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_ProductTaxClassifications_ProductId",
+                name: "IX_ProductItemTypes_ProductId",
                 schema: "product",
-                table: "ProductTaxClassifications",
+                table: "ProductItemTypes",
                 column: "ProductId");
         }
 
@@ -94,17 +92,17 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql("""
-                IF EXISTS (SELECT 1 FROM [product].[ProductTaxClassifications])
-                    OR EXISTS (SELECT 1 FROM [product].[ProductTaxClassificationAttempts])
-                    THROW 51132, 'Product tax classifications exist; AddProductTaxClassifications is not rolled back (forward fix).', 1;
+                IF EXISTS (SELECT 1 FROM [product].[ProductItemTypes])
+                    OR EXISTS (SELECT 1 FROM [product].[ProductItemTypeAttempts])
+                    THROW 51132, 'Product item types exist; AddProductItemTypes is not rolled back (forward fix).', 1;
                 """);
 
             migrationBuilder.DropTable(
-                name: "ProductTaxClassificationAttempts",
+                name: "ProductItemTypeAttempts",
                 schema: "product");
 
             migrationBuilder.DropTable(
-                name: "ProductTaxClassifications",
+                name: "ProductItemTypes",
                 schema: "product");
         }
     }

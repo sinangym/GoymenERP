@@ -3,24 +3,24 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Settings.Application;
 
-/// <summary>A tax category of the company (VAT class, withholding class or buyer category).</summary>
-public sealed record TaxCategoryDataV1(Guid Id, string Kind, string Code, string Name);
-
 /// <summary>
-/// One immutable rate record. <c>Kind</c> <see cref="TaxRateKindsV1.Vat"/>: a VAT class's rate (<c>Applies</c> true,
-/// <c>RatePercent</c> 0…100). <see cref="TaxRateKindsV1.Withholding"/>: a withholding class + buyer category, either
-/// applying (<c>RatePercent</c> &gt; 0…100 and a <c>WithholdingCode</c>) or explicitly not applied. <c>IsWithdrawn</c>:
-/// withdrawn before it took effect; such a record is ignored everywhere.
+/// One immutable default-tax record of an item type (SAT-D139): the reviewed catalog entry (<c>Source</c> <c>Catalog</c>,
+/// version 0) or a Settings record (version ≥ 1). VAT applies with a percent, or not ("KDV yok") with an optional exemption
+/// code; withholding (only when VAT applies) with a percent and an optional code, or not. <c>IsWithdrawn</c>: withdrawn
+/// before it took effect; ignored everywhere.
 /// </summary>
-public sealed record TaxRateRecordDataV1(
+public sealed record TaxItemTypeDefaultDataV1(
     Guid RecordId,
-    string Kind,
-    Guid ClassId,
-    Guid? BuyerCategoryId,
+    Guid CompanyId,
+    string ItemType,
+    string Source,
     long RecordVersion,
     DateOnly EffectiveFrom,
-    bool Applies,
-    decimal? RatePercent,
+    bool VatApplies,
+    decimal? VatPercent,
+    string? ExemptionCode,
+    bool WithholdingApplies,
+    decimal? WithholdingPercent,
     string? WithholdingCode,
     bool IsWithdrawn = false);
 
@@ -41,42 +41,45 @@ public sealed record TaxWithholdingThresholdDataV1(
     string CurrencyCode,
     bool IsWithdrawn = false);
 
-/// <summary>Everything the tax master of one company holds (thresholds null = none).</summary>
+/// <summary>Everything the tax master of one company holds (the catalog entries included in <c>Defaults</c>).</summary>
 public sealed record TaxMasterDataV1(
-    IReadOnlyDictionary<Guid, TaxCategoryDataV1> Categories,
-    IReadOnlyList<TaxRateRecordDataV1> Records,
+    IReadOnlyList<TaxItemTypeDefaultDataV1> Defaults,
     IReadOnlyList<TaxCodeListVersionDataV1> CodeLists,
-    IReadOnlyList<TaxWithholdingThresholdDataV1>? Thresholds = null);
+    IReadOnlyList<TaxWithholdingThresholdDataV1> Thresholds);
 
-/// <summary>The VAT and withholding parts of a line's tax resolution (company/product identity added by the port).</summary>
-public sealed record TaxLineResolutionPartsV1(
-    string VatState,
+/// <summary>The default tax of an item type on a date (company/product identity added by the port).</summary>
+public sealed record TaxDefaultResolutionPartsV1(
+    string State,
+    string? Reason,
+    TaxItemTypeDefaultDataV1? Record,
+    string? VatState,
     decimal? VatPercent,
-    TaxRateRecordDataV1? VatRecord,
-    string? VatReason,
-    string WithholdingState,
+    string? ExemptionCodeState,
+    string? ExemptionCode,
+    string? ExemptionCodeReason,
+    string? WithholdingState,
     decimal? WithholdingPercent,
+    string? WithholdingCodeState,
     string? WithholdingCode,
-    TaxRateRecordDataV1? WithholdingRecord,
-    string? WithholdingReason);
+    string? WithholdingCodeReason,
+    string? BuyerAdjustment = null);
 
 /// <summary>
-/// The ONE deterministic calculator of the tax master (MOD-03; SAT-D73/D74/D82/D93), used by the Settings screen's read and by
-/// the line tax port (<see cref="ISettingsLineTaxResolverV1"/>); no UI or report re-implements it.
+/// The ONE deterministic calculator of the tax master (MOD-03; SAT-D93/D133/D135/D139), used by the Settings screen's read and
+/// by the line tax port (<see cref="ISettingsLineTaxResolverV1"/>); no UI or report re-implements it.
 /// <list type="bullet">
-/// <item><b>Timeline</b> (the SAT-D78/D84 precedent of the discount limits): per series — a VAT class; a withholding class +
-/// buyer category; a code list kind — the non-withdrawn record in force on a date is the one with the LATEST
-/// <c>EffectiveFrom</c> on or before it, and of several on that date the highest version. Before the first record nothing is
-/// in force. A later-dated record applies by itself from its date.</item>
-/// <item><b>VAT</b> (SAT-D73/D82): the product's VAT class → its rate in force → <c>Resolved</c>; anything missing is
-/// <c>Unresolved</c> with a reason — never 0 and never a default rate.</item>
-/// <item><b>Withholding</b> (SAT-D74): no withholding class on the product → <c>NotApplicable</c>; otherwise the buyer
-/// category is required and the record of (class, buyer category) in force answers <c>Resolved</c> (percent + code; the code
-/// must be in the withholding code list in force on the same date) or <c>NotApplied</c> (an explicit "no withholding"
-/// record); anything missing → <c>Unresolved</c>.</item>
-/// <item><b>Amounts</b> are NOT computed here: the consumer passes <see cref="WithholdingShare"/> and the VAT percent to its
-/// single amount calculator (Sales <c>SalesOrderTotalsCalculator</c>: line amount = quantity × the UNROUNDED net unit price,
-/// rounded once, SAT-D76; VAT per line rounded; withholding = the ROUNDED line VAT × share, rounded, SAT-D75).</item>
+/// <item><b>Timeline</b> (the SAT-D78/D84 precedent of the discount limits): per series — an item type's default; a code list
+/// kind; the threshold — the non-withdrawn record in force on a date is the one with the LATEST <c>EffectiveFrom</c> on or
+/// before it, and of several on that date the highest version (a Settings record outranks the version-0 catalog entry on the
+/// same day). Before the first record nothing is in force. A later-dated record applies by itself from its date.</item>
+/// <item><b>Default</b> (SAT-D139): the item type's record in force → VAT (<c>Resolved</c> percent or <c>Exempt</c>) and
+/// withholding (<c>Resolved</c> percent or <c>NotApplied</c>); an exemption / withholding code is checked against the list in
+/// force on the same date and is otherwise <c>Unresolved</c> ("kaynak yok", the invoice waits). No item type or no record →
+/// <c>Unresolved</c> — never 0, never a guessed default.</item>
+/// <item><b>Amounts</b> are NOT computed here: the consumer passes the VAT percent (0 for <c>Exempt</c>) and
+/// <see cref="WithholdingShare"/> to its single amount calculator (Sales <c>SalesOrderTotalsCalculator</c>: line amount =
+/// quantity × the UNROUNDED net unit price, rounded once, SAT-D76; VAT per line rounded; withholding = the ROUNDED line VAT ×
+/// share, rounded, SAT-D75).</item>
 /// </list>
 /// </summary>
 public static class TaxMasterCalculatorV1
@@ -84,27 +87,22 @@ public static class TaxMasterCalculatorV1
     public const decimal MinimumPercent = 0m;
     public const decimal MaximumPercent = 100m;
 
-    /// <summary>The record of one series in force on <paramref name="on"/> (null before its first record).</summary>
-    public static TaxRateRecordDataV1? RateInForce(TaxMasterDataV1 data, string kind, Guid classId, Guid? buyerCategoryId,
-        DateOnly on)
+    /// <summary>The default of <paramref name="itemType"/> in force on <paramref name="on"/> (null before its first record).</summary>
+    public static TaxItemTypeDefaultDataV1? DefaultInForce(TaxMasterDataV1 data, string itemType, DateOnly on)
     {
         ArgumentNullException.ThrowIfNull(data);
-        return Series(data, kind, classId, buyerCategoryId)
+        return Defaults(data, itemType)
             .Where(record => record.EffectiveFrom <= on)
             .OrderBy(record => record.EffectiveFrom)
             .ThenBy(record => record.RecordVersion)
             .LastOrDefault();
     }
 
-    /// <summary>
-    /// The records of one series that start AFTER <paramref name="after"/>, earliest first; of several on one day only the
-    /// highest version (the store withdraws a same-day superseded record anyway).
-    /// </summary>
-    public static IReadOnlyList<TaxRateRecordDataV1> ScheduledRates(TaxMasterDataV1 data, string kind, Guid classId,
-        Guid? buyerCategoryId, DateOnly after)
+    /// <summary>The records of one item type that start AFTER <paramref name="after"/>, earliest first (one per day).</summary>
+    public static IReadOnlyList<TaxItemTypeDefaultDataV1> ScheduledDefaults(TaxMasterDataV1 data, string itemType, DateOnly after)
     {
         ArgumentNullException.ThrowIfNull(data);
-        return Series(data, kind, classId, buyerCategoryId)
+        return Defaults(data, itemType)
             .Where(record => record.EffectiveFrom > after)
             .GroupBy(record => record.EffectiveFrom)
             .Select(sameDay => sameDay.MaxBy(record => record.RecordVersion)!)
@@ -157,79 +155,95 @@ public static class TaxMasterCalculatorV1
     }
 
     /// <summary>
-    /// An amount as lossless decimal text above 0: 1…15 integer digits (no leading zero), an optional '.' and 1…4 decimals.
-    /// No sign, exponent, group separator or whitespace; never rounded.
+    /// The default tax of <paramref name="itemType"/> (null: the product has none) on <paramref name="on"/>, adjusted for the
+    /// order's <paramref name="buyerSituation"/> (SAT-D140 with the SAT-D74/D93 rule, see <see cref="TaxBuyerSituationsV1"/>).
     /// </summary>
-    public static bool TryParseAmount(string? text, out decimal value)
-    {
-        value = 0m;
-        if (string.IsNullOrEmpty(text) || text.Length > 15 + 1 + TaxMasterInputLimitsV1.PercentMaximumScale)
-        {
-            return false;
-        }
-
-        var dot = text.IndexOf('.', StringComparison.Ordinal);
-        var integerPart = dot < 0 ? text : text[..dot];
-        var fraction = dot < 0 ? string.Empty : text[(dot + 1)..];
-        if (integerPart.Length is 0 or > 15 || !integerPart.All(char.IsAsciiDigit)
-            || (integerPart.Length > 1 && integerPart[0] == '0')
-            || (dot >= 0 && (fraction.Length is 0 || fraction.Length > TaxMasterInputLimitsV1.PercentMaximumScale
-                || !fraction.All(char.IsAsciiDigit))))
-        {
-            return false;
-        }
-
-        if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed)
-            || parsed <= 0m)
-        {
-            return false;
-        }
-
-        value = parsed;
-        return true;
-    }
-
-    /// <summary>An ISO 4217 alphabetic code: exactly three ASCII letters, upper-cased.</summary>
-    public static bool TryNormalizeCurrencyCode(string? code, out string normalized)
-    {
-        normalized = code?.Trim().ToUpperInvariant() ?? string.Empty;
-        return normalized.Length == 3 && normalized.All(char.IsAsciiLetterUpper);
-    }
-
-    /// <summary>
-    /// The VAT and withholding of a product (its classes as the Product owner answered them) for a buyer category on a date.
-    /// <paramref name="vatClassId"/> null means the product is not classified (both parts <c>Unresolved</c>).
-    /// </summary>
-    public static TaxLineResolutionPartsV1 Resolve(TaxMasterDataV1 data, Guid? vatClassId, Guid? withholdingClassId,
-        Guid? buyerCategoryId, DateOnly on)
+    public static TaxDefaultResolutionPartsV1 Resolve(TaxMasterDataV1 data, string? itemType, string buyerSituation, DateOnly on)
     {
         ArgumentNullException.ThrowIfNull(data);
-        if (vatClassId is not { } vatClass)
+        if (!TaxBuyerSituationsV1.IsKnown(buyerSituation))
         {
-            return Unclassified(TaxResolutionReasonsV1.ProductNotClassified);
+            throw new ArgumentOutOfRangeException(nameof(buyerSituation), "Alıcı vergi durumu tanımlı değil.");
         }
 
-        string vatState = TaxResolutionStatesV1.Unresolved;
-        decimal? vatPercent = null;
-        TaxRateRecordDataV1? vatRecord = null;
-        string? vatReason;
-        if (!IsCategory(data, vatClass, TaxCategoryKindsV1.VatClass))
+        var parts = ResolveDefault(data, itemType, on);
+        if (parts.State != TaxResolutionStatesV1.Resolved)
         {
-            vatReason = TaxResolutionReasonsV1.VatClassUnknown;
-        }
-        else if (RateInForce(data, TaxRateKindsV1.Vat, vatClass, null, on) is { RatePercent: { } rate } record)
-        {
-            (vatState, vatPercent, vatRecord, vatReason) = (TaxResolutionStatesV1.Resolved, rate, record, null);
-        }
-        else
-        {
-            vatReason = TaxResolutionReasonsV1.VatRateMissing;
+            return parts;
         }
 
-        var (withholdingState, withholdingPercent, withholdingCode, withholdingRecord, withholdingReason) =
-            ResolveWithholding(data, withholdingClassId, buyerCategoryId, on);
-        return new TaxLineResolutionPartsV1(vatState, vatPercent, vatRecord, vatReason, withholdingState, withholdingPercent,
-            withholdingCode, withholdingRecord, withholdingReason);
+        return buyerSituation switch
+        {
+            TaxBuyerSituationsV1.Normal => parts,
+            // SAT-D74: withholding only for a buyer subject to it; the VAT stays the default's.
+            TaxBuyerSituationsV1.NotSubjectToWithholding or TaxBuyerSituationsV1.FinalConsumer => parts.WithholdingState
+                == TaxResolutionStatesV1.NotApplied
+                ? parts
+                : parts with
+                {
+                    WithholdingState = TaxResolutionStatesV1.NotApplied,
+                    WithholdingPercent = null,
+                    WithholdingCodeState = TaxResolutionStatesV1.NotRequired,
+                    WithholdingCode = null,
+                    WithholdingCodeReason = null,
+                    BuyerAdjustment = TaxResolutionReasonsV1.BuyerNotSubjectToWithholding,
+                },
+            // SAT-D93: a document / export-registered sale changes the VAT, but how (and under which UBL-TR code) is the mali
+            // müşavir's decision: no guess — both parts are unresolved and the line decides by hand.
+            _ => parts with
+            {
+                VatState = TaxResolutionStatesV1.Unresolved,
+                VatPercent = null,
+                ExemptionCodeState = TaxResolutionStatesV1.Unresolved,
+                ExemptionCode = null,
+                ExemptionCodeReason = TaxResolutionReasonsV1.BuyerSituationUndecided,
+                WithholdingState = TaxResolutionStatesV1.Unresolved,
+                WithholdingPercent = null,
+                WithholdingCodeState = TaxResolutionStatesV1.Unresolved,
+                WithholdingCode = null,
+                WithholdingCodeReason = TaxResolutionReasonsV1.BuyerSituationUndecided,
+                BuyerAdjustment = TaxResolutionReasonsV1.BuyerSituationUndecided,
+            },
+        };
+    }
+
+    private static TaxDefaultResolutionPartsV1 ResolveDefault(TaxMasterDataV1 data, string? itemType, DateOnly on)
+    {
+        if (itemType is null)
+        {
+            return Unresolved(TaxResolutionReasonsV1.ProductItemTypeMissing);
+        }
+
+        if (!TaxItemTypesV1.IsKnown(itemType))
+        {
+            return Unresolved(TaxResolutionReasonsV1.ItemTypeUnknown);
+        }
+
+        if (DefaultInForce(data, itemType, on) is not { } record)
+        {
+            return Unresolved(TaxResolutionReasonsV1.ItemTypeDefaultMissing);
+        }
+
+        var (exemptionState, exemptionCode, exemptionReason) = record.VatApplies
+            ? (TaxResolutionStatesV1.NotRequired, (string?)null, (string?)null)
+            : Code(data, TaxCodeListKindsV1.Exemption, record.ExemptionCode, TaxResolutionReasonsV1.ExemptionCodeMissing, on);
+        var (withholdingCodeState, withholdingCode, withholdingReason) = record.WithholdingApplies
+            ? Code(data, TaxCodeListKindsV1.Withholding, record.WithholdingCode, TaxResolutionReasonsV1.WithholdingCodeMissing, on)
+            : (TaxResolutionStatesV1.NotRequired, (string?)null, (string?)null);
+        return new TaxDefaultResolutionPartsV1(
+            TaxResolutionStatesV1.Resolved,
+            null,
+            record,
+            record.VatApplies ? TaxResolutionStatesV1.Resolved : TaxResolutionStatesV1.Exempt,
+            record.VatApplies ? record.VatPercent : null,
+            exemptionState,
+            exemptionCode,
+            exemptionReason,
+            record.WithholdingApplies ? TaxResolutionStatesV1.Resolved : TaxResolutionStatesV1.NotApplied,
+            record.WithholdingApplies ? record.WithholdingPercent : null,
+            withholdingCodeState,
+            withholdingCode,
+            withholdingReason);
     }
 
     /// <summary>The share of the line VAT that is withheld: the percent / 100, exact (e.g. 50 → 0.5 for 5/10).</summary>
@@ -250,24 +264,8 @@ public static class TaxMasterCalculatorV1
     public static bool TryParsePercent(string? text, bool allowZero, out decimal value)
     {
         value = 0m;
-        if (string.IsNullOrEmpty(text) || text.Length > 3 + 1 + TaxMasterInputLimitsV1.PercentMaximumScale)
-        {
-            return false;
-        }
-
-        var dot = text.IndexOf('.', StringComparison.Ordinal);
-        var integerPart = dot < 0 ? text : text[..dot];
-        var fraction = dot < 0 ? string.Empty : text[(dot + 1)..];
-        if (integerPart.Length is 0 or > 3 || !integerPart.All(char.IsAsciiDigit)
-            || (integerPart.Length > 1 && integerPart[0] == '0')
-            || (dot >= 0 && (fraction.Length is 0 || fraction.Length > TaxMasterInputLimitsV1.PercentMaximumScale
-                || !fraction.All(char.IsAsciiDigit))))
-        {
-            return false;
-        }
-
-        if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed)
-            || parsed < MinimumPercent || parsed > MaximumPercent || (!allowZero && parsed == MinimumPercent))
+        if (!TryParseDecimalText(text, 3, out var parsed) || parsed < MinimumPercent || parsed > MaximumPercent
+            || (!allowZero && parsed == MinimumPercent))
         {
             return false;
         }
@@ -276,89 +274,88 @@ public static class TaxMasterCalculatorV1
         return true;
     }
 
-    /// <summary>The canonical text of a percent (no trailing zeros, invariant culture).</summary>
+    /// <summary>An amount as lossless decimal text above 0: 1…15 integer digits (no leading zero), optional 1…4 decimals.</summary>
+    public static bool TryParseAmount(string? text, out decimal value)
+    {
+        value = 0m;
+        if (!TryParseDecimalText(text, 15, out var parsed) || parsed <= 0m)
+        {
+            return false;
+        }
+
+        value = parsed;
+        return true;
+    }
+
+    /// <summary>The canonical text of a percent or amount (no trailing zeros, invariant culture).</summary>
     public static string Format(decimal value) => value.ToString("0.############################", CultureInfo.InvariantCulture);
 
-    /// <summary>A category code: upper-case ASCII letters, digits, '_' and '-', starting with a letter or digit, 1…32.</summary>
-    public static bool TryNormalizeCategoryCode(string? code, out string normalized) =>
-        TryNormalizeCode(code, TaxMasterInputLimitsV1.CategoryCodeMaximumLength, allowSeparators: true, out normalized);
-
     /// <summary>A UBL-TR list code: upper-case ASCII letters and digits only, 1…16 (e.g. "601", "351").</summary>
-    public static bool TryNormalizeListCode(string? code, out string normalized) =>
-        TryNormalizeCode(code, TaxMasterInputLimitsV1.ListCodeMaximumLength, allowSeparators: false, out normalized);
-
-    private static bool TryNormalizeCode(string? code, int maximumLength, bool allowSeparators, out string normalized)
+    public static bool TryNormalizeListCode(string? code, out string normalized)
     {
         normalized = code?.Trim().ToUpperInvariant() ?? string.Empty;
         var value = normalized;
-        return value.Length > 0 && value.Length <= maximumLength
-            && (char.IsAsciiLetterUpper(value[0]) || char.IsAsciiDigit(value[0]))
-            && value.All(character => char.IsAsciiLetterUpper(character) || char.IsAsciiDigit(character)
-                || (allowSeparators && character is '_' or '-'));
+        return value.Length > 0 && value.Length <= TaxMasterInputLimitsV1.ListCodeMaximumLength
+            && value.All(character => char.IsAsciiLetterUpper(character) || char.IsAsciiDigit(character));
     }
 
-    private static (string State, decimal? Percent, string? Code, TaxRateRecordDataV1? Record, string? Reason) ResolveWithholding(
-        TaxMasterDataV1 data, Guid? withholdingClassId, Guid? buyerCategoryId, DateOnly on)
+    /// <summary>An ISO 4217 alphabetic code: exactly three ASCII letters, upper-cased.</summary>
+    public static bool TryNormalizeCurrencyCode(string? code, out string normalized)
     {
-        if (withholdingClassId is not { } withholdingClass)
-        {
-            return (TaxResolutionStatesV1.NotApplicable, null, null, null, null);
-        }
-
-        if (!IsCategory(data, withholdingClass, TaxCategoryKindsV1.WithholdingClass))
-        {
-            return Unresolved(TaxResolutionReasonsV1.WithholdingClassUnknown);
-        }
-
-        if (buyerCategoryId is not { } buyer)
-        {
-            return Unresolved(TaxResolutionReasonsV1.BuyerCategoryMissing);
-        }
-
-        if (!IsCategory(data, buyer, TaxCategoryKindsV1.BuyerCategory))
-        {
-            return Unresolved(TaxResolutionReasonsV1.BuyerCategoryUnknown);
-        }
-
-        var record = RateInForce(data, TaxRateKindsV1.Withholding, withholdingClass, buyer, on);
-        if (record is null)
-        {
-            return Unresolved(TaxResolutionReasonsV1.WithholdingRateMissing);
-        }
-
-        if (!record.Applies)
-        {
-            return (TaxResolutionStatesV1.NotApplied, null, null, record, null);
-        }
-
-        // The code must still be listed on the same date: a list version withdrawn or replaced without it leaves the
-        // withholding without a source (fail-closed), never a code the list no longer carries.
-        var list = ListInForce(data, TaxCodeListKindsV1.Withholding, on);
-        if (record.RatePercent is not { } percent || record.WithholdingCode is not { } code
-            || list is null || !list.Entries.Any(entry => string.Equals(entry.Code, code, StringComparison.Ordinal)))
-        {
-            return Unresolved(TaxResolutionReasonsV1.WithholdingCodeNotInList);
-        }
-
-        return (TaxResolutionStatesV1.Resolved, percent, code, record, null);
+        normalized = code?.Trim().ToUpperInvariant() ?? string.Empty;
+        return normalized.Length == 3 && normalized.All(char.IsAsciiLetterUpper);
     }
 
-    private static (string, decimal?, string?, TaxRateRecordDataV1?, string?) Unresolved(string reason) =>
-        (TaxResolutionStatesV1.Unresolved, null, null, null, reason);
+    /// <summary>Whether <paramref name="code"/> is in the <paramref name="kind"/> list in force on <paramref name="on"/>.</summary>
+    public static bool IsListed(TaxMasterDataV1 data, string kind, string code, DateOnly on) =>
+        ListInForce(data, kind, on)?.Entries.Any(entry => string.Equals(entry.Code, code, StringComparison.Ordinal)) ?? false;
 
-    private static TaxLineResolutionPartsV1 Unclassified(string reason) =>
-        new(TaxResolutionStatesV1.Unresolved, null, null, reason, TaxResolutionStatesV1.Unresolved, null, null, null, reason);
+    private static bool TryParseDecimalText(string? text, int maximumIntegerDigits, out decimal value)
+    {
+        value = 0m;
+        if (string.IsNullOrEmpty(text) || text.Length > maximumIntegerDigits + 1 + TaxMasterInputLimitsV1.PercentMaximumScale)
+        {
+            return false;
+        }
 
-    private static bool IsCategory(TaxMasterDataV1 data, Guid id, string kind) =>
-        data.Categories.TryGetValue(id, out var category) && category is not null && category.Kind == kind;
+        var dot = text.IndexOf('.', StringComparison.Ordinal);
+        var integerPart = dot < 0 ? text : text[..dot];
+        var fraction = dot < 0 ? string.Empty : text[(dot + 1)..];
+        if (integerPart.Length == 0 || integerPart.Length > maximumIntegerDigits || !integerPart.All(char.IsAsciiDigit)
+            || (integerPart.Length > 1 && integerPart[0] == '0')
+            || (dot >= 0 && (fraction.Length is 0 || fraction.Length > TaxMasterInputLimitsV1.PercentMaximumScale
+                || !fraction.All(char.IsAsciiDigit))))
+        {
+            return false;
+        }
 
-    private static IEnumerable<TaxRateRecordDataV1> Series(TaxMasterDataV1 data, string kind, Guid classId, Guid? buyerCategoryId) =>
-        data.Records.Where(record => !record.IsWithdrawn && record.Kind == kind && record.ClassId == classId
-                                     && record.BuyerCategoryId == buyerCategoryId);
+        return decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out value);
+    }
 
-    private static IEnumerable<TaxWithholdingThresholdDataV1> Thresholds(TaxMasterDataV1 data) =>
-        (data.Thresholds ?? []).Where(record => !record.IsWithdrawn);
+    private static (string State, string? Code, string? Reason) Code(TaxMasterDataV1 data, string kind, string? code,
+        string missingReason, DateOnly on)
+    {
+        if (code is null)
+        {
+            return (TaxResolutionStatesV1.Unresolved, null, missingReason);
+        }
+
+        // The code must still be listed on the date: a list version withdrawn or replaced without it leaves the code without
+        // a source (fail-closed), never a code the list no longer carries.
+        return IsListed(data, kind, code, on)
+            ? (TaxResolutionStatesV1.Resolved, code, null)
+            : (TaxResolutionStatesV1.Unresolved, code, TaxResolutionReasonsV1.CodeNotInList);
+    }
+
+    private static TaxDefaultResolutionPartsV1 Unresolved(string reason) =>
+        new(TaxResolutionStatesV1.Unresolved, reason, null, null, null, null, null, null, null, null, null, null, null);
+
+    private static IEnumerable<TaxItemTypeDefaultDataV1> Defaults(TaxMasterDataV1 data, string itemType) =>
+        data.Defaults.Where(record => !record.IsWithdrawn && record.ItemType == itemType);
 
     private static IEnumerable<TaxCodeListVersionDataV1> Lists(TaxMasterDataV1 data, string kind) =>
         data.CodeLists.Where(list => !list.IsWithdrawn && list.Kind == kind);
+
+    private static IEnumerable<TaxWithholdingThresholdDataV1> Thresholds(TaxMasterDataV1 data) =>
+        data.Thresholds.Where(record => !record.IsWithdrawn);
 }

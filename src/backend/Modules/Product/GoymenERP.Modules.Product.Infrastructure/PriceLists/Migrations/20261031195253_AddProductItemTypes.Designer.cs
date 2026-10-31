@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
 {
     [DbContext(typeof(ProductPriceListDbContext))]
-    [Migration("20261031130728_AddProductTaxClassifications")]
-    partial class AddProductTaxClassifications
+    [Migration("20261031195253_AddProductItemTypes")]
+    partial class AddProductItemTypes
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -525,7 +525,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         });
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductTaxClassificationAttemptRow", b =>
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeAttemptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
@@ -572,23 +572,30 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
 
                     b.HasKey("CompanyId", "CommandName", "IdempotencyKeyHash");
 
-                    b.ToTable("ProductTaxClassificationAttempts", "product", t =>
+                    b.ToTable("ProductItemTypeAttempts", "product", t =>
                         {
-                            t.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Answer", "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
+                            t.HasCheckConstraint("CK_ProductItemTypeAttempts_Answer", "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
 
-                            t.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+                            t.HasCheckConstraint("CK_ProductItemTypeAttempts_Hashes", "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
 
-                            t.HasCheckConstraint("CK_ProductTaxClassificationAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+                            t.HasCheckConstraint("CK_ProductItemTypeAttempts_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND LEN([CommandName]) > 0 AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
                         });
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductTaxClassificationRow", b =>
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("ProductId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ItemType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
 
                     b.Property<DateTimeOffset>("UpdatedAtUtc")
                         .HasColumnType("datetimeoffset");
@@ -598,27 +605,21 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
-                    b.Property<Guid>("VatClassId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.Property<long>("Version")
                         .IsConcurrencyToken()
                         .HasColumnType("bigint");
-
-                    b.Property<Guid?>("WithholdingClassId")
-                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("CompanyId", "ProductId");
 
                     b.HasIndex("ProductId");
 
-                    b.ToTable("ProductTaxClassifications", "product", t =>
+                    b.ToTable("ProductItemTypes", "product", t =>
                         {
-                            t.HasCheckConstraint("CK_ProductTaxClassifications_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [VatClassId] <> '00000000-0000-0000-0000-000000000000'");
+                            t.HasCheckConstraint("CK_ProductItemTypes_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
 
-                            t.HasCheckConstraint("CK_ProductTaxClassifications_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
+                            t.HasCheckConstraint("CK_ProductItemTypes_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
 
-                            t.HasCheckConstraint("CK_ProductTaxClassifications_Withholding", "[WithholdingClassId] IS NULL OR ([WithholdingClassId] <> '00000000-0000-0000-0000-000000000000' AND [WithholdingClassId] <> [VatClassId])");
+                            t.HasCheckConstraint("CK_ProductItemTypes_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
                         });
                 });
 
@@ -671,7 +672,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductTaxClassificationAttemptRow", b =>
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeAttemptRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
                         .WithMany()
@@ -680,7 +681,7 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductTaxClassificationRow", b =>
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
                         .WithMany()

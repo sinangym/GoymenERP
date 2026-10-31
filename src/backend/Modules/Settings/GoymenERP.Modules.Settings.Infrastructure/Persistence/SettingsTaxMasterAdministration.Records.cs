@@ -1,4 +1,3 @@
-using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
@@ -6,81 +5,35 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
-/// The rate records (SAT-D82 VAT, SAT-D74 withholding) and the code list versions (EK13 UBL-TR lists) on their timelines.
-/// A record or list version row never changes; a withdrawal is an insert-only row. Every change moves the owning class's
-/// (or list's) version, which fences concurrent changes of the same series.
+/// The per-item-type default records (SAT-D139) and the code list versions (EK13 UBL-TR lists) on their timelines. A record or
+/// list version row never changes; a withdrawal is an insert-only row. Every change moves the owning series' (or list's)
+/// version, which fences concurrent changes of the same series.
 /// </summary>
 internal sealed partial class SettingsTaxMasterAdministration
 {
-    private const string VatRateRecordCommandName = "settings.tax-rate.record-vat.v1";
-    private const string WithholdingRateRecordCommandName = "settings.tax-rate.record-withholding.v1";
-    private const string RateWithdrawCommandName = "settings.tax-rate.withdraw.v1";
+    private const string DefaultRecordCommandName = "settings.tax-item-type-default.record.v1";
+    private const string DefaultWithdrawCommandName = "settings.tax-item-type-default.withdraw.v1";
     private const string CodeListPublishCommandName = "settings.tax-code-list.publish.v1";
     private const string CodeListWithdrawCommandName = "settings.tax-code-list.withdraw.v1";
 
-    public async Task<TaxMasterCommandResultV1> RecordVatRateAsync(Guid vatClassId, RecordVatRateRequestV1 request,
+    public async Task<TaxMasterCommandResultV1> RecordItemTypeDefaultAsync(string itemType, RecordItemTypeDefaultRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateMetadata(metadata);
         var companyId = RequireContextCompany();
         var scope = await RequireAsync(companyId, cancellationToken);
-        if (vatClassId == Guid.Empty || !TryParseVersion(request.ExpectedVersion, 1, out var expectedVersion))
-        {
-            return Unstored(Answers.Invalid("KDV sınıfı ve beklenen sürüm (pozitif tam sayı metni) zorunludur."), metadata);
-        }
-
-        if (!TaxMasterCalculatorV1.TryParsePercent(request.RatePercent, allowZero: true, out var rate))
-        {
-            return Unstored(Answers.Invalid("KDV oranı 0-100 arası, en çok 4 ondalıklı bir sayı metni olmalıdır."), metadata);
-        }
-
-        if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
-        {
-            return Unstored(reasonRefusal, metadata);
-        }
-
-        var requestHash = IdempotencyHash.ComputePayload(new
-        {
-            ClassId = vatClassId, ExpectedVersion = expectedVersion, RatePercent = rate, Reason = reason, request.EffectiveFrom,
-        });
-        var change = new RateChange(VatRateRecordCommandName, TaxRateKindsV1.Vat, TaxCategoryKindsV1.VatClass, vatClassId,
-            expectedVersion, null, true, rate, null, request.EffectiveFrom, reason);
-        return await RecordRateAsync(change, requestHash, companyId, scope, metadata, cancellationToken);
-    }
-
-    public async Task<TaxMasterCommandResultV1> RecordWithholdingRateAsync(Guid withholdingClassId,
-        RecordWithholdingRateRequestV1 request, SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        ValidateMetadata(metadata);
-        var companyId = RequireContextCompany();
-        var scope = await RequireAsync(companyId, cancellationToken);
-        if (withholdingClassId == Guid.Empty || !TryParseVersion(request.ExpectedVersion, 1, out var expectedVersion)
-            || request.BuyerCategoryId is not { } buyerCategoryId || buyerCategoryId == Guid.Empty
-            || request.Applies is not { } applies)
+        if (!TaxItemTypesV1.IsKnown(itemType) || !TryParseVersion(request.ExpectedVersion, 0, out var expectedVersion)
+            || request.VatApplies is not { } vatApplies || request.WithholdingApplies is not { } withholdingApplies)
         {
             return Unstored(Answers.Invalid(
-                "Tevkifat sınıfı, beklenen sürüm, alıcı kategorisi ve uygulanıp uygulanmadığı zorunludur."), metadata);
+                "Kalem tipi (Steel/Scrap/Service), beklenen sürüm, KDV ve tevkifat uygulanıp uygulanmadığı zorunludur."), metadata);
         }
 
-        decimal? rate = null;
-        string? code = null;
-        if (applies)
+        if (!TryReadDefault(vatApplies, request.VatPercent, request.ExemptionCode, withholdingApplies, request.WithholdingPercent,
+                request.WithholdingCode, out var values, out var detail))
         {
-            if (!TaxMasterCalculatorV1.TryParsePercent(request.RatePercent, allowZero: false, out var parsed)
-                || !TaxMasterCalculatorV1.TryNormalizeListCode(request.WithholdingCode, out var normalized))
-            {
-                return Unstored(Answers.Invalid(
-                    "Tevkifat uygulanıyorsa 0'dan büyük, en fazla 100, en çok 4 ondalıklı oran ve tevkifat kodu (A-Z, 0-9; en çok 16) girilir."),
-                    metadata);
-            }
-
-            (rate, code) = (parsed, normalized);
-        }
-        else if (request.RatePercent is not null || request.WithholdingCode is not null)
-        {
-            return Unstored(Answers.Invalid("Tevkifat uygulanmıyorsa oran ve kod girilmez."), metadata);
+            return Unstored(Answers.Invalid(detail), metadata);
         }
 
         if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
@@ -88,24 +41,129 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Unstored(reasonRefusal, metadata);
         }
 
+        var subject = itemType;
+        var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new
         {
-            ClassId = withholdingClassId,
+            ItemType = itemType,
             ExpectedVersion = expectedVersion,
-            BuyerCategoryId = buyerCategoryId,
-            Applies = applies,
-            RatePercent = rate,
-            WithholdingCode = code,
+            values.VatApplies,
+            values.VatPercent,
+            values.ExemptionCode,
+            values.WithholdingApplies,
+            values.WithholdingPercent,
+            values.WithholdingCode,
             Reason = reason,
             request.EffectiveFrom,
         });
-        var change = new RateChange(WithholdingRateRecordCommandName, TaxRateKindsV1.Withholding,
-            TaxCategoryKindsV1.WithholdingClass, withholdingClassId, expectedVersion, buyerCategoryId, applies, rate, code,
-            request.EffectiveFrom, reason);
-        return await RecordRateAsync(change, requestHash, companyId, scope, metadata, cancellationToken);
+        if (await FindExecutionAsync(DefaultRecordCommandName, keyHash, cancellationToken) is { } existing)
+        {
+            await RequireStillAsync(companyId, cancellationToken);
+            return Done("default-record", metadata, subject, Replay(existing, requestHash, metadata));
+        }
+
+        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var data = rows.ToData(companyId);
+        var today = SettingsBusinessDate.Today(timeProvider);
+        var series = rows.Series.SingleOrDefault(row => row.ItemType == itemType);
+        var effectiveFrom = request.EffectiveFrom ?? today;
+        var refusal = (series?.Version ?? 0) != expectedVersion ? Answers.VersionConflict()
+            : effectiveFrom < today ? Answers.EffectiveFromPast()
+            : values.ExemptionCode is { } exemption && !TaxMasterCalculatorV1.IsListed(data, TaxCodeListKindsV1.Exemption, exemption,
+                effectiveFrom)
+                ? Answers.Problem(422, TaxMasterProblemCodesV1.ExemptionCodeUnknown, "İstisna kodu listede yok.",
+                    "İstisna kodu, kaydın başladığı gün yürürlükteki istisna kod listesinde bulunmalıdır.")
+            : values.WithholdingCode is { } withholding && !TaxMasterCalculatorV1.IsListed(data, TaxCodeListKindsV1.Withholding,
+                withholding, effectiveFrom)
+                ? Answers.Problem(422, TaxMasterProblemCodesV1.WithholdingCodeUnknown, "Tevkifat kodu listede yok.",
+                    "Tevkifat kodu, kaydın başladığı gün yürürlükteki tevkifat kod listesinde bulunmalıdır.")
+            : null;
+        if (refusal is not null)
+        {
+            return Done("default-record", metadata, subject,
+                await StoreRefusalAsync(DefaultRecordCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
+        }
+
+        // The same default already in force on the date (catalog or record) changes nothing (no record, version or audit).
+        if (TaxMasterCalculatorV1.DefaultInForce(data, itemType, effectiveFrom) is { } inForce && SameDefault(inForce, values))
+        {
+            await RequireStillAsync(companyId, cancellationToken);
+            return Done("default-record", metadata, subject, await StoreRefusalAsync(DefaultRecordCommandName,
+                Answers.NoContent(), keyHash, requestHash, metadata, cancellationToken));
+        }
+
+        if (SettingsBusinessDate.Today(timeProvider) != today)
+        {
+            // The business day turned while the command was checked: nothing is written; the editor re-reads.
+            return Done("default-record", metadata, subject, Unstored(Answers.VersionConflict(), metadata));
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var versionBefore = series?.Version;
+        var previous = TaxMasterCalculatorV1.DefaultInForce(data, itemType, effectiveFrom);
+        if (series is null)
+        {
+            series = new TaxItemTypeDefaultSeriesRow
+            {
+                CompanyId = companyId, ItemType = itemType, Version = 1, LastRecordVersion = 1, UpdatedAtUtc = now,
+                UpdatedBy = metadata.ActorId,
+            };
+            database.TaxItemTypeDefaultSeries.Add(series);
+        }
+        else
+        {
+            series.Version = checked(series.Version + 1);
+            series.LastRecordVersion = checked(series.LastRecordVersion + 1);
+            series.UpdatedAtUtc = now;
+            series.UpdatedBy = metadata.ActorId;
+        }
+
+        var record = new TaxItemTypeDefaultRecordRow
+        {
+            CompanyId = companyId,
+            Id = Guid.NewGuid(),
+            ItemType = itemType,
+            RecordVersion = series.LastRecordVersion,
+            EffectiveFrom = effectiveFrom,
+            VatApplies = values.VatApplies,
+            VatPercent = values.VatPercent,
+            ExemptionCode = values.ExemptionCode,
+            WithholdingApplies = values.WithholdingApplies,
+            WithholdingPercent = values.WithholdingPercent,
+            WithholdingCode = values.WithholdingCode,
+            RecordedAtUtc = now,
+            RecordedBy = metadata.ActorId,
+            Reason = reason,
+        };
+        database.TaxItemTypeDefaultRecords.Add(record);
+
+        // SAT-D84 precedent: a record on the date of a not-yet-effective Settings record REPLACES it (withdrawn in this save),
+        // so a later withdrawal can never bring a hidden record back. A catalog entry is never withdrawn.
+        var superseded = data.Defaults
+            .Where(existingRecord => !existingRecord.IsWithdrawn && existingRecord.Source == TaxDefaultSourcesV1.Record
+                                     && existingRecord.ItemType == itemType && existingRecord.EffectiveFrom == effectiveFrom
+                                     && existingRecord.EffectiveFrom > today)
+            .Select(existingRecord => existingRecord.RecordId)
+            .ToArray();
+        foreach (var replaced in superseded)
+        {
+            database.TaxItemTypeDefaultWithdrawals.Add(new TaxItemTypeDefaultWithdrawalRow
+            {
+                CompanyId = companyId, RecordId = replaced, ReplacedByRecordId = record.Id, WithdrawnAtUtc = now,
+                WithdrawnBy = metadata.ActorId, Reason = reason,
+            });
+        }
+
+        Audit(companyId, superseded.Length == 0 ? "settings.tax-item-type-default.recorded.v1" : "settings.tax-item-type-default.corrected.v1",
+            DefaultEntityType, subject, superseded.Length == 0 ? "RecordDefault" : "CorrectDefault", versionBefore, series.Version,
+            scope, previous is null ? null : DefaultSnapshot(companyId, previous, []),
+            DefaultSnapshot(companyId, ToData(record), superseded), reason, metadata);
+        await RequireStillAsync(companyId, cancellationToken);
+        return Done("default-record", metadata, subject, await SaveChangeAsync(DefaultRecordCommandName, Answers.NoContent(),
+            keyHash, requestHash, metadata, _ => Task.FromResult(Answers.VersionConflict()), cancellationToken));
     }
 
-    public async Task<TaxMasterCommandResultV1> WithdrawRateRecordAsync(Guid recordId, WithdrawTaxRateRecordRequestV1 request,
+    public async Task<TaxMasterCommandResultV1> WithdrawItemTypeDefaultAsync(Guid recordId, WithdrawTaxRecordRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -114,7 +172,7 @@ internal sealed partial class SettingsTaxMasterAdministration
         var scope = await RequireAsync(companyId, cancellationToken);
         if (recordId == Guid.Empty || !TryParseVersion(request.ExpectedVersion, 1, out var expectedVersion))
         {
-            return Unstored(Answers.Invalid("Kayıt ve sınıfın beklenen sürümü (pozitif tam sayı metni) zorunludur."), metadata);
+            return Unstored(Answers.Invalid("Kayıt ve kalem tipinin beklenen sürümü (pozitif tam sayı metni) zorunludur."), metadata);
         }
 
         if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
@@ -125,57 +183,56 @@ internal sealed partial class SettingsTaxMasterAdministration
         var subject = recordId.ToString("D");
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
         var requestHash = IdempotencyHash.ComputePayload(new { RecordId = recordId, ExpectedVersion = expectedVersion, Reason = reason });
-        if (await FindExecutionAsync(RateWithdrawCommandName, keyHash, cancellationToken) is { } existing)
+        if (await FindExecutionAsync(DefaultWithdrawCommandName, keyHash, cancellationToken) is { } existing)
         {
             await RequireStillAsync(companyId, cancellationToken);
-            return Done("rate-withdraw", metadata, subject, Replay(existing, requestHash, metadata));
+            return Done("default-withdraw", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, trackCategoriesAndLists: true, cancellationToken);
-        var data = rows.ToData();
+        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
-        var record = rows.Records.SingleOrDefault(row => row.Id == recordId);
-        var owner = record is null ? null : rows.Categories.SingleOrDefault(row => row.Id == record.ClassId);
-        var target = data.Records.SingleOrDefault(row => row.RecordId == recordId);
-        var refusal = record is null || owner is null || target is null ? Answers.NotFound()
-            : owner.Version != expectedVersion ? Answers.VersionConflict()
+        // Only a Settings record can be withdrawn; a catalog id is "not found" here (it is reviewed source, not a row).
+        var target = data.Defaults.SingleOrDefault(record => record.RecordId == recordId && record.Source == TaxDefaultSourcesV1.Record);
+        var series = target is null ? null : rows.Series.SingleOrDefault(row => row.ItemType == target.ItemType);
+        var refusal = target is null || series is null ? Answers.NotFound()
+            : series.Version != expectedVersion ? Answers.VersionConflict()
             : target.IsWithdrawn ? Answers.RecordWithdrawn()
             : target.EffectiveFrom <= today ? Answers.RecordInEffect()
             : null;
         if (refusal is not null)
         {
-            return Done("rate-withdraw", metadata, subject,
-                await StoreRefusalAsync(RateWithdrawCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
+            return Done("default-withdraw", metadata, subject,
+                await StoreRefusalAsync(DefaultWithdrawCommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
         }
 
         if (SettingsBusinessDate.Today(timeProvider) != today)
         {
-            return Done("rate-withdraw", metadata, subject, Unstored(Answers.VersionConflict(), metadata));
+            return Done("default-withdraw", metadata, subject, Unstored(Answers.VersionConflict(), metadata));
         }
 
-        var versionBefore = owner!.Version;
-        database.TaxRateRecordWithdrawals.Add(new TaxRateRecordWithdrawalRow
+        var now = timeProvider.GetUtcNow();
+        var versionBefore = series!.Version;
+        database.TaxItemTypeDefaultWithdrawals.Add(new TaxItemTypeDefaultWithdrawalRow
         {
-            CompanyId = companyId,
-            RecordId = recordId,
-            ReplacedByRecordId = null,
-            WithdrawnAtUtc = timeProvider.GetUtcNow(),
-            WithdrawnBy = metadata.ActorId,
-            Reason = reason,
+            CompanyId = companyId, RecordId = recordId, ReplacedByRecordId = null, WithdrawnAtUtc = now,
+            WithdrawnBy = metadata.ActorId, Reason = reason,
         });
-        Touch(owner, metadata);
-        Audit(companyId, "settings.tax-rate.withdrawn.v1", CategoryEntityType, owner.Id.ToString("D"), "WithdrawRate",
-            versionBefore, owner.Version, scope, RecordSnapshot(owner, record!, []), new
+        series.Version = checked(series.Version + 1);
+        series.UpdatedAtUtc = now;
+        series.UpdatedBy = metadata.ActorId;
+        Audit(companyId, "settings.tax-item-type-default.withdrawn.v1", DefaultEntityType, target!.ItemType, "WithdrawDefault",
+            versionBefore, series.Version, scope, DefaultSnapshot(companyId, target, []), new
             {
-                ClassId = owner.Id,
-                owner.CompanyId,
+                CompanyId = companyId,
+                target.ItemType,
                 WithdrawnRecordId = recordId,
-                record!.RecordVersion,
-                record.EffectiveFrom,
+                target.RecordVersion,
+                target.EffectiveFrom,
                 Withdrawn = true,
             }, reason, metadata);
         await RequireStillAsync(companyId, cancellationToken);
-        return Done("rate-withdraw", metadata, subject, await SaveChangeAsync(RateWithdrawCommandName, Answers.NoContent(),
+        return Done("default-withdraw", metadata, subject, await SaveChangeAsync(DefaultWithdrawCommandName, Answers.NoContent(),
             keyHash, requestHash, metadata, _ => Task.FromResult(Answers.VersionConflict()), cancellationToken));
     }
 
@@ -217,8 +274,8 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("list-publish", metadata, listKind, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, trackCategoriesAndLists: true, cancellationToken);
-        var data = rows.ToData();
+        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var list = rows.Lists.SingleOrDefault(row => row.Kind == listKind);
         var effectiveFrom = request.EffectiveFrom ?? today;
@@ -341,8 +398,8 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("list-withdraw", metadata, listKind, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, trackCategoriesAndLists: true, cancellationToken);
-        var data = rows.ToData();
+        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var list = rows.Lists.SingleOrDefault(row => row.Kind == listKind);
         var target = data.CodeLists.SingleOrDefault(version => version.Kind == listKind && version.ListVersion == listVersion);
@@ -382,140 +439,102 @@ internal sealed partial class SettingsTaxMasterAdministration
             keyHash, requestHash, metadata, _ => Task.FromResult(Answers.VersionConflict()), cancellationToken));
     }
 
-    /// <summary>A rate command after its input checks.</summary>
-    private sealed record RateChange(
-        string CommandName,
-        string RateKind,
-        string ClassKind,
-        Guid ClassId,
-        long ExpectedVersion,
-        Guid? BuyerCategoryId,
-        bool Applies,
-        decimal? RatePercent,
-        string? WithholdingCode,
-        DateOnly? EffectiveFrom,
-        string Reason);
+    private sealed record DefaultValues(bool VatApplies, decimal? VatPercent, string? ExemptionCode, bool WithholdingApplies,
+        decimal? WithholdingPercent, string? WithholdingCode);
 
-    private async Task<TaxMasterCommandResultV1> RecordRateAsync(RateChange change, string requestHash, Guid companyId,
-        PermissionScope scope, SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken)
+    private static bool TryReadDefault(bool vatApplies, string? vatPercentText, string? exemptionCodeText, bool withholdingApplies,
+        string? withholdingPercentText, string? withholdingCodeText, out DefaultValues values, out string detail)
     {
-        var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var subject = change.ClassId.ToString("D");
-        if (await FindExecutionAsync(change.CommandName, keyHash, cancellationToken) is { } existing)
+        values = new DefaultValues(false, null, null, false, null, null);
+        detail = string.Empty;
+        decimal? vatPercent = null;
+        string? exemptionCode = null;
+        if (vatApplies)
         {
-            await RequireStillAsync(companyId, cancellationToken);
-            return Done("rate-record", metadata, subject, Replay(existing, requestHash, metadata));
-        }
-
-        var rows = await TaxMasterRows.ReadAsync(database, trackCategoriesAndLists: true, cancellationToken);
-        var data = rows.ToData();
-        var today = SettingsBusinessDate.Today(timeProvider);
-        var owner = rows.Categories.SingleOrDefault(row => row.Id == change.ClassId);
-        var effectiveFrom = change.EffectiveFrom ?? today;
-        var refusal = owner is null ? Answers.NotFound()
-            : owner.Kind != change.ClassKind
-                ? Answers.Problem(422, TaxMasterProblemCodesV1.CategoryKindMismatch, "Kategori türü uyuşmuyor.",
-                    "Bu kayıt yalnız ilgili türdeki sınıfa girilir.")
-            : owner.Version != change.ExpectedVersion ? Answers.VersionConflict()
-            : change.BuyerCategoryId is { } buyer
-              && !rows.Categories.Any(row => row.Id == buyer && row.Kind == TaxCategoryKindsV1.BuyerCategory)
-                ? Answers.Problem(422, TaxMasterProblemCodesV1.BuyerCategoryNotFound, "Alıcı kategorisi bulunamadı.",
-                    "Alıcı kategorisi bu şirkette yok.")
-            : effectiveFrom < today ? Answers.EffectiveFromPast()
-            : change.WithholdingCode is { } code
-              && !(TaxMasterCalculatorV1.ListInForce(data, TaxCodeListKindsV1.Withholding, effectiveFrom)?.Entries
-                  .Any(entry => string.Equals(entry.Code, code, StringComparison.Ordinal)) ?? false)
-                ? Answers.Problem(422, TaxMasterProblemCodesV1.WithholdingCodeUnknown, "Tevkifat kodu listede yok.",
-                    "Tevkifat kodu, kaydın başladığı gün yürürlükteki tevkifat kod listesinde bulunmalıdır.")
-            : null;
-        if (refusal is not null)
-        {
-            return Done("rate-record", metadata, subject,
-                await StoreRefusalAsync(change.CommandName, refusal, keyHash, requestHash, metadata, cancellationToken));
-        }
-
-        // The same value already in force on the date changes nothing (no record, no version, no audit).
-        if (TaxMasterCalculatorV1.RateInForce(data, change.RateKind, change.ClassId, change.BuyerCategoryId, effectiveFrom) is
-                { } inForce
-            && inForce.Applies == change.Applies && inForce.RatePercent == change.RatePercent
-            && string.Equals(inForce.WithholdingCode, change.WithholdingCode, StringComparison.Ordinal))
-        {
-            await RequireStillAsync(companyId, cancellationToken);
-            return Done("rate-record", metadata, subject, await StoreRefusalAsync(change.CommandName, Answers.NoContent(),
-                keyHash, requestHash, metadata, cancellationToken));
-        }
-
-        if (SettingsBusinessDate.Today(timeProvider) != today)
-        {
-            // The business day turned while the command was checked: nothing is written; the editor re-reads.
-            return Done("rate-record", metadata, subject, Unstored(Answers.VersionConflict(), metadata));
-        }
-
-        var now = timeProvider.GetUtcNow();
-        var versionBefore = owner!.Version;
-        var record = new TaxRateRecordRow
-        {
-            CompanyId = companyId,
-            Id = Guid.NewGuid(),
-            Kind = change.RateKind,
-            ClassId = change.ClassId,
-            BuyerCategoryId = change.BuyerCategoryId,
-            RecordVersion = checked(owner.RecordVersion + 1),
-            EffectiveFrom = effectiveFrom,
-            Applies = change.Applies,
-            RatePercent = change.RatePercent,
-            WithholdingCode = change.WithholdingCode,
-            RecordedAtUtc = now,
-            RecordedBy = metadata.ActorId,
-            Reason = change.Reason,
-        };
-        database.TaxRateRecords.Add(record);
-        owner.RecordVersion = record.RecordVersion;
-
-        // SAT-D84 precedent: a record on the date of a not-yet-effective one of the same series REPLACES it, so a later
-        // withdrawal can never bring a hidden record back.
-        var superseded = data.Records
-            .Where(existingRecord => !existingRecord.IsWithdrawn && existingRecord.Kind == change.RateKind
-                                     && existingRecord.ClassId == change.ClassId
-                                     && existingRecord.BuyerCategoryId == change.BuyerCategoryId
-                                     && existingRecord.EffectiveFrom == effectiveFrom && existingRecord.EffectiveFrom > today)
-            .Select(existingRecord => existingRecord.RecordId)
-            .ToArray();
-        foreach (var replaced in superseded)
-        {
-            database.TaxRateRecordWithdrawals.Add(new TaxRateRecordWithdrawalRow
+            if (!TaxMasterCalculatorV1.TryParsePercent(vatPercentText, allowZero: true, out var parsed) || exemptionCodeText is not null)
             {
-                CompanyId = companyId, RecordId = replaced, ReplacedByRecordId = record.Id, WithdrawnAtUtc = now,
-                WithdrawnBy = metadata.ActorId, Reason = change.Reason,
-            });
+                detail = "KDV uygulanıyorsa 0-100 arası, en çok 4 ondalıklı oran girilir; istisna kodu girilmez.";
+                return false;
+            }
+
+            vatPercent = parsed;
+        }
+        else
+        {
+            if (vatPercentText is not null || withholdingApplies)
+            {
+                detail = "KDV uygulanmıyorsa oran ve tevkifat girilmez; istisna kodu isteğe bağlıdır.";
+                return false;
+            }
+
+            if (exemptionCodeText is not null)
+            {
+                if (!TaxMasterCalculatorV1.TryNormalizeListCode(exemptionCodeText, out var code))
+                {
+                    detail = "İstisna kodu yalnız büyük harf ve rakam (en çok 16) olabilir.";
+                    return false;
+                }
+
+                exemptionCode = code;
+            }
         }
 
-        Touch(owner, metadata);
-        var previous = TaxMasterCalculatorV1.RateInForce(data, change.RateKind, change.ClassId, change.BuyerCategoryId,
-            effectiveFrom) is { } before
-            ? rows.Records.Single(row => row.Id == before.RecordId)
-            : null;
-        Audit(companyId, superseded.Length == 0 ? "settings.tax-rate.recorded.v1" : "settings.tax-rate.corrected.v1",
-            CategoryEntityType, subject, superseded.Length == 0 ? "RecordRate" : "CorrectRate", versionBefore, owner.Version,
-            scope, previous is null ? null : RecordSnapshot(owner, previous, []), RecordSnapshot(owner, record, superseded),
-            change.Reason, metadata);
-        await RequireStillAsync(companyId, cancellationToken);
-        return Done("rate-record", metadata, subject, await SaveChangeAsync(change.CommandName, Answers.NoContent(), keyHash,
-            requestHash, metadata, _ => Task.FromResult(Answers.VersionConflict()), cancellationToken));
+        decimal? withholdingPercent = null;
+        string? withholdingCode = null;
+        if (withholdingApplies)
+        {
+            if (!TaxMasterCalculatorV1.TryParsePercent(withholdingPercentText, allowZero: false, out var parsed))
+            {
+                detail = "Tevkifat uygulanıyorsa 0'dan büyük, en fazla 100, en çok 4 ondalıklı oran girilir.";
+                return false;
+            }
+
+            withholdingPercent = parsed;
+            if (withholdingCodeText is not null)
+            {
+                if (!TaxMasterCalculatorV1.TryNormalizeListCode(withholdingCodeText, out var code))
+                {
+                    detail = "Tevkifat kodu yalnız büyük harf ve rakam (en çok 16) olabilir.";
+                    return false;
+                }
+
+                withholdingCode = code;
+            }
+        }
+        else if (withholdingPercentText is not null || withholdingCodeText is not null)
+        {
+            detail = "Tevkifat uygulanmıyorsa oran ve kod girilmez.";
+            return false;
+        }
+
+        values = new DefaultValues(vatApplies, vatPercent, exemptionCode, withholdingApplies, withholdingPercent, withholdingCode);
+        return true;
     }
 
-    private static object RecordSnapshot(TaxCategoryRow owner, TaxRateRecordRow record, IReadOnlyList<Guid> replacesRecordIds) => new
+    private static bool SameDefault(TaxItemTypeDefaultDataV1 record, DefaultValues values) =>
+        record.VatApplies == values.VatApplies && record.VatPercent == values.VatPercent
+        && string.Equals(record.ExemptionCode, values.ExemptionCode, StringComparison.Ordinal)
+        && record.WithholdingApplies == values.WithholdingApplies && record.WithholdingPercent == values.WithholdingPercent
+        && string.Equals(record.WithholdingCode, values.WithholdingCode, StringComparison.Ordinal);
+
+    private static TaxItemTypeDefaultDataV1 ToData(TaxItemTypeDefaultRecordRow row) =>
+        new TaxItemTypeDefaultDataV1(row.Id, row.CompanyId, row.ItemType, TaxDefaultSourcesV1.Record, row.RecordVersion,
+            row.EffectiveFrom, row.VatApplies, row.VatPercent, row.ExemptionCode, row.WithholdingApplies, row.WithholdingPercent,
+            row.WithholdingCode);
+
+    private static object DefaultSnapshot(Guid companyId, TaxItemTypeDefaultDataV1 record, IReadOnlyList<Guid> replacesRecordIds) => new
     {
-        ClassId = owner.Id,
-        owner.CompanyId,
-        ClassCode = owner.Code,
-        RecordId = record.Id,
-        record.Kind,
-        record.BuyerCategoryId,
+        CompanyId = companyId,
+        record.ItemType,
+        record.RecordId,
+        record.Source,
         record.RecordVersion,
         record.EffectiveFrom,
-        record.Applies,
-        RatePercent = record.RatePercent is { } rate ? TaxMasterCalculatorV1.Format(rate) : null,
+        record.VatApplies,
+        VatPercent = record.VatPercent is { } vat ? TaxMasterCalculatorV1.Format(vat) : null,
+        record.ExemptionCode,
+        record.WithholdingApplies,
+        WithholdingPercent = record.WithholdingPercent is { } withholding ? TaxMasterCalculatorV1.Format(withholding) : null,
         record.WithholdingCode,
         ReplacesRecordIds = replacesRecordIds,
     };

@@ -5,7 +5,7 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
-/// The withholding amount threshold (VUK 232 fatura sınırı, SAT-D93; Sinan 2026-10-31): a dated Settings value that starts
+/// The withholding amount threshold (VUK 232 fatura sınırı, SAT-D135, EK19): a dated Settings value that starts
 /// EMPTY and is entered by an authorized person (amount + the currency it is in, never assumed). The same timeline rules as
 /// the rate records: a later date applies by itself, a same-date record replaces a not-yet-effective one, a not-yet-effective
 /// record can be withdrawn, a record in force never changes.
@@ -53,8 +53,8 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("threshold-record", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, trackCategoriesAndLists: true, cancellationToken);
-        var data = rows.ToData();
+        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var header = rows.Threshold;
         var effectiveFrom = request.EffectiveFrom ?? today;
@@ -111,7 +111,7 @@ internal sealed partial class SettingsTaxMasterAdministration
             Reason = reason,
         };
         database.TaxWithholdingThresholdRecords.Add(record);
-        var superseded = (data.Thresholds ?? [])
+        var superseded = data.Thresholds
             .Where(existingRecord => !existingRecord.IsWithdrawn && existingRecord.EffectiveFrom == effectiveFrom
                                      && existingRecord.EffectiveFrom > today)
             .Select(existingRecord => existingRecord.RecordId)
@@ -144,7 +144,7 @@ internal sealed partial class SettingsTaxMasterAdministration
     }
 
     public async Task<TaxMasterCommandResultV1> WithdrawWithholdingThresholdAsync(Guid recordId,
-        WithdrawTaxRateRecordRequestV1 request, SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
+        WithdrawTaxRecordRequestV1 request, SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateMetadata(metadata);
@@ -169,11 +169,11 @@ internal sealed partial class SettingsTaxMasterAdministration
             return Done("threshold-withdraw", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var rows = await TaxMasterRows.ReadAsync(database, trackCategoriesAndLists: true, cancellationToken);
-        var data = rows.ToData();
+        var rows = await TaxMasterRows.ReadAsync(database, track: true, cancellationToken);
+        var data = rows.ToData(companyId);
         var today = SettingsBusinessDate.Today(timeProvider);
         var header = rows.Threshold;
-        var target = (data.Thresholds ?? []).SingleOrDefault(record => record.RecordId == recordId);
+        var target = data.Thresholds.SingleOrDefault(record => record.RecordId == recordId);
         var refusal = header is null || target is null ? Answers.NotFound()
             : header.Version != expectedVersion ? Answers.VersionConflict()
             : target.IsWithdrawn ? Answers.RecordWithdrawn()

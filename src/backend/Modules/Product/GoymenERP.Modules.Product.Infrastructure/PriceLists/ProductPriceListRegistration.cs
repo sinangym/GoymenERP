@@ -48,12 +48,12 @@ public static class ProductPriceListRegistration
         services.AddScoped<IProductQuantityPriceReferenceReaderV1>(CreateReader);
         // MOD-02: the SAT-D9 tier chain beside the unchanged V1 readers.
         services.AddScoped<IProductQuantityPriceReferenceReaderV2>(CreateReader);
-        // MOD-03 (SAT-D73/D74/D82): the company's product tax classification and its read port (same company-scoped context).
-        services.AddScoped(CreateTaxClassificationService);
-        services.AddScoped<IProductTaxClassificationServiceV1>(serviceProvider =>
-            serviceProvider.GetRequiredService<ProductTaxClassificationService>());
-        services.AddScoped<IProductTaxClassificationReaderV1>(serviceProvider =>
-            serviceProvider.GetRequiredService<ProductTaxClassificationService>());
+        // SAT-D134: the company's product item type and its read port (same company-scoped context).
+        services.AddScoped(CreateItemTypeService);
+        services.AddScoped<IProductItemTypeServiceV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductItemTypeService>());
+        services.AddScoped<IProductItemTypeReaderV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductItemTypeService>());
         return services;
     }
 
@@ -91,15 +91,13 @@ public static class ProductPriceListRegistration
         // MOD-02: the Cari owner's answer for a customer-specific list; absent → such a list is refused 503.
         serviceProvider.GetService<IProductPriceListCustomerPortV1>());
 
-    private static ProductTaxClassificationService CreateTaxClassificationService(IServiceProvider serviceProvider) => new(
+    private static ProductItemTypeService CreateItemTypeService(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
         serviceProvider.GetRequiredService<ICompanyContext>(),
         serviceProvider.GetRequiredService<ICurrentUser>(),
         serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
         serviceProvider.GetRequiredService<IAuditEventCollector>(),
-        serviceProvider.GetRequiredService<TimeProvider>(),
-        // The Settings owner's category read; absent → a classification write is refused 503.
-        serviceProvider.GetService<ISettingsTaxCategoryReaderV1>());
+        serviceProvider.GetRequiredService<TimeProvider>());
 
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListStore>(),

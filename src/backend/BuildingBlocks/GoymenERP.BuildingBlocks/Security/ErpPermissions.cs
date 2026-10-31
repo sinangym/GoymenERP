@@ -74,12 +74,12 @@ public static class ErpPermissions
     public const string ProductPriceListsPublish = "product.price-lists.publish";
 
     /// <summary>
-    /// MOD-03 (SAT-D73/D74/D82, <c>SINAN_KARARLARI_2026-10-28_SATIS_EK12.md</c>): the Product owner's ONE name for reading and
-    /// setting a product's VAT class and withholding class in the server-resolved company
-    /// (<c>ProductTaxClassificationPermissionsV1.Manage</c>). Registered, not granted: no role, seed or user receives it here;
-    /// who receives it is a human grant gate. Company-wide only. Not Critical.
+    /// SAT-D134 (Sinan, 2026-10-31, <c>SINAN_KARARLARI_2026-10-31_SATIS_EK19.md</c>): the Product owner's ONE name for reading and
+    /// setting a product's item type (demir / hurda / hizmet) in the server-resolved company (<c>ProductItemTypePermissionsV1.Manage</c>).
+    /// Registered, not granted: no role, seed or user receives it here; who receives it is a human grant gate. Company-wide only.
+    /// Not Critical.
     /// </summary>
-    public const string ProductTaxClassificationManage = "product.tax-classification.manage";
+    public const string ProductItemTypeManage = "product.item-type.manage";
 
     /// <summary>
     /// T07(a) Inventory reads (#310): a label's view and its stock position by position. Registering
@@ -687,8 +687,8 @@ public static class ErpPermissions
 
     /// <summary>
     /// SAT-D83 (Sinan, 2026-10-28, <c>SINAN_KARARLARI_2026-10-28_SATIS_EK12.md</c>): ONE name for reading and editing the Settings
-    /// tax master — VAT classes and their dated rates, withholding classes and buyer categories with their dated withholding
-    /// records, and the UBL-TR exemption / withholding code lists (<c>SettingsTaxMasterPermissionManifestV1.TaxMasterManage</c>).
+    /// tax master — the default tax per item type (SAT-D139), the UBL-TR exemption / withholding code lists and the VUK 232
+    /// withholding threshold (<c>SettingsTaxMasterPermissionManifestV1.TaxMasterManage</c>).
     /// The Muhasebe/Finans and Admin personas are the intended holders; registered, not granted: no role, seed or user receives
     /// it here (a human grant gate). Company-wide only. Not Critical.
     /// </summary>
@@ -740,7 +740,7 @@ public static class ErpPermissions
             ProductPriceListsRead,
             ProductPriceListsWrite,
             ProductPriceListsPublish,
-            ProductTaxClassificationManage,
+            ProductItemTypeManage,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,
@@ -875,7 +875,7 @@ public static class ErpPermissions
             ProductPriceListsRead,
             ProductPriceListsWrite,
             ProductPriceListsPublish,
-            ProductTaxClassificationManage,
+            ProductItemTypeManage,
             SalesDraftsCreate,
             SalesDraftsRead,
             SalesOrdersApprove,

@@ -8,16 +8,16 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
-/// MOD-03 tax master (SAT-D73/D74/D82/D83, EK12; SAT-D93/D110, EK13): the Settings owner's VAT classes, withholding classes
-/// and buyer categories, their effective-dated rate records and the UBL-TR exemption / withholding code lists. Every route is
+/// MOD-03 tax master (SAT-D83, EK12; SAT-D93, EK13; SAT-D133…D139, EK19): the Settings owner's default tax per item type (the
+/// reviewed SAT-D139 catalog as the base, Settings records over it), the UBL-TR exemption / withholding code lists and the VUK
+/// 232 withholding threshold. Every route is
 /// in the server-resolved company (X-Company-Id) under ONE name, <see cref="SettingsTaxMasterPermissionManifestV1.TaxMasterManage"/>
 /// (company-wide, not Critical, granted to no role here), re-authorized by the service. Responses are private, no-store.
 /// <list type="bullet">
-/// <item><c>GET /api/v1/settings/tax-master</c> — categories, the rate records in force today and scheduled, and both code
-/// lists. Nothing is seeded: an empty master is "kaynak yok" everywhere.</item>
-/// <item><c>POST …/categories</c> (201 + id) · <c>PUT …/categories/{categoryId}/name</c> ·
-/// <c>POST …/vat-classes/{classId}/rates</c> · <c>POST …/withholding-classes/{classId}/rates</c> ·
-/// <c>POST …/rate-records/{recordId}/withdrawal</c> · <c>POST …/code-lists/{listKind}/versions</c> ·
+/// <item><c>GET /api/v1/settings/tax-master</c> — the default per item type in force today and scheduled, both code lists and
+/// the threshold. Nothing is seeded: a code list or threshold not entered is "kaynak yok".</item>
+/// <item><c>POST …/item-type-defaults/{itemType}</c> · <c>POST …/item-type-defaults/records/{recordId}/withdrawal</c> ·
+/// <c>POST …/code-lists/{listKind}/versions</c> ·
 /// <c>POST …/code-lists/{listKind}/versions/{listVersion}/withdrawal</c> · SAT-D93 <c>POST …/withholding-threshold</c> ·
 /// <c>POST …/withholding-threshold/records/{recordId}/withdrawal</c> (204).</item>
 /// </list>
@@ -57,8 +57,10 @@ public static class SettingsTaxMasterEndpoints
             .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 
-        group.MapPost("/categories", async (
-                CreateTaxCategoryRequestV1 request,
+        // SAT-D139: the default tax per item type (the reviewed catalog is the base; a record replaces it from its date).
+        group.MapPost("/item-type-defaults/{itemType}", async (
+                string itemType,
+                RecordItemTypeDefaultRequestV1 request,
                 ISettingsTaxMasterAdministrationV1 service,
                 ICurrentUser currentUser,
                 ICompanyContext companyContext,
@@ -66,122 +68,30 @@ public static class SettingsTaxMasterEndpoints
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
             await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
-                metadata => service.CreateCategoryAsync(request, metadata, cancellationToken)))
+                metadata => service.RecordItemTypeDefaultAsync(itemType, request, metadata, cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
-            .WithName("CreateSettingsTaxCategoryV1")
-            .WithIdempotencyContract(StatusCodes.Status201Created, StatusCodes.Status409Conflict)
-            .Accepts<CreateTaxCategoryRequestV1>("application/json")
-            .Produces<TaxCategoryCreatedV1>(StatusCodes.Status201Created)
-            .ProducesErpBadRequest(CommandBadRequestCodes)
-            .AllowsCodeLessErpBadRequestBody()
-            .ProducesErpUnsupportedMediaType()
-            .ProducesErpConflict(
-                TaxMasterProblemCodesV1.IdempotencyConflict,
-                TaxMasterProblemCodesV1.CategoryCodeTaken,
-                TaxMasterProblemCodesV1.CategoryNameTaken)
-            .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
-            .ProducesErpAuthenticatedProblems();
-
-        group.MapPut("/categories/{categoryId:guid}/name", async (
-                Guid categoryId,
-                RenameTaxCategoryRequestV1 request,
-                ISettingsTaxMasterAdministrationV1 service,
-                ICurrentUser currentUser,
-                ICompanyContext companyContext,
-                ICorrelationContext correlationContext,
-                HttpContext httpContext,
-                CancellationToken cancellationToken) =>
-            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
-                metadata => service.RenameCategoryAsync(categoryId, request, metadata, cancellationToken)))
-            .RequireCompanyContext()
-            .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
-            .RequiresNonEmptyGuidPathParameter("categoryId")
-            .WithName("RenameSettingsTaxCategoryV1")
-            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
-                StatusCodes.Status409Conflict)
-            .Accepts<RenameTaxCategoryRequestV1>("application/json")
+            .WithName("RecordSettingsItemTypeDefaultV1")
+            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status409Conflict,
+                StatusCodes.Status422UnprocessableEntity)
+            .Accepts<RecordItemTypeDefaultRequestV1>("application/json")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesErpBadRequest(CommandBadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
-            .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(
-                TaxMasterProblemCodesV1.IdempotencyConflict,
-                TaxMasterProblemCodesV1.VersionConflict,
-                TaxMasterProblemCodesV1.CategoryNameTaken)
-            .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
-            .ProducesErpAuthenticatedProblems();
-
-        group.MapPost("/vat-classes/{classId:guid}/rates", async (
-                Guid classId,
-                RecordVatRateRequestV1 request,
-                ISettingsTaxMasterAdministrationV1 service,
-                ICurrentUser currentUser,
-                ICompanyContext companyContext,
-                ICorrelationContext correlationContext,
-                HttpContext httpContext,
-                CancellationToken cancellationToken) =>
-            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
-                metadata => service.RecordVatRateAsync(classId, request, metadata, cancellationToken)))
-            .RequireCompanyContext()
-            .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
-            .RequiresNonEmptyGuidPathParameter("classId")
-            .WithName("RecordSettingsVatRateV1")
-            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
-                StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity)
-            .Accepts<RecordVatRateRequestV1>("application/json")
-            .Produces(StatusCodes.Status204NoContent)
-            .ProducesErpBadRequest(CommandBadRequestCodes)
-            .AllowsCodeLessErpBadRequestBody()
-            .ProducesErpUnsupportedMediaType()
-            .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(
                 TaxMasterProblemCodesV1.IdempotencyConflict,
                 TaxMasterProblemCodesV1.VersionConflict)
             .ProducesErpUnprocessableEntity(
-                TaxMasterProblemCodesV1.CategoryKindMismatch,
-                TaxMasterProblemCodesV1.EffectiveFromPast)
-            .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
-            .ProducesErpAuthenticatedProblems();
-
-        group.MapPost("/withholding-classes/{classId:guid}/rates", async (
-                Guid classId,
-                RecordWithholdingRateRequestV1 request,
-                ISettingsTaxMasterAdministrationV1 service,
-                ICurrentUser currentUser,
-                ICompanyContext companyContext,
-                ICorrelationContext correlationContext,
-                HttpContext httpContext,
-                CancellationToken cancellationToken) =>
-            await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
-                metadata => service.RecordWithholdingRateAsync(classId, request, metadata, cancellationToken)))
-            .RequireCompanyContext()
-            .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
-            .RequiresNonEmptyGuidPathParameter("classId")
-            .WithName("RecordSettingsWithholdingRateV1")
-            .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
-                StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity)
-            .Accepts<RecordWithholdingRateRequestV1>("application/json")
-            .Produces(StatusCodes.Status204NoContent)
-            .ProducesErpBadRequest(CommandBadRequestCodes)
-            .AllowsCodeLessErpBadRequestBody()
-            .ProducesErpUnsupportedMediaType()
-            .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(
-                TaxMasterProblemCodesV1.IdempotencyConflict,
-                TaxMasterProblemCodesV1.VersionConflict)
-            .ProducesErpUnprocessableEntity(
-                TaxMasterProblemCodesV1.CategoryKindMismatch,
-                TaxMasterProblemCodesV1.BuyerCategoryNotFound,
+                TaxMasterProblemCodesV1.ExemptionCodeUnknown,
                 TaxMasterProblemCodesV1.WithholdingCodeUnknown,
                 TaxMasterProblemCodesV1.EffectiveFromPast)
             .ProducesErpServiceUnavailable(TaxMasterProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 
-        group.MapPost("/rate-records/{recordId:guid}/withdrawal", async (
+        group.MapPost("/item-type-defaults/records/{recordId:guid}/withdrawal", async (
                 Guid recordId,
-                WithdrawTaxRateRecordRequestV1 request,
+                WithdrawTaxRecordRequestV1 request,
                 ISettingsTaxMasterAdministrationV1 service,
                 ICurrentUser currentUser,
                 ICompanyContext companyContext,
@@ -189,14 +99,14 @@ public static class SettingsTaxMasterEndpoints
                 HttpContext httpContext,
                 CancellationToken cancellationToken) =>
             await CommandAsync(httpContext, currentUser, companyContext, correlationContext,
-                metadata => service.WithdrawRateRecordAsync(recordId, request, metadata, cancellationToken)))
+                metadata => service.WithdrawItemTypeDefaultAsync(recordId, request, metadata, cancellationToken)))
             .RequireCompanyContext()
             .RequireAuthorization(SettingsTaxMasterPermissionManifestV1.TaxMasterManage)
             .RequiresNonEmptyGuidPathParameter("recordId")
-            .WithName("WithdrawSettingsTaxRateRecordV1")
+            .WithName("WithdrawSettingsItemTypeDefaultV1")
             .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
                 StatusCodes.Status409Conflict)
-            .Accepts<WithdrawTaxRateRecordRequestV1>("application/json")
+            .Accepts<WithdrawTaxRecordRequestV1>("application/json")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesErpBadRequest(CommandBadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
@@ -299,7 +209,7 @@ public static class SettingsTaxMasterEndpoints
 
         group.MapPost("/withholding-threshold/records/{recordId:guid}/withdrawal", async (
                 Guid recordId,
-                WithdrawTaxRateRecordRequestV1 request,
+                WithdrawTaxRecordRequestV1 request,
                 ISettingsTaxMasterAdministrationV1 service,
                 ICurrentUser currentUser,
                 ICompanyContext companyContext,
@@ -314,7 +224,7 @@ public static class SettingsTaxMasterEndpoints
             .WithName("WithdrawSettingsWithholdingThresholdV1")
             .WithIdempotencyContract(StatusCodes.Status204NoContent, StatusCodes.Status404NotFound,
                 StatusCodes.Status409Conflict)
-            .Accepts<WithdrawTaxRateRecordRequestV1>("application/json")
+            .Accepts<WithdrawTaxRecordRequestV1>("application/json")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesErpBadRequest(CommandBadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
@@ -397,8 +307,6 @@ public static class SettingsTaxMasterEndpoints
         var answer = result.Answer;
         return answer.StatusCode switch
         {
-            StatusCodes.Status201Created when answer.Created is { } created => Results.Json(created,
-                statusCode: StatusCodes.Status201Created),
             StatusCodes.Status204NoContent => Results.NoContent(),
             StatusCodes.Status404NotFound when answer.Code is null => Results.Problem(title: answer.Title,
                 detail: answer.Detail, statusCode: StatusCodes.Status404NotFound),

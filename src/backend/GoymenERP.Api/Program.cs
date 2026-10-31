@@ -325,9 +325,9 @@ builder.Services.AddScoped<ISalesOwnerCandidateSourceV1, SalesOwnerCandidateHost
 // central adapters (no module reads another's tables).
 builder.Services.AddScoped<ISalesDiscountLimitGroupSourceV1, SalesDiscountLimitGroupHost>();
 builder.Services.AddScoped<ISettingsPersonDirectoryV1, SettingsPersonDirectoryHost>();
-// MOD-03 (SAT-D73/D74/D82): the Settings line tax port reads the product's VAT/withholding classes from the Product owner's
-// company-scoped classification through this central adapter (Settings reads no Product table).
-builder.Services.AddScoped<ISettingsProductTaxClassSourceV1, SettingsProductTaxClassHost>();
+// SAT-D134/D139: the Settings line tax port reads the product's item type from the Product owner's company-scoped field
+// through this central adapter (Settings reads no Product table).
+builder.Services.AddScoped<ISettingsProductItemTypeSourceV1, SettingsProductItemTypeHost>();
 builder.Services.AddScoped<ISalesDraftReadServiceV1, SalesDraftReadServiceV1>();
 // STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
 // hands the derived command to Inventory's writer after fresh company-wide authority fences.
@@ -445,7 +445,7 @@ app.MapAuditEndpoints();
 app.MapCounterpartyEndpoints();
 app.MapProductEndpoints();
 app.MapProductPriceListEndpoints();
-app.MapProductTaxClassificationEndpoints();
+app.MapProductItemTypeEndpoints();
 app.MapFinanceEndpoints();
 app.MapFinanceOpenItemReadEndpoints();
 app.MapWorkApprovalEndpoints();
