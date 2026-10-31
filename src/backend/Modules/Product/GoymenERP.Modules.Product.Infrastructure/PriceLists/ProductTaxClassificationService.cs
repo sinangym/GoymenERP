@@ -232,7 +232,7 @@ internal sealed class ProductTaxClassificationService(
         SettingsTaxCategoryV1? category;
         try
         {
-            category = await reader.FindAsync(categoryId, cancellationToken);
+            category = await reader.GetCategoryAsync(categoryId, cancellationToken);
         }
         catch (SettingsPrerequisiteException exception)
         {

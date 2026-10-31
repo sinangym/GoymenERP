@@ -249,7 +249,7 @@ public sealed record SettingsTaxCategoryV1(Guid CompanyId, Guid Id, string Kind,
 /// </summary>
 public interface ISettingsTaxCategoryReaderV1
 {
-    Task<SettingsTaxCategoryV1?> FindAsync(Guid categoryId, CancellationToken cancellationToken = default);
+    Task<SettingsTaxCategoryV1?> GetCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SettingsTaxCategoryV1>> ListAsync(string kind, CancellationToken cancellationToken = default);
 }

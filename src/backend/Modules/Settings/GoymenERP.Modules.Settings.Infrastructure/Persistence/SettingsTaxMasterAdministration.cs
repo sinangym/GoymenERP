@@ -482,7 +482,7 @@ internal sealed partial class SettingsTaxMasterAdministration(
         row.Version,
     };
 
-    private static TaxRateRecordViewV1 RecordView(TaxRateRecordRow row) => new(
+    private static TaxRateRecordViewV1 RecordView(TaxRateRecordRow row) => new TaxRateRecordViewV1(
         row.Id,
         Text(row.RecordVersion),
         row.EffectiveFrom,
@@ -493,7 +493,7 @@ internal sealed partial class SettingsTaxMasterAdministration(
         row.RecordedAtUtc,
         row.Reason);
 
-    private static TaxCodeListVersionViewV1 ListView(TaxCodeListVersionRow row, TaxCodeListVersionDataV1 data) => new(
+    private static TaxCodeListVersionViewV1 ListView(TaxCodeListVersionRow row, TaxCodeListVersionDataV1 data) => new TaxCodeListVersionViewV1(
         Text(row.ListVersion),
         row.EffectiveFrom,
         data.Entries,
@@ -534,16 +534,16 @@ internal sealed partial class SettingsTaxMasterAdministration(
     }
 
     private static TaxMasterCommandResultV1 Unstored(TaxMasterCommandAnswerV1 answer, SettingsCommandMetadataV1 metadata) =>
-        new(answer, false, metadata.CorrelationId);
+        new TaxMasterCommandResultV1(answer, false, metadata.CorrelationId);
 
     private static class Answers
     {
-        public static TaxMasterCommandAnswerV1 NoContent() => new(204, null, "Kaydedildi.", "Değişiklik kaydedildi.");
+        public static TaxMasterCommandAnswerV1 NoContent() => new TaxMasterCommandAnswerV1(204, null, "Kaydedildi.", "Değişiklik kaydedildi.");
 
-        public static TaxMasterCommandAnswerV1 Created(Guid id) => new(201, null, "Oluşturuldu.", "Vergi kategorisi oluşturuldu.",
+        public static TaxMasterCommandAnswerV1 Created(Guid id) => new TaxMasterCommandAnswerV1(201, null, "Oluşturuldu.", "Vergi kategorisi oluşturuldu.",
             new TaxCategoryCreatedV1(id, "1"));
 
-        public static TaxMasterCommandAnswerV1 NotFound() => new(404, null, "Kayıt bulunamadı.",
+        public static TaxMasterCommandAnswerV1 NotFound() => new TaxMasterCommandAnswerV1(404, null, "Kayıt bulunamadı.",
             "İstenen vergi kaydı bu şirkette bulunamadı.");
 
         public static TaxMasterCommandAnswerV1 Invalid(string detail) =>
@@ -565,6 +565,6 @@ internal sealed partial class SettingsTaxMasterAdministration(
             Problem(409, TaxMasterProblemCodesV1.RecordWithdrawn, "Kayıt geri çekilmiş.", "Bu kayıt daha önce geri çekildi.");
 
         public static TaxMasterCommandAnswerV1 Problem(int status, string code, string title, string detail) =>
-            new(status, code, title, detail);
+            new TaxMasterCommandAnswerV1(status, code, title, detail);
     }
 }

@@ -126,7 +126,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // (merged) also register one scoped Settings quote policy provider beside the Sales policy provider. Comments only; no
     // OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "341af1bcb67b7ffa6e97fd3bc3a9de5438808a54ef7f0eb727a9a4a767cc8d4a";
+        // MOD-03 maps the tax master and product tax classification routes and registers one scoped in-process Settings product tax class adapter, with comments; no OpenAPI-generation, network or hosted-service surface changes.
+        "5fea3bda79b6aef022ae43796cc8cd1f3b2e269fa094d8d50a34004e415998c8";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -302,8 +303,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (b384d836… -> 765b00e2…).
             // SAT-D78 / SAT-D84: +2 Settings discount limit SQL facts (future-dated records; withdraw/correct)
             // (765b00e2… -> e68b1182…).
+            // MOD-03: +2 Settings tax master SQL facts (tax master lifecycle; product tax classification → line tax port)
+            // (e68b1182… -> 5a0a2f43…).
             ["tools/relational_inventory/platform.txt"] =
-                "e68b11823817f70bf891b0ffa32633fdab29b6f7d0c67f4611bd7552709a3a0e",
+                "5a0a2f43498179af77a35f2f055f0e6625aeccf8a8579f9d2afa7c1f9adf0e01",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -409,7 +412,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // deleted, limit records and binding rows are immutable, every row in the context's company).
                 // Re-fingerprinted for SAT-D84: the company-filtered, insert-only limit withdrawal set (company inside its
                 // key and both foreign keys) joins the immutable rows of the write fence.
-                "fab206a200b147c6b44ba65362942e9917179e78aea3f6d5cbdc5d96ff69584f",
+                // Re-fingerprinted for MOD-03: the company-filtered tax master sets (categories, immutable rate records and code list versions with insert-only withdrawals; company inside every key and foreign key) join the write fence (immutable rows, every row in the context company).
+                "102f30392f968cff679dbf86b2e21b8515f018967f8dfb443a2288ba61012cea",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -515,7 +519,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // existing Product card context; every durable row and audit event carries CompanyId.
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "PriceLists/ProductPriceListDbContext.cs"] =
-                "13a34845ccd59e7dc23ba054c0349344e32e534b3a787124b792468d5f915489",
+                // Re-fingerprinted for MOD-03: the company-filtered product tax classification (classes, version and update facts the only moving columns) and its insert-only command answers join the write guard.
+                "b7a07946cee22c11d30c8a26a38098a0f17599edeef18e1dbba7ab3a2bbebab3",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
             [ReviewedWorkDbContextPath] =
@@ -683,7 +688,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "PriceLists/ProductPriceListRegistration.cs"] =
                     new(
-                        "4db2e396c81bcfce6f4c504ed84cdcab0375d91d48b9f0323ab8ed43107e0b59",
+                        // Re-fingerprinted for MOD-03: the named product tax classification service factory and its two port registrations (DI-only, the Settings category reader optional); the database surface and its counts are unchanged.
+                        "75301a181beebe479cd4e4950f553b893adb130442e3b6c80d1295c466711958",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1448,7 +1454,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "SettingsModuleExtensions.cs"] =
                     new(
-                        "60645768407be7c064f11ad9b8211b0ec92a86b4ed02bc1b708caa01a1e31405",
+                        // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
+                        "3ea44059d0560e2ed146acf88e50bf8375a688c13f276354c493e72f9a5e7db7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1608,6 +1615,25 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // MOD-02 (SAT-D9): the list scope; Down refuses (51072) while any customer-specific list remains, so dropping
                 // the scope columns never turns a customer's price into a company-wide one.
+                // MOD-03 (SAT-D73/D74/D82): Down refuses (51131) while any tax category or code list exists, before any
+                // drop, so a rollback never turns resolved VAT/withholding back into "kaynak yok" (forward fix).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261031130138_AddTaxMaster.cs"] =
+                    new(
+                        "3933f33833b89a796cfc434bc94706805449c2f1ec096a10a0b53ee770fd9a9c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // MOD-03: Down refuses (51132) while any product tax classification or its command answer exists (forward fix).
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
+                 + "Migrations/20261031130728_AddProductTaxClassifications.cs"] =
+                    new(
+                        "d6373a5217aa0d55bacfd7514788018fa8a03549558e4d1526588c40effd1d0e",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
                  + "Migrations/20261027123034_AddPriceListScope.cs"] =
                     new(

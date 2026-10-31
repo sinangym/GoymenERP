@@ -20,7 +20,7 @@ internal sealed class SettingsTaxMasterReader(
     ICurrentUser currentUser,
     ISettingsProductTaxClassSourceV1? productTaxClasses = null) : ISettingsTaxCategoryReaderV1, ISettingsLineTaxResolverV1
 {
-    public async Task<SettingsTaxCategoryV1?> FindAsync(Guid categoryId, CancellationToken cancellationToken = default)
+    public async Task<SettingsTaxCategoryV1?> GetCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default)
     {
         var companyId = RequireAccess();
         if (categoryId == Guid.Empty)
