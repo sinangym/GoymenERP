@@ -365,6 +365,11 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:SSqaxGHhk6E44Li2L54i7RyhfK17ERsay3drD_Q11mg";
     internal const string FullNormalHostWithProductPriceListsAndSalesDispatch =
         "sha256:aMOFdc7jJguD5s39zLtbijSUh8sj2OmpvL_CZxaYIP8";
+    // SAT-D61…D70 (merged over #849 Sales 1.10): the full normal host with the Settings 1.0 provider (the discount limit
+    // screen) as its last module, derived by ShellCapabilityRegistry.ComputeCandidateRevision over the real providers.
+    // Every earlier row keeps its name and value: no host composes those sets any more once Settings joins.
+    internal const string FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV10 =
+        "sha256:h2kW12R83z17--xEbOIzI3un0g_z6T9MmkLC9J3WiBU";
 
     // SAT-D24 / SAT-D44 merged over UI-60 / UI-61: Sales 1.10 adds the expired-quote conversion approval control of the quote
     // detail beside the S-07 / S-08 screens. The six live rows carrying PublishedSales were re-derived by

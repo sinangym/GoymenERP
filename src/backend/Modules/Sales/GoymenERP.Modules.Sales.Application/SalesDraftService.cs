@@ -146,7 +146,8 @@ public sealed partial class SalesDraftService(
         var discountLimit = SalesDiscountLimit.Undefined;
         if (lineInputs.Any(input => input.Commercial is { } commercial && SalesOrderDraft.IsMeasurablyDiscounted(commercial)))
         {
-            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, bindings.CreatePermission, request.BusinessDate,
+            // SAT-D81: the limit of the day the order is entered (the server's business day), not of its business date.
+            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, bindings.CreatePermission, DiscountLimitCheckDay(),
                 cancellationToken);
         }
 
@@ -515,13 +516,13 @@ public sealed partial class SalesDraftService(
                 line.SurchargeAmount)))
             .ToArray();
 
-        // SAT-D2 / SAT-D34 / SAT-D35: the reviser's discount limit on the draft's business date, read only when a line is
-        // discounted against its list-price reference (only then does a limit decide anything).
+        // SAT-D2 / SAT-D34 / SAT-D35 / SAT-D81: the reviser's discount limit on the day of the commercial revision (the
+        // server's business day, not the draft's business date), read only when a line is discounted against its list-price
+        // reference (only then does a limit decide anything).
         var discountLimit = SalesDiscountLimit.Undefined;
         if (inputs.Any(input => SalesOrderDraft.IsMeasurablyDiscounted(input.Commercial)))
         {
-            var current = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
-            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, permission, current.Money.EffectiveOn, cancellationToken);
+            (discountLimit, scope) = await ResolveDiscountLimitAsync(scope, permission, DiscountLimitCheckDay(), cancellationToken);
         }
         var audit = new SalesDraftStateAudit("sales.order-draft.commercial-revised.v1", "ReviseCommercial",
             "Satış sipariş taslağının fiyat ve iskontosu revize edildi");

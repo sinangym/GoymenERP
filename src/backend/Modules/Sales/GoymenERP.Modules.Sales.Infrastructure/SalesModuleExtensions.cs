@@ -131,9 +131,9 @@ public static class SalesModuleExtensions
         // until it is, the realization axis is "PolicyUnavailable", never a default tolerance. SAT-D2 / API-12 reads the
         // discount limits through the same port.
         serviceProvider.GetService<ISettingsSalesPolicyProviderV1>(),
-        // SAT-D2 / SAT-D34: the actor's discount limit groups (the Identity owner's role mapping, not registered yet). Without
-        // groups no limit is defined: every line below its list price goes to approval; with groups but no Settings source,
-        // such a line is 503, never checked against a guessed limit.
+        // SAT-D2 / SAT-D34 / SAT-D63: the actor's discount limit groups (the person → group bindings, the Settings owner's
+        // record, composed by the host). Without groups no limit is defined: every line below its list price goes to approval;
+        // with groups but no Settings source, such a line is 503, never checked against a guessed limit.
         serviceProvider.GetService<ISalesDiscountLimitGroupSourceV1>(),
         // MOD-01 / API-06: the customer-finance owner's risk-input port, registered by that owner's module (Finance); until it
         // is, open receivables, the credit limit and collateral are "Unavailable" and the risk check is never "Within".

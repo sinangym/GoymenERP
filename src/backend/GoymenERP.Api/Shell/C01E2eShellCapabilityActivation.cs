@@ -10,6 +10,7 @@ using GoymenERP.Modules.Organization.Infrastructure.Shell;
 using GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 using GoymenERP.Modules.Product.Infrastructure.Shell;
 using GoymenERP.Modules.Sales.Infrastructure.Shell;
+using GoymenERP.Modules.Settings.Infrastructure.Shell;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace GoymenERP.Api.Shell;
@@ -85,6 +86,7 @@ internal static class C01E2eShellCapabilityActivation
         typeof(InventoryShellCapabilityProvider),
         typeof(IdentityShellCapabilityProvider),
         typeof(ProductPriceListShellCapabilityProvider),
+        typeof(SettingsShellCapabilityProvider),
     ];
 
     // The accepted normal-host authority for each set of optional module providers present (in the
@@ -172,6 +174,17 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ProductPriceListShellCapabilityProvider),
             },
                 ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsAndSalesQuoteExpiryApproval),
+        // SAT-D61…D70: the Settings discount limit screen joins the full normal host.
+        (new[]
+            {
+                typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
+                typeof(SalesShellCapabilityProvider), typeof(FinanceShellCapabilityProvider),
+                typeof(ManufacturingShellCapabilityProvider), typeof(LogisticsShellCapabilityProvider),
+                typeof(PurchasingShellCapabilityProvider), typeof(AccountingShellCapabilityProvider),
+                typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
+                typeof(ProductPriceListShellCapabilityProvider), typeof(SettingsShellCapabilityProvider),
+            },
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV10),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

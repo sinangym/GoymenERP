@@ -13,7 +13,10 @@ namespace GoymenERP.Modules.Sales.Application;
 /// <list type="bullet">
 /// <item><b>The limit</b> of the actor who discounts a line against its list price is read only from the Settings owner
 /// (<see cref="ISettingsSalesPolicyProviderV1"/>) for each of the actor's limit groups
-/// (<see cref="ISalesDiscountLimitGroupSourceV1"/>, the Identity owner's mapping) on the draft's business date. SAT-D34: the
+/// (<see cref="ISalesDiscountLimitGroupSourceV1"/>: the person → group bindings, SAT-D63/D66, the Settings owner's record)
+/// on the day the check runs: SAT-D81 (<c>SINAN_KARARLARI_2026-10-28_SATIS_EK12.md</c>) — the limit of the day the order is
+/// entered or commercially revised (the server's Europe/Istanbul business day, SAT-D10), never of the order's business
+/// date, so a limit scheduled for a later day (SAT-D78) does not apply to an order entered today. SAT-D34: the
 /// HIGHEST limit among the groups that have one applies; a group without an approved limit ("not found"), an inactive policy
 /// or one outside its window contributes nothing; no group with a limit (or no group, or no group source) means no limit
 /// defined — every discount goes to approval (SAT-D36). A Settings source that cannot answer (not composed, not served,
@@ -155,6 +158,28 @@ public sealed partial class SalesDraftService
     }
 
     /// <summary>
+    /// SAT-D81 / SAT-D10: the server's business day in Europe/Istanbul now — the day whose discount limit a create or a
+    /// commercial revision is checked against. Unknown time zone rules refuse the check (503), never another zone's day.
+    /// </summary>
+    private DateOnly DiscountLimitCheckDay()
+    {
+        TimeZoneInfo zone;
+        try
+        {
+            zone = TimeZoneInfo.FindSystemTimeZoneById(DiscountLimitBusinessTimeZoneId);
+        }
+        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DiscountLimitUnavailable);
+        }
+
+        return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(timeProvider.GetUtcNow(), zone).DateTime);
+    }
+
+    /// <summary>SAT-D10: the business time zone.</summary>
+    private const string DiscountLimitBusinessTimeZoneId = "Europe/Istanbul";
+
+    /// <summary>
     /// SAT-D2: the limit that applies to the fenced actor on <paramref name="effectiveOn"/>, read under
     /// <paramref name="permission"/> (the fence again after every awaited read). See the class summary for the rules.
     /// </summary>
@@ -163,13 +188,24 @@ public sealed partial class SalesDraftService
     {
         if (discountLimitGroups is null)
         {
-            // No owner maps roles to limit groups yet: no limit is defined for anyone (SAT-D2, fail-closed).
+            // No host composes the person → group bindings: no limit is defined for anyone (SAT-D2, fail-closed).
             return (SalesDiscountLimit.Undefined, scope);
         }
 
         IReadOnlyList<Guid>? groups;
-        (groups, scope) = await GuardedWithScopeAsync(scope, permission,
-            () => discountLimitGroups.GetCurrentActorLimitGroupsAsync(cancellationToken), cancellationToken);
+        try
+        {
+            (groups, scope) = await GuardedWithScopeAsync(scope, permission,
+                () => discountLimitGroups.GetCurrentActorLimitGroupsAsync(cancellationToken), cancellationToken);
+        }
+        catch (SalesDiscountLimitGroupSourceException exception)
+        {
+            // The binding owner could not answer: never read as "no group" (that would only look fail-closed by accident).
+            throw exception.IsDenied
+                ? new SalesDraftServiceException(403, "settings_access_denied")
+                : new SalesDraftServiceException(503, SalesDraftProblemCodesV1.DiscountLimitUnavailable);
+        }
+
         if (groups is null || groups.Count == 0)
         {
             return (SalesDiscountLimit.Undefined, scope);

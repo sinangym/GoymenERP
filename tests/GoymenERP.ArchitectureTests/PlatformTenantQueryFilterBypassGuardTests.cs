@@ -122,10 +122,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // read factory, and registers one scoped in-process SalesOwnerCandidateHost, with comments (cae283bd… -> 2eae99cc…), then
     // a COMMENT-ONLY edit saying the sales-owner picker opens on the order create name alone (2eae99cc… -> 13f02f10…); no
     // OpenAPI-generation, network or hosted-service surface changes.
-    // SAT-D25 / SAT-D39 register one scoped in-process Settings quote policy provider (the reviewed, empty catalog) beside the
-    // Sales policy provider, with its comment (13f02f10… -> badc190e…); no OpenAPI-generation, network or hosted-service surface.
+    // SAT-D61…D70 maps the Settings limit routes and registers the central adapters and the shell provider; SAT-D25 / SAT-D39
+    // (merged) also register one scoped Settings quote policy provider beside the Sales policy provider. Comments only; no
+    // OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "badc190e8b7c8109d1c4aa9a2150d89eadd3eb6fdeba5f0ae88621dd44b99652";
+        "341af1bcb67b7ffa6e97fd3bc3a9de5438808a54ef7f0eb727a9a4a767cc8d4a";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -297,8 +298,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // AT-002: +2 GlobalSearchSqlServerRelationalAcceptanceTests facts (5bc60202… -> a5df5046…).
             // ERP-000G / AT-065: +8 DocumentVaultSqlServerRelationalAcceptanceTests facts (4ed7462b… -> e57500e0…).
             // Inventory material-label exact-code global search: +1 reviewed Platform SQL fact, kept ordinal-sorted.
+            // SAT-D61…D70: +2 Settings discount limit SQL facts (groups/limits lifecycle; multi-company binding)
+            // (b384d836… -> 765b00e2…).
+            // SAT-D78 / SAT-D84: +2 Settings discount limit SQL facts (future-dated records; withdraw/correct)
+            // (765b00e2… -> e68b1182…).
             ["tools/relational_inventory/platform.txt"] =
-                "b384d836e6824cf611260683ba7382455ab21761de36cd92b0c28b835c7a0aa8",
+                "e68b11823817f70bf891b0ffa32633fdab29b6f7d0c67f4611bd7552709a3a0e",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -398,7 +403,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "03d7b655dfc9ed6a2586566e9a7cc11c342c81ed397d306a30b14e0b113b4751",
             ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
              + "Persistence/SettingsDbContext.cs"] =
-                "9129cc666fb0ff6f594a8190c76252e0c0eeadceb7324c03407191da83d21731",
+                // Re-fingerprinted for SAT-D61…D70: the company-filtered discount limit group, limit record and binding
+                // sets (company inside every key and foreign key), the platform AuditEvent/CommandExecution mappings with
+                // the safe CompanyId filter, and the write fence (Manufacturing tolerance stays read-only, nothing is
+                // deleted, limit records and binding rows are immutable, every row in the context's company).
+                // Re-fingerprinted for SAT-D84: the company-filtered, insert-only limit withdrawal set (company inside its
+                // key and both foreign keys) joins the immutable rows of the write fence.
+                "fab206a200b147c6b44ba65362942e9917179e78aea3f6d5cbdc5d96ff69584f",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -614,7 +625,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedManufacturingInventoryInputIssueHostPath] = ("ManufacturingDbContext", 2),
                 [ReviewedManufacturingInventoryReturnOutputHostPath] = ("ManufacturingDbContext", 1),
                 [ReviewedProductRuntimeExtensionsPath] = ("IdentityDbContext", 1),
-                [ReviewedProductImportSqlCommandRunnerPath] = ("AuditDbContext", 1)
+                [ReviewedProductImportSqlCommandRunnerPath] = ("AuditDbContext", 1),
+                // SAT-D66: the multi-company binding write builds ONE Settings context per other company over the request
+                // context's connection and transaction, each with that company's own company context, audit collector and
+                // audit interceptor (the PurchaseAcceptanceParticipant shape), so every row passes its company's write fence.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/SettingsSalesDiscountLimitAdministration.Bindings.cs"] = ("SettingsDbContext", 1)
             };
     private const string ReviewedManualBankPaymentServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
@@ -736,8 +752,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // IIdentityAccessReadService; the database startup surface and its counts are unchanged.
                     // Re-fingerprinted for MOD-08: one scoped registration of the read-only IUserDirectoryReadPortV1,
                     // with its comment (f2b86575… -> a27b4290…); the database startup surface and its counts are unchanged.
+                    // Re-fingerprinted for SAT-D66: the same directory also registered as the read-only
+                    // IUserCompanyMembershipReadPortV1, with its comment (a27b4290… -> 355ade3a…); counts unchanged.
                     new(
-                        "a27b42909630c3d6ee0180d3b3cdf98587f576f411b07469e8697f8bd5599799",
+                        "355ade3a20461764b70b6626c23cb91f2429c8264199c93003ba8ad4289c1192",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1335,10 +1353,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // of the V1 reader (DI-only); the provider branch and its database token counts are unchanged.
                     // Re-fingerprinted for API-30 / API-31: the dispatch read service's bindings, the Sales-own order reference reader
                     // and the named service factory (DI-only, the owner ports optional); provider branch and token counts unchanged.
-                    // Re-fingerprinted for SAT-D25 / SAT-D39 merged over API-30 / API-31: the draft service also receives the optional
-                    // Settings quote policy port (DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for SAT-D63 (limit-group source) merged over SAT-D25 / SAT-D39 (the draft service also
+                    // receives the optional Settings quote policy port, DI-only); the provider branch and its token counts are unchanged.
                     new(
-                        "491c6b8d3dcddc5cf09fdf7e666bafc7f90e41076b6b095ff16bb6161dda94d1",
+                        "dd90dbd593384dd7bda252031ff8ebfabfa0f1653f6b22cf202c5e92e8f82052",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1411,10 +1429,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["System.Data.Common"] = 1
                         }),
+                // SAT-D66: GetDbConnection only to share the request context's connection and transaction with the per-company
+                // Settings contexts of one all-or-nothing binding write; every read and write stays tenant-filtered EF.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
+                 + "Persistence/SettingsSalesDiscountLimitAdministration.Bindings.cs"] =
+                    // Re-fingerprinted for SAT-D116 (EK15) and SAT-D117: the write covers only the companies where the person is a member,
+                    // and a passive group the person is already bound to may be kept
+                    // (membership asked through the Identity port first); the one connection and context per company unchanged.
+                    new(
+                        "05d49a3a709f9272b07ea25d6aca23863c482c3ae65b7c83249ca4dd09dee265",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["GetDbConnection"] = 1
+                        }),
+                // Re-fingerprinted for SAT-D61…D70: the Sales policy port is replaced by the catalog + limit-group store
+                // provider, and the binding reader and limit administration are registered (DI-only); the provider branch
+                // and its database token counts are unchanged.
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "SettingsModuleExtensions.cs"] =
                     new(
-                        "a235f268d6e5c0dbc008ffe847522d1597bffb25c5d0bbb9da705b2ccf8c6414",
+                        "60645768407be7c064f11ad9b8211b0ec92a86b4ed02bc1b708caa01a1e31405",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1530,6 +1564,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 3
+                        }),
+                // SAT-D61…D70: Down refuses (51095) while limit groups or bindings exist, before any drop (forward fix).
+                // Re-fingerprinted for SAT-D84: the same migration also creates (and Down drops) the withdrawal table; the
+                // one guard Sql is unchanged in behaviour (a withdrawal cannot exist without its group).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261027221309_AddSalesDiscountLimitGroups.cs"] =
+                    new(
+                        "54a56ef67049ac6263c2f9d410f0401fc938c59ace113d184a0a259ecdbbb35c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
                         }),
                 // Existing overlap fails before trigger replacement; concurrent publications are serialized by
                 // pre-insert key-range locks. Down refuses history before restoring the predecessor trigger.

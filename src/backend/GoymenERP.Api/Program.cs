@@ -58,6 +58,7 @@ using GoymenERP.Modules.Sales.Infrastructure.Shell;
 using GoymenERP.Modules.Settings.Application;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using GoymenERP.Modules.Settings.Infrastructure;
+using GoymenERP.Modules.Settings.Infrastructure.Shell;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -192,7 +193,8 @@ builder.Services.AddScoped<ISettingsPrerequisiteProvider, ApprovedSettingsPrereq
 builder.Services.AddScoped<ISettingsMoneyCandidateReader, ApprovedSettingsPrerequisiteProvider>();
 // SAT-D18: operation-aware currency candidates, so a Sales-only profile (GSP/GIN TRY) is listed for Sales only.
 builder.Services.AddScoped<ISettingsMoneyCandidateReaderV2, ApprovedSettingsPrerequisiteProvider>();
-// MOD-03 slice 1: the Settings-owned Sales policy registry (SAT-D2/D5/D6); no consumer is composed yet.
+// MOD-03 slice 1: the Settings-owned Sales policy registry (SAT-D2/D5/D6). AddSettingsModule replaces it with the
+// SettingsSalesPolicyProviderV1 that adds the company's discount limit groups (SAT-D61…D64) to this catalog.
 builder.Services.AddScoped<ISettingsSalesPolicyProviderV1, ApprovedSettingsPrerequisiteProvider>();
 // SAT-D25 / SAT-D39: the Settings-owned Sales quote policies (loss reason list, default validity); the reviewed catalog is
 // empty, so a loss is refused and no validity is suggested until Sinan enters the records.
@@ -318,6 +320,11 @@ builder.Services.AddScoped<ISalesPartyDisplaySourceV1, SalesPartyDisplayHost>();
 builder.Services.AddScoped<ISalesUserDisplaySourceV1, SalesUserDisplayHost>();
 // SAT-D27 (1): the sales-owner picker's adapter to the same Identity directory (scoped, in-process).
 builder.Services.AddScoped<ISalesOwnerCandidateSourceV1, SalesOwnerCandidateHost>();
+// SAT-D63/D66: the Sales limit check reads the actor's limit groups from the Settings owner's person → group bindings, and
+// the Settings limit administration reads people and their company memberships from the Identity owner, both through
+// central adapters (no module reads another's tables).
+builder.Services.AddScoped<ISalesDiscountLimitGroupSourceV1, SalesDiscountLimitGroupHost>();
+builder.Services.AddScoped<ISettingsPersonDirectoryV1, SettingsPersonDirectoryHost>();
 builder.Services.AddScoped<ISalesDraftReadServiceV1, SalesDraftReadServiceV1>();
 // STK/T11: the host-owned allocation boundary consumes Sales only through its approved-line port and
 // hands the derived command to Inventory's writer after fresh company-wide authority fences.
@@ -380,6 +387,8 @@ builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilit
 builder.Services.AddSingleton<IShellCapabilityProvider, IdentityShellCapabilityProvider>();
 // AT-018: Product's company-scoped U-05 price-list screens and edit/publish controls.
 builder.Services.AddSingleton<IShellCapabilityProvider, ProductPriceListShellCapabilityProvider>();
+// SAT-D61…D70: Settings' discount limit screen (settings.sales-discount-limits.manage, granted to no role).
+builder.Services.AddSingleton<IShellCapabilityProvider, SettingsShellCapabilityProvider>();
 var shellCapabilityAuthority = C01E2eShellCapabilityActivation.Configure(
     builder.Services,
     builder.Environment,
@@ -447,6 +456,7 @@ app.MapPurchasingProductCandidateEndpoints();
 app.MapAccountingEndpoints();
 app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();
+app.MapSettingsEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration
