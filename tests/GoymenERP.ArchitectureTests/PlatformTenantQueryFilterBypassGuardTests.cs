@@ -413,7 +413,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for SAT-D84: the company-filtered, insert-only limit withdrawal set (company inside its
                 // key and both foreign keys) joins the immutable rows of the write fence.
                 // Re-fingerprinted for MOD-03: the company-filtered tax master sets (categories, immutable rate records and code list versions with insert-only withdrawals; company inside every key and foreign key) join the write fence (immutable rows, every row in the context company).
-                "102f30392f968cff679dbf86b2e21b8515f018967f8dfb443a2288ba61012cea",
+                // Re-fingerprinted for SAT-D93 (Sinan 2026-10-31): the company-filtered VUK 232 withholding threshold fence, its
+                // immutable records and insert-only withdrawals join the write fence.
+                "1efd0a572a5e531303bdeb54499021ee4d004c6105e0da9df5fa0faab77c986e",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -1621,6 +1623,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Migrations/20261031130138_AddTaxMaster.cs"] =
                     new(
                         "3933f33833b89a796cfc434bc94706805449c2f1ec096a10a0b53ee770fd9a9c",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // MOD-03 / SAT-D93: Down refuses (51141) while the VUK 232 withholding threshold exists (forward fix).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261031180502_AddTaxWithholdingThreshold.cs"] =
+                    new(
+                        "602ae02967ceb2ec3329a10b2fe3df4bcd1d2c2fcbfe0de779e000180cceec2c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
