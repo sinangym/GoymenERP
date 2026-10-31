@@ -1,16 +1,16 @@
 /**
- * Ayarlar > Vergi — MOD-03 tax master (SAT-D73/D74/D82/D83, EK12; SAT-D93/D110, EK13), on the one name
+ * Ayarlar > Vergi — MOD-03 tax master (EK12 SAT-D83; EK13 SAT-D93; EK19 SAT-D133…D139), on the one name
  * `settings.tax-master.manage` (Muhasebe/Finans + Admin personas; granted to no role here — a human gate).
  *
- *  - VAT classes and their dated rates; withholding classes × buyer categories with their dated withholding (or an explicit
- *    "not applied"); the UBL-TR exemption and withholding code lists as dated versions.
- *  - Nothing is seeded and the screen never computes a tax: a value the server does not answer is shown as "Kaynak yok".
+ *  - The default KDV and tevkifat per item type (demir / hurda / hizmet): the reviewed SAT-D139 catalog as the base, a
+ *    Settings record over it from its date; the UBL-TR exemption and withholding code lists; the VUK 232 threshold.
+ *  - The screen never computes a tax: a value the server does not answer (a code, the threshold) is shown as "Kaynak yok".
  *  - Every change: one person, a mandatory reason, the expected version, one Idempotency-Key (kept for a retry after an
  *    unknown outcome). A version conflict closes the form and re-reads. A not-yet-effective record can be withdrawn.
  *  - Remounted per committed context and route entry; a group (multi-company) context shows the no-company state.
  */
 
-import { useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
@@ -22,37 +22,31 @@ import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { SETTINGS_CAPABILITY } from './capabilities'
 import type { CommandOutcome } from './discountLimitApi'
 import {
-  createTaxCategory,
   fetchTaxMaster,
   publishCodeList,
-  recordVatRate,
-  recordWithholdingRate,
+  recordItemTypeDefault,
   recordWithholdingThreshold,
   withdrawCodeList,
-  withdrawRateRecord,
+  withdrawItemTypeDefault,
   withdrawWithholdingThreshold,
 } from './taxMasterApi'
 import {
-  CATEGORY_KINDS,
   TAX_INPUT,
   TAX_PROBLEM,
   isAmountText,
-  isCategoryCode,
   isCurrencyCode,
   isListCode,
   isRatePercentText,
   normalizeTaxCode,
   parseCodeListText,
-  type CategoryKind,
-  type TaxCategory,
   type TaxCodeList,
+  type TaxDefaultRecord,
+  type TaxDefaultSeries,
   type TaxMaster,
-  type TaxRateRecord,
-  type TaxRateSeries,
   type TaxThreshold,
   type TaxThresholdRecord,
 } from './taxMasterContract'
-import { CATEGORY_KIND_LABEL, CODE_LIST_LABEL, TAX_TEXT, formatDate, taxRefusalText } from './taxMasterText'
+import { CODE_LIST_LABEL, ITEM_TYPE_LABEL, TAX_TEXT, formatDate, taxRefusalText } from './taxMasterText'
 import { useCommandAttempt, type AttemptStatus } from './useCommandAttempt'
 import styles from './settings.module.css'
 
@@ -122,10 +116,8 @@ function Frame({ children }: { readonly children: ReactNode }) {
 
 type Editor =
   | { readonly kind: 'none' }
-  | { readonly kind: 'category' }
-  | { readonly kind: 'vat'; readonly vatClass: TaxCategory }
-  | { readonly kind: 'withholding'; readonly withholdingClass: TaxCategory; readonly buyer: TaxCategory }
-  | { readonly kind: 'withdraw-rate'; readonly owner: TaxCategory; readonly record: TaxRateRecord }
+  | { readonly kind: 'default'; readonly series: TaxDefaultSeries }
+  | { readonly kind: 'withdraw-default'; readonly series: TaxDefaultSeries; readonly record: TaxDefaultRecord }
   | { readonly kind: 'list'; readonly list: TaxCodeList }
   | { readonly kind: 'withdraw-list'; readonly list: TaxCodeList; readonly listVersion: string }
   | { readonly kind: 'threshold'; readonly threshold: TaxThreshold }
@@ -142,13 +134,6 @@ function MasterView({
 }) {
   const [editor, setEditor] = useState<Editor>({ kind: 'none' })
   const [notice, setNotice] = useState<string | null>(null)
-  const byKind = useMemo(() => {
-    const groups: Record<CategoryKind, TaxCategory[]> = { VatClass: [], WithholdingClass: [], BuyerCategory: [] }
-    for (const category of master.categories) groups[category.kind].push(category)
-    return groups
-  }, [master.categories])
-  const series = (kind: 'Vat' | 'Withholding', classId: string, buyerId: string | null): TaxRateSeries | undefined =>
-    master.rateSeries.find((item) => item.kind === kind && item.classId === classId && item.buyerCategoryId === buyerId)
   const close = (saved: string | null) => {
     setEditor({ kind: 'none' })
     setNotice(saved)
@@ -169,126 +154,68 @@ function MasterView({
           {notice}
         </p>
       ) : null}
-      {master.categories.length === 0 ? <p className={styles.muted}>{TAX_TEXT.emptyMaster}</p> : null}
-
-      <section aria-labelledby="tax-vat-heading" className={styles.section}>
-        <h2 id="tax-vat-heading">{TAX_TEXT.vatHeading}</h2>
-        {byKind.VatClass.length === 0 ? (
-          <p className={styles.muted}>{TAX_TEXT.noCategoriesOfKind}</p>
-        ) : (
-          <table aria-label={TAX_TEXT.vatTableLabel} className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">{TAX_TEXT.columnCode}</th>
-                <th scope="col">{TAX_TEXT.columnName}</th>
-                <th scope="col">{TAX_TEXT.columnInForce}</th>
-                <th scope="col">{TAX_TEXT.columnScheduled}</th>
-                <th scope="col">{TAX_TEXT.columnActions}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byKind.VatClass.map((vatClass) => {
-                const rates = series('Vat', vatClass.id, null)
-                return (
-                  <tr key={vatClass.id}>
-                    <td>
-                      <code>{vatClass.code}</code>
-                    </td>
-                    <td>{vatClass.name}</td>
-                    <td>{rates?.inForce ? recordLabel(rates.inForce) : TAX_TEXT.noSource}</td>
-                    <td>
-                      <ScheduledList
-                        label={vatClass.code}
-                        records={rates?.scheduled ?? []}
-                        onWithdraw={(record) => setEditor({ kind: 'withdraw-rate', owner: vatClass, record })}
-                      />
-                    </td>
-                    <td>
-                      <Button
-                        type="button"
-                        size="sm"
-                        aria-label={`${TAX_TEXT.recordRate} — ${vatClass.code}`}
-                        onClick={() => setEditor({ kind: 'vat', vatClass })}
-                      >
-                        {TAX_TEXT.recordRate}
-                      </Button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section aria-labelledby="tax-withholding-heading" className={styles.section}>
-        <h2 id="tax-withholding-heading">{TAX_TEXT.withholdingHeading}</h2>
-        {byKind.WithholdingClass.length === 0 || byKind.BuyerCategory.length === 0 ? (
-          <p className={styles.muted}>{TAX_TEXT.withholdingNeedsCategories}</p>
-        ) : (
-          <table aria-label={TAX_TEXT.withholdingTableLabel} className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">{TAX_TEXT.columnClass}</th>
-                <th scope="col">{TAX_TEXT.columnBuyer}</th>
-                <th scope="col">{TAX_TEXT.columnInForce}</th>
-                <th scope="col">{TAX_TEXT.columnScheduled}</th>
-                <th scope="col">{TAX_TEXT.columnActions}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {byKind.WithholdingClass.flatMap((withholdingClass) =>
-                byKind.BuyerCategory.map((buyer) => {
-                  const rates = series('Withholding', withholdingClass.id, buyer.id)
-                  const label = `${withholdingClass.code} / ${buyer.code}`
-                  return (
-                    <tr key={`${withholdingClass.id}:${buyer.id}`}>
-                      <td>
-                        <code>{withholdingClass.code}</code>
-                      </td>
-                      <td>
-                        <code>{buyer.code}</code>
-                      </td>
-                      <td>{rates?.inForce ? recordLabel(rates.inForce) : TAX_TEXT.noSource}</td>
-                      <td>
-                        <ScheduledList
-                          label={label}
-                          records={rates?.scheduled ?? []}
-                          onWithdraw={(record) => setEditor({ kind: 'withdraw-rate', owner: withholdingClass, record })}
-                        />
-                      </td>
-                      <td>
-                        <Button
-                          type="button"
-                          size="sm"
-                          aria-label={`${TAX_TEXT.recordWithholding} — ${label}`}
-                          onClick={() => setEditor({ kind: 'withholding', withholdingClass, buyer })}
-                        >
-                          {TAX_TEXT.recordWithholding}
-                        </Button>
-                      </td>
-                    </tr>
-                  )
-                }),
-              )}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section aria-labelledby="tax-buyer-heading" className={styles.section}>
-        <h2 id="tax-buyer-heading">{TAX_TEXT.buyerHeading}</h2>
-        {byKind.BuyerCategory.length === 0 ? (
-          <p className={styles.muted}>{TAX_TEXT.noCategoriesOfKind}</p>
-        ) : (
-          <ul className={styles.plainList}>
-            {byKind.BuyerCategory.map((buyer) => (
-              <li key={buyer.id}>
-                <code>{buyer.code}</code> — {buyer.name}
-              </li>
-            ))}
-          </ul>
-        )}
+      <section aria-labelledby="tax-defaults-heading" className={styles.section}>
+        <h2 id="tax-defaults-heading">{TAX_TEXT.defaultsHeading}</h2>
+        <table aria-label={TAX_TEXT.defaultsTableLabel} className={styles.table}>
+          <thead>
+            <tr>
+              <th scope="col">{TAX_TEXT.columnItemType}</th>
+              <th scope="col">{TAX_TEXT.columnVat}</th>
+              <th scope="col">{TAX_TEXT.columnWithholding}</th>
+              <th scope="col">{TAX_TEXT.columnSource}</th>
+              <th scope="col">{TAX_TEXT.columnScheduled}</th>
+              <th scope="col">{TAX_TEXT.columnActions}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {master.itemTypeDefaults.map((series) => {
+              const label = ITEM_TYPE_LABEL[series.itemType]
+              const record = series.inForce
+              return (
+                <tr key={series.itemType}>
+                  <th scope="row">{label}</th>
+                  <td>{record === null ? TAX_TEXT.noSource : vatLabel(record)}</td>
+                  <td>{record === null ? TAX_TEXT.noSource : withholdingLabel(record)}</td>
+                  <td>{record === null ? TAX_TEXT.noSource : sourceLabel(record)}</td>
+                  <td>
+                    {series.scheduled.length === 0 ? (
+                      TAX_TEXT.noScheduled
+                    ) : (
+                      <ul aria-label={`${TAX_TEXT.columnScheduled} — ${label}`} className={styles.plainList}>
+                        {series.scheduled.map((scheduled) => (
+                          <li key={scheduled.recordId}>
+                            {TAX_TEXT.scheduledLabel(scheduled.effectiveFrom, `${vatLabel(scheduled)}, ${withholdingLabel(scheduled)}`)}{' '}
+                            {scheduled.source === 'Record' ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="danger"
+                                aria-label={`${TAX_TEXT.withdraw} — ${label} ${formatDate(scheduled.effectiveFrom)}`}
+                                onClick={() => setEditor({ kind: 'withdraw-default', series, record: scheduled })}
+                              >
+                                {TAX_TEXT.withdraw}
+                              </Button>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </td>
+                  <td>
+                    <Button
+                      type="button"
+                      size="sm"
+                      aria-label={`${TAX_TEXT.changeDefault} — ${label}`}
+                      onClick={() => setEditor({ kind: 'default', series })}
+                    >
+                      {TAX_TEXT.changeDefault}
+                    </Button>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </section>
 
       <section aria-labelledby="tax-threshold-heading" className={styles.section}>
@@ -373,30 +300,16 @@ function MasterView({
         ))}
       </section>
 
-      {editor.kind === 'none' ? (
-        <Button type="button" variant="primary" onClick={() => setEditor({ kind: 'category' })}>
-          {TAX_TEXT.newCategory}
-        </Button>
-      ) : null}
-      {editor.kind === 'category' ? <CategoryForm {...formProps} /> : null}
-      {editor.kind === 'vat' ? <VatRateForm key={editor.vatClass.id} {...formProps} vatClass={editor.vatClass} /> : null}
-      {editor.kind === 'withholding' ? (
-        <WithholdingForm
-          key={`${editor.withholdingClass.id}:${editor.buyer.id}`}
-          {...formProps}
-          withholdingClass={editor.withholdingClass}
-          buyer={editor.buyer}
-        />
-      ) : null}
-      {editor.kind === 'withdraw-rate' ? (
+      {editor.kind === 'default' ? <DefaultForm key={editor.series.itemType} {...formProps} series={editor.series} /> : null}
+      {editor.kind === 'withdraw-default' ? (
         <WithdrawForm
           key={editor.record.recordId}
           {...formProps}
-          heading={`${TAX_TEXT.withdraw} — ${editor.owner.code} ${formatDate(editor.record.effectiveFrom)}`}
+          heading={`${TAX_TEXT.withdraw} — ${ITEM_TYPE_LABEL[editor.series.itemType]} ${formatDate(editor.record.effectiveFrom)}`}
           execute={(context, reason) =>
-            withdrawRateRecord(context, editor.record.recordId, { expectedVersion: editor.owner.version, reason })
+            withdrawItemTypeDefault(context, editor.record.recordId, { expectedVersion: editor.series.version, reason })
           }
-          fingerprint={{ record: editor.record.recordId, version: editor.owner.version }}
+          fingerprint={{ record: editor.record.recordId, version: editor.series.version }}
         />
       ) : null}
       {editor.kind === 'threshold' ? <ThresholdForm {...formProps} threshold={editor.threshold} /> : null}
@@ -427,41 +340,18 @@ function MasterView({
   )
 }
 
-function recordLabel(record: TaxRateRecord): string {
-  if (!record.applies) return TAX_TEXT.notApplied
-  return record.withholdingCode === null
-    ? TAX_TEXT.rateLabelOf(record.ratePercent ?? '')
-    : TAX_TEXT.withholdingLabelOf(record.ratePercent ?? '', record.withholdingCode)
+function vatLabel(record: TaxDefaultRecord): string {
+  return record.vatApplies ? TAX_TEXT.rateLabelOf(record.vatPercent ?? '') : TAX_TEXT.vatNone
 }
 
-function ScheduledList({
-  label,
-  records,
-  onWithdraw,
-}: {
-  readonly label: string
-  readonly records: readonly TaxRateRecord[]
-  readonly onWithdraw: (record: TaxRateRecord) => void
-}) {
-  if (records.length === 0) return <>{TAX_TEXT.noScheduled}</>
-  return (
-    <ul aria-label={`${TAX_TEXT.columnScheduled} — ${label}`} className={styles.plainList}>
-      {records.map((record) => (
-        <li key={record.recordId}>
-          {TAX_TEXT.scheduledLabel(record.effectiveFrom, recordLabel(record))}{' '}
-          <Button
-            type="button"
-            size="sm"
-            variant="danger"
-            aria-label={`${TAX_TEXT.withdraw} — ${label} ${formatDate(record.effectiveFrom)}`}
-            onClick={() => onWithdraw(record)}
-          >
-            {TAX_TEXT.withdraw}
-          </Button>
-        </li>
-      ))}
-    </ul>
-  )
+function withholdingLabel(record: TaxDefaultRecord): string {
+  if (!record.withholdingApplies) return TAX_TEXT.withholdingNone
+  const code = record.withholdingCode === null ? TAX_TEXT.codeMissing : TAX_TEXT.codeOf(record.withholdingCode)
+  return `${TAX_TEXT.rateLabelOf(record.withholdingPercent ?? '')} (${code})`
+}
+
+function sourceLabel(record: TaxDefaultRecord): string {
+  return record.source === 'Catalog' ? TAX_TEXT.sourceCatalog : TAX_TEXT.sourceRecord
 }
 
 interface FormProps {
@@ -538,172 +428,98 @@ function EffectiveFromField({ value, onChange }: { readonly value: string; reado
   )
 }
 
-function CategoryForm(props: FormProps) {
-  const [kind, setKind] = useState<CategoryKind>('VatClass')
-  const [code, setCode] = useState('')
-  const [name, setName] = useState('')
-  const [reason, setReason] = useState('')
-  const attempt = useCommandAttempt<{ readonly id: string; readonly version: string }>()
-  const normalized = normalizeTaxCode(code)
-  const codeError = code.trim().length > 0 && !isCategoryCode(normalized) ? TAX_TEXT.codeHelp : undefined
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    const body = { kind, code: normalized, name: name.trim(), reason: reason.trim() }
-    finish(await attempt.run(body, (idempotencyKey) => createTaxCategory({ companyId: props.companyId, idempotencyKey }, body)), props)
-  }
-
-  return (
-    <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="tax-category-heading">
-      <h3 id="tax-category-heading">{TAX_TEXT.newCategory}</h3>
-      <Field label={TAX_TEXT.kindLabel}>
-        {(control) => (
-          <select {...control} value={kind} onChange={(event) => setKind(event.target.value as CategoryKind)}>
-            {CATEGORY_KINDS.map((option) => (
-              <option key={option} value={option}>
-                {CATEGORY_KIND_LABEL[option]}
-              </option>
-            ))}
-          </select>
-        )}
-      </Field>
-      <Field label={TAX_TEXT.codeLabel} help={TAX_TEXT.codeHelp} error={codeError}>
-        {(control) => (
-          <input
-            {...control}
-            type="text"
-            required
-            autoComplete="off"
-            maxLength={TAX_INPUT.categoryCodeMaximumLength}
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-          />
-        )}
-      </Field>
-      <Field label={TAX_TEXT.nameLabel}>
-        {(control) => (
-          <input
-            {...control}
-            type="text"
-            required
-            maxLength={TAX_INPUT.categoryNameMaximumLength}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        )}
-      </Field>
-      <ReasonField value={reason} onChange={setReason} />
-      <Footer status={attempt.status} hasPendingRetry={attempt.hasPendingRetry} onCancel={() => props.onDone(null)} />
-    </form>
-  )
-}
-
-function VatRateForm(props: FormProps & { readonly vatClass: TaxCategory }) {
-  const [rate, setRate] = useState('')
+function DefaultForm(props: FormProps & { readonly series: TaxDefaultSeries }) {
+  const current = props.series.inForce
+  const [vatApplies, setVatApplies] = useState(current?.vatApplies ?? true)
+  const [vatPercent, setVatPercent] = useState(current?.vatPercent ?? '')
+  const [exemptionCode, setExemptionCode] = useState(current?.exemptionCode ?? '')
+  const [withholdingApplies, setWithholdingApplies] = useState(current?.withholdingApplies ?? false)
+  const [withholdingPercent, setWithholdingPercent] = useState(current?.withholdingPercent ?? '')
+  const [withholdingCode, setWithholdingCode] = useState(current?.withholdingCode ?? '')
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [reason, setReason] = useState('')
   const attempt = useCommandAttempt<true>()
-  const rateError = rate.length > 0 && !isRatePercentText(rate) ? TAX_TEXT.rateHelp : undefined
+  const vatValid = !vatApplies || isRatePercentText(vatPercent)
+  const withholdingValid = !withholdingApplies || (isRatePercentText(withholdingPercent) && Number(withholdingPercent) > 0)
+  const normalizedExemption = normalizeTaxCode(exemptionCode)
+  const normalizedWithholding = normalizeTaxCode(withholdingCode)
+  const codesValid = (normalizedExemption.length === 0 || isListCode(normalizedExemption))
+    && (normalizedWithholding.length === 0 || isListCode(normalizedWithholding))
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (!isRatePercentText(rate)) return
+    if (!vatValid || !withholdingValid || !codesValid) return
+    const applyWithholding = vatApplies && withholdingApplies
     const body = {
-      expectedVersion: props.vatClass.version,
-      ratePercent: rate,
+      expectedVersion: props.series.version,
+      vatApplies,
+      vatPercent: vatApplies ? vatPercent : null,
+      exemptionCode: !vatApplies && normalizedExemption.length > 0 ? normalizedExemption : null,
+      withholdingApplies: applyWithholding,
+      withholdingPercent: applyWithholding ? withholdingPercent : null,
+      withholdingCode: applyWithholding && normalizedWithholding.length > 0 ? normalizedWithholding : null,
       reason: reason.trim(),
       ...(effectiveFrom.length > 0 ? { effectiveFrom } : {}),
     }
     finish(
-      await attempt.run({ classId: props.vatClass.id, ...body }, (idempotencyKey) =>
-        recordVatRate({ companyId: props.companyId, idempotencyKey }, props.vatClass.id, body),
+      await attempt.run({ itemType: props.series.itemType, ...body }, (idempotencyKey) =>
+        recordItemTypeDefault({ companyId: props.companyId, idempotencyKey }, props.series.itemType, body),
       ),
       props,
     )
   }
 
   return (
-    <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="tax-vat-form-heading">
-      <h3 id="tax-vat-form-heading">
-        {TAX_TEXT.recordRate} — <code>{props.vatClass.code}</code>
-      </h3>
-      <Field label={TAX_TEXT.rateLabel} help={TAX_TEXT.rateHelp} error={rateError}>
-        {(control) => (
-          <input {...control} type="text" inputMode="decimal" required value={rate} onChange={(event) => setRate(event.target.value.trim())} />
-        )}
-      </Field>
-      <EffectiveFromField value={effectiveFrom} onChange={setEffectiveFrom} />
-      <ReasonField value={reason} onChange={setReason} />
-      <Footer status={attempt.status} hasPendingRetry={attempt.hasPendingRetry} onCancel={() => props.onDone(null)} />
-    </form>
-  )
-}
-
-function WithholdingForm(props: FormProps & { readonly withholdingClass: TaxCategory; readonly buyer: TaxCategory }) {
-  const [applies, setApplies] = useState(true)
-  const [rate, setRate] = useState('')
-  const [code, setCode] = useState('')
-  const [effectiveFrom, setEffectiveFrom] = useState('')
-  const [reason, setReason] = useState('')
-  const attempt = useCommandAttempt<true>()
-  const normalizedCode = normalizeTaxCode(code)
-  const rateValid = isRatePercentText(rate) && Number(rate) > 0
-  const rateError = applies && rate.length > 0 && !rateValid ? TAX_TEXT.withholdingRateHelp : undefined
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (applies && (!rateValid || !isListCode(normalizedCode))) return
-    const body = {
-      expectedVersion: props.withholdingClass.version,
-      buyerCategoryId: props.buyer.id,
-      applies,
-      ratePercent: applies ? rate : null,
-      withholdingCode: applies ? normalizedCode : null,
-      reason: reason.trim(),
-      ...(effectiveFrom.length > 0 ? { effectiveFrom } : {}),
-    }
-    finish(
-      await attempt.run({ classId: props.withholdingClass.id, ...body }, (idempotencyKey) =>
-        recordWithholdingRate({ companyId: props.companyId, idempotencyKey }, props.withholdingClass.id, body),
-      ),
-      props,
-    )
-  }
-
-  return (
-    <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="tax-withholding-form-heading">
-      <h3 id="tax-withholding-form-heading">
-        {TAX_TEXT.recordWithholding} — <code>{props.withholdingClass.code}</code> / <code>{props.buyer.code}</code>
+    <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="tax-default-form-heading">
+      <h3 id="tax-default-form-heading">
+        {TAX_TEXT.changeDefault} — {ITEM_TYPE_LABEL[props.series.itemType]}
       </h3>
       <fieldset>
-        <legend>{TAX_TEXT.buyerLabel}: {props.buyer.name}</legend>
+        <legend>{TAX_TEXT.columnVat}</legend>
         <label>
-          <input type="radio" name="tax-applies" checked={applies} onChange={() => setApplies(true)} /> {TAX_TEXT.appliesLabel}
+          <input type="radio" name="tax-vat" checked={vatApplies} onChange={() => setVatApplies(true)} /> {TAX_TEXT.vatAppliesLabel}
         </label>
         <label>
-          <input type="radio" name="tax-applies" checked={!applies} onChange={() => setApplies(false)} /> {TAX_TEXT.notAppliedLabel}
+          <input type="radio" name="tax-vat" checked={!vatApplies} onChange={() => setVatApplies(false)} /> {TAX_TEXT.vatNotAppliedLabel}
         </label>
       </fieldset>
-      {applies ? (
+      {vatApplies ? (
+        <Field label={TAX_TEXT.vatRateLabel} help={TAX_TEXT.rateHelp} error={vatPercent.length > 0 && !vatValid ? TAX_TEXT.rateHelp : undefined}>
+          {(control) => (
+            <input {...control} type="text" inputMode="decimal" required value={vatPercent} onChange={(event) => setVatPercent(event.target.value.trim())} />
+          )}
+        </Field>
+      ) : (
+        <Field label={TAX_TEXT.exemptionCodeLabel} help={TAX_TEXT.exemptionCodeHelp}>
+          {(control) => (
+            <input {...control} type="text" autoComplete="off" maxLength={TAX_INPUT.listCodeMaximumLength} value={exemptionCode} onChange={(event) => setExemptionCode(event.target.value)} />
+          )}
+        </Field>
+      )}
+      {vatApplies ? (
         <>
-          <Field label={TAX_TEXT.rateLabel} help={TAX_TEXT.withholdingRateHelp} error={rateError}>
-            {(control) => (
-              <input {...control} type="text" inputMode="decimal" required value={rate} onChange={(event) => setRate(event.target.value.trim())} />
-            )}
-          </Field>
-          <Field label={TAX_TEXT.withholdingCodeLabel} help={TAX_TEXT.withholdingCodeHelp}>
-            {(control) => (
-              <input
-                {...control}
-                type="text"
-                required
-                autoComplete="off"
-                maxLength={TAX_INPUT.listCodeMaximumLength}
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-              />
-            )}
-          </Field>
+          <label>
+            <input type="checkbox" checked={withholdingApplies} onChange={(event) => setWithholdingApplies(event.target.checked)} />{' '}
+            {TAX_TEXT.withholdingAppliesLabel}
+          </label>
+          {withholdingApplies ? (
+            <>
+              <Field
+                label={TAX_TEXT.withholdingRateLabel}
+                help={TAX_TEXT.withholdingRateHelp}
+                error={withholdingPercent.length > 0 && !withholdingValid ? TAX_TEXT.withholdingRateHelp : undefined}
+              >
+                {(control) => (
+                  <input {...control} type="text" inputMode="decimal" required value={withholdingPercent} onChange={(event) => setWithholdingPercent(event.target.value.trim())} />
+                )}
+              </Field>
+              <Field label={TAX_TEXT.withholdingCodeLabel} help={TAX_TEXT.withholdingCodeHelp}>
+                {(control) => (
+                  <input {...control} type="text" autoComplete="off" maxLength={TAX_INPUT.listCodeMaximumLength} value={withholdingCode} onChange={(event) => setWithholdingCode(event.target.value)} />
+                )}
+              </Field>
+            </>
+          ) : null}
         </>
       ) : null}
       <EffectiveFromField value={effectiveFrom} onChange={setEffectiveFrom} />

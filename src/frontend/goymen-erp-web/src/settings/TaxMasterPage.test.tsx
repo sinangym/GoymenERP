@@ -1,10 +1,11 @@
 /**
- * MOD-03 component cases — Ayarlar > Vergi (KDV / tevkifat).
+ * MOD-03 component cases — Ayarlar > Vergi (KDV / tevkifat; EK19 SAT-D133…D139).
  *
- * COMPONENT/DOM EVIDENCE ONLY: `fetch` is stubbed with synthetic fixtures (SENTETIK rates and codes); the real API and SQL are
- * `SettingsTaxMasterSqlServerRelationalAcceptanceTests`. What these cases establish: the states (loading, "kaynak yok",
- * error, forbidden route, conflict, unknown outcome), what is SENT (company header, Idempotency-Key, exact bodies with
- * versions and rates as text and the reason), and the same key on a retry after an unknown outcome.
+ * COMPONENT/DOM EVIDENCE ONLY: `fetch` is stubbed with synthetic fixtures (SENTETIK codes, threshold and records; the catalog
+ * rows mirror the reviewed SAT-D139 defaults); the real API and SQL are `SettingsTaxMasterSqlServerRelationalAcceptanceTests`.
+ * What these cases establish: the states (loading, "kaynak yok", error, forbidden route, conflict, unknown outcome), the
+ * per-item-type defaults with their source, what is SENT (company header, Idempotency-Key, exact bodies with versions and
+ * percents as text and the reason), and the same key on a retry after an unknown outcome.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,93 +13,126 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COMPANY_A, commands, installFetch, json, noContent, problem, renderAt } from './testHarness'
 import { SETTINGS_CAPABILITY } from './capabilities'
-import { TAX_TEXT, CODE_LIST_LABEL } from './taxMasterText'
+import { CODE_LIST_LABEL, ITEM_TYPE_LABEL, TAX_TEXT } from './taxMasterText'
 import { decodeTaxMaster, parseCodeListText } from './taxMasterContract'
 
 const TAX_PATH = '/ayarlar/vergi'
-const VAT = '61000000-0000-4000-8000-000000000001'
-const STEEL = '61000000-0000-4000-8000-000000000002'
-const TAXPAYER = '61000000-0000-4000-8000-000000000003'
-const CONSUMER = '61000000-0000-4000-8000-000000000004'
-const RECORD = '61000000-0000-4000-8000-0000000000a1'
-const SCHEDULED = '61000000-0000-4000-8000-0000000000a2'
-const WH_RECORD = '61000000-0000-4000-8000-0000000000a3'
+const STEEL_CATALOG = '74e7f161-192d-5d1e-9a8a-cb17e0fd1e2c'
+const SCRAP_CATALOG = '61000000-0000-5000-8000-0000000000c2'
+const SERVICE_CATALOG = '61000000-0000-5000-8000-0000000000c3'
+const SERVICE_RECORD = '61000000-0000-4000-8000-0000000000a1'
+const STEEL_SCHEDULED = '61000000-0000-4000-8000-0000000000a2'
 const USER = '99999999-9999-4999-8999-999999999999'
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function record(id: string, effectiveFrom: string, ratePercent: string | null, withholdingCode: string | null = null, applies = true) {
+interface DefaultFixture {
+  recordId: string
+  source: 'Catalog' | 'Record'
+  recordVersion: string
+  effectiveFrom: string
+  vatApplies: boolean
+  vatPercent: string | null
+  exemptionCode: string | null
+  withholdingApplies: boolean
+  withholdingPercent: string | null
+  withholdingCode: string | null
+  recordedBy: string | null
+  recordedAtUtc: string | null
+  reason: string
+}
+
+function catalog(recordId: string, vatPercent: string | null, withholdingPercent: string | null): DefaultFixture {
   return {
-    recordId: id,
-    recordVersion: '1',
-    effectiveFrom,
-    applies,
-    ratePercent,
-    withholdingCode,
-    recordedBy: USER,
-    recordedAtUtc: '2026-11-01T09:00:00+00:00',
-    reason: 'SENTETIK',
+    recordId,
+    source: 'Catalog',
+    recordVersion: '0',
+    effectiveFrom: '2026-10-31',
+    vatApplies: vatPercent !== null,
+    vatPercent,
+    exemptionCode: null,
+    withholdingApplies: withholdingPercent !== null,
+    withholdingPercent,
+    withholdingCode: null,
+    recordedBy: null,
+    recordedAtUtc: null,
+    reason: 'SAT-D139',
   }
 }
 
-function emptyMaster() {
+function settingsRecord(recordId: string, effectiveFrom: string, overrides: Partial<DefaultFixture> = {}): DefaultFixture {
+  return {
+    ...catalog(recordId, '20', null),
+    source: 'Record',
+    recordVersion: '1',
+    effectiveFrom,
+    recordedBy: USER,
+    recordedAtUtc: '2026-11-01T09:00:00+00:00',
+    reason: 'SENTETIK',
+    ...overrides,
+  }
+}
+
+function codeLists() {
+  return [
+    { kind: 'Exemption', version: '0', inForce: null, scheduled: [] },
+    {
+      kind: 'Withholding',
+      version: '1',
+      inForce: {
+        listVersion: '1',
+        effectiveFrom: '2026-11-01',
+        entries: [{ code: 'T1', name: 'SENTETIK tevkifat kodu' }],
+        recordedBy: USER,
+        recordedAtUtc: '2026-11-01T09:00:00+00:00',
+        reason: 'SENTETIK',
+      },
+      scheduled: [],
+    },
+  ]
+}
+
+/** Only the reviewed catalog answers; no code list, no threshold. */
+function catalogMaster() {
   return {
     companyId: COMPANY_A,
     businessDate: '2026-11-01',
-    categories: [],
-    rateSeries: [],
+    itemTypeDefaults: [
+      { itemType: 'Steel', version: '0', inForce: catalog(STEEL_CATALOG, '20', '50'), scheduled: [] as DefaultFixture[] },
+      { itemType: 'Scrap', version: '0', inForce: catalog(SCRAP_CATALOG, null, null), scheduled: [] as DefaultFixture[] },
+      { itemType: 'Service', version: '0', inForce: catalog(SERVICE_CATALOG, '20', null), scheduled: [] as DefaultFixture[] },
+    ],
     codeLists: [
       { kind: 'Exemption', version: '0', inForce: null, scheduled: [] },
       { kind: 'Withholding', version: '0', inForce: null, scheduled: [] },
     ],
-    withholdingThreshold: { version: '0', inForce: null, scheduled: [] },
+    withholdingThreshold: { version: '0', inForce: null as unknown, scheduled: [] as unknown[] },
   }
 }
 
 function master() {
+  const base = catalogMaster()
   return {
-    companyId: COMPANY_A,
-    businessDate: '2026-11-01',
-    categories: [
-      { id: CONSUMER, kind: 'BuyerCategory', code: 'NIHAI', name: 'Nihai tüketici', version: '1' },
-      { id: TAXPAYER, kind: 'BuyerCategory', code: 'MUKELLEF', name: 'KDV mükellefi', version: '1' },
-      { id: VAT, kind: 'VatClass', code: 'GENEL', name: 'Genel', version: '3' },
-      { id: STEEL, kind: 'WithholdingClass', code: 'DEMIR-CELIK', name: 'Demir-çelik', version: '2' },
-    ],
-    rateSeries: [
+    ...base,
+    itemTypeDefaults: [
       {
-        kind: 'Vat',
-        classId: VAT,
-        buyerCategoryId: null,
-        inForce: record(RECORD, '2026-11-01', '20'),
-        scheduled: [record(SCHEDULED, '2026-12-01', '25')],
+        itemType: 'Steel',
+        version: '2',
+        inForce: catalog(STEEL_CATALOG, '20', '50'),
+        scheduled: [
+          settingsRecord(STEEL_SCHEDULED, '2026-12-01', {
+            withholdingApplies: true,
+            withholdingPercent: '70',
+            withholdingCode: 'T1',
+          }),
+        ],
       },
-      {
-        kind: 'Withholding',
-        classId: STEEL,
-        buyerCategoryId: TAXPAYER,
-        inForce: record(WH_RECORD, '2026-11-01', '50', 'T1'),
-        scheduled: [],
-      },
+      base.itemTypeDefaults[1],
+      { itemType: 'Service', version: '1', inForce: settingsRecord(SERVICE_RECORD, '2026-11-01'), scheduled: [] },
     ],
-    codeLists: [
-      { kind: 'Exemption', version: '0', inForce: null, scheduled: [] },
-      {
-        kind: 'Withholding',
-        version: '1',
-        inForce: {
-          listVersion: '1',
-          effectiveFrom: '2026-11-01',
-          entries: [{ code: 'T1', name: 'SENTETIK tevkifat kodu' }],
-          recordedBy: USER,
-          recordedAtUtc: '2026-11-01T09:00:00+00:00',
-          reason: 'SENTETIK',
-        },
-        scheduled: [],
-      },
-    ],
+    codeLists: codeLists(),
     withholdingThreshold: {
       version: '2',
       inForce: {
@@ -122,36 +156,47 @@ function install(respond: (url: string, init: RequestInit | undefined) => Respon
 
 const isRead = (url: string) => url.endsWith('/settings/tax-master')
 
+function rowOf(table: HTMLElement, label: string): HTMLElement {
+  const row = within(table)
+    .getAllByRole('row')
+    .find((candidate) => within(candidate).queryByRole('rowheader', { name: label }) !== null)
+  if (row === undefined) throw new Error(`no row ${label}`)
+  return row
+}
+
 describe('Vergi ayarları — reads', () => {
-  it('shows "Kaynak yok" for an empty master and sends only the company header', async () => {
-    const recorded = install((url) => (isRead(url) ? json(emptyMaster()) : undefined))
+  it('shows the SAT-D139 catalog defaults per item type and "Kaynak yok" for codes and the threshold', async () => {
+    const recorded = install((url) => (isRead(url) ? json(catalogMaster()) : undefined))
     renderAt(TAX_PATH)
 
-    expect(await screen.findByText(TAX_TEXT.emptyMaster)).toBeTruthy()
-    // VAT/withholding rows absent; both code lists and the VUK 232 threshold are "kaynak yok".
+    const table = await screen.findByRole('table', { name: TAX_TEXT.defaultsTableLabel })
+    const steel = rowOf(table, ITEM_TYPE_LABEL.Steel)
+    expect(within(steel).getByText('%20')).toBeTruthy()
+    // The catalog carries no withholding code: "kaynak yok", never a guessed code.
+    expect(within(steel).getByText(`%50 (${TAX_TEXT.codeMissing})`)).toBeTruthy()
+    expect(within(steel).getByText(TAX_TEXT.sourceCatalog)).toBeTruthy()
+    const scrap = rowOf(table, ITEM_TYPE_LABEL.Scrap)
+    expect(within(scrap).getByText(TAX_TEXT.vatNone)).toBeTruthy()
+    expect(within(scrap).getByText(TAX_TEXT.withholdingNone)).toBeTruthy()
+    const service = rowOf(table, ITEM_TYPE_LABEL.Service)
+    expect(within(service).getByText('%20')).toBeTruthy()
+    expect(within(service).getByText(TAX_TEXT.withholdingNone)).toBeTruthy()
+
+    // Both code lists and the VUK 232 threshold are "kaynak yok".
     expect(screen.getAllByText(TAX_TEXT.noSource)).toHaveLength(3)
-    expect(screen.getByText(TAX_TEXT.withholdingNeedsCategories)).toBeTruthy()
     const read = recorded.find((request) => isRead(request.url))
     expect(read?.headers['X-Company-Id']).toBe(COMPANY_A)
     expect(commands(recorded)).toEqual([])
   })
 
-  it('shows rates in force, scheduled records, an explicit missing withholding and the code list', async () => {
+  it('shows a Settings record over the catalog, a scheduled record and the code list', async () => {
     install((url) => (isRead(url) ? json(master()) : undefined))
     renderAt(TAX_PATH)
 
-    const vat = await screen.findByRole('table', { name: TAX_TEXT.vatTableLabel })
-    const vatRow = within(vat).getAllByRole('row')[1]
-    expect(within(vatRow).getByText('%20')).toBeTruthy()
-    expect(within(vatRow).getByText('01.12.2026 itibarıyla %25')).toBeTruthy()
-
-    const withholding = screen.getByRole('table', { name: TAX_TEXT.withholdingTableLabel })
-    const rows = within(withholding).getAllByRole('row').slice(1)
-    expect(rows).toHaveLength(2)
-    const byBuyer = (code: string) => rows.find((row) => within(row).queryByText(code) !== null)!
-    expect(within(byBuyer('MUKELLEF')).getByText('%50 (kod T1)')).toBeTruthy()
-    // No record for the consumer: "kaynak yok", never 0 or "not applied".
-    expect(within(byBuyer('NIHAI')).getByText(TAX_TEXT.noSource)).toBeTruthy()
+    const table = await screen.findByRole('table', { name: TAX_TEXT.defaultsTableLabel })
+    expect(within(rowOf(table, ITEM_TYPE_LABEL.Service)).getByText(TAX_TEXT.sourceRecord)).toBeTruthy()
+    const scheduled = screen.getByRole('list', { name: `${TAX_TEXT.columnScheduled} — ${ITEM_TYPE_LABEL.Steel}` })
+    expect(within(scheduled).getByText(/01\.12\.2026 itibarıyla %20, %70 \(kod T1\)/)).toBeTruthy()
 
     const list = screen.getByRole('group', { name: CODE_LIST_LABEL.Withholding })
     expect(within(list).getByText('T1')).toBeTruthy()
@@ -167,7 +212,7 @@ describe('Vergi ayarları — reads', () => {
 
     install((url) => (isRead(url) ? json({ ...master(), companyId: '00000000-0000-4000-8000-000000000009' }) : undefined))
     renderAt(TAX_PATH)
-    await waitFor(() => expect(screen.queryByRole('table', { name: TAX_TEXT.vatTableLabel })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('table', { name: TAX_TEXT.defaultsTableLabel })).toBeNull())
   })
 
   it('an ungranted screen calls nothing', async () => {
@@ -180,7 +225,7 @@ describe('Vergi ayarları — reads', () => {
 })
 
 describe('Vergi ayarları — commands', () => {
-  it('records a VAT rate with the class version, the rate as text, the date and one Idempotency-Key, then re-reads', async () => {
+  it('changes a default with the series version, percents as text, the date and one Idempotency-Key, then re-reads', async () => {
     const user = userEvent.setup()
     let reads = 0
     const recorded = install((url, init) => {
@@ -188,23 +233,31 @@ describe('Vergi ayarları — commands', () => {
         reads += 1
         return json(master())
       }
-      return init?.method === 'POST' && url.endsWith(`/vat-classes/${VAT}/rates`) ? noContent() : undefined
+      return init?.method === 'POST' && url.endsWith('/settings/tax-master/item-type-defaults/Steel') ? noContent() : undefined
     })
     renderAt(TAX_PATH)
 
-    await user.click(await screen.findByRole('button', { name: `${TAX_TEXT.recordRate} — GENEL` }))
-    await user.type(screen.getByLabelText(TAX_TEXT.rateLabel, { exact: false }), '10.5')
-    const date = screen.getByLabelText(TAX_TEXT.effectiveFromLabel, { exact: false })
-    await user.type(date, '2027-01-01')
+    await user.click(await screen.findByRole('button', { name: `${TAX_TEXT.changeDefault} — ${ITEM_TYPE_LABEL.Steel}` }))
+    // Pre-filled from the default in force (catalog: 20 / 50, no code).
+    const rate = screen.getByLabelText(TAX_TEXT.withholdingRateLabel, { exact: false })
+    await user.clear(rate)
+    await user.type(rate, '70')
+    await user.type(screen.getByLabelText(TAX_TEXT.withholdingCodeLabel, { exact: false }), ' t1 ')
+    await user.type(screen.getByLabelText(TAX_TEXT.effectiveFromLabel, { exact: false }), '2027-01-01')
     await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), '  SENTETIK gerekçe  ')
     await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
 
     expect(await screen.findByText(TAX_TEXT.saved)).toBeTruthy()
     const [command] = commands(recorded)
-    expect(command.url).toMatch(new RegExp(`/settings/tax-master/vat-classes/${VAT}/rates$`))
+    expect(command.url).toMatch(/\/settings\/tax-master\/item-type-defaults\/Steel$/)
     expect(command.body).toEqual({
-      expectedVersion: '3',
-      ratePercent: '10.5',
+      expectedVersion: '2',
+      vatApplies: true,
+      vatPercent: '20',
+      exemptionCode: null,
+      withholdingApplies: true,
+      withholdingPercent: '70',
+      withholdingCode: 'T1',
       reason: 'SENTETIK gerekçe',
       effectiveFrom: '2027-01-01',
     })
@@ -213,36 +266,38 @@ describe('Vergi ayarları — commands', () => {
     await waitFor(() => expect(reads).toBeGreaterThanOrEqual(2))
   })
 
-  it('records an explicit "no withholding" for a buyer category without a rate or code', async () => {
+  it('records "KDV yok" for an item type without a rate, a withholding or an exemption code', async () => {
     const user = userEvent.setup()
     const recorded = install((url, init) => {
       if (isRead(url)) return json(master())
-      return init?.method === 'POST' && url.endsWith(`/withholding-classes/${STEEL}/rates`) ? noContent() : undefined
+      return init?.method === 'POST' && url.endsWith('/item-type-defaults/Service') ? noContent() : undefined
     })
     renderAt(TAX_PATH)
 
-    await user.click(await screen.findByRole('button', { name: `${TAX_TEXT.recordWithholding} — DEMIR-CELIK / NIHAI` }))
-    await user.click(screen.getByLabelText(TAX_TEXT.notAppliedLabel))
+    await user.click(await screen.findByRole('button', { name: `${TAX_TEXT.changeDefault} — ${ITEM_TYPE_LABEL.Service}` }))
+    await user.click(screen.getByLabelText(TAX_TEXT.vatNotAppliedLabel))
     await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), 'SENTETIK')
     await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
 
     expect(await screen.findByText(TAX_TEXT.saved)).toBeTruthy()
     expect(commands(recorded)[0].body).toEqual({
-      expectedVersion: '2',
-      buyerCategoryId: CONSUMER,
-      applies: false,
-      ratePercent: null,
+      expectedVersion: '1',
+      vatApplies: false,
+      vatPercent: null,
+      exemptionCode: null,
+      withholdingApplies: false,
+      withholdingPercent: null,
       withholdingCode: null,
       reason: 'SENTETIK',
     })
   })
 
-  it('keeps the same key for a retry after an unknown outcome and shows a refusal by its code', async () => {
+  it('offers no withdrawal for a catalog row and keeps the same key for a retry after an unknown outcome', async () => {
     const user = userEvent.setup()
     let attempt = 0
     const recorded = install((url, init) => {
       if (isRead(url)) return json(master())
-      if (init?.method === 'POST' && url.endsWith(`/rate-records/${SCHEDULED}/withdrawal`)) {
+      if (init?.method === 'POST' && url.endsWith(`/item-type-defaults/records/${STEEL_SCHEDULED}/withdrawal`)) {
         attempt += 1
         return attempt === 1 ? problem(500) : problem(409, { code: 'settings_tax_master_record_in_effect' })
       }
@@ -250,7 +305,9 @@ describe('Vergi ayarları — commands', () => {
     })
     renderAt(TAX_PATH)
 
-    await user.click(await screen.findByRole('button', { name: `${TAX_TEXT.withdraw} — GENEL 01.12.2026` }))
+    await screen.findByRole('table', { name: TAX_TEXT.defaultsTableLabel })
+    expect(screen.queryByRole('button', { name: `${TAX_TEXT.withdraw} — ${ITEM_TYPE_LABEL.Steel} 31.10.2026` })).toBeNull()
+    await user.click(screen.getByRole('button', { name: `${TAX_TEXT.withdraw} — ${ITEM_TYPE_LABEL.Steel} 01.12.2026` }))
     await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), 'SENTETIK')
     await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
     expect(await screen.findByText(TAX_TEXT.unknownOutcome)).toBeTruthy()
@@ -260,7 +317,7 @@ describe('Vergi ayarları — commands', () => {
     const sent = commands(recorded)
     expect(sent).toHaveLength(2)
     expect(sent[0].headers['Idempotency-Key']).toBe(sent[1].headers['Idempotency-Key'])
-    expect(sent[0].body).toEqual({ expectedVersion: '3', reason: 'SENTETIK' })
+    expect(sent[0].body).toEqual({ expectedVersion: '2', reason: 'SENTETIK' })
   })
 
   it('closes the form and re-reads on a version conflict', async () => {
@@ -284,28 +341,26 @@ describe('Vergi ayarları — commands', () => {
     expect(screen.queryByRole('button', { name: TAX_TEXT.save })).toBeNull()
   })
 
-  it('creates a category with the normalized code', async () => {
+  it('shows an unknown withholding code refusal by its code', async () => {
     const user = userEvent.setup()
-    const recorded = install((url, init) => {
-      if (isRead(url)) return json(emptyMaster())
-      return init?.method === 'POST' && url.endsWith('/settings/tax-master/categories')
-        ? json({ id: VAT, version: '1' }, 201)
-        : undefined
+    install((url, init) => {
+      if (isRead(url)) return json(master())
+      return init?.method === 'POST' ? problem(422, { code: 'settings_tax_master_withholding_code_unknown' }) : undefined
     })
     renderAt(TAX_PATH)
 
-    await user.click(await screen.findByRole('button', { name: TAX_TEXT.newCategory }))
-    await user.type(screen.getByRole('textbox', { name: TAX_TEXT.codeLabel }), ' genel ')
-    await user.type(screen.getByRole('textbox', { name: TAX_TEXT.nameLabel }), 'Genel')
+    await user.click(await screen.findByRole('button', { name: `${TAX_TEXT.changeDefault} — ${ITEM_TYPE_LABEL.Steel}` }))
+    await user.type(screen.getByLabelText(TAX_TEXT.withholdingCodeLabel, { exact: false }), 'X9')
     await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), 'SENTETIK')
     await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
 
-    expect(await screen.findByText(TAX_TEXT.saved)).toBeTruthy()
-    expect(commands(recorded)[0].body).toEqual({ kind: 'VatClass', code: 'GENEL', name: 'Genel', reason: 'SENTETIK' })
+    expect(
+      await screen.findByText('Tevkifat kodu, kaydın başladığı gün yürürlükteki tevkifat kod listesinde yok.'),
+    ).toBeTruthy()
   })
 })
 
-describe('Vergi ayarları — VUK 232 threshold (SAT-D93)', () => {
+describe('Vergi ayarları — VUK 232 threshold (SAT-D135)', () => {
   it('shows the threshold in force and records a new one with the entered amount and currency as text', async () => {
     const user = userEvent.setup()
     const recorded = install((url, init) => {
@@ -330,16 +385,28 @@ describe('Vergi ayarları — VUK 232 threshold (SAT-D93)', () => {
 describe('Vergi ayarları — contract decoders', () => {
   it('accepts the fixtures and fails closed on an off-contract record', () => {
     expect(decodeTaxMaster(master(), COMPANY_A)).not.toBeNull()
-    expect(decodeTaxMaster(emptyMaster(), COMPANY_A)).not.toBeNull()
+    expect(decodeTaxMaster(catalogMaster(), COMPANY_A)).not.toBeNull()
+
     const broken = master()
-    ;(broken.rateSeries[0].inForce as { ratePercent: string | null }).ratePercent = '20.12345'
+    broken.itemTypeDefaults[0].inForce.vatPercent = '20.12345'
     expect(decodeTaxMaster(broken, COMPANY_A)).toBeNull()
+
     const zeroWithholding = master()
-    ;(zeroWithholding.rateSeries[1].inForce as { withholdingCode: string | null }).withholdingCode = null
+    zeroWithholding.itemTypeDefaults[0].inForce.withholdingPercent = '0'
     expect(decodeTaxMaster(zeroWithholding, COMPANY_A)).toBeNull()
+
+    const catalogWithRecorder = master()
+    catalogWithRecorder.itemTypeDefaults[0].inForce.recordedBy = USER
+    expect(decodeTaxMaster(catalogWithRecorder, COMPANY_A)).toBeNull()
+
+    const missingType = master()
+    missingType.itemTypeDefaults = missingType.itemTypeDefaults.slice(0, 2)
+    expect(decodeTaxMaster(missingType, COMPANY_A)).toBeNull()
+
     const zeroThreshold = master()
     ;(zeroThreshold.withholdingThreshold.inForce as { amount: string }).amount = '0'
     expect(decodeTaxMaster(zeroThreshold, COMPANY_A)).toBeNull()
+
     const { withholdingThreshold: _omitted, ...noThreshold } = master()
     expect(decodeTaxMaster(noThreshold, COMPANY_A)).toBeNull()
   })

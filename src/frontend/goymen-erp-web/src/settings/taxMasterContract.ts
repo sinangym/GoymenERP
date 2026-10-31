@@ -1,15 +1,13 @@
 /**
- * MOD-03 tax master wire contract (SAT-D73/D74/D82/D83; `SettingsTaxMasterEndpoints`, `SettingsTaxMasterV1.cs`; pinned to
+ * MOD-03 tax master wire contract (EK19 SAT-D133…D139; `SettingsTaxMasterEndpoints`, `SettingsTaxMasterV1.cs`; pinned to
  * `contracts/openapi/goymen-erp-v1.json` by ./taxMasterOpenapiContract.test.ts):
  *
  *   GET  /settings/tax-master                                                -> TaxMasterViewV1
- *   POST /settings/tax-master/categories                                     -> 201 TaxCategoryCreatedV1
- *   POST /settings/tax-master/vat-classes/{classId}/rates                    -> 204
- *   POST /settings/tax-master/withholding-classes/{classId}/rates            -> 204
- *   POST /settings/tax-master/rate-records/{recordId}/withdrawal             -> 204
+ *   POST /settings/tax-master/item-type-defaults/{itemType}                  -> 204 (SAT-D139)
+ *   POST /settings/tax-master/item-type-defaults/records/{id}/withdrawal     -> 204
  *   POST /settings/tax-master/code-lists/{listKind}/versions                 -> 204
  *   POST /settings/tax-master/code-lists/{listKind}/versions/{v}/withdrawal  -> 204
- *   POST /settings/tax-master/withholding-threshold                          -> 204 (SAT-D93, VUK 232)
+ *   POST /settings/tax-master/withholding-threshold                          -> 204 (SAT-D135, VUK 232)
  *   POST /settings/tax-master/withholding-threshold/records/{id}/withdrawal  -> 204
  *
  * Every decoder fails CLOSED (one bad row invalidates the whole answer); rates stay the lossless decimal TEXT the server
@@ -19,18 +17,15 @@
 import { isDateText, isUuid } from './discountLimitContract'
 
 export const TAX_MASTER_PATH = '/settings/tax-master'
-export const TAX_CATEGORIES_PATH = `${TAX_MASTER_PATH}/categories`
+export const ITEM_TYPES = ['Steel', 'Scrap', 'Service'] as const
+export type ItemType = (typeof ITEM_TYPES)[number]
 
-export function vatRatePath(classId: string): string {
-  return `${TAX_MASTER_PATH}/vat-classes/${encodeURIComponent(classId)}/rates`
+export function itemTypeDefaultPath(itemType: ItemType): string {
+  return `${TAX_MASTER_PATH}/item-type-defaults/${itemType}`
 }
 
-export function withholdingRatePath(classId: string): string {
-  return `${TAX_MASTER_PATH}/withholding-classes/${encodeURIComponent(classId)}/rates`
-}
-
-export function rateWithdrawalPath(recordId: string): string {
-  return `${TAX_MASTER_PATH}/rate-records/${encodeURIComponent(recordId)}/withdrawal`
+export function itemTypeDefaultWithdrawalPath(recordId: string): string {
+  return `${TAX_MASTER_PATH}/item-type-defaults/records/${encodeURIComponent(recordId)}/withdrawal`
 }
 
 export const WITHHOLDING_THRESHOLD_PATH = `${TAX_MASTER_PATH}/withholding-threshold`
@@ -54,10 +49,7 @@ export const TAX_PROBLEM = {
   reasonTooLong: 'settings_tax_master_reason_too_long',
   idempotencyConflict: 'settings_tax_master_idempotency_conflict',
   versionConflict: 'settings_tax_master_version_conflict',
-  categoryCodeTaken: 'settings_tax_master_category_code_taken',
-  categoryNameTaken: 'settings_tax_master_category_name_taken',
-  categoryKindMismatch: 'settings_tax_master_category_kind_mismatch',
-  buyerCategoryNotFound: 'settings_tax_master_buyer_category_not_found',
+  exemptionCodeUnknown: 'settings_tax_master_exemption_code_unknown',
   withholdingCodeUnknown: 'settings_tax_master_withholding_code_unknown',
   effectiveFromPast: 'settings_tax_master_effective_from_past',
   recordInEffect: 'settings_tax_master_record_in_effect',
@@ -66,46 +58,38 @@ export const TAX_PROBLEM = {
 } as const
 
 export const TAX_INPUT = {
-  categoryCodeMaximumLength: 32,
-  categoryNameMaximumLength: 100,
   listCodeMaximumLength: 16,
   listEntryNameMaximumLength: 200,
   listMaximumEntries: 500,
   reasonMaximumLength: 4000,
 } as const
 
-export const CATEGORY_KINDS = ['VatClass', 'WithholdingClass', 'BuyerCategory'] as const
-export type CategoryKind = (typeof CATEGORY_KINDS)[number]
 export const CODE_LIST_KINDS = ['Exemption', 'Withholding'] as const
 export type CodeListKind = (typeof CODE_LIST_KINDS)[number]
-export type RateKind = 'Vat' | 'Withholding'
+export type DefaultSource = 'Catalog' | 'Record'
 
-export interface TaxCategory {
-  readonly id: string
-  readonly kind: CategoryKind
-  readonly code: string
-  readonly name: string
-  readonly version: string
-}
-
-export interface TaxRateRecord {
+/** SAT-D139: one default-tax record of an item type (the reviewed catalog entry or a Settings record). */
+export interface TaxDefaultRecord {
   readonly recordId: string
+  readonly source: DefaultSource
   readonly recordVersion: string
   readonly effectiveFrom: string
-  readonly applies: boolean
-  readonly ratePercent: string | null
+  readonly vatApplies: boolean
+  readonly vatPercent: string | null
+  readonly exemptionCode: string | null
+  readonly withholdingApplies: boolean
+  readonly withholdingPercent: string | null
   readonly withholdingCode: string | null
-  readonly recordedBy: string
-  readonly recordedAtUtc: string
+  readonly recordedBy: string | null
+  readonly recordedAtUtc: string | null
   readonly reason: string
 }
 
-export interface TaxRateSeries {
-  readonly kind: RateKind
-  readonly classId: string
-  readonly buyerCategoryId: string | null
-  readonly inForce: TaxRateRecord | null
-  readonly scheduled: readonly TaxRateRecord[]
+export interface TaxDefaultSeries {
+  readonly itemType: ItemType
+  readonly version: string
+  readonly inForce: TaxDefaultRecord | null
+  readonly scheduled: readonly TaxDefaultRecord[]
 }
 
 export interface TaxCodeListEntry {
@@ -150,8 +134,7 @@ export interface TaxThreshold {
 export interface TaxMaster {
   readonly companyId: string
   readonly businessDate: string
-  readonly categories: readonly TaxCategory[]
-  readonly rateSeries: readonly TaxRateSeries[]
+  readonly itemTypeDefaults: readonly TaxDefaultSeries[]
   readonly codeLists: readonly TaxCodeList[]
   readonly withholdingThreshold: TaxThreshold
 }
@@ -164,25 +147,14 @@ export interface RecordThresholdBody {
   readonly effectiveFrom?: string
 }
 
-export interface CreateCategoryBody {
-  readonly kind: CategoryKind
-  readonly code: string
-  readonly name: string
-  readonly reason: string
-}
-
-export interface RecordVatRateBody {
+/** SAT-D139: a new default record of an item type (rates as text; codes optional — empty stays "kaynak yok"). */
+export interface RecordDefaultBody {
   readonly expectedVersion: string
-  readonly ratePercent: string
-  readonly reason: string
-  readonly effectiveFrom?: string
-}
-
-export interface RecordWithholdingRateBody {
-  readonly expectedVersion: string
-  readonly buyerCategoryId: string
-  readonly applies: boolean
-  readonly ratePercent: string | null
+  readonly vatApplies: boolean
+  readonly vatPercent: string | null
+  readonly exemptionCode: string | null
+  readonly withholdingApplies: boolean
+  readonly withholdingPercent: string | null
   readonly withholdingCode: string | null
   readonly reason: string
   readonly effectiveFrom?: string
@@ -202,7 +174,6 @@ export interface PublishCodeListBody {
 
 const VERSION = /^(0|[1-9]\d*)$/
 const PERCENT = /^(0|[1-9]\d{0,2})(\.\d{1,4})?$/
-const CATEGORY_CODE = /^[A-Z0-9][A-Z0-9_-]{0,31}$/
 const LIST_CODE = /^[A-Z0-9]{1,16}$/
 const AMOUNT = /^(0|[1-9]\d{0,14})(\.\d{1,4})?$/
 const CURRENCY = /^[A-Z]{3}$/
@@ -262,60 +233,49 @@ export function normalizeTaxCode(value: string): string {
   return value.trim().toLocaleUpperCase('en-US')
 }
 
-export function isCategoryCode(value: string): boolean {
-  return CATEGORY_CODE.test(value)
-}
-
 export function isListCode(value: string): boolean {
   return LIST_CODE.test(value)
 }
 
-function decodeCategory(raw: unknown): TaxCategory | null {
-  if (!isRecord(raw) || !isUuid(raw.id) || !CATEGORY_KINDS.includes(raw.kind as CategoryKind) || typeof raw.code !== 'string'
-    || !isCategoryCode(raw.code) || !isText(raw.name) || !isVersion(raw.version)) return null
-  return { id: raw.id, kind: raw.kind as CategoryKind, code: raw.code, name: raw.name, version: raw.version }
-}
-
-function decodeRecord(raw: unknown, kind: RateKind): TaxRateRecord | null {
-  if (!isRecord(raw) || !isUuid(raw.recordId) || !isVersion(raw.recordVersion) || !isDateText(raw.effectiveFrom)
-    || typeof raw.applies !== 'boolean' || !isText(raw.recordedBy) || typeof raw.recordedAtUtc !== 'string'
-    || typeof raw.reason !== 'string') return null
-  const rate = raw.ratePercent
-  const code = raw.withholdingCode
-  if (kind === 'Vat' && (!raw.applies || !isRatePercentText(rate) || code !== null)) return null
-  if (kind === 'Withholding') {
-    if (raw.applies && (!isRatePercentText(rate) || typeof code !== 'string' || !isListCode(code))) return null
-    if (!raw.applies && (rate !== null || code !== null)) return null
-  }
+function decodeDefault(raw: unknown): TaxDefaultRecord | null {
+  if (!isRecord(raw) || !isUuid(raw.recordId) || (raw.source !== 'Catalog' && raw.source !== 'Record')
+    || !isVersion(raw.recordVersion) || !isDateText(raw.effectiveFrom) || typeof raw.vatApplies !== 'boolean'
+    || typeof raw.withholdingApplies !== 'boolean' || typeof raw.reason !== 'string') return null
+  const optionalCode = (value: unknown) => value === null || (typeof value === 'string' && isListCode(value))
+  if (raw.vatApplies ? !isRatePercentText(raw.vatPercent) || raw.exemptionCode !== null
+    : raw.vatPercent !== null || !optionalCode(raw.exemptionCode)) return null
+  if (raw.withholdingApplies
+    ? !raw.vatApplies || !isRatePercentText(raw.withholdingPercent) || Number(raw.withholdingPercent) <= 0
+      || !optionalCode(raw.withholdingCode)
+    : raw.withholdingPercent !== null || raw.withholdingCode !== null) return null
+  const isCatalog = raw.source === 'Catalog'
+  if (isCatalog ? raw.recordedBy !== null || raw.recordedAtUtc !== null
+    : !isText(raw.recordedBy) || typeof raw.recordedAtUtc !== 'string') return null
   return {
     recordId: raw.recordId,
+    source: raw.source,
     recordVersion: raw.recordVersion,
     effectiveFrom: raw.effectiveFrom,
-    applies: raw.applies,
-    ratePercent: (rate as string | null) ?? null,
-    withholdingCode: (code as string | null) ?? null,
-    recordedBy: raw.recordedBy,
-    recordedAtUtc: raw.recordedAtUtc,
+    vatApplies: raw.vatApplies,
+    vatPercent: (raw.vatPercent as string | null) ?? null,
+    exemptionCode: (raw.exemptionCode as string | null) ?? null,
+    withholdingApplies: raw.withholdingApplies,
+    withholdingPercent: (raw.withholdingPercent as string | null) ?? null,
+    withholdingCode: (raw.withholdingCode as string | null) ?? null,
+    recordedBy: (raw.recordedBy as string | null) ?? null,
+    recordedAtUtc: (raw.recordedAtUtc as string | null) ?? null,
     reason: raw.reason,
   }
 }
 
-function decodeSeries(raw: unknown): TaxRateSeries | null {
-  if (!isRecord(raw) || (raw.kind !== 'Vat' && raw.kind !== 'Withholding') || !isUuid(raw.classId)) return null
-  const kind = raw.kind
-  if (kind === 'Vat' ? raw.buyerCategoryId !== null : !isUuid(raw.buyerCategoryId)) return null
-  const inForce = raw.inForce === null ? null : decodeRecord(raw.inForce, kind)
+function decodeSeries(raw: unknown): TaxDefaultSeries | null {
+  if (!isRecord(raw) || !ITEM_TYPES.includes(raw.itemType as ItemType) || !isVersion(raw.version)
+    || !Array.isArray(raw.scheduled)) return null
+  const inForce = raw.inForce === null ? null : decodeDefault(raw.inForce)
   if (raw.inForce !== null && inForce === null) return null
-  if (!Array.isArray(raw.scheduled)) return null
-  const scheduled = raw.scheduled.map((record) => decodeRecord(record, kind))
+  const scheduled = raw.scheduled.map(decodeDefault)
   if (scheduled.some((record) => record === null)) return null
-  return {
-    kind,
-    classId: raw.classId,
-    buyerCategoryId: (raw.buyerCategoryId as string | null) ?? null,
-    inForce,
-    scheduled: scheduled as TaxRateRecord[],
-  }
+  return { itemType: raw.itemType as ItemType, version: raw.version, inForce, scheduled: scheduled as TaxDefaultRecord[] }
 }
 
 function decodeListVersion(raw: unknown): TaxCodeListVersion | null {
@@ -349,15 +309,13 @@ function decodeList(raw: unknown): TaxCodeList | null {
 
 /** The whole master, or null when any part is off-contract or the company is not the one asked for. */
 export function decodeTaxMaster(raw: unknown, companyId: string): TaxMaster | null {
-  if (!isRecord(raw) || raw.companyId !== companyId || !isDateText(raw.businessDate) || !Array.isArray(raw.categories)
-    || !Array.isArray(raw.rateSeries) || !Array.isArray(raw.codeLists)) return null
-  const categories = raw.categories.map(decodeCategory)
-  const series = raw.rateSeries.map(decodeSeries)
+  if (!isRecord(raw) || raw.companyId !== companyId || !isDateText(raw.businessDate) || !Array.isArray(raw.itemTypeDefaults)
+    || !Array.isArray(raw.codeLists)) return null
+  const series = raw.itemTypeDefaults.map(decodeSeries)
   const lists = raw.codeLists.map(decodeList)
-  if (categories.some((item) => item === null) || series.some((item) => item === null) || lists.some((item) => item === null)) {
-    return null
-  }
-
+  if (series.some((item) => item === null) || lists.some((item) => item === null)) return null
+  const types = (series as TaxDefaultSeries[]).map((item) => item.itemType)
+  if (types.length !== ITEM_TYPES.length || ITEM_TYPES.some((type) => !types.includes(type))) return null
   const threshold = decodeThreshold(raw.withholdingThreshold)
   if (threshold === null) return null
   const kinds = (lists as TaxCodeList[]).map((list) => list.kind)
@@ -365,15 +323,10 @@ export function decodeTaxMaster(raw: unknown, companyId: string): TaxMaster | nu
   return {
     companyId,
     businessDate: raw.businessDate,
-    categories: categories as TaxCategory[],
-    rateSeries: series as TaxRateSeries[],
+    itemTypeDefaults: series as TaxDefaultSeries[],
     codeLists: lists as TaxCodeList[],
     withholdingThreshold: threshold,
   }
-}
-
-export function decodeCategoryCreated(raw: unknown): { readonly id: string; readonly version: string } | null {
-  return isRecord(raw) && isUuid(raw.id) && isVersion(raw.version) ? { id: raw.id, version: raw.version } : null
 }
 
 /** "KOD;Ad" per line → entries (codes normalized); null when a line is malformed or a code repeats. */

@@ -5,16 +5,15 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  TAX_CATEGORIES_PATH,
+  ITEM_TYPES,
   TAX_MASTER_PATH,
   TAX_PROBLEM,
   codeListPath,
   codeListWithdrawalPath,
-  rateWithdrawalPath,
+  itemTypeDefaultPath,
+  itemTypeDefaultWithdrawalPath,
   WITHHOLDING_THRESHOLD_PATH,
   thresholdWithdrawalPath,
-  vatRatePath,
-  withholdingRatePath,
 } from './taxMasterContract'
 
 interface Schema {
@@ -43,9 +42,8 @@ const ID = '11111111-1111-4111-8111-111111111111'
 
 function template(builtPath: string): string {
   return `/api/v1${builtPath}`
-    .replace(`/vat-classes/${ID}`, '/vat-classes/{classId}')
-    .replace(`/withholding-classes/${ID}`, '/withholding-classes/{classId}')
-    .replace(`/rate-records/${ID}`, '/rate-records/{recordId}')
+    .replace(`/item-type-defaults/records/${ID}`, '/item-type-defaults/records/{recordId}')
+    .replace(/\/item-type-defaults\/(Steel|Scrap|Service)$/, '/item-type-defaults/{itemType}')
     .replace(`/withholding-threshold/records/${ID}`, '/withholding-threshold/records/{recordId}')
     .replace(/\/code-lists\/(Exemption|Withholding)\/versions/, '/code-lists/{listKind}/versions')
     .replace(/\/versions\/7\/withdrawal$/, '/versions/{listVersion}/withdrawal')
@@ -70,10 +68,8 @@ function expectFits(example: object, method: 'post', builtPath: string): void {
 describe('tax master client ↔ canonical OpenAPI', () => {
   it('calls only routes the backend declares, with the method it uses', () => {
     operation('get', TAX_MASTER_PATH)
-    operation('post', TAX_CATEGORIES_PATH)
-    operation('post', vatRatePath(ID))
-    operation('post', withholdingRatePath(ID))
-    operation('post', rateWithdrawalPath(ID))
+    for (const itemType of ITEM_TYPES) operation('post', itemTypeDefaultPath(itemType))
+    operation('post', itemTypeDefaultWithdrawalPath(ID))
     operation('post', codeListPath('Exemption'))
     operation('post', codeListWithdrawalPath('Withholding', '7'))
     operation('post', WITHHOLDING_THRESHOLD_PATH)
@@ -81,14 +77,22 @@ describe('tax master client ↔ canonical OpenAPI', () => {
   })
 
   it('sends exactly the declared request members', () => {
-    expectFits({ kind: 'VatClass', code: 'A', name: 'A', reason: 'r' }, 'post', TAX_CATEGORIES_PATH)
-    expectFits({ expectedVersion: '1', ratePercent: '20', reason: 'r', effectiveFrom: '2026-11-01' }, 'post', vatRatePath(ID))
     expectFits(
-      { expectedVersion: '1', buyerCategoryId: ID, applies: true, ratePercent: '50', withholdingCode: 'T1', reason: 'r' },
+      {
+        expectedVersion: '0',
+        vatApplies: true,
+        vatPercent: '20',
+        exemptionCode: null,
+        withholdingApplies: true,
+        withholdingPercent: '50',
+        withholdingCode: 'T1',
+        reason: 'r',
+        effectiveFrom: '2026-11-01',
+      },
       'post',
-      withholdingRatePath(ID),
+      itemTypeDefaultPath('Steel'),
     )
-    expectFits({ expectedVersion: '1', reason: 'r' }, 'post', rateWithdrawalPath(ID))
+    expectFits({ expectedVersion: '1', reason: 'r' }, 'post', itemTypeDefaultWithdrawalPath(ID))
     expectFits({ expectedVersion: '0', entries: [], reason: 'r' }, 'post', codeListPath('Withholding'))
     expectFits({ expectedVersion: '1', reason: 'r' }, 'post', codeListWithdrawalPath('Withholding', '7'))
     expectFits({ expectedVersion: '0', amount: '1', currencyCode: 'TRY', reason: 'r' }, 'post', WITHHOLDING_THRESHOLD_PATH)

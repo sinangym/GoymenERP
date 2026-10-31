@@ -7,23 +7,19 @@
 
 import { noBody, readJson, send, type CommandContext } from './discountLimitApi'
 import {
-  TAX_CATEGORIES_PATH,
   TAX_MASTER_PATH,
+  WITHHOLDING_THRESHOLD_PATH,
   codeListPath,
   codeListWithdrawalPath,
-  decodeCategoryCreated,
   decodeTaxMaster,
-  rateWithdrawalPath,
-  vatRatePath,
-  withholdingRatePath,
-  WITHHOLDING_THRESHOLD_PATH,
+  itemTypeDefaultPath,
+  itemTypeDefaultWithdrawalPath,
   thresholdWithdrawalPath,
-  type RecordThresholdBody,
   type CodeListKind,
-  type CreateCategoryBody,
+  type ItemType,
   type PublishCodeListBody,
-  type RecordVatRateBody,
-  type RecordWithholdingRateBody,
+  type RecordDefaultBody,
+  type RecordThresholdBody,
   type TaxMaster,
   type WithdrawBody,
 } from './taxMasterContract'
@@ -33,20 +29,12 @@ export function fetchTaxMaster(companyId: string, signal?: AbortSignal): Promise
   return readJson(TAX_MASTER_PATH, companyId, (raw) => decodeTaxMaster(raw, companyId), signal)
 }
 
-export function createTaxCategory(context: CommandContext, body: CreateCategoryBody) {
-  return send('POST', TAX_CATEGORIES_PATH, context, body, 201, decodeCategoryCreated)
+export function recordItemTypeDefault(context: CommandContext, itemType: ItemType, body: RecordDefaultBody) {
+  return send<true>('POST', itemTypeDefaultPath(itemType), context, body, 204, noBody)
 }
 
-export function recordVatRate(context: CommandContext, classId: string, body: RecordVatRateBody) {
-  return send<true>('POST', vatRatePath(classId), context, body, 204, noBody)
-}
-
-export function recordWithholdingRate(context: CommandContext, classId: string, body: RecordWithholdingRateBody) {
-  return send<true>('POST', withholdingRatePath(classId), context, body, 204, noBody)
-}
-
-export function withdrawRateRecord(context: CommandContext, recordId: string, body: WithdrawBody) {
-  return send<true>('POST', rateWithdrawalPath(recordId), context, body, 204, noBody)
+export function withdrawItemTypeDefault(context: CommandContext, recordId: string, body: WithdrawBody) {
+  return send<true>('POST', itemTypeDefaultWithdrawalPath(recordId), context, body, 204, noBody)
 }
 
 export function publishCodeList(context: CommandContext, kind: CodeListKind, body: PublishCodeListBody) {
