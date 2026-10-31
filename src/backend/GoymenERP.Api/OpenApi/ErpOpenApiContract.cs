@@ -112,6 +112,7 @@ public static partial class ErpOpenApiContract
             {
                 ApplyContactInformationSchema(schema, context.JsonTypeInfo.Type);
                 ApplyCustomerGroupSchema(schema, context.JsonTypeInfo.Type);
+                ApplyEDocumentProfileSchema(schema, context.JsonTypeInfo.Type);
                 if (context.JsonTypeInfo.Type == typeof(SalesDraftLineCommercialV1))
                 {
                     schema.Required ??= new HashSet<string>();

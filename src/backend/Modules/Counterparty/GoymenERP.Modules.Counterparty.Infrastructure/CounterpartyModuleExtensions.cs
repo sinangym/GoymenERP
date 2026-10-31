@@ -63,6 +63,9 @@ public static class CounterpartyModuleExtensions
         services.AddScoped<
             ICounterpartyAccountCustomerGroupSourceV1,
             CounterpartyAccountCustomerGroupSourceV1>();
+        services.AddScoped<
+            ICounterpartyAccountEDocumentProfileSourceV1,
+            CounterpartyAccountEDocumentProfileSourceV1>();
         services.AddScoped<ICounterpartyLinkCandidateReadService, CounterpartyLinkCandidateReadService>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ICounterpartyReadSqlObserver, NullCounterpartyReadSqlObserver>();
@@ -99,6 +102,8 @@ public static class CounterpartyModuleExtensions
         services.AddScoped<ICounterpartyTaxIdentityService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyCustomerGroupService>(provider =>
+            provider.GetRequiredService<CounterpartyCommandService>());
+        services.AddScoped<ICounterpartyEDocumentProfileService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyCompanyAccountLinkService, CounterpartyCompanyAccountLinkService>();
         services.AddScoped<

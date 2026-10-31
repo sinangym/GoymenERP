@@ -9,6 +9,7 @@ using GoymenERP.Modules.Counterparty.Application.Views;
 using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
+using GoymenERP.Modules.Settings.Application.Contracts.V1;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -22,7 +23,9 @@ internal sealed partial class CounterpartyCommandService(
     IErpAuthorityRevalidationService authorityRevalidationService,
     IAuditEventCollector auditEventCollector,
     ICounterpartyActiveStateCommandProbe activeStateCommandProbe,
-    ILogger<CounterpartyCommandService> logger)
+    ILogger<CounterpartyCommandService> logger,
+    TimeProvider timeProvider,
+    ISettingsEInvoiceScenarioPolicyProviderV1? eInvoiceScenarioPolicy = null)
     : ICounterpartyCommandService, ICounterpartyContactInformationService
 {
     private const int CommandExecutionSchemaVersion = 1;
@@ -321,6 +324,8 @@ internal sealed partial class CounterpartyCommandService(
                     metadata.CompanyId, concurrencyContext.PartyId, cancellationToken),
                 CustomerGroupConcurrencyContext => await ReadCustomerGroupVersionAsync(
                     metadata.CompanyId, concurrencyContext.PartyId, cancellationToken),
+                EDocumentProfileConcurrencyContext => await ReadEDocumentProfileVersionAsync(
+                    concurrencyContext.PartyId, cancellationToken),
                 _ => await dbContext.CompanyPartyAccounts
                     .AsNoTracking()
                     .Where(x =>
@@ -652,6 +657,11 @@ internal sealed partial class CounterpartyCommandService(
     private sealed record CustomerGroupConcurrencyContext(
         Guid CustomerGroupId,
         long ExpectedVersion) : ConcurrencyContext(CustomerGroupId, ExpectedVersion);
+
+    /// <summary>A SAT-D119 e-belge command: fenced on the VKN-shared profile's version (the id rides in <c>PartyId</c>).</summary>
+    private sealed record EDocumentProfileConcurrencyContext(
+        Guid ProfileId,
+        long ExpectedVersion) : ConcurrencyContext(ProfileId, ExpectedVersion);
 
     private static class Responses
     {

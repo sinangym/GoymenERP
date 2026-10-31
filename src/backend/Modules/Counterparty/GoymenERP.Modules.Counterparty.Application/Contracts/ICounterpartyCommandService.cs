@@ -93,6 +93,18 @@ public enum CounterpartyCommandResult
 
     /// <summary>SAT-D57: the group to assign is passive; a passive group is never newly assigned (409).</summary>
     CustomerGroupInactive = 17,
+
+    /// <summary>
+    /// SAT-D102: Settings has no e-Fatura scenario code list in force for the company ("kaynak yok"), so no customer
+    /// override can be chosen (422).
+    /// </summary>
+    EInvoiceScenarioCodeListMissing = 18,
+
+    /// <summary>SAT-D102: the scenario code is not in the Settings list in force for the company (422).</summary>
+    EInvoiceScenarioNotListed = 19,
+
+    /// <summary>SAT-D119: the party has no VKN/TCKN, so no VKN-keyed e-belge profile can exist (422).</summary>
+    EDocumentTaxIdentityRequired = 20,
 }
 
 public static class CounterpartyProblemCodesV1
@@ -137,6 +149,14 @@ public static class CounterpartyProblemCodesV1
 
     public const string CustomerGroupInactive = "customer_group_inactive";
 
+    /// <summary>SAT-D102 e-belge profile.</summary>
+    public const string EInvoiceScenarioCodeListMissing = "einvoice_scenario_code_list_missing";
+
+    public const string EInvoiceScenarioNotListed = "einvoice_scenario_not_listed";
+
+    /// <summary>SAT-D119: no VKN/TCKN on the party, so the shared e-belge profile cannot be recorded.</summary>
+    public const string EDocumentTaxIdentityRequired = "e_document_tax_identity_required";
+
     public static string RequiredForProblem(CounterpartyCommandResult result)
     {
         return result switch
@@ -156,6 +176,9 @@ public static class CounterpartyProblemCodesV1
             CounterpartyCommandResult.CustomerGroupNameTaken => CustomerGroupNameTaken,
             CounterpartyCommandResult.CustomerGroupNotFound => CustomerGroupNotFound,
             CounterpartyCommandResult.CustomerGroupInactive => CustomerGroupInactive,
+            CounterpartyCommandResult.EInvoiceScenarioCodeListMissing => EInvoiceScenarioCodeListMissing,
+            CounterpartyCommandResult.EInvoiceScenarioNotListed => EInvoiceScenarioNotListed,
+            CounterpartyCommandResult.EDocumentTaxIdentityRequired => EDocumentTaxIdentityRequired,
             _ => throw new InvalidOperationException(
                 $"Cari terminal sonucu stable ProblemDetails koduyla eşleşmiyor: {result}."),
         };
