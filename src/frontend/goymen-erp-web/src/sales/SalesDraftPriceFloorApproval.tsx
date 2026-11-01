@@ -108,8 +108,12 @@ export function SalesDraftPriceFloorApproval({ shell, detail, companyId, onRecor
   }
 
   const notice = attempt.phase === 'submitting' ? T.floorApproval.submitting
-    : isOutcomeStillUnknown(attempt) ? T.floorApproval.unknown
-      : attempt.phase === 'failed' ? T.floorApproval.failed : null
+    : isOutcomeStillUnknown(attempt)
+      ? ('reason' in attempt && attempt.reason === 'service-unavailable' ? T.floorApproval.unavailable : T.floorApproval.unknown)
+      : attempt.phase === 'failed'
+        ? (attempt.failure === 'conflict' ? T.floorApproval.conflict
+          : attempt.failure === 'forbidden' ? T.floorApproval.forbidden : T.floorApproval.failed)
+        : null
 
   return (
     <section className={styles.actions} aria-label={T.floorApproval.heading} data-testid="sales-price-floor-approval">

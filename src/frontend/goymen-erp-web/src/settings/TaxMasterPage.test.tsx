@@ -546,6 +546,35 @@ describe('Vergi ayarları — contract decoders', () => {
     const { withholdingThreshold: _omitted, ...noThreshold } = master()
     expect(decodeTaxMaster(noThreshold, COMPANY_A)).toBeNull()
 
+    // Like the Sales decoders: an unknown member at any level is off-contract, never ignored.
+    expect(decodeTaxMaster({ ...master(), extra: true }, COMPANY_A)).toBeNull()
+    const extraSeries = master()
+    ;(extraSeries.itemTypeDefaults[0] as Record<string, unknown>).extra = true
+    expect(decodeTaxMaster(extraSeries, COMPANY_A)).toBeNull()
+    const extraRecord = master()
+    ;(extraRecord.itemTypeDefaults[0].inForce as unknown as Record<string, unknown>).rateSource = 'x'
+    expect(decodeTaxMaster(extraRecord, COMPANY_A)).toBeNull()
+    const extraThreshold = master()
+    ;(extraThreshold.withholdingThreshold as Record<string, unknown>).extra = true
+    expect(decodeTaxMaster(extraThreshold, COMPANY_A)).toBeNull()
+    const extraList = master()
+    ;(extraList.codeLists[0] as Record<string, unknown>).extra = true
+    expect(decodeTaxMaster(extraList, COMPANY_A)).toBeNull()
+    // SAT-D158: the buyer situation list, its versions and entries are just as strict.
+    const extraSituations = master()
+    ;(extraSituations.buyerSituations as Record<string, unknown>).extra = true
+    expect(decodeTaxMaster(extraSituations, COMPANY_A)).toBeNull()
+    const extraSituationVersion = master()
+    ;(extraSituationVersion.buyerSituations.inForce as Record<string, unknown>).extra = true
+    expect(decodeTaxMaster(extraSituationVersion, COMPANY_A)).toBeNull()
+    const extraSituation = master()
+    ;(extraSituation.buyerSituations.inForce.entries[0] as Record<string, unknown>).withholdingCode = 'T1'
+    expect(decodeTaxMaster(extraSituation, COMPANY_A)).toBeNull()
+    const { documentRequired: _noDocument, ...missingDocument } = situationCatalog().entries[0]
+    const missingSituationMember = master()
+    ;(missingSituationMember.buyerSituations.inForce.entries as unknown[])[0] = missingDocument
+    expect(decodeTaxMaster(missingSituationMember, COMPANY_A)).toBeNull()
+
     // SAT-D147/D158: a KDV %0 situation keeping a withholding, a catalog with a recorder or a missing list is off-contract.
     const zeroWithWithholding = master()
     zeroWithWithholding.buyerSituations.inForce.entries[1].withholdingApplies = true

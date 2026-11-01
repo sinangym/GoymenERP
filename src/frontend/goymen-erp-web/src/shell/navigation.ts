@@ -75,6 +75,9 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'sales.invoice-candidates.list',
   /** UI-80: the read-only Sales reports screen, on its own grant. */
   'sales.reports.view',
+  /** UI-20 S-01: the request and quote pools, each on its own grant; create and detail are reached from the list. */
+  'sales.requests.list',
+  'sales.quotes.list',
   /**
    * MFG-02, listed with the route that serves it (MFG-ORD). It renders only where the server's
    * snapshot carries the capability; the order detail is reached from a list row, never the sidebar.
@@ -177,6 +180,8 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'sales.dispatches.list': 'Sevkiyat / İrsaliyeler',
   'sales.invoice-candidates.list': 'Faturaya Hazır',
   'sales.reports.view': 'Satış raporları',
+  'sales.requests.list': 'Satış talepleri',
+  'sales.quotes.list': 'Satış teklifleri',
   'manufacturing.orders.list': 'Üretim emirleri',
   // Nor this one: an order is opened from the list or by its id, never from the sidebar. So
   // `NAV_CAPABILITIES` gains exactly ONE Manufacturing entry.
@@ -292,7 +297,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     id: 'sales',
     label: 'Satış',
-    entries: ['sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.reports.view', 'price-lists.list'],
+    entries: ['sales.requests.list', 'sales.quotes.list', 'sales.drafts.list', 'sales.dispatches.list', 'sales.invoice-candidates.list', 'sales.reports.view', 'price-lists.list'],
   },
   {
     id: 'purchasing',

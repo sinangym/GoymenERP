@@ -107,7 +107,8 @@ describe('product item type panel (SAT-D134/D149)', () => {
 
   it('fails closed on an off-contract read', () => {
     const of = (overrides: Record<string, unknown>) => ({
-      companyId: COMPANY, productId: PRODUCT, version: '1', itemType: 'Steel', updatedInCompanyId: COMPANY, ...overrides,
+      companyId: COMPANY, productId: PRODUCT, version: '1', itemType: 'Steel', updatedAtUtc: '2026-10-30T08:00:00Z', updatedBy: 'u-1',
+      updatedInCompanyId: COMPANY, ...overrides,
     })
     expect(decodeItemType(of({}), COMPANY, PRODUCT)).not.toBeNull()
     expect(decodeItemType(of({ itemType: 'Copper' }), COMPANY, PRODUCT)).toBeNull()
@@ -116,6 +117,14 @@ describe('product item type panel (SAT-D134/D149)', () => {
     // Another company's answer is off-contract, never shown.
     expect(decodeItemType(of({ companyId: '00000000-0000-4000-8000-000000000009' }), COMPANY, PRODUCT)).toBeNull()
     expect(decodeItemType(of({ companyId: undefined }), COMPANY, PRODUCT)).toBeNull()
+    // Like the Sales decoders: an unknown member is off-contract, and so is a missing one.
+    expect(decodeItemType(of({ vatPercent: '20' }), COMPANY, PRODUCT)).toBeNull()
+    const { updatedBy: _dropped, ...missing } = of({})
+    expect(decodeItemType(missing, COMPANY, PRODUCT)).toBeNull()
+    expect(decodeItemType(of({ updatedBy: 7 }), COMPANY, PRODUCT)).toBeNull()
+    // SAT-D149 adds updatedInCompanyId: missing it is off-contract too.
+    const { updatedInCompanyId: _noCompany, ...withoutCompany } = of({})
+    expect(decodeItemType(withoutCompany, COMPANY, PRODUCT)).toBeNull()
     // SAT-D149: a stored value names the company it was changed in; an unset one names none.
     expect(decodeItemType(of({ updatedInCompanyId: null }), COMPANY, PRODUCT)).toBeNull()
     expect(decodeItemType(of({ updatedInCompanyId: 'x' }), COMPANY, PRODUCT)).toBeNull()
@@ -137,6 +146,20 @@ describe('product item type panel (SAT-D134/D149)', () => {
     renderPanel()
     expect(await screen.findByText(ITEM_TYPE_TEXT.shared)).toBeTruthy()
     expect(screen.queryByText(ITEM_TYPE_TEXT.changedElsewhere)).toBeNull()
+  })
+
+  it('tells an ended session (401) apart from a missing permission (403)', async () => {
+    install(() => new Response(null, { status: 401 }))
+    renderPanel()
+    expect(await screen.findByRole('alert')).toBeTruthy()
+    expect(screen.getByTestId('product-item-type-unauthenticated').textContent).toContain(ITEM_TYPE_TEXT.unauthenticated)
+    cleanup()
+    vi.unstubAllGlobals()
+
+    install(() => new Response(null, { status: 403 }))
+    const { container } = renderPanel()
+    await waitFor(() => expect(container.querySelector('section')).toBeNull())
+    expect(screen.queryByText(ITEM_TYPE_TEXT.unauthenticated)).toBeNull()
   })
 })
 

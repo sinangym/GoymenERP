@@ -100,6 +100,7 @@ import {
 import type { OrderCommandOutcome } from './orderAttempt'
 import { decodeOrderStatus, salesDraftStatusPath, type OrderStatus } from './orderStatus'
 import { decodeOrderTotals, salesDraftTotalsPath, type OrderTotals } from './orderTotals'
+import { decodeRiskCheck, salesDraftRiskCheckPath, type RiskCheck } from './riskCheck'
 import type { ViewOutcome } from '../shell/uiState'
 import type { OrderDraftOptions } from './orderDraftForm'
 import { isReferenceId } from './wirePrimitives'
@@ -355,6 +356,23 @@ export async function fetchDraftTotals(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const totals = decodeOrderTotals(raw.body, detail)
   return totals === null ? { type: 'malformed' } : { type: 'ok-single', data: totals }
+}
+
+/**
+ * MOD-01 / API-06: the order's customer risk check, read-only under the draft read (amounts only with the price read). Data
+ * only when it describes exactly this detail (`decodeRiskCheck`); anything else is `malformed`. A non-200 keeps its status and
+ * body so the card can tell 403, 404 and 503 apart.
+ */
+export async function fetchDraftRiskCheck(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<RiskCheck>> {
+  const raw = await request(salesDraftRiskCheckPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const check = decodeRiskCheck(raw.body, detail)
+  return check === null ? { type: 'malformed' } : { type: 'ok-single', data: check }
 }
 
 /** Partial-delivery remainder facts; owner quantities stay nullable when the Logistics read is unavailable. */

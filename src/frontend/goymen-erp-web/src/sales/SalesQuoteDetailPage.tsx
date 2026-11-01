@@ -41,7 +41,7 @@ import {
   type PoolFormErrors,
   type PoolFormValues,
 } from './poolForm'
-import { POOL_TEXT, QUOTE_STATE_TEXT } from './poolText'
+import { POOL_SUBJECT_TEXT, POOL_TEXT, QUOTE_STATE_TEXT } from './poolText'
 import { problemCodeText } from './salesText'
 import { SALES_POOL_ROUTE, salesRequestScreenPath, useSalesPoolCapability } from './poolCapabilities'
 import { SALES_CAPABILITY, salesDetailPath } from './capabilities'
@@ -102,7 +102,7 @@ export function SalesQuoteDetailPage() {
         {backLink}
         <StateBlock
           state={outcome === undefined ? { kind: 'initial-loading' } : classifyOutcome(outcome)}
-          subject="satış teklifi"
+          subject={POOL_SUBJECT_TEXT.quote}
           onRetry={() => void query.refetch()}
         />
       </section>
@@ -538,7 +538,7 @@ function LossForm({ detail, companyId, onReread }: { readonly detail: SalesQuote
       if (next.phase === 'failed' && next.failure === 'validation') void reasons.refetch()
     },
   )
-  const notice = poolNotice(attempt.state, { noun: 'kayıp kaydı', onRecord: true, blockedChange: attempt.blockedChange, completed: () => T.lossCompleted })
+  const notice = poolNotice(attempt.state, { noun: POOL_SUBJECT_TEXT.lossNoun, onRecord: true, blockedChange: attempt.blockedChange, completed: () => T.lossCompleted })
   const disabled = attempt.frozen || attempt.state.phase === 'completed'
 
   const heading = <h3 id="pool-quote-loss-form-heading" className={styles.lineTitle}>{T.loseHeading}</h3>
@@ -552,7 +552,7 @@ function LossForm({ detail, companyId, onReread }: { readonly detail: SalesQuote
         ) : (
           <>
             <p role="alert" className={styles.notice}>{T.lossReasonsUnavailable}</p>
-            <StateBlock state={classifyOutcome(outcome)} subject="kayıp nedenleri" onRetry={() => void reasons.refetch()} />
+            <StateBlock state={classifyOutcome(outcome)} subject={POOL_SUBJECT_TEXT.lossReasons} onRetry={() => void reasons.refetch()} />
           </>
         )}
       </section>
@@ -642,7 +642,7 @@ function ApprovalForm({ detail, onReread }: { readonly detail: SalesQuoteDetail;
       if (next.phase === 'completed' || (next.phase === 'failed' && next.failure === 'conflict')) onReread()
     },
   )
-  const notice = poolNotice(attempt.state, { noun: 'süre onayı', onRecord: true, blockedChange: attempt.blockedChange, completed: () => T.approveCompleted })
+  const notice = poolNotice(attempt.state, { noun: POOL_SUBJECT_TEXT.expiredApprovalNoun, onRecord: true, blockedChange: attempt.blockedChange, completed: () => T.approveCompleted })
   const disabled = attempt.frozen || attempt.state.phase === 'completed'
 
   function submit() {
@@ -707,7 +707,7 @@ function ConversionForm({ detail, onReread }: { readonly detail: SalesQuoteDetai
     },
   )
   const notice = poolNotice(attempt.state, {
-    noun: 'sipariş',
+    noun: POOL_SUBJECT_TEXT.orderNoun,
     onRecord: true,
     blockedChange: attempt.blockedChange,
     completed: (result) => T.convertCompleted(result.detail.draft.documentNo),

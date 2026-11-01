@@ -5,14 +5,11 @@ import { APPROVAL_STATE, isTerminalState, REV_0, SALES_PROBLEM_CODE, type DraftD
 import { contactLabel } from './format'
 import {
   buildHeaderRevisionRequest,
-  DUE_BASES,
   DUE_LIMITS,
   headerFormValues,
   type DraftHeader,
-  type DueBasis,
   type HeaderFormValues,
   type HeaderRevisionRequest,
-  type InstalmentRow,
   type OwnerRef,
 } from './headerRevision'
 import { fetchDraftHeader, fetchSalesOwners, sendDraftHeaderRevision, type SalesOwnersOutcome } from './headerRevisionApi'
@@ -30,6 +27,7 @@ import {
 } from './orderAttempt'
 import { SalesContactInformationSourceContext, SalesCurrencySourceContext, SalesReferenceSourceContext } from './referenceSource'
 import { HEADER_REVISION_TEXT as T } from './salesText'
+import { SalesDueTermsEditor } from './SalesDueTermsEditor'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './SalesPages.module.css'
@@ -234,11 +232,6 @@ function HeaderRevisionEditor({
   }
 
   const set = (patch: Partial<HeaderFormValues>) => setValues((current) => ({ ...current, ...patch }))
-  const setRow = (rowKey: string, patch: Partial<InstalmentRow>) =>
-    setValues((current) => ({
-      ...current,
-      instalments: current.instalments?.map((row) => (row.key === rowKey ? { ...row, ...patch } : row)) ?? null,
-    }))
 
   function chooseAccount(value: string) {
     const [partyId, companyAccountId] = value.split('|')
@@ -336,48 +329,13 @@ function HeaderRevisionEditor({
         {owners.type !== 'ready' && owners.type !== 'loading' ? <span className={styles.muted}>{T.salesOwnersUnavailable}</span> : null}
       </fieldset>
 
-      <fieldset className={styles.line} disabled={disabled} data-testid="sales-header-due-terms">
-        <legend>{T.dueTerms}</legend>
-        <p className={styles.muted}>{T.dueTermsHint}</p>
-        {values.instalments === null ? (
-          <>
-            <p className={styles.muted}>{T.noDueTerms}</p>
-            <Button type="button" variant="secondary"
-              onClick={() => set({ instalments: [{ key: nextRowKey(), basis: 'OrderDate', daysAfter: '', sharePercent: '' }] })}>
-              {T.addDueTerms}
-            </Button>
-          </>
-        ) : (
-          <>
-            {values.instalments.map((row, index) => (
-              <div key={row.key} role="group" aria-label={T.instalment(index + 1)}>
-                <label htmlFor={`${row.key}-basis`}>{T.basis}</label>
-                <select id={`${row.key}-basis`} value={row.basis}
-                  onChange={(event) => setRow(row.key, { basis: event.target.value as DueBasis })}>
-                  {DUE_BASES.map((basis) => <option key={basis} value={basis}>{T.basisName[basis]}</option>)}
-                </select>
-                <label htmlFor={`${row.key}-days`}>{T.daysAfter}</label>
-                <input id={`${row.key}-days`} inputMode="numeric" value={row.daysAfter}
-                  onChange={(event) => setRow(row.key, { daysAfter: event.target.value })} />
-                <label htmlFor={`${row.key}-share`}>{T.sharePercent}</label>
-                <input id={`${row.key}-share`} inputMode="decimal" value={row.sharePercent}
-                  onChange={(event) => setRow(row.key, { sharePercent: event.target.value })} />
-                <Button type="button" variant="ghost" className={styles.linkButton}
-                  onClick={() => set({ instalments: values.instalments?.filter((candidate) => candidate.key !== row.key) ?? null })}>
-                  {T.removeInstalment(index + 1)}
-                </Button>
-              </div>
-            ))}
-            <Button type="button" variant="secondary" disabled={values.instalments.length >= DUE_LIMITS.maximumInstalments}
-              onClick={() => set({ instalments: [...(values.instalments ?? []), { key: nextRowKey(), basis: 'OrderDate', daysAfter: '', sharePercent: '' }] })}>
-              {T.addInstalment}
-            </Button>
-            <Button type="button" variant="ghost" className={styles.linkButton} onClick={() => set({ instalments: null })}>
-              {T.removeDueTerms}
-            </Button>
-          </>
-        )}
-      </fieldset>
+      <SalesDueTermsEditor
+        rows={values.instalments}
+        onChange={(instalments) => set({ instalments })}
+        nextKey={nextRowKey}
+        disabled={disabled}
+        testId="sales-header-due-terms"
+      />
 
       <label htmlFor={reasonId}>{T.reason}</label>
       <textarea id={reasonId} value={values.reason} maxLength={DUE_LIMITS.reason} required aria-describedby={`${reasonId}-hint`}

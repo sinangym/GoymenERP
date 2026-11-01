@@ -1,7 +1,10 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { fetchDraftRemainderChanges, sendRemainderChangeDecision, sendRemainderChangeRequest } from './api'
-import { APPROVAL_STATE, isTerminalState, type DraftDetail, type DraftMutation } from './contract'
+import { APPROVAL_STATE, isTerminalState, userDisplayFor, type DraftDetail, type DraftMutation, type UserDisplay } from './contract'
+import { formatInstant } from './format'
+import { orderUnitCodes } from './unitNames'
+import { UnitName } from './UnitName'
 import { generateOrderAttemptKey, type OrderCommandOutcome } from './orderAttempt'
 import { isPositiveDecimalString } from './wirePrimitives'
 import {
@@ -27,9 +30,11 @@ import { Button } from '../ui/Button'
 const TEXT = REMAINDER_CHANGE_TEXT
 
 export function SalesDraftRemainderChangePanel({
-  detail, companyId, namespace, actorId, routeEntryGeneration, attemptBinding, canRequest, canDecide, onRecorded,
+  detail, companyId, namespace, actorId, routeEntryGeneration, attemptBinding, canRequest, canDecide, onRecorded, userDisplays = [],
 }: {
   readonly detail: DraftDetail
+  /** MOD-08: the people the detail names (by the Identity directory); an id without an entry is shown as it is stored. */
+  readonly userDisplays?: readonly UserDisplay[]
   readonly companyId: string
   readonly namespace: string
   readonly actorId: string
@@ -61,6 +66,14 @@ export function SalesDraftRemainderChangePanel({
     staleTime: 0, gcTime: 0, retry: false, refetchOnWindowFocus: false,
   })
   const changes = query.data?.type === 'ok-single' ? query.data.data : null
+  const unitCodes = useMemo(() => orderUnitCodes(detail), [detail])
+  const unitOf = (lineId: string) => changes?.lines.find((line) => line.lineId === lineId)?.orderUnitId
+    ?? detail.lines.find((line) => line.lineId === lineId)?.orderUnitId ?? null
+  const personName = (id: string | null) => {
+    if (id === null) return null
+    const person = userDisplayFor(userDisplays, id)
+    return person === null ? id : person.isActiveInCompany ? person.displayName : TEXT.formerMember(person.displayName)
+  }
   const selected = useMemo(() => changes?.lines.find((line) => line.lineId === lineId) ?? null, [changes, lineId])
   const stateAllowsRequest = !isTerminalState(detail.draft.state) && detail.draft.approvalState === APPROVAL_STATE.approved
     && detail.customerAcceptance.isCurrentRevisionAccepted
@@ -102,7 +115,7 @@ export function SalesDraftRemainderChangePanel({
     }
     settlePendingRemainderAction(attemptBinding, action.key)
     setPending(null)
-    setNotice(`${TEXT.failed}${outcome.type === 'http' && outcome.problem?.code ? ` (${outcome.problem.code})` : ''}`)
+    setNotice(failureNotice(outcome))
     if (outcome.type === 'http' && outcome.status === 409) onRecorded()
   }
 
@@ -147,12 +160,20 @@ export function SalesDraftRemainderChangePanel({
         <>
           {changes?.floorStatus === REMAINDER_FLOOR.unreadable ? <p role="alert" className={styles.notice}>{TEXT.unreadable}</p> : null}
           {notice === null ? null : <p role="status" className={styles.notice}>{notice}</p>}
-          {selected === null ? null : <p className={styles.muted}>{TEXT.lineFacts(selected)}</p>}
+          {selected === null ? null : (
+            <p className={styles.muted} data-testid="sales-remainder-line-facts">
+              {TEXT.lineFacts(selected, unitCodes.get(selected.orderUnitId) ?? selected.orderUnitId)}
+            </p>
+          )}
           {canRequest ? (
             <div className={styles.actions} data-testid="sales-remainder-request">
               <label htmlFor="sales-remainder-line">{TEXT.line}</label>
               <select id="sales-remainder-line" value={lineId} disabled={busy || pending !== null} onChange={(event) => setLineId(event.target.value)}>
-                {changes?.lines.map((line) => <option key={line.lineId} value={line.lineId}>{line.lineNo}. satır · {line.quantity}</option>)}
+                {changes?.lines.map((line) => (
+                  <option key={line.lineId} value={line.lineId}>
+                    {TEXT.lineOption(line.lineNo, line.quantity, unitCodes.get(line.orderUnitId) ?? line.orderUnitId)}
+                  </option>
+                ))}
               </select>
               <label htmlFor="sales-remainder-kind">{TEXT.kind}</label>
               <select id="sales-remainder-kind" value={kind} disabled={busy || pending !== null} onChange={(event) => setKind(event.target.value as typeof kind)}>
@@ -168,11 +189,26 @@ export function SalesDraftRemainderChangePanel({
           {pending !== null && !busy ? <Button type="button" variant="secondary"
             disabled={pending.kind === 'request' ? !canRequest : !canDecide}
             onClick={() => void execute(pending)}>{TEXT.retry}</Button> : null}
-          {(changes?.items.length ?? 0) === 0 ? <p>{TEXT.empty}</p> : changes?.items.map((item) => (
+          {(changes?.items.length ?? 0) === 0 ? <p>{TEXT.empty}</p> : changes?.items.map((item) => {
+            const unit = unitOf(item.lineId)
+            const withUnit = (quantity: string) => unit === null ? quantity : <>{quantity} <UnitName id={unit} unitCodes={unitCodes} /></>
+            const decidedBy = personName(item.decidedBy)
+            return (
             <article key={item.changeNo} className={styles.line} data-testid={`sales-remainder-change-${item.changeNo}`}>
-              <h3>{item.changeNo}. değişiklik · {item.kind === REMAINDER_KIND.cancel ? TEXT.cancel : TEXT.revise}</h3>
-              <p>{item.lineNo}. satır · {item.orderedQuantity} → {item.requestedQuantity ?? item.loadedAtRequest} · {item.state}</p>
-              <p className={styles.muted}>{item.reason} · {item.requestedBy}</p>
+              <h3>{TEXT.changeHeading(item.changeNo)} · {item.kind === REMAINDER_KIND.cancel ? TEXT.cancel : TEXT.revise}</h3>
+              <p data-testid={`sales-remainder-change-${item.changeNo}-facts`}>
+                {TEXT.lineNo(item.lineNo)} · {withUnit(item.orderedQuantity)} → {withUnit(item.requestedQuantity ?? item.loadedAtRequest)}
+                {' · '}<span data-testid={`sales-remainder-change-${item.changeNo}-state`}>{TEXT.state[item.state]}</span>
+              </p>
+              <p className={styles.muted} data-testid={`sales-remainder-change-${item.changeNo}-requested`}>
+                {item.reason} · {TEXT.requestedBy(personName(item.requestedBy) ?? item.requestedBy, formatInstant(item.requestedAtUtc))}
+              </p>
+              {decidedBy === null || item.decidedAtUtc === null ? null : (
+                <p className={styles.muted} data-testid={`sales-remainder-change-${item.changeNo}-decided`}>
+                  {TEXT.decidedBy(decidedBy, formatInstant(item.decidedAtUtc))}
+                  {item.decisionReason === null ? null : ` · ${item.decisionReason}`}
+                </p>
+              )}
               {item.state === REMAINDER_STATE.pending && canDecide ? <div className={styles.actions}>
                 <label htmlFor={`sales-remainder-reject-${item.changeNo}`}>{TEXT.decisionReason}</label>
                 <input id={`sales-remainder-reject-${item.changeNo}`} value={decisionReasons[item.changeNo] ?? ''} disabled={busy || pending !== null}
@@ -181,9 +217,20 @@ export function SalesDraftRemainderChangePanel({
                 <Button type="button" variant="secondary" disabled={busy || pending !== null} onClick={() => decide(item.changeNo, 'rejection')}>{TEXT.reject}</Button>
               </div> : null}
             </article>
-          ))}
+            )
+          })}
         </>
       ) : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data)} subject={TEXT.heading} onRetry={() => void query.refetch()} />}
     </section>
   )
+}
+
+/** A refused command in words: the authority, the stale version and the unavailable owner each say what happened. */
+function failureNotice(outcome: OrderCommandOutcome<DraftMutation>): string {
+  if (outcome.type !== 'http') return TEXT.failed
+  if (outcome.status === 401) return TEXT.unauthenticated
+  if (outcome.status === 403) return TEXT.forbidden
+  if (outcome.status === 409) return TEXT.conflict
+  if (outcome.status >= 500) return TEXT.serviceUnavailable
+  return outcome.problem?.code ? TEXT.failedWithCode(outcome.problem.code) : TEXT.failed
 }

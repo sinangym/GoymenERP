@@ -97,7 +97,18 @@ const SCENARIO_CODE = /^[A-Z][A-Z0-9_]{0,31}$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const PROFILE_TOKEN = /^[0-9a-f]{64}$/
 
-const isObject = (raw: unknown): raw is Record<string, unknown> => typeof raw === 'object' && raw !== null
+const isObject = (raw: unknown): raw is Record<string, unknown> => typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+/** Exactly these members, no more and no fewer (the Sales decoders' rule): an unknown member is off-contract. */
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const own = Object.keys(value)
+  return own.length === keys.length && keys.every((key) => Object.hasOwn(value, key))
+}
+
+/** The wire members of `CounterpartyAccountEDocumentView` and its parts (the OpenAPI schemas'). */
+const PROFILE_KEYS = ['partyId', 'accountId', 'companyId', 'version', 'profileToken', 'accountIsActive', 'taxIdentityNumberPresent',
+  'status', 'statusCheckedAtUtc', 'statusCheckedInActiveCompany', 'statusCheckedByDisplayName', 'scenarioOverrideCode',
+  'evaluatedOn', 'scenarioCodes', 'settingsDefault', 'effectiveScenario', 'viewer'] as const
+const EFFECTIVE_KEYS = ['outcome', 'source', 'scenarioCode', 'unresolvedReason'] as const
 const oneOf = <T extends string>(values: readonly T[], raw: unknown): raw is T =>
   typeof raw === 'string' && (values as readonly string[]).includes(raw)
 const isCode = (raw: unknown): raw is string => typeof raw === 'string' && SCENARIO_CODE.test(raw)
@@ -106,6 +117,7 @@ const isInstant = (raw: unknown): raw is string => typeof raw === 'string' && !N
 function decodeEffective(raw: unknown): EffectiveScenario | null {
   if (
     !isObject(raw) ||
+    !hasExactKeys(raw, EFFECTIVE_KEYS) ||
     !oneOf(OUTCOMES, raw.outcome) ||
     !oneOf(SOURCES, raw.source) ||
     !oneOf(REASONS, raw.unresolvedReason) ||
@@ -128,6 +140,7 @@ export function decodeAccountEDocumentProfile(
 ): AccountEDocumentProfile | null {
   if (
     !isObject(raw) ||
+    !hasExactKeys(raw, PROFILE_KEYS) ||
     raw.partyId !== expected.partyId ||
     raw.companyId !== expected.companyId ||
     !isBoundUuid(raw.accountId) ||
@@ -140,11 +153,14 @@ export function decodeAccountEDocumentProfile(
     !DATE.test(raw.evaluatedOn) ||
     !(raw.scenarioOverrideCode === null || isCode(raw.scenarioOverrideCode)) ||
     !isObject(raw.scenarioCodes) ||
+    !hasExactKeys(raw.scenarioCodes, ['state', 'codes']) ||
     !oneOf(SETTINGS_SOURCE_STATES, raw.scenarioCodes.state) ||
     !Array.isArray(raw.scenarioCodes.codes) ||
     !isObject(raw.settingsDefault) ||
+    !hasExactKeys(raw.settingsDefault, ['state', 'scenarioCode']) ||
     !oneOf(SETTINGS_SOURCE_STATES, raw.settingsDefault.state) ||
     !isObject(raw.viewer) ||
+    !hasExactKeys(raw.viewer, ['canUpdate']) ||
     typeof raw.viewer.canUpdate !== 'boolean'
   ) {
     return null

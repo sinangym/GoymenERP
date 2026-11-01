@@ -17,6 +17,7 @@ export const ITEM_TYPE_TEXT = {
   changedElsewhere: 'Son değişiklik başka bir şirkette yapıldı.',
   loading: 'Kalem tipi yükleniyor…',
   failed: 'Kalem tipi şu anda okunamadı.',
+  unauthenticated: 'Oturumunuz sona erdi; kalem tipini görmek için yeniden giriş yapın.',
   change: 'Kalem tipini değiştir',
   choose: 'Kalem tipi seçin',
   formLabel: 'Kalem tipi değişikliği',
