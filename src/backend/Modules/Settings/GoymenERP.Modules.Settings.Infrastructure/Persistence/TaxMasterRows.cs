@@ -127,3 +127,50 @@ internal sealed class TaxWithholdingThresholdWithdrawalRow
     public string WithdrawnBy { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// SAT-D158: the buyer situation list of one company (the edit fence of its versions). Created with its first Settings version;
+/// until then only the reviewed catalog answers (version "0").
+/// </summary>
+internal sealed class TaxBuyerSituationListRow
+{
+    public Guid CompanyId { get; set; }
+    public long Version { get; set; }
+    public long LastListVersion { get; set; }
+    public DateTimeOffset UpdatedAtUtc { get; set; }
+    public string UpdatedBy { get; set; } = string.Empty;
+}
+
+/// <summary>One immutable, whole buyer situation list version; its entries are <see cref="TaxBuyerSituationEntryRow"/>.</summary>
+internal sealed class TaxBuyerSituationListVersionRow
+{
+    public Guid CompanyId { get; set; }
+    public long ListVersion { get; set; }
+    public DateOnly EffectiveFrom { get; set; }
+    public DateTimeOffset RecordedAtUtc { get; set; }
+    public string RecordedBy { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}
+
+/// <summary>One buyer situation of a list version with its tax effect as data (SAT-D74/D93/D147).</summary>
+internal sealed class TaxBuyerSituationEntryRow
+{
+    public Guid CompanyId { get; set; }
+    public long ListVersion { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public bool WithholdingApplies { get; set; }
+    public string VatMode { get; set; } = string.Empty;
+    public bool DocumentRequired { get; set; }
+}
+
+/// <summary>The withdrawal of a buyer situation list version before it took effect (insert-only).</summary>
+internal sealed class TaxBuyerSituationListWithdrawalRow
+{
+    public Guid CompanyId { get; set; }
+    public long ListVersion { get; set; }
+    public long? ReplacedByListVersion { get; set; }
+    public DateTimeOffset WithdrawnAtUtc { get; set; }
+    public string WithdrawnBy { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+}

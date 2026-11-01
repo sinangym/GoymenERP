@@ -15,7 +15,11 @@ internal sealed record TaxMasterRows(
     IReadOnlyList<TaxCodeListWithdrawalRow> ListWithdrawals,
     TaxWithholdingThresholdRow? Threshold,
     IReadOnlyList<TaxWithholdingThresholdRecordRow> ThresholdRecords,
-    IReadOnlyList<TaxWithholdingThresholdWithdrawalRow> ThresholdWithdrawals)
+    IReadOnlyList<TaxWithholdingThresholdWithdrawalRow> ThresholdWithdrawals,
+    TaxBuyerSituationListRow? SituationList,
+    IReadOnlyList<TaxBuyerSituationListVersionRow> SituationListVersions,
+    IReadOnlyList<TaxBuyerSituationEntryRow> SituationEntries,
+    IReadOnlyList<TaxBuyerSituationListWithdrawalRow> SituationListWithdrawals)
 {
     public static async Task<TaxMasterRows> ReadAsync(SettingsDbContext database, bool track,
         CancellationToken cancellationToken)
@@ -36,11 +40,21 @@ internal sealed record TaxMasterRows(
             : await database.TaxWithholdingThresholds.AsNoTracking().SingleOrDefaultAsync(cancellationToken);
         var thresholdRecords = await database.TaxWithholdingThresholdRecords.AsNoTracking().ToListAsync(cancellationToken);
         var thresholdWithdrawals = await database.TaxWithholdingThresholdWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
+        var situationList = track
+            ? await database.TaxBuyerSituationLists.SingleOrDefaultAsync(cancellationToken)
+            : await database.TaxBuyerSituationLists.AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+        var situationVersions = await database.TaxBuyerSituationListVersions.AsNoTracking().ToListAsync(cancellationToken);
+        var situationEntries = await database.TaxBuyerSituationEntries.AsNoTracking().ToListAsync(cancellationToken);
+        var situationWithdrawals = await database.TaxBuyerSituationListWithdrawals.AsNoTracking().ToListAsync(cancellationToken);
         return new TaxMasterRows(series, records, recordWithdrawals, lists, listVersions, listEntries, listWithdrawals,
-            threshold, thresholdRecords, thresholdWithdrawals);
+            threshold, thresholdRecords, thresholdWithdrawals, situationList, situationVersions, situationEntries,
+            situationWithdrawals);
     }
 
-    /// <summary>The company's data, the reviewed SAT-D139 catalog entries of <paramref name="companyId"/> included.</summary>
+    /// <summary>
+    /// The company's data, the reviewed SAT-D139 default and SAT-D158 buyer situation catalogs of <paramref name="companyId"/>
+    /// included.
+    /// </summary>
     public TaxMasterDataV1 ToData(Guid companyId)
     {
         var withdrawnRecords = RecordWithdrawals.Select(withdrawal => withdrawal.RecordId).ToHashSet();
@@ -51,6 +65,14 @@ internal sealed record TaxMasterRows(
             .ToDictionary(group => group.Key, group => (IReadOnlyList<TaxCodeListEntryViewV1>)group
                 .OrderBy(entry => entry.Code, StringComparer.Ordinal)
                 .Select(entry => new TaxCodeListEntryViewV1(entry.Code, entry.Name))
+                .ToArray());
+        var withdrawnSituationLists = SituationListWithdrawals.Select(withdrawal => withdrawal.ListVersion).ToHashSet();
+        var situations = SituationEntries
+            .GroupBy(entry => entry.ListVersion)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<TaxBuyerSituationEntryViewV1>)group
+                .OrderBy(entry => entry.Code, StringComparer.Ordinal)
+                .Select(entry => new TaxBuyerSituationEntryViewV1(entry.Code, entry.Name, entry.WithholdingApplies, entry.VatMode,
+                    entry.DocumentRequired))
                 .ToArray());
         var defaults = ApprovedTaxItemTypeDefaultCatalog.For(companyId)
             .Concat(Records.Select(row => new TaxItemTypeDefaultDataV1(row.Id, row.CompanyId, row.ItemType,
@@ -63,6 +85,10 @@ internal sealed record TaxMasterRows(
                 entries.GetValueOrDefault((row.Kind, row.ListVersion)) ?? [],
                 withdrawnLists.Contains((row.Kind, row.ListVersion)))).ToArray(),
             ThresholdRecords.Select(row => new TaxWithholdingThresholdDataV1(row.Id, row.RecordVersion, row.EffectiveFrom,
-                row.Amount, row.CurrencyCode, withdrawnThresholds.Contains(row.Id))).ToArray());
+                row.Amount, row.CurrencyCode, withdrawnThresholds.Contains(row.Id))).ToArray(),
+            ApprovedTaxBuyerSituationCatalog.For(companyId).Concat(SituationListVersions.Select(row =>
+                new TaxBuyerSituationListVersionDataV1(row.ListVersion, row.EffectiveFrom, TaxDefaultSourcesV1.Record,
+                    situations.GetValueOrDefault(row.ListVersion) ?? [], withdrawnSituationLists.Contains(row.ListVersion))))
+                .ToArray());
     }
 }

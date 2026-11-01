@@ -1,5 +1,6 @@
 /**
- * SAT-D134 (EK19): the item type of the product in the selected company — the card's only tax-relevant field. KDV and tevkifat
+ * SAT-D134 (EK19) / SAT-D149 (EK20): the item type of the product on the SHARED card (the same in every company; a holder of
+ * the name in the selected company changes it for all) — the card's only tax-relevant field. KDV and tevkifat
  * come from Ayarlar > Vergi's default for this type (SAT-D139) and may be changed on the order line (SAT-D93); the card never
  * shows or stores a rate. Without `product.item-type.manage` (granted to no role here) the server answers 403 and the panel
  * shows nothing; a failed read says so instead of showing "belirtilmemiş".
@@ -58,6 +59,8 @@ export function ProductItemTypePanel({
             <strong>{ITEM_TYPE_TEXT.label}:</strong>{' '}
             {outcome.data.itemType === null ? ITEM_TYPE_TEXT.unset : ITEM_TYPE_LABEL[outcome.data.itemType]}
           </p>
+          <p className={styles.note}>{ITEM_TYPE_TEXT.shared}</p>
+          {outcome.data.changedInAnotherCompany ? <p className={styles.note}>{ITEM_TYPE_TEXT.changedElsewhere}</p> : null}
           <p className={styles.note}>{ITEM_TYPE_TEXT.note}</p>
           {editing ? (
             <ItemTypeForm

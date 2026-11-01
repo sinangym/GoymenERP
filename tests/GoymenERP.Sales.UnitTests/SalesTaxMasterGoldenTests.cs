@@ -49,7 +49,8 @@ public sealed class SalesTaxMasterGoldenTests
     {
         var day = new DateOnly(2026, 11, 1);
         var parts = TaxMasterCalculatorV1.Resolve(new TaxMasterDataV1(
-                ApprovedTaxItemTypeDefaultCatalog.For(ApprovedUnitProfileCatalog.GdcCompanyId), [], []),
+                ApprovedTaxItemTypeDefaultCatalog.For(ApprovedUnitProfileCatalog.GdcCompanyId), [], [],
+                ApprovedTaxBuyerSituationCatalog.For(ApprovedUnitProfileCatalog.GdcCompanyId)),
             TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, day);
         var rate = SalesLineTaxRate.Of(parts.VatPercent!.Value, TaxMasterCalculatorV1.WithholdingShare(parts.WithholdingPercent!.Value));
 
@@ -64,7 +65,7 @@ public sealed class SalesTaxMasterGoldenTests
     [Fact]
     public void An_unresolved_default_is_never_turned_into_a_rate_so_no_tax_is_computed()
     {
-        var data = new TaxMasterDataV1([], [], []);
+        var data = new TaxMasterDataV1([], [], [], ApprovedTaxBuyerSituationCatalog.For(ApprovedUnitProfileCatalog.GdcCompanyId));
         var parts = TaxMasterCalculatorV1.Resolve(data, TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, new DateOnly(2026, 11, 1));
         Assert.Equal(TaxResolutionStatesV1.Unresolved, parts.State);
 
@@ -73,6 +74,28 @@ public sealed class SalesTaxMasterGoldenTests
             [new SalesTotalsLineInput(L1, 1, Kg, 1m, new CommercialDraftFields("10", Kg, null, null, null, null, null))],
             Try, 2, _ => rate).Lines);
         Assert.Equal((SalesTaxState.NoSource, (Money?)null, (Money?)null), (line.TaxState, line.VatAmount, line.WithheldVatAmount));
+    }
+
+    [Fact]
+    public void A_sat_d147_export_registered_buyer_feeds_zero_vat_and_no_withholding_to_the_calculator()
+    {
+        // SAT-D147 golden: the steel default (20 % + 5/10) for an export-registered buyer with a listed exemption code (SENTETIK)
+        // → KDV %0 and no withholding: 1000 kg × 25.505 = 25505.00 net = gross = payable.
+        var day = new DateOnly(2026, 11, 1);
+        var gdc = ApprovedUnitProfileCatalog.GdcCompanyId;
+        var parts = TaxMasterCalculatorV1.Resolve(new TaxMasterDataV1(ApprovedTaxItemTypeDefaultCatalog.For(gdc),
+                [new TaxCodeListVersionDataV1(TaxCodeListKindsV1.Exemption, 1, day, [new TaxCodeListEntryViewV1("E701", "SENTETIK")])],
+                [], ApprovedTaxBuyerSituationCatalog.For(gdc)),
+            TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExportRegistered, day, exemptionCode: "E701");
+        Assert.Equal((TaxResolutionStatesV1.ZeroRated, TaxResolutionStatesV1.Resolved, TaxResolutionStatesV1.NotApplied),
+            (parts.VatState, parts.ExemptionCodeState, parts.WithholdingState));
+        var rate = SalesLineTaxRate.Of(parts.VatPercent!.Value, null);
+
+        var line = Assert.Single(SalesOrderTotalsCalculator.Calculate(
+            [new SalesTotalsLineInput(L1, 1, Kg, 1000m, new CommercialDraftFields("25.505", Kg, null, null, null, null, null))],
+            Try, 2, _ => rate).Lines);
+        Assert.Equal(("25505.00", "0.00", "25505.00", "25505.00"), (Text(line.NetAmount), Text(line.VatAmount),
+            Text(line.GrossAmount), Text(line.PayableAmount)));
     }
 
     private static TaxDefaultResolutionPartsV1 Resolved(string vat, string withholding)
@@ -85,7 +108,7 @@ public sealed class SalesTaxMasterGoldenTests
                     Parse(vat), null, true, Parse(withholding), "T1"),
             ],
             [new TaxCodeListVersionDataV1(TaxCodeListKindsV1.Withholding, 1, day, [new TaxCodeListEntryViewV1("T1", "SENTETIK")])],
-            []);
+            [], ApprovedTaxBuyerSituationCatalog.For(ApprovedUnitProfileCatalog.GdcCompanyId));
         var parts = TaxMasterCalculatorV1.Resolve(data, TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, day);
         Assert.Equal((TaxResolutionStatesV1.Resolved, TaxResolutionStatesV1.Resolved, TaxResolutionStatesV1.Resolved),
             (parts.VatState, parts.WithholdingState, parts.WithholdingCodeState));

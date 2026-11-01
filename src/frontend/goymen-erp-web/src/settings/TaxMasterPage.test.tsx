@@ -14,7 +14,13 @@ import userEvent from '@testing-library/user-event'
 import { COMPANY_A, commands, installFetch, json, noContent, problem, renderAt } from './testHarness'
 import { SETTINGS_CAPABILITY } from './capabilities'
 import { CODE_LIST_LABEL, ITEM_TYPE_LABEL, TAX_TEXT } from './taxMasterText'
-import { decodeTaxMaster, parseCodeListText } from './taxMasterContract'
+import {
+  buyerSituationText,
+  decodeBuyerSituationList,
+  decodeTaxMaster,
+  parseBuyerSituationText,
+  parseCodeListText,
+} from './taxMasterContract'
 
 const TAX_PATH = '/ayarlar/vergi'
 const STEEL_CATALOG = '74e7f161-192d-5d1e-9a8a-cb17e0fd1e2c'
@@ -94,6 +100,29 @@ function codeLists() {
   ]
 }
 
+/** SAT-D158: the reviewed version-0 buyer situation catalog (the five SAT-D140 situations with their effects). */
+function situationCatalog() {
+  return {
+    listVersion: '0',
+    source: 'Catalog',
+    effectiveFrom: '2026-10-31',
+    entries: [
+      { code: 'ExemptionCertificate', name: 'İstisna belgeli alıcı', withholdingApplies: false, vatMode: 'ZeroWithExemptionCode', documentRequired: true },
+      { code: 'ExportRegistered', name: 'İhraç kayıtlı satış', withholdingApplies: false, vatMode: 'ZeroWithExemptionCode', documentRequired: true },
+      { code: 'FinalConsumer', name: 'Nihai tüketici', withholdingApplies: false, vatMode: 'Normal', documentRequired: false },
+      { code: 'Normal', name: 'Normal alıcı', withholdingApplies: true, vatMode: 'Normal', documentRequired: false },
+      { code: 'NotSubjectToWithholding', name: 'Tevkifata tabi olmayan alıcı', withholdingApplies: false, vatMode: 'Normal', documentRequired: false },
+    ],
+    recordedBy: null as string | null,
+    recordedAtUtc: null as string | null,
+    reason: 'SAT-D158',
+  }
+}
+
+function buyerSituations(scheduled: unknown[] = []) {
+  return { companyId: COMPANY_A, businessDate: '2026-11-01', version: scheduled.length === 0 ? '0' : '1', inForce: situationCatalog(), scheduled }
+}
+
 /** Only the reviewed catalog answers; no code list, no threshold. */
 function catalogMaster() {
   return {
@@ -109,6 +138,7 @@ function catalogMaster() {
       { kind: 'Withholding', version: '0', inForce: null, scheduled: [] },
     ],
     withholdingThreshold: { version: '0', inForce: null as unknown, scheduled: [] as unknown[] },
+    buyerSituations: buyerSituations() as ReturnType<typeof buyerSituations>,
   }
 }
 
@@ -376,6 +406,91 @@ describe('Vergi ayarları — commands', () => {
   })
 })
 
+describe('Vergi ayarları — buyer situations (SAT-D147/D158)', () => {
+  it('shows the reviewed situations with their tax effect as data', async () => {
+    install((url) => (isRead(url) ? json(catalogMaster()) : undefined))
+    renderAt(TAX_PATH)
+    const table = await screen.findByRole('table', { name: TAX_TEXT.buyerSituationsTableLabel })
+    const exportRow = within(table).getByText('ExportRegistered').closest('tr') as HTMLElement
+    expect(within(exportRow).getByText(TAX_TEXT.situationVatZero)).toBeTruthy()
+    expect(within(exportRow).getByText(TAX_TEXT.situationWithholdingRemoved)).toBeTruthy()
+    expect(within(exportRow).getByText(TAX_TEXT.situationDocumentRequired)).toBeTruthy()
+    const normalRow = within(table).getByText('Normal').closest('tr') as HTMLElement
+    expect(within(normalRow).getByText(TAX_TEXT.situationWithholdingKept)).toBeTruthy()
+    expect(within(normalRow).getByText(TAX_TEXT.situationVatNormal)).toBeTruthy()
+    expect(screen.getByText(TAX_TEXT.situationSourceCatalog)).toBeTruthy()
+  })
+
+  it('publishes a whole list with the list version, the effects and one key, and withdraws a scheduled version', async () => {
+    const user = userEvent.setup()
+    const scheduledVersion = {
+      ...situationCatalog(),
+      listVersion: '2',
+      source: 'Record',
+      effectiveFrom: '2026-12-01',
+      recordedBy: USER,
+      recordedAtUtc: '2026-11-01T09:00:00+00:00',
+      reason: 'SENTETIK',
+    }
+    let withScheduled = false
+    const recorded = install((url, init) => {
+      if (isRead(url)) return json({ ...catalogMaster(), buyerSituations: withScheduled ? buyerSituations([scheduledVersion]) : buyerSituations() })
+      if (init?.method === 'POST' && url.endsWith('/settings/tax-master/buyer-situations/versions')) return noContent()
+      if (init?.method === 'POST' && url.endsWith('/settings/tax-master/buyer-situations/versions/2/withdrawal')) return noContent()
+      return undefined
+    })
+    renderAt(TAX_PATH)
+
+    await user.click(await screen.findByRole('button', { name: TAX_TEXT.publishSituations }))
+    const editor = screen.getByLabelText(TAX_TEXT.situationsLabel, { exact: false }) as HTMLTextAreaElement
+    expect(editor.value).toContain('ExportRegistered;İhraç kayıtlı satış;hayır;sıfır;evet')
+    await user.clear(editor)
+    await user.type(editor, 'Normal;Normal alıcı;evet;normal;hayır{enter}DiplomaticMission;SENTETIK;hayır;sıfır;evet')
+    await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), 'SENTETIK yeni durum')
+    await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
+    expect(await screen.findByText(TAX_TEXT.saved)).toBeTruthy()
+    const [publish] = commands(recorded)
+    expect(publish.body).toEqual({
+      expectedVersion: '0',
+      entries: [
+        { code: 'Normal', name: 'Normal alıcı', withholdingApplies: true, vatMode: 'Normal', documentRequired: false },
+        { code: 'DiplomaticMission', name: 'SENTETIK', withholdingApplies: false, vatMode: 'ZeroWithExemptionCode', documentRequired: true },
+      ],
+      reason: 'SENTETIK yeni durum',
+    })
+    expect(publish.headers['Idempotency-Key']).toMatch(/.+/)
+    expect(publish.headers['X-Company-Id']).toBe(COMPANY_A)
+
+    withScheduled = true
+    vi.unstubAllGlobals()
+    document.body.innerHTML = ''
+    const second = install((url, init) => {
+      if (isRead(url)) return json({ ...catalogMaster(), buyerSituations: buyerSituations([scheduledVersion]) })
+      return init?.method === 'POST' && url.endsWith('/buyer-situations/versions/2/withdrawal') ? noContent() : undefined
+    })
+    renderAt(TAX_PATH)
+    await user.click(await screen.findByRole('button', { name: `${TAX_TEXT.withdraw} — ${TAX_TEXT.buyerSituationsHeading} 01.12.2026` }))
+    await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), 'SENTETIK geri')
+    await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
+    expect(await screen.findByText(TAX_TEXT.saved)).toBeTruthy()
+    expect(commands(second).map((command) => command.body)).toEqual([{ expectedVersion: '1', reason: 'SENTETIK geri' }])
+  })
+
+  it('refuses a KDV %0 situation that keeps a withholding in the form and sends nothing', async () => {
+    const user = userEvent.setup()
+    const recorded = install((url) => (isRead(url) ? json(catalogMaster()) : undefined))
+    renderAt(TAX_PATH)
+    await user.click(await screen.findByRole('button', { name: TAX_TEXT.publishSituations }))
+    const editor = screen.getByLabelText(TAX_TEXT.situationsLabel, { exact: false })
+    await user.clear(editor)
+    await user.type(editor, 'Odd;SENTETIK;evet;sıfır;evet')
+    expect(screen.getByText(TAX_TEXT.situationsInvalid)).toBeTruthy()
+    await user.type(screen.getByLabelText(TAX_TEXT.reasonLabel, { exact: false }), 'SENTETIK')
+    await user.click(screen.getByRole('button', { name: TAX_TEXT.save }))
+    expect(commands(recorded)).toEqual([])
+  })
+})
+
 describe('Vergi ayarları — VUK 232 threshold (SAT-D135)', () => {
   it('shows the threshold in force and records a new one with the entered amount and currency as text', async () => {
     const user = userEvent.setup()
@@ -430,6 +545,36 @@ describe('Vergi ayarları — contract decoders', () => {
 
     const { withholdingThreshold: _omitted, ...noThreshold } = master()
     expect(decodeTaxMaster(noThreshold, COMPANY_A)).toBeNull()
+
+    // SAT-D147/D158: a KDV %0 situation keeping a withholding, a catalog with a recorder or a missing list is off-contract.
+    const zeroWithWithholding = master()
+    zeroWithWithholding.buyerSituations.inForce.entries[1].withholdingApplies = true
+    expect(decodeTaxMaster(zeroWithWithholding, COMPANY_A)).toBeNull()
+    const catalogRecorder = master()
+    catalogRecorder.buyerSituations.inForce.recordedBy = USER
+    expect(decodeTaxMaster(catalogRecorder, COMPANY_A)).toBeNull()
+    const unknownMode = master()
+    ;(unknownMode.buyerSituations.inForce.entries[0] as { vatMode: string }).vatMode = 'Half'
+    expect(decodeTaxMaster(unknownMode, COMPANY_A)).toBeNull()
+    const { buyerSituations: _none, ...noSituations } = master()
+    expect(decodeTaxMaster(noSituations, COMPANY_A)).toBeNull()
+    expect(decodeBuyerSituationList(buyerSituations(), COMPANY_A)).not.toBeNull()
+    expect(decodeBuyerSituationList(buyerSituations(), '00000000-0000-4000-8000-000000000009')).toBeNull()
+  })
+
+  it('parses buyer situation lines with their effect and refuses malformed ones (SAT-D158)', () => {
+    expect(parseBuyerSituationText('Normal;Normal alıcı;evet;normal;hayır\nExportRegistered;İhraç kayıtlı;hayır;sıfır;evet')).toEqual([
+      { code: 'Normal', name: 'Normal alıcı', withholdingApplies: true, vatMode: 'Normal', documentRequired: false },
+      { code: 'ExportRegistered', name: 'İhraç kayıtlı', withholdingApplies: false, vatMode: 'ZeroWithExemptionCode', documentRequired: true },
+    ])
+    // KDV %0 never keeps a withholding (SAT-D147).
+    expect(parseBuyerSituationText('Odd;SENTETIK;evet;sıfır;evet')).toBeNull()
+    expect(parseBuyerSituationText('1Odd;SENTETIK;hayır;normal;hayır')).toBeNull()
+    expect(parseBuyerSituationText('Odd;SENTETIK;belki;normal;hayır')).toBeNull()
+    expect(parseBuyerSituationText('A;x;evet;normal;hayır\nA;y;evet;normal;hayır')).toBeNull()
+    expect(parseBuyerSituationText('A;x;evet;normal')).toBeNull()
+    const round = situationCatalog().entries as Parameters<typeof buyerSituationText>[0]
+    expect(parseBuyerSituationText(buyerSituationText(round))).toEqual(round)
   })
 
   it('parses "KOD;Ad" lines and refuses malformed or repeated codes', () => {

@@ -14,7 +14,9 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 /// Draft version's lines replaced as a whole (the only delete this context allows). Published versions and their lines
 /// never change. The attempt key (company, command, key hash) is a primary key under a binary collation; the raw key is
 /// never stored. The audit sidecar is Audit's table, written in the same save and filtered the same way.
-/// The Product card and Organization's company table are mapped read-only for foreign keys and checks.
+/// The Product card and Organization's company table are mapped read-only for foreign keys and checks. One exception to the
+/// company scope (SAT-D149, EK20): the item type of the SHARED product card (<c>ProductCardItemTypes</c>) is keyed by the product
+/// alone, written only from a resolved company (recorded as the acting company) under its own write guard.
 /// Migrations have their own history table so that this context never shares one with <c>ProductDbContext</c>.
 /// </summary>
 public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListDbContext> options, ICompanyContext companyContext)
@@ -36,7 +38,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
 
     internal DbSet<PriceListProductReference> Products => Set<PriceListProductReference>();
 
-    internal DbSet<ProductItemTypeRow> ItemTypes => Set<ProductItemTypeRow>();
+    internal DbSet<ProductCardItemTypeRow> ItemTypes => Set<ProductCardItemTypeRow>();
 
     internal DbSet<ProductItemTypeAttemptRow> ItemTypeAttempts => Set<ProductItemTypeAttemptRow>();
 
@@ -219,25 +221,28 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
     }
 
     /// <summary>
-    /// SAT-D134: the company's product item type (demir / hurda / hizmet) and its command answers. The tax per item type is
-    /// the Settings owner's default (SAT-D139); nothing tax-related is stored here.
+    /// SAT-D149 (EK20): the product's item type on the SHARED card (one value for all companies, keyed by the product; no company
+    /// filter, like the global card it extends) and its command answers (company-scoped: a command runs in one company). The tax
+    /// per item type is the Settings owner's default (SAT-D139); nothing tax-related is stored here.
     /// </summary>
     private void ConfigureItemTypes(ModelBuilder modelBuilder)
     {
-        var entity = modelBuilder.Entity<ProductItemTypeRow>();
-        entity.ToTable("ProductItemTypes", Schema, table =>
+        var entity = modelBuilder.Entity<ProductCardItemTypeRow>();
+        entity.ToTable("ProductCardItemTypes", Schema, table =>
         {
-            table.HasCheckConstraint("CK_ProductItemTypes_Identity", $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid}");
-            table.HasCheckConstraint("CK_ProductItemTypes_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
-            table.HasCheckConstraint("CK_ProductItemTypes_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
+            table.HasCheckConstraint("CK_ProductCardItemTypes_Identity",
+                $"[ProductId] <> {EmptyGuid} AND [UpdatedInCompanyId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_ProductCardItemTypes_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
+            table.HasCheckConstraint("CK_ProductCardItemTypes_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
         });
-        entity.HasKey(x => new { x.CompanyId, x.ProductId });
+        entity.HasKey(x => x.ProductId);
+        entity.Property(x => x.ProductId).ValueGeneratedNever();
         entity.Property(x => x.ItemType).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
         entity.Property(x => x.Version).IsConcurrencyToken();
         entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
-        entity.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
         entity.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
-        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+        entity.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.UpdatedInCompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         var attempt = modelBuilder.Entity<ProductItemTypeAttemptRow>();
         attempt.ToTable("ProductItemTypeAttempts", Schema, table =>
@@ -285,6 +290,34 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
             }
         }
 
+        // SAT-D149: the shared card's item type is written only from a resolved company (recorded as the acting company), is
+        // never deleted, and only the item type and the update facts move (its version is the token).
+        foreach (var entry in ChangeTracker.Entries<ProductCardItemTypeRow>())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
+            {
+                continue;
+            }
+
+            if (entry.State == EntityState.Deleted || !companyContext.IsResolved || companyContext.CompanyId == Guid.Empty
+                || entry.Entity.UpdatedInCompanyId != companyContext.CompanyId)
+            {
+                throw new InvalidOperationException(
+                    "Ürün kartının kalem tipi silinmez ve yalnız aktif şirket bağlamında, o şirket adına yazılır.");
+            }
+
+            string[] allowed =
+            [
+                nameof(ProductCardItemTypeRow.ItemType), nameof(ProductCardItemTypeRow.UpdatedAtUtc),
+                nameof(ProductCardItemTypeRow.UpdatedBy), nameof(ProductCardItemTypeRow.UpdatedInCompanyId),
+            ];
+            if (entry.State == EntityState.Modified && entry.Properties.Any(property =>
+                    property.IsModified && !property.Metadata.IsConcurrencyToken && !allowed.Contains(property.Metadata.Name)))
+            {
+                throw new InvalidOperationException("Ürün kartının kalem tipinde yalnız tip ve güncelleme bilgisi değişir.");
+            }
+        }
+
         foreach (var entry in ChangeTracker.Entries<IProductPriceListTenantRow>())
         {
             if (entry.State is not (EntityState.Added or EntityState.Modified or EntityState.Deleted))
@@ -309,12 +342,6 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                 string[] allowed = entry.Entity switch
                 {
                     PriceListRow => [nameof(PriceListRow.Name), nameof(PriceListRow.UpdatedAtUtc)],
-                    // SAT-D134: only the item type and the update facts move (its version is the token).
-                    ProductItemTypeRow =>
-                    [
-                        nameof(ProductItemTypeRow.ItemType), nameof(ProductItemTypeRow.UpdatedAtUtc),
-                        nameof(ProductItemTypeRow.UpdatedBy),
-                    ],
                     PriceListVersionRow when (int)entry.OriginalValues[nameof(PriceListVersionRow.State)]! == 1 =>
                     [
                         nameof(PriceListVersionRow.ValidFrom), nameof(PriceListVersionRow.ValidThrough), nameof(PriceListVersionRow.State),

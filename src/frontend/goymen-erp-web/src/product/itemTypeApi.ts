@@ -1,5 +1,6 @@
 /**
- * SAT-D134 (EK19) — the product item type (demir / hurda / hizmet), company-scoped, pinned to
+ * SAT-D134 (EK19) / SAT-D149 (EK20) — the product item type (demir / hurda / hizmet), ONE value on the shared product card
+ * (the same in every company; a holder in any company changes it), pinned to
  * `GET/PUT /api/v1/product-item-types/{productId}` (`ProductItemTypeEndpoints`). Reads send the selected company only; the
  * command carries one caller-owned `Idempotency-Key` (kept for a retry after an unknown outcome). Success is exactly the
  * contract's status; a 5xx or an off-contract answer is an UNKNOWN outcome; a refusal is read by its status and `code`.
@@ -18,7 +19,11 @@ export interface ProductItemTypeView {
   readonly productId: string
   readonly version: string
   readonly itemType: ProductItemType | null
+  /** SAT-D149: the last change was made in another company (the value is shared). */
+  readonly changedInAnotherCompany: boolean
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export type ItemTypeRead =
   | { readonly type: 'ok'; readonly data: ProductItemTypeView }
@@ -53,7 +58,14 @@ export function decodeItemType(raw: unknown, companyId: string, productId: strin
   const itemType = raw.itemType
   if (itemType !== null && !PRODUCT_ITEM_TYPES.includes(itemType as ProductItemType)) return null
   if ((raw.version === '0') !== (itemType === null)) return null
-  return { productId, version: raw.version, itemType: itemType as ProductItemType | null }
+  const updatedIn = raw.updatedInCompanyId
+  if (itemType === null ? updatedIn !== null : typeof updatedIn !== 'string' || !UUID.test(updatedIn)) return null
+  return {
+    productId,
+    version: raw.version,
+    itemType: itemType as ProductItemType | null,
+    changedInAnotherCompany: typeof updatedIn === 'string' && updatedIn.toLowerCase() !== companyId.toLowerCase(),
+  }
 }
 
 export async function fetchItemType(companyId: string, productId: string, signal?: AbortSignal): Promise<ItemTypeRead> {
