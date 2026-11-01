@@ -24,8 +24,12 @@ soru cevapları: bir tur, iki soru. Sinan'a her seçeneğin adı **ve açıklama
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
-| SAT-D165 | Müşteri reddinden sonra sipariş PDF'i | Güncel revizyonu müşteri tarafından reddedilmiş bir siparişte sipariş PDF'i **müşterinin kabul ettiği son revizyonu** basar: o revizyonun satırları, miktarları ve fiyatları. Reddedilen revizyon PDF'te bir notla belirtilir: hangi revizyon, ret gerekçesi, siparişin hangi revizyonla sürdüğü (soru 1). Uygulama ayrıntısı (geri alınabilir): dosya adı ve belgede gösterilen revizyon numarası kabul edilen revizyonu gösterir | Sipariş PDF'i (MOD-07, #842), PR #874 |
-| SAT-D166 | Müşteri reddinden sonra risk | Müşteri bir revizyonu reddettiğinde risk hesabındaki onaylı sipariş kalanı **müşterinin kabul ettiği son revizyona göre** ölçülür (soru 2). Reddedilen revizyon riske girmez. Kabul **bekleyen** revizyon için SAT-D50 aynen geçerlidir | API-06 risk kontrolü, PR #874 |
+| SAT-D165 | Müşteri reddinden sonra sipariş PDF'i | Güncel revizyonu müşteri tarafından reddedilmiş bir siparişte sipariş PDF'i **müşterinin kabul ettiği son revizyonu** basar: o revizyonun satırları, miktarları ve fiyatları. Reddedilen revizyon PDF'te bir notla belirtilir (soru 1). Uygulama ayrıntısı (geri alınabilir): notun içeriği yalnız hangi revizyonun müşteri tarafından reddedildiği ve siparişin hangi revizyonla sürdüğüdür (ör. "Rev.2 müşteri tarafından reddedildi; sipariş Rev.1 ile sürer"). İç kayıttaki serbest metin ret gerekçesi müşteriye giden PDF'e **basılmaz**; basılması ayrı bir Sinan kararı ister. Dosya adı ve belgede gösterilen revizyon numarası kabul edilen revizyonu gösterir. Ret sonrasında açılan yeni bir revizyon müşteri kabulü bekliyorsa güncel revizyon artık reddedilmiş değildir; PDF bugünkü gibi güncel revizyonu basar | Sipariş PDF'i (MOD-07, #842), PR #874 |
+| SAT-D166 | Müşteri reddinden sonra risk | Müşteri bir revizyonu reddettiğinde risk hesabındaki onaylı sipariş kalanı **müşterinin kabul ettiği son revizyona göre** ölçülür (soru 2). Reddedilen revizyon riske girmez; risk, SAT-D48'in kabul beklenirken koyduğu yeni tutar yerine kabul edilen revizyonun kalanına döner. Kabul **bekleyen** revizyon için (ret sonrasında açılan yeni revizyon dahil) SAT-D50 aynen geçerlidir. Uygulama ayrıntısı (geri alınabilir): ret komutu yeni bir sipariş aşaması limit kontrolü tetiklemez; kabul edilen revizyonun tutarı daha önce kontrol edilmişti, sevkteki kesin kontrol (DEC-FIN-009) değişmeden çalışır | API-06 risk kontrolü, PR #874 |
+
+## Kapsam notu
+
+- Ret yalnız müşterinin daha önce bir revizyonu kabul ettiği siparişte kaydedilebilir (SAT-D113: Rev.0'ın davranışı değişmez; PR #874 bu durumda reddi reddeder). Bu yüzden SAT-D165 ve SAT-D166'nın uygulandığı her siparişte kabul edilmiş bir revizyon vardır. Ret kaydı olmayan siparişte PDF ve risk bugünkü gibi çalışır.
 
 ## Sınırlar
 
