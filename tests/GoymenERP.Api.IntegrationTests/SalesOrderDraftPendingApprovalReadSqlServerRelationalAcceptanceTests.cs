@@ -212,7 +212,7 @@ public sealed class SalesOrderDraftPendingApprovalReadSqlServerRelationalAccepta
 
     private static SalesOrderDraft Draft(Owners owners, string documentNo)
     {
-        var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day);
+        var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day, DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(
             owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, documentNo, header, money, T0);

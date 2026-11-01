@@ -415,9 +415,41 @@ public sealed partial class SalesDraftService
 
     /// <summary>The current lines of <paramref name="order"/> in the group key (the store's grouping, applied to the restored order).</summary>
     private static IEnumerable<SalesOrderDraftLine> KeyLines(SalesOrderDraft order, SalesOpenOrderGroupKey key) =>
-        order.Header.CompanyAccountId == key.CompanyAccountId && order.Header.PartyId == key.PartyId
+        BasisCustomer(order) is var customer && customer.CompanyAccountId == key.CompanyAccountId && customer.PartyId == key.PartyId
             ? order.Lines.Where(line => line.Product.ProductId == key.ProductId && line.OrderUnit.UnitId == key.UnitId).OrderBy(line => line.LineNo)
             : [];
+
+    /// <summary>
+    /// API-04 × API-41 (SAT-D137): the customer (account, party) and currency of the revision the open quantity is MEASURED on — the
+    /// customer-accepted revision when acceptance is required and one is accepted, else the internally approved one (the current
+    /// revision when it is approved, else the last archived approved revision). The current header when that revision is the
+    /// current one, else the archived header of that revision (<c>sales.DraftRevisionHeaders</c>). The store groups and filters by
+    /// exactly this rule in SQL (<c>SalesStore.OpenLines</c>), so an order is never split across customers and a pending customer
+    /// change never moves accepted quantity to the new, unapproved customer. Missing archive header → empty ids (never matched).
+    /// </summary>
+    internal static (Guid CompanyAccountId, Guid PartyId, Guid CurrencyId) BasisCustomer(SalesOrderDraft order)
+    {
+        var revision = order.CustomerAcceptanceRequired && order.CustomerAcceptance is { } acceptance
+            ? acceptance.Revision
+            : order.ApprovalState == InternalApprovalState.Approved || order.ArchivedRevisions.Count == 0
+                ? order.Revision
+                : order.ArchivedRevisions.Max(archive => archive.Revision);
+        if (revision == order.Revision)
+        {
+            return (order.Header.CompanyAccountId, order.Header.PartyId, order.Header.CurrencyId);
+        }
+
+        var header = order.ArchivedRevisions.FirstOrDefault(archive => archive.Revision == revision)?.Header;
+        return header is null ? (Guid.Empty, Guid.Empty, Guid.Empty) : (header.CompanyAccountId, header.PartyId, header.CurrencyId);
+    }
+
+    /// <summary>
+    /// The per-line marker: the current header's customer or currency differs from the measured revision's (a customer/currency
+    /// revision not yet approved, or approved but not yet accepted by the customer) — the line stays under the measured customer.
+    /// </summary>
+    private static bool HeaderRevisionPending(SalesOrderDraft order) =>
+        BasisCustomer(order) is var basis && (basis.CompanyAccountId != order.Header.CompanyAccountId
+            || basis.PartyId != order.Header.PartyId || basis.CurrencyId != order.Header.CurrencyId);
 
     private static SalesOpenOrderUnmeasuredLineView Unmeasured(SalesOrderDraft order, SalesOrderDraftLine line,
         SalesOpenOrderUnmeasuredReasonView reason) => new(order.Id, order.DocumentNo, line.Id, line.LineNo, reason);
@@ -691,7 +723,8 @@ public sealed partial class SalesDraftService
                     .Select(line => new SalesOpenOrderLineView(line.Order.Id, line.Order.DocumentNo, line.Order.Header.BusinessDate,
                         line.Line.RequestedDeliveryDate ?? line.Order.Header.RequestedDeliveryDate, line.AcceptedRevision, line.Line.Id,
                         line.Line.LineNo, QuantityText(line.Accepted), QuantityText(line.Shipped), QuantityText(line.Remaining),
-                        line.CompletedWithinTolerance, QuantityText(line.Awaiting), line.AwaitingRevision))],
+                        line.CompletedWithinTolerance, QuantityText(line.Awaiting), line.AwaitingRevision,
+                        HeaderRevisionPending(line.Order)))],
                 Unmeasured);
         }
     }

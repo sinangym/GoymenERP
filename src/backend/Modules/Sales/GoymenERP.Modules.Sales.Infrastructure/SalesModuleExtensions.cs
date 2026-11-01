@@ -145,6 +145,10 @@ public static class SalesModuleExtensions
         // SAT-D25 / SAT-D39: the Settings quote policy port (loss reason list, default validity), registered by the host from the
         // Settings owner; until it is, a loss is 503 (never a guessed reason) and no validity is suggested (503 on the read).
         serviceProvider.GetService<ISettingsSalesQuotePolicyProviderV1>(),
+        // API-04 / SAT-D27: the Identity user directory adapters (the host's central registrations) — the sales owner's display
+        // and eligibility; until they are, a sales-owner change is 503, never an unverified person.
+        serviceProvider.GetService<ISalesUserDisplaySourceV1>(),
+        serviceProvider.GetService<ISalesOwnerCandidateSourceV1>(),
         // API-41 / API-42: the report queries (this module's own store).
         serviceProvider.GetRequiredService<ISalesReportReadStore>(),
         // API-41 / API-42: the Cari party display (host adapter, registered centrally); until it is, a report naming a customer is

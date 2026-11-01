@@ -1434,7 +1434,8 @@ public sealed partial class SalesDraftServiceTests
             RequestedDeliverySlices: index == 0
                 ? [new(Guid.NewGuid(), KgUnit, "0.5", Day.AddDays(1)), new(Guid.NewGuid(), KgUnit, "0.5", Day.AddDays(2))]
                 : null)).ToArray();
-        return new CreateSalesOrderDraftRequest("Order", Party, Account, Day, Currency, list);
+        // SAT-D123: the order carries its due terms from the create, so the approval tests can approve it.
+        return new CreateSalesOrderDraftRequest("Order", Party, Account, Day, Currency, list, DueTerms: TestDueTerms.PointDue30Wire);
     }
 
     private static SalesCommandMetadata Metadata(string key, string? correlation = null) =>
@@ -1625,6 +1626,10 @@ public sealed partial class SalesDraftServiceTests
         public FakeAccounts Accounts { get; init; } = new();
         public FakePartyDisplays PartyDisplays { get; init; } = new();
         public FakeUserDisplays UserDisplays { get; init; } = new();
+        /// <summary>API-04 / SAT-D27: the sales-owner eligibility search (Identity's directory); null = not composed (503).</summary>
+        public FakeSalesOwners? SalesOwners { get; set; } = new();
+        /// <summary>API-04: whether the Identity display adapter is composed for the draft service (the read service always gets it).</summary>
+        public bool NoUserDisplays { get; set; }
         public FakeContactInformation ContactInformation { get; init; } = new();
         public FakeSettings Settings { get; init; } = new();
         public FakeProducts Products { get; init; } = new();
@@ -1679,7 +1684,7 @@ public sealed partial class SalesDraftServiceTests
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
-                SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, Reports, PartyDisplays);
+                SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays);
         }
 
         public SalesDraftReadServiceV1 ReadService()
@@ -1811,12 +1816,34 @@ public sealed partial class SalesDraftServiceTests
                 return Task.FromResult(new SalesUserDisplayBatchAnswerV1(SalesUserDisplayBatchOutcomeV1.Unavailable, []));
 
             var items = request.UserIds
-                .Select(id => new SalesUserDisplayV1(id, Fault == "malformed" ? " " : $"Kisi {id:N}", true))
+                .Select(id => new SalesUserDisplayV1(id, Fault == "malformed" ? " " : $"Kisi {id:N}", Fault != "inactive"))
                 .ToList();
             if (Fault == "missing") items.Clear();
             if (Fault == "duplicate" && items.Count != 0) items.Add(items[0]);
             if (Fault == "mismatch" && items.Count != 0) items[0] = items[0] with { UserId = Guid.NewGuid() };
             return Task.FromResult(new SalesUserDisplayBatchAnswerV1(SalesUserDisplayBatchOutcomeV1.Success, items));
+        }
+    }
+
+    /// <summary>API-04 / SAT-D27: Identity's eligibility search as the central adapter answers it — the ids in <see cref="Eligible"/>.</summary>
+    private sealed class FakeSalesOwners : ISalesOwnerCandidateSourceV1
+    {
+        public string Fault { get; set; } = "";
+        public HashSet<Guid> Eligible { get; } = [];
+        public bool HasMore { get; set; }
+        public List<SalesOwnerCandidateRequestV1> Asked { get; } = [];
+
+        public Task<SalesOwnerCandidateAnswerV1> SearchAsync(SalesOwnerCandidateRequestV1 request, CancellationToken cancellationToken = default)
+        {
+            Asked.Add(request);
+            return Task.FromResult(Fault switch
+            {
+                "denied" => new SalesOwnerCandidateAnswerV1(SalesOwnerCandidateOutcomeV1.Denied, [], false),
+                "unavailable" => new SalesOwnerCandidateAnswerV1(SalesOwnerCandidateOutcomeV1.Unavailable, [], false),
+                _ => new SalesOwnerCandidateAnswerV1(SalesOwnerCandidateOutcomeV1.Success,
+                    [.. Eligible.Where(id => $"Kisi {id:N}".Contains(request.Query ?? "", StringComparison.Ordinal))
+                        .Select(id => new SalesOwnerOptionV1(id, $"Kisi {id:N}"))], HasMore),
+            });
         }
     }
 
@@ -2056,6 +2083,34 @@ public sealed partial class SalesDraftServiceTests
                 (target, now) => archived = mutate(target, now), audit,
                 token => beforeWrite(draft!, token), cancellationToken);
             if (archived is not null) Archived.Add(archived);
+            return result;
+        }
+
+        /// <summary>The reason each recorded header revision handed the store (SAT-D126), in order.</summary>
+        public List<string> HeaderRevisionReasons { get; } = [];
+
+        /// <summary>When set, the next header revision fails as the real store does when its audit envelope is refused.</summary>
+        public bool FailHeaderRevisionAudit { get; set; }
+
+        public async Task<SalesDraftStateResult?> ReviseDraftHeaderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+            Guid draftId, Func<SalesOrderDraft, SalesHeaderRevisionInput, DateTimeOffset, ApprovedRevisionSnapshot?> mutate,
+            SalesDraftStateAudit audit, string revisionReason, Func<SalesOrderDraft, CancellationToken, Task<SalesHeaderRevisionInput>> beforeWrite,
+            CancellationToken cancellationToken = default)
+        {
+            if (commandName != SalesDraftCommands.ReviseHeaderV1) throw new ArgumentException("wrong command", nameof(commandName));
+            if (FailHeaderRevisionAudit)
+            {
+                throw new SalesDraftStoreException(SalesDraftStoreCodes.AuditRecordInvalid, "SENTETIK audit zarfı reddedildi");
+            }
+
+            ApprovedRevisionSnapshot? archived = null;
+            SalesHeaderRevisionInput? input = null;
+            var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
+            var result = await UpdateDraftStateAsyncCore(envelope, requestHash, commandName, draftId,
+                (target, now) => archived = mutate(target, input!, now), audit,
+                async token => input = await beforeWrite(draft!, token), cancellationToken);
+            if (archived is not null) Archived.Add(archived);
+            if (result is { Outcome: SalesDraftWriteOutcome.Recorded }) HeaderRevisionReasons.Add(revisionReason.Trim());
             return result;
         }
 

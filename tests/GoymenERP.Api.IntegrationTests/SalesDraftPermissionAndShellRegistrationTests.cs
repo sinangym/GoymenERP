@@ -46,6 +46,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
     // No 30 / SAT-D12: force-closing an approved order. Its own name (the decision's literal, separate from the cancel
     // name), company-wide and not Critical (the reason is on ErpPermissions.SalesOrdersForceClose).
     [InlineData(SalesPermissionManifestV1.OrdersForceClose, ErpPermissions.SalesOrdersForceClose)]
+    // API-04: the header-revision name, company-wide and not Critical, granted to no role.
+    [InlineData(SalesPermissionManifestV1.OrdersHeaderWrite, ErpPermissions.SalesOrdersHeaderWrite)]
     // DEC-SAL-002: the quantity revision of an approved order. Its own name, company-wide and not Critical (the reason is
     // on ErpPermissions.SalesOrdersQuantityWrite).
     [InlineData(SalesPermissionManifestV1.OrdersQuantityWrite, ErpPermissions.SalesOrdersQuantityWrite)]
@@ -126,8 +128,8 @@ public sealed class SalesDraftPermissionAndShellRegistrationTests
         // DEC-SAL-003 delivery-schedule, DEC-SAL-005 cancel, DEC-SAL-002 quantity-revision, Q9 customer-acceptance and
         // No 30 force-close controls; Sales 1.8 (UI-20) adds the six S-01 request/quote screens and their three controls; Sales 1.9
         // (UI-60 / UI-61) the S-07 dispatch list and the S-08 invoice candidates; Sales 1.10 (SAT-D24 / SAT-D44) the expired-quote
-        // approval control; Sales 1.11 (UI-80) the reports screen.
-        Assert.Equal(24, sales.Length);
+        // approval control; Sales 1.11 (UI-80) the reports screen; Sales 1.12 (API-04) the header-revision control.
+        Assert.Equal(25, sales.Length);
         Assert.Equal(SalesShellCapabilityProvider.RequestDetailCapabilityId,
             Assert.Single(sales, item => item.Declaration.CapabilityId == SalesShellCapabilityProvider.RequestApproveCapabilityId)
                 .Declaration.ParentCapabilityId);

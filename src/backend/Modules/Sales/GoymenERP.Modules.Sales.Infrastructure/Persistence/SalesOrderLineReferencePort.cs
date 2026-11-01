@@ -103,6 +103,13 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
         }
 
         var lastApproved = draft.ArchivedRevisions[^1];
+        // API-04 (fail-closed): SAT-D103 does not cover a currency change, and no decision lets a pending customer change ship
+        // under the old customer — while the newer revision names another customer or currency, nothing is shipped.
+        if (draft.CustomerOrCurrencyRevisionPending)
+        {
+            return LineStanding.Refused(HeaderRevisionPending);
+        }
+
         if (draft.CustomerAcceptanceRequired && draft.CustomerAcceptance?.Revision != lastApproved.Revision)
         {
             return LineStanding.Refused(CustomerAcceptancePending);
@@ -133,6 +140,9 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
     }
 
     private const string CustomerAcceptancePending = "CustomerAcceptancePending";
+
+    /// <summary>API-04: a newer revision changes the customer or the currency and waits for (re-)approval; nothing ships meanwhile.</summary>
+    internal const string HeaderRevisionPending = "HeaderRevisionPending";
 
     /// <summary>A line's standing for physical shipping: refused with a state, or the revision, quantity, cap and basis it answers.</summary>
     internal sealed record LineStanding(string? RefusedState, int Revision, string? QuantityText, string? ShippingCapText, string? Basis,

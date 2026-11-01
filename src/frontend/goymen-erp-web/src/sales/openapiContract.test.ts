@@ -21,6 +21,12 @@ import revisionsResponse from './examples/revisions-response.json'
 import statusResponse from './examples/status-response.json'
 import totalsResponse from './examples/totals-response.json'
 import {
+  SALES_REFERENCE_SALES_OWNERS_PATH,
+  salesDraftHeaderPath,
+  salesDraftHeaderRevisionPath,
+  type HeaderRevisionRequest,
+} from './headerRevision'
+import {
   SALES_DRAFT_PATH,
   salesDraftCancellationImpactPath,
   salesDraftCancellationPath,
@@ -142,12 +148,16 @@ describe('Sales client ↔ canonical OpenAPI', () => {
       SALES_REFERENCE_CURRENCIES_PATH,
       SALES_REFERENCE_CONTACT_INFORMATION_PATH,
       SALES_REFERENCE_PRODUCTS_PATH,
+      // API-04: the revisable header and the SAT-D27 sales-owner list.
+      salesDraftHeaderPath('ID'),
+      SALES_REFERENCE_SALES_OWNERS_PATH,
     ]
     const writes = [
       SALES_DRAFT_PATH,
       salesDraftCommercialRevisionPath('ID'),
       salesDraftPriceFloorExceptionApprovalPath('ID'),
       salesDraftQuantityRevisionPath('ID'),
+      salesDraftHeaderRevisionPath('ID'),
       salesDraftDeliverySchedulePath('ID'),
       salesDraftCancellationPath('ID'),
       remainderChangesPath('ID'),
@@ -165,6 +175,14 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expect(requestSchema(salesDraftCancellationPath('ID'))).toBe('SalesDraftCancelRequest')
     expectFits({ expectedVersion: '4', reason: 'r', impactToken: 'a'.repeat(64) }, 'SalesDraftCancelRequest')
     expect(requestSchema(salesDraftQuantityRevisionPath('ID'))).toBe('SalesDraftQuantityRevisionRequest')
+    // API-04: the whole header as the client sends it, every member present.
+    expect(requestSchema(salesDraftHeaderRevisionPath('ID'))).toBe('SalesDraftHeaderRevisionRequest')
+    const header: HeaderRevisionRequest = {
+      expectedVersion: '4', reason: 'r', partyId: 'p', companyAccountId: 'a', currencyId: 'c', deliveryAddress: null, contact: null,
+      salesOwnerUserId: null, dueTerms: { instalments: [{ sequenceNo: 1, basis: 'ShipmentDate', daysAfter: 30, sharePercent: '100' }] },
+    }
+    expectFits(header, 'SalesDraftHeaderRevisionRequest')
+    expectFits(header.dueTerms!.instalments[0]!, 'SalesDueInstalmentV1')
     expect(requestSchema(salesDraftDeliverySchedulePath('ID'))).toBe('SalesDraftDeliveryScheduleRequest')
     expect(requestSchema(salesDraftCommercialRevisionPath('ID'))).toBe('SalesDraftCommercialRevisionRequest')
     expect(requestSchema(salesDraftPriceFloorExceptionApprovalPath('ID'))).toBe('SalesDraftPriceFloorExceptionApprovalRequest')

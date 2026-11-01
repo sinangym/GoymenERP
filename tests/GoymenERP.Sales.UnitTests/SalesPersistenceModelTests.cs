@@ -120,7 +120,8 @@ public sealed class SalesPersistenceModelTests
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesRequests", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesQuotes", StringComparison.Ordinal));
         Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesDiscountExceptionApprovalReplayResults", StringComparison.Ordinal));
-        Assert.Equal("20261027222533_AddSalesQuoteExpiryApprovalsAndLossReasons", context.Database.GetMigrations().Last());
+        Assert.Contains(context.Database.GetMigrations(), migration => migration.EndsWith("_AddSalesQuoteExpiryApprovalsAndLossReasons", StringComparison.Ordinal));
+        Assert.Equal("20261031131127_AddDraftHeaderRevisions", context.Database.GetMigrations().Last());
         Assert.False(context.Database.HasPendingModelChanges());
     }
 
@@ -184,6 +185,10 @@ public sealed class SalesPersistenceModelTests
     [Theory]
     [InlineData("delete-draft")]
     [InlineData("edit-draft-header")]
+    [InlineData("edit-draft-note")]
+    [InlineData("edit-draft-responsible")]
+    [InlineData("edit-revision-header")]
+    [InlineData("delete-revision-header")]
     [InlineData("edit-draft-company")]
     [InlineData("edit-line")]
     [InlineData("edit-line-unit")]
@@ -219,7 +224,21 @@ public sealed class SalesPersistenceModelTests
                 context.Drafts.Remove(Attach(context, Draft()));
                 break;
             case "edit-draft-header":
-                Attach(context, Draft()).PartyId = Guid.NewGuid();
+                // API-04 admits the customer, currency, delivery references, sales owner and due terms; the business date stays.
+                Attach(context, Draft()).BusinessDate = new DateOnly(2026, 9, 19);
+                break;
+            case "edit-draft-note":
+                Attach(context, Draft()).Note = "başka";
+                break;
+            case "edit-draft-responsible":
+                Attach(context, Draft()).ResponsibleId = Guid.NewGuid();
+                break;
+            // API-04: an archived revision's header is append-only — no column of it may change, nothing is deleted.
+            case "edit-revision-header":
+                Attach(context, RevisionHeader()).PartyId = Guid.NewGuid();
+                break;
+            case "delete-revision-header":
+                context.DraftRevisionHeaders.Remove(Attach(context, RevisionHeader()));
                 break;
             case "edit-draft-company":
                 Attach(context, Draft()).CompanyId = CompanyB;
@@ -494,6 +513,12 @@ public sealed class SalesPersistenceModelTests
     {
         CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, SubmittedBy = "prep", SubmittedAtUtc = At, ApprovedBy = "mgr", ApprovedAtUtc = At,
         MoneyProfileId = Guid.NewGuid(), MoneyProfileVersion = "3", MoneyScale = 2, ArchivedAtUtc = At, ArchivedBy = "pricer", CorrelationId = "synthetic-correlation",
+    };
+
+    private static DraftRevisionHeaderRow RevisionHeader() => new()
+    {
+        CompanyId = CompanyA, DraftId = Guid.NewGuid(), Revision = 0, PartyId = Guid.NewGuid(), CompanyAccountId = Guid.NewGuid(),
+        CurrencyId = Guid.NewGuid(),
     };
 
     private static DraftRevisionLineRow RevisionLine() => new()

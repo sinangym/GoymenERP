@@ -156,6 +156,16 @@ public static class SalesRuleCodes
     /// <summary>A revision reason over the technical bound (the note's) is refused, never cut.</summary>
     public const string RevisionReasonTooLong = "sales_revision_reason_too_long";
 
+    /// <summary>
+    /// API-04 (fail-closed, NEEDS-SINAN): the customer or the currency of an order with a PRICED line is not changed — the
+    /// prices were set (and, for a list reference, resolved by the SAT-D9 tier chain) for the old customer and currency, and
+    /// no decision says whether they carry over or are restated.
+    /// </summary>
+    public const string HeaderRevisionPricedLines = "sales_header_revision_priced_lines";
+
+    /// <summary>SAT-D123 (EK18): an order is not approved without due terms; they are entered (or changed) by a header revision.</summary>
+    public const string DueTermsRequired = "sales_due_terms_required";
+
     /// <summary>DEC-SAL-003: a delivery-schedule update must name every current line exactly once and no other line.</summary>
     public const string ScheduleLinesMismatch = "sales_schedule_lines_mismatch";
     /// <summary>

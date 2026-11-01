@@ -93,7 +93,7 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
                 .ToArray();
         }
 
-        Assert.Equal(["DocumentCounters", "DraftAttempts", "DraftCancellations", "DraftDeliveryScheduleDates", "DraftDeliverySchedules", "DraftDeliverySlices", "DraftForceClosures", "DraftLines", "DraftNumbers", "DraftRemainderChanges", "DraftRemainderDecisions", "DraftRevisionLines", "DraftRevisions", "Drafts", "QuoteAttempts", "QuoteExpiryApprovals", "QuoteLines", "QuoteRequests", "QuoteRevisions", "Quotes", "RequestAttempts", "RequestLines", "Requests", "__EFMigrationsHistory"], mapped);
+        Assert.Equal(["DocumentCounters", "DraftAttempts", "DraftCancellations", "DraftDeliveryScheduleDates", "DraftDeliverySchedules", "DraftDeliverySlices", "DraftForceClosures", "DraftLines", "DraftNumbers", "DraftRemainderChanges", "DraftRemainderDecisions", "DraftRevisionHeaders", "DraftRevisionLines", "DraftRevisions", "Drafts", "QuoteAttempts", "QuoteExpiryApprovals", "QuoteLines", "QuoteRequests", "QuoteRevisions", "Quotes", "RequestAttempts", "RequestLines", "Requests", "__EFMigrationsHistory"], mapped);
         Assert.Equal(string.Join(',', mapped), await run.ScalarAsync<string>(
             "SELECT STRING_AGG(name, ',') WITHIN GROUP (ORDER BY name COLLATE Latin1_General_BIN2) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales')"));
         // ADR-011 §2: the raw key is not a column; the attempt row holds the command name, the key hash and the actor.
@@ -335,7 +335,7 @@ public sealed class SalesDraftSqlServerRelationalAcceptanceTests
     {
         var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day,
             RequestedDeliveryDate: withReferences ? Day.AddDays(7) : null, Note: withReferences ? "SENTETIK not" : null,
-            DeliveryAddress: withReferences ? new OwnerReference(owners.Address, "2") : null);
+            DeliveryAddress: withReferences ? new OwnerReference(owners.Address, "2") : null, DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, documentNo, header, money, at);
         var unit = new UnitProfileSnapshot(owners.Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

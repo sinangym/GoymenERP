@@ -60,6 +60,17 @@ public interface ISalesDraftService
     Task<SalesOrderDraftResponse> ReviseQuantityAsync(Guid draftId, SalesDraftQuantityRevisionRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    // API-04 (DEC-SAL-002, DEC-SAL-008) — the header revision under `sales.orders.header.write`: customer account, currency,
+    // due terms, sales owner and delivery references replaced with a reason; an APPROVED order archives its approved revision
+    // (with its header) first and advances to the next one for re-approval. The read of the revisable header is
+    // `sales.drafts.read` (due terms only with `sales.orders.price.read`). Default bodies refuse for test doubles only.
+    Task<SalesOrderDraftResponse> ReviseHeaderAsync(Guid draftId, SalesDraftHeaderRevisionRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Bu servis başlık revizyonunu desteklemiyor.");
+
+    Task<SalesDraftHeaderV1> GetDraftHeaderAsync(Guid draftId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Bu servis başlık okumasını desteklemiyor.");
+
     // DEC-SAL-003 — the delivery-schedule update under `sales.orders.delivery-schedule.write` (dates only, no
     // re-approval, audited), and the read of the schedule history (`sales.drafts.read`).
     Task<SalesOrderDraftResponse> RescheduleDeliveryAsync(Guid draftId, SalesDraftDeliveryScheduleRequest request,

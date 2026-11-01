@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 17;
+    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write.
+    public const int Version = 18;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -96,6 +97,15 @@ public static class SalesPermissionManifestV1
     public const string OrdersQuantityWrite = "sales.orders.quantity.write";
 
     /// <summary>
+    /// API-04 (DEC-SAL-002, DEC-SAL-008; plan §3.1): POST …/{id}/header-revision — revising an order's header (customer account,
+    /// currency, due terms, sales owner, delivery address and contact; an approved order is archived and re-enters approval).
+    /// Its own name (the plan's literal): the create, approve, price, quantity, schedule and cancel names do NOT confer it and it
+    /// confers none of them (the new revision is approved through <see cref="OrdersApprove"/>). Company-wide; not Critical;
+    /// registered, granted to no role — which persona holds it is a human gate (NEEDS-SINAN).
+    /// </summary>
+    public const string OrdersHeaderWrite = "sales.orders.header.write";
+
+    /// <summary>
     /// SINAN_KARARLARI_2026-10-21 No 30: force-closing an APPROVED order — GET …/{id}/force-close-impact (the impact preview) and
     /// POST …/{id}/force-close. The decision's own literal, "<c>sales.orders.cancel</c>'dan ayrı ad": the create, approve, price,
     /// schedule, quantity and cancel names do NOT confer it and it confers none of them. Holding it releases or reverses no other
@@ -161,7 +171,7 @@ public static class SalesPermissionManifestV1
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
-            OrdersQuantityWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
+            OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
             QuotesExpiredConversionApprove, InvoicesRead, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

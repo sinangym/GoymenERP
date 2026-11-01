@@ -53,6 +53,9 @@ public sealed class SalesShellCapabilityProviderTests
                 // No 30 / SAT-D12: the force-close CONTROL of the detail (read + its own name, never the cancel name).
                 ("sales.orders.force-close", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersForceClose}", "sales.drafts.detail"),
+                // API-04: the header-revision CONTROL of the detail (read + its own name).
+                ("sales.orders.header.write", "/satis/siparisler/:draftId",
+                    $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersHeaderWrite}", "sales.drafts.detail"),
                 ("sales.orders.price-floor-exception.approve", "/satis/siparisler/:draftId",
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove}", "sales.drafts.detail"),
                 ("sales.orders.price.write", "/satis/siparisler/:draftId",

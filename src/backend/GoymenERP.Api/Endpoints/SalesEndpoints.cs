@@ -417,6 +417,7 @@ public static partial class SalesEndpoints
         MapDiscountExceptionApproval(drafts);
         MapCommercialRevisionCommand(drafts);
         MapQuantityRevisionCommand(drafts);
+        MapHeaderRevisionEndpoints(drafts);
         MapDeliveryScheduleCommand(drafts);
         MapDeliverySchedules(drafts);
         MapDeliveryProgress(drafts);
@@ -445,7 +446,9 @@ public static partial class SalesEndpoints
             unprocessableCodes: ["validation_failed"], extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved]);
         MapStateCommand(drafts, "/{id:guid}/approval", "ApproveSalesOrderDraftV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.ApproveDraftAsync(id, body, metadata, cancellationToken),
-            unprocessableCodes: [], extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved]);
+            unprocessableCodes: [],
+            // API-04: a pending customer/currency change is approved only while no owner record names the order (not recorded).
+            extraConflictCodes: [SalesQuoteProblemCodesV1.RequestNotApproved, SalesDraftProblemCodesV1.RevisionBlocked]);
         MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: []);

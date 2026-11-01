@@ -290,6 +290,9 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
         var cancellation = Array.FindIndex(applied,
             migration => migration.EndsWith("_AddDraftCancellations", StringComparison.Ordinal));
         Assert.True(cancellation > 0);
+        // SAT-D123: an approved order carries due terms; clear them (this test's own draft only) so the later
+        // header-revision migration's 51133 guard does not stop the rollback before the guard under test.
+        await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL WHERE [Id] = @id; SELECT @@ROWCOUNT", ("@id", draft.Id));
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync(applied[cancellation]);
         Assert.Equal(applied[..(cancellation + 1)], await context.Database.GetAppliedMigrationsAsync());
@@ -328,7 +331,7 @@ public sealed class SalesOrderCancellationSqlServerRelationalAcceptanceTests
     /// <summary>A one-line draft (the given kg quantity, no slices) from SYNTHETIC owner snapshots in the approved kg unit: version 2.</summary>
     private static SalesOrderDraft Draft(Guid company, string documentNo, string quantity)
     {
-        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10));
+        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

@@ -205,7 +205,7 @@ public sealed class SalesOrderStatusSqlServerRelationalAcceptanceTests
     /// <summary>A one-line draft (the given kg quantity, no slices) on the business day from SYNTHETIC owner snapshots in the approved kg unit: version 2.</summary>
     private static SalesOrderDraft Draft(Guid company, string documentNo, string quantity, DateOnly day)
     {
-        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, day, day.AddDays(10));
+        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, day, day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

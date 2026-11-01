@@ -239,6 +239,12 @@ export interface HarnessConfig {
   readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-002: a POST on `/sales/drafts/{id}/quantity-revision`. */
   readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** API-04: GET `/sales/drafts/{id}/header` (read when the header-revision form opens). */
+  readonly onHeader?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /** API-04: a POST on `/sales/drafts/{id}/header-revision`. */
+  readonly onHeaderRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** SAT-D27: GET `/sales/references/sales-owners`; default: nobody listed for the bound company. */
+  readonly onSalesOwners?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** AT-055: GET `/logistics/dispatch-notes?salesOrderId=…` (read only when the shell holds the Logistics instruction detail). */
   readonly onDispatchNotes?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** K3 / AT-018: a POST on `/sales/drafts/{id}/commercial-revision`. */
@@ -308,6 +314,14 @@ export function installFetch(config: HarnessConfig = {}) {
           if (config.onPriceReferences === undefined) throw new Error('unexpected price-references read')
           return config.onPriceReferences(url, call.companyId)
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/header$/.test(url)) {
+          if (config.onHeader === undefined) throw new Error('unexpected header read')
+          return config.onHeader(url, call.companyId)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/header-revision$/.test(url)) {
+          if (config.onHeaderRevision === undefined) throw new Error('unexpected header revision')
+          return config.onHeaderRevision(call)
+        }
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/quantity-revision$/.test(url)) {
           if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')
           return config.onQuantityRevision(call)
@@ -375,6 +389,9 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (config.onList === undefined) throw new Error('unexpected list read')
         return asPartyDisplayRead(await config.onList(url, call.companyId), 'list', call)
+      }
+      if (call.method === 'GET' && url.includes('/sales/references/sales-owners')) {
+        return config.onSalesOwners?.(url, call.companyId) ?? json({ companyId: call.companyId, owners: [], hasMore: false })
       }
       if (call.method === 'GET' && url.includes('/documents?')) {
         if (config.onDocuments === undefined) throw new Error('unexpected documents read')

@@ -457,6 +457,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         await using var context = run.Context(CompanyA);
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         var previous = Assert.Single(applied, migration => migration.EndsWith("_AddDraftRemainderChanges", StringComparison.Ordinal));
+        await run.ClearDueTermsAsync();
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(previous));
         Assert.Equal(51060, rollback.Number);
         Assert.EndsWith("_AddDraftCustomerAcceptance", Assert.Single(await context.Database.GetAppliedMigrationsAsync(),
@@ -731,6 +732,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         var approval = Array.FindIndex(applied,
             migration => migration.EndsWith("_AddDraftApproval", StringComparison.Ordinal));
         Assert.True(approval > 0);
+        await run.ClearDueTermsAsync();
         var migrator = context.GetService<IMigrator>();
         await migrator.MigrateAsync(applied[approval]);
         Assert.Equal(applied[..(approval + 1)], await context.Database.GetAppliedMigrationsAsync());
@@ -794,7 +796,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         // The sales schema's tables, by name: no money, no stock, no shipment table exists here for a withdrawal to touch.
         var tables = await run.ScalarAsync<string>(
             "SELECT STRING_AGG([name], N',') WITHIN GROUP (ORDER BY [name]) FROM sys.tables WHERE schema_id = SCHEMA_ID(N'sales') AND [name] <> N'__EFMigrationsHistory'");
-        Assert.Equal("DocumentCounters,DraftAttempts,DraftCancellations,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftForceClosures,DraftLines,DraftNumbers,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionLines,DraftRevisions,Drafts,QuoteAttempts,QuoteExpiryApprovals,QuoteLines,QuoteRequests,QuoteRevisions,Quotes,RequestAttempts,RequestLines,Requests", tables);
+        Assert.Equal("DocumentCounters,DraftAttempts,DraftCancellations,DraftDeliveryScheduleDates,DraftDeliverySchedules,DraftDeliverySlices,DraftForceClosures,DraftLines,DraftNumbers,DraftRemainderChanges,DraftRemainderDecisions,DraftRevisionHeaders,DraftRevisionLines,DraftRevisions,Drafts,QuoteAttempts,QuoteExpiryApprovals,QuoteLines,QuoteRequests,QuoteRevisions,Quotes,RequestAttempts,RequestLines,Requests", tables);
         async Task<(int Drafts, int Lines, int Slices, int Numbers, int Revisions, int RevisionLines)> QuietCountsAsync() => (
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [CompanyId] = @c", ("@c", CompanyA)),
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [CompanyId] = @c", ("@c", CompanyA)),
@@ -1025,6 +1027,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             // Later empty Sales migrations roll back freely; target the withdrawal migration by identity, never by a brittle tail offset.
             var withdrawal = Assert.Single(applied, migration => migration.EndsWith("_AddDraftWithdrawal", StringComparison.Ordinal));
+            await run.ClearDueTermsAsync();
             await context.GetService<IMigrator>().MigrateAsync(withdrawal);
         }
 
@@ -1077,6 +1080,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             var withdrawal = Assert.Single(applied, migration => migration.EndsWith("_AddDraftWithdrawal", StringComparison.Ordinal));
             var linked = Array.FindIndex(applied, migration => migration.EndsWith("_LinkMutationRefusalsToDrafts", StringComparison.Ordinal));
             Assert.True(linked >= 0);
+            await run.ClearDueTermsAsync();
             var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(withdrawal));
             Assert.Equal(51046, error.Number);
             Assert.Equal(applied[..(linked + 1)], await context.Database.GetAppliedMigrationsAsync());
@@ -1108,6 +1112,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
         // Every later empty migration rolls back; D2's guard then refuses (51050).
         var withdrawal = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftWithdrawal", StringComparison.Ordinal));
         Assert.True(withdrawal > 0);
+        await run.ClearDueTermsAsync();
         var error = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[withdrawal - 1]));
         Assert.Equal(51050, error.Number);
         Assert.Equal(applied[..(withdrawal + 1)], await context.Database.GetAppliedMigrationsAsync());
@@ -1148,7 +1153,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     private static SalesOrderDraft Draft(Owners owners, string documentNo, DateTimeOffset at, int lines = 1,
         bool customerAcceptanceRequired = false)
     {
-        var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day);
+        var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day, DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, documentNo, header, money, at,
             customerAcceptanceRequired);
@@ -1209,6 +1214,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             ("@id", draft.Id.ToString("D"))));
 
         await using var context = run.Context(CompanyA);
+        await run.ClearDueTermsAsync();
         var refusal = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync("20260928090000_AddRevisionReasons"));
         Assert.Equal(51064, refusal.Number);
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [PricingJson] IS NOT NULL",
@@ -1217,7 +1223,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
 
     private static SalesOrderDraft PricedDraft(Owners owners, string documentNo, DateTimeOffset at)
     {
-        var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day);
+        var header = new SalesDraftHeader(owners.Party, owners.Account, Currency, Day, DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(owners.Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), owners.Company, documentNo, header, money, at);
         var unit = new UnitProfileSnapshot(owners.Company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
@@ -1420,6 +1426,12 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
             return developmentUser;
         }
 
+        /// <summary>
+        /// SAT-D123: the drafts here carry due terms, and the header-revision migration refuses to roll back over them (51133); a
+        /// test that rolls back to an older schema clears them first (this run's own database only).
+        /// </summary>
+        public Task<int> ClearDueTermsAsync() => ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL; SELECT @@ROWCOUNT");
+
         public async Task<T> ScalarAsync<T>(string sql, params (string Name, object Value)[] parameters)
         {
             await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
@@ -1482,7 +1494,7 @@ public sealed class SalesDraftApprovalSqlServerRelationalAcceptanceTests
     private static void AssertRevisionChangeSet(IReadOnlyList<SaveRecorder.Entry> save)
     {
         Assert.Equal(
-            ["AuditEvent:Added", "DraftAttemptRow:Added", "DraftLineRow:Modified", "DraftRevisionLineRow:Added", "DraftRevisionRow:Added", "DraftRow:Modified"],
+            ["AuditEvent:Added", "DraftAttemptRow:Added", "DraftLineRow:Modified", "DraftRevisionHeaderRow:Added", "DraftRevisionLineRow:Added", "DraftRevisionRow:Added", "DraftRow:Modified"],
             save.Select(entry => $"{entry.Entity}:{entry.State}").Order(StringComparer.Ordinal));
         // The header's modified set, EXACTLY (both directions, as the line below): Approved → Preparing clears the four approval
         // facts, the revision counter and the version advance, the timestamp moves; RejectionReason stays null (not modified)

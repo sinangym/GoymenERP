@@ -111,6 +111,7 @@ import { SalesDraftLinePricing } from './SalesDraftLinePricing'
 import { SalesDraftPriceFloorApproval } from './SalesDraftPriceFloorApproval'
 import { SalesDraftRevisionHistory } from './SalesDraftRevisionHistory'
 import { SalesDraftQuantityRevisionForm } from './SalesDraftQuantityRevisionForm'
+import { SalesDraftHeaderRevisionForm } from './SalesDraftHeaderRevisionForm'
 import { SalesDraftAllocationPanel } from './SalesDraftAllocationPanel'
 import { SalesDraftDeliveryScheduleForm } from './SalesDraftDeliveryScheduleForm'
 import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleHistory'
@@ -275,13 +276,23 @@ export function SalesDraftDetailPage() {
       }
       quantityRevision={
         companyId === null ? null : (
-          <SalesDraftQuantityRevisionForm
-            key={`quantity:${namespace ?? ''}:${outcome.data.draft.id}`}
-            shell={shell}
-            detail={outcome.data}
-            companyId={companyId}
-            onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
-          />
+          <>
+            <SalesDraftQuantityRevisionForm
+              key={`quantity:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
+            {/* API-04: the header revision beside the quantity revision (its own control). */}
+            <SalesDraftHeaderRevisionForm
+              key={`header:${namespace ?? ''}:${outcome.data.draft.id}`}
+              shell={shell}
+              detail={outcome.data}
+              companyId={companyId}
+              onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            />
+          </>
         )
       }
       deliverySchedule={
@@ -1075,7 +1086,9 @@ function commandNotice(attempt: CommandAttempt): string | null {
       // SAT-D111 / SAT-D112: a submission or approval of a revised order refused below the shipped or loaded total.
       const floor = (attempt.problem?.errors ?? []).map((error) =>
         error.code === 'sales_revision_below_shipped' ? T.approval.belowShipped
-          : error.code === 'sales_revision_below_loaded' ? T.approval.belowLoaded : null).filter((part) => part !== null)
+          : error.code === 'sales_revision_below_loaded' ? T.approval.belowLoaded
+            // SAT-D123 (EK18): no approval without due terms.
+            : error.code === 'sales_due_terms_required' ? T.approval.dueTermsRequired : null).filter((part) => part !== null)
       const withCode = codeText === null ? base : `${base} ${codeText}`
       const text = floor.length === 0 ? withCode : `${withCode} ${floor.join(' ')}`
       return attempt.unresolvedSince === undefined ? text : `${text} ${T.approval.refusedAfterUnknown}`

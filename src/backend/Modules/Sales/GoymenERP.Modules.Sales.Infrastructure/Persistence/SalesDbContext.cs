@@ -198,6 +198,9 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
 
     internal DbSet<DraftRevisionLineRow> DraftRevisionLines => Set<DraftRevisionLineRow>();
 
+    /// <summary>API-04: the header of each archived approved revision (append-only, one per archive).</summary>
+    internal DbSet<DraftRevisionHeaderRow> DraftRevisionHeaders => Set<DraftRevisionHeaderRow>();
+
     /// <summary>DEC-SAL-003: the recorded delivery-schedule changes (append-only).</summary>
     internal DbSet<DraftDeliveryScheduleRow> DraftDeliverySchedules => Set<DraftDeliveryScheduleRow>();
 
@@ -367,6 +370,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "(([DeliveryAddressId] IS NULL AND [DeliveryAddressVersion] IS NULL) OR ([DeliveryAddressId] IS NOT NULL AND [DeliveryAddressVersion] IS NOT NULL)) AND (([ContactId] IS NULL AND [ContactVersion] IS NULL) OR ([ContactId] IS NOT NULL AND [ContactVersion] IS NOT NULL)) "
                 + "AND (([ResponsibleId] IS NULL AND [ResponsibleVersion] IS NULL) OR ([ResponsibleId] IS NOT NULL AND [ResponsibleVersion] IS NOT NULL)) AND (([PaymentTermsId] IS NULL AND [PaymentTermsVersion] IS NULL) OR ([PaymentTermsId] IS NOT NULL AND [PaymentTermsVersion] IS NOT NULL)) "
                 + "AND (([SourceStrategyId] IS NULL AND [SourceStrategyVersion] IS NULL) OR ([SourceStrategyId] IS NOT NULL AND [SourceStrategyVersion] IS NOT NULL)) AND (([PackageId] IS NULL AND [PackageVersion] IS NULL) OR ([PackageId] IS NOT NULL AND [PackageVersion] IS NOT NULL))");
+            // API-04: the sales owner is a real id when present; the due terms are JSON when present.
+            table.HasCheckConstraint("CK_Drafts_HeaderRevision", HeaderRevisionConstraint);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -386,6 +391,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             entity.Property<string?>(version).HasMaxLength(128);
         }
 
+        entity.Property(x => x.DueTermsJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.MoneyOperation).HasMaxLength(128).IsRequired();
         entity.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
         entity.Property(x => x.MoneyEffectiveOn).HasColumnType("date");
@@ -1007,7 +1013,34 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.Revision })
             .OnDelete(DeleteBehavior.Restrict);
         line.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        // API-04: the header an archived approved revision was approved with — one row per archive, append-only.
+        var header = modelBuilder.Entity<DraftRevisionHeaderRow>();
+        header.ToTable("DraftRevisionHeaders", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_DraftRevisionHeaders_Identity",
+                "[PartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000'");
+            table.HasCheckConstraint("CK_DraftRevisionHeaders_References",
+                "(([DeliveryAddressId] IS NULL AND [DeliveryAddressVersion] IS NULL) OR ([DeliveryAddressId] IS NOT NULL AND [DeliveryAddressVersion] IS NOT NULL)) "
+                + "AND (([ContactId] IS NULL AND [ContactVersion] IS NULL) OR ([ContactId] IS NOT NULL AND [ContactVersion] IS NOT NULL))");
+            table.HasCheckConstraint("CK_DraftRevisionHeaders_HeaderRevision", HeaderRevisionConstraint);
+        });
+        header.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision });
+        header.Property(x => x.DeliveryAddressVersion).HasMaxLength(128);
+        header.Property(x => x.ContactVersion).HasMaxLength(128);
+        header.Property(x => x.DueTermsJson).HasColumnType("nvarchar(max)");
+        header.HasOne<DraftRevisionRow>().WithOne()
+            .HasForeignKey<DraftRevisionHeaderRow>(x => new { x.CompanyId, x.DraftId, x.Revision })
+            .HasPrincipalKey<DraftRevisionRow>(x => new { x.CompanyId, x.DraftId, x.Revision })
+            .OnDelete(DeleteBehavior.Restrict);
+        header.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
+
+    /// <summary>API-04: a present sales owner is a real id; present due terms are JSON (the shape is the store's strict reader's).</summary>
+    private const string HeaderRevisionConstraint =
+        "([SalesOwnerUserId] IS NULL OR [SalesOwnerUserId] <> '00000000-0000-0000-0000-000000000000') "
+        + "AND ([DueTermsJson] IS NULL OR ISJSON([DueTermsJson]) = 1)";
 
     private void ApplyWriteGuards()
     {
@@ -1050,6 +1083,17 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(DraftRow.DecidedBy), nameof(DraftRow.DecidedAtUtc), nameof(DraftRow.RejectionReason), nameof(DraftRow.Revision),
                         nameof(DraftRow.State), nameof(DraftRow.CustomerAcceptedRevision), nameof(DraftRow.CustomerAcceptedBy),
                         nameof(DraftRow.CustomerAcceptedAtUtc),
+                        // API-04 (DEC-SAL-002) — a DELIBERATE widening of "the header moves only along its axes", declared here
+                        // and in the PR: the header revision moves the customer, the currency with its money profile, the
+                        // delivery references, the sales owner and the due terms (the approved values stay in the archived
+                        // revision's header row). The business date, note, document number, creator and the other owner
+                        // references stay immutable (the persistence test pins both halves).
+                        nameof(DraftRow.PartyId), nameof(DraftRow.CompanyAccountId), nameof(DraftRow.CurrencyId),
+                        nameof(DraftRow.MoneyOperation), nameof(DraftRow.MoneyProfileId), nameof(DraftRow.MoneyProfileVersion),
+                        nameof(DraftRow.MoneyEffectiveOn), nameof(DraftRow.MoneyIsActive), nameof(DraftRow.MoneyEffectiveFrom),
+                        nameof(DraftRow.MoneyEffectiveThrough), nameof(DraftRow.MoneyScale),
+                        nameof(DraftRow.DeliveryAddressId), nameof(DraftRow.DeliveryAddressVersion), nameof(DraftRow.ContactId),
+                        nameof(DraftRow.ContactVersion), nameof(DraftRow.SalesOwnerUserId), nameof(DraftRow.DueTermsJson),
                     ],
                     // K3 Head B — a DELIBERATE narrowing of "lines never change", declared here and in the PR: ONLY the three
                     // commercial columns may change, under a commercial revision; DEC-SAL-002 widens it by exactly the ordered
@@ -1067,6 +1111,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     // added schedule may change afterwards: no column is admitted.
                     DraftDeliveryScheduleRow => [],
                     DraftDeliveryScheduleDateRow => [],
+                    // API-04: an archived revision's header is APPEND-ONLY — no column may change afterwards.
+                    DraftRevisionHeaderRow => [],
                     // DEC-SAL-005: a recorded cancellation is APPEND-ONLY — no column of it may change afterwards.
                     DraftCancellationRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.

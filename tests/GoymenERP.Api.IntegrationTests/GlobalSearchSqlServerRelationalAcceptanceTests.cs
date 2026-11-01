@@ -245,7 +245,7 @@ public sealed class GlobalSearchSqlServerRelationalAcceptanceTests
     /// <summary>A one-line draft (the given kg quantity) from SYNTHETIC owner snapshots in the approved kg unit, created at <paramref name="at"/>.</summary>
     private static SalesOrderDraft Draft(Guid company, string documentNo, string quantity, DateTimeOffset at)
     {
-        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10));
+        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, at);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);

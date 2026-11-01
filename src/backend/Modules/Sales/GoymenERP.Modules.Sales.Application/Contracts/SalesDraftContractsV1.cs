@@ -13,7 +13,11 @@ public sealed record CreateSalesOrderDraftRequest(
     SalesDraftOwnerReferenceV1? Responsible = null,
     SalesDraftOwnerReferenceV1? PaymentTerms = null,
     SalesDraftOwnerReferenceV1? SourceStrategy = null,
-    SalesDraftOwnerReferenceV1? Package = null);
+    SalesDraftOwnerReferenceV1? Package = null,
+    // SAT-D123 / SAT-D127 (EK18): the due terms the salesperson enters by hand (optional at create; never defaulted; required
+    // before approval). Omitted from the canonical replay content when absent, so an older create's attempt identity is unchanged.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SalesDueTermsV1? DueTerms = null);
 
 public sealed record SalesOrderDraftLineRequest(
     Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid OrderUnitId,
@@ -434,6 +438,7 @@ public static class SalesDraftJson
             if (line.DiscountPercent is not null) RequireDecimalShape(line.DiscountPercent, positive: false);
             SalesDraftDeliveryPlanV1.GetUnscheduledQuantity(line);
         }
+        if (request.DueTerms is not null) SalesDraftHeaderApiV1.RequireDueTermsShape(request.DueTerms);
         return request;
     }
 

@@ -471,43 +471,7 @@ public sealed partial class SalesStore(
 
         if (archived is not null)
         {
-            // The approved revision as it stood, written BEFORE the header advances in the same save.
-            dbContext.DraftRevisions.Add(new DraftRevisionRow
-            {
-                CompanyId = companyId,
-                DraftId = draft.Id,
-                Revision = archived.Revision,
-                SubmittedBy = archived.Approval.SubmittedBy ?? throw new InvalidOperationException("Onaylı revizyonun göndereni yok."),
-                SubmittedAtUtc = archived.Approval.SubmittedAtUtc ?? throw new InvalidOperationException("Onaylı revizyonun gönderim zamanı yok."),
-                ApprovedBy = archived.Approval.DecidedBy ?? throw new InvalidOperationException("Onaylı revizyonun onaylayanı yok."),
-                ApprovedAtUtc = archived.Approval.DecidedAtUtc ?? throw new InvalidOperationException("Onaylı revizyonun onay zamanı yok."),
-                MoneyProfileId = archived.MoneyProfileId,
-                MoneyProfileVersion = archived.MoneyProfileVersion,
-                MoneyScale = archived.MoneyScale,
-                ArchivedAtUtc = archived.ArchivedAtUtc,
-                ArchivedBy = archived.ArchivedBy,
-                CorrelationId = envelope.CorrelationId.Trim(),
-                Reason = archived.Reason,
-            });
-            foreach (var line in archived.Lines)
-            {
-                dbContext.DraftRevisionLines.Add(new DraftRevisionLineRow
-                {
-                    CompanyId = companyId,
-                    DraftId = draft.Id,
-                    Revision = archived.Revision,
-                    LineNo = line.LineNo,
-                    LineId = line.LineId,
-                    ProductId = line.ProductId,
-                    ProductVersion = line.ProductVersion,
-                    OrderUnitId = line.OrderUnitId,
-                    QuantityText = line.QuantityText,
-                    UnitPrice = line.Commercial.UnitPrice,
-                    PriceUnitId = line.Commercial.PriceUnitId,
-                    DiscountPercent = line.Commercial.DiscountPercent,
-                    PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
-                });
-            }
+            AddArchiveRows(companyId, draft, archived, envelope);
         }
 
         row.Revision = draft.Revision;
@@ -540,6 +504,78 @@ public sealed partial class SalesStore(
             }
         }
 
+        AddAttemptAndAudit(companyId, keyHash, actorId, commandName, requestHash, envelope, draft, result, now, audit, versionBefore,
+            before, picture(draft));
+        await SaveAsync(cancellationToken);
+        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim(), result);
+    }
+
+    /// <summary>
+    /// The archived approved revision as it stood — its row, its lines and (API-04) the header it was approved with — written
+    /// BEFORE the header advances, in the same save. Every archive written since <c>AddDraftHeaderRevisions</c> carries its header.
+    /// </summary>
+    private void AddArchiveRows(Guid companyId, SalesOrderDraft draft, ApprovedRevisionSnapshot archived, SalesDraftWriteEnvelope envelope)
+    {
+        var header = archived.Header ?? throw new InvalidOperationException("Arşivlenen onaylı revizyonun başlığı yok.");
+        dbContext.DraftRevisions.Add(new DraftRevisionRow
+        {
+            CompanyId = companyId,
+            DraftId = draft.Id,
+            Revision = archived.Revision,
+            SubmittedBy = archived.Approval.SubmittedBy ?? throw new InvalidOperationException("Onaylı revizyonun göndereni yok."),
+            SubmittedAtUtc = archived.Approval.SubmittedAtUtc ?? throw new InvalidOperationException("Onaylı revizyonun gönderim zamanı yok."),
+            ApprovedBy = archived.Approval.DecidedBy ?? throw new InvalidOperationException("Onaylı revizyonun onaylayanı yok."),
+            ApprovedAtUtc = archived.Approval.DecidedAtUtc ?? throw new InvalidOperationException("Onaylı revizyonun onay zamanı yok."),
+            MoneyProfileId = archived.MoneyProfileId,
+            MoneyProfileVersion = archived.MoneyProfileVersion,
+            MoneyScale = archived.MoneyScale,
+            ArchivedAtUtc = archived.ArchivedAtUtc,
+            ArchivedBy = archived.ArchivedBy,
+            CorrelationId = envelope.CorrelationId.Trim(),
+            Reason = archived.Reason,
+        });
+        foreach (var line in archived.Lines)
+        {
+            dbContext.DraftRevisionLines.Add(new DraftRevisionLineRow
+            {
+                CompanyId = companyId,
+                DraftId = draft.Id,
+                Revision = archived.Revision,
+                LineNo = line.LineNo,
+                LineId = line.LineId,
+                ProductId = line.ProductId,
+                ProductVersion = line.ProductVersion,
+                OrderUnitId = line.OrderUnitId,
+                QuantityText = line.QuantityText,
+                UnitPrice = line.Commercial.UnitPrice,
+                PriceUnitId = line.Commercial.PriceUnitId,
+                DiscountPercent = line.Commercial.DiscountPercent,
+                PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
+            });
+        }
+
+        dbContext.DraftRevisionHeaders.Add(new DraftRevisionHeaderRow
+        {
+            CompanyId = companyId,
+            DraftId = draft.Id,
+            Revision = archived.Revision,
+            PartyId = header.PartyId,
+            CompanyAccountId = header.CompanyAccountId,
+            CurrencyId = header.CurrencyId,
+            DeliveryAddressId = header.DeliveryAddress?.Id,
+            DeliveryAddressVersion = header.DeliveryAddress?.ExpectedVersion,
+            ContactId = header.Contact?.Id,
+            ContactVersion = header.Contact?.ExpectedVersion,
+            SalesOwnerUserId = header.SalesOwnerUserId,
+            DueTermsJson = SalesDueTermsJson.Serialize(header.DueTerms),
+        });
+    }
+
+    /// <summary>The attempt record and the ADR-009 audit event of a revision command, added to the same save.</summary>
+    private void AddAttemptAndAudit(Guid companyId, string keyHash, string actorId, string commandName, string requestHash,
+        SalesDraftWriteEnvelope envelope, SalesOrderDraft draft, SalesDraftReplayResult? result, DateTimeOffset now,
+        SalesDraftStateAudit audit, long versionBefore, object before, object after)
+    {
         dbContext.DraftAttempts.Add(new DraftAttemptRow
         {
             CompanyId = companyId,
@@ -566,7 +602,7 @@ public sealed partial class SalesStore(
             envelope.PermissionCode,
             envelope.RoleCodes,
             JsonSerializer.Serialize(before, Json),
-            JsonSerializer.Serialize(picture(draft), Json),
+            JsonSerializer.Serialize(after, Json),
             audit.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -577,8 +613,6 @@ public sealed partial class SalesStore(
             envelope.CorrelationId,
             envelope.CausationId,
             envelope.IdempotencyKey));
-        await SaveAsync(cancellationToken);
-        return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim(), result);
     }
 
     private static SalesDraftReplayResult? ReplayResult(DraftAttemptRow attempt)
@@ -1483,6 +1517,7 @@ public sealed partial class SalesStore(
         var slices = await dbContext.DraftDeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.DraftId)).ToListAsync(cancellationToken);
         var revisions = await dbContext.DraftRevisions.AsNoTracking().Where(revision => ids.Contains(revision.DraftId)).ToListAsync(cancellationToken);
         var revisionLines = await dbContext.DraftRevisionLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
+        var revisionHeaders = await dbContext.DraftRevisionHeaders.AsNoTracking().Where(header => ids.Contains(header.DraftId)).ToListAsync(cancellationToken);
         var schedules = await dbContext.DraftDeliverySchedules.AsNoTracking().Where(schedule => ids.Contains(schedule.DraftId)).ToListAsync(cancellationToken);
         var scheduleDates = await dbContext.DraftDeliveryScheduleDates.AsNoTracking().Where(date => ids.Contains(date.DraftId)).ToListAsync(cancellationToken);
         var cancellations = await dbContext.DraftCancellations.AsNoTracking().Where(cancellation => ids.Contains(cancellation.DraftId)).ToListAsync(cancellationToken);
@@ -1496,7 +1531,8 @@ public sealed partial class SalesStore(
                 row.RequestedDeliveryDate, row.Note,
                 Reference(row.DeliveryAddressId, row.DeliveryAddressVersion), Reference(row.ContactId, row.ContactVersion),
                 Reference(row.ResponsibleId, row.ResponsibleVersion), Reference(row.PaymentTermsId, row.PaymentTermsVersion),
-                Reference(row.SourceStrategyId, row.SourceStrategyVersion), Reference(row.PackageId, row.PackageVersion));
+                Reference(row.SourceStrategyId, row.SourceStrategyVersion), Reference(row.PackageId, row.PackageVersion),
+                SalesDueTermsJson.Restore(row.DueTermsJson), row.SalesOwnerUserId);
             var money = new MoneyProfileSnapshot(row.CompanyId, row.CurrencyId, row.MoneyOperation, row.MoneyProfileId,
                 row.MoneyProfileVersion, row.MoneyEffectiveOn, row.MoneyIsActive, row.MoneyEffectiveFrom, row.MoneyEffectiveThrough,
                 row.MoneyScale);
@@ -1543,7 +1579,10 @@ public sealed partial class SalesStore(
                     [.. revisionLines.Where(line => line.DraftId == row.Id && line.Revision == archived.Revision).OrderBy(line => line.LineNo)
                         .Select(line => new RevisionLineSnapshot(line.LineId, line.LineNo, line.ProductId, line.ProductVersion, line.OrderUnitId,
                             line.QuantityText, SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson)))],
-                    archived.Reason));
+                    archived.Reason,
+                    // API-04: every archive has its header row (AddDraftHeaderRevisions backfilled the older ones); none is refused.
+                    RevisionHeader(revisionHeaders.SingleOrDefault(header => header.DraftId == row.Id && header.Revision == archived.Revision)
+                        ?? throw new InvalidOperationException("Kayıtlı onaylı revizyonun başlığı yok."))));
             }
 
             // DEC-SAL-003: every recorded delivery schedule, oldest first, BEFORE the approval axis (its version floor counts
@@ -1793,7 +1832,7 @@ public sealed partial class SalesStore(
         if (commandName is not (SalesDraftCommands.CreateV1 or SalesDraftCommands.SubmitV1 or SalesDraftCommands.ApproveV1
             or SalesDraftCommands.RejectV1 or SalesDraftCommands.ReviseCommercialV1 or SalesDraftCommands.WithdrawV1
             or SalesDraftCommands.RescheduleDeliveryV1 or SalesDraftCommands.CancelV1 or SalesDraftCommands.ForceCloseV1
-            or SalesDraftCommands.ReviseQuantityV1
+            or SalesDraftCommands.ReviseQuantityV1 or SalesDraftCommands.ReviseHeaderV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
             or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1
             or SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesDraftCommands.ApproveDiscountExceptionsV1
@@ -1822,6 +1861,10 @@ public sealed partial class SalesStore(
 
     private static OwnerReference? Reference(Guid? id, string? version) =>
         id is { } value && version is not null ? new OwnerReference(value, version) : null;
+
+    private static RevisionHeaderSnapshot RevisionHeader(DraftRevisionHeaderRow row) =>
+        new RevisionHeaderSnapshot(row.PartyId, row.CompanyAccountId, row.CurrencyId, Reference(row.DeliveryAddressId, row.DeliveryAddressVersion),
+            Reference(row.ContactId, row.ContactVersion), row.SalesOwnerUserId, SalesDueTermsJson.Restore(row.DueTermsJson));
 
     private static string DraftAudit(SalesOrderDraft draft) => JsonSerializer.Serialize(new
     {

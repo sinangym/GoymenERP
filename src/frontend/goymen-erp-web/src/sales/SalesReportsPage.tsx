@@ -322,7 +322,16 @@ function OpenOrderDetail({ group }: { readonly group: OpenOrderGroup }) {
       key: 'order',
       header: O.order,
       pin: 'start',
-      cell: (line) => <DispatchOrderCell orderId={line.orderId} documentNo={line.documentNo} lineNo={line.lineNo} />,
+      cell: (line) => (
+        <>
+          <DispatchOrderCell orderId={line.orderId} documentNo={line.documentNo} lineNo={line.lineNo} />
+          {line.headerRevisionPending ? (
+            <StatusIndicator tone="warning">
+              <span data-testid={`sales-report-line-header-pending-${line.lineId}`}>{O.headerRevisionPending}</span>
+            </StatusIndicator>
+          ) : null}
+        </>
+      ),
     },
     { key: 'orderDate', header: O.orderDate, cell: (line) => formatBusinessDate(line.businessDate) },
     {
