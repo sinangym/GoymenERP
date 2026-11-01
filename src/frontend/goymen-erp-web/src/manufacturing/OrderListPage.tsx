@@ -28,6 +28,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './OrderListPage.module.css'
+import { Button } from '../ui/Button'
 
 const ORDER_STATUSES: readonly OrderStatus[] = ['Open', 'Closed']
 
@@ -255,7 +256,7 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
         ) : nextCursor === null ? (
           <p className={styles.muted}>{ORDER_LIST_TEXT.end}</p>
         ) : (
-          <button
+          <Button
             type="button"
             className={styles.secondaryButton}
             onClick={() => void loadMore()}
@@ -263,7 +264,7 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
             aria-busy={continuation === 'loading'}
           >
             {continuation === 'loading' ? ORDER_LIST_TEXT.loadingMore : ORDER_LIST_TEXT.loadMore}
-          </button>
+          </Button>
         )}
       </div>
     </section>

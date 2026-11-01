@@ -37,6 +37,7 @@ import {
   type CutToLengthLineDraft,
 } from './usePlanPreview'
 import styles from './PlanPage.module.css'
+import { Button } from '../ui/Button'
 
 type ReadState<T> =
   | { readonly type: 'idle' | 'loading' }
@@ -362,14 +363,14 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
                           />
                         </td>
                         <td>
-                          <button
+                          <Button
                             type="button"
                             aria-label={`${name} kaldır`}
                             onClick={() => setRows((existing) =>
                               existing.filter((candidate) => candidate.parentRollId !== row.parentRollId))}
                           >
                             Kaldır
-                          </button>
+                          </Button>
                         </td>
                       </tr>
                     )
@@ -381,7 +382,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
           <div className={styles.searchRow}>
             <label htmlFor="plan-edit-roll-search">Eklenecek etiket, ürün veya lot ara</label>
             <input id="plan-edit-roll-search" maxLength={64} value={search} onChange={(event) => setSearch(event.target.value)} />
-            <button type="button" onClick={() => void readCandidates()}>Ana rulo ara</button>
+            <Button type="button" onClick={() => void readCandidates()}>Ana rulo ara</Button>
           </div>
           {candidates.type === 'loading' ? <p role="status">Ana rulolar yükleniyor…</p> : null}
           {candidates.type === 'failed' ? <p role="alert">{candidates.message}</p> : null}
@@ -407,14 +408,14 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
                         <td>{candidate.labelVersion}</td>
                         <td>{candidate.physicalKg} kg</td>
                         <td>
-                          <button
+                          <Button
                             type="button"
                             disabled={label === 'Seçilemez' || label === 'Planda'}
                             aria-label={`${candidate.labelCode} ${label}`}
                             onClick={() => addCandidate(candidate)}
                           >
                             {label}
-                          </button>
+                          </Button>
                           {!candidate.draftSelectable ? <div className={styles.muted}>{candidate.draftRefusalCode}</div> : null}
                         </td>
                       </tr>
@@ -466,10 +467,10 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
         </fieldset>
 
         <div className={styles.actions}>
-          <button type="submit" disabled={busy} aria-busy={busy}>
+          <Button variant="primary" type="submit" disabled={busy} aria-busy={busy}>
             {busy ? PLAN_EDIT_TEXT.saving : PLAN_EDIT_TEXT.save}
-          </button>
-          <button type="button" disabled={busy} onClick={onCancel}>{PLAN_EDIT_TEXT.cancel}</button>
+          </Button>
+          <Button type="button" disabled={busy} onClick={onCancel}>{PLAN_EDIT_TEXT.cancel}</Button>
         </div>
       </form>
     </section>
