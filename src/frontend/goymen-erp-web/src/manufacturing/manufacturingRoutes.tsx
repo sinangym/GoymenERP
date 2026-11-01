@@ -1,6 +1,5 @@
 /**
- * The Manufacturing route table, ready for the shell owner to spread into
- * `shell/router.tsx` as `...manufacturingRoutes` (see ./SHARED_MOUNT_HANDOFF.md).
+ * The Manufacturing route table, spread into `shell/router.tsx` as `...manufacturingRoutes`.
  *
  * Wrapped in `<CapabilityRoute>`: the capability is published (MFG-UI-F #349), but the
  * registry grants it only to an actor holding its permission; for anyone else the route
@@ -22,16 +21,9 @@ import { PlanCreatePage } from './PlanCreatePage'
 import { PlanDetailPage } from './PlanDetailPage'
 import { PlanListPage } from './PlanListPage'
 
-/**
- * `CapabilityRoute` types its prop as the shell's `CapabilityId` union, which does not
- * yet contain the Manufacturing ids — adding them is the shell owner's edit (the
- * handoff), not this lane's. The cast is confined here, the Product lane's pattern: it
- * widens a compile-time union and changes NO runtime behaviour, because `hasCapability`
- * compares a plain string against the server's published list, so an unpublished id
- * still fails closed. Once the shell declares the ids the cast can go.
- */
-function gate(capability: ManufacturingCapabilityId, children: ReactNode) {
-  return <CapabilityRoute capability={capability as CapabilityId}>{children}</CapabilityRoute>
+/** The five routed ids are declared in the shell's `CAPABILITY` table, so no cast is needed. */
+function gate(capability: CapabilityId & ManufacturingCapabilityId, children: ReactNode) {
+  return <CapabilityRoute capability={capability}>{children}</CapabilityRoute>
 }
 
 export const manufacturingRoutes: RouteObject[] = [
