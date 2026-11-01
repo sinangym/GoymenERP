@@ -32,6 +32,7 @@ import { cutToLengthDraftInput, planPreviewInput, usePlanPreview, type CutToLeng
 import { CutToLengthLinesEditor } from './CutToLengthLinesEditor'
 import { CUT_LINE_TEXT } from './planEditText'
 import styles from './PlanPage.module.css'
+import { Button } from '../ui/Button'
 
 type ReadState<T> =
   | { readonly type: 'idle' | 'loading' }
@@ -466,9 +467,9 @@ function PlanCreate({ namespace, preselect }: {
           <p>{attempt.phase === 'failed' ? attempt.message : attempt.message}</p>
           <p>Önceki gönderim kesinleşmeden yeni plan oluşturulamaz.</p>
           <div className={styles.actions}>
-            <button type="button" onClick={() => void send(retrySnapshot, retryReason)}>
+            <Button type="button" onClick={() => void send(retrySnapshot, retryReason)}>
               Aynı anahtarla yeniden gönder
-            </button>
+            </Button>
             <Link className={styles.secondary} to={orderListPath()}>Formu kapat</Link>
           </div>
         </section>
@@ -517,7 +518,7 @@ function PlanCreate({ namespace, preselect }: {
           <div className={styles.searchRow}>
             <label htmlFor="parent-roll-search">Etiket, ürün veya lot ara</label>
             <input id="parent-roll-search" maxLength={64} value={search} onChange={(event) => setSearch(event.target.value)} />
-            <button type="button" onClick={() => void readCandidates()}>Ara</button>
+            <Button type="button" onClick={() => void readCandidates()}>Ara</Button>
           </div>
           {candidates.type === 'loading' ? <p role="status">Ana rulolar yükleniyor…</p> : null}
           {candidates.type === 'failed' ? <p role="alert">{candidates.message}</p> : null}
@@ -536,9 +537,9 @@ function PlanCreate({ namespace, preselect }: {
                           <td>{candidate.physicalKg} kg<br /><span className={styles.muted}>Blok dışı: {candidate.unblockedPhysicalKg} kg · Blokeli: {candidate.blockedPhysicalKg} kg</span></td>
                           <td>{candidate.documentStatus}</td>
                           <td>
-                            <button type="button" disabled={!candidate.draftSelectable || selected} onClick={() => addCandidate(candidate)}>
+                            <Button type="button" disabled={!candidate.draftSelectable || selected} onClick={() => addCandidate(candidate)}>
                               {selected ? 'Eklendi' : candidate.draftSelectable ? 'Ekle' : 'Seçilemez'}
-                            </button>
+                            </Button>
                             {!candidate.draftSelectable ? <div className={styles.muted}>{candidate.draftRefusalCode}</div> : null}
                           </td>
                         </tr>
@@ -571,7 +572,7 @@ function PlanCreate({ namespace, preselect }: {
                           onChange={(event) => setInputs((current) => current.map((row) => row.candidate.labelId === input.candidate.labelId ? { ...row, plannedKg: event.target.value } : row))}
                         />
                       </td>
-                      <td><button type="button" onClick={() => setInputs((current) => current.filter((row) => row.candidate.labelId !== input.candidate.labelId))}>Kaldır</button></td>
+                      <td><Button type="button" onClick={() => setInputs((current) => current.filter((row) => row.candidate.labelId !== input.candidate.labelId))}>Kaldır</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -622,14 +623,14 @@ function PlanCreate({ namespace, preselect }: {
                           <th scope="row">{index + 1}</th>
                           <td><input aria-label={`Bant ${index + 1} genişliği mm`} inputMode="decimal" value={line.bandWidthMm} onChange={(event) => setSlitLines((current) => current.map((item) => item.id === line.id ? { ...item, bandWidthMm: event.target.value } : item))} /></td>
                           <td><input aria-label={`Bant ${index + 1} adedi`} inputMode="numeric" value={line.count} onChange={(event) => setSlitLines((current) => current.map((item) => item.id === line.id ? { ...item, count: event.target.value } : item))} /></td>
-                          <td><button type="button" onClick={() => setSlitLines((current) => current.filter((item) => item.id !== line.id))}>Kaldır</button></td>
+                          <td><Button type="button" onClick={() => setSlitLines((current) => current.filter((item) => item.id !== line.id))}>Kaldır</Button></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
                 <div className={styles.actions}>
-                  <button type="button" onClick={() => setSlitLines((current) => [...current, { id: newId(), bandWidthMm: '', count: '' }])}>Bant satırı ekle</button>
+                  <Button type="button" onClick={() => setSlitLines((current) => [...current, { id: newId(), bandWidthMm: '', count: '' }])}>Bant satırı ekle</Button>
                 </div>
                 <div className={styles.formGrid}>
                   <label htmlFor="plan-winding-target-kg">İsteğe bağlı sarım hedefi (kg)</label>
@@ -647,7 +648,7 @@ function PlanCreate({ namespace, preselect }: {
         ) : null}
         <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />
         <div className={styles.actions}>
-          <button type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? 'Kaydediliyor…' : 'Taslak planı kaydet'}</button>
+          <Button variant="primary" type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? 'Kaydediliyor…' : 'Taslak planı kaydet'}</Button>
         </div>
       </form>
     </main>
