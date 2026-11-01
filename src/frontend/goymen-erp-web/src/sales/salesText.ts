@@ -12,6 +12,8 @@ import type {
   RealizationState,
 } from './orderStatus'
 import type { LineTotalState, TaxState } from './orderTotals'
+import type { RemainderState } from './remainderChange'
+import type { DueBasis } from './headerRevision'
 import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CancellationStatus, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
@@ -185,6 +187,22 @@ export const ORDER_DRAFT_TEXT = {
   },
 } as const
 
+/**
+ * S-03: words that belong to the create page's layout only: short section names, the toggles of the optional details and what a
+ * closed toggle says is already filled in. Every field label and message is ORDER_DRAFT_TEXT's.
+ */
+export const ORDER_CREATE_LAYOUT_TEXT = {
+  list: 'Sipariş taslakları',
+  openDraft: 'Taslağı aç',
+  sections: { customer: 'Müşteri', order: 'Sipariş ve teslimat' },
+  headerMore: 'Termin ve not',
+  lineMore: 'Termin ve açıklama',
+  line: (lineNo: number) => `${lineNo}. satır`,
+  noteFilled: 'not var',
+  lineNoteFilled: 'açıklama var',
+  slicesFilled: (count: number) => `${count} termin dilimi`,
+} as const
+
 /** Messages for the stable codes in `SalesDraftFieldCodesV1`. Never parsed from `title`. */
 export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.validationFailed]: 'Gönderilen bilgi geçerli değil.',
@@ -284,6 +302,7 @@ export const ORDER_LIST_TEXT = {
   loadingMore: 'Yükleniyor…',
   end: 'Listenin sonu.',
   nextPageFailed: 'Sonraki sayfa alınamadı. Gösterilen satırlar geçerli.',
+  stateSubject: 'sipariş taslakları',
 } as const
 
 export const ORDER_DETAIL_TEXT = {
@@ -626,6 +645,7 @@ export const ORDER_DETAIL_TEXT = {
     number: 'İrsaliye no',
     eDispatchNumber: 'e-İrsaliye no',
     line: 'Satır',
+    lineQuantity: (lineNo: number | string, quantity: string, unit: string) => `Satır ${lineNo}: ${quantity} ${unit}`,
     more: 'Daha fazla taslak var; tamamı yükleme talimatlarında görünür.',
     subject: 'irsaliye taslakları',
   },
@@ -702,7 +722,7 @@ export const ORDER_DETAIL_TEXT = {
     deliveryAddress: 'Teslim adresi',
     contact: 'Muhatap',
     responsible: 'Sorumlu',
-    paymentTerms: 'Vade',
+    paymentTerms: 'Ödeme koşulu kaydı',
     sourceStrategy: 'Kaynak stratejisi',
     package: 'Paket',
   },
@@ -768,6 +788,9 @@ export const LINE_PRICING_TEXT = {
     submitting: 'İstisna onayı gönderiliyor…',
     unknown: 'Sonuç alınamadı; aynı anahtar ve gövdeyle yeniden deneyin.',
     failed: 'İstisna onaylanmadı. Güncel kaydı okuyup gerekçeleri düzeltin.',
+    forbidden: 'Bu şirkette taban fiyat istisnasını onaylama yetkiniz yok; onay kaydedilmedi.',
+    conflict: 'Fiyatlar siz baktıktan sonra değişti; onay kaydedilmedi. Güncel sipariş yeniden okunuyor.',
+    unavailable: 'Servis şu anda yanıt vermiyor; onay kaydedilmiş olabilir. Aynı anahtar ve gövdeyle yeniden deneyin.',
     retry: 'Aynı onayı yeniden dene',
     abandon: 'Bu denemeyi bırak',
     correct: 'Gerekçeleri düzelt',
@@ -904,6 +927,11 @@ export const REMAINDER_CHANGE_TEXT = {
   retry: 'Aynı işlemi tekrar dene', submitting: 'İşlem kaydediliyor…', completed: 'İşlem kaydedildi; güncel sipariş yeniden okunuyor.',
   unknown: 'Sonuç alınamadı; kayıt yapılmış olabilir. Aynı anahtarla tekrar deneyin.',
   failed: 'İşlem uygulanmadı.', invalid: 'Satır, miktar ve gerekçeyi kontrol edin.',
+  failedWithCode: (code: string) => `İşlem uygulanmadı (${code}).`,
+  unauthenticated: 'Oturumunuz sona erdi; işlem uygulanmadı.',
+  forbidden: 'Bu işlem için yetkiniz yok; işlem uygulanmadı.',
+  conflict: 'Sipariş siz baktıktan sonra değişti; işlem uygulanmadı. Güncel kayıt yeniden okunuyor.',
+  serviceUnavailable: 'Servis ya da Lojistik kaynağı şu anda yanıt vermiyor; işlem uygulanmadı. Biraz sonra yeniden deneyin.',
   authorityLost: 'Bu işlem için güncel yetki bulunmuyor; kayıt gönderilmedi.',
   /** The selected line's Logistics quantities; an unreadable one is named, never shown as zero. */
   lineFacts: (line: {
@@ -911,9 +939,19 @@ export const REMAINDER_CHANGE_TEXT = {
     readonly shipped: string | null
     readonly delivered: string | null
     readonly minimumQuantity: string | null
-  }) =>
-    `Yüklenen: ${line.loaded ?? 'okunamadı'} · Sevk: ${line.shipped ?? 'okunamadı'} · Teslim: ${line.delivered ?? 'okunamadı'} · Alt sınır: ${line.minimumQuantity ?? 'okunamadı'}`,
+  }, unit: string) => {
+    const q = (value: string | null) => (value === null ? 'okunamadı' : `${value} ${unit}`)
+    return `Yüklenen: ${q(line.loaded)} · Sevk: ${q(line.shipped)} · Teslim: ${q(line.delivered)} · Alt sınır: ${q(line.minimumQuantity)}`
+  },
   stateUnavailable: 'Yalnız onaylı ve iptal edilmemiş siparişin kısmi teslimat kalanı değiştirilebilir.',
+  /** The recorded change's state (`Pending` / `Approved` / `Rejected`), in words — never the wire spelling. */
+  state: { Pending: 'Onay bekliyor', Approved: 'Onaylandı', Rejected: 'Reddedildi' } satisfies Record<RemainderState, string>,
+  changeHeading: (changeNo: number) => `${changeNo}. değişiklik`,
+  lineNo: (lineNo: number) => `${lineNo}. satır`,
+  lineOption: (lineNo: number, quantity: string, unit: string) => `${lineNo}. satır · ${quantity} ${unit}`,
+  requestedBy: (person: string, at: string) => `Talep eden: ${person} · ${at}`,
+  decidedBy: (person: string, at: string) => `Karar veren: ${person} · ${at}`,
+  formerMember: (name: string) => `${name} (${ORDER_DETAIL_TEXT.approval.formerMember})`,
 } as const
 
 /** S-04 Sipariş 360: the six locked order-detail tabs (Master §7.2) and their empty states. */
@@ -1196,6 +1234,26 @@ export const ORDER_TOTALS_TEXT = {
 } as const
 
 /**
+ * API-04 / S-04: the read-only header summary — the due terms and the sales owner as the header read answers them. The due
+ * terms are price information (`sales.orders.price.read`); without it they are named as withheld, never as "no due terms".
+ */
+export const HEADER_SUMMARY_TEXT = {
+  dueTerms: 'Vade',
+  salesOwner: 'Satış sorumlusu',
+  loading: 'Okunuyor…',
+  unreadable: 'Okunamadı',
+  forbidden: 'Okuma yetkiniz yok',
+  dueTermsWithheld: 'Gizli (fiyat görme yetkisi gerekir)',
+  noDueTerms: 'Vade tanımlı değil',
+  noSalesOwner: 'Atanmadı',
+  /** One instalment in words: its share, its due type and from which date its days run. */
+  instalment: (sharePercent: string, basis: DueBasis, daysAfter: number) =>
+    basis === 'OrderDate'
+      ? `%${sharePercent} · Nokta vade · sipariş tarihinden ${daysAfter} gün sonra`
+      : `%${sharePercent} · Sevk vadesi · her sevkin tarihinden ${daysAfter} gün sonra`,
+} as const
+
+/**
  * API-04 (DEC-SAL-002, DEC-SAL-008, SAT-D27, SAT-D103): the S-04 header revision — customer account, currency, due terms
  * ("vade"), sales owner and delivery information. Every rule is the server's; these texts only say what it decided.
  */
@@ -1250,6 +1308,8 @@ export const HEADER_REVISION_TEXT = {
   },
   daysAfter: 'Gün',
   sharePercent: 'Pay (%)',
+  mixedDueTermsHint:
+    'Her taksitin vade tipi ayrı seçilir; bir kısmı nokta vade, bir kısmı sevk vadesi olan karma vade de girilebilir.',
   dueTermsHint:
     'Nokta vadede vade sipariş tarihinden, sevk vadesinde her sevkin kendi tarihinden hesaplanır; takvim günü sayılır, hafta sonu ' +
     've tatil günü kaydırılmaz. Taksitlerde payların toplamı tam 100 olmalıdır; tutarlar kuruşa yuvarlanır, kalan fark son taksite eklenir.',

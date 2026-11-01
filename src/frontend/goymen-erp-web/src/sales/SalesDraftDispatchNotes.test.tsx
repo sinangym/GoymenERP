@@ -63,7 +63,8 @@ describe('S-04 dispatch-note drafts (AT-055)', () => {
     const link = await within(block).findByTestId(`sales-dispatch-note-link-${NOTE}`)
     expect(link.getAttribute('href')).toBe(`/lojistik/yukleme-talimatlari/${INSTRUCTION}#irsaliye-${NOTE}`)
     expect(link.textContent).toBe(`${T.draft} …${NOTE.slice(-8)}`)
-    expect(within(block).getByTestId(`sales-dispatch-note-${NOTE}`).textContent).toContain(`${T.line} 1: 600`)
+    // The shipped quantity carries the unit the order names (its id when the order names none).
+    expect(within(block).getByTestId(`sales-dispatch-note-${NOTE}`).textContent).toContain(T.lineQuantity(1, '600', KG))
     expect(within(block).getByTestId(`sales-dispatch-note-status-${NOTE}`).textContent).toBe(T.status.Draft)
     expect(within(block).queryByTestId(`sales-dispatch-note-number-${NOTE}`)).toBeNull()
     const read = harness.calls.find((call) => call.url.includes('/logistics/dispatch-notes'))
@@ -128,5 +129,63 @@ describe('S-04 dispatch-note drafts (AT-055)', () => {
     await within(block).findByText(/Beklenmeyen yanıt/)
     expect(within(block).queryByTestId('sales-dispatch-notes-list')).toBeNull()
     await waitFor(() => expect(within(block).queryByTestId(`sales-dispatch-note-${NOTE}`)).toBeNull())
+  })
+
+  it('names the unit the order carries beside each shipped quantity', async () => {
+    const body = approvedDetail()
+    body.lines[0].orderUnitCode = 'KG'
+    installFetch({
+      capabilities: [...ALL_SALES, LOGISTICS_CAPABILITY.instructionsDetail],
+      onDetail: () => json(body),
+      onDispatchNotes: () => json(notes()),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const block = await screen.findByTestId('sales-dispatch-notes')
+    expect((await within(block).findByTestId(`sales-dispatch-note-${NOTE}`)).textContent).toContain('Satır 1: 600 KG')
+  })
+
+  it('a 409 read shows the conflict state and no note', async () => {
+    installFetch({
+      capabilities: [...ALL_SALES, LOGISTICS_CAPABILITY.instructionsDetail],
+      onDetail: () => json(approvedDetail()),
+      onDispatchNotes: () => json({ status: 409 }, 409),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const block = await screen.findByTestId('sales-dispatch-notes')
+    await waitFor(() => expect(block.querySelector('[data-state="conflict"]')).not.toBeNull())
+    expect(within(block).queryByTestId('sales-dispatch-notes-list')).toBeNull()
+  })
+
+  it.each([
+    [503, 'service-unavailable'],
+  ] as const)('a %i read shows its own state, no note, and retries the same read-only URL', async (status, kind) => {
+    let failing = true
+    const harness = installFetch({
+      capabilities: [...ALL_SALES, LOGISTICS_CAPABILITY.instructionsDetail],
+      onDetail: () => json(approvedDetail()),
+      onDispatchNotes: () => (failing ? json({ status }, status) : json(notes())),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const block = await screen.findByTestId('sales-dispatch-notes')
+    // The panel sits in the (hidden) "Gerçekleşme" tab, so it is found by its state, not by an accessible role.
+    await waitFor(() => expect(block.querySelector(`[data-state="${kind}"]`)).not.toBeNull())
+    expect(within(block).queryByTestId('sales-dispatch-notes-list')).toBeNull()
+    failing = false
+    ;(block.querySelector(`[data-state="${kind}"] button`) as HTMLButtonElement).click()
+    await within(block).findByTestId(`sales-dispatch-note-${NOTE}`)
+    const reads = harness.calls.filter((call) => call.url.includes('/logistics/dispatch-notes'))
+    expect(reads.length).toBeGreaterThanOrEqual(2)
+    expect(new Set(reads.map((call) => `${call.method} ${call.url}`)).size).toBe(1)
+  })
+
+  it('routes a 403 through the real auth boundary: the protected order closes and no note is left', async () => {
+    installFetch({
+      capabilities: [...ALL_SALES, LOGISTICS_CAPABILITY.instructionsDetail],
+      onDetail: () => json(approvedDetail()),
+      onDispatchNotes: () => json({ status: 403 }, 403),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
+    expect(screen.queryByTestId('sales-dispatch-notes')).toBeNull()
   })
 })

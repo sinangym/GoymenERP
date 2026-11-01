@@ -2,7 +2,8 @@
  * SAT-D134 (EK19): the item type of the product in the selected company — the card's only tax-relevant field. KDV and tevkifat
  * come from Ayarlar > Vergi's default for this type (SAT-D139) and may be changed on the order line (SAT-D93); the card never
  * shows or stores a rate. Without `product.item-type.manage` (granted to no role here) the server answers 403 and the panel
- * shows nothing; a failed read says so instead of showing "belirtilmemiş".
+ * shows nothing; an ended session (401) says so — it is not a missing permission; a failed read says so instead of showing
+ * "belirtilmemiş".
  */
 
 import { useState, type FormEvent } from 'react'
@@ -45,6 +46,14 @@ export function ProductItemTypePanel({
 
   const outcome = query.data
   if (outcome === undefined || outcome.type === 'forbidden') return null
+  if (outcome.type === 'unauthenticated') {
+    return (
+      <section className={styles.section} aria-labelledby="product-item-type-heading" data-testid="product-item-type-unauthenticated">
+        <h2 id="product-item-type-heading">{ITEM_TYPE_TEXT.heading}</h2>
+        <p role="alert">{ITEM_TYPE_TEXT.unauthenticated}</p>
+      </section>
+    )
+  }
 
   return (
     <section className={styles.section} aria-labelledby="product-item-type-heading">

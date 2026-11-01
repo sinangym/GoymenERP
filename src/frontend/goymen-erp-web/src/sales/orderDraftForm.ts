@@ -27,7 +27,11 @@
  *    owner's contact information of the chosen account (id + the owner's version) and
  *    are optional — nothing chosen is null (unknown), never a default address;
  *  - the other four owner references (responsible, payment terms, source, package) go
- *    out as null: no authorized read exists and no policy was decided for them.
+ *    out as null: no authorized read exists and no policy was decided for them;
+ *  - SAT-D123 / SAT-D127: the due terms ("vade") are optional at create and typed by hand
+ *    (never defaulted): none is null ("vade yok"); otherwise one or more instalments, each
+ *    with its own due type (a mixed "karma" plan is one list), days and share. The shape is
+ *    checked here; whether the shares add up to 100 is the server's rule.
  */
 
 import {
@@ -41,7 +45,8 @@ import {
   type OwnerReference,
 } from './contract'
 import { unplannedQuantity } from './deliveryPlan'
-import { ORDER_DRAFT_TEXT } from './salesText'
+import { buildDueTerms, type DueTermsFormError, type InstalmentRow } from './headerRevision'
+import { HEADER_REVISION_TEXT, ORDER_DRAFT_TEXT } from './salesText'
 import { isDateOnly, parseDecimalInput, parseQuantityInput, type DecimalInputError, type QuantityInputError } from './wirePrimitives'
 
 /** What the owners currently offer. Filled only from a real selection source. */
@@ -112,6 +117,8 @@ export interface OrderDraftFormValues {
   /** SALES-A2a: an address / contact of the CHOSEN account, or '' (nothing chosen → null on the wire). */
   readonly deliveryAddressId: string
   readonly contactId: string
+  /** SAT-D123: null = no due terms ("vade yok"); otherwise the editor's rows as typed. */
+  readonly instalments: readonly InstalmentRow[] | null
 }
 
 /** SALES-A2a: what the Cari owner lists for the chosen account; null while nothing is offered (not read, or failed). */
@@ -141,6 +148,7 @@ export const ORDER_FIELD = {
   lines: 'lines',
   deliveryAddress: 'deliveryAddress',
   contact: 'contact',
+  dueTerms: 'dueTerms',
 } as const
 
 export const lineFieldId = (lineId: string, field: LineField) => `lines.${lineId}.${field}`
@@ -200,6 +208,7 @@ export function emptyOrderDraftForm(firstLineId: string): OrderDraftFormValues {
     lines: [emptyLine(firstLineId)],
     deliveryAddressId: '',
     contactId: '',
+    instalments: null,
   }
 }
 
@@ -213,6 +222,7 @@ export function isOrderDraftPristine(values: OrderDraftFormValues): boolean {
     values.note.trim() === '' &&
     values.deliveryAddressId === '' &&
     values.contactId === '' &&
+    values.instalments === null &&
     values.lines.every(
       (line) =>
         line.productId === '' &&
@@ -419,6 +429,10 @@ export function validateOrderDraft(
   const reference = (option: { readonly id: string; readonly version: string } | undefined): OwnerReference | null =>
     option === undefined ? null : { id: option.id, expectedVersion: option.version }
 
+  // SAT-D123: the due terms follow the delivery references in DOM order.
+  const terms = buildDueTerms(values.instalments)
+  if (!terms.ok) errors[ORDER_FIELD.dueTerms] = dueTermsMessage(terms.error)
+
   if (values.lines.length === 0) errors[ORDER_FIELD.lines] = text.linesRequired
   else if (values.lines.length > LIMITS.lines) errors[ORDER_FIELD.lines] = text.tooManyLines
 
@@ -514,8 +528,14 @@ export function validateOrderDraft(
       paymentTerms: null,
       sourceStrategy: null,
       package: null,
+      dueTerms: terms.ok ? terms.dueTerms : null,
     },
   }
+}
+
+/** The create form's text for a due-terms row error (the header revision's own wording). */
+export function dueTermsMessage(error: DueTermsFormError): string {
+  return HEADER_REVISION_TEXT.localError(error)
 }
 
 /**
@@ -535,6 +555,7 @@ export function formFieldForServerPath(path: string, sentLines: readonly { reado
   if (path === 'lines') return ORDER_FIELD.lines
   if (path === 'deliveryAddress') return ORDER_FIELD.deliveryAddress
   if (path === 'contact') return ORDER_FIELD.contact
+  if (path === 'dueTerms' || path.startsWith('dueTerms.') || path.startsWith('dueTerms[')) return ORDER_FIELD.dueTerms
   const match =
     /^lines\[(\d+)\]\.(productId|expectedProductVersion|orderUnitId|quantity|requestedDeliveryDate|note|requestedDeliverySlices|unitPrice|priceUnitId|discountPercent)/.exec(
       path,

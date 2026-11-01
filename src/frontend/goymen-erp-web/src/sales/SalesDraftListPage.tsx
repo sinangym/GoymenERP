@@ -185,7 +185,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="sales-list-heading">
         {header}
-        <StateBlock state={state} subject="sipariş taslakları" onRetry={() => void first.refetch()} />
+        <StateBlock state={state} subject={ORDER_LIST_TEXT.stateSubject} onRetry={() => void first.refetch()} />
       </section>
     )
   }
@@ -195,7 +195,7 @@ function DraftList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="sales-list-heading">
         {header}
-        <StateBlock state={{ kind: 'empty-no-data' }} subject="sipariş taslakları" />
+        <StateBlock state={{ kind: 'empty-no-data' }} subject={ORDER_LIST_TEXT.stateSubject} />
       </section>
     )
   }

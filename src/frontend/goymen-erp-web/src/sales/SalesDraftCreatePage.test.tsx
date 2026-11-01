@@ -15,7 +15,7 @@ import { resetPendingDrafts } from './pendingDrafts'
 import { unavailableReferenceSource, type UseContactInformation, type UseCurrencyOptions, type UseReferenceOptions } from './referenceSource'
 import { SALES_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { ORDER_FIELD } from './orderDraftForm'
-import { ORDER_DRAFT_TEXT as T } from './salesText'
+import { HEADER_REVISION_TEXT as H, ORDER_DRAFT_TEXT as T } from './salesText'
 import {
   ACCOUNT,
   ALL_SALES,
@@ -934,5 +934,58 @@ describe('UI-14 — price entry on the new order', () => {
     await userEvent.click(saveButton())
     await screen.findByRole('heading', { name: T.attempt.completed })
     expect(fetch.salesCalls()).toHaveLength(1)
+  })
+})
+
+describe('SAT-D123 — due terms ("vade") typed at create', () => {
+  it('sends no due terms by default, and a mixed plan with each instalment’s own type when one is typed', async () => {
+    const pending = deferred<Response>()
+    const fetch = installFetch({ onCreate: () => pending.promise })
+    renderSalesApp(PATH)
+    await formVisible()
+    await fillExample()
+    const editor = screen.getByTestId('sales-create-due-terms')
+    expect(within(editor).getByText(H.noDueTerms)).toBeTruthy()
+
+    await userEvent.click(within(editor).getByRole('button', { name: H.addDueTerms }))
+    const first = within(editor).getByRole('group', { name: H.instalment(1) })
+    await userEvent.selectOptions(within(first).getByLabelText(H.basis), 'OrderDate')
+    await userEvent.type(within(first).getByLabelText(H.daysAfter), '30')
+    await userEvent.type(within(first).getByLabelText(H.sharePercent), '40')
+    await userEvent.click(within(editor).getByRole('button', { name: H.addInstalment }))
+    const second = within(editor).getByRole('group', { name: H.instalment(2) })
+    await userEvent.selectOptions(within(second).getByLabelText(H.basis), 'ShipmentDate')
+    await userEvent.type(within(second).getByLabelText(H.daysAfter), '60')
+    await userEvent.type(within(second).getByLabelText(H.sharePercent), '60')
+
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.submitting)
+    const [call] = fetch.salesCalls().filter((candidate) => candidate.method === 'POST')
+    expect(JSON.parse(call.body as string).dueTerms).toEqual({ instalments: [
+      { sequenceNo: 1, basis: 'OrderDate', daysAfter: 30, sharePercent: '40' },
+      { sequenceNo: 2, basis: 'ShipmentDate', daysAfter: 60, sharePercent: '60' },
+    ] })
+  })
+
+  it('sends dueTerms null when no plan is typed, and refuses a malformed row before anything is sent', async () => {
+    const pending = deferred<Response>()
+    const fetch = installFetch({ onCreate: () => pending.promise })
+    renderSalesApp(PATH)
+    await formVisible()
+    await fillExample()
+    const editor = screen.getByTestId('sales-create-due-terms')
+    await userEvent.click(within(editor).getByRole('button', { name: H.addDueTerms }))
+    await userEvent.type(within(editor).getByLabelText(H.daysAfter), 'otuz')
+    await userEvent.type(within(editor).getByLabelText(H.sharePercent), '100')
+    await userEvent.click(saveButton())
+    expect(await within(editor).findByRole('alert')).toBeTruthy()
+    expect(within(editor).getByRole('alert').textContent).toBe(H.localError({ kind: 'days', row: 1 }))
+    expect(fetch.salesCalls().filter((call) => call.method === 'POST')).toHaveLength(0)
+
+    await userEvent.click(within(editor).getByRole('button', { name: H.removeDueTerms }))
+    await userEvent.click(saveButton())
+    await screen.findByText(T.attempt.submitting)
+    const [call] = fetch.salesCalls().filter((candidate) => candidate.method === 'POST')
+    expect(JSON.parse(call.body as string).dueTerms).toBeNull()
   })
 })

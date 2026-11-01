@@ -1,4 +1,5 @@
 export const ALLOCATION_TEXT = {
+  lineTitle: (lineNo: number, productName: string) => `Satır ${lineNo}: ${productName}`,
   heading: 'Fiziksel tahsisler',
   note: 'Tahsis stok hareketi oluşturmaz; Inventory sunucu gerçeği burada yeniden okunur.',
   loading: 'Tahsisler okunuyor…',

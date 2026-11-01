@@ -12,7 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import { matchPath } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
-import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from '../sales/capabilities'
+import { SALES_CAPABILITY, SALES_POOL_CAPABILITY_ID, SALES_POOL_ROUTE, SALES_ROUTE, salesDetailPath } from '../sales/capabilities'
 import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES, NAV_GROUPS } from './navigation'
 
 describe('shell ↔ Sales lane capability ids', () => {
@@ -26,9 +26,12 @@ describe('shell ↔ Sales lane capability ids', () => {
     const shellSalesIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('sales.'))
     // SALES-A1: `sales.orders.approve` is a control of the S-04 detail (the provider's ParentCapabilityId),
     // checked inside the detail with hasCapability, so it belongs in no route registry (the Finance pattern).
-    const laneRoutedIds = (Object.values(SALES_CAPABILITY) as string[]).filter(
-      (id) => id !== SALES_CAPABILITY.ordersApprove,
-    )
+    // UI-20: the two S-01 pool LISTS are named in the sidebar too (their routes stay the lane's pool gates).
+    const laneRoutedIds = [
+      ...(Object.values(SALES_CAPABILITY) as string[]).filter((id) => id !== SALES_CAPABILITY.ordersApprove),
+      SALES_POOL_CAPABILITY_ID.requestsList,
+      SALES_POOL_CAPABILITY_ID.quotesList,
+    ]
     expect([...shellSalesIds].sort()).toEqual([...laneRoutedIds].sort())
     expect(Object.keys(CAPABILITY_ROUTE)).not.toContain(SALES_CAPABILITY.ordersApprove)
     expect(Object.keys(CAPABILITY_NAV_LABEL)).not.toContain(SALES_CAPABILITY.ordersApprove)
@@ -80,5 +83,21 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesReportsView)
     expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesReportsView)
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.reports)).toBeNull()
+  })
+
+  it('names the S-01 request and quote pools under the Sales menu, on the lane’s own ids and routes', () => {
+    expect(CAPABILITY.salesRequestsList).toBe(SALES_POOL_CAPABILITY_ID.requestsList)
+    expect(CAPABILITY.salesQuotesList).toBe(SALES_POOL_CAPABILITY_ID.quotesList)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesRequestsList]).toBe(SALES_POOL_ROUTE.requests)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesQuotesList]).toBe(SALES_POOL_ROUTE.quotes)
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesRequestsList]).toBe('Satış talepleri')
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesQuotesList]).toBe('Satış teklifleri')
+    const sales = NAV_GROUPS.find((group) => group.id === 'sales')?.entries ?? []
+    expect(sales).toContain(CAPABILITY.salesRequestsList)
+    expect(sales).toContain(CAPABILITY.salesQuotesList)
+    // Neither the create nor the detail of a pool gets a sidebar entry: they are reached from the list.
+    expect(NAV_CAPABILITIES).not.toContain(SALES_POOL_CAPABILITY_ID.requestsCreate)
+    expect(NAV_CAPABILITIES).not.toContain(SALES_POOL_CAPABILITY_ID.quotesCreate)
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_POOL_ROUTE.requests)).toBeNull()
   })
 })

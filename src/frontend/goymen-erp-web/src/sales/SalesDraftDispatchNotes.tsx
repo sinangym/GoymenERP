@@ -8,13 +8,14 @@
  * order is not shown. Each note shows its state (Taslak / Onaylandı / İptal edildi), its ERP number once approved and its
  * e-İrsaliye number when entered; a cancelled note stays listed. The link names the note by its short reference.
  */
-import { useId } from 'react'
+import { useId, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router'
 import { fetchSalesOrderDispatchNotes } from '../logistics/api'
 import { LOGISTICS_CAPABILITY, instructionDetailRoute } from '../logistics/capabilities'
 import type { DraftDetail } from './contract'
 import { formatInstant } from './format'
+import { orderUnitCodes } from './unitNames'
 import { ORDER_DETAIL_TEXT } from './salesText'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
@@ -34,6 +35,8 @@ export function SalesDraftDispatchNotes({ detail }: { readonly detail: DraftDeta
     && hasCapability(shell, LOGISTICS_CAPABILITY.instructionsDetail)
   const boundary = useAuthBoundary()
   const headingId = useId()
+  // TEK-11: each shipped quantity with the unit the order names (its stored id when the order does not name it).
+  const unitCodes = useMemo(() => orderUnitCodes(detail), [detail])
   const query = useQuery({
     queryKey: [namespace ?? 'no-context', shell.routeEntryGeneration, 'sales-draft-dispatch-notes', detail.draft.id],
     enabled: canRead,
@@ -75,7 +78,7 @@ export function SalesDraftDispatchNotes({ detail }: { readonly detail: DraftDeta
                   <> · {T.eDispatchNumber}: <span data-testid={`sales-dispatch-note-e-number-${note.dispatchNoteId}`}>{note.eDispatchNumber}</span></>
                 )}
                 {' '}· {formatInstant(note.createdAtUtc)} ·{' '}
-                {note.lines.map((line) => `${T.line} ${lineNo(line.sourceOrderLineId)}: ${line.quantity}`).join(', ')}
+                {note.lines.map((line) => T.lineQuantity(lineNo(line.sourceOrderLineId), line.quantity, unitCodes.get(line.unitId) ?? line.unitId)).join(', ')}
               </li>
             ))}
             {outcome.data.hasMore ? <li className={styles.muted} data-testid="sales-dispatch-notes-more">{T.more}</li> : null}

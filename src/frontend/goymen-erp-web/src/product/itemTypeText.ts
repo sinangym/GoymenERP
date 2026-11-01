@@ -15,6 +15,7 @@ export const ITEM_TYPE_TEXT = {
   note: 'KDV ve tevkifat bu tipe göre Ayarlar > Vergi varsayılanından gelir; sipariş satırında değiştirilebilir. Ürün kartında oran tutulmaz.',
   loading: 'Kalem tipi yükleniyor…',
   failed: 'Kalem tipi şu anda okunamadı.',
+  unauthenticated: 'Oturumunuz sona erdi; kalem tipini görmek için yeniden giriş yapın.',
   change: 'Kalem tipini değiştir',
   choose: 'Kalem tipi seçin',
   formLabel: 'Kalem tipi değişikliği',
