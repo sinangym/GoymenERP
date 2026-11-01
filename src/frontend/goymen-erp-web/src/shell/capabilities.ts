@@ -154,6 +154,8 @@ export const CAPABILITY = {
   salesDispatchesList: 'sales.dispatches.list',
   /** UI-61 S-08 Faturaya Hazır (API-31). Route `/satis/faturaya-hazir`. Granted on its own `sales.invoices.read`. */
   salesInvoiceCandidatesList: 'sales.invoice-candidates.list',
+  /** UI-80 Satış raporları (API-41 / API-42). Route `/satis/raporlar`. Granted on its own `sales.reports.read`. */
+  salesReportsView: 'sales.reports.view',
   /** MFG-02 the company's production orders (MFG-ORD). Route `/uretim/emirler`. */
   manufacturingOrdersList: 'manufacturing.orders.list',
   /**
@@ -305,6 +307,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   // Two static Sales siblings; neither is a draft id under `/satis/siparisler/:draftId`.
   [CAPABILITY.salesDispatchesList]: '/satis/sevkiyatlar',
   [CAPABILITY.salesInvoiceCandidatesList]: '/satis/faturaya-hazir',
+  // UI-80: another static Sales sibling, never a draft id.
+  [CAPABILITY.salesReportsView]: '/satis/raporlar',
   // Static before the parameter route, the /cari/yeni rule: 'emirler' must never be read as an
   // order id. The lane orders its own route table the same way.
   [CAPABILITY.manufacturingOrdersList]: '/uretim/emirler',

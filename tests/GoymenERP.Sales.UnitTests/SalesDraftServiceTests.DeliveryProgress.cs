@@ -170,10 +170,26 @@ public sealed partial class SalesDraftServiceTests
 
         public List<Guid> Asked { get; } = [];
 
+        /// <summary>The batch reads (API-41): the orders each one asked, in call order.</summary>
+        public List<IReadOnlyCollection<Guid>> Batches { get; } = [];
+
         public Task<SalesOrderDeliveryReadAnswerV1> ReadOrderDeliveriesAsync(Guid orderId, CancellationToken cancellationToken = default)
         {
             Asked.Add(orderId);
             return Task.FromResult(Answer(orderId));
+        }
+
+        /// <summary>The batch read (API-41), answered order by order like the port's default and recorded as one batch.</summary>
+        public Task<IReadOnlyList<SalesOrderDeliveryReadAnswerV1>> ReadOrdersDeliveriesAsync(IReadOnlyCollection<Guid> orderIds,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(orderIds.Count, ISalesOrderDeliveryReadPortV1.MaximumBatchSize);
+            Batches.Add([.. orderIds]);
+            return Task.FromResult<IReadOnlyList<SalesOrderDeliveryReadAnswerV1>>([.. orderIds.Distinct().Select(orderId =>
+            {
+                Asked.Add(orderId);
+                return Answer(orderId);
+            })]);
         }
     }
 }

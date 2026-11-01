@@ -238,4 +238,6 @@ public sealed record SalesDraftServiceBindings(
     // SAT-D2 / API-12: the over-limit discount approval name (Müdür's persona, SAT-D37; a grant, never implied here).
     string? DiscountExceptionApprovePermission = SalesPermissionManifestV1.OrdersDiscountExceptionApprove,
     // SAT-D24 / SAT-D44: the expired-quote conversion approval name (a grant, never implied here).
-    string? QuoteExpiredConversionApprovePermission = SalesPermissionManifestV1.QuotesExpiredConversionApprove);
+    string? QuoteExpiredConversionApprovePermission = SalesPermissionManifestV1.QuotesExpiredConversionApprove,
+    // API-41 / API-42: the Sales reports' own read name (a report's amount additionally needs the price read).
+    string? ReportReadPermission = SalesPermissionManifestV1.ReportsRead);

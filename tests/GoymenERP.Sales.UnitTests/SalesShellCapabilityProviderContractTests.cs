@@ -28,8 +28,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // UI-20 (1.8): the S-01 request and quote screens with their decision, write and conversion controls.
         // UI-60 / UI-61 (1.9): the S-07 dispatch list and the S-08 invoice candidates.
         // SAT-D24 / SAT-D44 merged over 1.9 (1.10): the expired-quote conversion approval control of the quote detail.
-        Assert.Equal(("SALES", "1.10"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(23, declarations.Count);
+        // UI-80 (1.11): the Sales reports screen.
+        Assert.Equal(("SALES", "1.11"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(24, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -241,6 +242,28 @@ public sealed class SalesShellCapabilityProviderContractTests
     }
 
     [Fact]
+    public void The_UI80_reports_screen_is_a_routed_screen_on_its_own_read_name_without_a_control()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), FrontendCapabilities));
+        var declarations = new SalesShellCapabilityProvider().GetDeclarations();
+
+        // API-41 / API-42 read under their own sales.reports.read; the amounts are the server's price-read decision, not a control.
+        var reports = Assert.Single(declarations, candidate => candidate.CapabilityId == "sales.reports.view");
+        Assert.Equal(("sales.reports.view", "/satis/raporlar", "R-02-SALES", ShellCapabilityRoutePrecedence.Static,
+                ShellCapabilityContextRequirement.SingleOrAuthorizedMultiCompanyRead, ShellCapabilityScopeRequirement.CompanyWide),
+            (reports.RouteId, reports.RoutePath, reports.ScreenId, reports.RoutePrecedence, reports.ContextRequirement,
+                reports.ScopeRequirement));
+        Assert.Equal([SalesPermissionManifestV1.ReportsRead], reports.RequiredPermissions);
+        Assert.Null(reports.ParentCapabilityId);
+        Assert.True(reports.ImplementationAvailable);
+        Assert.DoesNotContain(declarations, candidate => candidate.ParentCapabilityId == reports.CapabilityId);
+        Assert.Contains("'sales.reports.view'", source);
+        Assert.Contains("'/satis/raporlar'", source);
+        // The report read name is UI-80's alone: no other declaration asks for it.
+        Assert.Single(declarations, candidate => candidate.RequiredPermissions.Contains(SalesPermissionManifestV1.ReportsRead));
+    }
+
+    [Fact]
     public void The_permission_names_are_the_manifests_and_spelled_as_the_card_decided()
     {
         Assert.Equal("sales.drafts.create", SalesPermissionManifestV1.DraftsCreate);
@@ -276,7 +299,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.quotes.expired-conversion.approve", SalesPermissionManifestV1.QuotesExpiredConversionApprove);
         // API-31 (plan §3.3, S-08): the invoice candidates' own read name; no order name confers it.
         Assert.Equal("sales.invoices.read", SalesPermissionManifestV1.InvoicesRead);
-        Assert.Equal((16, 19), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        // API-41 / API-42 (plan §3.4, UI-80): the reports' own read name; no order, quote, invoice or price name confers it.
+        Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
+        Assert.Equal((17, 20), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -298,6 +323,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.QuotesRead,
                 SalesPermissionManifestV1.QuotesExpiredConversionApprove,
                 SalesPermissionManifestV1.InvoicesRead,
+                SalesPermissionManifestV1.ReportsRead,
             ],
             StringComparer.Ordinal);
         Assert.True(exactNames.SetEquals(SalesPermissionManifestV1.Names));

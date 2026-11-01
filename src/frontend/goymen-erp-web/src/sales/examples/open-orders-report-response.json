@@ -1,0 +1,155 @@
+{
+  "measure": "ApprovedMinusShipped",
+  "groups": [
+    {
+      "customer": {
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "code": "CAR-000101",
+        "legalName": "SENTETIK Rapor Müşterisi A.Ş.",
+        "tradeName": null
+      },
+      "productId": "22222222-2222-2222-2222-222222222222",
+      "productCode": "GDC-001",
+      "productName": "Sentetik bant",
+      "unitId": "44444444-4444-4444-4444-444444444444",
+      "unitCode": "kg",
+      "state": "Measured",
+      "scopeOrderCount": 5,
+      "orderCount": 3,
+      "approvedQuantity": "3500.5",
+      "shippedQuantity": "3240",
+      "remainingQuantity": "250.5",
+      "awaitingAcceptanceQuantity": "800",
+      "complete": false,
+      "lines": [
+        {
+          "orderId": "c3c3c3c3-0000-4000-8000-000000000001",
+          "documentNo": "SO-2026-000007",
+          "businessDate": "2026-10-20",
+          "requestedDeliveryDate": "2026-10-30",
+          "basisRevision": "Rev.0",
+          "lineId": "c3c3c3c3-0000-4000-8000-000000000101",
+          "lineNo": 1,
+          "approvedQuantity": "1500.5",
+          "shippedQuantity": "1250",
+          "remainingQuantity": "250.5",
+          "completedWithinTolerance": false,
+          "awaitingAcceptanceQuantity": "0",
+          "awaitingAcceptanceRevision": null
+        },
+        {
+          "orderId": "c3c3c3c3-0000-4000-8000-000000000002",
+          "documentNo": "SO-2026-000008",
+          "businessDate": "2026-10-21",
+          "requestedDeliveryDate": null,
+          "basisRevision": "Rev.0",
+          "lineId": "c3c3c3c3-0000-4000-8000-000000000201",
+          "lineNo": 1,
+          "approvedQuantity": "2000",
+          "shippedQuantity": "1990",
+          "remainingQuantity": "0",
+          "completedWithinTolerance": true,
+          "awaitingAcceptanceQuantity": "500",
+          "awaitingAcceptanceRevision": "Rev.1"
+        },
+        {
+          "orderId": "c3c3c3c3-0000-4000-8000-000000000005",
+          "documentNo": "SO-2026-000011",
+          "businessDate": "2026-10-22",
+          "requestedDeliveryDate": null,
+          "basisRevision": null,
+          "lineId": "c3c3c3c3-0000-4000-8000-000000000501",
+          "lineNo": 1,
+          "approvedQuantity": "0",
+          "shippedQuantity": "0",
+          "remainingQuantity": "0",
+          "completedWithinTolerance": false,
+          "awaitingAcceptanceQuantity": "300",
+          "awaitingAcceptanceRevision": "Rev.0"
+        }
+      ],
+      "unmeasured": [
+        {
+          "orderId": "c3c3c3c3-0000-4000-8000-000000000003",
+          "documentNo": "SO-2026-000009",
+          "lineId": "c3c3c3c3-0000-4000-8000-000000000301",
+          "lineNo": 2,
+          "reason": "PendingReapproval"
+        },
+        {
+          "orderId": "c3c3c3c3-0000-4000-8000-000000000004",
+          "documentNo": "SO-2026-000010",
+          "lineId": "c3c3c3c3-0000-4000-8000-000000000401",
+          "lineNo": 1,
+          "reason": "TolerancePolicyUnavailable"
+        }
+      ]
+    },
+    {
+      "customer": {
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "code": "CAR-000101",
+        "legalName": "SENTETIK Rapor Müşterisi A.Ş.",
+        "tradeName": null
+      },
+      "productId": "22222222-2222-2222-2222-222222222222",
+      "productCode": "GDC-001",
+      "productName": "Sentetik bant",
+      "unitId": "66666666-6666-4666-8666-666666666666",
+      "unitCode": "adet",
+      "state": "Measured",
+      "scopeOrderCount": 1,
+      "orderCount": 1,
+      "approvedQuantity": "40",
+      "shippedQuantity": "30",
+      "remainingQuantity": "10",
+      "awaitingAcceptanceQuantity": "0",
+      "complete": true,
+      "lines": [
+        {
+          "orderId": "c3c3c3c3-0000-4000-8000-000000000001",
+          "documentNo": "SO-2026-000007",
+          "businessDate": "2026-10-20",
+          "requestedDeliveryDate": "2026-10-30",
+          "basisRevision": "Rev.0",
+          "lineId": "c3c3c3c3-0000-4000-8000-000000000102",
+          "lineNo": 2,
+          "approvedQuantity": "40",
+          "shippedQuantity": "30",
+          "remainingQuantity": "10",
+          "completedWithinTolerance": false,
+          "awaitingAcceptanceQuantity": "0",
+          "awaitingAcceptanceRevision": null
+        }
+      ],
+      "unmeasured": []
+    },
+    {
+      "customer": {
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "code": "CAR-000101",
+        "legalName": "SENTETIK Rapor Müşterisi A.Ş.",
+        "tradeName": null
+      },
+      "productId": "22222222-2222-2222-2222-222222222229",
+      "productCode": "GDC-009",
+      "productName": "Sentetik rulo",
+      "unitId": "44444444-4444-4444-4444-444444444444",
+      "unitCode": "kg",
+      "state": "TooManyOrders",
+      "scopeOrderCount": 1500,
+      "orderCount": 0,
+      "approvedQuantity": null,
+      "shippedQuantity": null,
+      "remainingQuantity": null,
+      "awaitingAcceptanceQuantity": null,
+      "complete": false,
+      "lines": [],
+      "unmeasured": []
+    }
+  ],
+  "nextCursor": "c2FsZXMtcmVwb3J0LWN1cnNvcg"
+}

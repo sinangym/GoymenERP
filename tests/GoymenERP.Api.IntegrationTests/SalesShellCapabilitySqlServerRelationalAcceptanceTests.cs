@@ -69,6 +69,16 @@ public sealed class SalesShellCapabilitySqlServerRelationalAcceptanceTests
                     SalesOnly(await ReadAsync(invoicer)));
             }
 
+            // + sales.reports.read (API-41 / API-42, Sales 1.11): exactly the UI-80 reports screen joins; no control.
+            await GrantAsync(factory, TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.ReportsRead, AccessScopeType.Company, CompanyA);
+            using (var reporter = factory.CreateClientFor(TestUsers.CompanyA, CompanyA))
+            {
+                Assert.Equal(
+                    new[] { "sales.dispatches.list", "sales.drafts.create", "sales.drafts.detail", "sales.drafts.list", "sales.invoice-candidates.list",
+                        "sales.reports.view" },
+                    SalesOnly(await ReadAsync(reporter)));
+            }
+
             // The grant is company A's. The same actor gets a non-Sales assignment in company B, so the
             // company-B context resolves and the answer is measured (ORG #328 P2-1): no Sales screen there.
             await GrantAsync(factory, TestUsers.CompanyA, CompanyB, ErpPermissions.OrganizationLocationsRead, AccessScopeType.Company, CompanyB);

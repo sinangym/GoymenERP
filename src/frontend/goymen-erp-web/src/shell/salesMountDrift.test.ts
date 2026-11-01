@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { matchPath } from 'react-router'
 import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
 import { SALES_CAPABILITY, SALES_ROUTE, salesDetailPath } from '../sales/capabilities'
-import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES } from './navigation'
+import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES, NAV_GROUPS } from './navigation'
 
 describe('shell ↔ Sales lane capability ids', () => {
   it('declares the same three ids the lane does', () => {
@@ -40,6 +40,9 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(CAPABILITY.salesInvoiceCandidatesList).toBe(SALES_CAPABILITY.invoiceCandidatesList)
     expect(CAPABILITY_ROUTE[CAPABILITY.salesDispatchesList]).toBe(SALES_ROUTE.dispatches)
     expect(CAPABILITY_ROUTE[CAPABILITY.salesInvoiceCandidatesList]).toBe(SALES_ROUTE.invoiceCandidates)
+    // UI-80 (Sales shell 1.11): the reports screen.
+    expect(CAPABILITY.salesReportsView).toBe(SALES_CAPABILITY.reportsView)
+    expect(CAPABILITY_ROUTE[CAPABILITY.salesReportsView]).toBe(SALES_ROUTE.reports)
     expect(CAPABILITY_ROUTE[CAPABILITY.salesDraftsList]).toBe(SALES_ROUTE.list)
     expect(CAPABILITY_ROUTE[CAPABILITY.salesDraftsCreate]).toBe(SALES_ROUTE.create)
     expect(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail]).toBe(SALES_ROUTE.detail)
@@ -70,5 +73,12 @@ describe('shell ↔ Sales lane capability ids', () => {
     // Neither static route is ever read as a draft id.
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.dispatches)).toBeNull()
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.invoiceCandidates)).toBeNull()
+  })
+
+  it('names UI-80 under the Sales menu, drawn only where its own capability is granted', () => {
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesReportsView]).toBe('Satış raporları')
+    expect(NAV_CAPABILITIES).toContain(CAPABILITY.salesReportsView)
+    expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesReportsView)
+    expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_ROUTE.reports)).toBeNull()
   })
 })

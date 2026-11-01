@@ -17,16 +17,61 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.Persistence;
 internal sealed class LogisticsSalesOrderDeliveryReadPort(LogisticsDbContext dbContext, ICompanyContext companyContext)
     : ISalesOrderDeliveryReadPortV1
 {
-    public async Task<SalesOrderDeliveryReadAnswerV1> ReadOrderDeliveriesAsync(Guid orderId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// API-41: the per-order answers of up to <see cref="ISalesOrderDeliveryReadPortV1.MaximumBatchSize"/> orders in ONE grouped
+    /// statement over the same company-filtered lines; every requested order answers (an empty list when nothing is recorded).
+    /// </summary>
+    public async Task<IReadOnlyList<SalesOrderDeliveryReadAnswerV1>> ReadOrdersDeliveriesAsync(IReadOnlyCollection<Guid> orderIds,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(orderIds);
         cancellationToken.ThrowIfCancellationRequested();
+        var companyId = RequireCompany();
+        if (orderIds.Count > ISalesOrderDeliveryReadPortV1.MaximumBatchSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(orderIds),
+                $"En fazla {ISalesOrderDeliveryReadPortV1.MaximumBatchSize} sipariş birlikte okunur.");
+        }
+
+        var ids = orderIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return [.. orderIds.Distinct().Select(orderId => new SalesOrderDeliveryReadAnswerV1(companyId, orderId, []))];
+        }
+
+        var totals = await dbContext.Lines.AsNoTracking()
+                .Where(line => ids.Contains(line.SourceOrderId))
+                .GroupBy(line => new { line.SourceOrderId, line.SourceOrderLineId, line.UnitId })
+                .Select(group => new
+                {
+                    group.Key.SourceOrderId,
+                    group.Key.SourceOrderLineId,
+                    group.Key.UnitId,
+                    Shipped = group.Sum(line => line.Shipped),
+                    Delivered = group.Sum(line => line.Delivered),
+                })
+                .ToListAsync(cancellationToken);
+        return [.. orderIds.Distinct().Select(orderId => new SalesOrderDeliveryReadAnswerV1(companyId, orderId,
+            [.. totals.Where(total => total.SourceOrderId == orderId)
+                .OrderBy(total => total.SourceOrderLineId).ThenBy(total => total.UnitId)
+                .Select(total => new SalesOrderLineDeliveryV1(total.SourceOrderLineId, total.UnitId, total.Shipped, total.Delivered))]))];
+    }
+
+    private Guid RequireCompany()
+    {
         if (!companyContext.IsResolved || companyContext.CompanyId == Guid.Empty)
         {
             // Without a server-resolved company there is no tenant filter to read under: refuse, never read unscoped.
             throw new InvalidOperationException("Teslimat okuması yalnız çözümlenmiş şirket bağlamında yapılır.");
         }
 
-        var companyId = companyContext.CompanyId;
+        return companyContext.CompanyId;
+    }
+
+    public async Task<SalesOrderDeliveryReadAnswerV1> ReadOrderDeliveriesAsync(Guid orderId, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var companyId = RequireCompany();
         if (orderId == Guid.Empty)
         {
             return new SalesOrderDeliveryReadAnswerV1(companyId, orderId, []);

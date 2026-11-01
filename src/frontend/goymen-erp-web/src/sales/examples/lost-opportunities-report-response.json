@@ -1,0 +1,70 @@
+{
+  "amountDisclosure": "Visible",
+  "items": [
+    {
+      "quoteId": "b2b2b2b2-0000-4000-8000-000000000001",
+      "documentNo": "SQ-2026-000004",
+      "revision": "Rev.1",
+      "businessDate": "2026-10-10",
+      "validUntil": "2026-10-25",
+      "customer": {
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "code": "CAR-000101",
+        "legalName": "SENTETIK Rapor Müşterisi A.Ş.",
+        "tradeName": null
+      },
+      "currencyId": "9e60dcf0-f4bd-5bca-b464-f9a2db98e31a",
+      "lostAtUtc": "2026-10-21T09:30:00+00:00",
+      "lostOn": "2026-10-21",
+      "lostBy": "SENTETIK-satis",
+      "reason": {
+        "reasonId": "e0000000-0000-4000-8000-000000000002",
+        "code": "SENTETIK-FIYAT",
+        "label": "Sentetik fiyat",
+        "profileId": "e0000000-0000-4000-8000-0000000000ff",
+        "profileVersion": 1
+      },
+      "explanation": "SENTETIK rakip daha ucuz",
+      "lineCount": 2,
+      "amount": {
+        "state": "Computed",
+        "currencyId": "9e60dcf0-f4bd-5bca-b464-f9a2db98e31a",
+        "amountScale": 2,
+        "netAmount": "14840.25",
+        "unpricedLineCount": 0,
+        "priceUnitNotOrderUnitLineCount": 0
+      }
+    },
+    {
+      "quoteId": "b2b2b2b2-0000-4000-8000-000000000002",
+      "documentNo": "SQ-2026-000002",
+      "revision": "Rev.0",
+      "businessDate": "2026-09-30",
+      "validUntil": null,
+      "customer": {
+        "partyId": "33333333-3333-4333-8333-333333333333",
+        "companyAccountId": "44444444-4444-4444-8444-444444444444",
+        "code": "CAR-000101",
+        "legalName": "SENTETIK Rapor Müşterisi A.Ş.",
+        "tradeName": null
+      },
+      "currencyId": "9e60dcf0-f4bd-5bca-b464-f9a2db98e31a",
+      "lostAtUtc": "2026-10-02T12:00:00+00:00",
+      "lostOn": "2026-10-02",
+      "lostBy": "SENTETIK-satis",
+      "reason": null,
+      "explanation": "SENTETIK eski serbest metin",
+      "lineCount": 1,
+      "amount": {
+        "state": "Incomplete",
+        "currencyId": "9e60dcf0-f4bd-5bca-b464-f9a2db98e31a",
+        "amountScale": 2,
+        "netAmount": null,
+        "unpricedLineCount": 1,
+        "priceUnitNotOrderUnitLineCount": 0
+      }
+    }
+  ],
+  "nextCursor": null
+}
