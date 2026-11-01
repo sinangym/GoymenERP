@@ -37,4 +37,5 @@ export const PLAN_LIST_TEXT = {
   plans: 'Üretim planları',
   subject: 'üretim planları',
   contextSubject: 'üretim planları için tek şirket bağlamı',
+  nextPageSubject: 'sonraki sayfa',
 } as const

@@ -269,7 +269,7 @@ function PlanList({ namespace }: { readonly namespace: string | null }) {
         {typeof continuation === 'object' ? (
           <div className={styles.inlineError}>
             <p>{PLAN_LIST_TEXT.nextPageFailed}</p>
-            <StateBlock state={continuation} subject="sonraki sayfa" onRetry={() => void loadMore()} />
+            <StateBlock state={continuation} subject={PLAN_LIST_TEXT.nextPageSubject} onRetry={() => void loadMore()} />
           </div>
         ) : nextCursor === null ? (
           <p className={styles.muted}>{PLAN_LIST_TEXT.end}</p>
