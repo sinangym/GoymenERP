@@ -337,6 +337,7 @@ public sealed partial class SalesStore
         quote.Convert(expectedQuoteVersion, draft.Id, actorId, SalesBusinessDay.DateOf(now), now);
         SalesDraftRows.Add(dbContext, draft, envelope.ActorId, envelope.CorrelationId, quote.Id, quote.Revision);
         draft.RestoreCreator(envelope.ActorId);
+        draft.RestoreSourceQuote(quote.Id);
         row.State = (int)quote.State;
         row.ConvertedDraftId = quote.Conversion!.DraftId;
         row.ConvertedBy = quote.Conversion.ConvertedBy;

@@ -94,7 +94,12 @@ public sealed class SalesDueTermsTests
         var pending = SalesDueDateCalculator.Compute(shipment, OrderDate, null);
         // A point due needs no shipment.
         Assert.True(SalesDueDateCalculator.Compute(SalesDueTerms.Create([Instalment(1, SalesDueBasis.OrderDate, 1, "100")]), OrderDate, null).IsResolved);
-        Assert.Equal((SalesDueDateUnresolvedReason.ShipmentDateMissing, 0), (pending.Unresolved!.Value, pending.DueDates.Count));
+        // SAT-D156 (EK21): per instalment — the point-due instalment keeps its date, only the shipment-due one waits.
+        Assert.Equal(SalesDueDateUnresolvedReason.ShipmentDateMissing, pending.Unresolved!.Value);
+        Assert.Equal([
+            new SalesDueDate(1, OrderDate.AddDays(10), "50"),
+            new SalesDueDate(2, null, "50", SalesDueDateUnresolvedReason.ShipmentDateMissing),
+        ], pending.DueDates);
         var none = SalesDueDateCalculator.Compute(null, OrderDate, ShipmentDate);
         Assert.Equal((SalesDueDateUnresolvedReason.NoTerms, 0), (none.Unresolved!.Value, none.DueDates.Count));
     }
@@ -234,5 +239,59 @@ public sealed class SalesDueTermsTests
         Assert.Throws<System.Text.Json.JsonException>(() => SalesDraftHeaderApiV1.Read(Body.Replace("BASIS", "OrderDate").Replace("SHARE", "-1")));
         Assert.Throws<System.Text.Json.JsonException>(() => SalesDraftHeaderApiV1.Read(Body.Replace("\"contact\":null,", "").Replace("BASIS", "OrderDate").Replace("SHARE", "100")));
         Assert.Throws<System.Text.Json.JsonException>(() => SalesDraftHeaderApiV1.Read(Body.Replace("\"contact\":null,", "\"contact\":null,\"extra\":1,").Replace("BASIS", "OrderDate").Replace("SHARE", "100")));
+    }
+    [Fact]
+    public void SAT_D156_a_mixed_plan_resolves_instalment_by_instalment_golden()
+    {
+        // Point 30 days 40 %, shipment 15 days 35 %, point 60 days 25 %: order 2026-11-02, nothing shipped yet.
+        var terms = SalesDueTerms.Create([
+            Instalment(1, SalesDueBasis.OrderDate, 30, "40"), Instalment(2, SalesDueBasis.ShipmentDate, 15, "35"),
+            Instalment(3, SalesDueBasis.OrderDate, 60, "25"),
+        ]);
+
+        var waiting = SalesDueDateCalculator.Compute(terms, OrderDate, null);
+        Assert.False(waiting.IsResolved);
+        Assert.Equal(SalesDueDateUnresolvedReason.ShipmentDateMissing, waiting.Unresolved);
+        Assert.Equal([
+            new SalesDueDate(1, new DateOnly(2026, 12, 2), "40"),
+            new SalesDueDate(2, null, "35", SalesDueDateUnresolvedReason.ShipmentDateMissing),
+            new SalesDueDate(3, new DateOnly(2027, 1, 1), "25"),
+        ], waiting.DueDates);
+        Assert.Equal([true, false, true], waiting.DueDates.Select(dueDate => dueDate.IsResolved));
+
+        // Once shipped (2026-11-18) the waiting instalment gets its date and the others do not move.
+        var shipped = SalesDueDateCalculator.Compute(terms, OrderDate, ShipmentDate);
+        Assert.True(shipped.IsResolved);
+        Assert.Null(shipped.Unresolved);
+        Assert.Equal([new DateOnly(2026, 12, 2), new DateOnly(2026, 12, 3), new DateOnly(2027, 1, 1)],
+            shipped.DueDates.Select(dueDate => dueDate.DueDate!.Value));
+        Assert.All(shipped.DueDates, dueDate => Assert.Null(dueDate.Pending));
+
+        // Only shipment-due instalments, nothing shipped: every instalment waits on its own, none is dropped.
+        var allShipment = SalesDueDateCalculator.Compute(SalesDueTerms.Create([
+            Instalment(1, SalesDueBasis.ShipmentDate, 0, "50"), Instalment(2, SalesDueBasis.ShipmentDate, 30, "50")]), OrderDate, null);
+        Assert.Equal([1, 2], allShipment.DueDates.Select(dueDate => dueDate.SequenceNo));
+        Assert.All(allShipment.DueDates, dueDate => Assert.Equal((null, SalesDueDateUnresolvedReason.ShipmentDateMissing),
+            (dueDate.DueDate, dueDate.Pending)));
+    }
+
+    [Fact]
+    public void SAT_D157_a_split_into_too_many_instalments_is_refused_with_the_users_message()
+    {
+        // 0.02 TL into four equal instalments: 0.01 + 0.01 + 0.01 leaves −0.01 for the last one.
+        var terms = SalesDueTerms.Create([
+            Instalment(1, SalesDueBasis.OrderDate, 1, "25"), Instalment(2, SalesDueBasis.OrderDate, 2, "25"),
+            Instalment(3, SalesDueBasis.OrderDate, 3, "25"), Instalment(4, SalesDueBasis.OrderDate, 4, "25"),
+        ]);
+
+        var refused = Assert.Throws<SalesDueTermsException>(() => SalesDueDateCalculator.SplitAmount(terms, Money.Of(0.02m, Try, 2)));
+
+        Assert.Equal(SalesDueTermsCodes.AmountNotSplittable, refused.Code);
+        Assert.Contains("tutar bu kadar taksite bölünemez", refused.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(SalesDueDateCalculator.AmountNotSplittableMessage, refused.Message);
+        // Fewer instalments are accepted: 0.02 into two (SAT-D124 rounding unchanged).
+        Assert.Equal([0.01m, 0.01m], SalesDueDateCalculator.SplitAmount(
+            SalesDueTerms.Create([Instalment(1, SalesDueBasis.OrderDate, 1, "50"), Instalment(2, SalesDueBasis.OrderDate, 2, "50")]),
+            Money.Of(0.02m, Try, 2)).Select(amount => amount.Amount.Amount));
     }
 }

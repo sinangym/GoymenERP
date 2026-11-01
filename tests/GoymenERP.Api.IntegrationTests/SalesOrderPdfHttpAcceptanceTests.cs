@@ -403,6 +403,132 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         Assert.DoesNotContain("Footer", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
+    private const string InternalRejectionReason = "SENTETIK-GIZLI-RET-GEREKCESI";
+
+    /// <summary>
+    /// SAT-D165 (EK23): the customer rejected the current approved Rev.1 and the order continues on the accepted Rev.0 — the PDF is
+    /// Rev.0: its quantity and prices, "Rev.0" in the revision field and footer, v01 in the file name, no draft watermark, and the
+    /// note "Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer". The rejected quantity and the rejection's internal
+    /// reason are never printed.
+    /// </summary>
+    [Fact]
+    public async Task SAT_D165_a_customer_rejected_revision_prints_the_accepted_revision_with_the_note_and_never_the_reason()
+    {
+        var draftId = Guid.NewGuid();
+        var (order, pricing) = Order(draftId, SalesPriceDisclosure.Visible, unitPrice: "14.75");
+        var line = Assert.Single(order.Lines);
+        var detail = Rejected(order with { Lines = [line with { Quantity = "7.777" }] });
+        var accepted = pricing with
+        {
+            Lines = [new SalesDraftLinePricingV1(line.LineId, 1, "12.50", Kg, "Manual", null, "5", null, null, "0.25", "12.125", null)],
+            AcceptedRevision = new SalesOrderPrintRevisionV1("Rev.0",
+                [new SalesOrderPrintRevisionLineV1(line.LineId, 1, line.ProductId, Kg, "3.333")]),
+        };
+        using var host = CreateHost(new StubDetail(_ => Task.FromResult(detail)), new StubPricing(_ => Task.FromResult(accepted)));
+        using var client = CreateClient(host);
+
+        using var response = await client.GetAsync(PdfPath(draftId));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Satış_Siparişi_SO-2026-000123_SENTETIK_Gıda_2026-10-27_v01_Onaylı.pdf",
+            response.Content.Headers.ContentDisposition!.FileNameStar);
+        var text = await TextAsync(response);
+        Assert.Contains("3.333", text, StringComparison.Ordinal);
+        Assert.Contains("12.50 TRY / kg", text, StringComparison.Ordinal);
+        Assert.Contains("Rev.0 kabul edildi", text, StringComparison.Ordinal);
+        Assert.Contains("Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer", text, StringComparison.Ordinal);
+        Assert.Contains("SO-2026-000123 · Rev.0 · ", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("7.777", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("14.75", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Rev.1 ·", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(InternalRejectionReason, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("TASLAK", text, StringComparison.Ordinal);
+
+        // Without the price read: the same accepted revision, the price-less variant, never the reason.
+        var (_, withheld) = Order(draftId, SalesPriceDisclosure.Withheld);
+        var hidden = detail with { Lines = [.. detail.Lines.Select(item => item with { UnitPrice = null, PriceUnitId = null,
+            DiscountPercent = null, PriceDisclosure = SalesPriceDisclosure.Withheld })] };
+        using var priceless = CreateHost(new StubDetail(_ => Task.FromResult(hidden)),
+            new StubPricing(_ => Task.FromResult(withheld with { AcceptedRevision = accepted.AcceptedRevision })));
+        using var pricelessClient = CreateClient(priceless);
+        using var pricelessResponse = await pricelessClient.GetAsync(PdfPath(draftId));
+        Assert.Equal(HttpStatusCode.OK, pricelessResponse.StatusCode);
+        var pricelessText = await TextAsync(pricelessResponse);
+        Assert.Contains("3.333", pricelessText, StringComparison.Ordinal);
+        Assert.Contains("Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer", pricelessText, StringComparison.Ordinal);
+        Assert.DoesNotContain("7.777", pricelessText, StringComparison.Ordinal);
+        Assert.DoesNotContain(InternalRejectionReason, pricelessText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// SAT-D165: a rejected current revision without an accepted revision to print (the accepted one names another customer or
+    /// currency) is never presented as the valid order — it carries the draft watermark and the note; a newer revision approved
+    /// and awaiting the acceptance after a rejection is printed as before (current revision, no note). The reason never prints.
+    /// </summary>
+    [Fact]
+    public async Task SAT_D165_without_an_accepted_revision_to_print_the_rejected_one_is_a_draft_and_a_newer_revision_prints_as_before()
+    {
+        var draftId = Guid.NewGuid();
+        var (order, pricing) = Order(draftId, SalesPriceDisclosure.Withheld);
+        using (var host = CreateHost(new StubDetail(_ => Task.FromResult(Rejected(order))), new StubPricing(_ => Task.FromResult(pricing))))
+        {
+            using var client = CreateClient(host);
+            using var response = await client.GetAsync(PdfPath(draftId));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var pdf = PdfDocument.Open(await response.Content.ReadAsByteArrayAsync());
+            var page = Assert.Single(pdf.GetPages());
+            Assert.Equal("TASLAK", string.Concat(page.Letters.Where(letter => letter.PointSize > 100).Select(letter => letter.Value)));
+            Assert.Contains("Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer", page.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(InternalRejectionReason, page.Text, StringComparison.Ordinal);
+        }
+
+        var newer = Rejected(order) with { Draft = order.Draft with { Revision = "Rev.2" } };
+        using (var host = CreateHost(new StubDetail(_ => Task.FromResult(newer)), new StubPricing(_ => Task.FromResult(pricing))))
+        {
+            using var client = CreateClient(host);
+            using var response = await client.GetAsync(PdfPath(draftId));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("Satış_Siparişi_Fiyatsız_SO-2026-000123_SENTETIK_Gıda_2026-10-27_v03_Onaylı.pdf",
+                response.Content.Headers.ContentDisposition!.FileNameStar);
+            var text = await TextAsync(response);
+            Assert.DoesNotContain("reddedildi", text, StringComparison.Ordinal);
+            Assert.DoesNotContain(InternalRejectionReason, text, StringComparison.Ordinal);
+            Assert.DoesNotContain("TASLAK", text, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>SAT-D165: an accepted revision that does not answer the detail's lines is not printed (503), never a mixed document.</summary>
+    [Fact]
+    public async Task SAT_D165_an_accepted_revision_that_does_not_match_the_detail_is_503_never_a_mixed_pdf()
+    {
+        var draftId = Guid.NewGuid();
+        var (order, pricing) = Order(draftId, SalesPriceDisclosure.Withheld);
+        var line = Assert.Single(order.Lines);
+        foreach (var broken in new[]
+                 {
+                     new SalesOrderPrintRevisionLineV1(Guid.NewGuid(), 1, line.ProductId, Kg, "3"),
+                     new SalesOrderPrintRevisionLineV1(line.LineId, 2, line.ProductId, Kg, "3"),
+                     new SalesOrderPrintRevisionLineV1(line.LineId, 1, Guid.NewGuid(), Kg, "3"),
+                     new SalesOrderPrintRevisionLineV1(line.LineId, 1, line.ProductId, Guid.NewGuid(), "3"),
+                 })
+        {
+            var answer = pricing with { AcceptedRevision = new SalesOrderPrintRevisionV1("Rev.0", [broken]) };
+            using var host = CreateHost(new StubDetail(_ => Task.FromResult(Rejected(order))), new StubPricing(_ => Task.FromResult(answer)));
+            using var client = CreateClient(host);
+            using var response = await client.GetAsync(PdfPath(draftId));
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        }
+    }
+
+    /// <summary>The approved Rev.1 of <see cref="Order"/> as the customer rejected it, after accepting Rev.0 (acceptance required).</summary>
+    private static SalesOrderDraftReadDetailViewV1 Rejected(SalesOrderDraftReadDetailViewV1 order) => order with
+    {
+        CustomerAcceptance = new SalesDraftCustomerAcceptanceV1(true, "Rev.0", "SENTETIK-kabul",
+            new DateTimeOffset(2026, 10, 26, 10, 0, 0, TimeSpan.Zero), false,
+            [new SalesDraftCustomerRejectionV1("Rev.1", "SENTETIK-ret", new DateTimeOffset(2026, 10, 28, 10, 0, 0, TimeSpan.Zero),
+                InternalRejectionReason)]),
+    };
+
     private static void AssertInOrder(string text, IEnumerable<string> parts)
     {
         var position = 0;

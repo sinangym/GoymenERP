@@ -100,7 +100,7 @@ import {
   SALES_ROUTE,
 } from './capabilities'
 import { APPROVAL_STATE_TEXT, COMMERCIAL_STAGE_TEXT, ORDER_DETAIL_TEXT as T, ORDER_DRAFT_TEXT, ORDER_TABS_TEXT, problemCodeText } from './salesText'
-import { SALES_PROBLEM_CODE } from './contract'
+import { SALES_PROBLEM_CODE, currentRevisionRejection } from './contract'
 import { classifyOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
@@ -118,7 +118,7 @@ import { SalesDraftDeliveryScheduleHistory } from './SalesDraftDeliveryScheduleH
 import { SalesDraftDeliveryProgress } from './SalesDraftDeliveryProgress'
 import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
 import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
-import { previousRevision } from './orderStatus'
+import { customerAcceptedFallback, previousRevision } from './orderStatus'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
 import { SalesOrderRiskCard } from './SalesOrderRiskCard'
 import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
@@ -534,6 +534,9 @@ export function DraftView({
   readonly onTabChange?: (tab: OrderTab) => void
 }) {
   const { draft, approval, customerAcceptance } = detail
+  // SAT-D115: the customer's rejection of the current revision, and the revision the order continues on.
+  const currentRejection = currentRevisionRejection(detail)
+  const acceptedFallback = customerAcceptedFallback(detail)
   const unitCodes = useMemo(() => orderUnitCodes(detail), [detail])
   const [ownTab, setOwnTab] = useState<OrderTab>(ORDER_TAB.lines)
   const tab = activeTab ?? ownTab
@@ -686,9 +689,29 @@ export function DraftView({
                 ? T.approval.customerAcceptanceLegacy
                 : customerAcceptance.isCurrentRevisionAccepted
                   ? T.approval.customerAcceptanceRecorded
-                  : T.approval.customerAcceptancePending}
+                  : currentRejection !== null
+                    ? T.approval.customerRejected
+                    : T.approval.customerAcceptancePending}
             </dd>
           </div>
+          {currentRejection === null ? null : (
+            <>
+              <div>
+                <dt>{T.approval.customerRejectedBy}</dt>
+                <dd data-testid="sales-customer-rejected-by">
+                  <ActorName displays={detail.userDisplays} actorId={currentRejection.rejectedBy} />
+                </dd>
+              </div>
+              <div>
+                <dt>{T.approval.customerRejectedAt}</dt>
+                <dd>{formatInstant(currentRejection.rejectedAtUtc)} ({currentRejection.revision})</dd>
+              </div>
+              <div>
+                <dt>{T.approval.customerRejectionReason}</dt>
+                <dd data-testid="sales-customer-rejection-reason">{currentRejection.reason}</dd>
+              </div>
+            </>
+          )}
           {customerAcceptance.acceptedBy === null ? null : (
             <div>
               <dt>{T.approval.customerAcceptedBy}</dt>
@@ -706,6 +729,9 @@ export function DraftView({
         </dl>
         {linkedEffects ?? <SalesDraftLinkedEffectsUnbound />}
         {draft.approvalState === APPROVAL_STATE.approved && !cancelled && !closed ? <p className={styles.muted}>{T.approval.approvedNote}</p> : null}
+        {acceptedFallback !== null && currentRejection !== null && !cancelled && !closed ? (
+          <p className={styles.muted} data-testid="sales-customer-rejection-note">{T.approval.customerRejectionNote(acceptedFallback)}</p>
+        ) : null}
         {draft.approvalState === APPROVAL_STATE.rejected && lastApproved === null ? <p className={styles.muted}>{T.approval.rejectedNote}</p> : null}
         {/* SAT-D103 / SAT-D104 / SAT-D111 (EK13): a newer revision of an approved order waits for, or was refused, its approval. */}
         {lastApproved !== null && !cancelled && !closed && (draft.approvalState === APPROVAL_STATE.preparing || draft.approvalState === APPROVAL_STATE.pendingApproval)
@@ -939,6 +965,8 @@ function ApprovalCommands({
   const [command, setCommand] = useState<DraftStateCommand | null>(null)
   const [reason, setReason] = useState('')
   const [withdrawReason, setWithdrawReason] = useState('')
+  const [customerRejectionReason, setCustomerRejectionReason] = useState('')
+  const [customerRejectionMissing, setCustomerRejectionMissing] = useState(false)
   const attemptRef = useRef(attempt)
   attemptRef.current = attempt
 
@@ -961,7 +989,11 @@ function ApprovalCommands({
   const offerWithdraw = canSubmit && ownDraft && unapproved && draft.revision === 'Rev.0'
   const offerCustomerAcceptance = canAcceptCustomer && !isTerminalState(draft.state)
     && draft.approvalState === APPROVAL_STATE.approved && detail.customerAcceptance.required
-    && !detail.customerAcceptance.isCurrentRevisionAccepted
+    && !detail.customerAcceptance.isCurrentRevisionAccepted && currentRevisionRejection(detail) === null
+  // SAT-D115 (EK14): a rejection is offered only beside the acceptance of a NEW revision (an earlier one was accepted); the server
+  // remains the authority (409 when it does not fit).
+  const offerCustomerRejection = offerCustomerAcceptance && detail.customerAcceptance.acceptedRevision !== null
+    && detail.customerAcceptance.acceptedRevision !== draft.revision
   if (!offerSubmit && !offerDecision && !offerWithdraw && !offerCustomerAcceptance && !ownDecisionWithheld && attempt.phase === 'idle') return null
 
   async function send(kind: DraftStateCommand, snapshot: OrderAttemptSnapshot<DraftStateCommandRequest>) {
@@ -984,7 +1016,14 @@ function ApprovalCommands({
   function start(kind: DraftStateCommand) {
     const binding = orderAttemptBinding(shell, commandScope(draft.id, kind))
     if (binding === null) return
-    const typed = kind === 'rejection' ? reason.trim() : kind === 'withdrawal' ? withdrawReason.trim() : ''
+    const typed = kind === 'rejection' ? reason.trim() : kind === 'withdrawal' ? withdrawReason.trim()
+      : kind === 'customer-rejection' ? customerRejectionReason.trim() : ''
+    // SAT-D115: the reason is required; the screen says so before sending (the server refuses it too, 422).
+    if (kind === 'customer-rejection' && typed === '') {
+      setCustomerRejectionMissing(true)
+      return
+    }
+    setCustomerRejectionMissing(false)
     const payload: DraftStateCommandRequest =
       typed !== '' ? { expectedVersion: draft.version, reason: typed } : { expectedVersion: draft.version }
     const decision = decideSubmit(
@@ -1076,6 +1115,30 @@ function ApprovalCommands({
           {T.approval.recordCustomerAcceptance}
         </Button>
       ) : null}
+      {offerCustomerRejection ? (
+        <>
+          <p className={styles.muted}>{T.approval.customerRejectionHint}</p>
+          <label htmlFor="sales-customer-rejection-reason">{T.approval.customerRejectionReasonLabel}</label>
+          <textarea
+            id="sales-customer-rejection-reason"
+            maxLength={4000}
+            required
+            aria-invalid={customerRejectionMissing}
+            aria-describedby={customerRejectionMissing ? 'sales-customer-rejection-missing' : undefined}
+            value={customerRejectionReason}
+            disabled={frozen}
+            onChange={(event) => setCustomerRejectionReason(event.target.value)}
+          />
+          {customerRejectionMissing ? (
+            <p id="sales-customer-rejection-missing" role="alert" className={styles.notice}>
+              {T.approval.customerRejectionReasonRequired}
+            </p>
+          ) : null}
+          <Button type="button" variant="secondary" disabled={frozen} onClick={() => start('customer-rejection')}>
+            {T.approval.recordCustomerRejection}
+          </Button>
+        </>
+      ) : null}
     </div>
   )
 }
@@ -1116,7 +1179,10 @@ function commandNotice(attempt: CommandAttempt): string | null {
         error.code === 'sales_revision_below_shipped' ? T.approval.belowShipped
           : error.code === 'sales_revision_below_loaded' ? T.approval.belowLoaded
             // SAT-D123 (EK18): no approval without due terms.
-            : error.code === 'sales_due_terms_required' ? T.approval.dueTermsRequired : null).filter((part) => part !== null)
+            : error.code === 'sales_due_terms_required' ? T.approval.dueTermsRequired
+              // SAT-D115: the customer rejection's required reason (422).
+              : error.code === 'sales_revision_reason_required' ? T.approval.customerRejectionReasonRequired : null)
+        .filter((part) => part !== null)
       const withCode = codeText === null ? base : `${base} ${codeText}`
       const text = floor.length === 0 ? withCode : `${withCode} ${floor.join(' ')}`
       return attempt.unresolvedSince === undefined ? text : `${text} ${T.approval.refusedAfterUnknown}`

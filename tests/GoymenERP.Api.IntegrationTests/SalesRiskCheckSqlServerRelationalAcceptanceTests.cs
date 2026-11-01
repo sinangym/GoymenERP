@@ -62,6 +62,9 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
 
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
+    private static readonly SalesDraftStateAudit Accepted = new("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance", "SENTETIK müşteri kabul etti");
+    private static readonly SalesDraftStateAudit CustomerRejected = new("sales.order-draft.customer-rejection-recorded.v1", "RecordCustomerRejection", "SENTETIK müşteri reddetti");
+    private static readonly SalesDraftStateAudit QuantityRevised = new("sales.order-draft.quantity-revised.v1", "ReviseQuantity", "SENTETIK miktar revizyonu");
     private static readonly LogisticsMutationAudit Issued = new("logistics.loading-instruction.issued.v1", "Issue", "SENTETIK yayımlandı");
     private static readonly LogisticsMutationAudit Loaded = new("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "SENTETIK yüklendi");
     private static readonly LogisticsMutationAudit Shipped = new("logistics.loading-instruction.shipment-recorded.v1", "RecordShipment", "SENTETIK sevk edildi");
@@ -188,6 +191,41 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
         Assert.Equal("Unavailable", check.GetProperty("result").GetString());
     }
 
+    /// <summary>
+    /// K3-REVIEW-B P2-1, SAT-D115 / SAT-D166 (EK23): Rev.0 (1.25 kg) approved and accepted, partly shipped through the real
+    /// Logistics store; Rev.1 changes the quantity, is approved, and the customer rejects it. The risk's approved unshipped
+    /// remainder is the ACCEPTED Rev.0's, rebuilt from SQL: 1 of 1.25 kg shipped leaves 0.25 kg priced — unavailable (its VAT has
+    /// no source), never a recorded zero (the rejected 1 kg would leave nothing); 1.25 kg shipped leaves nothing of Rev.0 — a
+    /// recorded zero (the rejected 2 kg would leave 0.75 kg).
+    /// </summary>
+    [SqlServerFact]
+    public async Task SAT_D166_after_a_customer_rejection_the_remainder_is_the_accepted_revisions_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersPriceRead);
+        using var client = run.Client(reader, CompanyA);
+        foreach (var (prefix, rejectedQuantity, shipped, state, reason) in new (string, string, decimal, string, string?)[]
+                 {
+                     ("rj-down", "1", 1m, "Unavailable", "vat_inclusive_amount_unavailable"),
+                     ("rj-up", "2", 1.25m, "Available", null),
+                 })
+        {
+            var customer = new Customer(Guid.NewGuid(), Guid.NewGuid());
+            var approved = await run.ApprovedDraftAsync(CompanyA, customer, prefix, "1.25", acceptanceRequired: true);
+            await run.ShippedInstructionAsync(CompanyA, approved, prefix, instructed: shipped, shipped: shipped);
+            var rejected = await run.CustomerRejectedAsync(CompanyA, approved, prefix, rejectedQuantity);
+            Assert.Equal((10L, 1, 0, rejectedQuantity), (rejected.Version, rejected.Revision, rejected.CustomerAcceptedFallback!.Revision,
+                Assert.Single(rejected.Lines).QuantityText));
+
+            var check = await run.RiskCheckAsync(client, $"{SalesEndpoints.DraftsPath}/{approved.Id:D}/risk-check");
+            Assert.Equal(("ApprovedUnshippedRemainder", "sales.approved-order-remainders", state, state == "Available" ? "IncludingTax" : null,
+                    state == "Available" ? "" : null, reason),
+                Figure(check.GetProperty("components")[2]));
+            Assert.Equal("Unavailable", check.GetProperty("result").GetString());
+        }
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private sealed record Customer(Guid PartyId, Guid AccountId);
@@ -236,11 +274,11 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 
     /// <summary>A one-line priced draft (kg, 12.50 per kg, no list reference — SAT-D43) of the customer from SYNTHETIC owner snapshots: version 2.</summary>
-    private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, string quantity)
+    private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, string quantity, bool acceptanceRequired = false)
     {
         var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, Day, Day.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "3", Day, true, From, null, 2);
-        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0);
+        var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, money, T0, customerAcceptanceRequired: acceptanceRequired);
         var unit = new UnitProfileSnapshot(company, KgUnit, "kg", "weight", KgProfile, "4", true, 3, 3, true, From, null);
         var binding = new UnitBindingSnapshot(company, KgUnit, KgProfile, "4");
         var product = new ProductSnapshot(Product, "7", "GDC-001", "Sentetik bant", Day, binding, binding, binding);
@@ -331,11 +369,12 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
         }
 
         /// <summary>A stored priced draft of the customer, its discount check approved, submitted and approved (version 5), through the real Sales store.</summary>
-        public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, Customer customer, string keyPrefix, string quantity)
+        public async Task<SalesOrderDraft> ApprovedDraftAsync(Guid company, Customer customer, string keyPrefix, string quantity,
+            bool acceptanceRequired = false)
         {
             await using var scope = SalesStore(company);
             var draft = (await scope.Store.StoreDraftAsync(SalesEnvelope($"{keyPrefix}-create"), Hash($"{Correlation}-{keyPrefix}-create"),
-                documentNo => Draft(company, customer, documentNo, quantity))).Draft;
+                documentNo => Draft(company, customer, documentNo, quantity, acceptanceRequired))).Draft;
             // SAT-D2 / API-12: the list-less price is approved by another person first (version 3), through the real store.
             var lineId = Assert.Single(draft.Lines).Id;
             await scope.Store.ReviseDraftCommercialAsync(SalesEnvelope($"{keyPrefix}-discount", actor: "SENTETIK-manager"),
@@ -353,6 +392,32 @@ public sealed class SalesRiskCheckSqlServerRelationalAcceptanceTests
                 Hash($"{Correlation}-{keyPrefix}-approve"), SalesDraftCommands.ApproveV1, draft.Id,
                 (d, now) => d.Approve(4, "SENTETIK-approver", now), Approved);
             return approved!.Draft;
+        }
+
+        /// <summary>
+        /// The approved Rev.0 (version 5) accepted by the customer, revised to <paramref name="quantity"/>, approved inside and
+        /// rejected by the customer, through the real Sales store: version 10, Rev.1, the order continuing on Rev.0.
+        /// </summary>
+        public async Task<SalesOrderDraft> CustomerRejectedAsync(Guid company, SalesOrderDraft approved, string keyPrefix, string quantity)
+        {
+            await using var scope = SalesStore(company);
+            var line = Assert.Single(approved.Lines).Id;
+            await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-accept"), Hash($"{Correlation}-{keyPrefix}-accept"),
+                SalesDraftCommands.RecordCustomerAcceptanceV1, approved.Id, (d, now) => d.RecordCustomerAcceptance(5, Actor, now), Accepted);
+            await scope.Store.ReviseDraftQuantityAsync(SalesEnvelope($"{keyPrefix}-revise"), Hash($"{Correlation}-{keyPrefix}-revise"),
+                SalesDraftCommands.ReviseQuantityV1, approved.Id,
+                (d, now) => d.ReviseQuantities(6, [new LineQuantityInput(line, quantity,
+                    decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture))], Actor, "SENTETIK miktar revizyonu", now),
+                QuantityRevised, (_, _) => Task.CompletedTask);
+            await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-submit-1"), Hash($"{Correlation}-{keyPrefix}-submit-1"),
+                SalesDraftCommands.SubmitV1, approved.Id, (d, now) => d.Submit(7, Actor, now), Submitted);
+            await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-approve-1", actor: "SENTETIK-approver"),
+                Hash($"{Correlation}-{keyPrefix}-approve-1"), SalesDraftCommands.ApproveV1, approved.Id,
+                (d, now) => d.Approve(8, "SENTETIK-approver", now), Approved);
+            var rejected = await scope.Store.UpdateDraftStateAsync(SalesEnvelope($"{keyPrefix}-reject"), Hash($"{Correlation}-{keyPrefix}-reject"),
+                SalesDraftCommands.RecordCustomerRejectionV1, approved.Id,
+                (d, now) => d.RecordCustomerRejection(9, "SENTETIK-recorder", "SENTETIK müşteri istemedi", now), CustomerRejected);
+            return rejected!.Draft;
         }
 
         /// <summary>An instruction for the draft's one line, created, issued, loaded in full and shipped, through the real Logistics store.</summary>

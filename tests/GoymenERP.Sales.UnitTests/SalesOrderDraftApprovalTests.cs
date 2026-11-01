@@ -161,7 +161,9 @@ public sealed class SalesOrderDraftApprovalTests
         // DEC-SAL-002: so is the quantity revision (RequireQuantityRevisable only reads); No 30: so is the force-close
         // (RequireForceClosable only reads).
         // SAT-D2 / API-12: so is the discount exception approval. API-04: so is the header revision (RequireHeaderRevisable only reads).
-        Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "ForceClose", "RecordCustomerAcceptance", "Reject", "RejectRemainderChange",
+        Assert.Equal(["AddLine", "Approve", "ApproveDiscountExceptions", "ApprovePriceFloorExceptions", "ApproveRemainderChange", "Cancel", "ForceClose",
+            // SAT-D115: the customer rejection is a mutation entry; IsCustomerRejected is the only read in the population (a query).
+            "IsCustomerRejected", "RecordCustomerAcceptance", "RecordCustomerRejection", "Reject", "RejectRemainderChange",
             "RequestRemainderChange", "RescheduleDelivery", "ReviseCommercial", "ReviseHeader", "ReviseQuantities", "Submit", "Withdraw"], entries);
 
         var draft = Draft();
@@ -177,6 +179,7 @@ public sealed class SalesOrderDraftApprovalTests
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Reject(3, Approver, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.Withdraw(3, Preparer, null, T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordCustomerAcceptance(3, Approver, T0)));
+        Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RecordCustomerRejection(3, Approver, "SENTETIK", T0)));
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.ReviseCommercial(3, [Commercial(draft.Lines[0], "13.00", KgUnit, "5")], "synthetic-pricer", T0)));
         // DEC-SAL-003: the delivery-schedule update is a mutation entry too; a withdrawn draft's dates do not move.
         Assert.Equal(SalesRuleCodes.StateConflict, CodeOf(() => draft.RescheduleDelivery(3, Day.AddDays(5),

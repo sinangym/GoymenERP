@@ -269,7 +269,9 @@ public sealed partial class SalesStore(
         }
 
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
-        var before = new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance };
+        var before = new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance,
+            customerRejection = draft.CurrentRevisionCustomerRejection };
+        var rejectionsBefore = draft.CustomerRejections.Count;
         var versionBefore = draft.Version;
         var now = timeProvider.GetUtcNow();
         // The domain decides: the expected version, the allowed transition and the reason bound. A
@@ -298,6 +300,29 @@ public sealed partial class SalesStore(
         row.CustomerAcceptedAtUtc = draft.CustomerAcceptance?.AcceptedAtUtc;
         row.Version = draft.Version;
         row.UpdatedAtUtc = draft.UpdatedAtUtc;
+        // SAT-D115: a customer rejection appends exactly one row (only under its own command); nothing else of the history moves.
+        var rejectionAdded = draft.CustomerRejections.Count - rejectionsBefore;
+        if (rejectionAdded != (commandName == SalesDraftCommands.RecordCustomerRejectionV1 ? 1 : 0))
+        {
+            throw new InvalidOperationException("Müşteri reddi yalnız kendi komutuyla ve tam bir kayıt olarak eklenir.");
+        }
+
+        if (rejectionAdded == 1)
+        {
+            var rejection = draft.CustomerRejections[^1];
+            dbContext.DraftCustomerRejections.Add(new DraftCustomerRejectionRow
+            {
+                CompanyId = companyId,
+                DraftId = draft.Id,
+                Revision = rejection.Revision,
+                RejectedBy = rejection.RejectedBy,
+                RejectedAtUtc = rejection.RejectedAtUtc,
+                Reason = rejection.Reason,
+                DraftVersion = draft.Version,
+                CorrelationId = envelope.CorrelationId.Trim(),
+            });
+        }
+
         dbContext.DraftAttempts.Add(new DraftAttemptRow
         {
             CompanyId = companyId,
@@ -323,7 +348,8 @@ public sealed partial class SalesStore(
             envelope.PermissionCode,
             envelope.RoleCodes,
             JsonSerializer.Serialize(before, Json),
-            JsonSerializer.Serialize(new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance }, Json),
+            JsonSerializer.Serialize(new { state = draft.ApprovalState.ToString(), version = draft.Version, approval = draft.Approval, customerAcceptance = draft.CustomerAcceptance,
+                customerRejection = draft.CurrentRevisionCustomerRejection }, Json),
             audit.Reason,
             ApprovalContextJson: null,
             AuditAiInvolvement.None,
@@ -1524,6 +1550,7 @@ public sealed partial class SalesStore(
         var forceClosures = await dbContext.DraftForceClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         var remainderChanges = await dbContext.DraftRemainderChanges.AsNoTracking().Where(change => ids.Contains(change.DraftId)).ToListAsync(cancellationToken);
         var remainderDecisions = await dbContext.DraftRemainderDecisions.AsNoTracking().Where(decision => ids.Contains(decision.DraftId)).ToListAsync(cancellationToken);
+        var customerRejections = await dbContext.DraftCustomerRejections.AsNoTracking().Where(rejection => ids.Contains(rejection.DraftId)).ToListAsync(cancellationToken);
         var drafts = new List<SalesOrderDraft>(rows.Count);
         foreach (var row in rows)
         {
@@ -1570,6 +1597,12 @@ public sealed partial class SalesStore(
             // K3 Head B: the revision number and the archived approved revisions, oldest first; a history that does not fit is refused.
             // D2: the creator is restored so "one's OWN draft" is a fact of the aggregate, measured on the server.
             draft.RestoreCreator(row.CreatedBy);
+            if (row.SourceQuoteId is { } sourceQuoteId)
+            {
+                // SAT-D152 (EK21): an order converted from a quote keeps the quote's customer; the domain refuses a customer change.
+                draft.RestoreSourceQuote(sourceQuoteId);
+            }
+
             draft.RestoreRevision(row.Revision);
             foreach (var archived in revisions.Where(revision => revision.DraftId == row.Id).OrderBy(revision => revision.Revision))
             {
@@ -1653,6 +1686,13 @@ public sealed partial class SalesStore(
                 : new CustomerAcceptanceFacts(row.CustomerAcceptedRevision.Value,
                     row.CustomerAcceptedBy ?? throw new InvalidOperationException("Kayıtlı müşteri kabul eden kimliği yok."),
                     row.CustomerAcceptedAtUtc ?? throw new InvalidOperationException("Kayıtlı müşteri kabul zamanı yok.")));
+
+            // SAT-D115: every recorded customer rejection, oldest first, BEFORE the approval axis (its version floor counts them).
+            foreach (var rejection in customerRejections.Where(candidate => candidate.DraftId == row.Id).OrderBy(candidate => candidate.Revision))
+            {
+                draft.RestoreCustomerRejection(new CustomerRejectionFacts(rejection.Revision, rejection.RejectedBy, rejection.RejectedAtUtc,
+                    rejection.Reason));
+            }
 
             // SALES-A1: the stored approval axis, restored without a transition; the facts must fit the state.
             draft.RestoreApproval((InternalApprovalState)row.ApprovalState,
@@ -1835,6 +1875,7 @@ public sealed partial class SalesStore(
             or SalesDraftCommands.ReviseQuantityV1 or SalesDraftCommands.ReviseHeaderV1
             or SalesDraftCommands.RequestRemainderChangeV1 or SalesDraftCommands.ApproveRemainderChangeV1
             or SalesDraftCommands.RejectRemainderChangeV1 or SalesDraftCommands.RecordCustomerAcceptanceV1
+            or SalesDraftCommands.RecordCustomerRejectionV1
             or SalesDraftCommands.ApprovePriceFloorExceptionsV1 or SalesDraftCommands.ApproveDiscountExceptionsV1
             or SalesQuoteCommands.ConvertV1))
         {

@@ -369,8 +369,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // column arms alone) and +1 (1000/1001/4000-character reasons recorded whole), kept ordinal-sorted (a85d5b59… -> 2e764e76…).
             // K3-REVIEW-B P2-1 (#864 × #865): +1 SalesReportSqlServerRelationalAcceptanceTests fact (a pending customer revision keeps
             // the accepted open quantity under the accepted customer), kept ordinal-sorted (2e764e76… -> af6987da…).
+            // SAT-D115 / SAT-D152 (EK14, EK21): +3 SalesOrderCustomerRejectionSqlServerRelationalAcceptanceTests facts (route + one
+            // save, isolation/authority, 51134 rollback refusal), +1 SalesQuote (quote customer lock) and +1 SalesReport (a rejected
+            // revision awaits nothing) fact, kept ordinal-sorted (af6987da… -> 55482d2d…).
+            // K3-REVIEW-B P2-1 / P2-2, SAT-D165 / SAT-D166 (EK23): +1 SalesOrderPdf (the accepted revision is printed, never the
+            // reason) and +1 SalesRiskCheck (the remainder is the accepted revision's) fact, kept ordinal-sorted (55482d2d… -> a921318d…).
             ["tools/relational_inventory/sales.txt"] =
-                "af6987da2706326348359f54d11b657b7a09b6204a3f9fb40f594a927ca8a800",
+                "a921318de33cdad00f001934e21c3fa67290b1b4cca70b86c497840c2f1966c4",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -464,9 +469,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for API-04: the company-filtered DraftRevisionHeaders table (company-leading key and FK to the archived
             // revision, append-only in the write guard), two nullable header columns with CK_Drafts_HeaderRevision, and the
             // header's write guard widened by exactly the revisable header columns; no query-filter bypass or direct database surface.
+            // Re-fingerprinted for SAT-D115: the company-filtered DraftCustomerRejections table (company-leading key and FK to the
+            // draft, append-only in the write guard); no query-filter bypass or direct database surface.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "31067bc68e4029659a2cb20db7db8bd33accd1b5d3b4be252a7261bb17f7f24a",
+                "845384e4c4a3841b9cea43a24e2b4a8b94dcada8965403fee745ad0e45f0990f",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1436,8 +1443,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for API-04: the archive write is shared by the line revisions and the header revision
                     // (SalesStore.HeaderRevision.cs, same filtered context, one save) and every archive writes its header row;
                     // the restore reads those rows through the same filtered context; SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D115 / SAT-D152: the state command appends a customer-rejection row and the restore
+                    // reads those rows (and binds the source quote) through the same filtered context; SqlClient count unchanged.
                     new(
-                        "b8e6b25024d3ecbfc1ee1fdccaaf173755a67eccabf6e2ef4816686603a1bbaa",
+                        "f15894a84e8452b836f3c4e8b3db3df834f1dfa12f086ff37c551403a823ca89",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1961,6 +1970,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new("d2f0eb7e622945e26ebe3de8328fc8fd64d7e39248b6a209a72592fb0ed470b6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 2 }),
+                // SAT-D115: the Down's only raw SQL is Sales' refusal (51134, used by no other migration) while any customer rejection
+                // is recorded (row or recorded attempt); the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261101143750_AddDraftCustomerRejections.cs"] =
+                    new("8cd14cc9c383002f48c83fabfb21b5a87bcf7f50daadce9d0563f885bfc73901",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
                 // any weighbridge record is stored; the THROW precedes the DropTable, an empty table rolls back freely.
                 ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/Persistence/Migrations/20260928120000_AddVehicleWeighings.cs"] =

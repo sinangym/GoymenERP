@@ -44,11 +44,18 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
     {
         ArgumentNullException.ThrowIfNull(detail);
         ArgumentNullException.ThrowIfNull(pricing);
-        var draft = detail.Draft;
-        if (!string.Equals(pricing.Version, draft.Version, StringComparison.Ordinal))
+        if (!string.Equals(pricing.Version, detail.Draft.Version, StringComparison.Ordinal))
         {
             throw new InvalidOperationException("The print pricing does not belong to the detail's version.");
         }
+
+        // SAT-D165 (EK23): when the customer rejected the current approved revision, the revision the customer last
+        // accepted is the valid order — its lines, quantities, prices, revision and file-name version are printed, not the
+        // rejected revision's. The detail is narrowed to it here, so every block below prints that revision only.
+        var accepted = pricing.AcceptedRevision;
+        var stored = detail;
+        detail = accepted is null ? detail : AcceptedDetail(detail, accepted);
+        var draft = detail.Draft;
 
         var pricesVisible = pricing.PriceDisclosure == SalesPriceDisclosure.Visible
             && detail.Lines.All(line => line.PriceDisclosure == SalesPriceDisclosure.Visible);
@@ -61,7 +68,7 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             new DocumentPdfHeading(T("HeadingOrder")),
             new DocumentPdfFields(OrderFields(detail, currency)),
             new DocumentPdfHeading(T("HeadingApproval")),
-            new DocumentPdfFields(ApprovalFields(detail)),
+            new DocumentPdfFields(ApprovalFields(detail, RejectionNote(stored))),
             new DocumentPdfHeading(T("HeadingLines")),
         };
         if (detail.Lines.Count == 0)
@@ -89,9 +96,53 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             blocks,
             Format("Footer", draft.DocumentNo, draft.Revision),
             T("PageLabel"),
-            IsApprovedRevision(draft) ? null : T("DraftWatermark"));
+            accepted is null && (!IsApprovedRevision(draft) || CurrentRevisionRejected(stored)) ? T("DraftWatermark") : null);
         return (request, pricesVisible);
     }
+
+    /// <summary>
+    /// SAT-D165: the detail as the accepted revision has it — that revision's number, and only its lines with its quantities
+    /// (product, unit, delivery and note from the detail, which a revision does not change). A printed line the detail does not
+    /// hold, or holds under another line number, product or unit, cannot be printed faithfully (fail-closed, never mixed). A
+    /// delivery split sums to the current quantity: printed only when the accepted quantity is the same.
+    /// </summary>
+    private static SalesOrderDraftReadDetailViewV1 AcceptedDetail(SalesOrderDraftReadDetailViewV1 detail, SalesOrderPrintRevisionV1 accepted)
+    {
+        if (accepted.Lines is null || accepted.Lines.Count == 0 || string.IsNullOrWhiteSpace(accepted.Revision))
+        {
+            throw new InvalidOperationException("The accepted revision to print is incomplete.");
+        }
+
+        var current = new Dictionary<Guid, SalesOrderDraftLineDetail>();
+        foreach (var line in detail.Lines)
+        {
+            current.TryAdd(line.LineId, line);
+        }
+
+        var lines = new List<SalesOrderDraftLineDetail>(accepted.Lines.Count);
+        var seen = new HashSet<Guid>();
+        foreach (var line in accepted.Lines)
+        {
+            if (line is null || !seen.Add(line.LineId) || !current.TryGetValue(line.LineId, out var now) || now.LineNo != line.LineNo
+                || now.ProductId != line.ProductId || now.OrderUnitId != line.OrderUnitId || string.IsNullOrWhiteSpace(line.Quantity))
+            {
+                throw new InvalidOperationException("The accepted revision does not answer the detail's lines.");
+            }
+
+            var sameQuantity = string.Equals(now.Quantity, line.Quantity, StringComparison.Ordinal);
+            lines.Add(now with { Quantity = line.Quantity, RequestedDeliverySlices = sameQuantity ? now.RequestedDeliverySlices : null });
+        }
+
+        return detail with
+        {
+            Draft = detail.Draft with { Revision = accepted.Revision, LineCount = lines.Count },
+            Lines = lines,
+        };
+    }
+
+    /// <summary>SAT-D115: the customer rejected the current revision (printed without an accepted revision: under the watermark).</summary>
+    private static bool CurrentRevisionRejected(SalesOrderDraftReadDetailViewV1 detail) =>
+        detail.CustomerAcceptance.Rejections?.Any(rejection => rejection.Revision == detail.Draft.Revision) == true;
 
     private static Dictionary<Guid, SalesDraftLinePricingV1> PricingByLine(
         SalesOrderDraftReadDetailViewV1 detail, SalesOrderPrintPricingV1 pricing)
@@ -146,7 +197,7 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
         return fields;
     }
 
-    private List<DocumentPdfField> ApprovalFields(SalesOrderDraftReadDetailViewV1 detail)
+    private List<DocumentPdfField> ApprovalFields(SalesOrderDraftReadDetailViewV1 detail, string rejectionNote)
     {
         var approval = detail.Approval;
         var acceptance = detail.CustomerAcceptance;
@@ -159,9 +210,34 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
                 : acceptance.AcceptedRevision is null
                     ? T("AcceptancePending")
                     : Format("AcceptanceRecorded", acceptance.AcceptedRevision,
-                        Actor(detail, acceptance.AcceptedBy, acceptance.AcceptedAtUtc))),
+                        Actor(detail, acceptance.AcceptedBy, acceptance.AcceptedAtUtc)) + rejectionNote),
         ];
     }
+
+    /// <summary>
+    /// SAT-D115 / SAT-D165 (EK23): "Rev.N müşteri tarafından reddedildi; sipariş Rev.M ile sürer" — only while the order
+    /// continues on the accepted revision, i.e. the customer rejected the LAST internally approved revision (the current one when
+    /// approved, else the previous one) after accepting an earlier one (the server's <c>CustomerAcceptedFallback</c>). A newer
+    /// revision approved and awaiting the acceptance has no note (nothing continues on the old one, SAT-D113). The rejection's
+    /// free-text reason is internal and never printed.
+    /// </summary>
+    private string RejectionNote(SalesOrderDraftReadDetailViewV1 detail)
+    {
+        var acceptance = detail.CustomerAcceptance;
+        if (acceptance.AcceptedRevision is not { } acceptedRevision || acceptance.Rejections is not { Count: > 0 } rejections)
+        {
+            return string.Empty;
+        }
+
+        var current = RevisionNumber(detail.Draft.Revision);
+        var lastApproved = IsApprovedRevision(detail.Draft) ? current : current - 1;
+        var rejected = rejections.FirstOrDefault(rejection => RevisionNumber(rejection.Revision) == lastApproved);
+        return rejected is null || RevisionNumber(acceptedRevision) >= lastApproved
+            ? string.Empty
+            : "\n" + Format("CustomerRejectionNote", rejected.Revision, acceptedRevision);
+    }
+
+    private static int RevisionNumber(string revision) => FileNameVersion(revision) - 1;
 
     private DocumentPdfTable LineTable(SalesOrderDraftReadDetailViewV1 detail,
         IReadOnlyDictionary<Guid, SalesDraftLinePricingV1>? pricing, string? currency)

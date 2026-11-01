@@ -38,6 +38,8 @@ export const STATUS_AXIS_STATE = {
   notRequired: 'NotRequired',
   pending: 'Pending',
   accepted: 'Accepted',
+  /** SAT-D115 (EK14): the customer rejected the CURRENT revision; the order goes on as the customer last accepted it. */
+  rejected: 'Rejected',
   draft: 'Draft',
   active: 'Active',
   notStarted: 'NotStarted',
@@ -53,8 +55,9 @@ export const STATUS_AXIS_STATE = {
 export const LIFECYCLE_AXIS_STATES = [STATUS_AXIS_STATE.draft, STATUS_AXIS_STATE.active, CANCELLED_STATE, CLOSED_STATE] as const
 export type LifecycleAxisState = (typeof LIFECYCLE_AXIS_STATES)[number]
 
-/** The customer-acceptance axis of the CURRENT commercial revision ("Vazgeçildi" is never emitted: no declination exists). */
-export const ACCEPTANCE_AXIS_STATES = [STATUS_AXIS_STATE.notRequired, STATUS_AXIS_STATE.pending, STATUS_AXIS_STATE.accepted] as const
+/** The customer-acceptance axis of the CURRENT commercial revision (SAT-D115: "Vazgeçildi" = `Rejected`). */
+export const ACCEPTANCE_AXIS_STATES = [STATUS_AXIS_STATE.notRequired, STATUS_AXIS_STATE.pending, STATUS_AXIS_STATE.accepted,
+  STATUS_AXIS_STATE.rejected] as const
 export type AcceptanceAxisState = (typeof ACCEPTANCE_AXIS_STATES)[number]
 
 /**
@@ -335,6 +338,20 @@ export function previousRevision(revision: string): string | null {
 }
 
 /**
+ * SAT-D115 (EK14): the revision the customer last accepted, when the LAST internally approved revision (the current one when
+ * approved, else the previous one) was rejected by the customer and an earlier accepted revision exists; else null. The server's
+ * `CustomerAcceptedFallback`, read from the detail's own facts.
+ */
+export function customerAcceptedFallback(detail: DraftDetail): string | null {
+  const { approvalState, revision } = detail.draft
+  const { required, acceptedRevision, rejections } = detail.customerAcceptance
+  if (!required || acceptedRevision === null) return null
+  const last = approvalState === APPROVAL_STATE.approved ? revision : previousRevision(revision)
+  if (last === null || !rejections.some((rejection) => rejection.revision === last)) return null
+  return Number(acceptedRevision.slice(4)) < Number(last.slice(4)) ? acceptedRevision : null
+}
+
+/**
  * SAT-D103 / SAT-D114: the invoicing axis `{state, gate, priceBasisRevision}`, bound to the detail (and its customer
  * acceptance facts: a basis the customer has not accepted, when acceptance is required, is `AwaitingCustomerAcceptance`). A revision is archived only when an
  * approved revision is revised, so a detail above Rev.0 that is not approved always has an approved previous revision:
@@ -349,6 +366,15 @@ function decodeInvoicing(value: unknown, detail: DraftDetail): { state: Ownerles
   const { required, isCurrentRevisionAccepted, acceptedRevision } = detail.customerAcceptance
   const revised = revision !== REV_0
   const lastApproved = previousRevision(revision)
+  // SAT-D115: the customer rejected the last approved revision — invoicing goes on at the revision the customer last accepted,
+  // or waits for the customer (no basis) when that revision names another customer or currency than the header: the detail
+  // carries no archived header, so either of these two shapes is read — never Open at another revision.
+  const fallback = customerAcceptedFallback(detail)
+  if (fallback !== null && (approvalState === APPROVAL_STATE.approved || approvalState === APPROVAL_STATE.rejected)) {
+    const openAtAccepted = o.gate === INVOICING_GATE.open && o.priceBasisRevision === fallback
+    const waiting = o.gate === INVOICING_GATE.awaitingCustomerAcceptance && o.priceBasisRevision === null
+    return openAtAccepted || waiting ? { state: o.state, gate: o.gate, priceBasisRevision: o.priceBasisRevision } : null
+  }
   // SAT-D114: when acceptance is required, a basis the customer has not accepted is no basis.
   const waitingCustomer = { gate: INVOICING_GATE.awaitingCustomerAcceptance, basis: null }
   const expected: { gate: InvoicingGate; basis: string | null } =
@@ -400,7 +426,9 @@ export function decodeOrderStatus(value: unknown, detail: DraftDetail): OrderSta
     !(acceptance.acceptedRevision === null || isRevision(acceptance.acceptedRevision)) ||
     acceptance.acceptedRevision !== facts.acceptedRevision ||
     acceptance.state !== (!facts.required ? STATUS_AXIS_STATE.notRequired
-      : facts.isCurrentRevisionAccepted ? STATUS_AXIS_STATE.accepted : STATUS_AXIS_STATE.pending)
+      : facts.isCurrentRevisionAccepted ? STATUS_AXIS_STATE.accepted
+        : facts.rejections.some((rejection) => rejection.revision === detail.draft.revision) ? STATUS_AXIS_STATE.rejected
+          : STATUS_AXIS_STATE.pending)
   ) return null
 
   const source = decodeOwnerless(o.source)

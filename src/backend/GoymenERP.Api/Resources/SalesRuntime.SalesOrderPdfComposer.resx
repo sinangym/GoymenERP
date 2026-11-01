@@ -43,6 +43,7 @@
   <data name="AcceptanceNotRequired" xml:space="preserve"><value>Gerekmiyor</value></data>
   <data name="AcceptancePending" xml:space="preserve"><value>Bekleniyor</value></data>
   <data name="AcceptanceRecorded" xml:space="preserve"><value>{0} kabul edildi · {1}</value></data>
+  <data name="CustomerRejectionNote" xml:space="preserve"><value>{0} müşteri tarafından reddedildi; sipariş {1} ile sürer</value></data>
   <data name="NotGiven" xml:space="preserve"><value>Belirtilmedi</value></data>
   <data name="None" xml:space="preserve"><value>—</value></data>
   <data name="ColumnLineNo" xml:space="preserve"><value>Sıra</value></data>

@@ -17,6 +17,27 @@ public sealed record SalesHeaderRevisionInput(
 
 public sealed partial class SalesOrderDraft
 {
+    /// <summary>SAT-D152 (EK21): the Turkish text of the quote-customer lock (the screen shows its own copy of it).</summary>
+    public const string QuoteCustomerLockedMessage =
+        "Tekliften dönen siparişin carisi değiştirilemez (SAT-D152); başka müşteri için sipariş iptal edilip yeni teklif ya da sipariş açılır.";
+
+    /// <summary>
+    /// No 162 / SAT-D152: the quote this order was converted from (null for an order created directly). Set once, by the
+    /// conversion or the store's rebuild; never changed. An order converted from a quote keeps the quote's customer.
+    /// </summary>
+    public Guid? SourceQuoteId { get; private set; }
+
+    /// <summary>The conversion's / the store's one-time binding of the source quote (not a transition; no version moves).</summary>
+    public void RestoreSourceQuote(Guid quoteId)
+    {
+        if (SourceQuoteId is not null)
+        {
+            throw new InvalidOperationException("Kaynak teklif yalnız bir kez bağlanır.");
+        }
+
+        SourceQuoteId = Identity.Require(quoteId, nameof(quoteId));
+    }
+
     /// <summary>
     /// DEC-SAL-002 (KILITLI, K0, verbatim): "Cari, ürün, miktar, fiyat, iskonto, para, vade ve risk istisnası değişirse yeni
     /// revizyon ve yeniden onay gerekir." — "Rev.0 korunur". API-04 (SATIS_HAZIRLIK_PLANI_v1 §3.1): the header revision of the
@@ -31,6 +52,8 @@ public sealed partial class SalesOrderDraft
     /// <item>SAT-D126 (EK18): a change of ONLY the sales owner and/or the delivery address / contact is recorded in place — no
     /// archive, no Rev+1, the approval axis and the shipping / invoicing gates untouched — with the required reason and the audit.
     /// A change of the due terms, the customer or the currency re-enters approval (DEC-SAL-002, SAT-D123).</item>
+    /// <item>SAT-D152 (EK21): an order converted from a quote never changes its customer
+    /// (<see cref="SalesRuleCodes.HeaderRevisionQuoteCustomer"/>); its currency follows SAT-D128 unchanged.</item>
     /// <item>Customer or currency (SAT-D128): refused while any line is priced (<see cref="SalesRuleCodes.HeaderRevisionPricedLines"/>)
     /// — a wrong customer or currency means cancelling the order and opening a new one; a currency change brings the new
     /// currency's money profile on the order's business date (the create's money rules). Whether shipping has started
@@ -64,6 +87,11 @@ public sealed partial class SalesOrderDraft
 
         var customerChanged = input.PartyId != Header.PartyId || input.CompanyAccountId != Header.CompanyAccountId;
         var currencyChanged = input.CurrencyId != Header.CurrencyId;
+        if (customerChanged && SourceQuoteId is not null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.HeaderRevisionQuoteCustomer, QuoteCustomerLockedMessage);
+        }
+
         if ((customerChanged || currencyChanged) && lines.Any(line => line.Commercial.UnitPrice is not null))
         {
             throw new SalesRuleException(SalesRuleCodes.HeaderRevisionPricedLines,
@@ -171,15 +199,16 @@ public sealed partial class SalesOrderDraft
     /// customer change ship under the old customer: while the current (not yet approved) revision names another customer
     /// (party or account) or another currency than the LAST APPROVED revision, nothing of the order is shipped (the line port
     /// answers not approved) and the approval re-reads the owner records (fail-closed). False when no approved revision is
-    /// archived, when the current revision is approved, or for a cancelled / closed order.
+    /// archived, when the current revision is approved, or for a cancelled / closed order. SAT-D115 (EK14): when the customer
+    /// rejected the last approved revision, the comparison base is the revision the customer last ACCEPTED (the one the order
+    /// ships on, <see cref="CustomerAcceptedFallback"/>), never the rejected one — a newer revision that returns to the accepted
+    /// customer and currency is no customer/currency change (SAT-D103: shipping goes on under the accepted revision).
     /// </summary>
     public bool CustomerOrCurrencyRevisionPending =>
         State == SalesDraftState.Draft
         && ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.PendingApproval or InternalApprovalState.Rejected
         && archivedRevisions.Count > 0
-        && (archivedRevisions[^1].Header is not { } approved
-            || approved.PartyId != Header.PartyId || approved.CompanyAccountId != Header.CompanyAccountId
-            || approved.CurrencyId != Header.CurrencyId);
+        && HeaderDiffersFrom(Header, CustomerAcceptedFallback ?? archivedRevisions[^1]);
 
     /// <summary>The header as it stands, for an archive (API-04).</summary>
     private RevisionHeaderSnapshot CurrentHeaderSnapshot() =>
