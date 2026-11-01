@@ -452,6 +452,11 @@ public static partial class SalesEndpoints
         MapStateCommand(drafts, "/{id:guid}/customer-acceptance", "RecordSalesOrderDraftCustomerAcceptanceV1", allowReason: false,
             (service, id, body, metadata, cancellationToken) => service.RecordCustomerAcceptanceAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: []);
+        // SAT-D115 (EK14): the customer rejects the current approved revision (reason required); the order continues on the revision
+        // the customer last accepted. Same authority as the acceptance; 422 validation_failed (reason) is not recorded.
+        MapStateCommand(drafts, "/{id:guid}/customer-rejection", "RecordSalesOrderDraftCustomerRejectionV1", allowReason: true,
+            (service, id, body, metadata, cancellationToken) => service.RecordCustomerRejectionAsync(id, body, metadata, cancellationToken),
+            unprocessableCodes: ["validation_failed"]);
         MapStateCommand(drafts, "/{id:guid}/rejection", "RejectSalesOrderDraftV1", allowReason: true,
             (service, id, body, metadata, cancellationToken) => service.RejectDraftAsync(id, body, metadata, cancellationToken),
             unprocessableCodes: [SalesDraftProblemCodesV1.ApprovalReasonTooLong]);

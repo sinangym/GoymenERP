@@ -58,7 +58,7 @@ public static class SalesDueTermsCodes
     /// <summary>The shares do not add up to exactly 100.</summary>
     public const string SharesNotWhole = "sales_due_terms_shares_not_whole";
 
-    /// <summary>SAT-D124: the rounded instalments leave a negative remainder for the last one (refused, never repaired).</summary>
+    /// <summary>SAT-D124 / SAT-D157: the rounded instalments leave a negative remainder for the last one (refused, never repaired; "tutar bu kadar taksite bölünemez").</summary>
     public const string AmountNotSplittable = "sales_due_terms_amount_not_splittable";
 }
 
@@ -200,16 +200,29 @@ public enum SalesDueDateUnresolvedReason
     /// <summary>The order carries no due terms (SAT-D101: "vade eksik").</summary>
     NoTerms = 1,
 
-    /// <summary>An instalment is a "sevk vadesi" and no shipment day was given (nothing shipped yet for it).</summary>
+    /// <summary>An instalment is a "sevk vadesi" and no shipment day was given (nothing shipped yet for it): that instalment is "bekliyor" (SAT-D156).</summary>
     ShipmentDateMissing = 2,
 }
 
-/// <summary>One instalment's computed due date with its sequence and share.</summary>
-public sealed record SalesDueDate(int SequenceNo, DateOnly DueDate, string SharePercent);
+/// <summary>
+/// One instalment's due date with its sequence and share. SAT-D156 (EK21): a mixed plan resolves instalment by instalment — a
+/// "nokta vade" instalment always has its date; a "sevk vadesi" instalment without a shipment day has no date and is
+/// <see cref="Pending"/> (<see cref="SalesDueDateUnresolvedReason.ShipmentDateMissing"/>, "bekliyor"), without holding back the
+/// others. Exactly one of <see cref="DueDate"/> and <see cref="Pending"/> is set.
+/// </summary>
+public sealed record SalesDueDate(int SequenceNo, DateOnly? DueDate, string SharePercent, SalesDueDateUnresolvedReason? Pending = null)
+{
+    public bool IsResolved => DueDate is not null;
+}
 
-/// <summary>The calculator's answer: every instalment's due date, or why none could be computed.</summary>
+/// <summary>
+/// The calculator's answer: every instalment, each with its date or its pending reason (SAT-D156); <see cref="Unresolved"/> is
+/// <see cref="SalesDueDateUnresolvedReason.NoTerms"/> when the order has no terms (no instalment at all), else
+/// <see cref="SalesDueDateUnresolvedReason.ShipmentDateMissing"/> while ANY instalment is pending, else null.
+/// </summary>
 public sealed record SalesDueDateResult(IReadOnlyList<SalesDueDate> DueDates, SalesDueDateUnresolvedReason? Unresolved)
 {
+    /// <summary>Every instalment has its date.</summary>
     public bool IsResolved => Unresolved is null;
 }
 
@@ -222,12 +235,16 @@ public sealed record SalesDueAmount(int SequenceNo, Money Amount);
 /// day ("sevk vadesi", SAT-D10); in the invoice-first flow the invoice date stands in for the shipment day of a "sevk vadesi"
 /// (SAT-D131, <see cref="ComputeInvoiceFirst"/>) while a "nokta vade" stays the order's date — plus its whole calendar days;
 /// nothing moves off a weekend or holiday (SAT-D125). A base date the caller does not have (nothing shipped yet) is
-/// <see cref="SalesDueDateResult.Unresolved"/>, never a guess. Amount: every instalment but the last is the total × its share, rounded half away from zero to the total's money scale (SAT-D11's one
+/// that instalment's pending reason (SAT-D156: per instalment, the others keep their dates), never a guess. Amount: every instalment but the last is the total × its share, rounded half away from zero to the total's money scale (SAT-D11's one
 /// rounding, <see cref="Money.Round"/>); the LAST instalment takes the remainder so the instalments add up to the total exactly
 /// (SAT-D124). The screen never computes either.
 /// </summary>
 public static class SalesDueDateCalculator
 {
+    /// <summary>SAT-D157 (EK21): the user's message for a split whose last instalment would fall below zero (verbatim phrase).</summary>
+    public const string AmountNotSplittableMessage =
+        "Tutar bu kadar taksite bölünemez; daha az taksit girin (kuruşa yuvarlanan taksitler son taksite eksi tutar bırakıyor).";
+
     /// <summary>
     /// The shipment-first flow (the default, SAT-D94 (1)): a "nokta vade" counts from <paramref name="orderDate"/>, a "sevk vadesi"
     /// from <paramref name="shipmentDate"/> (the shipment's Europe/Istanbul day; null while nothing is shipped → unresolved).
@@ -250,28 +267,23 @@ public static class SalesDueDateCalculator
             return new SalesDueDateResult([], SalesDueDateUnresolvedReason.NoTerms);
         }
 
+        // SAT-D156 (EK21): instalment by instalment — one instalment's missing shipment day never holds back another's date.
         var dueDates = new List<SalesDueDate>(terms.Instalments.Count);
         foreach (var instalment in terms.Instalments)
         {
-            DateOnly basisDate;
-            switch (instalment.Basis)
+            DateOnly? basisDate = instalment.Basis switch
             {
-                case SalesDueBasis.OrderDate:
-                    basisDate = orderDate;
-                    break;
-                case SalesDueBasis.ShipmentDate when shipmentBaseDate is { } shipment:
-                    basisDate = shipment;
-                    break;
-                case SalesDueBasis.ShipmentDate:
-                    return new SalesDueDateResult([], SalesDueDateUnresolvedReason.ShipmentDateMissing);
-                default:
-                    throw new InvalidOperationException("Vade tipi tanımlı değil.");
-            }
-
-            dueDates.Add(new SalesDueDate(instalment.SequenceNo, basisDate.AddDays(instalment.DaysAfter), instalment.SharePercent));
+                SalesDueBasis.OrderDate => orderDate,
+                SalesDueBasis.ShipmentDate => shipmentBaseDate,
+                _ => throw new InvalidOperationException("Vade tipi tanımlı değil."),
+            };
+            dueDates.Add(basisDate is { } date
+                ? new SalesDueDate(instalment.SequenceNo, date.AddDays(instalment.DaysAfter), instalment.SharePercent)
+                : new SalesDueDate(instalment.SequenceNo, null, instalment.SharePercent, SalesDueDateUnresolvedReason.ShipmentDateMissing));
         }
 
-        return new SalesDueDateResult(dueDates, null);
+        return new SalesDueDateResult(dueDates,
+            dueDates.Any(dueDate => !dueDate.IsResolved) ? SalesDueDateUnresolvedReason.ShipmentDateMissing : null);
     }
 
     /// <summary>
@@ -302,8 +314,8 @@ public static class SalesDueDateCalculator
         var last = total.Subtract(allocated);
         if (last.IsNegative)
         {
-            throw new SalesDueTermsException(SalesDueTermsCodes.AmountNotSplittable,
-                "Taksit tutarları kuruşa yuvarlanınca son taksite negatif tutar kalıyor; tutar bu taksitlere bölünemez.");
+            // SAT-D157 (EK21): refused, never repaired (no automatic instalment reduction); the user enters fewer instalments.
+            throw new SalesDueTermsException(SalesDueTermsCodes.AmountNotSplittable, AmountNotSplittableMessage);
         }
 
         amounts.Add(new SalesDueAmount(terms.Instalments[^1].SequenceNo, last));

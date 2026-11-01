@@ -100,10 +100,10 @@ const APPROVAL_STATES: readonly string[] = Object.values(APPROVAL_STATE)
  * D2: `withdrawal` is the creator's own command (POST …/{id}/withdrawal, optional `reason`).
  */
 export const STATE_COMMAND_STATUS = 200
-export type DraftStateCommand = 'submission' | 'approval' | 'rejection' | 'withdrawal' | 'customer-acceptance'
+export type DraftStateCommand = 'submission' | 'approval' | 'rejection' | 'withdrawal' | 'customer-acceptance' | 'customer-rejection'
 export const salesDraftCommandPath = (id: string, command: DraftStateCommand) => `${salesDraftDetailPath(id)}/${command}`
 
-/** `SalesDraftStateCommandRequest`: the expected version as text; `reason` only on a rejection. */
+/** `SalesDraftStateCommandRequest`: the expected version as text; `reason` on a rejection, a withdrawal or (SAT-D115, required) a customer rejection. */
 export interface DraftStateCommandRequest {
   readonly expectedVersion: string
   readonly reason?: string
@@ -285,12 +285,22 @@ export interface ApprovalFacts {
   readonly rejectionReason: string | null
 }
 
+/** SAT-D115 (EK14): one recorded customer rejection of a revision — never deleted. */
+export interface CustomerRejectionFacts {
+  readonly revision: string
+  readonly rejectedBy: string
+  readonly rejectedAtUtc: string
+  readonly reason: string
+}
+
 export interface CustomerAcceptanceFacts {
   readonly required: boolean
   readonly acceptedRevision: string | null
   readonly acceptedBy: string | null
   readonly acceptedAtUtc: string | null
   readonly isCurrentRevisionAccepted: boolean
+  /** SAT-D115: every revision the customer rejected, oldest first (an additive member; absent = none). */
+  readonly rejections: readonly CustomerRejectionFacts[]
 }
 
 /** Technical bounds from `SalesDraftJson.ReadCreate`. Not owner scale or precision. */
@@ -905,8 +915,28 @@ export function decodeDraftDetail(value: unknown, expectedId: string | null): Dr
   }
 }
 
+/** SAT-D115: the rejections, oldest first, each of a revision above Rev.0, never the accepted one, never repeated. */
+function decodeCustomerRejections(value: unknown, required: boolean, acceptedRevision: string | null): CustomerRejectionFacts[] | null {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value) || (!required && value.length > 0)) return null
+  const rejections: CustomerRejectionFacts[] = []
+  let previous = 0
+  for (const entry of value) {
+    const o = exact(entry, ['revision', 'rejectedBy', 'rejectedAtUtc', 'reason'])
+    if (
+      o === null || typeof o.revision !== 'string' || !REVISION_RE.test(o.revision) || o.revision === acceptedRevision ||
+      !isText(o.rejectedBy, 128) || !isInstant(o.rejectedAtUtc) || !isText(o.reason, 4000)
+    ) return null
+    const number = Number(o.revision.slice(4))
+    if (!Number.isSafeInteger(number) || number <= previous) return null
+    previous = number
+    rejections.push({ revision: o.revision, rejectedBy: o.rejectedBy, rejectedAtUtc: o.rejectedAtUtc, reason: o.reason })
+  }
+  return rejections
+}
+
 function decodeCustomerAcceptance(value: unknown, currentRevision: string): CustomerAcceptanceFacts | null {
-  const o = exact(value, ['required', 'acceptedRevision', 'acceptedBy', 'acceptedAtUtc', 'isCurrentRevisionAccepted'])
+  const o = exactWithOptional(value, ['required', 'acceptedRevision', 'acceptedBy', 'acceptedAtUtc', 'isCurrentRevisionAccepted'], ['rejections'])
   if (o === null || typeof o.required !== 'boolean' || typeof o.isCurrentRevisionAccepted !== 'boolean') return null
   if (!isNullable(o.acceptedRevision, (v): v is string => typeof v === 'string' && /^Rev\.(0|[1-9][0-9]*)$/.test(v))) return null
   if (!isNullable(o.acceptedBy, (v): v is string => isText(v, 128)) || !isNullable(o.acceptedAtUtc, isInstant)) return null
@@ -917,12 +947,14 @@ function decodeCustomerAcceptance(value: unknown, currentRevision: string): Cust
     : empty
       ? !o.isCurrentRevisionAccepted
       : complete && o.isCurrentRevisionAccepted === (o.acceptedRevision === currentRevision)
-  return consistent ? {
+  const rejections = consistent ? decodeCustomerRejections(o.rejections, o.required, o.acceptedRevision) : null
+  return rejections !== null ? {
     required: o.required,
     acceptedRevision: o.acceptedRevision,
     acceptedBy: o.acceptedBy,
     acceptedAtUtc: o.acceptedAtUtc,
     isCurrentRevisionAccepted: o.isCurrentRevisionAccepted,
+    rejections,
   } : null
 }
 
@@ -1055,7 +1087,8 @@ const USER_DISPLAY_KEYS = ['userId', 'displayName', 'isActiveInCompany'] as cons
 /** The actor ids the detail itself carries; a display may name only these. */
 function detailActorIds(detail: DraftDetail): Set<string> {
   const ids = new Set<string>()
-  for (const id of [detail.approval.submittedBy, detail.approval.decidedBy, detail.customerAcceptance.acceptedBy]) {
+  for (const id of [detail.approval.submittedBy, detail.approval.decidedBy, detail.customerAcceptance.acceptedBy,
+    ...detail.customerAcceptance.rejections.map((rejection) => rejection.rejectedBy)]) {
     if (id !== null) ids.add(id.toLowerCase())
   }
   return ids
@@ -1886,4 +1919,9 @@ export function decodeContactInformationOptions(
     contacts.push({ id: c.id, version: c.version, displayName: c.displayName, jobTitle: c.jobTitle, purpose: c.purpose })
   }
   return { partyId, companyAccountId, accountVersion: o.accountVersion, addresses, contacts }
+}
+
+/** SAT-D115: the customer's rejection of the CURRENT revision, or null. */
+export function currentRevisionRejection(detail: DraftDetail): CustomerRejectionFacts | null {
+  return detail.customerAcceptance.rejections.find((rejection) => rejection.revision === detail.draft.revision) ?? null
 }

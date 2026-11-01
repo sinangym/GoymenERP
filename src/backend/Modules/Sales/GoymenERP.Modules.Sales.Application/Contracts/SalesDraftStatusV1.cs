@@ -20,11 +20,13 @@ public static class SalesDraftStatusAxisStatesV1
     /// <summary>SAT-D5: no approved, active Settings delivery tolerance for the company on the order's business date.</summary>
     public const string PolicyUnavailable = "PolicyUnavailable";
 
-    // Customer acceptance (DURUM_MAKINELERI "Müşteri onayı: Bekleniyor / Alındı / Vazgeçildi"; the domain records no
-    // declination, so "Vazgeçildi" is never emitted). "NotRequired": an order of before the Q9 cutover.
+    // Customer acceptance (DURUM_MAKINELERI "Müşteri onayı: Bekleniyor / Alındı / Vazgeçildi"). "NotRequired": an order of before
+    // the Q9 cutover. SAT-D115 (EK14): "Rejected" — the customer rejected the CURRENT revision ("Vazgeçildi" of that revision); the
+    // order continues on the revision the customer last accepted (the invoicing gate's price basis).
     public const string NotRequired = "NotRequired";
     public const string Pending = "Pending";
     public const string Accepted = "Accepted";
+    public const string Rejected = "Rejected";
 
     // Lifecycle (SAT-D32): the stored "Draft" / "Cancelled" / "Closed", and "Active" derived once the order was approved
     // (DURUM_MAKINELERI "Taslak / Aktif / Kapalı / İptal"). The order is never closed automatically.

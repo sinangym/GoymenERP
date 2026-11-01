@@ -312,6 +312,19 @@ export const ORDER_DETAIL_TEXT = {
     customerAcceptedBy: 'Müşteri kabulünü kaydeden',
     customerAcceptedAt: 'Müşteri kabul zamanı',
     recordCustomerAcceptance: 'Müşteri kabulünü kaydet',
+    // SAT-D115 (EK14): the customer rejects the revision awaiting its acceptance; nothing is deleted.
+    customerRejected: 'Güncel revizyon müşteri tarafından reddedildi',
+    recordCustomerRejection: 'Müşteri reddini kaydet',
+    customerRejectionReasonLabel: 'Müşteri ret gerekçesi (zorunlu)',
+    customerRejectionReasonRequired: 'Müşteri reddi için gerekçe yazın; gerekçesiz ret kaydedilmez.',
+    customerRejectedBy: 'Müşteri reddini kaydeden',
+    customerRejectedAt: 'Müşteri ret zamanı',
+    customerRejectionReason: 'Müşteri ret gerekçesi',
+    customerRejectionNote: (accepted: string) =>
+      `Müşteri bu revizyonu reddetti. Sevkiyat ve fatura müşterinin kabul ettiği son revizyonla (${accepted}; miktar ve fiyat) ` +
+      'sürer. Reddedilen revizyon kayıtta kalır, silinmez; değişiklik gerekiyorsa yeni bir revizyon açılır.',
+    customerRejectionHint:
+      'Müşteri yeni revizyonu kabul etmiyorsa reddi gerekçesiyle kaydedin; sipariş müşterinin kabul ettiği son revizyonla devam eder.',
     notYet: 'Henüz yok',
     /** MOD-08: beside the name of a person who is no longer an active member of the record's company. */
     formerMember: 'artık bu şirkette aktif değil',
@@ -1022,6 +1035,7 @@ export const ORDER_STATUS_TEXT = {
     NotRequired: 'Gerekmiyor (müşteri onayı kuralından önceki sipariş)',
     Pending: 'Bekleniyor',
     Accepted: 'Alındı',
+    Rejected: 'Vazgeçildi (müşteri güncel revizyonu reddetti)',
   } satisfies Record<AcceptanceAxisState, string>,
   acceptedRevision: (revision: string) => `Son kayıtlı müşteri onayı: ${revision}`,
   ownerless: { NoSource: 'Kaynağı henüz yok' } satisfies Record<OwnerlessAxisState, string>,
@@ -1279,6 +1293,11 @@ export const HEADER_REVISION_TEXT = {
           : `Bağlı kayıt: ${source}`,
   /** The server's field codes the screen explains (the field names the member). */
   fieldCode: {
+    // SAT-D152 (EK21): the quote's customer stays on the converted order.
+    sales_header_revision_quote_customer:
+      'Tekliften dönen siparişin carisi değiştirilemez; başka müşteri için sipariş iptal edilip yeni teklif ya da sipariş açılır.',
+    // SAT-D157 (EK21): the split is refused, never repaired.
+    sales_due_terms_amount_not_splittable: 'Tutar bu kadar taksite bölünemez; daha az taksit girin.',
     sales_header_revision_priced_lines:
       'Satırlarında fiyat olan siparişte cari hesap ve para birimi değiştirilemez; yanlışsa sipariş iptal edilip yeni sipariş açılır.',
     sales_due_terms_required: 'Vade girilmeden sipariş onaylanamaz.',

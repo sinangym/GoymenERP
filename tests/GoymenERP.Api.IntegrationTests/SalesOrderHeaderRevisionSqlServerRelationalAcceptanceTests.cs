@@ -363,8 +363,12 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             var headers = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftHeaderRevisions", StringComparison.Ordinal));
             var migrator = context.GetService<IMigrator>();
+            // Every later migration (SAT-D115 AddDraftCustomerRejections: no rejection here) rolls back first; stop on this one.
+            await migrator.MigrateAsync(applied[headers]);
             var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
             Assert.Equal(51133, error.Number);
+            Assert.Equal(applied[..(headers + 1)], await context.Database.GetAppliedMigrationsAsync());
+            await context.Database.MigrateAsync();
             Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
 
             await using (var reader = run.SalesStore(CompanyA))
@@ -376,9 +380,10 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
             // The recorded-attempt arm alone: with no draft carrying a sales owner or due terms, the recorded header revision
             // still refuses the rollback.
             await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL, [SalesOwnerUserId] = NULL; SELECT @@ROWCOUNT");
+            await migrator.MigrateAsync(applied[headers]);
             var attemptArm = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
             Assert.Equal(51133, attemptArm.Number);
-            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+            Assert.Equal(applied[..(headers + 1)], await context.Database.GetAppliedMigrationsAsync());
         }
     }
 

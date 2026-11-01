@@ -670,6 +670,12 @@ public sealed partial class SalesOrderDraft
             throw StateConflict("Siparişin güncel revizyonu zaten müşteri tarafından kabul edilmiş.");
         }
 
+        // SAT-D115: a revision the customer rejected stays rejected; a changed offer is a new revision.
+        if (IsCustomerRejected(Revision))
+        {
+            throw StateConflict("Müşterinin reddettiği revizyon kabul edilmez; değişiklik yeni revizyonla yapılır.");
+        }
+
         CustomerAcceptance = new CustomerAcceptanceFacts(Revision, actor, now.ToUniversalTime());
         Touch(now);
     }
@@ -1544,8 +1550,17 @@ public sealed partial class SalesOrderDraft
         // every decision on one (restored just before this).
         var remainderTransitions = RemainderTransitions;
         var customerAcceptanceTransitions = CustomerAcceptance is null ? 0L : 1L;
+        // SAT-D115: every recorded customer rejection was one step of its own, and only of an APPROVED revision — a rejection of
+        // the current revision beside any other approval state is refused, not repaired.
+        if (IsCustomerRejected(Revision) && state != InternalApprovalState.Approved)
+        {
+            throw new InvalidOperationException("Güncel revizyonun müşteri reddi yalnız onaylı siparişle birlikte geri yüklenir.");
+        }
+
+        var customerRejectionTransitions = (long)customerRejections.Count;
         var consistentVersion = storedVersion >= checked(Version + minimumTransitions + archivedTransitions + scheduleTransitions
-            + cancellationTransitions + forceClosureTransitions + remainderTransitions + customerAcceptanceTransitions);
+            + cancellationTransitions + forceClosureTransitions + remainderTransitions + customerAcceptanceTransitions
+            + customerRejectionTransitions);
         if (!consistentVersion)
         {
             throw new InvalidOperationException("Kayıtlı sürüm, satırların ve onay geçişlerinin hesabıyla uyuşmuyor.");

@@ -127,6 +127,8 @@ public sealed class SalesDocumentOwnerLinkPortTests
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> RecordCustomerAcceptanceAsync(Guid draftId, SalesDraftStateCommandRequest request,
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<SalesOrderDraftResponse> RecordCustomerRejectionAsync(Guid draftId, SalesDraftStateCommandRequest request,
+            SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> WithdrawDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
             SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<SalesOrderDraftResponse> RejectDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,

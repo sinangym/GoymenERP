@@ -180,6 +180,29 @@ describe('decodeOrderStatus', () => {
     expect(decodeOrderStatus({ ...rejected, invoicing: { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.1' } }, rejectedUnaccepted)).toBeNull()
   })
 
+  it('reads the SAT-D115 customer rejection: acceptance Rejected and invoicing Open at the accepted revision, nothing else', () => {
+    const rejection = { revision: 'Rev.1', rejectedBy: 'satis-ret', rejectedAtUtc: '2026-09-21T10:00:00Z', reason: 'SENTETIK' }
+    const rejectedByCustomer = decodeDetail({
+      ...detailBody({ approvalState: 'Approved', revision: 'Rev.1' }),
+      approval: APPROVED,
+      customerAcceptance: { required: true, acceptedRevision: 'Rev.0', acceptedBy: 'musteri', acceptedAtUtc: '2026-09-19T10:00:00Z',
+        isCurrentRevisionAccepted: false, rejections: [rejection] },
+    })
+    const body = status()
+    Object.assign(body, { revision: 'Rev.1' })
+    body.customerAcceptance = { state: 'Rejected', acceptedRevision: 'Rev.0' }
+    body.realization.basisRevision = 'Rev.0'
+    body.invoicing = { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.0' }
+    const decoded = decodeOrderStatus(body, rejectedByCustomer)
+    expect(decoded?.customerAcceptance).toEqual({ state: 'Rejected', acceptedRevision: 'Rev.0' })
+    expect(decoded?.invoicingGate).toEqual({ gate: 'Open', priceBasisRevision: 'Rev.0' })
+    // Open at the rejected revision, still waiting, or Pending on the axis contradict the facts.
+    expect(decodeOrderStatus({ ...body, invoicing: { state: 'NoSource', gate: 'Open', priceBasisRevision: 'Rev.1' } }, rejectedByCustomer)).toBeNull()
+    expect(decodeOrderStatus({ ...body, invoicing: { state: 'NoSource', gate: 'AwaitingCustomerAcceptance', priceBasisRevision: null } },
+      rejectedByCustomer)).toBeNull()
+    expect(decodeOrderStatus({ ...body, customerAcceptance: { state: 'Pending', acceptedRevision: 'Rev.0' } }, rejectedByCustomer)).toBeNull()
+  })
+
   it('reads PendingReapproval, Unreadable and PolicyUnavailable in their one shape', () => {
     const unjudged = (state: string, basis: string | null): Body => {
       const body = status()

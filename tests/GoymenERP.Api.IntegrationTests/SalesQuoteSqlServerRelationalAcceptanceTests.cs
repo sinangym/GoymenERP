@@ -332,6 +332,59 @@ public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
     }
 
     [SqlServerFact]
+    public async Task SAT_D152_an_order_converted_from_a_quote_refuses_a_customer_change_with_its_own_code_and_writes_nothing_on_real_sql()
+    {
+        // SAT-D152 (EK21): the quote's customer stays — a customer change of the converted order is a 422 with its own code (before
+        // the SAT-D128 priced-line rule), never recorded; the due terms (SAT-D123) still change by the header revision.
+        await using var run = await Run.StartAsync();
+        var party = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        var request = await run.RequestAsync(party, account);
+        await run.ApproveRequestAsync(request, "d152-approve");
+        Guid orderId;
+        await using (var scope = run.Store(CompanyA))
+        {
+            var service = run.Service(scope, run.Actor);
+            var quote = await service.CreateQuoteAsync(CreateQuote(party, account, [request], "12.50"), run.Metadata("d152-quote"));
+            orderId = (await service.ConvertQuoteAsync(quote.Detail.Quote.Id, new SalesQuoteConversionRequest("1", Day), run.Metadata("d152-convert")))
+                .Detail.Draft.Id;
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.Drafts WHERE Id = @d AND SourceQuoteId IS NOT NULL", ("@d", orderId)));
+        await using (var scope = run.Store(CompanyA))
+        {
+            var service = run.Service(scope, run.Actor);
+            var header = await service.GetDraftHeaderAsync(orderId);
+            var attempts = await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts");
+            foreach (var (newParty, newAccount, tag) in new[] { (Guid.NewGuid(), Guid.NewGuid(), "both"), (party, Guid.NewGuid(), "account") })
+            {
+                var refused = await Assert.ThrowsAsync<SalesDraftServiceException>(() => service.ReviseHeaderAsync(orderId,
+                    new SalesDraftHeaderRevisionRequest(header.DraftVersion, "SENTETIK başka müşteri", newParty, newAccount, header.CurrencyId,
+                        header.DeliveryAddress, header.Contact, header.SalesOwnerUserId, TestDueTerms.PointDue30Wire), run.Metadata("d152-" + tag)));
+                Assert.Equal((422, "validation_failed", "companyAccountId", SalesRuleCodes.HeaderRevisionQuoteCustomer),
+                    (refused.Status, refused.Code, Assert.Single(refused.Errors).Field, refused.Errors[0].Code));
+            }
+
+            Assert.Equal((attempts, party, account), (
+                await run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts"),
+                await run.ScalarAsync<Guid>("SELECT PartyId FROM sales.Drafts WHERE Id = @d", ("@d", orderId)),
+                await run.ScalarAsync<Guid>("SELECT CompanyAccountId FROM sales.Drafts WHERE Id = @d", ("@d", orderId))));
+
+            // The order's own customer with due terms: the header revision goes through (the converted order is otherwise revisable).
+            var revised = await service.ReviseHeaderAsync(orderId, new SalesDraftHeaderRevisionRequest(header.DraftVersion, "SENTETIK vade",
+                header.PartyId, header.CompanyAccountId, header.CurrencyId, header.DeliveryAddress, header.Contact, header.SalesOwnerUserId,
+                TestDueTerms.PointDue30Wire), run.Metadata("d152-due-terms"));
+            Assert.False(revised.IsReplay);
+        }
+
+        // Rebuilt from SQL through the domain, the order still knows its source quote (the lock survives the store).
+        await using (var reader = run.Store(CompanyA))
+        {
+            Assert.NotNull((await reader.Drafts.FindDraftAsync(orderId))!.SourceQuoteId);
+        }
+    }
+
+    [SqlServerFact]
     public async Task A_request_with_any_order_that_is_not_cancelled_is_not_rejected_and_only_a_cancelled_order_releases_it_on_real_sql()
     {
         // No 161, fail-closed (SAT-D23): only a CANCELLED order releases the request it came from.

@@ -89,11 +89,24 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
             return LineStanding.Refused(draft.State.ToString());
         }
 
+        // SAT-D115 (EK14): the customer rejected the last approved revision — shipping continues on the revision the customer last
+        // accepted (its number and quantity as the cap), never on the rejected one; a fallback under another header ships nothing.
+        var acceptedFallback = draft.CustomerAcceptedFallback;
+        if (acceptedFallback is not null && SalesOrderDraft.HeaderDiffersFrom(draft.Header, acceptedFallback))
+        {
+            return LineStanding.Refused(HeaderRevisionPending);
+        }
+
         if (draft.ApprovalState == InternalApprovalState.Approved)
         {
-            return draft.IsCustomerAccepted
-                ? new LineStanding(null, draft.Revision, line.QuantityText, line.QuantityText, SalesOrderLineRevisionBasisV1.CurrentRevision, null)
-                : LineStanding.Refused(CustomerAcceptancePending);
+            if (draft.IsCustomerAccepted)
+            {
+                return new LineStanding(null, draft.Revision, line.QuantityText, line.QuantityText, SalesOrderLineRevisionBasisV1.CurrentRevision, null);
+            }
+
+            return acceptedFallback is null
+                ? LineStanding.Refused(CustomerAcceptancePending)
+                : FromBasis(draft, line, acceptedFallback, CustomerRejected, capByCurrent: false);
         }
 
         if (draft.ApprovalState is not (InternalApprovalState.Preparing or InternalApprovalState.PendingApproval or InternalApprovalState.Rejected)
@@ -112,9 +125,27 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
 
         if (draft.CustomerAcceptanceRequired && draft.CustomerAcceptance?.Revision != lastApproved.Revision)
         {
-            return LineStanding.Refused(CustomerAcceptancePending);
+            if (acceptedFallback is null)
+            {
+                return LineStanding.Refused(CustomerAcceptancePending);
+            }
+
+            // SAT-D115: the last approved revision was rejected by the customer; the newer one is measured against the accepted one.
+            lastApproved = acceptedFallback;
         }
 
+        return FromBasis(draft, line, lastApproved, draft.ApprovalState.ToString(), capByCurrent: true);
+    }
+
+    /// <summary>
+    /// A line answered from an archived <paramref name="lastApproved"/> revision (the last approved one, or SAT-D115 the last accepted
+    /// one): refused when the basis does not hold the line the same way; the cap per SAT-D104 / SAT-D111 when
+    /// <paramref name="capByCurrent"/> (a newer revision in preparation), else the basis quantity itself (a revision the customer
+    /// rejected never moves the cap).
+    /// </summary>
+    private static LineStanding FromBasis(SalesOrderDraft draft, SalesOrderDraftLine line, ApprovedRevisionSnapshot lastApproved,
+        string pendingState, bool capByCurrent)
+    {
         var archived = lastApproved.Lines.FirstOrDefault(candidate => candidate.LineId == line.Id);
         if (archived is null || archived.ProductId != line.Product.ProductId
             || !string.Equals(archived.ProductVersion, line.Product.ProductVersion, StringComparison.Ordinal)
@@ -132,14 +163,17 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
         // the last approved quantity.
         var restoredByRejection = draft.ApprovalState == InternalApprovalState.Rejected
             && draft.Approval.DecidedAtUtc is { } decidedAt && draft.UpdatedAtUtc <= decidedAt;
-        var cap = !restoredByRejection && line.Quantity.Value < approvedQuantity
+        var cap = capByCurrent && !restoredByRejection && line.Quantity.Value < approvedQuantity
             ? line.QuantityText
             : archived.QuantityText;
         return new LineStanding(null, lastApproved.Revision, archived.QuantityText, cap, SalesOrderLineRevisionBasisV1.LastApprovedRevision,
-            draft.ApprovalState.ToString());
+            pendingState);
     }
 
     private const string CustomerAcceptancePending = "CustomerAcceptancePending";
+
+    /// <summary>SAT-D115: the current approved revision was rejected by the customer; the line answers the last accepted revision.</summary>
+    internal const string CustomerRejected = "CustomerRejected";
 
     /// <summary>API-04: a newer revision changes the customer or the currency and waits for (re-)approval; nothing ships meanwhile.</summary>
     internal const string HeaderRevisionPending = "HeaderRevisionPending";

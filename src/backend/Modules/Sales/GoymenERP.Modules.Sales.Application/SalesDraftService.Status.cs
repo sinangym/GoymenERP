@@ -96,6 +96,10 @@ public sealed partial class SalesDraftService
         // SAT-D114 (EK14) / SAT-D121 (EK17, PR #862): an internally approved revision the customer has not accepted (acceptance
         // required) is no basis — for EVERY revision type (price, quantity-only SAT-D104/D111, VAT/withholding SAT-D105), since
         // the gate reads only the approval state and the acceptance of the basis revision, never the kind of change.
+        // SAT-D115 (EK14): the customer rejected the last approved revision — invoicing continues at the revision the customer last
+        // accepted (its prices), never at the rejected one.
+        InternalApprovalState.Approved or InternalApprovalState.Rejected when draft.CustomerAcceptedFallback is { } accepted =>
+            (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(accepted.Revision)),
         InternalApprovalState.Approved when !draft.IsCustomerAccepted => (SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, null),
         InternalApprovalState.Approved => (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(draft.Revision)),
         InternalApprovalState.Preparing or InternalApprovalState.PendingApproval when draft.ArchivedRevisions.Count > 0 =>
@@ -139,7 +143,10 @@ public sealed partial class SalesDraftService
     private static SalesDraftCustomerAcceptanceAxisV1 CustomerAcceptanceAxis(SalesOrderDraft draft) => new(
         !draft.CustomerAcceptanceRequired
             ? SalesDraftStatusAxisStatesV1.NotRequired
-            : draft.IsCustomerAccepted ? SalesDraftStatusAxisStatesV1.Accepted : SalesDraftStatusAxisStatesV1.Pending,
+            : draft.IsCustomerAccepted ? SalesDraftStatusAxisStatesV1.Accepted
+            // SAT-D115: the current revision was rejected by the customer (DURUM_MAKINELERI "Vazgeçildi" of that revision).
+            : draft.IsCustomerRejected(draft.Revision) ? SalesDraftStatusAxisStatesV1.Rejected
+            : SalesDraftStatusAxisStatesV1.Pending,
         draft.CustomerAcceptance is null ? null : SalesDraftApiV1.RevisionText(draft.CustomerAcceptance.Revision));
 
     // ---- realization ----------------------------------------------------------------------------------------------------
@@ -154,13 +161,16 @@ public sealed partial class SalesDraftService
 
     private static MeasurementBasis? Basis(SalesOrderDraft draft)
     {
-        if (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count == 0)
+        // SAT-D115 (EK14): after the customer rejected the last approved revision, realization is measured on the revision the
+        // customer last accepted.
+        var acceptedFallback = draft.CustomerAcceptedFallback;
+        if (acceptedFallback is null && (draft.ApprovalState == InternalApprovalState.Approved || draft.ArchivedRevisions.Count == 0))
         {
             return new MeasurementBasis(SalesDraftApiV1.RevisionText(draft.Revision),
                 draft.Lines.ToDictionary(line => line.Id, line => (line.Quantity, line.QuantityText)));
         }
 
-        var approved = draft.ArchivedRevisions[^1];
+        var approved = acceptedFallback ?? draft.ArchivedRevisions[^1];
         var lines = new Dictionary<Guid, (Quantity Quantity, string Text)>();
         foreach (var line in draft.Lines)
         {

@@ -290,7 +290,7 @@ export function installFetch(config: HarnessConfig = {}) {
         })
       }
       if (url.includes('/sales/drafts')) {
-        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal|customer-acceptance)$/.exec(url)?.[1]
+        const command = /\/sales\/drafts\/[^/?]+\/(submission|approval|rejection|withdrawal|customer-acceptance|customer-rejection)$/.exec(url)?.[1]
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/delivery-schedule$/.test(url)) {
           if (config.onDeliverySchedule === undefined) throw new Error('unexpected delivery-schedule update')
           return config.onDeliverySchedule(call)

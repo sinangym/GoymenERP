@@ -22,6 +22,11 @@ public interface ISalesDraftService
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
     Task<SalesOrderDraftResponse> RecordCustomerAcceptanceAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D115: POST …/{id}/customer-rejection — the customer rejected the current approved revision (reason required).</summary>
+    Task<SalesOrderDraftResponse> RecordCustomerRejectionAsync(Guid draftId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default);
+
     /// <summary>D2 (Sinan 5749046401): the preparer withdraws their OWN not-yet-approved draft — the create name plus identity (actor == creator); anyone else's is refused; approved is a 409.</summary>
     Task<SalesOrderDraftResponse> WithdrawDraftAsync(Guid draftId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, CancellationToken cancellationToken = default);

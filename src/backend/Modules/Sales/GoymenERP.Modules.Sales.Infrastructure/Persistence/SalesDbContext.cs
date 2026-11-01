@@ -210,6 +210,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
     /// <summary>DEC-SAL-005 / AT-007: the recorded cancellation of an approved order (append-only, at most one per draft).</summary>
     internal DbSet<DraftCancellationRow> DraftCancellations => Set<DraftCancellationRow>();
 
+    internal DbSet<DraftCustomerRejectionRow> DraftCustomerRejections => Set<DraftCustomerRejectionRow>();
+
     /// <summary>No 30 / SAT-D12: the recorded force-closures (append-only, at most one per draft).</summary>
     internal DbSet<DraftForceClosureRow> DraftForceClosures => Set<DraftForceClosureRow>();
 
@@ -304,6 +306,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         ConfigureDraftRevisions(modelBuilder);
         ConfigureDraftDeliverySchedules(modelBuilder);
         ConfigureDraftCancellations(modelBuilder);
+        ConfigureDraftCustomerRejections(modelBuilder);
         ConfigureDraftForceClosures(modelBuilder);
         ConfigureDraftRemainderChanges(modelBuilder);
         ConfigureRequests(modelBuilder);
@@ -851,6 +854,29 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         date.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    // SAT-D115 (EK14): the recorded customer rejections — append-only history beside the draft, at most one per revision.
+    private void ConfigureDraftCustomerRejections(ModelBuilder modelBuilder)
+    {
+        var rejection = modelBuilder.Entity<DraftCustomerRejectionRow>();
+        rejection.ToTable("DraftCustomerRejections", Schema, table =>
+        {
+            // A rejected revision is never Rev.0 (an earlier accepted one exists); the smallest version a rejection can produce is
+            // create (1), one line (2), submit (3), approve (4), accept (5), revise (6), submit (7), approve (8), reject (9).
+            table.HasCheckConstraint("CK_DraftCustomerRejections_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [DraftId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [Revision] >= 1 AND [DraftVersion] >= 9 AND LEN([RejectedBy]) > 0 AND LEN([Reason]) > 0 AND LEN([CorrelationId]) > 0");
+        });
+        rejection.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision });
+        rejection.Property(x => x.RejectedBy).HasMaxLength(SalesOrderDraft.MaximumActorLength).IsRequired();
+        rejection.Property(x => x.Reason).HasMaxLength(SalesOrderDraft.MaximumCustomerRejectionReasonLength).IsRequired();
+        rejection.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        rejection.HasOne<DraftRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.DraftId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        rejection.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     // DEC-SAL-005 / AT-007: the recorded cancellation — append-only history beside the draft, at most one per draft.
     private void ConfigureDraftCancellations(ModelBuilder modelBuilder)
     {
@@ -1115,6 +1141,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                     DraftRevisionHeaderRow => [],
                     // DEC-SAL-005: a recorded cancellation is APPEND-ONLY — no column of it may change afterwards.
                     DraftCancellationRow => [],
+                    // SAT-D115: a recorded customer rejection is APPEND-ONLY — no column of it may change afterwards.
+                    DraftCustomerRejectionRow => [],
                     // No 30 / SAT-D12: a recorded force-closure is APPEND-ONLY — no column of it may change afterwards.
                     DraftForceClosureRow => [],
                     // Partial delivery: a remainder request and its decision are APPEND-ONLY — no column may change afterwards.

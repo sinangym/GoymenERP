@@ -49,6 +49,9 @@ public static class SalesDraftCommands
     /// <summary>Q9: POST /api/v1/sales/drafts/{id}/customer-acceptance.</summary>
     public const string RecordCustomerAcceptanceV1 = "sales.order-draft.customer-acceptance.record.v1";
 
+    /// <summary>SAT-D115: POST /api/v1/sales/drafts/{id}/customer-rejection — the customer rejected the current approved revision.</summary>
+    public const string RecordCustomerRejectionV1 = "sales.order-draft.customer-rejection.record.v1";
+
     /// <summary>K3 Head B: POST /api/v1/sales/drafts/{id}/commercial-revision — the commercial fields of every line replaced; an approved draft is archived and advances a revision.</summary>
     public const string ReviseCommercialV1 = "sales.order-draft.revise-commercial.v1";
 
@@ -89,7 +92,7 @@ public static class SalesDraftCommands
         commandName is RequestRemainderChangeV1 or ApproveRemainderChangeV1 or RejectRemainderChangeV1;
 
     public static bool IsStateCommand(string commandName) =>
-        commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1 or RecordCustomerAcceptanceV1;
+        commandName is SubmitV1 or ApproveV1 or RejectV1 or WithdrawV1 or RecordCustomerAcceptanceV1 or RecordCustomerRejectionV1;
 }
 
 /// <summary>The stable refusal codes of the Sales draft store, beside the domain's own rule codes.</summary>
