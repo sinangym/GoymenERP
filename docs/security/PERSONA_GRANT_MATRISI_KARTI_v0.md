@@ -12,8 +12,8 @@ sayıya vardı. Kartın tablosu yeniden ölçülmedi.)
 
 **Güncelleme (1 Kasım 2026, EK20/EK21):** Sinan'ın
 [EK20](../decisions/SINAN_KARARLARI_2026-11-01_SATIS_EK20.md) kararları (SAT-D141…D151) iki yeni persona
-(**Satış Uzmanı**, **Muhasebe**) ekledi ve yedi satış/ayar adının personasını söyledi; EK21 (SAT-D153, SAT-D155,
-SAT-D159, SAT-D162, SAT-D163; PR #870) risk istisnası, Cari e-belge ve Admin'in iki Muhasebe işinin personasını söyledi. Tabloya iki sütun ve yalnız bu
+(**Satış Uzmanı**, **Muhasebe**) ekledi ve yedi satış/ayar adının personasını söyledi; [EK21](../decisions/SINAN_KARARLARI_2026-11-01_SATIS_EK21.md)
+(SAT-D153, SAT-D155, SAT-D159, SAT-D162, SAT-D163; #870, main @ `c89d22e9`) risk istisnası, Cari e-belge ve Admin'in iki Muhasebe işinin personasını söyledi. Tabloya iki sütun ve yalnız bu
 kararların bağladığı satırlar eklendi (aşağıda "EK20/EK21 eşlemesi"). **Kayıtlı ad sayısı yeniden ölçülmedi;**
 bugün `ErpPermissions`'ta tabloda satırı olmayan başka adlar da vardır (ör. teklif/talep, iptal, iskonto istisnası).
 Onlar bu güncellemenin kapsamı değildir ve deny-first kuralıyla kimseye önerilmemiş sayılır.
