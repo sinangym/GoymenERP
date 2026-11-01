@@ -199,15 +199,16 @@ public sealed partial class SalesOrderDraft
     /// customer change ship under the old customer: while the current (not yet approved) revision names another customer
     /// (party or account) or another currency than the LAST APPROVED revision, nothing of the order is shipped (the line port
     /// answers not approved) and the approval re-reads the owner records (fail-closed). False when no approved revision is
-    /// archived, when the current revision is approved, or for a cancelled / closed order.
+    /// archived, when the current revision is approved, or for a cancelled / closed order. SAT-D115 (EK14): when the customer
+    /// rejected the last approved revision, the comparison base is the revision the customer last ACCEPTED (the one the order
+    /// ships on, <see cref="CustomerAcceptedFallback"/>), never the rejected one — a newer revision that returns to the accepted
+    /// customer and currency is no customer/currency change (SAT-D103: shipping goes on under the accepted revision).
     /// </summary>
     public bool CustomerOrCurrencyRevisionPending =>
         State == SalesDraftState.Draft
         && ApprovalState is InternalApprovalState.Preparing or InternalApprovalState.PendingApproval or InternalApprovalState.Rejected
         && archivedRevisions.Count > 0
-        && (archivedRevisions[^1].Header is not { } approved
-            || approved.PartyId != Header.PartyId || approved.CompanyAccountId != Header.CompanyAccountId
-            || approved.CurrencyId != Header.CurrencyId);
+        && HeaderDiffersFrom(Header, CustomerAcceptedFallback ?? archivedRevisions[^1]);
 
     /// <summary>The header as it stands, for an archive (API-04).</summary>
     private RevisionHeaderSnapshot CurrentHeaderSnapshot() =>

@@ -15,10 +15,21 @@ public interface ISalesOrderPrintReadServiceV1
 /// <summary>
 /// The draft's concurrency <paramref name="Version"/> at the read (the caller binds it to the detail it prints), the
 /// price disclosure and — only when <see cref="SalesPriceDisclosure.Visible"/> — the draft currency's code (the Settings
-/// money profile the draft was created under) and every line's pricing in line order.
+/// money profile the draft was created under) and every line's pricing in line order. SAT-D165 (EK23) "kabul edilen
+/// revizyonu bassın": <paramref name="AcceptedRevision"/> is set when the customer rejected the current approved revision and the
+/// order continues on the revision the customer last accepted (same customer and currency) — the PDF then prints THAT revision
+/// (its lines, quantities and, with the price read, the <paramref name="Lines"/> prices, which are then its prices), never the
+/// rejected one. Not a price fact: set with or without the price read.
 /// </summary>
 public sealed record SalesOrderPrintPricingV1(
     string Version,
     SalesPriceDisclosure PriceDisclosure,
     string? CurrencyCode,
-    IReadOnlyList<SalesDraftLinePricingV1> Lines);
+    IReadOnlyList<SalesDraftLinePricingV1> Lines,
+    SalesOrderPrintRevisionV1? AcceptedRevision = null);
+
+/// <summary>SAT-D165: the revision the PDF prints instead of the current one ("Rev.N") and its lines in line order.</summary>
+public sealed record SalesOrderPrintRevisionV1(string Revision, IReadOnlyList<SalesOrderPrintRevisionLineV1> Lines);
+
+/// <summary>SAT-D165: one line as the printed revision has it: identity, line number, product, order unit and quantity text.</summary>
+public sealed record SalesOrderPrintRevisionLineV1(Guid LineId, int LineNo, Guid ProductId, Guid OrderUnitId, string Quantity);

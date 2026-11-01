@@ -372,8 +372,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D115 / SAT-D152 (EK14, EK21): +3 SalesOrderCustomerRejectionSqlServerRelationalAcceptanceTests facts (route + one
             // save, isolation/authority, 51134 rollback refusal), +1 SalesQuote (quote customer lock) and +1 SalesReport (a rejected
             // revision awaits nothing) fact, kept ordinal-sorted (af6987da… -> 55482d2d…).
+            // K3-REVIEW-B P2-1 / P2-2, SAT-D165 / SAT-D166 (EK23): +1 SalesOrderPdf (the accepted revision is printed, never the
+            // reason) and +1 SalesRiskCheck (the remainder is the accepted revision's) fact, kept ordinal-sorted (55482d2d… -> a921318d…).
             ["tools/relational_inventory/sales.txt"] =
-                "55482d2dadbf363c511085b37cb4219c406f1f0e028238114b857a7ec684a7d4",
+                "a921318de33cdad00f001934e21c3fa67290b1b4cca70b86c497840c2f1966c4",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

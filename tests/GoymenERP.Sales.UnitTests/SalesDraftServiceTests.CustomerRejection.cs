@@ -96,6 +96,90 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(("Rev.2", "Rev.1"), (reread.Draft.Revision, Assert.Single(reread.CustomerAcceptance.Rejections!).Revision));
     }
 
+    /// <summary>
+    /// K3-REVIEW-B P2-1, SAT-D115 / SAT-D166 (EK23): the risk's approved unshipped remainder is measured on the revision the
+    /// customer last ACCEPTED once the customer rejected the newer one — the commitment that ships and is invoiced — never on
+    /// the rejected revision, in either direction.
+    /// </summary>
+    [Theory]
+    [InlineData("1", "1", "Unavailable", SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable)]
+    [InlineData("2", "1.25", "Available", null)]
+    public async Task SAT_D166_after_a_customer_rejection_the_risk_remainder_is_the_accepted_revisions(string rejectedQuantity,
+        string shipped, string expectedState, string? expectedReason)
+    {
+        var world = new World();
+        world.PartyRisk = new FakePartyRisk(FinanceLike([]));
+        var approved = await PricedApprovedAsync(world, "risk-rj");
+        var draftId = approved.Draft.Id;
+        var line = approved.Lines[0].LineId;
+        Owners(world);
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        await world.Service().RecordCustomerAcceptanceAsync(draftId, Command("5"), Metadata("risk-rj-accept"));
+
+        // Rev.0 1.25 kg accepted; Rev.1 asks another quantity, is approved and the customer rejects it.
+        await world.Service().ReviseQuantityAsync(draftId,
+            new SalesDraftQuantityRevisionRequest("6", "SENTETIK revizyon", [new SalesDraftLineQuantityV1(line, rejectedQuantity)]),
+            Metadata("risk-rj-revise"));
+        await world.Service().SubmitDraftAsync(draftId, Command("7"), Metadata("risk-rj-r1-submit"));
+        await world.Service().ApproveDraftAsync(draftId, Command("8"), Metadata("risk-rj-r1-approve"));
+        var rejected = await world.Service().RecordCustomerRejectionAsync(draftId, Command("9", "SENTETIK müşteri istemedi"),
+            Metadata("risk-rj-reject"));
+        Assert.Equal(("Rev.1", rejectedQuantity), (rejected.Detail.Draft.Revision, rejected.Detail.Lines[0].Quantity));
+
+        // Partly shipped: 1 kg of Rev.0's 1.25 leaves 0.25 kg priced at Rev.0 — unavailable (its VAT has no source), never a
+        // recorded zero (Rev.1's 1 kg would leave nothing). 1.25 kg shipped leaves nothing of Rev.0 — a recorded zero (Rev.1's
+        // 2 kg would leave 0.75 kg).
+        var quantity = decimal.Parse(shipped, System.Globalization.CultureInfo.InvariantCulture);
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, [new(line, KgUnit, quantity, quantity)]));
+        var check = await world.Service().GetDraftRiskCheckAsync(draftId);
+        Assert.Equal((expectedState, expectedReason), (check.Components[2].State, check.Components[2].ReasonCode));
+        if (expectedState == "Available")
+        {
+            Assert.Empty(check.Components[2].Amounts!);
+        }
+        else
+        {
+            Assert.Null(check.Components[2].Amounts);
+        }
+    }
+
+    /// <summary>
+    /// K3-REVIEW-B P3-1 / P3-2: a rejected revision that changed the customer account. Nothing ships (the accepted Rev.0 names
+    /// another account than the header) and invoicing waits for the customer too — never Open at Rev.0 under a header the
+    /// customer did not accept. A newer revision that returns to the accepted account is no customer change against the
+    /// ACCEPTED revision (SAT-D103): shipping goes on under Rev.0 while it is prepared.
+    /// </summary>
+    [Fact]
+    public async Task SAT_D115_a_rejected_customer_change_ships_and_invoices_nothing_and_returning_to_the_accepted_customer_ships_on_rev0()
+    {
+        var world = new World();
+        Owners(world);
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        var port = LinePort(world);
+
+        await world.Service().ReviseHeaderAsync(approved.Id,
+            HeaderRevision("5", account: NewAccount, reason: "SENTETIK cari hesap değişti"), Metadata("k-rjh-revise"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-rjh-submit"));
+        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-rjh-approve"));
+        await world.Service().RecordCustomerRejectionAsync(approved.Id, Command("8", "SENTETIK müşteri cari değişikliğini istemedi"),
+            Metadata("k-rjh-reject"));
+
+        var stopped = await port.GetApprovedLineAsync(approved.Id, line);
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "HeaderRevisionPending"), (stopped.Outcome, stopped.ApprovalState));
+        Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, (string?)null), await GateAsync(world, approved.Id));
+        Assert.Equal(SalesDraftStatusAxisStatesV1.Rejected, (await world.Service().GetDraftStatusAsync(approved.Id)).CustomerAcceptance.State);
+
+        // Rev.2 returns to the accepted account: compared with the ACCEPTED Rev.0, never the rejected Rev.1.
+        var back = await world.Service().ReviseHeaderAsync(approved.Id,
+            HeaderRevision("9", account: Account, reason: "SENTETIK eski cari hesaba dönüldü"), Metadata("k-rjh-back"));
+        Assert.Equal(("Rev.2", "Preparing"), (back.Detail.Draft.Revision, back.Detail.Draft.ApprovalState));
+        Assert.False((await world.Service().GetDraftHeaderAsync(approved.Id)).CustomerOrCurrencyRevisionPending);
+        var answer = await port.GetApprovedLineAsync(approved.Id, line);
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, Account, SalesOrderLineRevisionBasisV1.LastApprovedRevision),
+            (answer.Outcome, answer.Line!.Revision, answer.Line.CompanyAccountId, answer.Line.RevisionBasis));
+        Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingReapproval, (string?)null), await GateAsync(world, approved.Id));
+    }
+
     [Fact]
     public async Task SAT_D115_a_revision_never_accepted_before_or_already_accepted_is_not_rejected_and_the_name_is_required()
     {

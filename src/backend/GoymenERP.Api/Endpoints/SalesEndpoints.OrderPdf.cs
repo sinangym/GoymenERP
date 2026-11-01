@@ -20,7 +20,9 @@ public static partial class SalesEndpoints
     /// printed: they do not exist yet (API-03, T28). Every order the domain accepts lays out (rows and fields taller than a page
     /// continue on the next pages); an order longer than the PDF component's page bound is 422 <c>sales_order_pdf_too_large</c>
     /// (stable: a retry gives the same answer), never a cut document. A missing or malformed text and missing time-zone rules
-    /// are a code-less 503.
+    /// are a code-less 503. SAT-D165 (EK23): when the customer rejected the current approved revision, the revision the
+    /// customer last accepted is printed (its lines, quantities, prices, revision and file-name version) with the note
+    /// "Rev.N müşteri tarafından reddedildi; sipariş Rev.M ile sürer" — never the rejection's internal reason.
     /// </summary>
     private static void MapOrderPdf(RouteGroupBuilder drafts)
     {

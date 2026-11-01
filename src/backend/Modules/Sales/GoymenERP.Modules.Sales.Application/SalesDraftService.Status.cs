@@ -97,9 +97,12 @@ public sealed partial class SalesDraftService
         // required) is no basis — for EVERY revision type (price, quantity-only SAT-D104/D111, VAT/withholding SAT-D105), since
         // the gate reads only the approval state and the acceptance of the basis revision, never the kind of change.
         // SAT-D115 (EK14): the customer rejected the last approved revision — invoicing continues at the revision the customer last
-        // accepted (its prices), never at the rejected one.
+        // accepted (its prices), never at the rejected one. A fallback under another customer or currency than the order's header
+        // is no basis either, as the line port ships nothing then (HeaderRevisionPending): invoicing waits for the customer too.
         InternalApprovalState.Approved or InternalApprovalState.Rejected when draft.CustomerAcceptedFallback is { } accepted =>
-            (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(accepted.Revision)),
+            SalesOrderDraft.HeaderDiffersFrom(draft.Header, accepted)
+                ? (SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, null)
+                : (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(accepted.Revision)),
         InternalApprovalState.Approved when !draft.IsCustomerAccepted => (SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, null),
         InternalApprovalState.Approved => (SalesDraftInvoicingGatesV1.Open, SalesDraftApiV1.RevisionText(draft.Revision)),
         InternalApprovalState.Preparing or InternalApprovalState.PendingApproval when draft.ArchivedRevisions.Count > 0 =>

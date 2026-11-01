@@ -366,12 +366,14 @@ function decodeInvoicing(value: unknown, detail: DraftDetail): { state: Ownerles
   const { required, isCurrentRevisionAccepted, acceptedRevision } = detail.customerAcceptance
   const revised = revision !== REV_0
   const lastApproved = previousRevision(revision)
-  // SAT-D115: the customer rejected the last approved revision — invoicing goes on at the revision the customer last accepted.
+  // SAT-D115: the customer rejected the last approved revision — invoicing goes on at the revision the customer last accepted,
+  // or waits for the customer (no basis) when that revision names another customer or currency than the header: the detail
+  // carries no archived header, so either of these two shapes is read — never Open at another revision.
   const fallback = customerAcceptedFallback(detail)
   if (fallback !== null && (approvalState === APPROVAL_STATE.approved || approvalState === APPROVAL_STATE.rejected)) {
-    return o.gate === INVOICING_GATE.open && o.priceBasisRevision === fallback
-      ? { state: o.state, gate: o.gate, priceBasisRevision: o.priceBasisRevision }
-      : null
+    const openAtAccepted = o.gate === INVOICING_GATE.open && o.priceBasisRevision === fallback
+    const waiting = o.gate === INVOICING_GATE.awaitingCustomerAcceptance && o.priceBasisRevision === null
+    return openAtAccepted || waiting ? { state: o.state, gate: o.gate, priceBasisRevision: o.priceBasisRevision } : null
   }
   // SAT-D114: when acceptance is required, a basis the customer has not accepted is no basis.
   const waitingCustomer = { gate: INVOICING_GATE.awaitingCustomerAcceptance, basis: null }

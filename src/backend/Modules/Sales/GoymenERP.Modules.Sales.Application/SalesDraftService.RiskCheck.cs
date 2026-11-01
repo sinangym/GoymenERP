@@ -334,24 +334,31 @@ public sealed partial class SalesDraftService
     }
 
     /// <summary>
-    /// The current lines while the current revision is approved; else (a revision awaiting re-approval) the LAST APPROVED
-    /// revision's lines, never the unapproved ones. Null (fail-closed) when an archived quantity is not exact text or an archived
-    /// line that still exists is in another unit now.
+    /// SAT-D115 / SAT-D166 (EK23) "kabul edilen son revizyona göre": when the customer rejected the last approved
+    /// revision, the revision the customer last ACCEPTED — the commitment that ships and is invoiced; the rejected revision is
+    /// no commitment (a revision still awaiting the acceptance is, SAT-D50). Else the current lines while the current revision is
+    /// approved; else (a revision awaiting re-approval) the LAST APPROVED revision's lines, never the unapproved ones. Null
+    /// (fail-closed) when an archived quantity is not exact text or an archived line that still exists is in another unit now.
     /// </summary>
     private static RiskOrderBasis? RiskBasis(SalesOrderDraft order)
     {
+        if (order.CustomerAcceptedFallback is { } accepted)
+        {
+            return ArchivedBasis(order, accepted);
+        }
+
         if (order.ApprovalState == InternalApprovalState.Approved)
         {
             return new RiskOrderBasis(
                 [.. order.Lines.Select(line => new RiskBasisLine(line.Id, line.OrderUnit.UnitId, line.Quantity.Value, line.Commercial))]);
         }
 
-        if (order.ArchivedRevisions.Count == 0)
-        {
-            return null;
-        }
+        return order.ArchivedRevisions.Count == 0 ? null : ArchivedBasis(order, order.ArchivedRevisions[^1]);
+    }
 
-        var approved = order.ArchivedRevisions[^1];
+    /// <summary>An archived approved revision's lines, with the same exact-text and unit checks for every archived basis.</summary>
+    private static RiskOrderBasis? ArchivedBasis(SalesOrderDraft order, ApprovedRevisionSnapshot approved)
+    {
         var current = order.Lines.ToDictionary(line => line.Id);
         var lines = new List<RiskBasisLine>(approved.Lines.Count);
         foreach (var line in approved.Lines)
