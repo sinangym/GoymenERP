@@ -31,6 +31,8 @@ import { PlanPreviewPanel } from './PlanPreviewPanel'
 import { cutToLengthDraftInput, planPreviewInput, usePlanPreview, type CutToLengthLineDraft } from './usePlanPreview'
 import { CutToLengthLinesEditor } from './CutToLengthLinesEditor'
 import { CUT_LINE_TEXT } from './planEditText'
+import { TARGET_BASIS_LABEL } from './manufacturingText'
+import { PLAN_CREATE_TEXT, PLAN_FORM_TEXT, readFailureText, saveFailureText } from './planText'
 import styles from './PlanPage.module.css'
 import { Button } from '../ui/Button'
 
@@ -53,22 +55,17 @@ type Attempt =
   /** The stored slot cannot be trusted either way: nothing is sent from this form (M01.3 K2 #728/6180459736). */
   | { readonly phase: 'blocked'; readonly message: string }
 
-const UNKNOWN_TEXT = 'Önceki gönderimin sonucu bilinmiyor.'
+const UNKNOWN_TEXT = PLAN_CREATE_TEXT.unknown
 
-const BLOCKED_TEXT =
-  'Bu şirket için bu oturumda bekleyen bir plan kaydı okunamadı. Önceki gönderimin sonucu bilinmediği için bu '
-  + 'ekrandan yeni plan gönderilmez; kayıtlı planlar okunabilir.'
+const BLOCKED_TEXT = PLAN_CREATE_TEXT.blocked
 
 /**
  * M01.3 r5 (#66/6187473245): the server answered `authenticationSessionBinding: null`. Without a server session identity
  * no pending create can be bound to this session, so none is stored or sent; nothing local stands in for the server.
  */
-const NO_SESSION_TEXT =
-  'Sunucu bu oturum için oturum bağlayıcısı vermedi. Bekleyen bir plan kaydının bu oturuma ait olduğu doğrulanamayacağı '
-  + 'için bu ekrandan yeni plan gönderilmez; kayıtlı planlar okunabilir.'
+const NO_SESSION_TEXT = PLAN_CREATE_TEXT.noSession
 
-const NOT_DURABLE_TEXT =
-  'Plan, sayfa yenilense de aynı istek ve anahtarla yeniden gönderilebilecek biçimde saklanamadı; istek gönderilmedi.'
+const NOT_DURABLE_TEXT = PLAN_CREATE_TEXT.notDurable
 
 /** Only a proven-empty slot opens the form; an unreadable one keeps it closed for this mount. */
 function initialAttempt(slot: PendingPlanCreateSlot, sessionBinding: string | null): Attempt {
@@ -110,24 +107,8 @@ function newId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-function readFailure(subject: string, outcome: { readonly type: string; readonly status?: number }): string {
-  if (outcome.type === 'http') {
-    if (outcome.status === 401 || outcome.status === 403) return `${subject} için yetkiniz artık geçerli değil.`
-    return `${subject} kaynağı yanıt vermedi (${outcome.status}).`
-  }
-  if (outcome.type === 'offline') return 'Çevrimdışısınız.'
-  if (outcome.type === 'fence-stale') return 'Şirket veya oturum değişti; eski sonuç kullanılmadı.'
-  return outcome.type === 'malformed'
-    ? `${subject} kaynağı beklenen sözleşmeyle yanıt vermedi.`
-    : `${subject} kaynağına ulaşılamadı.`
-}
-
 function commandFailure(outcome: Extract<SavePlanOutcome, { type: 'failed' }>): string {
-  if (outcome.status === 401 || outcome.status === 403) return 'Plan kaydetme yetkiniz artık geçerli değil.'
-  if (outcome.status === 404) return 'Seçilen ana rulo veya şirket bağlamı artık bulunamıyor.'
-  if (outcome.status === 409) return `Seçilen kayıtların sürümü veya yazma durumu değişti (${outcome.code ?? 'conflict'}).`
-  if (outcome.status === 422) return `Plan girdisi kabul edilmedi (${outcome.code ?? 'rule_refusal'}).`
-  return `Plan kaydedilmedi (${outcome.code ?? outcome.status}).`
+  return saveFailureText(outcome.status, outcome.code)
 }
 
 function positiveKilograms(value: string): boolean {
@@ -193,7 +174,7 @@ function PlanCreate({ namespace, preselect }: {
       setWorkCenters(
         outcome.type === 'ok-single'
           ? { type: 'ready', data: outcome.data }
-          : { type: 'failed', message: readFailure('İş merkezi', outcome) },
+          : { type: 'failed', message: readFailureText(PLAN_FORM_TEXT.workCenter, outcome) },
       )
     }
     void read()
@@ -220,7 +201,7 @@ function PlanCreate({ namespace, preselect }: {
         reportSecurity(outcome.status, security)
       }
       if (outcome.type !== 'ok-single') {
-        const message = readFailure('Ana rulo', outcome)
+        const message = readFailureText(PLAN_FORM_TEXT.parentRoll, outcome)
         setCandidates({ type: 'failed', message })
         setPreselection({ type: 'failed', message })
         return
@@ -258,7 +239,7 @@ function PlanCreate({ namespace, preselect }: {
     setCandidates(
       outcome.type === 'ok-single'
         ? { type: 'ready', data: outcome.data }
-        : { type: 'failed', message: readFailure('Ana rulo', outcome) },
+        : { type: 'failed', message: readFailureText(PLAN_FORM_TEXT.parentRoll, outcome) },
     )
   }, [captureSecurity, companyId, reportSecurity, search])
 
@@ -304,7 +285,7 @@ function PlanCreate({ namespace, preselect }: {
         setAttempt({
           phase: 'unknown',
           snapshot,
-          message: unresolvedSince ?? 'Sonuç bilinmiyor. Aynı içerik ve anahtarla yeniden gönderin.',
+          message: unresolvedSince ?? PLAN_CREATE_TEXT.sendUnknown,
         })
         return
       }
@@ -346,7 +327,7 @@ function PlanCreate({ namespace, preselect }: {
     targetKg,
     {
       enabled: slittingActive,
-      lines: slitLines.map((line, index) => ({ ...line, label: `Bant ${index + 1}` })),
+      lines: slitLines.map((line, index) => ({ ...line, label: PLAN_CREATE_TEXT.band(index + 1) })),
       windingTargetKg,
     },
     // Authored rows are validated before preview AND save; only a CutToLength line sends them.
@@ -381,11 +362,11 @@ function PlanCreate({ namespace, preselect }: {
       return
     }
     if (workCenterId === '' || inputs.length === 0 || inputs.some((input) => !positiveKilograms(input.plannedKg))) {
-      setFormError('İş merkezi, en az bir ana rulo ve her rulo için sıfırdan büyük planlanan kg zorunludur.')
+      setFormError(PLAN_FORM_TEXT.formRequired)
       return
     }
     if ((targetBasis === '') !== (targetKg === '') || (targetKg !== '' && !positiveKilograms(targetKg))) {
-      setFormError('Hedef kullanılacaksa türü ve sıfırdan büyük kg değeri birlikte girilmelidir.')
+      setFormError(PLAN_FORM_TEXT.targetPair)
       return
     }
     if (previewInput.type !== 'ready') {
@@ -410,17 +391,17 @@ function PlanCreate({ namespace, preselect }: {
   }
 
   if (companyId === null || actorId === null) {
-    return <main className={styles.page}><p role="alert">Yetkili tek şirket bağlamı seçilmeden plan oluşturulamaz.</p></main>
+    return <main className={styles.page}><p role="alert">{PLAN_CREATE_TEXT.noContext}</p></main>
   }
   if (attempt.phase === 'blocked') {
     return (
       <main className={styles.page} aria-labelledby="manufacturing-plan-create-heading">
         <header className={styles.header}>
           <div>
-            <p className={styles.eyebrow}>ÜRETİM PLANI</p>
-            <h1 id="manufacturing-plan-create-heading">Yeni taslak plan</h1>
+            <p className={styles.eyebrow}>{PLAN_FORM_TEXT.eyebrow}</p>
+            <h1 id="manufacturing-plan-create-heading">{PLAN_CREATE_TEXT.heading}</h1>
           </div>
-          <Link to={orderListPath()}>← Üretim emirleri</Link>
+          <Link to={orderListPath()}>{PLAN_FORM_TEXT.backToOrders}</Link>
         </header>
         <p className={styles.error} role="alert">{attempt.message}</p>
       </main>
@@ -431,17 +412,17 @@ function PlanCreate({ namespace, preselect }: {
     return (
       <main className={styles.page}>
         <section className={styles.successCard} role="status">
-          <p className={styles.eyebrow}>ÜRETİM PLANI</p>
-          <h1>Taslak plan kaydedildi</h1>
-          <p className={styles.mono}>{plan.planId} · sürüm {plan.version}</p>
-          {attempt.result.replayed ? <p>Önceki kayıtlı sonuç yeniden gösterildi.</p> : null}
+          <p className={styles.eyebrow}>{PLAN_FORM_TEXT.eyebrow}</p>
+          <h1>{PLAN_CREATE_TEXT.savedTitle}</h1>
+          <p className={styles.mono}>{PLAN_CREATE_TEXT.savedReference(plan.planId, plan.version)}</p>
+          {attempt.result.replayed ? <p>{PLAN_CREATE_TEXT.replayed}</p> : null}
           <div className={styles.actions}>
             {hasCapability(shell, MANUFACTURING_CAPABILITY.planDetail) ? (
               <Link className={styles.primaryLink} to={planDetailPath(plan.planId)}>
-                Formu kapat ve planı yeniden aç
+                {PLAN_CREATE_TEXT.reopen}
               </Link>
             ) : null}
-            <Link className={styles.secondary} to={orderListPath()}>Üretim emirlerine dön</Link>
+            <Link className={styles.secondary} to={orderListPath()}>{PLAN_CREATE_TEXT.backToOrders}</Link>
           </div>
         </section>
       </main>
@@ -457,53 +438,53 @@ function PlanCreate({ namespace, preselect }: {
     <main className={styles.page} aria-labelledby="manufacturing-plan-create-heading">
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>ÜRETİM PLANI</p>
-          <h1 id="manufacturing-plan-create-heading">Yeni taslak plan</h1>
+          <p className={styles.eyebrow}>{PLAN_FORM_TEXT.eyebrow}</p>
+          <h1 id="manufacturing-plan-create-heading">{PLAN_CREATE_TEXT.heading}</h1>
         </div>
-        <Link to={orderListPath()}>← Üretim emirleri</Link>
+        <Link to={orderListPath()}>{PLAN_FORM_TEXT.backToOrders}</Link>
       </header>
       {unresolved && retrySnapshot !== undefined ? (
         <section className={styles.warningCard} role="alert">
           <p>{attempt.phase === 'failed' ? attempt.message : attempt.message}</p>
-          <p>Önceki gönderim kesinleşmeden yeni plan oluşturulamaz.</p>
+          <p>{PLAN_CREATE_TEXT.unresolvedNote}</p>
           <div className={styles.actions}>
             <Button type="button" onClick={() => void send(retrySnapshot, retryReason)}>
-              Aynı anahtarla yeniden gönder
+              {PLAN_CREATE_TEXT.resend}
             </Button>
-            <Link className={styles.secondary} to={orderListPath()}>Formu kapat</Link>
+            <Link className={styles.secondary} to={orderListPath()}>{PLAN_CREATE_TEXT.closeForm}</Link>
           </div>
         </section>
       ) : null}
       {attempt.phase === 'failed' && !unresolved ? <p className={styles.error} role="alert">{attempt.message}</p> : null}
       {formError === null ? null : <p className={styles.error} role="alert">{formError}</p>}
-      {preselection.type === 'loading' ? <p role="status">Stok pozisyonundan seçilen ana rulo aranıyor…</p> : null}
+      {preselection.type === 'loading' ? <p role="status">{PLAN_CREATE_TEXT.preselectLoading}</p> : null}
       {preselection.type === 'selected' ? (
         <p role="status" className={styles.note}>
-          Stok pozisyonundan seçilen ana rulo eklendi: {preselection.labelCode}. Planlanan kg’ı girin; seçim kayıtta etiket sürümüyle yeniden doğrulanır.
+          {PLAN_CREATE_TEXT.preselectAdded(preselection.labelCode)}
         </p>
       ) : null}
       {preselection.type === 'refused' ? (
         <p role="alert" className={styles.error}>
-          Stok pozisyonundan seçilen etiket ({preselection.labelCode}) taslak plana eklenemez ({preselection.code}).
+          {PLAN_CREATE_TEXT.preselectRefused(preselection.labelCode, preselection.code)}
         </p>
       ) : null}
       {preselection.type === 'missing' ? (
         <p role="alert" className={styles.error}>
-          Stok pozisyonundan seçilen etiket ana rulo adayları arasında bulunamadı{preselection.windowFull ? ' (arama penceresi doldu)' : ''}; etiketi elle arayın.
+          {PLAN_CREATE_TEXT.preselectMissing(preselection.windowFull)}
         </p>
       ) : null}
       {preselection.type === 'failed' ? <p role="alert" className={styles.error}>{preselection.message}</p> : null}
       <form className={styles.form} onSubmit={submit} noValidate>
         <fieldset disabled={frozen}>
-          <legend>İş merkezi</legend>
-          {workCenters.type === 'loading' ? <p role="status">İş merkezleri yükleniyor…</p> : null}
+          <legend>{PLAN_FORM_TEXT.workCenter}</legend>
+          {workCenters.type === 'loading' ? <p role="status">{PLAN_FORM_TEXT.workCentersLoading}</p> : null}
           {workCenters.type === 'failed' ? <p role="alert">{workCenters.message}</p> : null}
           {workCenters.type === 'ready' ? (
-            <select aria-label="İş merkezi" value={workCenterId} onChange={(event) => setWorkCenterId(event.target.value)}>
-              <option value="">Seçiniz</option>
+            <select aria-label={PLAN_FORM_TEXT.workCenter} value={workCenterId} onChange={(event) => setWorkCenterId(event.target.value)}>
+              <option value="">{PLAN_CREATE_TEXT.choose}</option>
               {workCenters.data.map((workCenter) => (
                 <option key={workCenter.id} value={workCenter.id}>
-                  {workCenter.code} — {workCenter.name}{workCenter.isActive ? '' : ' (pasif)'}
+                  {workCenter.code} — {workCenter.name}{workCenter.isActive ? '' : PLAN_FORM_TEXT.inactiveSuffix}
                 </option>
               ))}
             </select>
@@ -511,34 +492,34 @@ function PlanCreate({ namespace, preselect }: {
         </fieldset>
 
         <fieldset disabled={frozen}>
-          <legend>Ana rulo adayları</legend>
+          <legend>{PLAN_CREATE_TEXT.candidates}</legend>
           <p className={styles.note}>
-            Blok dışı fiziksel kg kullanılabilirlik veya rezervasyon garantisi değildir. Seçim, kayıtta etiket sürümüyle yeniden doğrulanır.
+            {PLAN_CREATE_TEXT.candidatesNote}
           </p>
           <div className={styles.searchRow}>
-            <label htmlFor="parent-roll-search">Etiket, ürün veya lot ara</label>
+            <label htmlFor="parent-roll-search">{PLAN_CREATE_TEXT.search}</label>
             <input id="parent-roll-search" maxLength={64} value={search} onChange={(event) => setSearch(event.target.value)} />
-            <Button type="button" onClick={() => void readCandidates()}>Ara</Button>
+            <Button type="button" onClick={() => void readCandidates()}>{PLAN_CREATE_TEXT.searchAction}</Button>
           </div>
-          {candidates.type === 'loading' ? <p role="status">Ana rulolar yükleniyor…</p> : null}
+          {candidates.type === 'loading' ? <p role="status">{PLAN_FORM_TEXT.rollsLoading}</p> : null}
           {candidates.type === 'failed' ? <p role="alert">{candidates.message}</p> : null}
           {candidates.type === 'ready' ? (
             <>
               <div className={styles.tableWrap}>
                 <table className={styles.table}>
-                  <thead><tr><th scope="col">Etiket</th><th scope="col">Ürün / lot</th><th scope="col">Fiziksel kg</th><th scope="col">Belge</th><th scope="col">Seçim</th></tr></thead>
+                  <thead><tr><th scope="col">{PLAN_FORM_TEXT.label}</th><th scope="col">{PLAN_CREATE_TEXT.productLot}</th><th scope="col">{PLAN_FORM_TEXT.physicalKg}</th><th scope="col">{PLAN_CREATE_TEXT.document}</th><th scope="col">{PLAN_FORM_TEXT.choice}</th></tr></thead>
                   <tbody>
                     {candidates.data.items.map((candidate) => {
                       const selected = inputs.some((input) => input.candidate.labelId === candidate.labelId)
                       return (
                         <tr key={candidate.labelId}>
                           <th scope="row">{candidate.labelCode}<div className={styles.mono}>{candidate.labelId}</div></th>
-                          <td><span className={styles.mono}>{candidate.productId}</span><br />Lot {candidate.lot.id}</td>
-                          <td>{candidate.physicalKg} kg<br /><span className={styles.muted}>Blok dışı: {candidate.unblockedPhysicalKg} kg · Blokeli: {candidate.blockedPhysicalKg} kg</span></td>
+                          <td><span className={styles.mono}>{candidate.productId}</span><br />{PLAN_CREATE_TEXT.lot(candidate.lot.id)}</td>
+                          <td>{candidate.physicalKg} kg<br /><span className={styles.muted}>{PLAN_CREATE_TEXT.candidateBalances(candidate.unblockedPhysicalKg, candidate.blockedPhysicalKg)}</span></td>
                           <td>{candidate.documentStatus}</td>
                           <td>
                             <Button type="button" disabled={!candidate.draftSelectable || selected} onClick={() => addCandidate(candidate)}>
-                              {selected ? 'Eklendi' : candidate.draftSelectable ? 'Ekle' : 'Seçilemez'}
+                              {selected ? PLAN_CREATE_TEXT.added : candidate.draftSelectable ? PLAN_FORM_TEXT.add : PLAN_FORM_TEXT.unselectable}
                             </Button>
                             {!candidate.draftSelectable ? <div className={styles.muted}>{candidate.draftRefusalCode}</div> : null}
                           </td>
@@ -548,17 +529,17 @@ function PlanCreate({ namespace, preselect }: {
                   </tbody>
                 </table>
               </div>
-              {candidates.data.searchWindowFull ? <p className={styles.note}>Arama penceresi doldu; sonucu daraltın.</p> : null}
+              {candidates.data.searchWindowFull ? <p className={styles.note}>{PLAN_CREATE_TEXT.searchWindowFull}</p> : null}
             </>
           ) : null}
         </fieldset>
 
         <fieldset disabled={frozen}>
-          <legend>Planlanan girdiler</legend>
-          {inputs.length === 0 ? <p>Henüz ana rulo eklenmedi.</p> : (
+          <legend>{PLAN_FORM_TEXT.plannedInputs}</legend>
+          {inputs.length === 0 ? <p>{PLAN_CREATE_TEXT.noInputs}</p> : (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
-                <thead><tr><th scope="col">Etiket</th><th scope="col">Etiket sürümü</th><th scope="col">Planlanan kg</th><th scope="col">İşlem</th></tr></thead>
+                <thead><tr><th scope="col">{PLAN_FORM_TEXT.label}</th><th scope="col">{PLAN_FORM_TEXT.labelVersion}</th><th scope="col">{PLAN_FORM_TEXT.plannedKg}</th><th scope="col">{PLAN_FORM_TEXT.action}</th></tr></thead>
                 <tbody>
                   {inputs.map((input) => (
                     <tr key={input.candidate.labelId}>
@@ -566,13 +547,13 @@ function PlanCreate({ namespace, preselect }: {
                       <td>{input.candidate.labelVersion}</td>
                       <td>
                         <input
-                          aria-label={`${input.candidate.labelCode} planlanan kg`}
+                          aria-label={PLAN_FORM_TEXT.plannedKgFor(input.candidate.labelCode)}
                           inputMode="decimal"
                           value={input.plannedKg}
                           onChange={(event) => setInputs((current) => current.map((row) => row.candidate.labelId === input.candidate.labelId ? { ...row, plannedKg: event.target.value } : row))}
                         />
                       </td>
-                      <td><Button type="button" onClick={() => setInputs((current) => current.filter((row) => row.candidate.labelId !== input.candidate.labelId))}>Kaldır</Button></td>
+                      <td><Button type="button" onClick={() => setInputs((current) => current.filter((row) => row.candidate.labelId !== input.candidate.labelId))}>{PLAN_FORM_TEXT.remove}</Button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -582,21 +563,21 @@ function PlanCreate({ namespace, preselect }: {
         </fieldset>
 
         <fieldset disabled={frozen}>
-          <legend>İsteğe bağlı hedef</legend>
+          <legend>{PLAN_FORM_TEXT.optionalTarget}</legend>
           <div className={styles.formGrid}>
-            <label htmlFor="plan-target-basis">Hedef türü</label>
+            <label htmlFor="plan-target-basis">{PLAN_FORM_TEXT.targetBasis}</label>
             <select id="plan-target-basis" value={targetBasis} onChange={(event) => setTargetBasis(event.target.value as '' | PlanTargetBasis)}>
-              <option value="">Hedef yok</option>
-              <option value="InputMass">Girdi kütlesi</option>
-              <option value="GoodOutputMass">İyi ürün kütlesi</option>
+              <option value="">{PLAN_FORM_TEXT.targetNone}</option>
+              <option value="InputMass">{TARGET_BASIS_LABEL.InputMass}</option>
+              <option value="GoodOutputMass">{TARGET_BASIS_LABEL.GoodOutputMass}</option>
             </select>
-            <label htmlFor="plan-target-kg">Hedef kg</label>
+            <label htmlFor="plan-target-kg">{PLAN_FORM_TEXT.targetKg}</label>
             <input id="plan-target-kg" inputMode="decimal" value={targetKg} onChange={(event) => setTargetKg(event.target.value)} />
           </div>
         </fieldset>
         {selectedWorkCenter?.kind === 'Slitting' ? (
           <fieldset disabled={frozen}>
-            <legend>Dilme ayrıntısı</legend>
+            <legend>{PLAN_FORM_TEXT.slitting}</legend>
             <label>
               <input
                 type="checkbox"
@@ -609,31 +590,31 @@ function PlanCreate({ namespace, preselect }: {
                   }
                 }}
               />{' '}
-              Sıralı bant planı ekle
+              {PLAN_CREATE_TEXT.addSlitting}
             </label>
             {slittingEnabled ? (
               <>
-                <p className={styles.note}>Satırlar kaydedildikleri sırayla korunur. Genişlik mm, adet tam sayıdır.</p>
+                <p className={styles.note}>{PLAN_CREATE_TEXT.slittingNote}</p>
                 <div className={styles.tableWrap}>
                   <table className={styles.table}>
-                    <thead><tr><th scope="col">Sıra</th><th scope="col">Bant genişliği (mm)</th><th scope="col">Adet</th><th scope="col">İşlem</th></tr></thead>
+                    <thead><tr><th scope="col">{PLAN_FORM_TEXT.sequence}</th><th scope="col">{PLAN_CREATE_TEXT.bandWidthMm}</th><th scope="col">{PLAN_CREATE_TEXT.count}</th><th scope="col">{PLAN_FORM_TEXT.action}</th></tr></thead>
                     <tbody>
                       {slitLines.map((line, index) => (
                         <tr key={line.id}>
                           <th scope="row">{index + 1}</th>
-                          <td><input aria-label={`Bant ${index + 1} genişliği mm`} inputMode="decimal" value={line.bandWidthMm} onChange={(event) => setSlitLines((current) => current.map((item) => item.id === line.id ? { ...item, bandWidthMm: event.target.value } : item))} /></td>
-                          <td><input aria-label={`Bant ${index + 1} adedi`} inputMode="numeric" value={line.count} onChange={(event) => setSlitLines((current) => current.map((item) => item.id === line.id ? { ...item, count: event.target.value } : item))} /></td>
-                          <td><Button type="button" onClick={() => setSlitLines((current) => current.filter((item) => item.id !== line.id))}>Kaldır</Button></td>
+                          <td><input aria-label={PLAN_CREATE_TEXT.bandWidthFor(index + 1)} inputMode="decimal" value={line.bandWidthMm} onChange={(event) => setSlitLines((current) => current.map((item) => item.id === line.id ? { ...item, bandWidthMm: event.target.value } : item))} /></td>
+                          <td><input aria-label={PLAN_CREATE_TEXT.bandCountFor(index + 1)} inputMode="numeric" value={line.count} onChange={(event) => setSlitLines((current) => current.map((item) => item.id === line.id ? { ...item, count: event.target.value } : item))} /></td>
+                          <td><Button type="button" onClick={() => setSlitLines((current) => current.filter((item) => item.id !== line.id))}>{PLAN_FORM_TEXT.remove}</Button></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
                 <div className={styles.actions}>
-                  <Button type="button" onClick={() => setSlitLines((current) => [...current, { id: newId(), bandWidthMm: '', count: '' }])}>Bant satırı ekle</Button>
+                  <Button type="button" onClick={() => setSlitLines((current) => [...current, { id: newId(), bandWidthMm: '', count: '' }])}>{PLAN_CREATE_TEXT.addBand}</Button>
                 </div>
                 <div className={styles.formGrid}>
-                  <label htmlFor="plan-winding-target-kg">İsteğe bağlı sarım hedefi (kg)</label>
+                  <label htmlFor="plan-winding-target-kg">{PLAN_CREATE_TEXT.windingTarget}</label>
                   <input id="plan-winding-target-kg" inputMode="decimal" value={windingTargetKg} onChange={(event) => setWindingTargetKg(event.target.value)} />
                 </div>
               </>
@@ -648,7 +629,7 @@ function PlanCreate({ namespace, preselect }: {
         ) : null}
         <PlanPreviewPanel state={preview} labelOf={labelOf} workCenterLabel={workCenterLabel} />
         <div className={styles.actions}>
-          <Button variant="primary" type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? 'Kaydediliyor…' : 'Taslak planı kaydet'}</Button>
+          <Button variant="primary" type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? PLAN_CREATE_TEXT.saving : PLAN_CREATE_TEXT.save}</Button>
         </div>
       </form>
     </main>

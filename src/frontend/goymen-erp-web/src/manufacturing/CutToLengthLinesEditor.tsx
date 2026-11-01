@@ -134,7 +134,7 @@ export function CutToLengthLinesEditor({ idPrefix, lines, onChange, keepOne }: C
                           disabled={!removable}
                           onClick={() => remove(line.lineId)}
                         >
-                          Kaldır
+                          {CUT_LINE_TEXT.removeButton}
                         </Button>
                       </div>
                     </td>
