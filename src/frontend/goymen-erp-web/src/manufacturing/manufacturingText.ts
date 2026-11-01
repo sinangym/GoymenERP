@@ -63,6 +63,16 @@ export function engineParameterLabel(name: string): string {
 }
 
 export const MASS_BALANCE_HEADING = 'Kütle dengesi (GDC-BAL/1)'
+export const MASS_BALANCE_TEXT = {
+  subject: 'kütle dengesi',
+  parentRoll: 'Ana rulo',
+  actualInput: 'Fiilî girdi (kg)',
+  accounted: 'Hesaplanan (kg)',
+  difference: 'Kütle farkı (kg)',
+  reconciliation: 'Mutabakat',
+  scrapPercent: 'Fire %',
+  actualUnitKg: 'Fiilî birim kg',
+} as const
 export const MASS_BALANCE_HELP =
   'Emrin kapanışının kullandığı hesap: fiilî girdi − (iyi ürün + ikinci kalite + kullanılabilir artık + hurda + ' +
   'proses kaybı + kalan WIP + onaylı ölçüm düzeltmesi). Fark işaretiyle gösterilir ve hiçbir sınıfa yazılmaz.'
@@ -102,15 +112,83 @@ export const OUTPUT_INVENTORY_TEXT = {
   partyThisCompany: 'Bu şirket',
   partyCompany: 'Başka şirket',
   partyCounterparty: 'Cari',
+  heading: 'Üretim çıktısı etiketi',
+  outputClass: 'Çıktı sınıfı',
+  productSearch: 'Ürün ara',
+  product: 'Ürün',
+  effectiveOnRequired: 'Önce geçerli çıktı zamanını girin.',
+  moreMatches: 'Daha fazla eşleşme var; aramayı daraltın.',
+  locationSearch: 'Lokasyon ara',
+  location: 'Lokasyon',
+  labelCode: 'Yeni etiket kodu',
+  heatNumber: 'Döküm no (opsiyonel)',
+  coilNumber: 'Rulo no (opsiyonel)',
+  documents: 'Belge referansları (satır başına)',
+  initialBlock: 'İlk stok durumu',
+  blockFree: 'Serbest',
+  blockBlocked: 'Blokeli',
 } as const
 
 export const INPUT_INVENTORY_TEXT = {
   heading: 'Ana rulo Inventory durumu',
+  subject: 'ana rulo Inventory durumu',
+  label: 'Etiket',
   version: 'Etiket sürümü',
   physical: 'Fiziksel',
   free: 'Serbest',
   blocked: 'Blokeli',
   loadingRequired: 'Ana rulonun güncel Inventory durumu okunmadan bu işlem gönderilemez.',
+} as const
+
+/** The order screen's own frame: its summary, the roll balance table and the fact form's general words. */
+export const ORDER_DETAIL_TEXT = {
+  heading: 'Üretim emri',
+  subject: 'üretim emri',
+  contextSubject: 'üretim emri için tek şirket bağlamı',
+  outstandingTitle: 'Sonucu bilinmeyen bir olgunuz var',
+  outstandingDetail:
+    'Gönderdiğiniz olgunun sonucu hâlâ belirsiz ve emir şu an okunamıyor. Olgu kendiliğinden tekrarlanmadı. ' +
+    'Emir yeniden okunduğunda aynı işlem anahtarıyla devam edebilirsiniz.',
+  summary: 'Emir özeti',
+  order: 'Emir',
+  status: 'Durum',
+  plan: 'Plan',
+  workCenter: 'İş merkezi',
+  process: 'Proses',
+  target: 'Hedef',
+  targetUndeclared: 'Beyan edilmedi',
+  remainingTarget: 'Kalan hedef',
+  remaining: (remainingKg: string | null, achievedKg: string | null, targetKg: string | null) =>
+    `${remainingKg} kg (gerçekleşen ${achievedKg} / ${targetKg} kg)`,
+  cost: 'Maliyet',
+  rollsHeading: 'Ana rulo dengesi (kg)',
+  rollsHelp: 'Her rulo kendi başına mutabık olur: çıkan − iade = çıktılar + WIP + açıklanamayan fark.',
+  parentRoll: 'Ana rulo',
+  planned: 'Planlanan',
+  issued: 'Çıkan',
+  returned: 'İade',
+  netIssued: 'Net çıkan',
+  workInProgress: 'WIP',
+  unexplained: 'Açıklanamayan fark',
+  reconciliation: 'Mutabakat',
+  balanced: 'Mutabık',
+  different: 'Fark var',
+} as const
+
+export const FACT_FORM_TEXT = {
+  heading: 'Gerçekleşme kaydı',
+  kind: 'Olgu türü',
+  parentRoll: 'Ana rulo',
+  choose: 'Seçin',
+  kg: 'Kütle (kg)',
+  time: 'Zaman',
+  resend: 'Aynı olguyu yeniden gönder',
+  sending: 'Gönderiliyor…',
+  save: 'Kaydet',
+  refreshing: 'Emir yeniden okunuyor…',
+  failedTitle: 'Kaydedilmedi',
+  unknownTitle: 'Sonuç bilinmiyor',
+  lastRefusal: (refusal: string) => `Son yeniden gönderim reddedildi: ${refusal}`,
 } as const
 
 /** MFG-02 order list. Column names are the summary's own fields; no figure is invented for a column. */
@@ -134,6 +212,11 @@ export const ORDER_LIST_TEXT = {
   nextPageFailed: 'Sonraki sayfa okunamadı; yukarıdaki satırlar yerinde kaldı.',
   end: 'Liste sonu.',
   labelNote: 'Rulo ve emir etiketleri ürün/etiket okumasıyla gelecek; burada teknik kimlik gösterilir.',
+  plans: 'Üretim planları',
+  newPlan: 'Yeni üretim planı',
+  subject: 'üretim emirleri',
+  contextSubject: 'üretim emirleri için tek şirket bağlamı',
+  nextPageSubject: 'sonraki sayfa',
 } as const
 
 /**

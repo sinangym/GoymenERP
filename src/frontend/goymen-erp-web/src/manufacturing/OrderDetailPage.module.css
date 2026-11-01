@@ -142,8 +142,7 @@
 }
 .form input:focus-visible,
 .form select:focus-visible,
-.form textarea:focus-visible,
-.actions button:focus-visible {
+.form textarea:focus-visible {
   outline: 2px solid #0b6fe8;
   outline-offset: 2px;
 }
@@ -178,19 +177,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-}
-.actions button {
-  font: inherit;
-  padding: 6px 14px;
-  border-radius: 6px;
-  border: 1px solid #0b6fe8;
-  background: #0b6fe8;
-  color: #ffffff;
-  cursor: pointer;
-}
-.actions button:disabled {
-  opacity: 0.6;
-  cursor: default;
 }
 
 .noticeOk,

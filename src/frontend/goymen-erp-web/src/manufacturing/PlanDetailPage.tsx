@@ -19,7 +19,9 @@ import {
 } from './planCommandApi'
 import type { ProductionPlanView } from './contract'
 import { TARGET_BASIS_LABEL } from './manufacturingText'
-import { PLAN_EDIT_TEXT, revisionFailureText } from './planEditText'
+import { CUT_LINE_TEXT, PLAN_EDIT_TEXT, revisionFailureText } from './planEditText'
+import { PLAN_STATUS_LABEL } from './planListText'
+import { lifecycleFailureText, lifecycleUnknownText, PLAN_DETAIL_TEXT, PLAN_FORM_TEXT } from './planText'
 import { currentRevision } from './planRevisionContract'
 import { PlanEditForm } from './PlanEditForm'
 import { PlanHistory } from './PlanHistory'
@@ -30,6 +32,7 @@ import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './PlanPage.module.css'
+import { Button } from '../ui/Button'
 
 type Attempt =
   | { readonly phase: 'idle' }
@@ -61,33 +64,23 @@ function failureText(
   process: string,
 ): string {
   if (kind === 'revise') return revisionFailureText(outcome.status, outcome.code, outcome.field, process)
-  const subject = kind === 'approve' ? 'Plan onayı' : 'Üretim emri'
-  if (outcome.status === 401 || outcome.status === 403) return `${subject} yetkiniz artık geçerli değil.`
-  if (outcome.status === 404) return `${subject} için kayıt bu şirket bağlamında bulunamadı.`
-  if (outcome.status === 409) return `${subject} uygulanmadı (${outcome.code ?? 'conflict'}).`
-  if (outcome.status === 422) return `${subject} iş kuralı tarafından reddedildi (${outcome.code ?? 'rule_refusal'}).`
-  return `${subject} uygulanmadı (${outcome.code ?? outcome.status}).`
+  return lifecycleFailureText(kind, outcome.status, outcome.code)
 }
 
 function unknownText(kind: PlanLifecycleSnapshot['kind']): string {
   if (kind === 'revise') return PLAN_EDIT_TEXT.unknown
-  return `${kind === 'approve' ? 'Plan onayının' : 'Emir oluşturmanın'} sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.`
+  return lifecycleUnknownText(kind)
 }
 
-const BLOCKED_TEXT =
-  'Bu plan için bu oturumda bekleyen bir komut kaydı okunamadı. Önceki işlemin sonucu bilinmediği için bu ekrandan '
-  + 'yeni düzenleme, onay veya emir gönderilmez; plan yalnız okunabilir.'
+const BLOCKED_TEXT = PLAN_DETAIL_TEXT.blocked
 
 /**
  * M01.3 r5 (#66/6187473245): the server answered `authenticationSessionBinding: null`. Without a server session identity
  * no pending command can be bound to this session, so none is stored or sent; the plan stays readable.
  */
-const NO_SESSION_TEXT =
-  'Sunucu bu oturum için oturum bağlayıcısı vermedi. Bekleyen bir komut kaydının bu oturuma ait olduğu doğrulanamayacağı '
-  + 'için bu ekrandan düzenleme, onay veya emir gönderilmez; plan yalnız okunabilir.'
+const NO_SESSION_TEXT = PLAN_DETAIL_TEXT.noSession
 
-const NOT_DURABLE_TEXT =
-  'Düzenleme, sayfa yenilense de aynı istek ve anahtarla yeniden gönderilebilecek biçimde saklanamadı; istek gönderilmedi.'
+const NOT_DURABLE_TEXT = PLAN_DETAIL_TEXT.notDurable
 
 function initialAttempt(slot: PendingPlanSlot, sessionBinding: string | null): Attempt {
   if (slot.state === 'absent') return { phase: 'idle' }
@@ -181,7 +174,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     const isCurrent = fresh?.planId === planId && fresh.companyId === companyId
     if (isCurrent && expectation.kind === 'approved' && fresh.status === 'Approved' && fresh.version === expectation.approved.version) {
       queryClient.setQueryData(queryKey, refreshed)
-      setAttempt({ phase: 'applied', message: 'Plan onaylandı ve güncel kayıt yeniden okundu.' })
+      setAttempt({ phase: 'applied', message: PLAN_DETAIL_TEXT.approvedRefreshed })
       return
     }
     if (isCurrent && expectation.kind === 'revised' && fresh.status === 'Draft' && fresh.version === expectation.revised.version) {
@@ -194,17 +187,17 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     if (isCurrent && expectation.kind === 'conflict') {
       queryClient.setQueryData(queryKey, refreshed)
       await queryClient.invalidateQueries({ queryKey: historyKey })
-      setAttempt({ phase: 'failed', message: `${expectation.failure} Güncel plan yeniden okundu.` })
+      setAttempt({ phase: 'failed', message: PLAN_DETAIL_TEXT.conflictRefreshed(expectation.failure) })
       return
     }
     setAttempt({
       phase: 'refresh-needed',
       refresh: expectation,
       message: expectation.kind === 'approved'
-        ? 'Plan onaylandı; güncel kayıt henüz yeniden okunamadı.'
+        ? PLAN_DETAIL_TEXT.approvedRefreshPending
         : expectation.kind === 'revised'
           ? PLAN_EDIT_TEXT.appliedRefreshPending
-          : `${expectation.failure} Güncel plan henüz yeniden okunamadı.`,
+          : PLAN_DETAIL_TEXT.conflictRefreshPending(expectation.failure),
     })
   }, [boundary, companyId, historyKey, planId, queryClient, queryKey])
 
@@ -274,8 +267,8 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       phase: 'applied',
       orderId,
       message: outcome.replayed
-        ? 'Önceki emir oluşturma sonucu yeniden gösterildi.'
-        : 'Üretim emri oluşturuldu.',
+        ? PLAN_DETAIL_TEXT.orderReplayed
+        : PLAN_DETAIL_TEXT.orderCreated,
     })
   }, [actorId, allowed, boundary, canOpenOrder, companyId, navigate, planId, planProcess, refreshPlan, sessionBinding, storeKey])
 
@@ -287,7 +280,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
   if (companyId === null || namespace === null) {
     return (
       <main className={styles.page}>
-        <StateBlock state={{ kind: 'no-authorized-company' }} subject="üretim planı için tek şirket bağlamı" />
+        <StateBlock state={{ kind: 'no-authorized-company' }} subject={PLAN_DETAIL_TEXT.contextSubject} />
       </main>
     )
   }
@@ -298,7 +291,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         : (classifyOutcome(query.data) as RemoteViewState<unknown>)
     return (
       <main className={styles.page}>
-        <StateBlock state={state} subject="üretim planı" onRetry={() => void query.refetch()} />
+        <StateBlock state={state} subject={PLAN_DETAIL_TEXT.subject} onRetry={() => void query.refetch()} />
       </main>
     )
   }
@@ -317,34 +310,34 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
     <main className={styles.page} aria-labelledby="manufacturing-plan-heading">
       <header className={styles.header}>
         <div>
-          <p className={styles.eyebrow}>ÜRETİM PLANI</p>
-          <h1 id="manufacturing-plan-heading">Plan yeniden açıldı</h1>
+          <p className={styles.eyebrow}>{PLAN_FORM_TEXT.eyebrow}</p>
+          <h1 id="manufacturing-plan-heading">{PLAN_DETAIL_TEXT.heading}</h1>
         </div>
         <div>
-          {canOpenPlanList ? <Link to={planListPath()}>← Üretim planları</Link> : null}{' '}
-          <Link to={orderListPath()}>← Üretim emirleri</Link>
+          {canOpenPlanList ? <Link to={planListPath()}>{PLAN_DETAIL_TEXT.backToPlans}</Link> : null}{' '}
+          <Link to={orderListPath()}>{PLAN_FORM_TEXT.backToOrders}</Link>
         </div>
       </header>
       <dl className={styles.facts}>
-        <div><dt>Plan</dt><dd className={styles.mono}>{plan.planId}</dd></div>
-        <div><dt>Durum</dt><dd>{plan.status === 'Draft' ? 'Taslak' : 'Onaylı'}</dd></div>
-        <div><dt>Sürüm</dt><dd>{plan.version}</dd></div>
-        <div><dt>İş merkezi</dt><dd className={styles.mono}>{plan.workCenterId}</dd></div>
-        <div><dt>Proses</dt><dd>{plan.process}</dd></div>
+        <div><dt>{PLAN_DETAIL_TEXT.plan}</dt><dd className={styles.mono}>{plan.planId}</dd></div>
+        <div><dt>{PLAN_DETAIL_TEXT.status}</dt><dd>{plan.status === 'Draft' ? PLAN_STATUS_LABEL.Draft : PLAN_STATUS_LABEL.Approved}</dd></div>
+        <div><dt>{PLAN_DETAIL_TEXT.version}</dt><dd>{plan.version}</dd></div>
+        <div><dt>{PLAN_FORM_TEXT.workCenter}</dt><dd className={styles.mono}>{plan.workCenterId}</dd></div>
+        <div><dt>{PLAN_DETAIL_TEXT.process}</dt><dd>{plan.process}</dd></div>
         <div>
-          <dt>Hedef</dt>
+          <dt>{PLAN_DETAIL_TEXT.target}</dt>
           <dd>
             {plan.target === null
-              ? 'Hedef yok'
+              ? PLAN_FORM_TEXT.targetNone
               : `${TARGET_BASIS_LABEL[plan.target.basis] ?? plan.target.basis}: ${plan.target.kg} kg`}
           </dd>
         </div>
       </dl>
       <section aria-labelledby="manufacturing-plan-inputs-heading">
-        <h2 id="manufacturing-plan-inputs-heading">Planlanan ana rulolar</h2>
+        <h2 id="manufacturing-plan-inputs-heading">{PLAN_DETAIL_TEXT.inputsHeading}</h2>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
-            <thead><tr><th scope="col">Ana rulo etiketi</th><th scope="col">Planlanan kg</th><th scope="col">Yakalanan teknik kaynak</th></tr></thead>
+            <thead><tr><th scope="col">{PLAN_DETAIL_TEXT.rollLabel}</th><th scope="col">{PLAN_FORM_TEXT.plannedKg}</th><th scope="col">{PLAN_DETAIL_TEXT.technicalSource}</th></tr></thead>
             <tbody>
               {plan.inputs.map((input) => (
                 <tr key={input.parentRollId}>
@@ -352,21 +345,21 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
                   <td>{input.plannedKg}</td>
                   <td>
                     {input.technicalSnapshot === null ? (
-                      <span className={styles.muted}>Yok — eski plan, güncel üründen tamamlanmaz</span>
+                      <span className={styles.muted}>{PLAN_DETAIL_TEXT.noTechnicalSnapshot}</span>
                     ) : (
                       <ul>
-                        <li>Ürün <span className={styles.mono}>{input.technicalSnapshot.productId}</span> · sürüm {input.technicalSnapshot.productVersion}</li>
-                        <li>Aile {input.technicalSnapshot.family.familyCode} · {input.technicalSnapshot.family.sourceRevision}</li>
-                        <li>Şablon {input.technicalSnapshot.template.templateCode} · {input.technicalSnapshot.template.templateVersion}</li>
+                        <li>{PLAN_DETAIL_TEXT.product} <span className={styles.mono}>{input.technicalSnapshot.productId}</span> · {PLAN_DETAIL_TEXT.productVersion} {input.technicalSnapshot.productVersion}</li>
+                        <li>{PLAN_DETAIL_TEXT.family} {input.technicalSnapshot.family.familyCode} · {input.technicalSnapshot.family.sourceRevision}</li>
+                        <li>{PLAN_DETAIL_TEXT.template} {input.technicalSnapshot.template.templateCode} · {input.technicalSnapshot.template.templateVersion}</li>
                         <li>{input.technicalSnapshot.thicknessMm} mm × {input.technicalSnapshot.widthMm} mm</li>
                         {/* The captured nominal length, exactly as stored; it is not a cut-line length. */}
                         <li>
-                          Nominal ürün boyu:{' '}
+                          {PLAN_DETAIL_TEXT.nominalLength}{' '}
                           {input.technicalSnapshot.lengthMm === null
-                            ? <span className={styles.muted}>kaydedilmemiş</span>
+                            ? <span className={styles.muted}>{PLAN_DETAIL_TEXT.notRecorded}</span>
                             : `${input.technicalSnapshot.lengthMm} mm`}
                         </li>
-                        <li>kg profili {input.technicalSnapshot.unitKg.profileVersion} · {input.technicalSnapshot.effectiveOn}</li>
+                        <li>{PLAN_DETAIL_TEXT.kgProfile} {input.technicalSnapshot.unitKg.profileVersion} · {input.technicalSnapshot.effectiveOn}</li>
                       </ul>
                     )}
                   </td>
@@ -379,10 +372,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
 
       {plan.slittingSpec === null ? null : (
         <section className={styles.commandCard} aria-labelledby="manufacturing-plan-slitting-spec-heading">
-          <h2 id="manufacturing-plan-slitting-spec-heading">Dilme ayrıntısı</h2>
+          <h2 id="manufacturing-plan-slitting-spec-heading">{PLAN_FORM_TEXT.slitting}</h2>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
-              <thead><tr><th scope="col">Sıra</th><th scope="col">Bant genişliği</th><th scope="col">Adet</th></tr></thead>
+              <thead><tr><th scope="col">{PLAN_FORM_TEXT.sequence}</th><th scope="col">{PLAN_DETAIL_TEXT.bandWidth}</th><th scope="col">{CUT_LINE_TEXT.count}</th></tr></thead>
               <tbody>
                 {plan.slittingSpec.lines.map((line, index) => (
                   <tr key={`${index}:${line.bandWidthMm}:${line.count}`}>
@@ -392,7 +385,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
               </tbody>
             </table>
           </div>
-          <p>Sarım hedefi: {plan.slittingSpec.windingTargetKg === null ? 'Yok' : `${plan.slittingSpec.windingTargetKg} kg`}</p>
+          <p>{PLAN_DETAIL_TEXT.windingTarget(plan.slittingSpec.windingTargetKg === null ? PLAN_DETAIL_TEXT.none : `${plan.slittingSpec.windingTargetKg} kg`)}</p>
         </section>
       )}
 
@@ -400,10 +393,10 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
         // M01.2: the stored cut lines, read-only and in source order (never re-sorted by sequence), so they are seen
         // before an edit or the approval. The line id is the row's stable identity, not its visible content.
         <section className={styles.commandCard} aria-labelledby="manufacturing-plan-cut-to-length-spec-heading">
-          <h2 id="manufacturing-plan-cut-to-length-spec-heading">Boy kesme ayrıntısı</h2>
+          <h2 id="manufacturing-plan-cut-to-length-spec-heading">{PLAN_DETAIL_TEXT.cutToLength}</h2>
           <div className={styles.tableWrap}>
             <table className={styles.table}>
-              <thead><tr><th scope="col">Sıra</th><th scope="col">Uzunluk (mm)</th><th scope="col">Adet</th></tr></thead>
+              <thead><tr><th scope="col">{PLAN_FORM_TEXT.sequence}</th><th scope="col">{CUT_LINE_TEXT.length}</th><th scope="col">{CUT_LINE_TEXT.count}</th></tr></thead>
               <tbody>
                 {plan.cutToLengthSpec.lines.map((line) => (
                   <tr key={line.lineId}>
@@ -417,9 +410,9 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       )}
 
       <section className={styles.commandCard} aria-labelledby="manufacturing-stored-plan-calculation-heading">
-        <h2 id="manufacturing-stored-plan-calculation-heading">Kayıtlı plan hesaplaması</h2>
+        <h2 id="manufacturing-stored-plan-calculation-heading">{PLAN_DETAIL_TEXT.calculationHeading}</h2>
         {plan.calculation === null ? (
-          <p className={styles.note}>Bu eski komut yanıtında kalıcı hesaplama projeksiyonu bulunmuyor.</p>
+          <p className={styles.note}>{PLAN_DETAIL_TEXT.noCalculation}</p>
         ) : (
           <PlanCalculationDetails preview={plan.calculation} labelOf={(parentRollId) => parentRollId} />
         )}
@@ -438,25 +431,25 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
       ) : null}
 
       <section className={styles.commandCard} aria-labelledby="manufacturing-plan-next-heading">
-        <h2 id="manufacturing-plan-next-heading">Sonraki işlem</h2>
+        <h2 id="manufacturing-plan-next-heading">{PLAN_DETAIL_TEXT.nextHeading}</h2>
         {blocked ? (
           <p role="alert" className={styles.error}>{attempt.message}</p>
         ) : unresolved ? (
           <>
             <p role="alert" className={styles.error}>{attempt.message}</p>
             <div className={styles.actions}>
-              <button type="button" onClick={() => void send(attempt.pending)}>
-                Aynı istek ve anahtarla yeniden gönder
-              </button>
+              <Button type="button" onClick={() => void send(attempt.pending)}>
+                {PLAN_DETAIL_TEXT.resend}
+              </Button>
             </div>
           </>
         ) : attempt.phase === 'refresh-needed' ? (
           <>
             <p role="alert" className={styles.error}>{attempt.message}</p>
             <div className={styles.actions}>
-              <button type="button" onClick={() => void refreshPlan(attempt.refresh)}>
-                Güncel planı yeniden oku
-              </button>
+              <Button type="button" onClick={() => void refreshPlan(attempt.refresh)}>
+                {PLAN_DETAIL_TEXT.reread}
+              </Button>
             </div>
           </>
         ) : (
@@ -464,15 +457,15 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {attempt.phase === 'failed' ? <p role="alert" className={styles.error}>{attempt.message}</p> : null}
             {attempt.phase === 'applied' ? (
               <p role="status" className={styles.success}>
-                {attempt.message}{attempt.orderId === undefined ? '' : ` Emir: ${attempt.orderId}`}
+                {attempt.message}{attempt.orderId === undefined ? '' : PLAN_DETAIL_TEXT.orderSuffix(attempt.orderId)}
               </p>
             ) : null}
             {editable && !editing ? (
               editReady ? (
                 <div className={styles.actions}>
-                  <button type="button" disabled={busy} onClick={() => setEditing(true)}>
+                  <Button type="button" disabled={busy} onClick={() => setEditing(true)}>
                     {PLAN_EDIT_TEXT.editButton}
-                  </button>
+                  </Button>
                 </div>
               ) : (
                 <p className={styles.note}>
@@ -484,33 +477,33 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
             {plan.status === 'Draft' && canEdit && plan.slittingSpec !== null ? <p className={styles.note}>{PLAN_EDIT_TEXT.specNote}</p> : null}
             {plan.status === 'Draft' && canApprove && !editing ? (
               <div className={styles.actions}>
-                <button
+                <Button
                   type="button"
                   disabled={busy}
                   aria-busy={busy}
                   onClick={() => start({ kind: 'approve', idempotencyKey: newId(), expectedVersion: plan.version })}
                 >
-                  {busy ? 'Plan onaylanıyor…' : 'Planı onayla'}
-                </button>
+                  {busy ? PLAN_DETAIL_TEXT.approving : PLAN_DETAIL_TEXT.approve}
+                </Button>
               </div>
             ) : null}
             {plan.status === 'Approved' && canCreateOrder ? (
               <div className={styles.actions}>
-                <button
+                <Button
                   type="button"
                   disabled={busy}
                   aria-busy={busy}
                   onClick={() => start({ kind: 'create-order', idempotencyKey: newId(), orderId: newId() })}
                 >
-                  {busy ? 'Üretim emri oluşturuluyor…' : 'Üretim emri oluştur'}
-                </button>
+                  {busy ? PLAN_DETAIL_TEXT.creatingOrder : PLAN_DETAIL_TEXT.createOrder}
+                </Button>
               </div>
             ) : null}
             {plan.status === 'Approved' && !canCreateOrder ? (
-              <p className={styles.note}>Onaylı plan bu ekranda salt okunurdur.</p>
+              <p className={styles.note}>{PLAN_DETAIL_TEXT.approvedReadOnly}</p>
             ) : null}
             {plan.status === 'Draft' && !canApprove && !canEdit ? (
-              <p className={styles.note}>Taslak plan bu ekranda salt okunurdur.</p>
+              <p className={styles.note}>{PLAN_DETAIL_TEXT.draftReadOnly}</p>
             ) : null}
           </>
         )}
@@ -518,7 +511,7 @@ function PlanDetail({ namespace, planId }: { readonly namespace: string | null; 
 
       {history === null ? (
         historyQuery.data !== undefined && historyQuery.data.type !== 'ok-single' ? (
-          <p className={styles.muted} role="status">Plan geçmişi okunamadı.</p>
+          <p className={styles.muted} role="status">{PLAN_EDIT_TEXT.historyUnreadable}</p>
         ) : null
       ) : <PlanHistory history={history} />}
     </main>

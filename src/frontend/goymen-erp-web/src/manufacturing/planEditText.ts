@@ -17,6 +17,14 @@ export const PLAN_EDIT_TEXT = {
   cancel: 'Vazgeç',
   reasonLabel: 'Düzenleme gerekçesi',
   reasonHelp: 'Gerekçe plan geçmişinde değişiklikle birlikte saklanır (en fazla 256 karakter).',
+  currentSuffix: ' (mevcut)',
+  noInputs: 'Ana rulo kalmadı; en az bir ana rulo ekleyin.',
+  removeFor: (name: string) => `${name} kaldır`,
+  search: 'Eklenecek etiket, ürün veya lot ara',
+  searchAction: 'Ana rulo ara',
+  version: 'Sürüm',
+  inPlan: 'Planda',
+  updateVersion: 'Sürümü güncelle',
   processNote: (process: string) =>
     `Planın süreci (${process}) değişmez: yalnız aynı süreci yürüten bir iş merkezi seçilebilir; farklı süreç sunucuda reddedilir.`,
   inputsNote:
@@ -27,8 +35,6 @@ export const PLAN_EDIT_TEXT = {
   specNote: 'Dilme ayrıntısı taşıyan plan düzenlenmez; ana ruloyla dengesi iş kararı bekliyor (AT-044).',
   historyNotReady: 'Plan geçmişi okunamadığı için düzenleme şu an açılamıyor.',
   historyStale: 'Plan geçmişi planın güncel sürümünü göstermiyor; güncel planı yeniden okuyun.',
-  formRequired: 'İş merkezi, en az bir ana rulo ve her rulo için sıfırdan büyük planlanan kg zorunludur.',
-  targetPair: 'Hedef kullanılacaksa türü ve sıfırdan büyük kg değeri birlikte girilmelidir.',
   reasonRequired: 'Düzenleme gerekçesi zorunludur (en fazla 256 karakter).',
   legacyRequired: 'Etiket sürümü olmayan ana rulo yeniden eklenmeden kaydedilemez.',
   noChange: 'Düzenleme planda hiçbir şeyi değiştirmiyor.',
@@ -37,7 +43,15 @@ export const PLAN_EDIT_TEXT = {
   unknown: 'Düzenlemenin sonucu bilinmiyor. Aynı istek ve anahtarla yeniden gönderin.',
   historyHeading: 'Plan geçmişi',
   historyEmpty: 'Plan oluşturulduğundan beri düzenlenmedi.',
+  historyUnreadable: 'Plan geçmişi okunamadı.',
   created: 'Oluşturma',
+  revision: (revision: number) => `Revizyon ${revision}`,
+  planVersion: (version: number) => `sürüm ${version}`,
+  revisionReason: (reason: string) => `Gerekçe: ${reason}`,
+  revisedBy: 'Kaydeden:',
+  workCenter: 'İş merkezi',
+  rollCount: (count: number) => `${count} ana rulo`,
+  targetNone: 'hedef yok',
 } as const
 
 /** M01.3: the shared cut-line editor's labels (create and edit). The user's words: Sıra no, Uzunluk (mm), Adet. */
@@ -55,6 +69,7 @@ export const CUT_LINE_TEXT = {
   moveUp: 'yukarı taşı',
   moveDown: 'aşağı taşı',
   remove: 'kaldır',
+  removeButton: 'Kaldır',
   add: 'Kesim satırı ekle',
   keepOne: 'Kayıtlı boy kesme tanımı en az bir satır korur; tanımı temizleme bu sürümde yok.',
 } as const
@@ -100,7 +115,7 @@ function cutLinesText(spec: PlanRevision['cutToLengthSpec']): string {
 }
 
 function targetText(target: PlanRevision['target']): string {
-  return target === null ? 'hedef yok' : `${TARGET_BASIS_LABEL[target.basis] ?? target.basis} ${target.kg} kg`
+  return target === null ? PLAN_EDIT_TEXT.targetNone : `${TARGET_BASIS_LABEL[target.basis] ?? target.basis} ${target.kg} kg`
 }
 
 /**

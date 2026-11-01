@@ -17,12 +17,8 @@ import {
   previewRefusal,
   valueLabel,
 } from './planPreviewText'
+import { TARGET_BASIS_LABEL } from './manufacturingText'
 import styles from './PlanPage.module.css'
-
-const BASIS_LABELS: Readonly<Record<string, string>> = {
-  InputMass: 'Girdi kütlesi',
-  GoodOutputMass: 'İyi ürün kütlesi',
-}
 
 function AnswerRow({ scope, answer }: { readonly scope: string; readonly answer: PlanFormulaAnswer }) {
   return (
@@ -39,7 +35,7 @@ function AnswerRow({ scope, answer }: { readonly scope: string; readonly answer:
           </ul>
         ) : null}
         {answer.outcome === 'Unavailable'
-          ? <>Eksik: {answer.missingParameters.map(parameterLabel).join(', ')}</>
+          ? <>{PLAN_PREVIEW_TEXT.missing(answer.missingParameters.map(parameterLabel).join(', '))}</>
           : null}
         {answer.outcome === 'Refused'
           ? <span className={styles.error}>{answer.refusalCode} ({parameterLabel(answer.refusedParameter ?? '')})</span>
@@ -60,38 +56,38 @@ export function PlanCalculationDetails({
   return (
     <>
       <dl className={styles.facts}>
-        <div><dt>Süreç</dt><dd>{preview.process}</dd></div>
-        <div><dt>Planlanan rulo</dt><dd>{preview.plannedRollCount}</dd></div>
-        <div><dt>Toplam planlanan girdi</dt><dd>{preview.plannedInputKg} kg</dd></div>
+        <div><dt>{PLAN_PREVIEW_TEXT.process}</dt><dd>{preview.process}</dd></div>
+        <div><dt>{PLAN_PREVIEW_TEXT.plannedRollCount}</dt><dd>{preview.plannedRollCount}</dd></div>
+        <div><dt>{PLAN_PREVIEW_TEXT.plannedInput}</dt><dd>{preview.plannedInputKg} kg</dd></div>
         <div>
-          <dt>Hedef karşılaştırması</dt>
+          <dt>{PLAN_PREVIEW_TEXT.targetComparison}</dt>
           <dd>
             {preview.target === null
-              ? 'Hedef yok'
+              ? PLAN_PREVIEW_TEXT.targetNone
               : preview.target.targetMinusPlannedInputKg !== null
-                ? `Hedef − planlanan girdi: ${preview.target.targetMinusPlannedInputKg} kg`
-                : `${BASIS_LABELS[preview.target.basis] ?? preview.target.basis}: ${OUTCOME_LABELS[preview.target.outcome]} (${preview.target.missingParameters.map(parameterLabel).join(', ')})`}
+                ? PLAN_PREVIEW_TEXT.targetMinusPlanned(preview.target.targetMinusPlannedInputKg)
+                : `${TARGET_BASIS_LABEL[preview.target.basis] ?? preview.target.basis}: ${OUTCOME_LABELS[preview.target.outcome]} (${preview.target.missingParameters.map(parameterLabel).join(', ')})`}
           </dd>
         </div>
-        <div><dt>Hesaplayıcı</dt><dd className={styles.mono}>{preview.calculatorVersion}</dd></div>
+        <div><dt>{PLAN_PREVIEW_TEXT.calculator}</dt><dd className={styles.mono}>{preview.calculatorVersion}</dd></div>
       </dl>
       {preview.missingParameters.length > 0 ? (
         <>
           <h3>{PLAN_PREVIEW_TEXT.missingHeading}</h3>
           <p className={styles.muted}>{PLAN_PREVIEW_TEXT.missingNote}</p>
-          <ul aria-label="Eksik parametreler">
+          <ul aria-label={PLAN_PREVIEW_TEXT.missingList}>
             {preview.missingParameters.map((name) => (
               <li key={name}>{parameterLabel(name)} <span className={styles.mono}>({name})</span></li>
             ))}
           </ul>
         </>
       ) : null}
-      {preview.hasRefusal ? <p className={styles.error}>Bir hesap girdiyi reddetti; ayrıntı aşağıdadır.</p> : null}
+      {preview.hasRefusal ? <p className={styles.error}>{PLAN_PREVIEW_TEXT.refusalNote}</p> : null}
       <div className={styles.tableWrap}>
         <table className={styles.table}>
-          <thead><tr><th scope="col">Formül</th><th scope="col">Kapsam</th><th scope="col">Durum</th><th scope="col">Sonuç</th></tr></thead>
+          <thead><tr><th scope="col">{PLAN_PREVIEW_TEXT.formula}</th><th scope="col">{PLAN_PREVIEW_TEXT.scope}</th><th scope="col">{PLAN_PREVIEW_TEXT.status}</th><th scope="col">{PLAN_PREVIEW_TEXT.result}</th></tr></thead>
           <tbody>
-            {preview.answers.map((answer) => <AnswerRow key={`plan:${answer.formula}`} scope="Plan" answer={answer} />)}
+            {preview.answers.map((answer) => <AnswerRow key={`plan:${answer.formula}`} scope={PLAN_PREVIEW_TEXT.planScope} answer={answer} />)}
             {preview.rolls.flatMap((roll) => roll.answers.map((answer) => (
               <AnswerRow
                 key={`${roll.parentRollId}:${answer.formula}`}
@@ -132,21 +128,21 @@ export function PlanPreviewPanel({
       </div>
       {status.type === 'refused' ? (
         <p className={styles.error} role="alert">
-          Önizleme hesaplanmadı: {previewRefusal(status.status, status.code, status.field)}
+          {PLAN_PREVIEW_TEXT.refused(previewRefusal(status.status, status.code, status.field))}
         </p>
       ) : null}
       {status.type === 'failed' ? <p className={styles.error} role="alert">{previewFailure(status.reason)}</p> : null}
 
       {last === null ? null : (
-        <div aria-label={current ? 'Güncel önizleme' : 'Önceki girdilere ait önizleme'} className={current ? undefined : styles.muted}>
+        <div aria-label={current ? PLAN_PREVIEW_TEXT.currentLabel : PLAN_PREVIEW_TEXT.staleLabel} className={current ? undefined : styles.muted}>
           {current ? null : <p className={styles.note}><strong>{PLAN_PREVIEW_TEXT.stale}</strong></p>}
-          <h3>Yanıtlanan girdiler</h3>
+          <h3>{PLAN_PREVIEW_TEXT.answeredHeading}</h3>
           <ul>
-            <li>İş merkezi: {workCenterLabel(last.request.workCenterId)}</li>
+            <li>{PLAN_PREVIEW_TEXT.answeredWorkCenter(workCenterLabel(last.request.workCenterId))}</li>
             {last.request.inputs.map((input) => (
-              <li key={input.parentRollId}>{labelOf(input.parentRollId)}: {input.plannedKg} kg (etiket sürümü {input.expectedLabelVersion})</li>
+              <li key={input.parentRollId}>{PLAN_PREVIEW_TEXT.answeredInput(labelOf(input.parentRollId), input.plannedKg, input.expectedLabelVersion)}</li>
             ))}
-            <li>Hedef: {last.request.target === null ? 'yok' : `${BASIS_LABELS[last.request.target.basis]} ${last.request.target.kg} kg`}</li>
+            <li>{PLAN_PREVIEW_TEXT.answeredTarget(last.request.target === null ? PLAN_PREVIEW_TEXT.answeredTargetNone : `${TARGET_BASIS_LABEL[last.request.target.basis]} ${last.request.target.kg} kg`)}</li>
           </ul>
           <PlanCalculationDetails preview={last.preview} labelOf={labelOf} />
         </div>

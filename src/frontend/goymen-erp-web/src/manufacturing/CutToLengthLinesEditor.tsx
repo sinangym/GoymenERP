@@ -15,6 +15,7 @@ import { useEffect, useRef } from 'react'
 import { CUT_LINE_TEXT } from './planEditText'
 import { newCutLineId, type CutToLengthLineDraft } from './usePlanPreview'
 import styles from './PlanPage.module.css'
+import { Button } from '../ui/Button'
 
 type Move = 'up' | 'down'
 
@@ -109,7 +110,7 @@ export function CutToLengthLinesEditor({ idPrefix, lines, onChange, keepOne }: C
                     </td>
                     <td>
                       <div className={styles.actions}>
-                        <button
+                        <Button
                           type="button"
                           id={controlId(line.lineId, 'up')}
                           aria-label={`${name} ${CUT_LINE_TEXT.moveUp}`}
@@ -117,8 +118,8 @@ export function CutToLengthLinesEditor({ idPrefix, lines, onChange, keepOne }: C
                           onClick={() => move(index, 'up')}
                         >
                           ↑
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           id={controlId(line.lineId, 'down')}
                           aria-label={`${name} ${CUT_LINE_TEXT.moveDown}`}
@@ -126,15 +127,15 @@ export function CutToLengthLinesEditor({ idPrefix, lines, onChange, keepOne }: C
                           onClick={() => move(index, 'down')}
                         >
                           ↓
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
                           aria-label={`${name} ${CUT_LINE_TEXT.remove}`}
                           disabled={!removable}
                           onClick={() => remove(line.lineId)}
                         >
-                          Kaldır
-                        </button>
+                          {CUT_LINE_TEXT.removeButton}
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -146,13 +147,13 @@ export function CutToLengthLinesEditor({ idPrefix, lines, onChange, keepOne }: C
       )}
       {keepOne && lines.length <= 1 ? <p className={styles.muted}>{CUT_LINE_TEXT.keepOne}</p> : null}
       <div className={styles.actions}>
-        <button
+        <Button
           ref={addButton}
           type="button"
           onClick={() => onChange([...lines, { lineId: newCutLineId(), sequence: '', lengthMm: '', count: '' }])}
         >
           {CUT_LINE_TEXT.add}
-        </button>
+        </Button>
       </div>
     </>
   )

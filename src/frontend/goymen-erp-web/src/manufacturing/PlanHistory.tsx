@@ -27,21 +27,21 @@ export function PlanHistory({ history }: { readonly history: PlanRevisionList })
         {entries.map((entry) => {
           const previous = history.revisions[entry.revision - 1]
           return (
-            <li key={entry.revision} aria-label={`Revizyon ${entry.revision}`}>
+            <li key={entry.revision} aria-label={PLAN_EDIT_TEXT.revision(entry.revision)}>
               <h3>
-                {entry.revision === 0 ? PLAN_EDIT_TEXT.created : `Revizyon ${entry.revision}`} · sürüm {entry.planVersion}
+                {entry.revision === 0 ? PLAN_EDIT_TEXT.created : PLAN_EDIT_TEXT.revision(entry.revision)} · {PLAN_EDIT_TEXT.planVersion(entry.planVersion)}
                 {' · '}{when(entry.recordedAtUtc)}
               </h3>
-              {entry.reason === null ? null : <p>Gerekçe: {entry.reason}</p>}
+              {entry.reason === null ? null : <p>{PLAN_EDIT_TEXT.revisionReason(entry.reason)}</p>}
               {entry.revisedBy === null ? null : (
-                <p className={styles.muted}>Kaydeden: <span className={styles.mono}>{entry.revisedBy}</span></p>
+                <p className={styles.muted}>{PLAN_EDIT_TEXT.revisedBy} <span className={styles.mono}>{entry.revisedBy}</span></p>
               )}
               {previous === undefined ? (
                 <p className={styles.muted}>
-                  İş merkezi <span className={styles.mono}>{entry.workCenterId}</span> ·{' '}
-                  {entry.inputs.length} ana rulo ·{' '}
+                  {PLAN_EDIT_TEXT.workCenter} <span className={styles.mono}>{entry.workCenterId}</span> ·{' '}
+                  {PLAN_EDIT_TEXT.rollCount(entry.inputs.length)} ·{' '}
                   {entry.target === null
-                    ? 'hedef yok'
+                    ? PLAN_EDIT_TEXT.targetNone
                     : `${TARGET_BASIS_LABEL[entry.target.basis] ?? entry.target.basis} ${entry.target.kg} kg`}
                 </p>
               ) : (
