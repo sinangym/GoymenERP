@@ -627,3 +627,21 @@ three `ErpPermissions` names; `AddProductPriceLists` + `InitializeProductPriceLi
 operations); the tenant-bypass guard pins (the new DbContext and the AuditEvent context inventory, the store's SqlClient use, the
 registration's MigrateAsync branch, the migration's reviewed `Sql`); `MODULE_DEPENDENCY_ALLOWLIST.json`
 (Product.Infrastructure → Audit.Infrastructure, ADR-009); the three relational-inventory names.
+
+## Product item type (MOD-03, EK19 SAT-D134)
+
+Source: `docs/decisions/SINAN_KARARLARI_2026-10-31_SATIS_EK19.md` (SAT-D134: the product card holds NO tax class and NO tax
+exception, only an ITEM TYPE — demir / hurda / hizmet; the tax is the Settings default for that type, SAT-D139, changeable on
+the order line, SAT-D93). It replaces the EK12 classification (`ProductTaxClassifications`, `product.tax-classification.manage`),
+which never reached main and is removed.
+
+| Concern | Rule |
+|---|---|
+| Owner and scope | Product, **company-scoped** (like the price lists, in `ProductPriceListDbContext`; EK19 open item: company vs. the global card was not asked — kept here, reversible): `product.ProductItemTypes` (company, product, `ItemType` `[ItemType] IN ('Steel','Scrap','Service')`, version, update facts). No rate and no code is stored on the product. |
+| Authority | ONE name, `product.item-type.manage` (`ProductItemTypePermissionsV1.Manage` = `ErpPermissions.ProductItemTypeManage`): company-wide, not Critical, granted to NO role (who receives it is a human gate, NEEDS-SINAN). Measured fresh first and before the answer / save. |
+| Command | `PUT /api/v1/product-item-types/{productId}` `{expectedVersion ("0" = none), itemType, reason}`: Idempotency-Key (own `ProductItemTypeAttempts`, SHA-256 key under a binary collation; same key + body replays, another body 409), stale version 409, unknown card code-less 404, unknown type 400; ONE audit event `product.item-type.changed.v1` with the whole reason; a no-op writes none. `GET` answers the item type (version "0" and null while none). |
+| Read port | `IProductItemTypeReaderV1` (access only, no permission; never throws for a missing card or item type) — consumed by the host's `SettingsProductItemTypeHost` for the Settings line tax port (`ISettingsLineTaxResolverV1.ResolveAsync`). |
+| Screen | The product card shows the item type and changes it (`ProductItemTypePanel`); without the permission the server answers 403 and the panel is hidden. |
+| Rollback | Migration `20261031195253_AddProductItemTypes` (`dotnet ef`): `Down` refuses with `THROW 51132` while any item type or command answer exists (forward fix). |
+
+Not here: a global (all-company) item type; choosing the order's buyer situation (SAT-D140, Sales follow-up).

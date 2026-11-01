@@ -39,6 +39,11 @@ public static class SettingsModuleExtensions
         // SAT-D65…D70: the limit administration. The person directory is the host's Identity adapter; until it is
         // composed the people search and the binding write answer 503.
         services.AddScoped<ISettingsSalesDiscountLimitAdministrationV1, SettingsSalesDiscountLimitAdministration>();
+        // MOD-03 tax master (SAT-D83/D133/D135/D139/D140): the administration and the line tax port Sales consumes. The product's
+        // item type comes from the host's Product adapter (ISettingsProductItemTypeSourceV1); until it is composed the
+        // product-based read answers 503.
+        services.AddScoped<ISettingsTaxMasterAdministrationV1, SettingsTaxMasterAdministration>();
+        services.AddScoped<ISettingsLineTaxResolverV1, SettingsTaxMasterReader>();
         return services;
     }
 

@@ -376,6 +376,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // Every earlier row keeps its name and value: no host composes those sets any more once Settings joins.
     internal const string FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV10 =
         "sha256:h2kW12R83z17--xEbOIzI3un0g_z6T9MmkLC9J3WiBU";
+    // MOD-03 (SAT-D83): the same full normal host with Settings 1.1 (the tax master screen beside the discount limit screen),
+    // derived by ShellCapabilityRegistry.ComputeCandidateRevision over the real providers (drift-test "Actual:"). The 1.0 row
+    // above keeps its name and value; no host composes it any more.
+    internal const string FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV11 =
+        "sha256:8-BkJ1YMFENn9LSV-IsMi0aDQ_X5UnqU_E_I9ixpQPU";
 
     // SAT-D24 / SAT-D44 merged over UI-60 / UI-61: Sales 1.10 adds the expired-quote conversion approval control of the quote
     // detail beside the S-07 / S-08 screens. The six live rows carrying PublishedSales were re-derived by
@@ -414,6 +419,11 @@ internal static class ShellCapabilityRegistryAuthorities
         "sha256:iz0JHzed8mfD2cp7hJZiNp8lH76C423PBGfD9Mq-Ypo";
     internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV10 =
         "sha256:CosLQ4Vlzw2OXN6VA89loeIwQJUX0gJR2KITZaVuNMs";
+    // Merged over MOD-03 (#866, Settings 1.1): the full normal host with Sales 1.11 and the Settings 1.1 provider, derived by
+    // ShellCapabilityRegistry.ComputeCandidateRevision over the real providers (drift-test "Actual:"). The V10 row above keeps its
+    // name and value; no host composes it any more.
+    internal const string FullNormalHostWithProductPriceListsSalesReportsAndSettingsV11 =
+        "sha256:cXXuG9OAYYQ6XS_3MvR8jdh-0Tn6hPaSk5Z-hXxOGaY";
 
     internal const string CounterpartyV15PublishedListCreateAndDetail =
         "sha256:UBHnivzhe_dp5f7vU7dP5n7HG-P8XYBGhxvD_OjMSnw";

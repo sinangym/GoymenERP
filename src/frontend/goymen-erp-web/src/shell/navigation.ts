@@ -133,6 +133,8 @@ export const NAV_CAPABILITIES: readonly CapabilityId[] = [
   'identity.assignments.list',
   /** SAT-D61…D70: the Settings discount limit screen, drawn only where the server granted its one name. */
   'settings.sales-discount-limits.manage',
+  /** MOD-03: the Settings tax master screen, drawn only where the server granted its one name. */
+  'settings.tax-master.manage',
 ]
 
 /** Nav label per capability. Only rendered when the server granted the capability. */
@@ -214,6 +216,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   // The role card is opened from a row of the access list, never from the sidebar.
   'identity.roles.detail': '',
   'settings.sales-discount-limits.manage': 'İskonto limitleri',
+  'settings.tax-master.manage': 'Vergi (KDV / tevkifat)',
   // Not these two: a period is proposed from the M-07 list and a journal opened from a row.
   'accounting.periods.propose': '',
   'accounting.journals.detail': '',
@@ -342,6 +345,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       'organization.work-centers.list',
       'identity.assignments.list',
       'settings.sales-discount-limits.manage',
+      'settings.tax-master.manage',
       'inventory.opening-stock.record',
     ],
     subheadings: { 'inventory.opening-stock.record': 'İlk kurulum ve veri aktarımı' },

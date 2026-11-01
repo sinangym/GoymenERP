@@ -836,3 +836,29 @@ describe('deactivation and reactivation', () => {
     expect(screen.queryByTestId('product-inactive-detail')).toBeNull()
   })
 })
+
+describe('item type (SAT-D134)', () => {
+  it('shows nothing without the grant and the item type when the server answers it, under the committed company', async () => {
+    const { calls } = installFetch({
+      capabilities: DETAIL_ONLY,
+      onItemType: () =>
+        json({ companyId: COMPANY_A, productId: PRODUCT_1, version: '1', itemType: 'Scrap', updatedAtUtc: null, updatedBy: null }),
+    })
+    renderProductApp(PATH)
+
+    await cardVisible()
+    const heading = await screen.findByRole('heading', { name: 'Kalem tipi (vergi)' })
+    expect(within(heading.closest('section') as HTMLElement).getByText('Hurda')).toBeTruthy()
+    const reads = calls.filter((call) => call.url.includes('/product-item-types/'))
+    expect(reads.length).toBeGreaterThan(0)
+    expect(reads.every((call) => call.companyId === COMPANY_A && call.method === 'GET')).toBe(true)
+    cleanup()
+    vi.unstubAllGlobals()
+
+    installFetch({ capabilities: DETAIL_ONLY })
+    renderProductApp(PATH)
+    await cardVisible()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(screen.queryByRole('heading', { name: 'Kalem tipi (vergi)' })).toBeNull()
+  })
+})

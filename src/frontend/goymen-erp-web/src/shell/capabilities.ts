@@ -239,6 +239,8 @@ export const CAPABILITY = {
    * bindings. Route `/ayarlar/iskonto-limitleri`, owner Settings; one non-Critical name, granted to no role here.
    */
   settingsSalesDiscountLimits: 'settings.sales-discount-limits.manage',
+  /** MOD-03 Ayarlar > Vergi: the tax master. Route `/ayarlar/vergi`, owner Settings; one non-Critical name, granted to no role. */
+  settingsTaxMaster: 'settings.tax-master.manage',
   /** L-02 loading-instruction list. Route `/lojistik/yukleme-talimatlari`, owner the Sales/Logistics lane (SİPARİŞ). */
   logisticsInstructionsList: 'logistics.instructions.list',
   /** L-03 new loading instruction. Route `/lojistik/yukleme-talimatlari/yeni`. A SEPARATE grant from reading. */
@@ -347,6 +349,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.identityAssignmentsList]: '/ayarlar/kullanicilar-ve-yetkiler',
   [CAPABILITY.identityRolesDetail]: '/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId',
   [CAPABILITY.settingsSalesDiscountLimits]: '/ayarlar/iskonto-limitleri',
+  [CAPABILITY.settingsTaxMaster]: '/ayarlar/vergi',
   [CAPABILITY.logisticsInstructionsList]: '/lojistik/yukleme-talimatlari',
   // Static before the parameter route, the /cari/yeni rule: 'yeni' must never be read as an instruction id.
   [CAPABILITY.logisticsInstructionsCreate]: '/lojistik/yukleme-talimatlari/yeni',
