@@ -40050,7 +40050,8 @@
               }
             },
             "x-erp-problem-codes": [
-              "concurrent_change"
+              "concurrent_change",
+              "sales_order_pdf_customer_revision_pending"
             ]
           },
           "422": {

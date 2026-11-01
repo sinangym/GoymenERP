@@ -28,8 +28,12 @@ public sealed record SalesOrderPrintPricingV1(
     IReadOnlyList<SalesDraftLinePricingV1> Lines,
     SalesOrderPrintRevisionV1? AcceptedRevision = null);
 
-/// <summary>SAT-D165: the revision the PDF prints instead of the current one ("Rev.N") and its lines in line order.</summary>
-public sealed record SalesOrderPrintRevisionV1(string Revision, IReadOnlyList<SalesOrderPrintRevisionLineV1> Lines);
+/// <summary>
+/// SAT-D165: the revision the PDF prints instead of the current one ("Rev.N"), its lines in line order and its OWN approval
+/// facts (who submitted and approved that revision, when) — never the rejected revision's.
+/// </summary>
+public sealed record SalesOrderPrintRevisionV1(string Revision, IReadOnlyList<SalesOrderPrintRevisionLineV1> Lines,
+    SalesDraftApprovalV1? Approval = null);
 
 /// <summary>SAT-D165: one line as the printed revision has it: identity, line number, product, order unit and quantity text.</summary>
 public sealed record SalesOrderPrintRevisionLineV1(Guid LineId, int LineNo, Guid ProductId, Guid OrderUnitId, string Quantity);

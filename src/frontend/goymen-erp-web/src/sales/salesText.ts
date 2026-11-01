@@ -1034,6 +1034,8 @@ export const SALES_ORDER_PDF_TEXT = {
   notFound: 'Sipariş bu şirkette bulunamadı; PDF indirilemedi.',
   changed: "Sipariş bu sırada değişti. PDF'i yeniden indirin.",
   tooLarge: "Sipariş tek bir PDF'e sığmayacak kadar uzun (sayfa sınırı aşılıyor). Yeniden denemek sonucu değiştirmez; destek ekibine bildirin.",
+  customerRevisionPending:
+    "Müşteri güncel revizyonu reddetti ve kabul ettiği revizyon başka bir cari ya da para birimiyle. Cari/para birimi revizyonu sonuçlanana kadar sipariş PDF'i yazdırılamaz.",
   failed: 'PDF oluşturulamadı. Bağlantınızı kontrol edip yeniden deneyin.',
   retry: 'Yeniden dene',
 } as const

@@ -125,6 +125,13 @@ public sealed partial class SalesDraftServiceTests
         var rejected = await world.Service().RecordCustomerRejectionAsync(draftId, Command("9", "SENTETIK müşteri istemedi"),
             Metadata("risk-rj-reject"));
         Assert.Equal(("Rev.1", rejectedQuantity), (rejected.Detail.Draft.Revision, rejected.Detail.Lines[0].Quantity));
+        // SAT-D165: the print read names the accepted Rev.0 — its quantity and its OWN approval facts (K3-REVIEW-B round 2 P3-1).
+        var print = await world.Service().GetOrderPrintPricingAsync(draftId);
+        var printed = print.AcceptedRevision!;
+        Assert.Equal(("Rev.0", "1.25"), (printed.Revision, Assert.Single(printed.Lines).Quantity));
+        Assert.Equal((approved.Approval.SubmittedBy, approved.Approval.DecidedBy, approved.Approval.DecidedAtUtc),
+            (printed.Approval!.SubmittedBy, printed.Approval.DecidedBy, printed.Approval.DecidedAtUtc));
+        Assert.NotEqual(rejected.Detail.Approval.DecidedAtUtc, printed.Approval.DecidedAtUtc);
 
         // Partly shipped: 1 kg of Rev.0's 1.25 leaves 0.25 kg priced at Rev.0 — unavailable (its VAT has no source), never a
         // recorded zero (Rev.1's 1 kg would leave nothing). 1.25 kg shipped leaves nothing of Rev.0 — a recorded zero (Rev.1's
@@ -168,6 +175,14 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.NotApproved, "HeaderRevisionPending"), (stopped.Outcome, stopped.ApprovalState));
         Assert.Equal((SalesDraftInvoicingGatesV1.AwaitingCustomerAcceptance, (string?)null), await GateAsync(world, approved.Id));
         Assert.Equal(SalesDraftStatusAxisStatesV1.Rejected, (await world.Service().GetDraftStatusAsync(approved.Id)).CustomerAcceptance.State);
+        // K3-REVIEW-B round 2 P2-1: no PDF — the accepted Rev.0 cannot be printed under this header, the rejected Rev.1 never is.
+        var pdf = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().GetOrderPrintPricingAsync(approved.Id));
+        Assert.Equal((409, SalesDraftProblemCodesV1.OrderPdfCustomerRevisionPending), (pdf.Status, pdf.Code));
+        // P3-2: the accepted Rev.0 is not this header's commitment — the remainder is unavailable, never Rev.0 counted under it.
+        world.PartyRisk = new FakePartyRisk(FinanceLike([]));
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        var risk = await world.Service().GetDraftRiskCheckAsync(approved.Id);
+        Assert.Equal(("Unavailable", SalesDraftRiskReasonCodesV1.OrderBasisUnreadable), (risk.Components[2].State, risk.Components[2].ReasonCode));
 
         // Rev.2 returns to the accepted account: compared with the ACCEPTED Rev.0, never the rejected Rev.1.
         var back = await world.Service().ReviseHeaderAsync(approved.Id,

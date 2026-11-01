@@ -344,7 +344,9 @@ public sealed partial class SalesDraftService
     {
         if (order.CustomerAcceptedFallback is { } accepted)
         {
-            return ArchivedBasis(order, accepted);
+            // K3-REVIEW-B round 2 P3-2 (fail-closed): an accepted revision under another customer or currency than the header is
+            // not this customer's commitment in this currency (the order ships nothing then) — never counted under the header.
+            return SalesOrderDraft.HeaderDiffersFrom(order.Header, accepted) ? null : ArchivedBasis(order, accepted);
         }
 
         if (order.ApprovalState == InternalApprovalState.Approved)

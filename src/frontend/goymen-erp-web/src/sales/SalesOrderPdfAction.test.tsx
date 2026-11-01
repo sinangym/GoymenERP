@@ -82,11 +82,16 @@ describe('MOD-07 sales order PDF action', () => {
     [404, T.notFound, false],
     [409, T.changed, true],
     [422, T.tooLarge, false],
+    [-409, T.customerRevisionPending, false],
     [503, T.failed, true],
     [500, T.failed, true],
-  ])('a %i is told as its own problem, nothing is saved, and only a passing one offers a retry', async (status, message, retryable) => {
+  ])('a %i is told as its own problem, nothing is saved, and only a passing one offers a retry', async (row, message, retryable) => {
+    // -409: the 409 with SAT-D165's own code (the customer/currency revision after a rejection is unresolved).
+    const status = Math.abs(row)
+    const body = row === -409 ? { status, code: 'sales_order_pdf_customer_revision_pending' }
+      : status === 409 ? { status, code: 'concurrent_change' } : status === 422 ? { status, code: 'sales_order_pdf_too_large' } : { status }
     const saves = captureSaves()
-    vi.stubGlobal('fetch', vi.fn(async () => json(status === 409 ? { status, code: 'concurrent_change' } : status === 422 ? { status, code: 'sales_order_pdf_too_large' } : { status }, status)))
+    vi.stubGlobal('fetch', vi.fn(async () => json(body, status)))
     renderAction()
 
     await userEvent.click(screen.getByRole('button', { name: T.download }))

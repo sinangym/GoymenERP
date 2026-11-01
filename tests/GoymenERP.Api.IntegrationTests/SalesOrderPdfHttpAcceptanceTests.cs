@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Globalization;
 using GoymenERP.Api.Endpoints;
@@ -422,7 +423,9 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         {
             Lines = [new SalesDraftLinePricingV1(line.LineId, 1, "12.50", Kg, "Manual", null, "5", null, null, "0.25", "12.125", null)],
             AcceptedRevision = new SalesOrderPrintRevisionV1("Rev.0",
-                [new SalesOrderPrintRevisionLineV1(line.LineId, 1, line.ProductId, Kg, "3.333")]),
+                [new SalesOrderPrintRevisionLineV1(line.LineId, 1, line.ProductId, Kg, "3.333")],
+                new SalesDraftApprovalV1("SENTETIK-rev0-preparer", new DateTimeOffset(2026, 10, 20, 7, 0, 0, TimeSpan.Zero),
+                    "SENTETIK-rev0-approver", new DateTimeOffset(2026, 10, 20, 8, 0, 0, TimeSpan.Zero), null)),
         };
         using var host = CreateHost(new StubDetail(_ => Task.FromResult(detail)), new StubPricing(_ => Task.FromResult(accepted)));
         using var client = CreateClient(host);
@@ -438,6 +441,10 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
         Assert.Contains("Rev.0 kabul edildi", text, StringComparison.Ordinal);
         Assert.Contains("Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer", text, StringComparison.Ordinal);
         Assert.Contains("SO-2026-000123 · Rev.0 · ", text, StringComparison.Ordinal);
+        // K3-REVIEW-B round 2 P3-1: the printed revision's own submitter and approver, never the rejected Rev.1's.
+        Assert.Contains("SENTETIK-rev0-preparer · 20.10.2026 10:00 (İstanbul saati)", text, StringComparison.Ordinal);
+        Assert.Contains("SENTETIK-rev0-approver · 20.10.2026 11:00 (İstanbul saati)", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("SENTETIK Onaylayan", text, StringComparison.Ordinal);
         Assert.DoesNotContain("7.777", text, StringComparison.Ordinal);
         Assert.DoesNotContain("14.75", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Rev.1 ·", text, StringComparison.Ordinal);
@@ -461,25 +468,35 @@ public sealed class SalesOrderPdfHttpAcceptanceTests(GoymenErpApiFactory factory
     }
 
     /// <summary>
-    /// SAT-D165: a rejected current revision without an accepted revision to print (the accepted one names another customer or
-    /// currency) is never presented as the valid order — it carries the draft watermark and the note; a newer revision approved
-    /// and awaiting the acceptance after a rejection is printed as before (current revision, no note). The reason never prints.
+    /// SAT-D165 / K3-REVIEW-B round 2 P2-1: the rejected current revision is never printed. When the accepted revision names
+    /// another customer or currency, the print read refuses — 409 <c>sales_order_pdf_customer_revision_pending</c>, never a
+    /// PDF (no watermarked rejected revision); an answer that names no accepted revision for a rejected one is not printed
+    /// either (503). A newer revision approved and awaiting the acceptance after a rejection is printed as before (current
+    /// revision, no note). The reason never prints.
     /// </summary>
     [Fact]
-    public async Task SAT_D165_without_an_accepted_revision_to_print_the_rejected_one_is_a_draft_and_a_newer_revision_prints_as_before()
+    public async Task SAT_D165_a_rejected_revision_is_never_printed_and_a_newer_revision_prints_as_before()
     {
         var draftId = Guid.NewGuid();
         var (order, pricing) = Order(draftId, SalesPriceDisclosure.Withheld);
+        var refusing = new StubPricing(_ => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.OrderPdfCustomerRevisionPending));
+        using (var host = CreateHost(new StubDetail(_ => Task.FromResult(Rejected(order))), refusing))
+        {
+            using var client = CreateClient(host);
+            using var response = await client.GetAsync(PdfPath(draftId));
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.NotEqual("application/pdf", response.Content.Headers.ContentType?.MediaType);
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("sales_order_pdf_customer_revision_pending", problem.GetProperty("code").GetString());
+            Assert.True(response.Headers.CacheControl is { Private: true, NoStore: true });
+        }
+
         using (var host = CreateHost(new StubDetail(_ => Task.FromResult(Rejected(order))), new StubPricing(_ => Task.FromResult(pricing))))
         {
             using var client = CreateClient(host);
             using var response = await client.GetAsync(PdfPath(draftId));
-            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-            using var pdf = PdfDocument.Open(await response.Content.ReadAsByteArrayAsync());
-            var page = Assert.Single(pdf.GetPages());
-            Assert.Equal("TASLAK", string.Concat(page.Letters.Where(letter => letter.PointSize > 100).Select(letter => letter.Value)));
-            Assert.Contains("Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer", page.Text, StringComparison.Ordinal);
-            Assert.DoesNotContain(InternalRejectionReason, page.Text, StringComparison.Ordinal);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+            Assert.NotEqual("application/pdf", response.Content.Headers.ContentType?.MediaType);
         }
 
         var newer = Rejected(order) with { Draft = order.Draft with { Revision = "Rev.2" } };

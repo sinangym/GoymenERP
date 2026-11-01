@@ -22,7 +22,9 @@ public static partial class SalesEndpoints
     /// (stable: a retry gives the same answer), never a cut document. A missing or malformed text and missing time-zone rules
     /// are a code-less 503. SAT-D165 (EK23): when the customer rejected the current approved revision, the revision the
     /// customer last accepted is printed (its lines, quantities, prices, revision and file-name version) with the note
-    /// "Rev.N müşteri tarafından reddedildi; sipariş Rev.M ile sürer" — never the rejection's internal reason.
+    /// "Rev.N müşteri tarafından reddedildi; sipariş Rev.M ile sürer" — never the rejection's internal reason. When that accepted
+    /// revision names another customer or currency than the header, nothing is printed: 409
+    /// <c>sales_order_pdf_customer_revision_pending</c> (the rejected revision is never printed in its place).
     /// </summary>
     private static void MapOrderPdf(RouteGroupBuilder drafts)
     {
@@ -104,7 +106,7 @@ public static partial class SalesEndpoints
             .WithName("GetSalesOrderDraftPdfV1")
             .Produces<Stream>(StatusCodes.Status200OK, TechnicalPdfGenerator.PdfMediaType)
             .ProducesErpCodeLessNotFound()
-            .ProducesErpConflict(SalesDraftProblemCodesV1.ConcurrentChange)
+            .ProducesErpConflict(SalesDraftProblemCodesV1.ConcurrentChange, SalesDraftProblemCodesV1.OrderPdfCustomerRevisionPending)
             .ProducesErpUnprocessableEntity(SalesDraftProblemCodesV1.OrderPdfTooLarge)
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

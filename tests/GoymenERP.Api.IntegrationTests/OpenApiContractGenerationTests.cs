@@ -2973,7 +2973,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["RescheduleSalesOrderDraftDeliveryV1:409"] = ["concurrent_change", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["RescheduleSalesOrderDraftDeliveryV1:422"] = ["validation_failed"],
             ["CancelSalesOrderDraftV1:400"] = ["command_metadata_invalid", "validation_failed"],
-            ["GetSalesOrderDraftPdfV1:409"] = ["concurrent_change"],
+            ["GetSalesOrderDraftPdfV1:409"] = ["concurrent_change", "sales_order_pdf_customer_revision_pending"],
             ["GetSalesOrderDraftPdfV1:422"] = ["sales_order_pdf_too_large"],
             ["CancelSalesOrderDraftV1:409"] = ["concurrent_change", "sales_cancellation_blocked", "sales_cancellation_impact_changed", "sales_state_conflict", "same_key_payload_mismatch", "version_conflict"],
             ["CancelSalesOrderDraftV1:422"] = ["validation_failed"],

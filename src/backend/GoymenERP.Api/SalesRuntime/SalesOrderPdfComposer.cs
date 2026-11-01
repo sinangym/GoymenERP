@@ -54,6 +54,13 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
         // rejected revision's. The detail is narrowed to it here, so every block below prints that revision only.
         var accepted = pricing.AcceptedRevision;
         var stored = detail;
+        if (accepted is null && IsApprovedRevision(detail.Draft) && CurrentRevisionRejected(detail))
+        {
+            // The rejected current revision is never printed as the order (SAT-D165): the print read names the accepted revision
+            // or refuses (409); an answer with neither cannot be printed faithfully.
+            throw new InvalidOperationException("A customer-rejected revision has no accepted revision to print.");
+        }
+
         detail = accepted is null ? detail : AcceptedDetail(detail, accepted);
         var draft = detail.Draft;
 
@@ -96,7 +103,7 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             blocks,
             Format("Footer", draft.DocumentNo, draft.Revision),
             T("PageLabel"),
-            accepted is null && (!IsApprovedRevision(draft) || CurrentRevisionRejected(stored)) ? T("DraftWatermark") : null);
+            accepted is null && !IsApprovedRevision(draft) ? T("DraftWatermark") : null);
         return (request, pricesVisible);
     }
 
@@ -133,14 +140,16 @@ public sealed class SalesOrderPdfComposer(IStringLocalizer<SalesOrderPdfComposer
             lines.Add(now with { Quantity = line.Quantity, RequestedDeliverySlices = sameQuantity ? now.RequestedDeliverySlices : null });
         }
 
+        // K3-REVIEW-B round 2 P3-1: who submitted and approved the printed revision is that revision's own facts.
         return detail with
         {
             Draft = detail.Draft with { Revision = accepted.Revision, LineCount = lines.Count },
             Lines = lines,
+            Approval = accepted.Approval ?? throw new InvalidOperationException("The accepted revision to print has no approval facts."),
         };
     }
 
-    /// <summary>SAT-D115: the customer rejected the current revision (printed without an accepted revision: under the watermark).</summary>
+    /// <summary>SAT-D115: the customer rejected the current revision.</summary>
     private static bool CurrentRevisionRejected(SalesOrderDraftReadDetailViewV1 detail) =>
         detail.CustomerAcceptance.Rejections?.Any(rejection => rejection.Revision == detail.Draft.Revision) == true;
 

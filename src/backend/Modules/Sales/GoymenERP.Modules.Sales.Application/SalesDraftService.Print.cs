@@ -19,6 +19,7 @@ public sealed partial class SalesDraftService : ISalesOrderPrintReadServiceV1
 
         var draft = await LoadDraftAsync(scope, permission, draftId, cancellationToken);
         var version = draft.Version.ToString(CultureInfo.InvariantCulture);
+        RequirePrintable(draft);
         var accepted = PrintedAcceptedRevision(draft);
         var printed = accepted is null ? null : PrintRevision(accepted);
         if (await DiscloseAsync(scope, cancellationToken) != SalesPriceDisclosure.Visible)
@@ -45,21 +46,31 @@ public sealed partial class SalesDraftService : ISalesOrderPrintReadServiceV1
     /// <summary>
     /// SAT-D165 (EK23): the revision the customer last accepted, printed instead of the current one, when the CURRENT
     /// revision is internally approved and the customer rejected it (<see cref="SalesOrderDraft.CustomerAcceptedFallback"/>).
-    /// Not when that revision names another customer or currency than the header (the header printed would not be the accepted
-    /// one; the order ships nothing then): the current revision is printed under the draft watermark with the rejection note.
     /// A newer revision in preparation or awaiting approval is printed as a draft (SAT-D56), as before.
     /// </summary>
     private static ApprovedRevisionSnapshot? PrintedAcceptedRevision(SalesOrderDraft draft) =>
-        draft.ApprovalState == InternalApprovalState.Approved
-        && draft.CustomerAcceptedFallback is { } accepted
-        && !SalesOrderDraft.HeaderDiffersFrom(draft.Header, accepted)
-            ? accepted
-            : null;
+        draft.ApprovalState == InternalApprovalState.Approved && draft.CustomerAcceptedFallback is { } accepted ? accepted : null;
+
+    /// <summary>
+    /// K3-REVIEW-B round 2 P2-1 (fail-closed): the accepted revision names another customer or currency than the header — it
+    /// cannot be printed under its own header, and the rejected revision is never printed in its place (the "print the rejected
+    /// one under a watermark" option was not chosen, EK23). 409 <c>sales_order_pdf_customer_revision_pending</c>, stable until
+    /// the customer/currency revision is resolved. Asked before any price read; nothing is recorded (a read).
+    /// </summary>
+    private static void RequirePrintable(SalesOrderDraft draft)
+    {
+        if (PrintedAcceptedRevision(draft) is { } accepted && SalesOrderDraft.HeaderDiffersFrom(draft.Header, accepted))
+        {
+            throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.OrderPdfCustomerRevisionPending);
+        }
+    }
 
     private static SalesOrderPrintRevisionV1 PrintRevision(ApprovedRevisionSnapshot accepted) =>
         new(SalesDraftApiV1.RevisionText(accepted.Revision),
             [.. accepted.Lines.OrderBy(line => line.LineNo)
-                .Select(line => new SalesOrderPrintRevisionLineV1(line.LineId, line.LineNo, line.ProductId, line.OrderUnitId, line.QuantityText))]);
+                .Select(line => new SalesOrderPrintRevisionLineV1(line.LineId, line.LineNo, line.ProductId, line.OrderUnitId, line.QuantityText))],
+            new SalesDraftApprovalV1(accepted.Approval.SubmittedBy, accepted.Approval.SubmittedAtUtc, accepted.Approval.DecidedBy,
+                accepted.Approval.DecidedAtUtc, null));
 
     private static SalesOrderPrintPricingV1 Withheld(string version, SalesOrderPrintRevisionV1? printed) =>
         new(version, SalesPriceDisclosure.Withheld, null, [], printed);
