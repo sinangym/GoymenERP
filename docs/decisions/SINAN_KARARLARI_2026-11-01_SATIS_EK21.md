@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-01 (Satış: tekliften sipariş carisi, risk istisnası, e-belge yetkisi, karma vade, taksit, alıcı durum listesi)
 
-Bu belge önceki karar dosyalarını silmez, SAT-D152…SAT-D162'yi ekler. 1 Kasım 2026'daki satış modülü genel taramasının
+Bu belge önceki karar dosyalarını silmez, SAT-D152…SAT-D163'ü ekler. 1 Kasım 2026'daki satış modülü genel taramasının
 (backend, ekran, test denetimi) açtığı açık soruları cevaplar. EK18 (SAT-D124, SAT-D128, SAT-D138), EK19 (SAT-D140), EK20
 (SAT-D141…D151), EK15/EK17 (SAT-D102, SAT-D119) ve DEC-FIN-009 geçerlidir.
 
@@ -22,7 +22,7 @@ Bu belge önceki karar dosyalarını silmez, SAT-D152…SAT-D162'yi ekler. 1 Kas
   günü yoksa **bütün plan** çözümsüz döner. Bundan sonra plan **taksit taksit** çözülür.
 
 **Kaynak:** Sinan'ın 1 Kasım 2026'da Claude Code cloud oturumunda (oturum `session_01SPADrzecggx3apH2gfNW7b`) verdiği seçmeli
-soru cevapları: beş tur, on beş soru. Sinan'a her seçeneğin adı **ve açıklaması** birlikte gösterildi. İki soruda Sinan kendi
+soru cevapları: altı tur, on yedi soru. Sinan'a her seçeneğin adı **ve açıklaması** birlikte gösterildi. İki soruda Sinan kendi
 metnini yazdı (soru 2 ve 10), bir soruda "Bunu anlamadım" dedi (soru 6). Anlaşılmayan soru somut bir örnekle yeniden soruldu (soru
 9). Metinler aynen verilir.
 
@@ -45,6 +45,8 @@ metnini yazdı (soru 2 ve 10), bir soruda "Bunu anlamadım" dedi (soru 6). Anla�
 | 13 | (Teyit) Kilitli bir kurala göre (DEC-SAL-002) 'risk istisnası değişirse sipariş yeni revizyona ve yeniden onaya gider'. Tek sevklik günlük risk istisnası da siparişi yeni revizyona sokmalı mı? | Hayır, sipariş revize olmaz (Önerilen) | "Tek sevk istisnası sevke bağlı ayrı bir onay kaydıdır; sipariş revizyonu ve sipariş yeniden onayı açmaz. Kuraldaki 'risk istisnası' siparişin kendisine yazılan sürekli istisnayı kasteder." (seçilmeyen: "Evet, her istisna revizyon açsın") |
 | 14 | (Teyit) Sevkiyatçı sipariş detayını ve bakiyeleri göremiyor. Risk istisnası talebini nereden açsın? | Sevk/yükleme ekranından (Önerilen) | "Yükleme ekranında yalnız 'risk limiti aşıldı, sevk duruyor' yazar; tutar görünmez; 'istisna iste' düğmesi olur." (seçilmeyen: "Sevkiyatçı talep etmesin") |
 | 15 | (Teyit) Alıcı vergi durumu listesine yeni bir durum eklemek veya bir durumun vergi etkisini değiştirmek vergi ayarı sayılsın mı? | Evet, vergi ayarı gibi (Önerilen) | "Müdür/Admin doğrudan değiştirir; Muhasebe önerir, müdür onaylar; yalnız müşavirin onayladığı kodlar kullanılabilir." (seçilmeyen: "Yalnız Admin") |
+| 16 | (Teyit) Müdür de risk istisnası TALEP edebilsin mi? (Onaylayabiliyor; kendi talebini onaylayamaz.) | Evet (Önerilen) | "Müdür talep açabilir; onayı başka bir yetkili (Satış Uzmanı, başka Müdür veya Admin) verir." (seçilmeyen: "Hayır" — "Müdür yalnız onaylar, talep açmaz.") |
+| 17 | (Teyit) Admin, Muhasebe'ye verilen iki işi de yapabilsin mi: vergi ayarı önermek ve dış faturayı sipariş/sevkle eşleştirmek? | Evet, ikisini de (Önerilen) | "Admin her şeyi yapabilen kullanıcı olduğu için bu ikisini de yapabilir (vergi ayarını zaten doğrudan değiştirebiliyor)." (seçilmeyenler: "Yalnız eşleştirme"; "Hayır, yalnız Muhasebe") |
 
 ## Kararlar
 
@@ -57,14 +59,15 @@ metnini yazdı (soru 2 ve 10), bir soruda "Bunu anlamadım" dedi (soru 6). Anla�
 | SAT-D156 | Karma vadede tarih | Karma planda vade tarihleri **taksit taksit** çözülür. Nokta vadeli taksitin tarihi hesaplanır. Sevk vadeli taksit, sevk yapılana kadar "bekliyor" görünür (soru 4). Bir taksitin belirsizliği diğerlerini bekletmez | Vade hesaplayıcı (`SalesDueDateCalculator`, #864) |
 | SAT-D157 | Eksi son taksit | Taksit bölmesinde son taksit eksiye düşüyorsa bölme **reddedilir**. Kullanıcı "tutar bu kadar taksite bölünemez" uyarısını görür ve daha az taksit girer (soru 7; bugünkü fail-closed davranış). SAT-D124'teki yuvarlama kuralı değişmez | Vade hesaplayıcı (#864) |
 | SAT-D158 | Alıcı vergi durumu listesi | SAT-D140'taki alıcı vergi durumu listesi (normal, nihai tüketici, tevkifata tabi olmayan, ihraç kayıtlı, istisna belgeli) **Ayarlar'da efektif tarihli bir liste** olarak tutulur. Listeye durum eklemek veya bir durumun vergi etkisini değiştirmek **vergi ayarı** sayılır (soru 15): Müdür ve Admin doğrudan değiştirir (EK20 SAT-D145), Muhasebe önerir ve müdür sınıfı onaylar (SAT-D146); etkide yalnız mali müşavirin onayladığı kodlar kullanılabilir (SAT-D148). Sürüm-0 listesindeki beş durumun etkisi SAT-D74, SAT-D93 ve SAT-D147'ye göre tohumlanır. Her durumun vergi etkisi (SAT-D74, SAT-D93, SAT-D147) aynı listede veri olarak tutulur, hesaplayıcıda sabit kodlanmaz | Ayarlar vergi masterı, sipariş başlığı |
-| SAT-D159 | Risk istisnasını kim ister | Risk istisnasını **Sevkiyatçı, Satış Destek, Satış Uzmanı ve Admin** talep edebilir (soru 10 ve 12). Sevkiyatçı talebi **sevk/yükleme ekranından** açar; o ekranda yalnız "risk limiti aşıldı, sevk duruyor" yazar, tutar görünmez (soru 14). Satış Uzmanı ve Admin hem talep hem onay iznini alır; kimse kendi talebini onaylayamaz (SAT-D153) | API-07, persona grant matrisi |
+| SAT-D159 | Risk istisnasını kim ister | Risk istisnasını **Sevkiyatçı, Satış Destek, Satış Uzmanı, Müdür ve Admin** talep edebilir (soru 10, 12 ve 16). Sevkiyatçı talebi **sevk/yükleme ekranından** açar; o ekranda yalnız "risk limiti aşıldı, sevk duruyor" yazar, tutar görünmez (soru 14). Satış Uzmanı, Müdür ve Admin hem talep hem onay iznini alır; kimse kendi talebini onaylayamaz (SAT-D153) | API-07, persona grant matrisi |
 | SAT-D160 | Risk istisnasının geçerliliği | Onaylanan risk istisnası **onaylandığı iş tarihinin (BusinessDate, Türkiye saati) sonuna kadar** geçerlidir; o tarih içinde sevk kesinleşmezse düşer ve ertesi gün yeniden onay gerekir (soru 11). Uygulama ayrıntısı (geri alınabilir): bağlı olduğu sevk iptal edilirse istisna da düşer. DEC-FIN-009'daki "istisna süreli" şartı bununla karşılanır | API-07, Lojistik sevk kapısı |
 | SAT-D161 | Risk istisnası ve sipariş revizyonu | Tek sevk risk istisnası sevke bağlı **ayrı bir onay kaydıdır**; sipariş revizyonu (Rev+1) ve sipariş yeniden onayı **açmaz** (soru 13). Kilitli DEC-SAL-002'deki "risk istisnası" ifadesi siparişin kendisine yazılan sürekli istisnayı kasteder; bu okuma Sinan'ın açık cevabıdır | API-07, DEC-SAL-002 okunuşu |
 | SAT-D162 | Sevkiyatçının talep yüzeyi | Sevkiyatçı risk istisnası talebini **sevk/yükleme ekranından** açar. O ekran yalnız "risk limiti aşıldı, sevk duruyor" durumunu ve "istisna iste" düğmesini gösterir; limit, bakiye ve tutar göstermez (soru 14; persona kartı: Sevkiyatçı Finance bakiyelerini göremez). Talep sipariş detayı izni (`sales.drafts.read`) gerektirmez | Lojistik yükleme ekranı, API-07 |
+| SAT-D163 | Admin ve Muhasebe işleri | EK20'de yalnız Muhasebe'ye verilen iki işi **Admin de yapar**: vergi ayarı **önerisi** (SAT-D146 öneri izni) ve dış faturanın sipariş/irsaliyeyle **eşleştirilmesi** (SAT-D142) (soru 17). Admin'in öneri izni, onu SAT-D146'daki onay kuralından muaf tutmaz; kendi önerisini onaylayamaz. Admin vergi ayarını doğrudan da değiştirebilir (SAT-D145) | Persona grant matrisi |
 
 ## Uygulama notları
 
-- SAT-D153 ve SAT-D159 için iki ayrı izin gerekir: istisnayı **isteme** (Sevkiyatçı, Satış Destek, Satış Uzmanı, Admin) ve
+- SAT-D153 ve SAT-D159 için iki ayrı izin gerekir: istisnayı **isteme** (Sevkiyatçı, Satış Destek, Satış Uzmanı, Müdür, Admin) ve
   **onaylama** (Satış Uzmanı, Müdür, Admin). `SATIS_HAZIRLIK_PLANI_v1` API-07'deki adlar (`sales.orders.risk-exception.request`
   / `.approve`) kullanılır.
 - SAT-D154'teki istisna belirli bir sevke (yükleme/irsaliye) bağlanır ve o sevk kesinleşince tükenir; kullanılmazsa
@@ -79,7 +82,7 @@ metnini yazdı (soru 2 ve 10), bir soruda "Bunu anlamadım" dedi (soru 6). Anla�
 
 ## Sınırlar
 
-- Grant, rol ve Critical ataması insan kapısıdır. Bu belge, SAT-D153, SAT-D155, SAT-D158 ve SAT-D159'daki atamalar için Sinan'ın somut
+- Grant, rol ve Critical ataması insan kapısıdır. Bu belge, SAT-D153, SAT-D155, SAT-D158, SAT-D159 ve SAT-D163'teki atamalar için Sinan'ın somut
   kararıdır. Uygulama PR'ı bu satırların dışında grant, rol veya Critical açamaz. Gerçek kullanıcıya rol atanması ve
   production etkinleştirmesi insan kapısında kalır (SAT-D110).
 - Bu kararlar merge kapılarını ve diğer insan kapılarını değiştirmez: deployment, environment, secret, Settings
