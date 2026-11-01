@@ -435,7 +435,7 @@ class RecoverySurfaceInventoryTests(unittest.TestCase):
 
     def test_current_source_inventory_is_exact_and_schema_valid(self) -> None:
         self.assertEqual(
-            {"dbContexts": 18, "migrations": 107, "durableStores": 24},
+            {"dbContexts": 18, "migrations": 108, "durableStores": 24},
             self.inventory["counts"],
         )
         actual = {
@@ -1920,7 +1920,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
         contexts = generator._discover_csharp_subclasses(self.snapshot, "DbContext")
         migrations = generator._discover_csharp_subclasses(self.snapshot, "Migration")
         self.assertEqual(18, len(contexts))
-        self.assertEqual(107, len(migrations))
+        self.assertEqual(108, len(migrations))
         accepted_main_migrations = {
             "20261014120000_AddManufacturingPlanCutLines.cs",
             "20261015110000_ReleaseHotRolledCutSheetPlateTechnicalDefinition.cs",
@@ -2261,7 +2261,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1223, len(source_paths))
+        self.assertEqual(1232, len(source_paths))
         # SAT-D61…D70: the Settings discount limit groups, limits and bindings (contracts, calculator, rows, reads,
         # policy provider, binding reader, administration, shell provider), their routes and host adapters, and the
         # AddSalesDiscountLimitGroups migration (SAT-D78/D84: the limit timeline and its withdrawals).
