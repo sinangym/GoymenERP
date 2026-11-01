@@ -187,8 +187,27 @@ export function isCurrencyCode(value: string): boolean {
   return CURRENCY.test(value)
 }
 
+/** Exactly these members, no more and no fewer (the Sales decoders' rule): an unknown member is off-contract. */
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const own = Object.keys(value)
+  return own.length === keys.length && keys.every((key) => Object.hasOwn(value, key))
+}
+
+/** The wire members of each `TaxMasterViewV1` part (the OpenAPI schemas'). */
+const KEYS = {
+  master: ['companyId', 'businessDate', 'itemTypeDefaults', 'codeLists', 'withholdingThreshold'],
+  series: ['itemType', 'version', 'inForce', 'scheduled'],
+  defaultRecord: ['recordId', 'source', 'recordVersion', 'effectiveFrom', 'vatApplies', 'vatPercent', 'exemptionCode',
+    'withholdingApplies', 'withholdingPercent', 'withholdingCode', 'recordedBy', 'recordedAtUtc', 'reason'],
+  codeList: ['kind', 'version', 'inForce', 'scheduled'],
+  listVersion: ['listVersion', 'effectiveFrom', 'entries', 'recordedBy', 'recordedAtUtc', 'reason'],
+  entry: ['code', 'name'],
+  threshold: ['version', 'inForce', 'scheduled'],
+  thresholdRecord: ['recordId', 'recordVersion', 'effectiveFrom', 'amount', 'currencyCode', 'recordedBy', 'recordedAtUtc', 'reason'],
+} as const
+
 function decodeThresholdRecord(raw: unknown): TaxThresholdRecord | null {
-  if (!isRecord(raw) || !isUuid(raw.recordId) || !isVersion(raw.recordVersion) || !isDateText(raw.effectiveFrom)
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.thresholdRecord) || !isUuid(raw.recordId) || !isVersion(raw.recordVersion) || !isDateText(raw.effectiveFrom)
     || !isAmountText(raw.amount) || typeof raw.currencyCode !== 'string' || !isCurrencyCode(raw.currencyCode)
     || !isText(raw.recordedBy) || typeof raw.recordedAtUtc !== 'string' || typeof raw.reason !== 'string') return null
   return {
@@ -204,7 +223,7 @@ function decodeThresholdRecord(raw: unknown): TaxThresholdRecord | null {
 }
 
 function decodeThreshold(raw: unknown): TaxThreshold | null {
-  if (!isRecord(raw) || !isVersion(raw.version) || !Array.isArray(raw.scheduled)) return null
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.threshold) || !isVersion(raw.version) || !Array.isArray(raw.scheduled)) return null
   const inForce = raw.inForce === null ? null : decodeThresholdRecord(raw.inForce)
   if (raw.inForce !== null && inForce === null) return null
   const scheduled = raw.scheduled.map(decodeThresholdRecord)
@@ -243,7 +262,7 @@ export function isListCode(value: string): boolean {
 }
 
 function decodeDefault(raw: unknown): TaxDefaultRecord | null {
-  if (!isRecord(raw) || !isUuid(raw.recordId) || (raw.source !== 'Catalog' && raw.source !== 'Record')
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.defaultRecord) || !isUuid(raw.recordId) || (raw.source !== 'Catalog' && raw.source !== 'Record')
     || !isVersion(raw.recordVersion) || !isDateText(raw.effectiveFrom) || typeof raw.vatApplies !== 'boolean'
     || typeof raw.withholdingApplies !== 'boolean' || typeof raw.reason !== 'string') return null
   const optionalCode = (value: unknown) => value === null || (typeof value === 'string' && isListCode(value))
@@ -274,7 +293,7 @@ function decodeDefault(raw: unknown): TaxDefaultRecord | null {
 }
 
 function decodeSeries(raw: unknown): TaxDefaultSeries | null {
-  if (!isRecord(raw) || !ITEM_TYPES.includes(raw.itemType as ItemType) || !isVersion(raw.version)
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.series) || !ITEM_TYPES.includes(raw.itemType as ItemType) || !isVersion(raw.version)
     || !Array.isArray(raw.scheduled)) return null
   const inForce = raw.inForce === null ? null : decodeDefault(raw.inForce)
   if (raw.inForce !== null && inForce === null) return null
@@ -284,10 +303,10 @@ function decodeSeries(raw: unknown): TaxDefaultSeries | null {
 }
 
 function decodeListVersion(raw: unknown): TaxCodeListVersion | null {
-  if (!isRecord(raw) || !isVersion(raw.listVersion) || !isDateText(raw.effectiveFrom) || !Array.isArray(raw.entries)
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.listVersion) || !isVersion(raw.listVersion) || !isDateText(raw.effectiveFrom) || !Array.isArray(raw.entries)
     || !isText(raw.recordedBy) || typeof raw.recordedAtUtc !== 'string' || typeof raw.reason !== 'string') return null
   const entries = raw.entries.map((entry) =>
-    isRecord(entry) && typeof entry.code === 'string' && isListCode(entry.code) && isText(entry.name)
+    isRecord(entry) && hasExactKeys(entry, KEYS.entry) && typeof entry.code === 'string' && isListCode(entry.code) && isText(entry.name)
       ? { code: entry.code, name: entry.name }
       : null,
   )
@@ -303,7 +322,7 @@ function decodeListVersion(raw: unknown): TaxCodeListVersion | null {
 }
 
 function decodeList(raw: unknown): TaxCodeList | null {
-  if (!isRecord(raw) || !CODE_LIST_KINDS.includes(raw.kind as CodeListKind) || !isVersion(raw.version)
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.codeList) || !CODE_LIST_KINDS.includes(raw.kind as CodeListKind) || !isVersion(raw.version)
     || !Array.isArray(raw.scheduled)) return null
   const inForce = raw.inForce === null ? null : decodeListVersion(raw.inForce)
   if (raw.inForce !== null && inForce === null) return null
@@ -314,7 +333,7 @@ function decodeList(raw: unknown): TaxCodeList | null {
 
 /** The whole master, or null when any part is off-contract or the company is not the one asked for. */
 export function decodeTaxMaster(raw: unknown, companyId: string): TaxMaster | null {
-  if (!isRecord(raw) || raw.companyId !== companyId || !isDateText(raw.businessDate) || !Array.isArray(raw.itemTypeDefaults)
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.master) || raw.companyId !== companyId || !isDateText(raw.businessDate) || !Array.isArray(raw.itemTypeDefaults)
     || !Array.isArray(raw.codeLists)) return null
   const series = raw.itemTypeDefaults.map(decodeSeries)
   const lists = raw.codeLists.map(decodeList)

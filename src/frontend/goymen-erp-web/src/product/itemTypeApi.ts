@@ -22,6 +22,9 @@ export interface ProductItemTypeView {
 
 export type ItemTypeRead =
   | { readonly type: 'ok'; readonly data: ProductItemTypeView }
+  /** 401: the session ended — not the same as lacking the permission. */
+  | { readonly type: 'unauthenticated' }
+  /** 403: no `product.item-type.manage` here. */
   | { readonly type: 'forbidden' }
   | { readonly type: 'failed' }
 
@@ -46,10 +49,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/** Exactly these members, no more and no fewer (the Sales decoders' rule): an unknown member is off-contract. */
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const own = Object.keys(value)
+  return own.length === keys.length && keys.every((key) => Object.hasOwn(value, key))
+}
+
+/** `ProductItemTypeViewV1`'s members. */
+const ITEM_TYPE_VIEW_KEYS = ['companyId', 'productId', 'version', 'itemType', 'updatedAtUtc', 'updatedBy'] as const
+
 export function decodeItemType(raw: unknown, companyId: string, productId: string): ProductItemTypeView | null {
-  if (!isRecord(raw) || raw.companyId !== companyId || raw.productId !== productId || typeof raw.version !== 'string' || !/^(0|[1-9]\d*)$/.test(raw.version)) {
+  if (!isRecord(raw) || !hasExactKeys(raw, ITEM_TYPE_VIEW_KEYS) || raw.companyId !== companyId || raw.productId !== productId || typeof raw.version !== 'string' || !/^(0|[1-9]\d*)$/.test(raw.version)) {
     return null
   }
+  if (!(raw.updatedAtUtc === null || typeof raw.updatedAtUtc === 'string')
+    || !(raw.updatedBy === null || typeof raw.updatedBy === 'string')) return null
   const itemType = raw.itemType
   if (itemType !== null && !PRODUCT_ITEM_TYPES.includes(itemType as ProductItemType)) return null
   if ((raw.version === '0') !== (itemType === null)) return null
@@ -59,7 +73,8 @@ export function decodeItemType(raw: unknown, companyId: string, productId: strin
 export async function fetchItemType(companyId: string, productId: string, signal?: AbortSignal): Promise<ItemTypeRead> {
   try {
     const response = await fetch(`${API_BASE}${itemTypePath(productId)}`, { headers: headers(companyId), signal })
-    if (response.status === 401 || response.status === 403) return { type: 'forbidden' }
+    if (response.status === 401) return { type: 'unauthenticated' }
+    if (response.status === 403) return { type: 'forbidden' }
     if (response.status !== 200) return { type: 'failed' }
     const data = decodeItemType(await response.json(), companyId, productId)
     return data === null ? { type: 'failed' } : { type: 'ok', data }

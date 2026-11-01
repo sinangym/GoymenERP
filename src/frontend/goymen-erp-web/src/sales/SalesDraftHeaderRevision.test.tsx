@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import detailResponseRaw from './examples/detail-response.json?raw'
 import { SALES_HEADER_WRITE_CAPABILITY } from './capabilities'
-import { HEADER_REVISION_TEXT as T } from './salesText'
+import { HEADER_REVISION_TEXT as T, HEADER_SUMMARY_TEXT as S, ORDER_DETAIL_TEXT } from './salesText'
 import { ACCOUNT, ADDRESS, ADDRESS_TEXT, ALL_SALES, COMPANY_A, CURRENCY, installFetch, json, OTHER_ACCOUNT, PARTY, renderSalesApp } from './testHarness'
 
 const DRAFT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
@@ -60,12 +60,53 @@ async function openForm() {
 }
 
 describe('S-04 header revision (API-04, DEC-SAL-002, DEC-SAL-008)', () => {
-  it('is not offered without the header control and reads nothing', async () => {
+  it('is not offered without the header control; the header is read once, for the read-only summary only', async () => {
     const harness = installFetch({ capabilities: ALL_SALES, onDetail: () => json(detail()) })
     renderSalesApp(`/satis/siparisler/${DRAFT}`)
     await screen.findByTestId('sales-draft-revision')
     expect(screen.queryByTestId('sales-header-revision')).toBeNull()
-    expect(harness.calls.some((call) => call.url.endsWith('/header'))).toBe(false)
+    await waitFor(() => expect(screen.getByTestId('sales-draft-due-terms').textContent).toBe(S.noDueTerms))
+    const reads = harness.calls.filter((call) => call.url.endsWith('/header'))
+    expect(reads).toHaveLength(1)
+    expect(reads[0]).toMatchObject({ method: 'GET', companyId: COMPANY_A, idempotencyKey: null, body: null })
+  })
+
+  it('shows a mixed ("karma") due plan and the sales owner by name to a read-only viewer, in words', async () => {
+    installFetch({
+      capabilities: ALL_SALES,
+      onDetail: () => json(detail()),
+      onHeader: () => json(header({
+        salesOwnerUserId: OWNER, salesOwnerDisplayName: 'Sentetik Satışçı',
+        dueTerms: { instalments: [
+          { sequenceNo: 1, basis: 'OrderDate', daysAfter: 30, sharePercent: '40' },
+          { sequenceNo: 2, basis: 'ShipmentDate', daysAfter: 60, sharePercent: '60' },
+        ] },
+      })),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    const due = await screen.findByTestId('sales-draft-due-terms')
+    await waitFor(() => expect(within(due).getAllByRole('listitem').map((item) => item.textContent)).toEqual([
+      S.instalment('40', 'OrderDate', 30), S.instalment('60', 'ShipmentDate', 60),
+    ]))
+    expect(screen.getByTestId('sales-draft-sales-owner').textContent).toBe('Sentetik Satışçı')
+    // The raw owner-reference ids live only in the technical disclosure, not in the reading view.
+    const commercial = screen.getByRole('region', { name: ORDER_DETAIL_TEXT.commercialHeading })
+    expect(within(commercial).queryByTestId('sales-draft-paymentTerms')).toBeNull()
+    expect(within(screen.getByTestId('sales-draft-technical-ids')).getByTestId('sales-draft-paymentTerms')).toBeTruthy()
+  })
+
+  it('says the due terms are withheld without the price read (SAT-D150)', async () => {
+    installFetch({ capabilities: ALL_SALES, onDetail: () => json(detail()), onHeader: () => json(header({ dueTermsDisclosure: 'Withheld' })) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await waitFor(() => expect(screen.getByTestId('sales-draft-due-terms').textContent).toBe(S.dueTermsWithheld))
+    expect(screen.getByTestId('sales-draft-sales-owner').textContent).toBe(S.noSalesOwner)
+  })
+
+  it('names a header it may not read or cannot vouch for, and shows no due terms then', async () => {
+    installFetch({ capabilities: ALL_SALES, onDetail: () => json(detail()), onHeader: () => json({ draftVersion: 4 }) })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await waitFor(() => expect(screen.getByTestId('sales-draft-sales-owner').textContent).toBe(S.unreadable))
+    expect(screen.getByTestId('sales-draft-due-terms').textContent).toBe(S.unreadable)
   })
 
   it('revises the due terms and the sales owner of an approved order under one key and re-reads Rev.1', async () => {

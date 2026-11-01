@@ -120,6 +120,8 @@ import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
 import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
 import { customerAcceptedFallback, previousRevision } from './orderStatus'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
+import { SalesOrderRiskCard } from './SalesOrderRiskCard'
+import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { SalesDraftCancellation } from './SalesDraftCancellation'
 import { SalesDraftForceClose } from './SalesDraftForceClose'
@@ -263,6 +265,19 @@ export function SalesDraftDetailPage() {
           />
         ) : null
       }
+      risk={
+        namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesOrderRiskCard
+            key={`risk:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+            detail={outcome.data}
+          />
+        ) : null
+      }
+      headerSummary={
+        companyId !== null && outcome.data.draft.companyId === companyId ? (
+          <SalesOrderHeaderSummary detail={outcome.data} companyId={companyId} />
+        ) : null
+      }
       delivery={companyId === null ? null : <DeliveryBlock shell={shell} detail={outcome.data} companyId={companyId} />}
       revisionHistory={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
@@ -346,6 +361,7 @@ export function SalesDraftDetailPage() {
             canRequest={hasCapability(shell, SALES_QUANTITY_WRITE_CAPABILITY)}
             canDecide={hasCapability(shell, SALES_CAPABILITY.ordersApprove)}
             onRecorded={() => void queryClient.invalidateQueries({ queryKey })}
+            userDisplays={outcome.data.userDisplays}
           />
         )
       }
@@ -445,6 +461,8 @@ export function DraftView({
   commands = null,
   statusAxes = null,
   totals = null,
+  risk = null,
+  headerSummary = null,
   delivery = null,
   commercialActions = null,
   revisionHistory = null,
@@ -470,12 +488,15 @@ export function DraftView({
   readonly commands?: React.ReactNode
   /**
    * DEC-SAL-001 / API-08 / UI-15: the seven status axes card (null: not mounted — no single company bound). The UI-15 totals
-   * card (API-03) is mounted beside it (`totals`); the risk card (API-06) is mounted here by its own slice when that route
-   * exists, and nothing stands in for it until then.
+   * card (API-03) is mounted beside it (`totals`), then the customer risk card (API-06, `risk`).
    */
   readonly statusAxes?: React.ReactNode
   /** API-03 / UI-15: the order totals card (null: not mounted — no single company bound). Every amount is the server's. */
   readonly totals?: React.ReactNode
+  /** MOD-01 / API-06 / UI-15: the customer risk card (null: not mounted — no single company bound). Every figure is the server's. */
+  readonly risk?: React.ReactNode
+  /** API-04: the read-only due terms and sales owner facts (`dt`/`dd` pairs); null when no single company is bound. */
+  readonly headerSummary?: React.ReactNode
   /** SALES-A2a: the "Teslimat" block (the owner's texts for the stored references); null when no company is bound. */
   readonly delivery?: React.ReactNode
   readonly commercialActions?: React.ReactNode
@@ -605,12 +626,30 @@ export function DraftView({
             <dt>{T.currency}</dt>
             <dd className={styles.identifier}>{draft.currencyId}</dd>
           </div>
+          {/*
+            The stored owner references by id and owner version. The delivery address and contact are shown by the Cari owner's
+            texts in the "Teslimat" block; the other four have no display source yet (create sends them null), so only their ids
+            exist and they stay here, never in the reading view.
+          */}
+          {OWNER_REFERENCE_FIELDS.map((field) => {
+            const reference = detail[field]
+            return (
+              <div key={field}>
+                <dt>{T.ownerReference[field]}</dt>
+                <dd data-testid={`sales-draft-${field}`} className={reference === null ? undefined : styles.identifier}>
+                  {reference === null ? T.unknown : `${reference.id} (${reference.expectedVersion})`}
+                </dd>
+              </div>
+            )
+          })}
         </dl>
       </details>
 
       {statusAxes}
 
       {totals}
+
+      {risk}
 
       {delivery}
 
@@ -714,19 +753,8 @@ export function DraftView({
             <>
               <section className={styles.section} aria-labelledby="sales-commercial-heading">
                 <h2 id="sales-commercial-heading">{T.commercialHeading}</h2>
-                <dl className={styles.facts}>
-                  {OWNER_REFERENCE_FIELDS.map((field) => {
-                    const reference = detail[field]
-                    return (
-                      <div key={field}>
-                        <dt>{T.ownerReference[field]}</dt>
-                        <dd data-testid={`sales-draft-${field}`} className={reference === null ? undefined : styles.identifier}>
-                          {reference === null ? T.unknown : `${reference.id} (${reference.expectedVersion})`}
-                        </dd>
-                      </div>
-                    )
-                  })}
-                </dl>
+                {/* API-04: the due terms and the sales owner as the header read answers them (read-only for every viewer). */}
+                {headerSummary === null ? null : <dl className={styles.facts} data-testid="sales-header-summary">{headerSummary}</dl>}
                 {commercialActions}
               </section>
 

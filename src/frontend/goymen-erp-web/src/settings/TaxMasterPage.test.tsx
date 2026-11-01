@@ -430,6 +430,21 @@ describe('Vergi ayarları — contract decoders', () => {
 
     const { withholdingThreshold: _omitted, ...noThreshold } = master()
     expect(decodeTaxMaster(noThreshold, COMPANY_A)).toBeNull()
+
+    // Like the Sales decoders: an unknown member at any level is off-contract, never ignored.
+    expect(decodeTaxMaster({ ...master(), extra: true }, COMPANY_A)).toBeNull()
+    const extraSeries = master()
+    ;(extraSeries.itemTypeDefaults[0] as Record<string, unknown>).extra = true
+    expect(decodeTaxMaster(extraSeries, COMPANY_A)).toBeNull()
+    const extraRecord = master()
+    ;(extraRecord.itemTypeDefaults[0].inForce as unknown as Record<string, unknown>).rateSource = 'x'
+    expect(decodeTaxMaster(extraRecord, COMPANY_A)).toBeNull()
+    const extraThreshold = master()
+    ;(extraThreshold.withholdingThreshold as Record<string, unknown>).extra = true
+    expect(decodeTaxMaster(extraThreshold, COMPANY_A)).toBeNull()
+    const extraList = master()
+    ;(extraList.codeLists[0] as Record<string, unknown>).extra = true
+    expect(decodeTaxMaster(extraList, COMPANY_A)).toBeNull()
   })
 
   it('parses "KOD;Ad" lines and refuses malformed or repeated codes', () => {

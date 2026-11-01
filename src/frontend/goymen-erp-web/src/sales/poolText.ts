@@ -27,6 +27,19 @@ export const QUOTE_STATE_TEXT: Record<QuoteState, string> = {
   [QUOTE_STATE.lost]: 'Kaybedildi',
 }
 
+/** The S-01 screens' state-block subjects and the command nouns of their notices (user texts, kept here). */
+export const POOL_SUBJECT_TEXT = {
+  requests: 'satış talepleri',
+  request: 'satış talebi',
+  quotes: 'satış teklifleri',
+  quote: 'satış teklifi',
+  selectedRequest: 'seçilen talep',
+  lossReasons: 'kayıp nedenleri',
+  lossNoun: 'kayıp kaydı',
+  expiredApprovalNoun: 'süre onayı',
+  orderNoun: 'sipariş',
+} as const
+
 export const POOL_TEXT = {
   tabs: {
     label: 'Talep ve teklif havuzu',

@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import { fetchQuotePage } from './poolApi'
 import { QUOTE_STATE, type QuoteState, type SalesQuoteSummary } from './poolContract'
-import { POOL_TEXT, QUOTE_STATE_TEXT } from './poolText'
+import { POOL_SUBJECT_TEXT, POOL_TEXT, QUOTE_STATE_TEXT } from './poolText'
 import { SALES_POOL_ROUTE, salesQuoteScreenPath, useSalesPoolCapability } from './poolCapabilities'
 import { SALES_CAPABILITY, salesDetailPath } from './capabilities'
 import { PoolContinuation, PoolPartyCell, PoolTabs } from './SalesPoolShared'
@@ -88,7 +88,7 @@ function QuoteList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="pool-quotes-heading">
         {header}
-        <StateBlock state={list.firstState ?? { kind: 'initial-loading' }} subject="satış teklifleri" onRetry={list.retryFirst} />
+        <StateBlock state={list.firstState ?? { kind: 'initial-loading' }} subject={POOL_SUBJECT_TEXT.quotes} onRetry={list.retryFirst} />
       </section>
     )
   }
@@ -96,7 +96,7 @@ function QuoteList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="pool-quotes-heading">
         {header}
-        <StateBlock state={{ kind: filter === null ? 'empty-no-data' : 'empty-filtered' }} subject="satış teklifleri" />
+        <StateBlock state={{ kind: filter === null ? 'empty-no-data' : 'empty-filtered' }} subject={POOL_SUBJECT_TEXT.quotes} />
       </section>
     )
   }

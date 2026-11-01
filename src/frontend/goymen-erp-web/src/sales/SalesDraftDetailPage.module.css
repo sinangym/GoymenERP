@@ -341,3 +341,9 @@
 .tabPanel[hidden] {
   display: none;
 }
+
+/* API-04 read-only summary: a multi-instalment due plan, one instalment per line. */
+.compactList {
+  margin: 0;
+  padding-left: 1.25rem;
+}

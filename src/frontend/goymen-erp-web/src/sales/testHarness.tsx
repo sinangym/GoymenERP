@@ -221,6 +221,12 @@ export interface HarnessConfig {
    * fake server's own fixture (`totalsOf`) — tax `NoSource` (no VAT master), an unpriced line `Unpriced` (a 404 when it served none).
    */
   readonly onTotals?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * MOD-01 / API-06: GET `/sales/drafts/{id}/risk-check`; default: today's answer for the detail this harness last served for
+   * that draft (`riskCheckOf`) — fail-closed `Unavailable` (no invoices, no VAT-included totals, no limit master), amounts
+   * withheld exactly when a line's price is (a 404 when it served none).
+   */
+  readonly onRiskCheck?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-003: a POST on `/sales/drafts/{id}/delivery-schedule`. */
   readonly onDeliverySchedule?: (call: RecordedCall) => Response | Promise<Response>
   /** SALES-A1: a POST on `/sales/drafts/{id}/(submission|approval|rejection)`. */
@@ -239,7 +245,7 @@ export interface HarnessConfig {
   readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-002: a POST on `/sales/drafts/{id}/quantity-revision`. */
   readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
-  /** API-04: GET `/sales/drafts/{id}/header` (read when the header-revision form opens). */
+  /** API-04: GET `/sales/drafts/{id}/header` (the S-04 summary and the header-revision form); default: `headerOf` the served detail. */
   readonly onHeader?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** API-04: a POST on `/sales/drafts/{id}/header-revision`. */
   readonly onHeaderRevision?: (call: RecordedCall) => Response | Promise<Response>
@@ -315,8 +321,8 @@ export function installFetch(config: HarnessConfig = {}) {
           return config.onPriceReferences(url, call.companyId)
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/header$/.test(url)) {
-          if (config.onHeader === undefined) throw new Error('unexpected header read')
-          return config.onHeader(url, call.companyId)
+          // API-04: the S-04 summary reads the header on every open; default: the served detail's header, no due terms.
+          return config.onHeader?.(url, call.companyId) ?? headerOf(details.get(url.replace(/\/header$/, '')))
         }
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/header-revision$/.test(url)) {
           if (config.onHeaderRevision === undefined) throw new Error('unexpected header revision')
@@ -359,6 +365,9 @@ export function installFetch(config: HarnessConfig = {}) {
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/status$/.test(url)) {
           return config.onStatus?.(url, call.companyId) ?? statusOf(details.get(url.replace(/\/status$/, '')))
+        }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/risk-check$/.test(url)) {
+          return config.onRiskCheck?.(url, call.companyId) ?? riskCheckOf(details.get(url.replace(/\/risk-check$/, '')))
         }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/totals$/.test(url)) {
           return config.onTotals?.(url, call.companyId) ?? totalsOf(details.get(url.replace(/\/totals$/, '')))
@@ -576,6 +585,63 @@ export function totalsOf(detail: unknown): Response {
       vatAmount: null, withheldVatAmount: null, grossAmount: null, payableAmount: null,
     },
     lines,
+  })
+}
+
+/** API-04: the fake server's revisable header for a served detail — no sales owner, no due terms (withheld with its prices). */
+export function headerOf(detail: unknown): Response {
+  const body = detail as {
+    draft?: { version?: unknown; revision?: string; partyId?: string; companyAccountId?: string; currencyId?: string }
+    deliveryAddress?: unknown
+    contact?: unknown
+    lines?: { priceDisclosure: string }[]
+  } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  const visible = body.lines.every((line) => line.priceDisclosure === 'Visible')
+  return json({
+    draftVersion: body.draft.version, revision: body.draft.revision, partyId: body.draft.partyId,
+    companyAccountId: body.draft.companyAccountId, currencyId: body.draft.currencyId,
+    deliveryAddress: body.deliveryAddress ?? null, contact: body.contact ?? null, salesOwnerUserId: null, salesOwnerDisplayName: null,
+    dueTermsDisclosure: visible ? 'Visible' : 'Withheld', dueTerms: null, customerOrCurrencyRevisionPending: false,
+  })
+}
+
+/**
+ * MOD-01 / API-06: the fake server's risk answer for a served detail, as main answers it today — open receivables a recorded
+ * zero, shipped-not-invoiced without a source, the remainder a recorded zero, this order and the limit not answerable — so the
+ * result is fail-closed `Unavailable`. Amounts are withheld exactly when a line's price is.
+ */
+export function riskCheckOf(detail: unknown): Response {
+  const body = detail as {
+    draft?: { version?: unknown; partyId?: string; companyAccountId?: string }
+    lines?: { priceDisclosure: string }[]
+  } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  const visible = body.lines.every((line) => line.priceDisclosure === 'Visible')
+  const figure = (kind: string, source: string, state: string, reasonCode: string | null) => ({
+    kind, source, state, taxBasis: state === 'Available' ? 'IncludingTax' : null,
+    amounts: state === 'Available' && visible ? [] : null, reasonCode,
+  })
+  return json({
+    draftVersion: body.draft.version,
+    partyId: body.draft.partyId,
+    companyAccountId: body.draft.companyAccountId,
+    result: 'Unavailable',
+    reasons: [
+      { component: 'ShippedNotInvoiced', code: 'invoicing_owner_missing' },
+      { component: 'CreditLimit', code: 'finance_credit_limit_owner_missing' },
+    ],
+    amountDisclosure: visible ? 'Visible' : 'Withheld',
+    inLocalCurrency: null,
+    inLimitCurrency: null,
+    components: [
+      figure('OpenReceivables', 'finance.open-items', 'Available', null),
+      figure('ShippedNotInvoiced', 'sales.invoicing', 'NoSource', 'invoicing_owner_missing'),
+      figure('ApprovedUnshippedRemainder', 'sales.approved-order-remainders', 'Available', null),
+    ],
+    thisOrder: figure('ThisOrder', 'sales.this-order', 'Available', null),
+    creditLimit: figure('CreditLimit', 'finance.party-credit-limit', 'NoSource', 'finance_credit_limit_owner_missing'),
+    collateral: figure('Collateral', 'finance.party-collateral', 'NoSource', 'finance_collateral_owner_missing'),
   })
 }
 

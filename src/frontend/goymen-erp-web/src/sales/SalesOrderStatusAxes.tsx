@@ -8,7 +8,7 @@
  * "not started" or "not complete".
  *
  * The totals (API-03) and risk (API-06) cards of UI-15 are separate components mounted beside this one by the detail page
- * once their routes exist; this card neither reserves nor fakes their numbers.
+ * (`SalesOrderTotalsCard`, `SalesOrderRiskCard`); this card neither reserves nor fakes their numbers.
  */
 import { useId, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'

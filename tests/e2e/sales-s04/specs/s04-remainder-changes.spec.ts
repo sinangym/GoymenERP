@@ -639,8 +639,8 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
 
   await openDetail(page, draftId, readerActor)
   await expect(page.getByTestId('sales-remainder-changes')).toBeVisible()
-  await expect(page.getByTestId('sales-remainder-change-1')).toContainText('Rejected')
-  await expect(page.getByTestId('sales-remainder-change-2')).toContainText('Approved')
+  await expect(page.getByTestId('sales-remainder-change-1')).toContainText('Reddedildi')
+  await expect(page.getByTestId('sales-remainder-change-2')).toContainText('Onaylandı')
   await page.goto('/satis/siparisler')
   await expect(page).toHaveURL(/\/satis\/siparisler$/)
   await openDetail(page, draftId, readerActor)
@@ -720,7 +720,7 @@ test('S04-RM-01 one accepted order revises then cancels only its remainder while
   })
 
   await openDetail(page, draftId, readerActor)
-  await expect(page.getByTestId('sales-remainder-change-3')).toContainText('Approved')
+  await expect(page.getByTestId('sales-remainder-change-3')).toContainText('Onaylandı')
   await page.goto('/satis/siparisler')
   await expect(page).toHaveURL(/\/satis\/siparisler$/)
   await openDetail(page, draftId, readerActor)

@@ -34,7 +34,7 @@ import {
   type PoolFormErrors,
   type PoolFormValues,
 } from './poolForm'
-import { POOL_TEXT } from './poolText'
+import { POOL_SUBJECT_TEXT, POOL_TEXT } from './poolText'
 import {
   QUOTE_FROM_REQUEST_PARAM,
   SALES_POOL_ROUTE,
@@ -136,7 +136,7 @@ function CoveredRequests({
       <section className={styles.page} aria-labelledby="pool-quote-create-heading">
         {heading}
         <p role="alert" className={styles.notice} data-testid="pool-quote-requests-blocked">{T.requestsUnreadable}</p>
-        <StateBlock state={classifyOutcome(failed.data)} subject="seçilen talep" onRetry={() => reads.forEach((read) => void read.refetch())} />
+        <StateBlock state={classifyOutcome(failed.data)} subject={POOL_SUBJECT_TEXT.selectedRequest} onRetry={() => reads.forEach((read) => void read.refetch())} />
       </section>
     )
   }
