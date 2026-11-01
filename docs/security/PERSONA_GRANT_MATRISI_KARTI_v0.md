@@ -13,7 +13,7 @@ sayıya vardı. Kartın tablosu yeniden ölçülmedi.)
 **Güncelleme (1 Kasım 2026, EK20/EK21):** Sinan'ın
 [EK20](../decisions/SINAN_KARARLARI_2026-11-01_SATIS_EK20.md) kararları (SAT-D141…D151) iki yeni persona
 (**Satış Uzmanı**, **Muhasebe**) ekledi ve yedi satış/ayar adının personasını söyledi; EK21 (SAT-D153, SAT-D155,
-SAT-D159; PR #870) risk istisnası ve Cari e-belge adlarının personasını söyledi. Tabloya iki sütun ve yalnız bu
+SAT-D159, SAT-D162, SAT-D163; PR #870) risk istisnası, Cari e-belge ve Admin'in iki Muhasebe işinin personasını söyledi. Tabloya iki sütun ve yalnız bu
 kararların bağladığı satırlar eklendi (aşağıda "EK20/EK21 eşlemesi"). **Kayıtlı ad sayısı yeniden ölçülmedi;**
 bugün `ErpPermissions`'ta tabloda satırı olmayan başka adlar da vardır (ör. teklif/talep, iptal, iskonto istisnası).
 Onlar bu güncellemenin kapsamı değildir ve deny-first kuralıyla kimseye önerilmemiş sayılır.
@@ -100,8 +100,6 @@ satırından sonraki satırlar bu tarihte eklendi; eski hücreler değişmedi.
 - *İtalik* satırların izin adı **henüz yoktur**; karar personayı söyledi, adı sahibinin teknik işi (SAT-D146 uygulama
   notu, SAT-D142 eşleştirme dilimi, fatura dalgası API-32). Ad gelene kadar bu satırlar hiçbir şey açmaz. Risk
   istisnasının iki adı `SATIS_HAZIRLIK_PLANI_v1.md` API-07'de planlıdır, manifest'te henüz yoktur.
-- `+ *(yorum)*` = EK21 uygulama notundaki etiketli yorum: Admin "tüm ERP işlevleri" tanımı gereği risk istisnasını
-  hem isteme hem onaylama iznini alır (geri alınabilir).
 
 | İzin adı | Admin | Sevkiyatçı | Satış Destek | Satış Uzmanı | Müdür | Muhasebe |
 |---|---|---|---|---|---|---|
@@ -123,15 +121,15 @@ satırından sonraki satırlar bu tarihte eklendi; eski hücreler değişmedi.
 | `sales.orders.price.read` (SAT-D150) | + | **—** | + | + | + | + |
 | `sales.orders.price.write` (SAT-D151) | + | — | + | + | + | **—** |
 | `sales.orders.header.write` (SAT-D144) | + | — | + | + | + | **—** |
-| `sales.orders.risk-exception.request` (SAT-D159; ad henüz kayıtlı değil, API-07) | + *(yorum)* | + | + | + | ? | **—** |
-| `sales.orders.risk-exception.approve` (SAT-D153; ad henüz kayıtlı değil, API-07) | + *(yorum)* | — | **—** | + | + | **—** |
+| `sales.orders.risk-exception.request` (SAT-D159; ad henüz kayıtlı değil, API-07) | + | + | + | + | + | **—** |
+| `sales.orders.risk-exception.approve` (SAT-D153; ad henüz kayıtlı değil, API-07) | + | — | **—** | + | + | **—** |
 | `settings.tax-master.manage` (SAT-D145) | + | — | — | — | + | **—** |
 | `product.item-type.manage` (SAT-D145/D149) | + | — | — | — | + | **—** |
 | `counterparty.accounts.e-document.update` (SAT-D155) | + | — | — | — | — | + |
 | *vergi ayarı okuma* (SAT-D146; **ad bekliyor**) | + | ? | ? | ? | + | + |
-| *vergi ayarı önerme* (SAT-D146; **ad bekliyor**) | ? | — | — | — | — | + |
+| *vergi ayarı önerme* (SAT-D146, SAT-D163; **ad bekliyor**) | + | — | — | — | — | + |
 | *vergi ayarı önerisini onaylama* (SAT-D146; **ad bekliyor**) | + | — | — | — | + | **—** |
-| *dış fatura ↔ sipariş/irsaliye eşleştirme* (SAT-D142; **ad bekliyor**) | ? | — | — | — | — | + |
+| *dış fatura ↔ sipariş/irsaliye eşleştirme* (SAT-D142, SAT-D163; **ad bekliyor**) | + | — | — | — | — | + |
 | *fatura kesme = ERP fatura taslağı hazırlama* (SAT-D142, API-32; **fatura dalgası, ad bekliyor**) | ? | ? | ? | ? | ? | + *(gelecek)* |
 | `purchasing.orders.read` | + | + | + | + | + | ? |
 | `purchasing.orders.create` | + | — | + | + | ? | ? |
@@ -182,9 +180,11 @@ satırından sonraki satırlar bu tarihte eklendi; eski hücreler değişmedi.
   - `sales.orders.price.write` ve `sales.orders.header.write`: Satış Destek, Satış Uzmanı, Müdür, Admin (SAT-D151,
     SAT-D144). Muhasebe "yazmaz"; Sevkiyatçı'nın "görür"ü write vermez. Başlık değişikliği yeniden onay gerektirirse
     onayı mevcut sipariş onay iznini tutan verir.
-  - Risk istisnası **talebi**: Sevkiyatçı, Satış Destek, Satış Uzmanı (SAT-D159). Müdür'ün talep edip etmeyeceği
-    söylenmedi → `?`. Muhasebe yazmaz → `—`. **Onayı**: Satış Uzmanı veya Müdür (SAT-D153); Satış Destek ve
-    Sevkiyatçı onaylamaz. İsteyen kendi talebini onaylayamaz — bu persona değil kayıt kuralıdır.
+  - Risk istisnası **talebi**: Sevkiyatçı, Satış Destek, Satış Uzmanı, Müdür ve Admin (SAT-D159). Muhasebe yazmaz
+    → `—`. Sevkiyatçı talebi **sevk/yükleme ekranından** açar; o ekran yalnız "risk limiti aşıldı, sevk duruyor"
+    durumunu gösterir, limit, bakiye ve tutar göstermez; talep `sales.drafts.read` gerektirmez (SAT-D162).
+    **Onayı**: Satış Uzmanı, Müdür veya Admin (SAT-D153); Satış Destek ve Sevkiyatçı onaylamaz. İsteyen kendi
+    talebini onaylayamaz — bu persona değil kayıt kuralıdır.
   - `settings.tax-master.manage` ve `product.item-type.manage`: yalnız Müdür ve Admin, doğrudan geçerli (SAT-D145).
     Muhasebe vergi ayarını yalnız öneri akışıyla değiştirir (SAT-D146) ve kalem tipini değiştirmez. Kalem tipini
     bu iki persona dışında kimin **okuyacağı** sorulmadı (EK20 açık kalanı, NEEDS-SINAN); o zamana kadar yalnız
@@ -192,12 +192,12 @@ satırından sonraki satırlar bu tarihte eklendi; eski hücreler değişmedi.
   - `counterparty.accounts.e-document.update`: Muhasebe ve Admin (SAT-D155). "Muhasebe + Müdür + Admin" ve
     "Satış Destek/Uzman + Müdür + Admin" seçenekleri gösterildi ve **seçilmedi**; bu yüzden Müdür, Satış Destek
     ve Satış Uzmanı `—`.
-  - SAT-D146 ad bekleyen üç izin: okuma Muhasebe, Müdür, Admin; öneri **yalnız** Muhasebe; onay **yalnız** Müdür ve
-    Admin. "Muhasebe müdürü" ve "satış müdürü" unvanları ayrı persona kararı gelene kadar ek yetki almaz.
-  - Eşleştirme izni "yalnız Muhasebe'ye verilir" (SAT-D142 uygulama notu); öneri izni de "yalnız Muhasebe". Bu iki
-    satırda Admin hücresi `?`: kartın "Admin tüm ERP işlevleri" kuralı ile kararın açık "yalnız"ı çelişir ve EK21'deki
-    gibi etiketli bir Admin yorumu burada yoktur (NEEDS-SINAN). Diğer personalar "yalnız" gereği `—`. Fatura kesmede
-    yalnız Muhasebe söylendi; diğer personalar `?`.
+  - SAT-D146 ad bekleyen üç izin: okuma Muhasebe, Müdür, Admin; öneri Muhasebe ve Admin (SAT-D146, SAT-D163); onay
+    **yalnız** Müdür ve Admin. Admin'in öneri izni onu onay kuralından muaf tutmaz: **kendi önerisini onaylayamaz**
+    (SAT-D163, maker ≠ checker). "Muhasebe müdürü" ve "satış müdürü" unvanları ayrı persona kararı gelene kadar ek
+    yetki almaz.
+  - Dış fatura eşleştirme: Muhasebe ve Admin (SAT-D142, SAT-D163). Diğer personalar `—` (EK20 "yalnız Muhasebe",
+    SAT-D163 yalnız Admin'i ekler). Fatura kesmede yalnız Muhasebe söylendi; diğer personalar `?`.
 - **Critical adlar:** `AI_YETKI_SOZLESMESI.md` ve ADR-004 §6 gereği grant'leri ayrı insan kapısıdır;
   bu kart onları hiçbir personaya *dağıtmaz*, Admin'de bile "insan kapısı" olarak işaretler.
 
