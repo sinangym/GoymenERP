@@ -303,7 +303,9 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
     private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, DateOnly businessDate,
         IReadOnlyList<string> quantities)
     {
-        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, businessDate, businessDate.AddDays(10));
+        // SAT-D123 (API-04, merged over API-41 / API-42): an order is approved only with due terms.
+        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, businessDate, businessDate.AddDays(10),
+            DueTerms: TestDueTerms.PointDue30);
         // Q9: the current service path creates every order with customer acceptance required (not the pre-Q9 default).
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, Money(company, businessDate), T0,
             customerAcceptanceRequired: true);

@@ -1384,7 +1384,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for API-04 merged over API-41 / API-42: the draft service also receives the optional Identity
                     // directory adapters (the sales owner's display and eligibility, DI-only); provider branch and token counts unchanged.
                     new(
-                        "EXTFP",
+                        "06f4fe6b7a6a090b57955753792343ca082c964b70079f0e53b24749c28c032c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
