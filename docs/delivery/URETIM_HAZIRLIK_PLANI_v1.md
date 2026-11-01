@@ -128,7 +128,7 @@ onaya bağlandı); müşterinin serbest metin taşınması (URT-D13 ile sipariş
 
 | ID | İş | Neden | Sev. |
 |---|---|---|---|
-| FZL-01 | Rotasız eski olgu metotlarını kaldır: `IssueInputAsync`, `ReturnUnusedInputAsync`, `DeclareOutputAsync` (Stok'suz yol). Testleri Stok'lu yola taşı | İki yol; yalnız testler çağırıyor; yanlışlıkla Stok'suz olgu yazma riski | K2 |
+| FZL-01 | Rotasız eski olgu metotlarını kaldır: `IssueInputAsync`, `ReturnUnusedInputAsync`, `DeclareOutputAsync` (Stok'suz yol). Testleri Stok'lu yola taşı. **Kapsam notu (2026-11-01):** aynı adlı store metotları iki host tarafından kullanılıyor ve servis metotlarını ~100 test çağırıyor; iş servis katmanıyla sınırlanır, store metotları korunur. FZL-03 yorum düzeltmeleri ve kaynak parmak izi yeniden sabitlemesi bununla birlikte yapılır | İki yol; yanlışlıkla Stok'suz olgu yazma riski | K2 |
 | FZL-02 | README'yi kodla eşitle: "No HTTP / No Inventory / No tolerance" bölümleri yanlış; proses kaybı, çıktı referansları, kesim satırları, snapshot'lar, kapanış kararı ve istisna izni belgelenmemiş | Belge kodla çelişiyor | K1 |
 | FZL-03 | Eski doc comment'ler: `ManufacturingPlanPreviewV1.cs:62` ("Product not wired"), `ClosureTolerancePolicySnapshotV1` ("runtime adapter outside") | Aynı | K1 |
 | FZL-04 | Frontend `as CapabilityId` dönüşümleri ve `SHARED_MOUNT_HANDOFF.md` (rotalar yayında; not kaldırılabilir diyor) | Aynı | K1 |
@@ -354,5 +354,8 @@ Bu bölüm iş takibidir; karar değildir.
 | İş | PR | Durum |
 |---|---|---|
 | Bu plan + karar dosyası URT-D1…D18 | #876 | taslak PR |
+| U0: README güncel durum, rota tip dönüşümü, eski devir notu (FZL-02/04) | #877 | taslak PR |
+| U0: TEK-02 tasarım sistemi `Button` | #878 | taslak PR |
+| U0: TEK-03 metin dosyaları (#878 üzerine) | #879 | taslak PR |
 
-Sıradaki işler: U0 (FZL-01…04, TEK-01…03, TEK-05/06, belge PR'ları).
+Sıradaki işler: U0 kalanı — FZL-01 + FZL-03 (CI doğrulamalı), TEK-01 dosya bölme, TEK-05/06 ortak altyapı, #876 merge'ünden sonra belge PR'ları.
