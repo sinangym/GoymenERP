@@ -48,6 +48,12 @@ public static class ProductPriceListRegistration
         services.AddScoped<IProductQuantityPriceReferenceReaderV1>(CreateReader);
         // MOD-02: the SAT-D9 tier chain beside the unchanged V1 readers.
         services.AddScoped<IProductQuantityPriceReferenceReaderV2>(CreateReader);
+        // SAT-D134: the company's product item type and its read port (same company-scoped context).
+        services.AddScoped(CreateItemTypeService);
+        services.AddScoped<IProductItemTypeServiceV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductItemTypeService>());
+        services.AddScoped<IProductItemTypeReaderV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<ProductItemTypeService>());
         return services;
     }
 
@@ -84,6 +90,14 @@ public static class ProductPriceListRegistration
         ErpPermissions.IsKnown,
         // MOD-02: the Cari owner's answer for a customer-specific list; absent → such a list is refused 503.
         serviceProvider.GetService<IProductPriceListCustomerPortV1>());
+
+    private static ProductItemTypeService CreateItemTypeService(IServiceProvider serviceProvider) => new(
+        serviceProvider.GetRequiredService<ProductPriceListDbContext>(),
+        serviceProvider.GetRequiredService<ICompanyContext>(),
+        serviceProvider.GetRequiredService<ICurrentUser>(),
+        serviceProvider.GetRequiredService<IErpAuthorityRevalidationService>(),
+        serviceProvider.GetRequiredService<IAuditEventCollector>(),
+        serviceProvider.GetRequiredService<TimeProvider>());
 
     private static ProductPriceReferenceReader CreateReader(IServiceProvider serviceProvider) => new(
         serviceProvider.GetRequiredService<ProductPriceListStore>(),

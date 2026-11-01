@@ -174,7 +174,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(ProductPriceListShellCapabilityProvider),
             },
                 ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsAndSalesQuoteExpiryApproval),
-        // SAT-D61…D70: the Settings discount limit screen joins the full normal host.
+        // SAT-D61…D70: the Settings discount limit screen joins the full normal host; MOD-03 (Settings 1.1) adds the tax master.
         (new[]
             {
                 typeof(OrganizationShellCapabilityProvider), typeof(ProductShellCapabilityProvider),
@@ -184,7 +184,7 @@ internal static class C01E2eShellCapabilityActivation
                 typeof(InventoryShellCapabilityProvider), typeof(IdentityShellCapabilityProvider),
                 typeof(ProductPriceListShellCapabilityProvider), typeof(SettingsShellCapabilityProvider),
             },
-                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV10),
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV11),
     ];
 
     private static string NormalAuthority(IServiceCollection services)

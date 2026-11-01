@@ -736,7 +736,9 @@ public sealed class SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests
         Assert.True(migration > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
         Assert.Equal(51095, rollback.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        // EF reverts the later migrations first, each in its own transaction: a later one whose store is empty (MOD-03
+        // AddTaxMaster here) rolls back freely, and the refused migration and everything before it stay applied.
+        Assert.Equal(applied.Take(migration + 1), await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(6, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[SalesDiscountLimitGroups]"));
     }
 

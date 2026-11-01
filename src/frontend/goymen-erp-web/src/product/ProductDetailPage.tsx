@@ -72,6 +72,7 @@ import {
 } from './pendingAttempt'
 import { UnresolvedExitGuard } from './UnresolvedExitGuard'
 import { DuplicateCandidatesPanel } from './DuplicateCandidates'
+import { ProductItemTypePanel } from './ProductItemTypePanel'
 import {
   duplicateIds,
   duplicateQueryKey,
@@ -876,6 +877,12 @@ function ProductCardView({
   // Single source: the card's own `completeness` is a compatibility projection of
   // this one, so reading the product's removes any chance of the two disagreeing.
   const completeness = product.completeness
+  // SAT-D134: the item type is company-scoped; it is read only in a single-company context.
+  const shell = useShellState()
+  const itemTypeKey = contextKey(shell)
+  const itemTypeNamespace = itemTypeKey === null ? null : contextKeyString(itemTypeKey)
+  const itemTypeCompany =
+    (shell.activeContext?.scopeMode ?? 'single') === 'single' ? (shell.activeContext?.companyId ?? null) : null
 
   return (
     <article className={styles.page} aria-labelledby="product-detail-heading">
@@ -910,6 +917,10 @@ function ProductCardView({
           <p>Bu ürün her iki şirkette de yeni kullanıma kapalıdır. Geçmiş kayıtlar görünür kalır.</p>
           {inactiveDetail}
         </div>
+      ) : null}
+
+      {itemTypeCompany !== null && itemTypeNamespace !== null ? (
+        <ProductItemTypePanel companyId={itemTypeCompany} productId={product.id} queryNamespace={itemTypeNamespace} />
       ) : null}
 
       <section className={styles.section} aria-labelledby="product-roles-heading">

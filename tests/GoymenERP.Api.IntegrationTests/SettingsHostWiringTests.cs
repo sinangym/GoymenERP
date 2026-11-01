@@ -515,6 +515,50 @@ public sealed class SettingsHostWiringTests
             scope.ServiceProvider.GetRequiredService<SalesReferenceReadBindings>().ProductPermission);
     }
 
+    [Fact]
+    public void The_host_composes_the_tax_master_ports_once_and_the_product_item_type_adapter()
+    {
+        using var factory = Host(Gdc);
+        using var scope = factory.Services.CreateScope();
+
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsTaxMasterAdministrationV1>());
+        Assert.Single(scope.ServiceProvider.GetServices<ISettingsLineTaxResolverV1>());
+        Assert.IsType<GoymenERP.Api.Endpoints.SettingsProductItemTypeHost>(
+            Assert.Single(scope.ServiceProvider.GetServices<ISettingsProductItemTypeSourceV1>()));
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IProductItemTypeReaderV1>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<IProductItemTypeServiceV1>());
+    }
+
+    [Fact]
+    public async Task The_line_tax_port_answers_the_sat_d139_default_fails_closed_without_a_product_source_and_denies_an_outsider()
+    {
+        using (var factory = Host(Gdc))
+        using (var scope = factory.Services.CreateScope())
+        {
+            var port = scope.ServiceProvider.GetRequiredService<ISettingsLineTaxResolverV1>();
+            // The reviewed SAT-D139 catalog answers through the host (the broad host's Settings store is empty).
+            var steel = await port.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, ExtraApproval.AddDays(5));
+            Assert.Equal((TaxResolutionStatesV1.Resolved, 20m, 50m, TaxDefaultSourcesV1.Catalog),
+                (steel.State, steel.VatPercent, steel.WithholdingPercent, steel.Source));
+            // The broad host has no Product runtime: the product's item type is unavailable, so the port answers 503.
+            var unavailable = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.ResolveAsync(Guid.NewGuid(), TaxBuyerSituationsV1.Normal, ExtraApproval));
+            Assert.Equal(TaxMasterProblemCodesV1.ProviderUnavailable, unavailable.Code);
+            Assert.Equal(TaxMasterProblemCodesV1.RequestInvalid, (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, "Somebody", ExtraApproval))).Code);
+        }
+
+        using (var factory = Host(Gdc, actorAllowedIn: Gsp))
+        using (var scope = factory.Services.CreateScope())
+        {
+            var port = scope.ServiceProvider.GetRequiredService<ISettingsLineTaxResolverV1>();
+            Assert.Equal(TaxMasterProblemCodesV1.AccessDenied, (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, ExtraApproval))).Code);
+            Assert.Equal(TaxMasterProblemCodesV1.AccessDenied, (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.GetCodeListAsync(TaxCodeListKindsV1.Exemption, ExtraApproval))).Code);
+        }
+    }
+
     private static WebApplicationFactoryWithFixedContext Host(Guid company, Guid? actorAllowedIn = null) =>
         new(company, actorAllowedIn ?? company);
 
