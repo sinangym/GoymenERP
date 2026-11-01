@@ -5,8 +5,8 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
-/// SAT-D134/D139: the central adapter that gives the Settings line tax port the product's item type from the Product owner's
-/// company-scoped field. Settings reads no Product table; Product re-fences the company and the caller. The company asked about
+/// SAT-D134/D139/D149: the central adapter that gives the Settings line tax port the product's item type from the Product owner's
+/// shared product card (one value in every company, read by an actor of the server company). Settings reads no Product table; Product re-fences the company and the caller. The company asked about
 /// must be the server company (a copy of the context, never an input). The two modules' item type wire values are the same
 /// (pinned by a host test).
 /// </summary>

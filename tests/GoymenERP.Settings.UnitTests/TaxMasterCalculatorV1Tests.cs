@@ -80,9 +80,14 @@ public sealed class TaxMasterCalculatorV1Tests
         // Another company has no catalog entries: "kaynak yok".
         Assert.Equal(TaxResolutionReasonsV1.ItemTypeDefaultMissing,
             TaxMasterCalculatorV1.Resolve(Data(Guid.NewGuid()), TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, Day).Reason);
-        // Before the catalog date nothing is in force.
-        Assert.Equal(TaxResolutionReasonsV1.ItemTypeDefaultMissing, TaxMasterCalculatorV1.Resolve(Catalog(), TaxItemTypesV1.Steel,
-            TaxBuyerSituationsV1.Normal, ApprovedTaxItemTypeDefaultCatalog.EffectiveFrom.AddDays(-1)).Reason);
+        // Before the catalog date nothing is in force (a SENTETIK earlier situation list isolates the default's answer; with the
+        // catalogs alone the situation is unknown first).
+        var before = ApprovedTaxItemTypeDefaultCatalog.EffectiveFrom.AddDays(-1);
+        Assert.Equal(TaxResolutionReasonsV1.ItemTypeDefaultMissing, TaxMasterCalculatorV1.Resolve(
+            Data(Gdc, situations: [Situations(1, before, ApprovedTaxBuyerSituationCatalog.Entries)]), TaxItemTypesV1.Steel,
+            TaxBuyerSituationsV1.Normal, before).Reason);
+        Assert.Equal(TaxResolutionReasonsV1.BuyerSituationUnknown,
+            TaxMasterCalculatorV1.Resolve(Catalog(), TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, before).Reason);
     }
 
     [Fact]
@@ -126,21 +131,134 @@ public sealed class TaxMasterCalculatorV1Tests
         Assert.Null(TaxMasterCalculatorV1.Resolve(Catalog(), TaxItemTypesV1.Service, situation, Day).BuyerAdjustment);
     }
 
-    [Theory]
-    [InlineData(TaxBuyerSituationsV1.ExportRegistered)]
-    [InlineData(TaxBuyerSituationsV1.ExemptionCertificate)]
-    public void A_document_based_buyer_situation_leaves_vat_and_withholding_undecided(string situation)
+    [Fact]
+    public void The_reviewed_buyer_situation_catalog_holds_the_five_sat_d140_situations_with_their_effects_as_data()
     {
-        var steel = TaxMasterCalculatorV1.Resolve(Catalog(), TaxItemTypesV1.Steel, situation, Day);
-        Assert.Equal((TaxResolutionStatesV1.Resolved, TaxResolutionStatesV1.Unresolved, (decimal?)null,
-            TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.BuyerSituationUndecided),
-            (steel.State, steel.VatState, steel.VatPercent, steel.WithholdingState, steel.BuyerAdjustment));
+        var entries = ApprovedTaxBuyerSituationCatalog.Entries.ToDictionary(entry => entry.Code);
+        Assert.Equal(TaxBuyerSituationsV1.Catalog.Order(StringComparer.Ordinal), entries.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal((true, TaxBuyerSituationVatModesV1.Normal, false), Effect(entries[TaxBuyerSituationsV1.Normal]));
+        Assert.Equal((false, TaxBuyerSituationVatModesV1.Normal, false), Effect(entries[TaxBuyerSituationsV1.FinalConsumer]));
+        Assert.Equal((false, TaxBuyerSituationVatModesV1.Normal, false),
+            Effect(entries[TaxBuyerSituationsV1.NotSubjectToWithholding]));
+        Assert.Equal((false, TaxBuyerSituationVatModesV1.ZeroWithExemptionCode, true),
+            Effect(entries[TaxBuyerSituationsV1.ExportRegistered]));
+        Assert.Equal((false, TaxBuyerSituationVatModesV1.ZeroWithExemptionCode, true),
+            Effect(entries[TaxBuyerSituationsV1.ExemptionCertificate]));
+        Assert.All(new[] { ApprovedUnitProfileCatalog.GdcCompanyId, ApprovedUnitProfileCatalog.GspCompanyId,
+            ApprovedUnitProfileCatalog.GinCompanyId }, company =>
+        {
+            var version = Assert.Single(ApprovedTaxBuyerSituationCatalog.For(company));
+            Assert.Equal((0L, TaxDefaultSourcesV1.Catalog, ApprovedTaxItemTypeDefaultCatalog.EffectiveFrom),
+                (version.ListVersion, version.Source, version.EffectiveFrom));
+        });
+        Assert.Empty(ApprovedTaxBuyerSituationCatalog.For(Guid.NewGuid()));
+    }
+
+    // SAT-D147 golden: an export-registered / exemption-certificate buyer gets KDV %0 under the exemption code chosen from the
+    // list, no withholding, and the document flag — for every item type (steel's 20 % + 5/10 and scrap's "KDV yok" alike).
+    [Theory]
+    [InlineData(TaxBuyerSituationsV1.ExportRegistered, TaxItemTypesV1.Steel)]
+    [InlineData(TaxBuyerSituationsV1.ExportRegistered, TaxItemTypesV1.Scrap)]
+    [InlineData(TaxBuyerSituationsV1.ExportRegistered, TaxItemTypesV1.Service)]
+    [InlineData(TaxBuyerSituationsV1.ExemptionCertificate, TaxItemTypesV1.Steel)]
+    [InlineData(TaxBuyerSituationsV1.ExemptionCertificate, TaxItemTypesV1.Scrap)]
+    public void A_zero_rated_buyer_gets_zero_vat_with_the_chosen_listed_exemption_code_and_no_withholding(string situation,
+        string itemType)
+    {
+        var data = Data(Gdc, lists: [List(TaxCodeListKindsV1.Exemption, "E701")]);
+        var parts = TaxMasterCalculatorV1.Resolve(data, itemType, situation, Day, exemptionCode: "E701");
+        Assert.Equal((TaxResolutionStatesV1.Resolved, TaxResolutionStatesV1.ZeroRated, (decimal?)0m, TaxResolutionStatesV1.Resolved,
+            "E701", (string?)null), (parts.State, parts.VatState, parts.VatPercent, parts.ExemptionCodeState, parts.ExemptionCode,
+            parts.ExemptionCodeReason));
+        Assert.Equal((TaxResolutionStatesV1.NotApplied, (decimal?)null, TaxResolutionStatesV1.NotRequired, (string?)null),
+            (parts.WithholdingState, parts.WithholdingPercent, parts.WithholdingCodeState, parts.WithholdingCode));
+        Assert.Equal((TaxResolutionReasonsV1.BuyerZeroRatedWithExemptionCode, true, 0L),
+            (parts.BuyerAdjustment, parts.BuyerSituation!.DocumentRequired, parts.BuyerSituationList!.ListVersion));
     }
 
     [Fact]
-    public void An_unknown_buyer_situation_is_refused() =>
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            TaxMasterCalculatorV1.Resolve(Catalog(), TaxItemTypesV1.Steel, "Somebody", Day));
+    public void A_zero_rated_buyer_without_a_chosen_code_an_exemption_list_or_a_listed_code_waits_kaynak_yok()
+    {
+        // SAT-D147/D148: the lists start empty until the mali müşavir approves them; the VAT stays 0 and the invoice waits.
+        var none = TaxMasterCalculatorV1.Resolve(Catalog(), TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExportRegistered, Day);
+        Assert.Equal((TaxResolutionStatesV1.ZeroRated, TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.ExemptionCodeMissing),
+            (none.VatState, none.ExemptionCodeState, none.ExemptionCodeReason));
+        var noList = TaxMasterCalculatorV1.Resolve(Catalog(), TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExportRegistered, Day,
+            exemptionCode: "E701");
+        Assert.Equal((TaxResolutionStatesV1.Unresolved, "E701", TaxResolutionReasonsV1.CodeListMissing),
+            (noList.ExemptionCodeState, noList.ExemptionCode, noList.ExemptionCodeReason));
+        var notListed = TaxMasterCalculatorV1.Resolve(Data(Gdc, lists: [List(TaxCodeListKindsV1.Exemption, "E702")]),
+            TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExemptionCertificate, Day, exemptionCode: "E701");
+        Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.CodeNotInList),
+            (notListed.ExemptionCodeState, notListed.ExemptionCodeReason));
+        // A withholding code chosen for the exemption list never satisfies it.
+        var wrongKind = TaxMasterCalculatorV1.Resolve(Data(Gdc, lists: [List(TaxCodeListKindsV1.Withholding, "E701")]),
+            TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExportRegistered, Day, exemptionCode: "E701");
+        Assert.Equal(TaxResolutionStatesV1.Unresolved, wrongKind.ExemptionCodeState);
+    }
+
+    [Fact]
+    public void A_chosen_exemption_code_is_ignored_for_a_normal_buyer()
+    {
+        var steel = TaxMasterCalculatorV1.Resolve(Data(Gdc, lists: [List(TaxCodeListKindsV1.Exemption, "E701")]),
+            TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, Day, exemptionCode: "E701");
+        Assert.Equal((TaxResolutionStatesV1.Resolved, (decimal?)20m, TaxResolutionStatesV1.NotRequired, (string?)null, false),
+            (steel.VatState, steel.VatPercent, steel.ExemptionCodeState, steel.ExemptionCode, steel.BuyerSituation!.DocumentRequired));
+    }
+
+    [Fact]
+    public void An_unknown_or_withdrawn_buyer_situation_is_unresolved_never_the_normal_default()
+    {
+        var unknown = TaxMasterCalculatorV1.Resolve(Catalog(), TaxItemTypesV1.Steel, "Somebody", Day);
+        Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.BuyerSituationUnknown, (decimal?)null, (string?)null),
+            (unknown.State, unknown.Reason, unknown.VatPercent, unknown.VatState));
+
+        // A Settings version without FinalConsumer replaces the catalog from its date: the code is no longer in force.
+        var withoutFinalConsumer = Situations(1, Day.AddDays(10), ApprovedTaxBuyerSituationCatalog.Entries
+            .Where(entry => entry.Code != TaxBuyerSituationsV1.FinalConsumer).ToArray());
+        var data = Data(Gdc, situations: [withoutFinalConsumer]);
+        Assert.Equal(TaxResolutionStatesV1.Resolved,
+            TaxMasterCalculatorV1.Resolve(data, TaxItemTypesV1.Steel, TaxBuyerSituationsV1.FinalConsumer, Day.AddDays(9)).State);
+        Assert.Equal(TaxResolutionReasonsV1.BuyerSituationUnknown,
+            TaxMasterCalculatorV1.Resolve(data, TaxItemTypesV1.Steel, TaxBuyerSituationsV1.FinalConsumer, Day.AddDays(10)).Reason);
+
+        // No list in force at all (another company's catalog is not this one's): "kaynak yok".
+        Assert.Equal(TaxResolutionReasonsV1.BuyerSituationUnknown, TaxMasterCalculatorV1.Resolve(
+            new TaxMasterDataV1(ApprovedTaxItemTypeDefaultCatalog.For(Gdc), [], [], []), TaxItemTypesV1.Steel,
+            TaxBuyerSituationsV1.Normal, Day).Reason);
+    }
+
+    [Fact]
+    public void A_situation_added_in_settings_carries_its_own_effect_and_a_withdrawn_version_is_ignored()
+    {
+        // SAT-D158: Müdür/Admin add a situation; its effect is data (SENTETIK code and name).
+        var added = Situations(1, Day, [.. ApprovedTaxBuyerSituationCatalog.Entries,
+            new TaxBuyerSituationEntryViewV1("DiplomaticMission", "SENTETIK diplomatik", false,
+                TaxBuyerSituationVatModesV1.ZeroWithExemptionCode, true)]);
+        var withdrawn = Situations(2, Day.AddDays(3), [new TaxBuyerSituationEntryViewV1("Normal", "SENTETIK", false,
+            TaxBuyerSituationVatModesV1.Normal, false)]) with { IsWithdrawn = true };
+        var data = Data(Gdc, lists: [List(TaxCodeListKindsV1.Exemption, "E1")], situations: [added, withdrawn]);
+
+        var diplomatic = TaxMasterCalculatorV1.Resolve(data, TaxItemTypesV1.Service, "DiplomaticMission", Day.AddDays(5), "E1");
+        Assert.Equal((TaxResolutionStatesV1.ZeroRated, TaxResolutionStatesV1.Resolved, 1L),
+            (diplomatic.VatState, diplomatic.ExemptionCodeState, diplomatic.BuyerSituationList!.ListVersion));
+        // The withdrawn version never applies: Normal keeps the withholding.
+        Assert.Equal(TaxResolutionStatesV1.Resolved,
+            TaxMasterCalculatorV1.Resolve(data, TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, Day.AddDays(5)).WithholdingState);
+        Assert.Empty(TaxMasterCalculatorV1.ScheduledBuyerSituationLists(data, Day));
+        Assert.Equal(1L, TaxMasterCalculatorV1.BuyerSituationListInForce(data, Day)!.ListVersion);
+    }
+
+    [Theory]
+    [InlineData("Normal", true)]
+    [InlineData("DiplomaticMission2", true)]
+    [InlineData("2Normal", false)]
+    [InlineData("Normal ", false)]
+    [InlineData("Nor-mal", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Buyer_situation_codes_are_ascii_letters_and_digits_starting_with_a_letter(string? code, bool valid) =>
+        Assert.Equal(valid, TaxMasterCalculatorV1.IsWellFormedSituationCode(code));
 
     [Fact]
     public void Code_lists_follow_the_same_timeline_and_a_withdrawn_version_is_ignored()
@@ -170,7 +288,7 @@ public sealed class TaxMasterCalculatorV1Tests
             new TaxWithholdingThresholdDataV1(Guid.NewGuid(), 1, Day, 1000m, "TRY"),
             new TaxWithholdingThresholdDataV1(Guid.NewGuid(), 2, Day.AddDays(10), 2000m, "TRY", IsWithdrawn: true),
             new TaxWithholdingThresholdDataV1(Guid.NewGuid(), 3, Day.AddDays(20), 3000m, "TRY"),
-        ]);
+        ], []);
 
         Assert.Null(TaxMasterCalculatorV1.ThresholdInForce(data, Day.AddDays(-1)));
         Assert.Equal(1000m, TaxMasterCalculatorV1.ThresholdInForce(data, Day.AddDays(15))!.Amount);
@@ -265,9 +383,17 @@ public sealed class TaxMasterCalculatorV1Tests
 
     private static TaxMasterDataV1 Catalog() => Data(Gdc);
 
+    /// <summary>The company's defaults; the buyer situations are GDC's reviewed catalog plus <paramref name="situations"/>.</summary>
     private static TaxMasterDataV1 Data(Guid company, IReadOnlyList<TaxItemTypeDefaultDataV1>? records = null,
-        IReadOnlyList<TaxCodeListVersionDataV1>? lists = null) =>
-        new([.. ApprovedTaxItemTypeDefaultCatalog.For(company), .. records ?? []], lists ?? [], []);
+        IReadOnlyList<TaxCodeListVersionDataV1>? lists = null, IReadOnlyList<TaxBuyerSituationListVersionDataV1>? situations = null) =>
+        new([.. ApprovedTaxItemTypeDefaultCatalog.For(company), .. records ?? []], lists ?? [], [],
+            [.. ApprovedTaxBuyerSituationCatalog.For(Gdc), .. situations ?? []]);
+
+    private static TaxBuyerSituationListVersionDataV1 Situations(long version, DateOnly from,
+        IReadOnlyList<TaxBuyerSituationEntryViewV1> entries) => new(version, from, TaxDefaultSourcesV1.Record, entries);
+
+    private static (bool, string, bool) Effect(TaxBuyerSituationEntryViewV1 entry) =>
+        (entry.WithholdingApplies, entry.VatMode, entry.DocumentRequired);
 
     private static TaxItemTypeDefaultDataV1 Record(string itemType, long version, DateOnly from, decimal? vat, decimal? withholding,
         string? withholdingCode, string? exemptionCode = null) =>

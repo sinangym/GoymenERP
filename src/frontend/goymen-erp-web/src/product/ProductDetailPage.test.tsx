@@ -842,7 +842,8 @@ describe('item type (SAT-D134)', () => {
     const { calls } = installFetch({
       capabilities: DETAIL_ONLY,
       onItemType: () =>
-        json({ companyId: COMPANY_A, productId: PRODUCT_1, version: '1', itemType: 'Scrap', updatedAtUtc: null, updatedBy: null }),
+        json({ companyId: COMPANY_A, productId: PRODUCT_1, version: '1', itemType: 'Scrap', updatedAtUtc: null, updatedBy: null,
+          updatedInCompanyId: COMPANY_A }),
     })
     renderProductApp(PATH)
 

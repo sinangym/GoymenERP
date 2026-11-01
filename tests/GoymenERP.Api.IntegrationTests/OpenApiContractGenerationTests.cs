@@ -1134,6 +1134,16 @@ public sealed partial class OpenApiContractGenerationTests
             AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
             "#/components/schemas/WithdrawTaxRecordRequestV1",
             ["path:recordId:true:type:string;format:uuid;non-empty-uuid:true"]),
+        // SAT-D158 (EK21): the buyer situation list.
+        new("get", "/api/v1/settings/tax-master/buyer-situations", "GetSettingsTaxBuyerSituationsV1",
+            AuthenticatedResponses("200:application/json", "400:application/problem+json", "503:application/problem+json")),
+        new("post", "/api/v1/settings/tax-master/buyer-situations/versions", "PublishSettingsTaxBuyerSituationListV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "409:application/problem+json", "415:", "422:application/problem+json", "503:application/problem+json"),
+            "#/components/schemas/PublishTaxBuyerSituationListRequestV1"),
+        new("post", "/api/v1/settings/tax-master/buyer-situations/versions/{listVersion}/withdrawal", "WithdrawSettingsTaxBuyerSituationListV1",
+            AuthenticatedResponses("204:", "400:application/problem+json", "404:application/problem+json", "409:application/problem+json", "415:", "503:application/problem+json"),
+            "#/components/schemas/WithdrawTaxCodeListRequestV1",
+            ["path:listVersion:true:type:integer;format:int64;pattern:^-?(?:0|[1-9]\\d*)$"]),
         new("get", "/api/v1/product-item-types/{productId}", "GetProductItemTypeV1",
             AuthenticatedResponses("200:application/json", "400:application/problem+json", "404:application/problem+json", "503:application/problem+json"),
             ParameterValues: ["path:productId:true:type:string;format:uuid;non-empty-uuid:true"]),
@@ -1435,6 +1445,9 @@ public sealed partial class OpenApiContractGenerationTests
             ["WithdrawSettingsTaxCodeListV1"] = "none",
             ["RecordSettingsWithholdingThresholdV1"] = "none",
             ["WithdrawSettingsWithholdingThresholdV1"] = "none",
+            ["GetSettingsTaxBuyerSituationsV1"] = "ref:TaxBuyerSituationListViewV1",
+            ["PublishSettingsTaxBuyerSituationListV1"] = "none",
+            ["WithdrawSettingsTaxBuyerSituationListV1"] = "none",
             ["GetProductItemTypeV1"] = "ref:ProductItemTypeViewV1",
             ["SetProductItemTypeV1"] = "none",
         };
@@ -1716,6 +1729,9 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsTaxCodeListV1",
         "RecordSettingsWithholdingThresholdV1",
         "WithdrawSettingsWithholdingThresholdV1",
+        "GetSettingsTaxBuyerSituationsV1",
+        "PublishSettingsTaxBuyerSituationListV1",
+        "WithdrawSettingsTaxBuyerSituationListV1",
         "GetProductItemTypeV1",
         "SetProductItemTypeV1",
     ];
@@ -1862,6 +1878,8 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsTaxCodeListV1",
         "RecordSettingsWithholdingThresholdV1",
         "WithdrawSettingsWithholdingThresholdV1",
+        "PublishSettingsTaxBuyerSituationListV1",
+        "WithdrawSettingsTaxBuyerSituationListV1",
         "SetProductItemTypeV1",
     ];
 
@@ -2135,6 +2153,8 @@ public sealed partial class OpenApiContractGenerationTests
                 ["WithdrawSettingsTaxCodeListV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["RecordSettingsWithholdingThresholdV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
                 ["WithdrawSettingsWithholdingThresholdV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
+                ["PublishSettingsTaxBuyerSituationListV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status409Conflict, StatusCodes.Status422UnprocessableEntity],
+                ["WithdrawSettingsTaxBuyerSituationListV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
                 ["SetProductItemTypeV1"] = [StatusCodes.Status204NoContent, StatusCodes.Status404NotFound, StatusCodes.Status409Conflict],
             };
 
@@ -2333,6 +2353,8 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsTaxCodeListV1",
         "RecordSettingsWithholdingThresholdV1",
         "WithdrawSettingsWithholdingThresholdV1",
+        "PublishSettingsTaxBuyerSituationListV1",
+        "WithdrawSettingsTaxBuyerSituationListV1",
         "SetProductItemTypeV1",
     ];
 
@@ -2488,6 +2510,7 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsItemTypeDefaultV1:404",
         "WithdrawSettingsTaxCodeListV1:404",
         "WithdrawSettingsWithholdingThresholdV1:404",
+        "WithdrawSettingsTaxBuyerSituationListV1:404",
         "GetProductItemTypeV1:404",
         "SetProductItemTypeV1:404",
     ];
@@ -2570,6 +2593,8 @@ public sealed partial class OpenApiContractGenerationTests
         "WithdrawSettingsTaxCodeListV1:400",
         "RecordSettingsWithholdingThresholdV1:400",
         "WithdrawSettingsWithholdingThresholdV1:400",
+        "PublishSettingsTaxBuyerSituationListV1:400",
+        "WithdrawSettingsTaxBuyerSituationListV1:400",
         "SetProductItemTypeV1:400",
     ];
 
@@ -3243,6 +3268,15 @@ public sealed partial class OpenApiContractGenerationTests
             ["WithdrawSettingsWithholdingThresholdV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
             ["WithdrawSettingsWithholdingThresholdV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_record_in_effect", "settings_tax_master_record_withdrawn", "settings_tax_master_version_conflict"],
             ["WithdrawSettingsWithholdingThresholdV1:503"] = ["settings_provider_unavailable"],
+            ["GetSettingsTaxBuyerSituationsV1:400"] = ["settings_tax_master_request_invalid"],
+            ["GetSettingsTaxBuyerSituationsV1:503"] = ["settings_provider_unavailable"],
+            ["PublishSettingsTaxBuyerSituationListV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["PublishSettingsTaxBuyerSituationListV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_version_conflict"],
+            ["PublishSettingsTaxBuyerSituationListV1:422"] = ["settings_tax_master_effective_from_past"],
+            ["PublishSettingsTaxBuyerSituationListV1:503"] = ["settings_provider_unavailable"],
+            ["WithdrawSettingsTaxBuyerSituationListV1:400"] = ["settings_tax_master_command_metadata_invalid", "settings_tax_master_reason_required", "settings_tax_master_reason_too_long", "settings_tax_master_request_invalid"],
+            ["WithdrawSettingsTaxBuyerSituationListV1:409"] = ["settings_tax_master_idempotency_conflict", "settings_tax_master_record_in_effect", "settings_tax_master_record_withdrawn", "settings_tax_master_version_conflict"],
+            ["WithdrawSettingsTaxBuyerSituationListV1:503"] = ["settings_provider_unavailable"],
             ["GetProductItemTypeV1:400"] = ["product_item_type_request_invalid"],
             ["GetProductItemTypeV1:503"] = ["product_item_type_provider_unavailable"],
             ["SetProductItemTypeV1:400"] = ["product_item_type_command_metadata_invalid", "product_item_type_reason_required", "product_item_type_reason_too_long", "product_item_type_request_invalid"],
@@ -6811,12 +6845,37 @@ public sealed partial class OpenApiContractGenerationTests
                     ("displayName", "type:string")),
                 // MOD-03: the tax master and product item type reads.
                 ["TaxMasterViewV1"] = ObjectSchema(
-                    ["companyId", "businessDate", "itemTypeDefaults", "codeLists", "withholdingThreshold"],
+                    ["companyId", "businessDate", "itemTypeDefaults", "codeLists", "withholdingThreshold", "buyerSituations"],
                     ("companyId", "type:string;format:uuid"),
                     ("businessDate", "type:string;format:date"),
                     ("itemTypeDefaults", "type:array;items:ref:TaxItemTypeDefaultSeriesViewV1"),
                     ("codeLists", "type:array;items:ref:TaxCodeListViewV1"),
-                    ("withholdingThreshold", "ref:TaxWithholdingThresholdViewV1")),
+                    ("withholdingThreshold", "ref:TaxWithholdingThresholdViewV1"),
+                    ("buyerSituations", "ref:TaxBuyerSituationListViewV1")),
+                // SAT-D158: the buyer situation list and each situation's tax effect.
+                ["TaxBuyerSituationListViewV1"] = ObjectSchema(
+                    ["companyId", "businessDate", "version", "inForce", "scheduled"],
+                    ("companyId", "type:string;format:uuid"),
+                    ("businessDate", "type:string;format:date"),
+                    ("version", "type:string"),
+                    ("inForce", "oneOf:ref:TaxBuyerSituationListVersionViewV1|type:null"),
+                    ("scheduled", "type:array;items:ref:TaxBuyerSituationListVersionViewV1")),
+                ["TaxBuyerSituationListVersionViewV1"] = ObjectSchema(
+                    ["listVersion", "source", "effectiveFrom", "entries", "recordedBy", "recordedAtUtc", "reason"],
+                    ("listVersion", "type:string"),
+                    ("source", "type:string"),
+                    ("effectiveFrom", "type:string;format:date"),
+                    ("entries", "type:array;items:ref:TaxBuyerSituationEntryViewV1"),
+                    ("recordedBy", "type:null|string"),
+                    ("recordedAtUtc", "type:null|string;format:date-time"),
+                    ("reason", "type:string")),
+                ["TaxBuyerSituationEntryViewV1"] = ObjectSchema(
+                    ["code", "name", "withholdingApplies", "vatMode", "documentRequired"],
+                    ("code", "type:string"),
+                    ("name", "type:string"),
+                    ("withholdingApplies", "type:boolean"),
+                    ("vatMode", "type:string"),
+                    ("documentRequired", "type:boolean")),
                 ["TaxItemTypeDefaultSeriesViewV1"] = ObjectSchema(
                     ["itemType", "version", "inForce", "scheduled"],
                     ("itemType", "type:string"),
@@ -6872,13 +6931,14 @@ public sealed partial class OpenApiContractGenerationTests
                     ("recordedAtUtc", "type:string;format:date-time"),
                     ("reason", "type:string")),
                 ["ProductItemTypeViewV1"] = ObjectSchema(
-                    ["companyId", "productId", "version", "itemType", "updatedAtUtc", "updatedBy"],
+                    ["companyId", "productId", "version", "itemType", "updatedAtUtc", "updatedBy", "updatedInCompanyId"],
                     ("companyId", "type:string;format:uuid"),
                     ("productId", "type:string;format:uuid"),
                     ("version", "type:string"),
                     ("itemType", "type:null|string"),
                     ("updatedAtUtc", "type:null|string;format:date-time"),
-                    ("updatedBy", "type:null|string")),
+                    ("updatedBy", "type:null|string"),
+                    ("updatedInCompanyId", "type:null|string;format:uuid")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -7808,6 +7868,19 @@ public sealed partial class OpenApiContractGenerationTests
                     ("currencyCode", "type:null|string"),
                     ("reason", "type:null|string"),
                     ("effectiveFrom", "type:null|string;format:date")),
+                ["PublishTaxBuyerSituationListRequestV1"] = ObjectSchema(
+                    ["expectedVersion", "entries", "reason"],
+                    ("expectedVersion", "type:null|string"),
+                    ("entries", "type:array|null;items:ref:TaxBuyerSituationEntryV1"),
+                    ("reason", "type:null|string"),
+                    ("effectiveFrom", "type:null|string;format:date")),
+                ["TaxBuyerSituationEntryV1"] = ObjectSchema(
+                    ["code", "name", "withholdingApplies", "vatMode", "documentRequired"],
+                    ("code", "type:null|string"),
+                    ("name", "type:null|string"),
+                    ("withholdingApplies", "type:boolean|null"),
+                    ("vatMode", "type:null|string"),
+                    ("documentRequired", "type:boolean|null")),
                 ["SetProductItemTypeRequestV1"] = ObjectSchema(
                     ["expectedVersion", "itemType", "reason"],
                     ("expectedVersion", "type:null|string"),

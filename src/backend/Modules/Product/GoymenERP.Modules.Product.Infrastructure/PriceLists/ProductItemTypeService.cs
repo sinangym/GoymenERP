@@ -10,11 +10,15 @@ using Microsoft.EntityFrameworkCore;
 namespace GoymenERP.Modules.Product.Infrastructure.PriceLists;
 
 /// <summary>
-/// SAT-D134 (EK19): the item type (Steel / Scrap / Service = demir / hurda / hizmet) of a product in the server-resolved company.
-/// The card holds no tax class and no tax exception; the tax is the Settings default per item type (SAT-D139).
+/// SAT-D134 (EK19) / SAT-D149 (EK20): the item type (Steel / Scrap / Service = demir / hurda / hizmet) of a product, held ONCE on
+/// the shared product card — the same value in every company. The card holds no tax class and no tax exception; the tax is the
+/// Settings default per item type (SAT-D139).
 /// <list type="bullet">
-/// <item><b>Authority</b>: <see cref="ProductItemTypePermissionsV1.Manage"/> company-wide, measured fresh first and again right
-/// before the answer / the save; granted to no role here.</item>
+/// <item><b>Authority</b> (SAT-D149): <see cref="ProductItemTypePermissionsV1.Manage"/> company-wide in the server-resolved
+/// company — a holder in ANY company reads and changes the shared value — measured fresh first and again right before the
+/// answer / the save; granted to no role here.</item>
+/// <item><b>Audit</b>: one event per real change, written in the acting company (the row records it as
+/// <c>UpdatedInCompanyId</c>; the before/after images name it).</item>
 /// <item><b>Command</b>: one person, a mandatory reason (at most 4000), Idempotency-Key (the stored terminal answer replays), the
 /// version as decimal text ("0" = none yet), correlation/causation and ONE audit event per real change.</item>
 /// <item><b>Read port</b> (<see cref="IProductItemTypeReaderV1"/>): access only (authenticated member of the company), no
@@ -52,9 +56,9 @@ internal sealed class ProductItemTypeService(
             .SingleOrDefaultAsync(itemType => itemType.ProductId == productId, cancellationToken);
         await MeasureAsync(cancellationToken);
         return row is null
-            ? new ProductItemTypeViewV1(scope.CompanyId, productId, "0", null, null, null)
+            ? new ProductItemTypeViewV1(scope.CompanyId, productId, "0", null, null, null, null)
             : new ProductItemTypeViewV1(scope.CompanyId, productId, row.Version.ToString(CultureInfo.InvariantCulture),
-                row.ItemType, row.UpdatedAtUtc, row.UpdatedBy);
+                row.ItemType, row.UpdatedAtUtc, row.UpdatedBy, row.UpdatedInCompanyId);
     }
 
     public async Task<ProductItemTypeResultV1> SetAsync(Guid productId, SetProductItemTypeRequestV1 request,
@@ -133,10 +137,10 @@ internal sealed class ProductItemTypeService(
         var versionBefore = row?.Version;
         if (row is null)
         {
-            row = new ProductItemTypeRow
+            row = new ProductCardItemTypeRow
             {
-                CompanyId = scope.CompanyId, ProductId = productId, ItemType = itemType, Version = 1, UpdatedAtUtc = now,
-                UpdatedBy = metadata.ActorId,
+                ProductId = productId, ItemType = itemType, Version = 1, UpdatedAtUtc = now, UpdatedBy = metadata.ActorId,
+                UpdatedInCompanyId = scope.CompanyId,
             };
             database.ItemTypes.Add(row);
         }
@@ -146,14 +150,16 @@ internal sealed class ProductItemTypeService(
             row.Version = checked(row.Version + 1);
             row.UpdatedAtUtc = now;
             row.UpdatedBy = metadata.ActorId;
+            row.UpdatedInCompanyId = scope.CompanyId;
         }
 
         var after = JsonSerializer.SerializeToNode(Snapshot(row), Json)!.AsObject();
+        after["actingCompanyId"] = scope.CompanyId;
         after["reason"] = reason;
         auditEvents.Enqueue(new AuditEventDraft(scope.CompanyId, "product.item-type.changed.v1", EntityType,
             productId.ToString("D"), "SetItemType", versionBefore, row.Version, AuditActorTypes.User, metadata.ActorId,
             Permission, scope.RoleCodes, before is null ? "{}" : JsonSerializer.Serialize(before, Json), after.ToJsonString(Json),
-            "Ürünün kalem tipi değiştirildi; gerekçe kayıt içeriğindedir", ApprovalContextJson: null,
+            "Ortak ürün kartının kalem tipi değiştirildi; gerekçe kayıt içeriğindedir", ApprovalContextJson: null,
             AuditAiInvolvement.None, AiContextJson: null, metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
             metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey));
         await MeasureAsync(cancellationToken);
@@ -284,12 +290,12 @@ internal sealed class ProductItemTypeService(
         }
     }
 
-    private static object Snapshot(ProductItemTypeRow row) => new
+    private static object Snapshot(ProductCardItemTypeRow row) => new
     {
-        row.CompanyId,
         row.ProductId,
         row.ItemType,
         row.Version,
+        row.UpdatedInCompanyId,
     };
 
     /// <summary>"0" or a positive decimal version without sign or leading zero.</summary>

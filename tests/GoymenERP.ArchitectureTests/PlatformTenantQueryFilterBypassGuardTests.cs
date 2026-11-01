@@ -313,8 +313,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (765b00e2… -> e68b1182…).
             // MOD-03 (EK19): +2 Settings tax master SQL facts (tax master lifecycle; product item type → line tax port)
             // (e68b1182… -> 9c53f777…).
+            // SAT-D149/D158 (EK20/EK21): +2 Settings tax master SQL facts (buyer situation list; item type move to the shared
+            // card) (9c53f777… -> 534be0f1…).
             ["tools/relational_inventory/platform.txt"] =
-                "9c53f7779e22f44c965220f619acec5911a81b7c5183fd4436047cb7ad78f79d",
+                "534be0f1b287823ce1de56809d24c57d8b7e4e895048896f87571869dbffdf51",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -429,7 +431,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for MOD-03: the company-filtered tax master sets (categories, immutable rate records and code list versions with insert-only withdrawals; company inside every key and foreign key) join the write fence (immutable rows, every row in the context company).
                 // Re-fingerprinted for SAT-D93 (Sinan 2026-10-31): the company-filtered VUK 232 withholding threshold fence, its
                 // immutable records and insert-only withdrawals join the write fence.
-                "fa35e2a7d5592a4cd177cf01a17363894c4007aabdaae4ffa1d1eb4635904bce",
+                // Re-fingerprinted for SAT-D158 (EK21): the company-filtered buyer situation list (fence, immutable whole
+                // versions and entries with their tax effect, insert-only withdrawals; company inside every key and foreign key)
+                // joins the write fence.
+                "a83f2f3e314b563f4075efbe2294c95620a7bfe22e414099e1b68618394f63a9",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -539,7 +544,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "PriceLists/ProductPriceListDbContext.cs"] =
                 // Re-fingerprinted for MOD-03: the company-filtered product tax classification (classes, version and update facts the only moving columns) and its insert-only command answers join the write guard.
-                "9137cddcd78fc5b15916421dda0fcb447a4c3b2459c2096afae5e752c08cde60",
+                // Re-fingerprinted for SAT-D149 (EK20): the item type moves to the SHARED card (ProductCardItemTypes keyed by the
+                // product, no company filter like the global card it extends); its own write guard refuses a delete, a write
+                // outside a resolved company or naming another acting company, and any column but the type and update facts.
+                // The command answers stay company-filtered.
+                "2d883027d5ca815850f42ca9767a175ccc40ef7ac654e3a35f699b64c3fbf2e6",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
             [ReviewedWorkDbContextPath] =
@@ -1659,6 +1668,26 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "Migrations/20261031195253_AddProductItemTypes.cs"] =
                     new(
                         "94c66a0c670078d3a5068659653d5323a39402c7669d3d578cf529628ae4ea93",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // SAT-D149 (EK20): the item type moves to the shared product card. Up refuses (51151) when one product has
+                // different item types in different companies (never chooses), then moves the agreed value; Down refuses (51152)
+                // while any shared item type exists (forward fix).
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
+                 + "Migrations/20261101144030_MoveProductItemTypesToProductCard.cs"] =
+                    new(
+                        "8eec9c301e2d1b4114a6c396394b6032bdf4ac6c38093485fb594fe141f04bf4",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 3
+                        }),
+                // SAT-D158 (EK21): Down refuses (51153) while any buyer situation list exists (forward fix).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261101143556_AddTaxBuyerSituationLists.cs"] =
+                    new(
+                        "ed57b4c0083c649e6918145cb88b2f25a0d6ca57505afa61849d9cca0f2b55b8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

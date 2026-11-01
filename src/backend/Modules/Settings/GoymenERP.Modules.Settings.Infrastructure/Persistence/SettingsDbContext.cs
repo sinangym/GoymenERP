@@ -47,6 +47,15 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
     internal DbSet<TaxWithholdingThresholdWithdrawalRow> TaxWithholdingThresholdWithdrawals =>
         Set<TaxWithholdingThresholdWithdrawalRow>();
 
+    internal DbSet<TaxBuyerSituationListRow> TaxBuyerSituationLists => Set<TaxBuyerSituationListRow>();
+
+    internal DbSet<TaxBuyerSituationListVersionRow> TaxBuyerSituationListVersions => Set<TaxBuyerSituationListVersionRow>();
+
+    internal DbSet<TaxBuyerSituationEntryRow> TaxBuyerSituationEntries => Set<TaxBuyerSituationEntryRow>();
+
+    internal DbSet<TaxBuyerSituationListWithdrawalRow> TaxBuyerSituationListWithdrawals =>
+        Set<TaxBuyerSituationListWithdrawalRow>();
+
     internal DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -75,6 +84,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
 
         ConfigureSalesDiscountLimits(modelBuilder);
         ConfigureTaxMaster(modelBuilder);
+        ConfigureTaxBuyerSituations(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
         // writes them in the same SaveChanges as its own rows and reads them only through the company filter.
@@ -406,6 +416,84 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
         thresholdWithdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// SAT-D158 (EK21): the company's effective-dated buyer situation list — whole immutable versions over the reviewed catalog,
+    /// each entry with its tax effect (withholding kept or removed, VAT mode, document required) — with the company inside every
+    /// key and foreign key, like the code lists.
+    /// </summary>
+    private void ConfigureTaxBuyerSituations(ModelBuilder modelBuilder)
+    {
+        const string emptyGuid = "'00000000-0000-0000-0000-000000000000'";
+        const string binaryCollation = "Latin1_General_100_BIN2";
+
+        var list = modelBuilder.Entity<TaxBuyerSituationListRow>();
+        list.ToTable("TaxBuyerSituationLists", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationLists_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationLists_Version", "[Version] > 0 AND [LastListVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationLists_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+        });
+        list.HasKey(x => x.CompanyId);
+        list.Property(x => x.Version).IsConcurrencyToken();
+        list.Property(x => x.UpdatedBy).HasMaxLength(128);
+        list.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var version = modelBuilder.Entity<TaxBuyerSituationListVersionRow>();
+        version.ToTable("TaxBuyerSituationListVersions", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationListVersions_Version", "[ListVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationListVersions_Recorded",
+                "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        version.HasKey(x => new { x.CompanyId, x.ListVersion });
+        version.Property(x => x.RecordedBy).HasMaxLength(128);
+        version.Property(x => x.Reason).HasMaxLength(4000);
+        version.HasOne<TaxBuyerSituationListRow>().WithMany()
+            .HasForeignKey(x => x.CompanyId)
+            .OnDelete(DeleteBehavior.Restrict);
+        version.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var entry = modelBuilder.Entity<TaxBuyerSituationEntryRow>();
+        entry.ToTable("TaxBuyerSituationEntries", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationEntries_Code",
+                "LEN([Code]) BETWEEN 1 AND 64 AND [Code] NOT LIKE '%[^A-Za-z0-9]%' AND [Code] LIKE '[A-Za-z]%'");
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationEntries_Name", "LEN(LTRIM(RTRIM([Name]))) > 0");
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationEntries_VatMode",
+                "[VatMode] IN ('Normal', 'ZeroWithExemptionCode')");
+            // SAT-D147: a KDV %0 situation never keeps a withholding (there is no VAT to withhold).
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationEntries_ZeroNoWithholding",
+                "[VatMode] <> 'ZeroWithExemptionCode' OR [WithholdingApplies] = 0");
+        });
+        entry.HasKey(x => new { x.CompanyId, x.ListVersion, x.Code });
+        entry.Property(x => x.Code).HasMaxLength(64).IsUnicode(false).UseCollation(binaryCollation);
+        entry.Property(x => x.Name).HasMaxLength(200);
+        entry.Property(x => x.VatMode).HasMaxLength(32).IsUnicode(false).UseCollation(binaryCollation);
+        entry.HasOne<TaxBuyerSituationListVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ListVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        entry.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var withdrawal = modelBuilder.Entity<TaxBuyerSituationListWithdrawalRow>();
+        withdrawal.ToTable("TaxBuyerSituationListWithdrawals", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationListWithdrawals_Replacement",
+                "[ReplacedByListVersion] IS NULL OR [ReplacedByListVersion] > [ListVersion]");
+            table.HasCheckConstraint("CK_SettingsTaxBuyerSituationListWithdrawals_Recorded",
+                "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+        });
+        withdrawal.HasKey(x => new { x.CompanyId, x.ListVersion });
+        withdrawal.Property(x => x.WithdrawnBy).HasMaxLength(128);
+        withdrawal.Property(x => x.Reason).HasMaxLength(4000);
+        withdrawal.HasOne<TaxBuyerSituationListVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ListVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        withdrawal.HasOne<TaxBuyerSituationListVersionRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.ReplacedByListVersion })
+            .OnDelete(DeleteBehavior.Restrict);
+        withdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+    }
+
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -459,7 +547,8 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
             if (entry.State == EntityState.Modified
                 && entry.Entity is TaxItemTypeDefaultRecordRow or TaxItemTypeDefaultWithdrawalRow or TaxCodeListVersionRow
                     or TaxCodeListEntryRow or TaxCodeListWithdrawalRow or TaxWithholdingThresholdRecordRow
-                    or TaxWithholdingThresholdWithdrawalRow)
+                    or TaxWithholdingThresholdWithdrawalRow or TaxBuyerSituationListVersionRow or TaxBuyerSituationEntryRow
+                    or TaxBuyerSituationListWithdrawalRow)
             {
                 throw new InvalidOperationException("Vergi oranı kaydı ve kod listesi sürümü değiştirilemez; yeni kayıt yazılır.");
             }
@@ -481,6 +570,10 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 TaxWithholdingThresholdRow row => row.CompanyId,
                 TaxWithholdingThresholdRecordRow row => row.CompanyId,
                 TaxWithholdingThresholdWithdrawalRow row => row.CompanyId,
+                TaxBuyerSituationListRow row => row.CompanyId,
+                TaxBuyerSituationListVersionRow row => row.CompanyId,
+                TaxBuyerSituationEntryRow row => row.CompanyId,
+                TaxBuyerSituationListWithdrawalRow row => row.CompanyId,
                 _ => (Guid?)null,
             };
             if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))

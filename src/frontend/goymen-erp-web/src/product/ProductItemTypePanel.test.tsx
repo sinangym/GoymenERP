@@ -46,9 +46,11 @@ function install(respond: (method: string, attempt: number) => Response): Sent[]
   return sent
 }
 
-function view(version: string, itemType: string | null) {
+const OTHER_COMPANY = '00000000-0000-4000-8000-000000000009'
+
+function view(version: string, itemType: string | null, updatedInCompanyId: string | null = itemType === null ? null : COMPANY) {
   return new Response(
-    JSON.stringify({ companyId: COMPANY, productId: PRODUCT, version, itemType, updatedAtUtc: null, updatedBy: null }),
+    JSON.stringify({ companyId: COMPANY, productId: PRODUCT, version, itemType, updatedAtUtc: null, updatedBy: null, updatedInCompanyId }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
   )
 }
@@ -62,7 +64,7 @@ function renderPanel() {
   )
 }
 
-describe('product item type panel (SAT-D134)', () => {
+describe('product item type panel (SAT-D134/D149)', () => {
   it('shows nothing without the permission (403) and says "kaynak yok" for an unset type', async () => {
     install(() => new Response(null, { status: 403 }))
     const { container } = renderPanel()
@@ -106,7 +108,7 @@ describe('product item type panel (SAT-D134)', () => {
   it('fails closed on an off-contract read', () => {
     const of = (overrides: Record<string, unknown>) => ({
       companyId: COMPANY, productId: PRODUCT, version: '1', itemType: 'Steel', updatedAtUtc: '2026-10-30T08:00:00Z', updatedBy: 'u-1',
-      ...overrides,
+      updatedInCompanyId: COMPANY, ...overrides,
     })
     expect(decodeItemType(of({}), COMPANY, PRODUCT)).not.toBeNull()
     expect(decodeItemType(of({ itemType: 'Copper' }), COMPANY, PRODUCT)).toBeNull()
@@ -120,6 +122,30 @@ describe('product item type panel (SAT-D134)', () => {
     const { updatedBy: _dropped, ...missing } = of({})
     expect(decodeItemType(missing, COMPANY, PRODUCT)).toBeNull()
     expect(decodeItemType(of({ updatedBy: 7 }), COMPANY, PRODUCT)).toBeNull()
+    // SAT-D149 adds updatedInCompanyId: missing it is off-contract too.
+    const { updatedInCompanyId: _noCompany, ...withoutCompany } = of({})
+    expect(decodeItemType(withoutCompany, COMPANY, PRODUCT)).toBeNull()
+    // SAT-D149: a stored value names the company it was changed in; an unset one names none.
+    expect(decodeItemType(of({ updatedInCompanyId: null }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeItemType(of({ updatedInCompanyId: 'x' }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeItemType(of({ version: '0', itemType: null, updatedInCompanyId: COMPANY }), COMPANY, PRODUCT)).toBeNull()
+    expect(decodeItemType(of({ updatedInCompanyId: OTHER_COMPANY }), COMPANY, PRODUCT)?.changedInAnotherCompany).toBe(true)
+    expect(decodeItemType(of({}), COMPANY, PRODUCT)?.changedInAnotherCompany).toBe(false)
+  })
+
+  it('says the type is shared by every company and when it was last changed in another one (SAT-D149)', async () => {
+    install(() => view('3', 'Scrap', OTHER_COMPANY))
+    renderPanel()
+    expect(await screen.findByText(ITEM_TYPE_LABEL.Scrap)).toBeTruthy()
+    expect(screen.getByText(ITEM_TYPE_TEXT.shared)).toBeTruthy()
+    expect(screen.getByText(ITEM_TYPE_TEXT.changedElsewhere)).toBeTruthy()
+    cleanup()
+    vi.unstubAllGlobals()
+
+    install(() => view('3', 'Scrap'))
+    renderPanel()
+    expect(await screen.findByText(ITEM_TYPE_TEXT.shared)).toBeTruthy()
+    expect(screen.queryByText(ITEM_TYPE_TEXT.changedElsewhere)).toBeNull()
   })
 
   it('tells an ended session (401) apart from a missing permission (403)', async () => {
@@ -201,7 +227,7 @@ describe('product item type client ↔ canonical OpenAPI', () => {
       '#/components/schemas/ProductItemTypeViewV1',
     )
     expect(Object.keys(document.components.schemas.ProductItemTypeViewV1?.properties ?? {}).sort()).toEqual([
-      'companyId', 'itemType', 'productId', 'updatedAtUtc', 'updatedBy', 'version',
+      'companyId', 'itemType', 'productId', 'updatedAtUtc', 'updatedBy', 'updatedInCompanyId', 'version',
     ])
     const declared = new Set(
       Object.values(operations)

@@ -9,6 +9,9 @@
  *   POST /settings/tax-master/code-lists/{listKind}/versions/{v}/withdrawal  -> 204
  *   POST /settings/tax-master/withholding-threshold                          -> 204 (SAT-D135, VUK 232)
  *   POST /settings/tax-master/withholding-threshold/records/{id}/withdrawal  -> 204
+ *   GET  /settings/tax-master/buyer-situations                               -> TaxBuyerSituationListViewV1 (SAT-D158)
+ *   POST /settings/tax-master/buyer-situations/versions                      -> 204 (SAT-D158, whole list version)
+ *   POST /settings/tax-master/buyer-situations/versions/{v}/withdrawal       -> 204
  *
  * Every decoder fails CLOSED (one bad row invalidates the whole answer); rates stay the lossless decimal TEXT the server
  * sends and the screen never computes a tax. A missing value is "kaynak yok", never 0.
@@ -42,6 +45,14 @@ export function codeListWithdrawalPath(kind: CodeListKind, listVersion: string):
   return `${codeListPath(kind)}/${encodeURIComponent(listVersion)}/withdrawal`
 }
 
+export const BUYER_SITUATIONS_PATH = `${TAX_MASTER_PATH}/buyer-situations`
+
+export const BUYER_SITUATION_VERSIONS_PATH = `${BUYER_SITUATIONS_PATH}/versions`
+
+export function buyerSituationWithdrawalPath(listVersion: string): string {
+  return `${BUYER_SITUATION_VERSIONS_PATH}/${encodeURIComponent(listVersion)}/withdrawal`
+}
+
 export const TAX_PROBLEM = {
   requestInvalid: 'settings_tax_master_request_invalid',
   commandMetadataInvalid: 'settings_tax_master_command_metadata_invalid',
@@ -62,7 +73,45 @@ export const TAX_INPUT = {
   listEntryNameMaximumLength: 200,
   listMaximumEntries: 500,
   reasonMaximumLength: 4000,
+  buyerSituationCodeMaximumLength: 64,
+  buyerSituationMaximumEntries: 100,
 } as const
+
+/** SAT-D147/D158: how a buyer situation changes the default's VAT. */
+export const VAT_MODES = ['Normal', 'ZeroWithExemptionCode'] as const
+export type VatMode = (typeof VAT_MODES)[number]
+
+/** SAT-D158: one buyer situation and its tax effect, as data. */
+export interface TaxBuyerSituation {
+  readonly code: string
+  readonly name: string
+  readonly withholdingApplies: boolean
+  readonly vatMode: VatMode
+  readonly documentRequired: boolean
+}
+
+export interface TaxBuyerSituationListVersion {
+  readonly listVersion: string
+  readonly source: DefaultSource
+  readonly effectiveFrom: string
+  readonly entries: readonly TaxBuyerSituation[]
+  readonly recordedBy: string | null
+  readonly recordedAtUtc: string | null
+  readonly reason: string
+}
+
+export interface TaxBuyerSituationList {
+  readonly version: string
+  readonly inForce: TaxBuyerSituationListVersion | null
+  readonly scheduled: readonly TaxBuyerSituationListVersion[]
+}
+
+export interface PublishBuyerSituationListBody {
+  readonly expectedVersion: string
+  readonly entries: readonly TaxBuyerSituation[]
+  readonly reason: string
+  readonly effectiveFrom?: string
+}
 
 export const CODE_LIST_KINDS = ['Exemption', 'Withholding'] as const
 export type CodeListKind = (typeof CODE_LIST_KINDS)[number]
@@ -137,6 +186,7 @@ export interface TaxMaster {
   readonly itemTypeDefaults: readonly TaxDefaultSeries[]
   readonly codeLists: readonly TaxCodeList[]
   readonly withholdingThreshold: TaxThreshold
+  readonly buyerSituations: TaxBuyerSituationList
 }
 
 export interface RecordThresholdBody {
@@ -177,6 +227,98 @@ const PERCENT = /^(0|[1-9]\d{0,2})(\.\d{1,4})?$/
 const LIST_CODE = /^[A-Z0-9]{1,16}$/
 const AMOUNT = /^(0|[1-9]\d{0,14})(\.\d{1,4})?$/
 const CURRENCY = /^[A-Z]{3}$/
+const SITUATION_CODE = /^[A-Za-z][A-Za-z0-9]{0,63}$/
+
+export function isSituationCode(value: string): boolean {
+  return SITUATION_CODE.test(value)
+}
+
+function decodeSituation(raw: unknown): TaxBuyerSituation | null {
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.situation) || typeof raw.code !== 'string' || !isSituationCode(raw.code)
+    || !isText(raw.name)
+    || typeof raw.withholdingApplies !== 'boolean' || !VAT_MODES.includes(raw.vatMode as VatMode)
+    || typeof raw.documentRequired !== 'boolean') return null
+  // SAT-D147: a KDV %0 situation never keeps a withholding.
+  if (raw.vatMode === 'ZeroWithExemptionCode' && raw.withholdingApplies) return null
+  return {
+    code: raw.code,
+    name: raw.name,
+    withholdingApplies: raw.withholdingApplies,
+    vatMode: raw.vatMode as VatMode,
+    documentRequired: raw.documentRequired,
+  }
+}
+
+function decodeSituationVersion(raw: unknown): TaxBuyerSituationListVersion | null {
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.situationVersion) || !isVersion(raw.listVersion)
+    || (raw.source !== 'Catalog' && raw.source !== 'Record')
+    || !isDateText(raw.effectiveFrom) || !Array.isArray(raw.entries) || raw.entries.length === 0
+    || typeof raw.reason !== 'string') return null
+  const isCatalog = raw.source === 'Catalog'
+  if (isCatalog ? raw.recordedBy !== null || raw.recordedAtUtc !== null || raw.listVersion !== '0'
+    : !isText(raw.recordedBy) || typeof raw.recordedAtUtc !== 'string' || raw.listVersion === '0') return null
+  const entries = raw.entries.map(decodeSituation)
+  if (entries.some((entry) => entry === null)) return null
+  const codes = (entries as TaxBuyerSituation[]).map((entry) => entry.code)
+  if (new Set(codes).size !== codes.length) return null
+  return {
+    listVersion: raw.listVersion,
+    source: raw.source,
+    effectiveFrom: raw.effectiveFrom,
+    entries: entries as TaxBuyerSituation[],
+    recordedBy: (raw.recordedBy as string | null) ?? null,
+    recordedAtUtc: (raw.recordedAtUtc as string | null) ?? null,
+    reason: raw.reason,
+  }
+}
+
+/** SAT-D158: the buyer situation list (also the body of GET …/buyer-situations, checked against the company asked for). */
+export function decodeBuyerSituationList(raw: unknown, companyId?: string): TaxBuyerSituationList | null {
+  if (!isRecord(raw) || !hasExactKeys(raw, KEYS.situationList) || !isUuid(raw.companyId) || !isDateText(raw.businessDate)
+    || !isVersion(raw.version) || !Array.isArray(raw.scheduled)) return null
+  if (companyId !== undefined && raw.companyId !== companyId) return null
+  const inForce = raw.inForce === null ? null : decodeSituationVersion(raw.inForce)
+  if (raw.inForce !== null && inForce === null) return null
+  const scheduled = raw.scheduled.map(decodeSituationVersion)
+  if (scheduled.some((version) => version === null)) return null
+  return { version: raw.version, inForce, scheduled: scheduled as TaxBuyerSituationListVersion[] }
+}
+
+/**
+ * "KOD;Ad;tevkifat(evet/hayır);KDV(normal/sifir);belge(evet/hayır)" per line → situations; null when a line is malformed, a
+ * code repeats or a KDV %0 situation keeps a withholding.
+ */
+export function parseBuyerSituationText(text: string): TaxBuyerSituation[] | null {
+  const lines = text.split('\n').map((line) => line.trim()).filter((line) => line.length > 0)
+  if (lines.length === 0 || lines.length > TAX_INPUT.buyerSituationMaximumEntries) return null
+  const yesNo = (value: string): boolean | null => {
+    const normalized = value.trim().toLocaleLowerCase('tr-TR')
+    return normalized === 'evet' ? true : normalized === 'hayır' || normalized === 'hayir' ? false : null
+  }
+  const entries: TaxBuyerSituation[] = []
+  for (const line of lines) {
+    const parts = line.split(';').map((part) => part.trim())
+    if (parts.length !== 5) return null
+    const [code, name, withholding, vat, document] = parts
+    const withholdingApplies = yesNo(withholding)
+    const documentRequired = yesNo(document)
+    const vatText = vat.toLocaleLowerCase('tr-TR')
+    const vatMode: VatMode | null = vatText === 'normal' ? 'Normal' : vatText === 'sıfır' || vatText === 'sifir'
+      ? 'ZeroWithExemptionCode' : null
+    if (!isSituationCode(code) || name.length === 0 || name.length > TAX_INPUT.listEntryNameMaximumLength
+      || withholdingApplies === null || documentRequired === null || vatMode === null
+      || (vatMode === 'ZeroWithExemptionCode' && withholdingApplies)) return null
+    entries.push({ code, name, withholdingApplies, vatMode, documentRequired })
+  }
+  return new Set(entries.map((entry) => entry.code)).size === entries.length ? entries : null
+}
+
+/** The editor text of a list (the inverse of {@link parseBuyerSituationText}). */
+export function buyerSituationText(entries: readonly TaxBuyerSituation[]): string {
+  const yesNo = (value: boolean) => (value ? 'evet' : 'hayır')
+  return entries.map((entry) => [entry.code, entry.name, yesNo(entry.withholdingApplies),
+    entry.vatMode === 'Normal' ? 'normal' : 'sıfır', yesNo(entry.documentRequired)].join(';')).join('\n')
+}
 
 /** Above 0, at most 15 integer digits and 4 decimals, as text (never a JS number on the wire). */
 export function isAmountText(value: unknown): value is string {
@@ -195,7 +337,7 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
 
 /** The wire members of each `TaxMasterViewV1` part (the OpenAPI schemas'). */
 const KEYS = {
-  master: ['companyId', 'businessDate', 'itemTypeDefaults', 'codeLists', 'withholdingThreshold'],
+  master: ['companyId', 'businessDate', 'itemTypeDefaults', 'codeLists', 'withholdingThreshold', 'buyerSituations'],
   series: ['itemType', 'version', 'inForce', 'scheduled'],
   defaultRecord: ['recordId', 'source', 'recordVersion', 'effectiveFrom', 'vatApplies', 'vatPercent', 'exemptionCode',
     'withholdingApplies', 'withholdingPercent', 'withholdingCode', 'recordedBy', 'recordedAtUtc', 'reason'],
@@ -204,6 +346,10 @@ const KEYS = {
   entry: ['code', 'name'],
   threshold: ['version', 'inForce', 'scheduled'],
   thresholdRecord: ['recordId', 'recordVersion', 'effectiveFrom', 'amount', 'currencyCode', 'recordedBy', 'recordedAtUtc', 'reason'],
+  // SAT-D158: the buyer situation list (also the body of GET …/buyer-situations), its versions and entries.
+  situationList: ['companyId', 'businessDate', 'version', 'inForce', 'scheduled'],
+  situationVersion: ['listVersion', 'source', 'effectiveFrom', 'entries', 'recordedBy', 'recordedAtUtc', 'reason'],
+  situation: ['code', 'name', 'withholdingApplies', 'vatMode', 'documentRequired'],
 } as const
 
 function decodeThresholdRecord(raw: unknown): TaxThresholdRecord | null {
@@ -344,12 +490,15 @@ export function decodeTaxMaster(raw: unknown, companyId: string): TaxMaster | nu
   if (threshold === null) return null
   const kinds = (lists as TaxCodeList[]).map((list) => list.kind)
   if (kinds.length !== CODE_LIST_KINDS.length || CODE_LIST_KINDS.some((kind) => !kinds.includes(kind))) return null
+  const buyerSituations = decodeBuyerSituationList(raw.buyerSituations, companyId)
+  if (buyerSituations === null) return null
   return {
     companyId,
     businessDate: raw.businessDate,
     itemTypeDefaults: series as TaxDefaultSeries[],
     codeLists: lists as TaxCodeList[],
     withholdingThreshold: threshold,
+    buyerSituations,
   }
 }
 

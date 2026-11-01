@@ -35,7 +35,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// host (routes, authorization, migrations, audit) — 403 without the name, the reviewed SAT-D139 default per item type, a
 /// Settings record over it (same-date replacement, withdrawal without resurrection, record in force immutable), the UBL-TR code
 /// lists, the VUK 232 threshold (empty = "kaynak yok"), the buyer-situation rule, company isolation, replay/conflict, audit and
-/// the rollback refusal (51131); and the Product owner's item type feeding the Settings line tax port end to end (51132).
+/// the rollback refusal (51131); the SAT-D158 buyer situation list (51153) and the SAT-D147 zero-rated buyer; and the Product
+/// owner's SHARED item type (SAT-D149) feeding the Settings line tax port end to end, with the forward-fix move (51151/51152).
 /// Every grant is a fresh synthetic role; codes and amounts are SENTETIK.
 /// </summary>
 public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
@@ -46,6 +47,8 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
     private const string Root = SettingsTaxMasterEndpoints.TaxMasterPath;
     private const string TaxMasterMigration = "20261031194631_AddTaxMaster";
     private const string ProductItemTypeMigration = "20261031195253_AddProductItemTypes";
+    private const string ProductCardItemTypeMigration = "20261101144030_MoveProductItemTypesToProductCard";
+    private const string BuyerSituationMigration = "20261101143556_AddTaxBuyerSituationLists";
 
     [SqlServerFact]
     public async Task Tax_master_lifecycle_with_dated_records_code_lists_isolation_replay_and_audit_on_real_sql()
@@ -217,9 +220,13 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             var steel = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.Normal, scheduledDay);
             Assert.Equal((20m, TaxResolutionStatesV1.Resolved, "T1", TaxDefaultSourcesV1.Record, inForceId),
                 (steel.VatPercent, steel.WithholdingCodeState, steel.WithholdingCode, steel.Source, steel.RecordId));
-            var undecided = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExportRegistered, today);
-            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.BuyerSituationUndecided),
-                (undecided.VatState, undecided.BuyerAdjustment));
+            // SAT-D147: an export-registered buyer is KDV %0 without withholding; no exemption list yet, so the code waits.
+            var export = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExportRegistered, today,
+                exemptionCode: "E701");
+            Assert.Equal((TaxResolutionStatesV1.ZeroRated, 0m, TaxResolutionStatesV1.NotApplied, TaxResolutionStatesV1.Unresolved,
+                    TaxResolutionReasonsV1.CodeListMissing, true),
+                (export.VatState, export.VatPercent, export.WithholdingState, export.ExemptionCodeState, export.ExemptionCodeReason,
+                    export.BuyerDocumentRequired));
         }
 
         // SAT-D135: the VUK 232 withholding threshold starts empty and is a dated record (SENTETIK amounts).
@@ -277,7 +284,9 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
         Assert.True(migration > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
         Assert.Equal(51131, rollback.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        // EF reverts the later migrations first, each in its own transaction: the empty SAT-D158 buyer situation store
+        // (AddTaxBuyerSituationLists) rolls back freely; the refused migration and everything before it stay applied.
+        Assert.Equal(applied.Take(migration + 1), await context.Database.GetAppliedMigrationsAsync());
     }
 
     [SqlServerFact]
@@ -331,11 +340,34 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
 
         await using (var scopeB = run.Request(CompanyB))
         {
-            // Company B never sees A's item type.
-            Assert.Equal("0", (await scopeB.Service.GetAsync(productId)).Version);
-            Assert.Equal(TaxResolutionReasonsV1.ProductItemTypeMissing,
-                (await scopeB.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.Normal, today)).Reason);
+            // SAT-D149: the item type is ONE value on the shared card — company B sees the value set in A (and where).
+            var shared = await scopeB.Service.GetAsync(productId);
+            Assert.Equal(("2", ProductItemTypesV1.Scrap, (Guid?)CompanyA, CompanyB),
+                (shared.Version, shared.ItemType, shared.UpdatedInCompanyId, shared.CompanyId));
+            Assert.Equal(TaxItemTypesV1.Scrap,
+                (await scopeB.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.Normal, today)).ItemType);
+
+            // A holder in B changes it for every company; the change is audited in B, the acting company.
+            Assert.Equal((409, ProductItemTypeProblemCodesV1.VersionConflict), Status(await scopeB.Service.SetAsync(productId,
+                new("1", ProductItemTypesV1.Steel, "SENTETIK B"), MetadataIn(CompanyB, "k-b-stale"))));
+            Assert.Equal(204, (await scopeB.Service.SetAsync(productId, new("2", ProductItemTypesV1.Steel, "SENTETIK B demir"),
+                MetadataIn(CompanyB, "k-b-set"))).Answer.StatusCode);
         }
+
+        await using (var scopeA = run.Request(CompanyA))
+        {
+            var afterB = await scopeA.Service.GetAsync(productId);
+            Assert.Equal(("3", ProductItemTypesV1.Steel, (Guid?)CompanyB), (afterB.Version, afterB.ItemType, afterB.UpdatedInCompanyId));
+            Assert.Equal((TaxItemTypesV1.Steel, 20m),
+                ((await scopeA.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.Normal, today)).ItemType,
+                    (await scopeA.LineTaxPort.ResolveAsync(productId, TaxBuyerSituationsV1.Normal, today)).VatPercent));
+        }
+
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [product].[ProductCardItemTypes]"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'product.item-type.changed.v1' AND [CompanyId] = @c "
+            + "AND JSON_VALUE([AfterJson], '$.actingCompanyId') = @s AND JSON_VALUE([BeforeJson], '$.updatedInCompanyId') = @a",
+            ("@c", CompanyB), ("@s", CompanyB.ToString("D")), ("@a", CompanyA.ToString("D"))));
 
         Assert.Equal(2, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'product.item-type.changed.v1' AND [CompanyId] = @c",
@@ -344,21 +376,228 @@ public sealed class SettingsTaxMasterSqlServerRelationalAcceptanceTests
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'product.item-type.changed.v1' "
             + "AND JSON_VALUE([AfterJson], '$.reason') = N'SENTETIK tip'"));
 
-        // The rollback is refused while an item type exists (forward fix, 51132).
+        // The rollback is refused while a shared item type exists (forward fix, 51152).
         await using var scopeRollback = run.Request(CompanyA);
         var context = scopeRollback.Context;
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
-        var migration = Array.IndexOf(applied, ProductItemTypeMigration);
+        var migration = Array.IndexOf(applied, ProductCardItemTypeMigration);
         Assert.True(migration > 0);
         var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
-        Assert.Equal(51132, rollback.Number);
+        Assert.Equal(51152, rollback.Number);
         Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Buyer_situation_list_is_dated_settings_data_whose_effect_drives_the_resolver_on_real_sql()
+    {
+        await using var run = await HostRun.StartAsync();
+        var (editorSubject, _) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Permission);
+        var (viewerSubject, _) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, "sales.drafts.read");
+        var (editorBSubject, _) = await run.GrantAsync(TestUsers.CompanyB, CompanyB, Permission);
+        using var client = run.Client(editorSubject, CompanyA);
+        using var viewer = run.Client(viewerSubject, CompanyA);
+        using var clientB = run.Client(editorBSubject, CompanyB);
+        var today = run.Today;
+        var tomorrow = today.AddDays(1);
+        var path = $"{Root}/buyer-situations";
+        var catalog = ApprovedTaxBuyerSituationCatalog.Entries
+            .Select(entry => new TaxBuyerSituationEntryV1(entry.Code, entry.Name, entry.WithholdingApplies, entry.VatMode,
+                entry.DocumentRequired))
+            .ToArray();
+
+        using (var forbidden = await viewer.GetAsync(path))
+        {
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        }
+
+        // SAT-D158: the reviewed catalog (version "0") answers until a version is published; the main read carries it too.
+        var initial = await run.JsonAsync(client, path);
+        Assert.Equal(("0", "Catalog", "0", 5), (initial.GetProperty("version").GetString(),
+            initial.GetProperty("inForce").GetProperty("source").GetString(),
+            initial.GetProperty("inForce").GetProperty("listVersion").GetString(),
+            initial.GetProperty("inForce").GetProperty("entries").GetArrayLength()));
+        var export = initial.GetProperty("inForce").GetProperty("entries").EnumerateArray()
+            .Single(entry => entry.GetProperty("code").GetString() == TaxBuyerSituationsV1.ExportRegistered);
+        Assert.Equal((false, "ZeroWithExemptionCode", true), (export.GetProperty("withholdingApplies").GetBoolean(),
+            export.GetProperty("vatMode").GetString(), export.GetProperty("documentRequired").GetBoolean()));
+        Assert.Equal("0", (await run.JsonAsync(client, Root)).GetProperty("buyerSituations").GetProperty("version").GetString());
+
+        // Validation: a KDV %0 situation keeps no withholding; a malformed code is refused; nothing is written.
+        using (var zeroWithholding = await client.SendAsync(Json(HttpMethod.Post, $"{path}/versions", "k-bs-bad",
+                   new PublishTaxBuyerSituationListRequestV1("0", [new TaxBuyerSituationEntryV1("Odd", "SENTETIK", true,
+                       TaxBuyerSituationVatModesV1.ZeroWithExemptionCode, true)], "SENTETIK"))))
+        {
+            await AssertProblemAsync(zeroWithholding, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.RequestInvalid);
+        }
+
+        using (var badCode = await client.SendAsync(Json(HttpMethod.Post, $"{path}/versions", "k-bs-badcode",
+                   new PublishTaxBuyerSituationListRequestV1("0", [new TaxBuyerSituationEntryV1("1x", "SENTETIK", true,
+                       TaxBuyerSituationVatModesV1.Normal, false)], "SENTETIK"))))
+        {
+            await AssertProblemAsync(badCode, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.RequestInvalid);
+        }
+
+        // The catalog again is a no-op (no version, no audit).
+        await run.CommandAsync(client, HttpMethod.Post, $"{path}/versions", "k-bs-same",
+            new PublishTaxBuyerSituationListRequestV1("0", catalog, "SENTETIK aynı"), HttpStatusCode.NoContent);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[TaxBuyerSituationListVersions]"));
+
+        // Müdür/Admin add a situation and drop one (SENTETIK); the exemption list (SENTETIK code) feeds the zero-rated ones.
+        await run.CommandAsync(client, HttpMethod.Post, $"{Root}/code-lists/Exemption/versions", "k-bs-ex",
+            new PublishTaxCodeListRequestV1("0", [new TaxCodeListEntryV1("E701", "SENTETIK istisna")], "SENTETIK liste"),
+            HttpStatusCode.NoContent);
+        var v1 = new PublishTaxBuyerSituationListRequestV1("0",
+        [
+            .. catalog.Where(entry => entry.Code != TaxBuyerSituationsV1.FinalConsumer),
+            new TaxBuyerSituationEntryV1("DiplomaticMission", "SENTETIK diplomatik temsilcilik", false,
+                TaxBuyerSituationVatModesV1.ZeroWithExemptionCode, true),
+        ], "SENTETIK yeni durum");
+        await run.CommandAsync(client, HttpMethod.Post, $"{path}/versions", "k-bs-1", v1, HttpStatusCode.NoContent);
+        await run.CommandAsync(client, HttpMethod.Post, $"{path}/versions", "k-bs-1", v1, HttpStatusCode.NoContent, replayed: true);
+        using (var stale = await client.SendAsync(Json(HttpMethod.Post, $"{path}/versions", "k-bs-stale", v1 with { Reason = "x" })))
+        {
+            await AssertProblemAsync(stale, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.VersionConflict);
+        }
+
+        await using (var port = run.LineTaxPort(CompanyA))
+        {
+            var diplomatic = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, "DiplomaticMission", today, "e701");
+            Assert.Equal((TaxResolutionStatesV1.ZeroRated, 0m, TaxResolutionStatesV1.Resolved, "E701", TaxResolutionStatesV1.NotApplied,
+                    1L, true),
+                (diplomatic.VatState, diplomatic.VatPercent, diplomatic.ExemptionCodeState, diplomatic.ExemptionCode,
+                    diplomatic.WithholdingState, diplomatic.BuyerSituationListVersion, diplomatic.BuyerDocumentRequired));
+            var exportRegistered = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Scrap,
+                TaxBuyerSituationsV1.ExportRegistered, today, "E701");
+            Assert.Equal((TaxResolutionStatesV1.ZeroRated, TaxResolutionStatesV1.Resolved,
+                    TaxResolutionReasonsV1.BuyerZeroRatedWithExemptionCode),
+                (exportRegistered.VatState, exportRegistered.ExemptionCodeState, exportRegistered.BuyerAdjustment));
+            // A withdrawn situation is "kaynak yok", never the normal default.
+            var dropped = await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.FinalConsumer, today);
+            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.BuyerSituationUnknown, (decimal?)null),
+                (dropped.State, dropped.Reason, dropped.VatPercent));
+            var list = await port.Value.GetBuyerSituationsAsync(today);
+            Assert.Equal((TaxResolutionStatesV1.Resolved, 1L, 5), (list.State, list.ListVersion, list.Entries.Count));
+            Assert.Equal(TaxMasterProblemCodesV1.RequestInvalid, (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, "Not a code", today))).Code);
+        }
+
+        // A scheduled version can be withdrawn before its date; a version in force cannot.
+        await run.CommandAsync(client, HttpMethod.Post, $"{path}/versions", "k-bs-2",
+            new PublishTaxBuyerSituationListRequestV1("1", catalog, "SENTETIK planlı", tomorrow), HttpStatusCode.NoContent);
+        var scheduled = await run.JsonAsync(client, path);
+        Assert.Equal(("2", "2"), (scheduled.GetProperty("version").GetString(),
+            Assert.Single(scheduled.GetProperty("scheduled").EnumerateArray()).GetProperty("listVersion").GetString()));
+        using (var inEffect = await client.SendAsync(Json(HttpMethod.Post, $"{path}/versions/1/withdrawal", "k-bs-w1",
+                   new WithdrawTaxCodeListRequestV1("2", "SENTETIK"))))
+        {
+            await AssertProblemAsync(inEffect, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.RecordInEffect);
+        }
+
+        await run.CommandAsync(client, HttpMethod.Post, $"{path}/versions/2/withdrawal", "k-bs-w2",
+            new WithdrawTaxCodeListRequestV1("2", "SENTETIK geri çekme"), HttpStatusCode.NoContent);
+        using (var again = await client.SendAsync(Json(HttpMethod.Post, $"{path}/versions/2/withdrawal", "k-bs-w3",
+                   new WithdrawTaxCodeListRequestV1("3", "SENTETIK"))))
+        {
+            await AssertProblemAsync(again, HttpStatusCode.Conflict, TaxMasterProblemCodesV1.RecordWithdrawn);
+        }
+
+        using (var catalogVersion = await client.SendAsync(Json(HttpMethod.Post, $"{path}/versions/0/withdrawal", "k-bs-w0",
+                   new WithdrawTaxCodeListRequestV1("3", "SENTETIK"))))
+        {
+            await AssertProblemAsync(catalogVersion, HttpStatusCode.BadRequest, TaxMasterProblemCodesV1.RequestInvalid);
+        }
+
+        Assert.Empty((await run.JsonAsync(client, path)).GetProperty("scheduled").EnumerateArray());
+        await using (var port = run.LineTaxPort(CompanyA))
+        {
+            Assert.Equal(TaxResolutionReasonsV1.BuyerSituationUnknown, (await port.Value.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel,
+                TaxBuyerSituationsV1.FinalConsumer, tomorrow)).Reason);
+        }
+
+        // Company isolation: B keeps its own catalog; A's version is B's code-less 404.
+        var listB = await run.JsonAsync(clientB, path);
+        Assert.Equal(("0", "Catalog", CompanyB), (listB.GetProperty("version").GetString(),
+            listB.GetProperty("inForce").GetProperty("source").GetString(), listB.GetProperty("companyId").GetGuid()));
+        using (var foreign = await clientB.SendAsync(Json(HttpMethod.Post, $"{path}/versions/1/withdrawal", "k-bs-foreign",
+                   new WithdrawTaxCodeListRequestV1("1", "SENTETIK"))))
+        {
+            Assert.Equal(HttpStatusCode.NotFound, foreign.StatusCode);
+        }
+
+        Assert.Equal(2, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-buyer-situation-list.published.v1' "
+            + "AND [CompanyId] = @c AND [PermissionCode] = N'settings.tax-master.manage'", ("@c", CompanyA)));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.tax-buyer-situation-list.withdrawn.v1' "
+            + "AND JSON_VALUE([AfterJson], '$.reason') = N'SENTETIK geri çekme'"));
+
+        // The CHECK holds the SAT-D147 rule in the database as well.
+        var check = await Assert.ThrowsAsync<SqlException>(() => run.ScalarAsync<int>(
+            "INSERT INTO [settings].[TaxBuyerSituationEntries] ([CompanyId], [ListVersion], [Code], [Name], [WithholdingApplies], "
+            + "[VatMode], [DocumentRequired]) VALUES (@c, 1, 'Odd', N'SENTETIK', 1, 'ZeroWithExemptionCode', 1); SELECT 0",
+            ("@c", CompanyA)));
+        Assert.Equal(547, check.Number);
+
+        // The rollback is refused while a buyer situation list exists (forward fix, 51153); nothing is dropped.
+        await using var context = run.SettingsContext(CompanyA);
+        var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
+        var migration = Array.IndexOf(applied, BuyerSituationMigration);
+        Assert.True(migration > 0);
+        var rollback = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
+        Assert.Equal(51153, rollback.Number);
+        Assert.Equal(applied.Take(migration + 1), await context.Database.GetAppliedMigrationsAsync());
+    }
+
+    [SqlServerFact]
+    public async Task Item_type_move_to_the_shared_card_refuses_disagreeing_companies_and_moves_agreeing_ones_on_real_sql()
+    {
+        await using var run = await ProductRun.StartAsync();
+        var productId = ProductSalesCandidateFixture.ProductId;
+        await using var scope = run.Request(CompanyA);
+        var migrator = scope.Context.GetService<IMigrator>();
+
+        // Down on an empty shared store restores the (empty) company-scoped table.
+        await migrator.MigrateAsync(ProductItemTypeMigration);
+        Assert.DoesNotContain(ProductCardItemTypeMigration, await scope.Context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [product].[ProductItemTypes]"));
+
+        // Pre-move state (the PR #866 shape, written as that migration's rows): the same product typed differently in A and B.
+        await run.ScalarAsync<int>(
+            "INSERT INTO [product].[ProductItemTypes] ([CompanyId], [ProductId], [ItemType], [Version], [UpdatedAtUtc], [UpdatedBy]) "
+            + "VALUES (@a, @p, 'Steel', 2, '2026-10-31T10:00:00+00:00', N'SENTETIK-a'), "
+            + "(@b, @p, 'Scrap', 1, '2026-10-31T11:00:00+00:00', N'SENTETIK-b'); SELECT 0",
+            ("@a", CompanyA), ("@b", CompanyB), ("@p", productId));
+        var refused = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync());
+        Assert.Equal(51151, refused.Number);
+        Assert.DoesNotContain(ProductCardItemTypeMigration, await scope.Context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [product].[ProductItemTypes]"));
+
+        // Once the companies agree, the value moves (version 1; the latest change's actor and company) and the old table goes.
+        await run.ScalarAsync<int>(
+            "UPDATE [product].[ProductItemTypes] SET [ItemType] = 'Steel' WHERE [CompanyId] = @b; SELECT 0", ("@b", CompanyB));
+        await migrator.MigrateAsync();
+        Assert.Contains(ProductCardItemTypeMigration, await scope.Context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM sys.tables WHERE [name] = N'ProductItemTypes'"));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [product].[ProductCardItemTypes] WHERE [ProductId] = @p AND [ItemType] = 'Steel' AND [Version] = 1 "
+            + "AND [UpdatedBy] = N'SENTETIK-b' AND [UpdatedInCompanyId] = @b", ("@p", productId), ("@b", CompanyB)));
+
+        await using var reader = run.Request(CompanyA);
+        var moved = await reader.Service.GetAsync(productId);
+        Assert.Equal(("1", ProductItemTypesV1.Steel, (Guid?)CompanyB), (moved.Version, moved.ItemType, moved.UpdatedInCompanyId));
+
+        // With a shared value stored, the move is not rolled back (forward fix, 51152).
+        var rollback = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(ProductItemTypeMigration));
+        Assert.Equal(51152, rollback.Number);
+        Assert.Contains(ProductCardItemTypeMigration, await scope.Context.Database.GetAppliedMigrationsAsync());
     }
 
     private static (int, string?) Status(ProductItemTypeResultV1 result) => (result.Answer.StatusCode, result.Answer.Code);
 
-    private static ProductItemTypeCommandMetadataV1 Metadata(string key) =>
-        new(CompanyA, ProductRun.ActorId.ToString("D"), $"corr-{key}", null, "Web", null, null, key);
+    private static ProductItemTypeCommandMetadataV1 Metadata(string key) => MetadataIn(CompanyA, key);
+
+    private static ProductItemTypeCommandMetadataV1 MetadataIn(Guid company, string key) =>
+        new(company, ProductRun.ActorId.ToString("D"), $"corr-{key}", null, "Web", null, null, key);
 
     private static HttpRequestMessage Json(HttpMethod method, string path, string key, object body)
     {
