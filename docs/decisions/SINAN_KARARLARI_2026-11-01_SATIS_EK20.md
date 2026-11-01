@@ -1,6 +1,6 @@
 # Sinan Kararları — 2026-11-01 (Satış: persona grant'ları, yeni personalar, özel alıcı vergisi, vergi kodları, kalem tipinin yeri)
 
-Bu belge önceki karar dosyalarını silmez, SAT-D141…SAT-D149'u ekler. Birleşen PR'lar şu izinleri bilerek hiçbir role
+Bu belge önceki karar dosyalarını silmez, SAT-D141…SAT-D151'i ekler. Birleşen PR'lar şu izinleri bilerek hiçbir role
 vermedi: #864 (API-04 başlık revizyonu, vade), #865 (S6 raporlar), #866 (MOD-03 vergi masterı) ve #860 (Cari e-belge). Bu
 belge, bu izinlerin hangi personaya verileceğini cevaplar. Ayrıca EK19'un açık bıraktığı kalem tipi yerini ve SAT-D140'ın
 karara bağlamadığı özel alıcı vergisini de cevaplar. EK19 (SAT-D133…D140), `docs/security/PERSONA_GRANT_MATRISI_KARTI_v0.md`,
@@ -22,7 +22,7 @@ DEC-SAL-002 ve DEC-FIN-001 geçerlidir.
   tabloları şirket bazında kalır.
 
 **Kaynak:** Sinan'ın 1 Kasım 2026'da Claude Code cloud oturumunda (oturum `session_01SPADrzecggx3apH2gfNW7b`) verdiği seçmeli
-soru cevapları. Dört tur, on dört soru. Son tur, docs review'larının (#869) açtığı dört teyit sorusudur. Sinan'a her
+soru cevapları. Beş tur, on altı soru. Son iki tur, docs review'larının (#869) açtığı altı teyit sorusudur. Sinan'a her
 seçeneğin adı **ve açıklaması** birlikte gösterildi. Altı soruda (1, 2, 3, 5, 6, 9) Sinan kendi metnini yazdı ya da seçeneğe
 ek yaptı; bu metinler aynen verilir.
 
@@ -44,24 +44,28 @@ ek yaptı; bu metinler aynen verilir.
 | 12 | (Teyit) Muhasebe için 'gerçek kesilen fatura ile ERP'den oluşturulanı şu anda eşleştirme' dedin. ERP'de henüz fatura kesme yok. Şu an Muhasebe neyi neyle eşleştirsin? | Dış faturayı sipariş/sevkle eşleştirsin (Önerilen) | "Başka sistemde kesilen faturanın numarası ve tutarı ERP'deki sipariş/irsaliyeye bağlanır; fark varsa görünür." (seçilmeyenler: "Mevcut resmi fatura içe aktarmayı kullansın" — "Finans'taki resmi fatura içe aktarma ekranı (FIN-F03) Muhasebe'ye açılır; eşleştirme oradan yapılır."; "Fatura modülü gelince") |
 | 13 | (Teyit) İhraç kayıtlı ya da istisna belgeli seçilen siparişte belge bilgisi (no, tarih) girilmemişse ne olsun? | Fatura beklesin (Önerilen) | "KDV %0 görünür ama belge girilene kadar fatura kesilmez." (seçilmeyenler: "Normal vergiye dönsün"; "Sipariş onaylanamasın") |
 | 14 | (Teyit) Ürün türü ortak kartta tek değer olacak, yani bir şirkette yapılan değişiklik üç şirketi birden etkiler. Bunu kim değiştirebilsin? | Herhangi bir şirkette yetkili Müdür/Admin (Önerilen) | "Üç şirketten birinde Müdür/Admin olan değiştirebilir; değişiklik kaydedilir." (seçilmeyenler: "Yalnız üç şirkette de yetkili olan"; "Yalnız Admin") |
+| 15 | (Teyit) Satış siparişlerinde ve raporlarda birim fiyat ile tutarları kimler görebilsin? (Sevkiyatçı göremez, Muhasebe hepsini görür demiştin.) | Admin, Müdür, Satış Destek, Uzman, Muhasebe (Önerilen) | "Sevkiyatçı dışındaki herkes fiyat ve tutarı görür." (seçilmeyen: "Admin, Müdür, Muhasebe" — "Satış Destek ve Satış Uzmanı sipariş girer ama fiyat ve tutarı göremez.") |
+| 16 | (Teyit) Sipariş satırına fiyat girme/değiştirme yetkisi kimde olsun? (Yetki matrisinde bu konu şu an 'koşullu' olarak açık duruyor.) | Satış Destek, Uzman, Müdür, Admin (Önerilen) | "Siparişi giren fiyatı da girer; fiyat taban/iskonto kuralları ve onay yine çalışır." (seçilmeyenler: "Yalnız Müdür ve Admin" — "Satış Destek ve Satış Uzmanı siparişi fiyatsız girer, fiyatı Müdür/Admin girer."; "Şimdilik karar verme" — "Fiyat yazma izni hiçbir role verilmez, sonra konuşuruz.") |
 
 ## Kararlar
 
 | No | Konu | Karar | Etkilenen yer |
 |---|---|---|---|
 | SAT-D141 | Yeni persona: Satış Uzmanı | `PERSONA_GRANT_MATRISI_KARTI_v0`'a **Satış Uzmanı** personası eklenir. Başlangıçta **Satış Destek'in bütün grant'larını** alır: sipariş girer ve düzenler, onaylayamaz, sipariş başlığını da değiştirir (soru 11). İleride ayrıştırılabilir. Uygulama yorumu (geri alınabilir): "Satış Destek gibi" ifadesi kartta Satış Destek'e verilen her izni kapsar, alış siparişi izinleri dahil | Persona grant matrisi |
-| SAT-D142 | Yeni persona: Muhasebe | `PERSONA_GRANT_MATRISI_KARTI_v0`'a **Muhasebe** personası eklenir. Satış modülünde **her şeyi görür**: siparişler, fiyatlar ve tutarlar (`sales.orders.price.read` dahil), raporlar ve vergi ayarları. **Sipariş yazmaz ve onaylamaz**. **Şimdi**, dış sistemde kesilen faturanın numarasını ve tutarını ERP'deki sipariş veya irsaliyeye bağlayarak **eşleştirir**; fark varsa görünür (soru 12; DEC-FIN-001: resmî fatura dış sistemdedir). **Fatura modülü geldiğinde** (API-32…37) ERP fatura taslağını **keser**. Bu taslak SAT-D88'deki hazırlayan ≠ onaylayan kuralına tabidir. Vergi ayarlarını yalnız SAT-D146 onay akışıyla değiştirir | Persona grant matrisi, yeni eşleştirme dilimi, fatura dalgası |
-| SAT-D143 | Satış raporlarını görme | `sales.reports.read` şu personalara verilir: **Admin, Müdür, Satış Destek, Satış Uzmanı, Muhasebe ve Sevkiyatçı**. Sevkiyatçı `sales.orders.price.read` almaz; bu yüzden raporlarda **yalnız miktarları** görür, birim fiyat ve tutar gizlenir. Fiyat sapması raporu fiyat görme izni olmadan açılmaz (403). Diğer personaların fiyat görme izni karttaki gibi kalır | Persona grant matrisi, API-41/42 |
+| SAT-D142 | Yeni persona: Muhasebe | `PERSONA_GRANT_MATRISI_KARTI_v0`'a **Muhasebe** personası eklenir. Satış modülünde **her şeyi görür**: siparişler, fiyatlar ve tutarlar (`sales.orders.price.read` dahil), raporlar ve vergi ayarları. **Sipariş yazmaz ve onaylamaz**. **Şimdi** dış sistemde kesilen faturanın numarasını ve tutarını ERP'deki sipariş veya irsaliyeye bağlayarak **eşleştirir**; fark varsa görünür (soru 12; DEC-FIN-001: resmî fatura dış sistemdedir). **Fatura modülü geldiğinde** (API-32…37) faturayı **keser**; uygulama yorumu (geri alınabilir): ERP'de "fatura kesme" DEC-FIN-001 gereği ERP fatura taslağını hazırlamaktır (API-32) ve SAT-D88'deki hazırlayan ≠ onaylayan kuralına tabidir. Vergi ayarlarını yalnız SAT-D146 onay akışıyla değiştirir | Persona grant matrisi, yeni eşleştirme dilimi, fatura dalgası |
+| SAT-D143 | Satış raporlarını görme | `sales.reports.read` şu personalara verilir: **Admin, Müdür, Satış Destek, Satış Uzmanı, Muhasebe ve Sevkiyatçı**. Sevkiyatçı `sales.orders.price.read` almaz; bu yüzden raporlarda **yalnız miktarları** görür, birim fiyat ve tutar gizlenir. Fiyat sapması raporu fiyat görme izni olmadan açılmaz (403). Diğer personaların fiyat görme izni SAT-D150'dedir | Persona grant matrisi, API-41/42 |
 | SAT-D144 | Sipariş başlığını değiştirme | `sales.orders.header.write` şu personalara verilir: **Satış Destek, Satış Uzmanı, Admin, Müdür** (soru 2 ve 11). Başlık değişikliği yeniden onay gerektiriyorsa (cari, para birimi, vade; DEC-SAL-002) onayı mevcut sipariş onay iznine sahip olanlar verir | Persona grant matrisi, API-04 |
 | SAT-D145 | Vergi ayarları ve kalem tipi yönetimi | `settings.tax-master.manage` ve `product.item-type.manage` **Müdür ve Admin**'e verilir; değişiklikleri **doğrudan geçerli olur**, onaya gitmez. Uygulama yorumu (geri alınabilir): "Müdürler" ifadesi karttaki Müdür personası olarak okunur | Persona grant matrisi, MOD-03 |
 | SAT-D146 | Muhasebe'nin vergi ayarı değişikliği | Muhasebe vergi ayarlarını (KDV/tevkifat varsayılanları, istisna ve tevkifat kodları, VUK 232 eşiği) **önerebilir**. Öneri **onaya gider** ve onaylanana kadar yürürlüğe girmez. Onayı **müdür sınıfındaki** bir persona verir; Sinan'ın metni: "Müdür, admin, muhasebe müdürü, satış müdürü, gibi tüm müdürler". Değişikliği yapan kendi değişikliğini onaylayamaz (maker ≠ checker). Muhasebe kalem tipini değiştirmez. Sinan'ın 6. sorudaki "eğer mantıklıysa" koşulu, 9. soruda onay akışının ayrıntısını cevaplamasıyla akışın kendisine dönüşmüştür | MOD-03 vergi masterı (yeni öneri/onay akışı), persona grant matrisi |
 | SAT-D147 | İhraç kayıtlı / istisna belgeli alıcı | SAT-D140'a göre siparişte "ihraç kayıtlı" ya da "istisna belgeli" seçilirse **KDV %0** olur, **istisna kodu listeden seçilir** (SAT-D93, SAT-D133 kod listesi) ve **tevkifat uygulanmaz**. Belge bilgisi (no, tarih) siparişte istenir. Belge bilgisi veya istisna kodu yoksa KDV %0 görünür ama **fatura kesilmez** ("kaynak yok"; soru 13, SAT-D135 ile aynı bekleme). Satır SAT-D93/D140'taki gibi tek tek değiştirilebilir. Kural hesaplayıcıda sabit kodlanmaz, Ayarlar verisi olarak tutulur (SAT-D93, SAT-D139). İhraç kayıtlı satışın e-Fatura gösterimi mali müşavir onayıyla belirlenir (SAT-D148): fatura tipi, istisna kodu ve KDV'nin hesaplanıp tecil edilip edilmeyeceği | MOD-03 vergi çözücü (PR #866'daki `buyer_situation_undecided` kaldırılır), sipariş başlığı, API-32 |
 | SAT-D148 | Vergi kodları ve VUK 232 eşiği | İstisna ve tevkifat kod listesi ile VUK 232 eşik tutarı için **Claude, GİB'in standart kod listelerinden bir öneri belgesi hazırlar**. **Mali müşavir onaylar**. Onaylanan değerleri **Müdür veya Admin** Ayarlar ekranından girer (Muhasebe SAT-D146 akışıyla önerebilir). Onaylanmamış hiçbir kod veya tutar sisteme girilmez. SAT-D139 varsayılan oranları bu kapının dışındadır | Öneri belgesi (docs), Ayarlar vergi masterı |
+| SAT-D150 | Fiyat ve tutar görme | `sales.orders.price.read` şu personalara verilir: **Admin, Müdür, Satış Destek, Satış Uzmanı, Muhasebe** (soru 15). **Sevkiyatçı almaz**; siparişlerde ve raporlarda birim fiyat ve tutar ona gizlenir (soru 1, PRS-02) | Persona grant matrisi |
+| SAT-D151 | Fiyat girme / değiştirme | `sales.orders.price.write` şu personalara verilir: **Satış Destek, Satış Uzmanı, Müdür, Admin** (soru 16). Persona kartındaki "koşullu" satır bu kararla kapanır. Fiyat taban, iskonto limiti ve onay kuralları (SAT-D1, SAT-D2, SAT-D61…D68; API-12) aynen çalışır | Persona grant matrisi |
 | SAT-D149 | Kalem tipinin yeri | Kalem tipi (demir/hurda/hizmet) **ortak ürün kartında tek değer** olarak tutulur: aynı ürün üç şirkette de aynı tiptedir ve bir kez girilir. Bunu **üç şirketten herhangi birinde** `product.item-type.manage` iznine sahip Müdür veya Admin değiştirebilir; değişiklik audit'e yazılır (soru 14). EK19 "Açık kalanlar"daki soru bununla kapanır. SAT-D133 (oran ve kod tabloları şirket bazında) ile SAT-D139 (varsayılanlar) değişmez | Ürün kartı (PR #866 deposunun taşınması), vergi çözücü |
 
 ## Uygulama notları
 
-- SAT-D141…D146'daki grant'lar ve personalar Sinan'ın somut grant kararıdır. Bu grant'lar ayrı bir PR'da uygulanır; o PR
+- SAT-D141…D146 ve SAT-D150/D151'deki grant'lar ve personalar Sinan'ın somut grant kararıdır. Bu grant'lar ayrı bir PR'da uygulanır; o PR
   önce `PERSONA_GRANT_MATRISI_KARTI_v0`'ı günceller ve yalnız bu belgede yazan grant'ları açar. Bu belge kendi başına hiçbir
   grant açmaz.
 - SAT-D146 için ayrı izin adları gerekir; böylece Muhasebe'nin "görme" izni onay akışını atlatamaz. Uygulama ayrıntısı
@@ -70,7 +74,8 @@ ek yaptı; bu metinler aynen verilir.
   - Öneri için ayrı bir izin olur; yalnız Muhasebe bunu alır.
   - Öneriyi onaylamak için ayrı bir izin olur; Müdür ve Admin bunu alır.
   - `settings.tax-master.manage` (doğrudan değiştirme) yalnız Müdür ve Admin'de kalır.
-  - Kalem tipi için de aynı ayrım geçerlidir: okuma izni geniş tutulur, `product.item-type.manage` dar tutulur.
+  - Kalem tipinde kimin yalnız okuyacağı sorulmadı. Karar verilene kadar kalem tipini yalnız `product.item-type.manage`
+    sahipleri (Müdür, Admin) okur (bkz. Açık kalanlar).
 - SAT-D146'daki onay izni, "muhasebe müdürü" ve "satış müdürü" için karar verilene kadar yalnız Müdür ve Admin
   personalarına verilir. İş unvanı kendiliğinden persona ataması yapmaz.
 - SAT-D147'de istisna kodu listesi SAT-D148 onayı gelene kadar boş olabilir. O süre içinde bu siparişlerin faturası
@@ -78,20 +83,24 @@ ek yaptı; bu metinler aynen verilir.
 - SAT-D149 için PR #866'nın şirket bazlı `product.ProductItemTypes` tablosu ortak ürün ana kaydına taşınır. Tablo main'de
   ama production verisi yoktur, bu yüzden geçiş ileri-düzeltme (forward-fix) migration'ıyla yapılır. Aynı ürün için
   şirketler arasında farklı tip kaydı varsa migration bunu sessizce seçmez, reddeder (fail-closed).
-- SAT-D142'deki şimdiki eşleştirme, dış faturanın numarasını, tarihini ve tutarını ERP siparişine veya irsaliyesine bağlar
-  ve farkı gösterir. Fatura dalgasında bu eşleştirme API-35 (resmî fatura ↔ ERP taslağı, SAT-D89/D106) ile birleştirilir;
-  eşleştirme verisi kopya kayıt üretmez.
+- SAT-D142'deki şimdiki eşleştirme, dış faturanın numarasını ve tutarını ERP siparişine veya irsaliyesine bağlar ve farkı
+  gösterir. Satış modülünün işidir; açık kalem oluşturmaz ve Finance'ın resmî fatura verisine (FIN-F03, SAT-D85) yazmaz.
+  İzin adı uygulama PR'ında manifest'e eklenir ve yalnız Muhasebe'ye verilir. Fatura dalgasında bu eşleştirme API-35 (resmî fatura ↔ ERP taslağı, SAT-D89/D106) ile birleştirilir;
+  eşleştirme verisi kopya kayıt üretmez. Bu birleştirme bir uygulama yorumudur (geri alınabilir).
+- Grant PR'ı `ErpPermissions` içindeki izin açıklamalarını da (ör. `SettingsTaxMasterManage`'ın "Muhasebe/Finans ve Admin" sahip notu) bu kararlara göre günceller.
 
 ## Açık kalanlar
 
 - "Muhasebe müdürü" ve "satış müdürü" ayrı personalar mı, yoksa Müdür personasının iş unvanları mı? Karar verilene kadar
   bu unvanlar ek yetki almaz (bkz. Uygulama notları).
 - Satış Uzmanı'nın Satış Destek'ten ne zaman ve nasıl ayrışacağı (ör. yalnız kendi müşterileri) sonraya bırakıldı.
+- Kalem tipini (ürün kartında) `product.item-type.manage` sahipleri dışında kimin okuyacağı sorulmadı (NEEDS-SINAN).
 
 ## Sınırlar
 
-- Grant, rol ve Critical ataması insan kapısıdır. Bu belge, SAT-D141…D146'daki atamalar için Sinan'ın somut kararıdır.
-  Uygulama PR'ı bu satırların dışında grant, rol veya Critical açamaz.
+- Grant, rol ve Critical ataması insan kapısıdır. Bu belge, SAT-D141…D146 ve SAT-D150/D151'deki atamalar için Sinan'ın somut kararıdır.
+  Uygulama PR'ı bu satırların dışında grant, rol veya Critical açamaz. Persona/rol tanımı ve izin eşlemesi bir PR'da
+  yapılabilir; gerçek kullanıcıya rol atanması ve production etkinleştirmesi insan kapısında kalır (SAT-D110).
 - Bu kararlar merge kapılarını ve diğer insan kapılarını değiştirmez: deployment, environment, secret, Settings
   etkinleştirme, production, `OPEN-*` kapatma, `.claude/settings.json`.
 - Vergi kodları ve VUK 232 eşik değeri mali müşavir/YMM onayı olmadan girilmez (SAT-D148). SAT-D139'daki varsayılan oranlar
