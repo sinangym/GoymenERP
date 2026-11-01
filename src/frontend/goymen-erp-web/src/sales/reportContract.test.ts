@@ -131,6 +131,9 @@ describe('open order report decoder', () => {
       // SAT-D130: completed within the tolerance means nothing open.
       (body) => (((body.groups as Wire[])[0].lines as Wire[])[1].remainingQuantity = '10'),
       (body) => delete (((body.groups as Wire[])[0].lines as Wire[])[0]).completedWithinTolerance,
+      // API-04: the pending customer/currency marker is a required boolean.
+      (body) => delete (((body.groups as Wire[])[0].lines as Wire[])[0]).headerRevisionPending,
+      (body) => (((body.groups as Wire[])[0].lines as Wire[])[0].headerRevisionPending = 'true'),
       // Awaiting acceptance: a quantity names its revision and only it; nothing accepted has nothing open; closed lines are not listed.
       (body) => (((body.groups as Wire[])[0].lines as Wire[])[1].awaitingAcceptanceRevision = null),
       (body) => (((body.groups as Wire[])[0].lines as Wire[])[2].remainingQuantity = '5'),

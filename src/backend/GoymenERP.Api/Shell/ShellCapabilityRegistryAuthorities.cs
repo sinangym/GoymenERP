@@ -406,6 +406,8 @@ internal static class ShellCapabilityRegistryAuthorities
     internal const string FullNormalHostWithProductPriceListsAndSalesQuoteExpiryApproval =
         "sha256:iV9yyfVzb9_f8rToJkaPVkYkgbF939T-TUhlY5xfegI";
 
+    // NOTE (API-04 merged over UI-80): the live "...SalesV15..." / "...SalesV21..." names below are historical; their values carry
+    // Sales 1.12 (the 1.11 reports screen + the header-revision control).
     // UI-80 (plan §3.4 API-41 / API-42): Sales 1.11 publishes the Sales reports screen beside S-07 / S-08 and the expired-quote
     // approval. The live rows carrying PublishedSales were re-derived by ShellCapabilityRegistry.ComputeCandidateRevision
     // (drift-test "Actual:") over main 4a87b8fc's providers with this change's Sales 1.11 (SalesV20 -> SalesV21). The SalesV20 rows

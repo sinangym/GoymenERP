@@ -103801,7 +103801,8 @@
           "remainingQuantity",
           "completedWithinTolerance",
           "awaitingAcceptanceQuantity",
-          "awaitingAcceptanceRevision"
+          "awaitingAcceptanceRevision",
+          "headerRevisionPending"
         ],
         "type": "object",
         "properties": {
@@ -103861,6 +103862,9 @@
               "null",
               "string"
             ]
+          },
+          "headerRevisionPending": {
+            "type": "boolean"
           }
         }
       },

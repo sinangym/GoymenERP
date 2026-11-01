@@ -4896,7 +4896,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("unmeasured", "type:array;items:ref:SalesOpenOrderUnmeasuredLineView")),
                 ["SalesOpenOrderLineView"] = ObjectSchema(
                     ["orderId", "documentNo", "businessDate", "requestedDeliveryDate", "basisRevision", "lineId", "lineNo", "approvedQuantity",
-                        "shippedQuantity", "remainingQuantity", "completedWithinTolerance", "awaitingAcceptanceQuantity", "awaitingAcceptanceRevision"],
+                        "shippedQuantity", "remainingQuantity", "completedWithinTolerance", "awaitingAcceptanceQuantity", "awaitingAcceptanceRevision",
+                        "headerRevisionPending"],
                     ("orderId", "type:string;format:uuid"),
                     ("documentNo", "type:string"),
                     ("businessDate", "type:string;format:date"),
@@ -4909,7 +4910,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("remainingQuantity", "type:string"),
                     ("completedWithinTolerance", "type:boolean"),
                     ("awaitingAcceptanceQuantity", "type:string"),
-                    ("awaitingAcceptanceRevision", "type:null|string")),
+                    ("awaitingAcceptanceRevision", "type:null|string"),
+                    ("headerRevisionPending", "type:boolean")),
                 ["SalesOpenOrderUnmeasuredLineView"] = ObjectSchema(
                     ["orderId", "documentNo", "lineId", "lineNo", "reason"],
                     ("orderId", "type:string;format:uuid"),

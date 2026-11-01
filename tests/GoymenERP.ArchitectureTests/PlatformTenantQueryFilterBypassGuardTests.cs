@@ -365,8 +365,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // API-04 (merged over API-41 / API-42): +4 header revision facts (route + one save, customer/currency through the store,
             // isolation/authority, migration backfill and 51133 rollback refusal), +2 (every revision's own audit reason; 51133's
             // column arms alone) and +1 (1000/1001/4000-character reasons recorded whole), kept ordinal-sorted (a85d5b59… -> 2e764e76…).
+            // K3-REVIEW-B P2-1 (#864 × #865): +1 SalesReportSqlServerRelationalAcceptanceTests fact (a pending customer revision keeps
+            // the accepted open quantity under the accepted customer), kept ordinal-sorted (2e764e76… -> af6987da…).
             ["tools/relational_inventory/sales.txt"] =
-                "2e764e761b8b7c1629d374a1cde4857710d9ad3c6f16fd079138deba28d47197",
+                "af6987da2706326348359f54d11b657b7a09b6204a3f9fb40f594a927ca8a800",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

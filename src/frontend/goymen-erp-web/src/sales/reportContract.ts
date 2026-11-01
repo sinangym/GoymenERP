@@ -54,6 +54,11 @@ export interface OpenOrderLine {
    */
   readonly awaitingAcceptanceQuantity: string
   readonly awaitingAcceptanceRevision: string | null
+  /**
+   * API-04: the order's current customer or currency differs from the measured revision's (a customer/currency revision not yet
+   * approved or accepted); the line stays under the measured revision's customer.
+   */
+  readonly headerRevisionPending: boolean
 }
 
 /**
@@ -237,6 +242,7 @@ function decodeCustomer(value: unknown): ReportCustomer | null {
 const OPEN_LINE_KEYS = [
   'orderId', 'documentNo', 'businessDate', 'requestedDeliveryDate', 'basisRevision', 'lineId', 'lineNo', 'approvedQuantity',
   'shippedQuantity', 'remainingQuantity', 'completedWithinTolerance', 'awaitingAcceptanceQuantity', 'awaitingAcceptanceRevision',
+  'headerRevisionPending',
 ] as const
 
 function decodeOpenLine(value: unknown): OpenOrderLine | null {
@@ -247,6 +253,7 @@ function decodeOpenLine(value: unknown): OpenOrderLine | null {
     || !isQuantity(o.approvedQuantity) || !isQuantity(o.shippedQuantity) || !isQuantity(o.remainingQuantity)
     || typeof o.completedWithinTolerance !== 'boolean' || !isQuantity(o.awaitingAcceptanceQuantity)
     || !(o.awaitingAcceptanceRevision === null || isRevision(o.awaitingAcceptanceRevision))
+    || typeof o.headerRevisionPending !== 'boolean'
   ) return null
   // The facts agree: completed within the tolerance has nothing open (SAT-D130); nothing accepted has nothing open; an awaiting
   // quantity names its revision and only it does; a listed line has something open or awaiting (closed history is not listed).
@@ -259,6 +266,7 @@ function decodeOpenLine(value: unknown): OpenOrderLine | null {
     basisRevision: o.basisRevision, lineId: o.lineId, lineNo: o.lineNo, approvedQuantity: o.approvedQuantity,
     shippedQuantity: o.shippedQuantity, remainingQuantity: o.remainingQuantity, completedWithinTolerance: o.completedWithinTolerance,
     awaitingAcceptanceQuantity: o.awaitingAcceptanceQuantity, awaitingAcceptanceRevision: o.awaitingAcceptanceRevision,
+    headerRevisionPending: o.headerRevisionPending,
   }
 }
 
