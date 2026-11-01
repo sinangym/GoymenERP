@@ -522,6 +522,47 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductCardItemTypeRow", b =>
+                {
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ItemType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<Guid>("UpdatedInCompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("ProductId");
+
+                    b.HasIndex("UpdatedInCompanyId");
+
+                    b.ToTable("ProductCardItemTypes", "product", t =>
+                        {
+                            t.HasCheckConstraint("CK_ProductCardItemTypes_Identity", "[ProductId] <> '00000000-0000-0000-0000-000000000000' AND [UpdatedInCompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_ProductCardItemTypes_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
+
+                            t.HasCheckConstraint("CK_ProductCardItemTypes_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeAttemptRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -579,47 +620,6 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         });
                 });
 
-            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeRow", b =>
-                {
-                    b.Property<Guid>("CompanyId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("ProductId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<string>("ItemType")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .IsUnicode(false)
-                        .HasColumnType("varchar(16)")
-                        .UseCollation("Latin1_General_100_BIN2");
-
-                    b.Property<DateTimeOffset>("UpdatedAtUtc")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<string>("UpdatedBy")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
-
-                    b.Property<long>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("bigint");
-
-                    b.HasKey("CompanyId", "ProductId");
-
-                    b.HasIndex("ProductId");
-
-                    b.ToTable("ProductItemTypes", "product", t =>
-                        {
-                            t.HasCheckConstraint("CK_ProductItemTypes_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000'");
-
-                            t.HasCheckConstraint("CK_ProductItemTypes_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
-
-                            t.HasCheckConstraint("CK_ProductItemTypes_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
-                        });
-                });
-
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListAttemptRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
@@ -669,26 +669,26 @@ namespace GoymenERP.Modules.Product.Infrastructure.PriceLists.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductCardItemTypeRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListProductReference", null)
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedInCompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeAttemptRow", b =>
                 {
                     b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("GoymenERP.Modules.Product.Infrastructure.PriceLists.ProductItemTypeRow", b =>
-                {
-                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListCompanyReference", null)
-                        .WithMany()
-                        .HasForeignKey("CompanyId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("GoymenERP.Modules.Product.Infrastructure.PriceLists.PriceListProductReference", null)
-                        .WithMany()
-                        .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

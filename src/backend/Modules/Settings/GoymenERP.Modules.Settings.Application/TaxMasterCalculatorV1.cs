@@ -41,11 +41,26 @@ public sealed record TaxWithholdingThresholdDataV1(
     string CurrencyCode,
     bool IsWithdrawn = false);
 
-/// <summary>Everything the tax master of one company holds (the catalog entries included in <c>Defaults</c>).</summary>
+/// <summary>
+/// SAT-D158: one immutable buyer situation list version (the whole list): the reviewed catalog (<c>Source</c> <c>Catalog</c>,
+/// version 0) or a Settings version (≥ 1). <c>IsWithdrawn</c>: withdrawn before it took effect; ignored everywhere.
+/// </summary>
+public sealed record TaxBuyerSituationListVersionDataV1(
+    long ListVersion,
+    DateOnly EffectiveFrom,
+    string Source,
+    IReadOnlyList<TaxBuyerSituationEntryViewV1> Entries,
+    bool IsWithdrawn = false);
+
+/// <summary>
+/// Everything the tax master of one company holds (the catalog entries included in <c>Defaults</c> and
+/// <c>BuyerSituationLists</c>).
+/// </summary>
 public sealed record TaxMasterDataV1(
     IReadOnlyList<TaxItemTypeDefaultDataV1> Defaults,
     IReadOnlyList<TaxCodeListVersionDataV1> CodeLists,
-    IReadOnlyList<TaxWithholdingThresholdDataV1> Thresholds);
+    IReadOnlyList<TaxWithholdingThresholdDataV1> Thresholds,
+    IReadOnlyList<TaxBuyerSituationListVersionDataV1> BuyerSituationLists);
 
 /// <summary>The default tax of an item type on a date (company/product identity added by the port).</summary>
 public sealed record TaxDefaultResolutionPartsV1(
@@ -62,7 +77,9 @@ public sealed record TaxDefaultResolutionPartsV1(
     string? WithholdingCodeState,
     string? WithholdingCode,
     string? WithholdingCodeReason,
-    string? BuyerAdjustment = null);
+    string? BuyerAdjustment = null,
+    TaxBuyerSituationListVersionDataV1? BuyerSituationList = null,
+    TaxBuyerSituationEntryViewV1? BuyerSituation = null);
 
 /// <summary>
 /// The ONE deterministic calculator of the tax master (MOD-03; SAT-D93/D133/D135/D139), used by the Settings screen's read and
@@ -72,6 +89,10 @@ public sealed record TaxDefaultResolutionPartsV1(
 /// kind; the threshold — the non-withdrawn record in force on a date is the one with the LATEST <c>EffectiveFrom</c> on or
 /// before it, and of several on that date the highest version (a Settings record outranks the version-0 catalog entry on the
 /// same day). Before the first record nothing is in force. A later-dated record applies by itself from its date.</item>
+/// <item><b>Buyer situation</b> (SAT-D140/D147/D158): the entry of the buyer situation list in force on the date carries the
+/// effect as data — withholding kept or removed (SAT-D74), VAT as the default's or KDV %0 under an exemption code the order
+/// chose from the exemption list (SAT-D147, no withholding), and whether the order needs the buyer's document. An unknown or
+/// withdrawn code is <c>Unresolved</c> (<c>buyer_situation_unknown</c>); no situation is hard-coded here.</item>
 /// <item><b>Default</b> (SAT-D139): the item type's record in force → VAT (<c>Resolved</c> percent or <c>Exempt</c>) and
 /// withholding (<c>Resolved</c> percent or <c>NotApplied</c>); an exemption / withholding code is checked against the list in
 /// force on the same date and is otherwise <c>Unresolved</c> ("kaynak yok", the invoice waits). No item type or no record →
@@ -154,57 +175,101 @@ public static class TaxMasterCalculatorV1
             .ToArray();
     }
 
-    /// <summary>
-    /// The default tax of <paramref name="itemType"/> (null: the product has none) on <paramref name="on"/>, adjusted for the
-    /// order's <paramref name="buyerSituation"/> (SAT-D140 with the SAT-D74/D93 rule, see <see cref="TaxBuyerSituationsV1"/>).
-    /// </summary>
-    public static TaxDefaultResolutionPartsV1 Resolve(TaxMasterDataV1 data, string? itemType, string buyerSituation, DateOnly on)
+    /// <summary>SAT-D158: the buyer situation list version in force on <paramref name="on"/> (null before the first).</summary>
+    public static TaxBuyerSituationListVersionDataV1? BuyerSituationListInForce(TaxMasterDataV1 data, DateOnly on)
     {
         ArgumentNullException.ThrowIfNull(data);
-        if (!TaxBuyerSituationsV1.IsKnown(buyerSituation))
+        return SituationLists(data)
+            .Where(list => list.EffectiveFrom <= on)
+            .OrderBy(list => list.EffectiveFrom)
+            .ThenBy(list => list.ListVersion)
+            .LastOrDefault();
+    }
+
+    public static IReadOnlyList<TaxBuyerSituationListVersionDataV1> ScheduledBuyerSituationLists(TaxMasterDataV1 data,
+        DateOnly after)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return SituationLists(data)
+            .Where(list => list.EffectiveFrom > after)
+            .GroupBy(list => list.EffectiveFrom)
+            .Select(sameDay => sameDay.MaxBy(list => list.ListVersion)!)
+            .OrderBy(list => list.EffectiveFrom)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// A buyer situation code: ASCII letters and digits, starting with a letter, 1…64 (case kept; compared ordinally). Never
+    /// trimmed into validity: surrounding whitespace is refused.
+    /// </summary>
+    public static bool IsWellFormedSituationCode(string? code) =>
+        code is { Length: > 0 and <= TaxMasterInputLimitsV1.BuyerSituationCodeMaximumLength }
+        && char.IsAsciiLetter(code[0]) && code.All(char.IsAsciiLetterOrDigit);
+
+    /// <summary>
+    /// The default tax of <paramref name="itemType"/> (null: the product has none) on <paramref name="on"/>, adjusted for the
+    /// order's <paramref name="buyerSituation"/> by the entry of the buyer situation list in force (SAT-D140/D158) and, for a
+    /// <see cref="TaxBuyerSituationVatModesV1.ZeroWithExemptionCode"/> situation, the <paramref name="exemptionCode"/> the order
+    /// chose (SAT-D147; ignored for any other situation).
+    /// </summary>
+    public static TaxDefaultResolutionPartsV1 Resolve(TaxMasterDataV1 data, string? itemType, string buyerSituation, DateOnly on,
+        string? exemptionCode = null)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        var list = BuyerSituationListInForce(data, on);
+        var situation = list?.Entries.SingleOrDefault(entry => string.Equals(entry.Code, buyerSituation, StringComparison.Ordinal));
+        if (list is null || situation is null)
         {
-            throw new ArgumentOutOfRangeException(nameof(buyerSituation), "Alıcı vergi durumu tanımlı değil.");
+            // SAT-D158: an unknown or withdrawn situation is "kaynak yok", never the normal default.
+            return Unresolved(TaxResolutionReasonsV1.BuyerSituationUnknown);
         }
 
-        var parts = ResolveDefault(data, itemType, on);
+        var parts = ResolveDefault(data, itemType, on) with { BuyerSituationList = list, BuyerSituation = situation };
         if (parts.State != TaxResolutionStatesV1.Resolved)
         {
             return parts;
         }
 
-        return buyerSituation switch
+        if (situation.VatMode == TaxBuyerSituationVatModesV1.ZeroWithExemptionCode)
         {
-            TaxBuyerSituationsV1.Normal => parts,
-            // SAT-D74: withholding only for a buyer subject to it; the VAT stays the default's.
-            TaxBuyerSituationsV1.NotSubjectToWithholding or TaxBuyerSituationsV1.FinalConsumer => parts.WithholdingState
-                == TaxResolutionStatesV1.NotApplied
-                ? parts
-                : parts with
-                {
-                    WithholdingState = TaxResolutionStatesV1.NotApplied,
-                    WithholdingPercent = null,
-                    WithholdingCodeState = TaxResolutionStatesV1.NotRequired,
-                    WithholdingCode = null,
-                    WithholdingCodeReason = null,
-                    BuyerAdjustment = TaxResolutionReasonsV1.BuyerNotSubjectToWithholding,
-                },
-            // SAT-D93: a document / export-registered sale changes the VAT, but how (and under which UBL-TR code) is the mali
-            // müşavir's decision: no guess — both parts are unresolved and the line decides by hand.
-            _ => parts with
+            // SAT-D147: KDV %0, the exemption code chosen from the list in force (else "kaynak yok", the invoice waits), and no
+            // withholding (there is no VAT to withhold).
+            var (codeState, code, codeReason) = Code(data, TaxCodeListKindsV1.Exemption, exemptionCode,
+                TaxResolutionReasonsV1.ExemptionCodeMissing, on, TaxResolutionReasonsV1.CodeListMissing);
+            return parts with
             {
-                VatState = TaxResolutionStatesV1.Unresolved,
-                VatPercent = null,
-                ExemptionCodeState = TaxResolutionStatesV1.Unresolved,
-                ExemptionCode = null,
-                ExemptionCodeReason = TaxResolutionReasonsV1.BuyerSituationUndecided,
-                WithholdingState = TaxResolutionStatesV1.Unresolved,
+                VatState = TaxResolutionStatesV1.ZeroRated,
+                VatPercent = MinimumPercent,
+                ExemptionCodeState = codeState,
+                ExemptionCode = code,
+                ExemptionCodeReason = codeReason,
+                WithholdingState = TaxResolutionStatesV1.NotApplied,
                 WithholdingPercent = null,
-                WithholdingCodeState = TaxResolutionStatesV1.Unresolved,
+                WithholdingCodeState = TaxResolutionStatesV1.NotRequired,
                 WithholdingCode = null,
-                WithholdingCodeReason = TaxResolutionReasonsV1.BuyerSituationUndecided,
-                BuyerAdjustment = TaxResolutionReasonsV1.BuyerSituationUndecided,
-            },
-        };
+                WithholdingCodeReason = null,
+                BuyerAdjustment = TaxResolutionReasonsV1.BuyerZeroRatedWithExemptionCode,
+            };
+        }
+
+        if (situation.VatMode != TaxBuyerSituationVatModesV1.Normal)
+        {
+            // A mode this calculator does not know (a newer list): fail closed.
+            return Unresolved(TaxResolutionReasonsV1.BuyerSituationUnknown);
+        }
+
+        // SAT-D74: withholding only for a buyer subject to it; the VAT stays the default's.
+        return situation.WithholdingApplies || parts.WithholdingState == TaxResolutionStatesV1.NotApplied
+            ? parts
+            : parts with
+            {
+                WithholdingState = TaxResolutionStatesV1.NotApplied,
+                WithholdingPercent = null,
+                WithholdingCodeState = TaxResolutionStatesV1.NotRequired,
+                WithholdingCode = null,
+                WithholdingCodeReason = null,
+                BuyerAdjustment = TaxResolutionReasonsV1.BuyerNotSubjectToWithholding,
+            };
     }
 
     private static TaxDefaultResolutionPartsV1 ResolveDefault(TaxMasterDataV1 data, string? itemType, DateOnly on)
@@ -335,11 +400,16 @@ public static class TaxMasterCalculatorV1
     }
 
     private static (string State, string? Code, string? Reason) Code(TaxMasterDataV1 data, string kind, string? code,
-        string missingReason, DateOnly on)
+        string missingReason, DateOnly on, string? listMissingReason = null)
     {
         if (code is null)
         {
             return (TaxResolutionStatesV1.Unresolved, null, missingReason);
+        }
+
+        if (listMissingReason is not null && ListInForce(data, kind, on) is null)
+        {
+            return (TaxResolutionStatesV1.Unresolved, code, listMissingReason);
         }
 
         // The code must still be listed on the date: a list version withdrawn or replaced without it leaves the code without
@@ -360,4 +430,7 @@ public static class TaxMasterCalculatorV1
 
     private static IEnumerable<TaxWithholdingThresholdDataV1> Thresholds(TaxMasterDataV1 data) =>
         data.Thresholds.Where(record => !record.IsWithdrawn);
+
+    private static IEnumerable<TaxBuyerSituationListVersionDataV1> SituationLists(TaxMasterDataV1 data) =>
+        data.BuyerSituationLists.Where(list => !list.IsWithdrawn);
 }

@@ -7,8 +7,10 @@
 
 import { noBody, readJson, send, type CommandContext } from './discountLimitApi'
 import {
+  BUYER_SITUATION_VERSIONS_PATH,
   TAX_MASTER_PATH,
   WITHHOLDING_THRESHOLD_PATH,
+  buyerSituationWithdrawalPath,
   codeListPath,
   codeListWithdrawalPath,
   decodeTaxMaster,
@@ -17,6 +19,7 @@ import {
   thresholdWithdrawalPath,
   type CodeListKind,
   type ItemType,
+  type PublishBuyerSituationListBody,
   type PublishCodeListBody,
   type RecordDefaultBody,
   type RecordThresholdBody,
@@ -51,4 +54,13 @@ export function recordWithholdingThreshold(context: CommandContext, body: Record
 
 export function withdrawWithholdingThreshold(context: CommandContext, recordId: string, body: WithdrawBody) {
   return send<true>('POST', thresholdWithdrawalPath(recordId), context, body, 204, noBody)
+}
+
+/** SAT-D158: publish a whole buyer situation list version. */
+export function publishBuyerSituationList(context: CommandContext, body: PublishBuyerSituationListBody) {
+  return send<true>('POST', BUYER_SITUATION_VERSIONS_PATH, context, body, 204, noBody)
+}
+
+export function withdrawBuyerSituationList(context: CommandContext, listVersion: string, body: WithdrawBody) {
+  return send<true>('POST', buyerSituationWithdrawalPath(listVersion), context, body, 204, noBody)
 }

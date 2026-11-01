@@ -5,7 +5,10 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  BUYER_SITUATIONS_PATH,
+  BUYER_SITUATION_VERSIONS_PATH,
   ITEM_TYPES,
+  buyerSituationWithdrawalPath,
   TAX_MASTER_PATH,
   TAX_PROBLEM,
   codeListPath,
@@ -74,6 +77,9 @@ describe('tax master client ↔ canonical OpenAPI', () => {
     operation('post', codeListWithdrawalPath('Withholding', '7'))
     operation('post', WITHHOLDING_THRESHOLD_PATH)
     operation('post', thresholdWithdrawalPath(ID))
+    operation('get', BUYER_SITUATIONS_PATH)
+    operation('post', BUYER_SITUATION_VERSIONS_PATH)
+    operation('post', buyerSituationWithdrawalPath('7'))
   })
 
   it('sends exactly the declared request members', () => {
@@ -97,6 +103,11 @@ describe('tax master client ↔ canonical OpenAPI', () => {
     expectFits({ expectedVersion: '1', reason: 'r' }, 'post', codeListWithdrawalPath('Withholding', '7'))
     expectFits({ expectedVersion: '0', amount: '1', currencyCode: 'TRY', reason: 'r' }, 'post', WITHHOLDING_THRESHOLD_PATH)
     expectFits({ expectedVersion: '1', reason: 'r' }, 'post', thresholdWithdrawalPath(ID))
+    expectFits({ expectedVersion: '0', entries: [], reason: 'r', effectiveFrom: '2026-11-01' }, 'post', BUYER_SITUATION_VERSIONS_PATH)
+    expectFits({ expectedVersion: '1', reason: 'r' }, 'post', buyerSituationWithdrawalPath('7'))
+    expect(Object.keys(document.components.schemas.TaxBuyerSituationEntryV1?.properties ?? {}).sort()).toEqual([
+      'code', 'documentRequired', 'name', 'vatMode', 'withholdingApplies',
+    ])
   })
 
   it('decodes exactly the members the read answers (response schemas)', () => {
@@ -106,7 +117,14 @@ describe('tax master client ↔ canonical OpenAPI', () => {
     }
     expect(read.responses?.['200']?.content?.['application/json']?.schema?.$ref).toBe('#/components/schemas/TaxMasterViewV1')
     // Every member below is read by decodeTaxMaster (./taxMasterContract.ts); a new or renamed member must be decoded first.
-    expect(members('TaxMasterViewV1')).toEqual(['businessDate', 'codeLists', 'companyId', 'itemTypeDefaults', 'withholdingThreshold'])
+    expect(members('TaxMasterViewV1')).toEqual([
+      'businessDate', 'buyerSituations', 'codeLists', 'companyId', 'itemTypeDefaults', 'withholdingThreshold',
+    ])
+    expect(members('TaxBuyerSituationListViewV1')).toEqual(['businessDate', 'companyId', 'inForce', 'scheduled', 'version'])
+    expect(members('TaxBuyerSituationListVersionViewV1')).toEqual([
+      'effectiveFrom', 'entries', 'listVersion', 'reason', 'recordedAtUtc', 'recordedBy', 'source',
+    ])
+    expect(members('TaxBuyerSituationEntryViewV1')).toEqual(['code', 'documentRequired', 'name', 'vatMode', 'withholdingApplies'])
     expect(members('TaxItemTypeDefaultSeriesViewV1')).toEqual(['inForce', 'itemType', 'scheduled', 'version'])
     expect(members('TaxItemTypeDefaultRecordViewV1')).toEqual([
       'effectiveFrom', 'exemptionCode', 'reason', 'recordId', 'recordVersion', 'recordedAtUtc', 'recordedBy', 'source',

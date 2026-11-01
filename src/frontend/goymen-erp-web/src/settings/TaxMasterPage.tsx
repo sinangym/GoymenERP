@@ -1,9 +1,10 @@
 /**
- * Ayarlar > Vergi — MOD-03 tax master (EK12 SAT-D83; EK13 SAT-D93; EK19 SAT-D133…D139), on the one name
- * `settings.tax-master.manage` (Muhasebe/Finans + Admin personas; granted to no role here — a human gate).
+ * Ayarlar > Vergi — MOD-03 tax master (EK12 SAT-D83; EK13 SAT-D93; EK19 SAT-D133…D139; EK20 SAT-D145/D147; EK21 SAT-D158),
+ * on the one name `settings.tax-master.manage` (Müdür + Admin personas, SAT-D145; granted to no role here — a human gate).
  *
  *  - The default KDV and tevkifat per item type (demir / hurda / hizmet): the reviewed SAT-D139 catalog as the base, a
- *    Settings record over it from its date; the UBL-TR exemption and withholding code lists; the VUK 232 threshold.
+ *    Settings record over it from its date; the UBL-TR exemption and withholding code lists; the VUK 232 threshold; the
+ *    buyer situation list (SAT-D158) with each situation's tax effect as data over the reviewed catalog.
  *  - The screen never computes a tax: a value the server does not answer (a code, the threshold) is shown as "Kaynak yok".
  *  - Every change: one person, a mandatory reason, the expected version, one Idempotency-Key (kept for a retry after an
  *    unknown outcome). A version conflict closes the form and re-reads. A not-yet-effective record can be withdrawn.
@@ -23,9 +24,11 @@ import { SETTINGS_CAPABILITY } from './capabilities'
 import type { CommandOutcome } from './discountLimitApi'
 import {
   fetchTaxMaster,
+  publishBuyerSituationList,
   publishCodeList,
   recordItemTypeDefault,
   recordWithholdingThreshold,
+  withdrawBuyerSituationList,
   withdrawCodeList,
   withdrawItemTypeDefault,
   withdrawWithholdingThreshold,
@@ -39,7 +42,12 @@ import {
   isRatePercentText,
   isVatPercentText,
   normalizeTaxCode,
+  buyerSituationText,
+  parseBuyerSituationText,
   parseCodeListText,
+  type TaxBuyerSituation,
+  type TaxBuyerSituationList,
+  type TaxBuyerSituationListVersion,
   type TaxCodeList,
   type TaxDefaultRecord,
   type TaxDefaultSeries,
@@ -123,6 +131,8 @@ type Editor =
   | { readonly kind: 'withdraw-list'; readonly list: TaxCodeList; readonly listVersion: string }
   | { readonly kind: 'threshold'; readonly threshold: TaxThreshold }
   | { readonly kind: 'withdraw-threshold'; readonly threshold: TaxThreshold; readonly record: TaxThresholdRecord }
+  | { readonly kind: 'situations'; readonly list: TaxBuyerSituationList }
+  | { readonly kind: 'withdraw-situations'; readonly list: TaxBuyerSituationList; readonly listVersion: string }
 
 function MasterView({
   master,
@@ -301,6 +311,14 @@ function MasterView({
         ))}
       </section>
 
+      <BuyerSituationSection
+        list={master.buyerSituations}
+        onPublish={() => setEditor({ kind: 'situations', list: master.buyerSituations })}
+        onWithdraw={(version) =>
+          setEditor({ kind: 'withdraw-situations', list: master.buyerSituations, listVersion: version.listVersion })
+        }
+      />
+
       {editor.kind === 'default' ? <DefaultForm key={editor.series.itemType} {...formProps} series={editor.series} /> : null}
       {editor.kind === 'withdraw-default' ? (
         <WithdrawForm
@@ -337,7 +355,99 @@ function MasterView({
           fingerprint={{ list: editor.list.kind, listVersion: editor.listVersion, version: editor.list.version }}
         />
       ) : null}
+      {editor.kind === 'situations' ? <BuyerSituationForm {...formProps} list={editor.list} /> : null}
+      {editor.kind === 'withdraw-situations' ? (
+        <WithdrawForm
+          key={`situations:${editor.listVersion}`}
+          {...formProps}
+          heading={`${TAX_TEXT.withdraw} — ${TAX_TEXT.buyerSituationsHeading}`}
+          execute={(context, reason) =>
+            withdrawBuyerSituationList(context, editor.listVersion, { expectedVersion: editor.list.version, reason })
+          }
+          fingerprint={{ situations: editor.listVersion, version: editor.list.version }}
+        />
+      ) : null}
     </>
+  )
+}
+
+/** SAT-D158: the buyer situations in force with their effect, the scheduled versions, publish and withdraw. */
+function BuyerSituationSection({
+  list,
+  onPublish,
+  onWithdraw,
+}: {
+  readonly list: TaxBuyerSituationList
+  readonly onPublish: () => void
+  readonly onWithdraw: (version: TaxBuyerSituationListVersion) => void
+}) {
+  return (
+    <section aria-labelledby="tax-situations-heading" className={styles.section}>
+      <h2 id="tax-situations-heading">{TAX_TEXT.buyerSituationsHeading}</h2>
+      <p className={styles.muted}>{TAX_TEXT.buyerSituationsIntro}</p>
+      {list.inForce === null ? (
+        <p>{TAX_TEXT.noSource}</p>
+      ) : (
+        <>
+          <p className={styles.muted}>
+            {list.inForce.source === 'Catalog'
+              ? TAX_TEXT.situationSourceCatalog
+              : TAX_TEXT.situationSourceRecord(list.inForce.listVersion)}
+          </p>
+          <table aria-label={TAX_TEXT.buyerSituationsTableLabel} className={styles.table}>
+            <thead>
+              <tr>
+                <th scope="col">{TAX_TEXT.columnSituationCode}</th>
+                <th scope="col">{TAX_TEXT.columnSituationName}</th>
+                <th scope="col">{TAX_TEXT.columnSituationWithholding}</th>
+                <th scope="col">{TAX_TEXT.columnSituationVat}</th>
+                <th scope="col">{TAX_TEXT.columnSituationDocument}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.inForce.entries.map((entry) => (
+                <SituationRow key={entry.code} entry={entry} />
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+      {list.scheduled.length > 0 ? (
+        <ul aria-label={`${TAX_TEXT.buyerSituationsHeading} — ${TAX_TEXT.columnScheduled}`} className={styles.plainList}>
+          {list.scheduled.map((version) => (
+            <li key={version.listVersion}>
+              {TAX_TEXT.scheduledLabel(version.effectiveFrom, TAX_TEXT.entryCount(version.entries.length))}{' '}
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                aria-label={`${TAX_TEXT.withdraw} — ${TAX_TEXT.buyerSituationsHeading} ${formatDate(version.effectiveFrom)}`}
+                onClick={() => onWithdraw(version)}
+              >
+                {TAX_TEXT.withdraw}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <Button type="button" size="sm" onClick={onPublish}>
+        {TAX_TEXT.publishSituations}
+      </Button>
+    </section>
+  )
+}
+
+function SituationRow({ entry }: { readonly entry: TaxBuyerSituation }) {
+  return (
+    <tr>
+      <td>
+        <code>{entry.code}</code>
+      </td>
+      <td>{entry.name}</td>
+      <td>{entry.withholdingApplies ? TAX_TEXT.situationWithholdingKept : TAX_TEXT.situationWithholdingRemoved}</td>
+      <td>{entry.vatMode === 'Normal' ? TAX_TEXT.situationVatNormal : TAX_TEXT.situationVatZero}</td>
+      <td>{entry.documentRequired ? TAX_TEXT.situationDocumentRequired : TAX_TEXT.situationDocumentNotRequired}</td>
+    </tr>
   )
 }
 
@@ -610,6 +720,44 @@ function CodeListForm(props: FormProps & { readonly list: TaxCodeList }) {
       </h3>
       <Field label={TAX_TEXT.entriesLabel} help={TAX_TEXT.entriesHelp} error={entriesError}>
         {(control) => <textarea {...control} required rows={6} value={text} onChange={(event) => setText(event.target.value)} />}
+      </Field>
+      <EffectiveFromField value={effectiveFrom} onChange={setEffectiveFrom} />
+      <ReasonField value={reason} onChange={setReason} />
+      <Footer status={attempt.status} hasPendingRetry={attempt.hasPendingRetry} onCancel={() => props.onDone(null)} />
+    </form>
+  )
+}
+
+function BuyerSituationForm(props: FormProps & { readonly list: TaxBuyerSituationList }) {
+  const [text, setText] = useState(props.list.inForce === null ? '' : buyerSituationText(props.list.inForce.entries))
+  const [effectiveFrom, setEffectiveFrom] = useState('')
+  const [reason, setReason] = useState('')
+  const attempt = useCommandAttempt<true>()
+  const entries = parseBuyerSituationText(text)
+  const entriesError = text.trim().length > 0 && entries === null ? TAX_TEXT.situationsInvalid : undefined
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (entries === null) return
+    const body = {
+      expectedVersion: props.list.version,
+      entries,
+      reason: reason.trim(),
+      ...(effectiveFrom.length > 0 ? { effectiveFrom } : {}),
+    }
+    finish(
+      await attempt.run({ situations: true, ...body }, (idempotencyKey) =>
+        publishBuyerSituationList({ companyId: props.companyId, idempotencyKey }, body),
+      ),
+      props,
+    )
+  }
+
+  return (
+    <form className={styles.form} onSubmit={(event) => void submit(event)} aria-labelledby="tax-situations-form-heading">
+      <h3 id="tax-situations-form-heading">{TAX_TEXT.publishSituations}</h3>
+      <Field label={TAX_TEXT.situationsLabel} help={TAX_TEXT.situationsHelp} error={entriesError}>
+        {(control) => <textarea {...control} required rows={7} value={text} onChange={(event) => setText(event.target.value)} />}
       </Field>
       <EffectiveFromField value={effectiveFrom} onChange={setEffectiveFrom} />
       <ReasonField value={reason} onChange={setReason} />

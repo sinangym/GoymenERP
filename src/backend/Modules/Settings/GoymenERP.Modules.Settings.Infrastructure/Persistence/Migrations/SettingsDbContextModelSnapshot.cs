@@ -578,6 +578,155 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationEntryRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ListVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<bool>("DocumentRequired")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("VatMode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(32)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<bool>("WithholdingApplies")
+                        .HasColumnType("bit");
+
+                    b.HasKey("CompanyId", "ListVersion", "Code");
+
+                    b.ToTable("TaxBuyerSituationEntries", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationEntries_Code", "LEN([Code]) BETWEEN 1 AND 64 AND [Code] NOT LIKE '%[^A-Za-z0-9]%' AND [Code] LIKE '[A-Za-z]%'");
+
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationEntries_Name", "LEN(LTRIM(RTRIM([Name]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationEntries_VatMode", "[VatMode] IN ('Normal', 'ZeroWithExemptionCode')");
+
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationEntries_ZeroNoWithholding", "[VatMode] <> 'ZeroWithExemptionCode' OR [WithholdingApplies] = 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("LastListVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId");
+
+                    b.ToTable("TaxBuyerSituationLists", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationLists_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationLists_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationLists_Version", "[Version] > 0 AND [LastListVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListVersionRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ListVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateOnly>("EffectiveFrom")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "ListVersion");
+
+                    b.ToTable("TaxBuyerSituationListVersions", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationListVersions_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationListVersions_Version", "[ListVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListWithdrawalRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("ListVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<long?>("ReplacedByListVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("WithdrawnAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("WithdrawnBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("CompanyId", "ListVersion");
+
+                    b.HasIndex("CompanyId", "ReplacedByListVersion");
+
+                    b.ToTable("TaxBuyerSituationListWithdrawals", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationListWithdrawals_Recorded", "LEN(LTRIM(RTRIM([WithdrawnBy]))) > 0 AND LEN(LTRIM(RTRIM([Reason]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsTaxBuyerSituationListWithdrawals_Replacement", "[ReplacedByListVersion] IS NULL OR [ReplacedByListVersion] > [ListVersion]");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxCodeListEntryRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1059,6 +1208,38 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.SalesDiscountLimitVersionRow", null)
                         .WithMany()
                         .HasForeignKey("CompanyId", "LimitGroupId", "ReplacedByVersion")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationEntryRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ListVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListVersionRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListWithdrawalRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ListVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.TaxBuyerSituationListVersionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ReplacedByListVersion")
                         .OnDelete(DeleteBehavior.Restrict);
                 });
 

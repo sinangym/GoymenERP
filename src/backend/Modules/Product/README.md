@@ -583,7 +583,7 @@ geçerlilik", AT-018 ("Fiyat sürümü para, birim, KDV, kanal ve geçerlilik ba
 
 | Concern | Rule |
 |---|---|
-| Owner and scope | Product module, **company-scoped** (unlike the global card): `ProductPriceListDbContext`, schema `product`, its own history table `__EFMigrationsHistory_PriceLists`, every row filtered by the server-resolved company and guarded on write. |
+| Owner and scope | Product, **on the shared product card** (SAT-D149, EK20: one value for every company, entered once): `product.ProductCardItemTypes` (keyed by the product, `[ItemType] IN ('Steel','Scrap','Service')`, version, update facts and `UpdatedInCompanyId` — the company the last change was made in), mapped in `ProductPriceListDbContext` with its own write guard (no delete, written only from a resolved company naming it as the acting company, only the type and update facts move). No rate and no code is stored on the product. |
 | Model | A list (name unique per company under `Turkish_100_CI_AS`, currency, channel, VAT basis) with numbered **versions** (validFrom, optional validThrough, Draft → Published) and per-version **lines** (product, price unit, unit price, optional floor). `PriceList` (Product.Domain) is the single authority. |
 | Context (AT-018) | Currency (ISO 4217 text, matched exactly at use, never converted), channel, VAT basis, validity and the price unit are stored on the list/version/line and returned with every reference. |
 | Validity | A published version applies from its start until the next published version starts, or its own end, whichever first; published starts strictly increase (also `UX_PriceListVersions_PublishedValidFrom`); a gap answers no price — nothing falls back to an older version. Derived display status: Taslak / Planlı / Geçerli / Geçmiş. |
@@ -628,7 +628,7 @@ operations); the tenant-bypass guard pins (the new DbContext and the AuditEvent 
 registration's MigrateAsync branch, the migration's reviewed `Sql`); `MODULE_DEPENDENCY_ALLOWLIST.json`
 (Product.Infrastructure → Audit.Infrastructure, ADR-009); the three relational-inventory names.
 
-## Product item type (MOD-03, EK19 SAT-D134)
+## Product item type (MOD-03, EK19 SAT-D134; EK20 SAT-D149)
 
 Source: `docs/decisions/SINAN_KARARLARI_2026-10-31_SATIS_EK19.md` (SAT-D134: the product card holds NO tax class and NO tax
 exception, only an ITEM TYPE — demir / hurda / hizmet; the tax is the Settings default for that type, SAT-D139, changeable on
@@ -638,10 +638,10 @@ which never reached main and is removed.
 | Concern | Rule |
 |---|---|
 | Owner and scope | Product, **company-scoped** (like the price lists, in `ProductPriceListDbContext`; EK19 open item: company vs. the global card was not asked — kept here, reversible): `product.ProductItemTypes` (company, product, `ItemType` `[ItemType] IN ('Steel','Scrap','Service')`, version, update facts). No rate and no code is stored on the product. |
-| Authority | ONE name, `product.item-type.manage` (`ProductItemTypePermissionsV1.Manage` = `ErpPermissions.ProductItemTypeManage`): company-wide, not Critical, granted to NO role (who receives it is a human gate, NEEDS-SINAN). Measured fresh first and before the answer / save. |
-| Command | `PUT /api/v1/product-item-types/{productId}` `{expectedVersion ("0" = none), itemType, reason}`: Idempotency-Key (own `ProductItemTypeAttempts`, SHA-256 key under a binary collation; same key + body replays, another body 409), stale version 409, unknown card code-less 404, unknown type 400; ONE audit event `product.item-type.changed.v1` with the whole reason; a no-op writes none. `GET` answers the item type (version "0" and null while none). |
+| Authority | ONE name, `product.item-type.manage` (`ProductItemTypePermissionsV1.Manage` = `ErpPermissions.ProductItemTypeManage`): company-wide, not Critical, granted to NO role here (SAT-D145 names Müdür and Admin; the grant is a separate PR, a human gate). SAT-D149: a holder in ANY company changes the shared value. Measured fresh first and before the answer / save. |
+| Command | `PUT /api/v1/product-item-types/{productId}` `{expectedVersion ("0" = none), itemType, reason}`: Idempotency-Key (own `ProductItemTypeAttempts`, SHA-256 key under a binary collation; same key + body replays, another body 409), stale version 409, unknown card code-less 404, unknown type 400; ONE audit event `product.item-type.changed.v1` in the ACTING company (before/after images carry `updatedInCompanyId`, the after-image `actingCompanyId`) with the whole reason; a no-op writes none. `GET` answers the shared item type (version "0" and null while none) with `updatedInCompanyId`. The command answers stay company-scoped. |
 | Read port | `IProductItemTypeReaderV1` (access only, no permission; never throws for a missing card or item type) — consumed by the host's `SettingsProductItemTypeHost` for the Settings line tax port (`ISettingsLineTaxResolverV1.ResolveAsync`). |
-| Screen | The product card shows the item type and changes it (`ProductItemTypePanel`); without the permission the server answers 403 and the panel is hidden. |
-| Rollback | Migration `20261031195253_AddProductItemTypes` (`dotnet ef`): `Down` refuses with `THROW 51132` while any item type or command answer exists (forward fix). |
+| Screen | The product card shows the item type, says it is shared by every company (and when the last change was made in another one) and changes it (`ProductItemTypePanel`); without the permission the server answers 403 and the panel is hidden. |
+| Rollback | Migration `20261031195253_AddProductItemTypes` (`dotnet ef`): `Down` refuses with `THROW 51132` while any item type or command answer exists (forward fix). Forward-fix migration `20261101144030_MoveProductItemTypesToProductCard` (`dotnet ef`, SAT-D149): `Up` refuses with `THROW 51151` when one product has different item types in different companies (it never chooses), otherwise moves the agreed value (version 1, the latest change's actor/time/company) and drops `product.ProductItemTypes`; `Down` refuses with `THROW 51152` while any shared item type exists, and on an empty store restores the empty company-scoped table. |
 
-Not here: a global (all-company) item type; choosing the order's buyer situation (SAT-D140, Sales follow-up).
+Not here: who besides `product.item-type.manage` holders reads the item type (EK20 open item); choosing the order's buyer situation (SAT-D140, Sales follow-up).

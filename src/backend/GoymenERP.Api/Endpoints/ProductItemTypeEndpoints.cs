@@ -8,8 +8,10 @@ using GoymenERP.Modules.Product.Application.Contracts;
 namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
-/// SAT-D134 (EK19): the item type (Steel / Scrap / Service) of a product in the server-resolved company (X-Company-Id), under
-/// <see cref="ProductItemTypePermissionsV1.Manage"/> (company-wide, granted to no role here).
+/// SAT-D134 (EK19) / SAT-D149 (EK20): the item type (Steel / Scrap / Service) of a product on the SHARED product card (the same
+/// value in every company), read and set by an actor of the server-resolved company (X-Company-Id) under
+/// <see cref="ProductItemTypePermissionsV1.Manage"/> in that company (company-wide, granted to no role here); each change is
+/// audited in that company.
 /// <c>GET /api/v1/product-item-types/{productId}</c> answers it (version "0" while none is stored); <c>PUT</c> sets it (204) with
 /// Idempotency-Key, the expected version and a mandatory reason. Private, no-store.
 /// </summary>
