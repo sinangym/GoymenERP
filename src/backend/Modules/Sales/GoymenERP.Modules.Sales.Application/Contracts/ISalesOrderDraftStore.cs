@@ -114,6 +114,12 @@ public static class SalesDraftStoreCodes
 
     /// <summary>The list cursor is not this company's, not this ordering's, or malformed (#257: 400).</summary>
     public const string InvalidCursor = "sales_invalid_cursor";
+
+    /// <summary>
+    /// The write's own audit record could not be built (an internal envelope fault, never the caller's input); nothing was
+    /// stored. Mapped like any other store failure (503), never to a field-less 400.
+    /// </summary>
+    public const string AuditRecordInvalid = "sales_audit_record_invalid";
 }
 
 /// <summary>A stored draft could not be written or read; <see cref="Code"/> says why. Nothing was stored.</summary>
@@ -303,11 +309,13 @@ public interface ISalesOrderDraftStore
     /// snapshot (with its reason and header) when one was made. (A default body refuses for stores that predate API-04: test doubles only.) The store writes that snapshot's rows, the header's revision /
     /// approval axis / version and its revisable columns (customer, currency + money profile, delivery references, sales owner,
     /// due terms) together with the attempt record and the audit event, or nothing at all. No line, slice or schedule column
-    /// changes. The command name must be <see cref="SalesDraftCommands.ReviseHeaderV1"/>.
+    /// changes. The command name must be <see cref="SalesDraftCommands.ReviseHeaderV1"/>. <paramref name="revisionReason"/> is the
+    /// user's reason as the domain accepts it (SAT-D126: up to 4000 characters, trimmed): the audit "after" picture's
+    /// <c>reason</c> (an unbounded JSON column); the audit event's own short <c>Reason</c> is <paramref name="audit"/>'s fixed text.
     /// </summary>
     Task<SalesDraftStateResult?> ReviseDraftHeaderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid draftId, Func<SalesOrderDraft, SalesHeaderRevisionInput, DateTimeOffset, ApprovedRevisionSnapshot?> mutate,
-        SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<SalesHeaderRevisionInput>> beforeWrite,
+        SalesDraftStateAudit audit, string revisionReason, Func<SalesOrderDraft, CancellationToken, Task<SalesHeaderRevisionInput>> beforeWrite,
         CancellationToken cancellationToken = default) =>
         throw new NotSupportedException("Bu taslak deposu başlık revizyonunu desteklemiyor.");
 

@@ -186,12 +186,59 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
                 await run.ScalarAsync<string>("SELECT ISNULL(JSON_VALUE([AfterJson], '$.supersededReason'), N'-') " + Where, parameters));
         }
 
-        Assert.Equal(("SENTETIK-ESKI-ARSIV-GEREKCESI", "SENTETIK-ESKI-ARSIV-GEREKCESI", "SENTETIK-ESKI-ARSIV-GEREKCESI"), await AuditAsync(5));
-        Assert.Equal(("SENTETIK-HAZIRLIK-GEREKCESI", "SENTETIK-HAZIRLIK-GEREKCESI", "-"), await AuditAsync(6));
-        Assert.Equal(("SENTETIK-D126-GEREKCESI", "SENTETIK-D126-GEREKCESI", "-"), await AuditAsync(9));
+        // The audit event's own short Reason is the command's fixed text; the user's reason is the "after" picture's.
+        const string Fixed = "Satış siparişi başlık revizyonu (SAT-D126)";
+        Assert.Equal((Fixed, "SENTETIK-ESKI-ARSIV-GEREKCESI", "SENTETIK-ESKI-ARSIV-GEREKCESI"), await AuditAsync(5));
+        Assert.Equal((Fixed, "SENTETIK-HAZIRLIK-GEREKCESI", "-"), await AuditAsync(6));
+        Assert.Equal((Fixed, "SENTETIK-D126-GEREKCESI", "-"), await AuditAsync(9));
         // The earlier archive's reason is attributed to no in-place change.
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'sales.order-draft.header-revised.v1' "
             + "AND [EntityId] = @id AND ([AfterJson] LIKE N'%ESKI-ARSIV%' OR [Reason] LIKE N'%ESKI-ARSIV%')", ("@id", draft.Id.ToString("D"))));
+    }
+
+    [SqlServerFact]
+    public async Task SAT_D126_a_reason_of_1000_1001_or_4000_characters_is_recorded_whole_in_the_audit_after_picture_through_the_real_route_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "k");
+        // sales.drafts.create makes the caller an eligible sales owner (SAT-D27).
+        var (subject, actorId) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.DraftsCreate, SalesPermissionManifestV1.OrdersHeaderWrite, SalesPermissionManifestV1.OrdersPriceRead);
+        using var client = run.Client(subject, CompanyA);
+        var draftPath = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}";
+        var terms = SalesDraftHeaderApiV1.ToWire(draft.Header.DueTerms);
+
+        // The audit Reason column is nvarchar(1000); the domain, the strict reader and the screen allow 4000. Every length is
+        // 200, the order stays approved (SAT-D126: owner-only, in place) and AfterJson (nvarchar(max)) holds the reason whole.
+        var version = 4L;
+        Guid? owner = actorId;
+        foreach (var length in new[] { 1000, 1001, 4000 })
+        {
+            var reason = new string('g', length - 1) + "Z";
+            var body = new SalesDraftHeaderRevisionRequest(version.ToString(System.Globalization.CultureInfo.InvariantCulture), reason,
+                draft.Header.PartyId, draft.Header.CompanyAccountId, Currency, null, null, owner, terms);
+            using (var revised = await client.SendAsync(Post($"{draftPath}/header-revision", $"SENTETIK-len-{length}", body)))
+            {
+                Assert.Equal(HttpStatusCode.OK, revised.StatusCode);
+            }
+
+            version++;
+            const string Where = "FROM [audit].[AuditEvents] AS e WHERE e.[EventType] = N'sales.order-draft.header-revised.v1' AND e.[EntityId] = @id AND e.[EntityVersionAfter] = @v";
+            (string, object)[] parameters = [("@id", draft.Id.ToString("D")), ("@v", version)];
+            Assert.Equal((reason, "Satış siparişi başlık revizyonu (SAT-D126)"), (
+                // OPENJSON with nvarchar(max): the whole value, not JSON_VALUE's 4000-character window.
+                await run.ScalarAsync<string>("SELECT j.[reason] FROM [audit].[AuditEvents] AS e CROSS APPLY OPENJSON(e.[AfterJson]) "
+                    + "WITH ([reason] nvarchar(max) '$.reason') AS j WHERE e.[EventType] = N'sales.order-draft.header-revised.v1' "
+                    + "AND e.[EntityId] = @id AND e.[EntityVersionAfter] = @v", parameters),
+                await run.ScalarAsync<string>("SELECT e.[Reason] " + Where, parameters)));
+            owner = owner is null ? actorId : null;
+        }
+
+        Assert.Equal((version, 0, 3), (
+            await run.ScalarAsync<long>("SELECT [Version] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT [Revision] FROM [sales].[Drafts] WHERE [Id] = @id", ("@id", draft.Id)),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-header.v1' "
+                + "AND [Outcome] = 1 AND [DraftId] = @id", ("@id", draft.Id))));
     }
 
     [SqlServerFact]
@@ -206,7 +253,7 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
         await using (var scope = run.SalesStore(CompanyA))
         {
             var result = await scope.Store.ReviseDraftHeaderAsync(run.SalesEnvelope("k-header"), Hash("k-header"), SalesDraftCommands.ReviseHeaderV1, draft.Id,
-                (d, input, now) => d.ReviseHeader(4, input, "SENTETIK-reviser", "SENTETIK cari değişti", now), HeaderRevised,
+                (d, input, now) => d.ReviseHeader(4, input, "SENTETIK-reviser", "SENTETIK cari değişti", now), HeaderRevised, "SENTETIK cari değişti",
                 (_, _) => Task.FromResult(new SalesHeaderRevisionInput(party, account, OtherCurrency, money, null, null, null, null)));
             Assert.Equal((1, OtherCurrency, 4), (result!.Draft.Revision, result.Draft.Money.CurrencyId, result.Draft.Money.Scale));
         }
@@ -306,7 +353,7 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
         await using (var scope = run.SalesStore(CompanyA))
         {
             await scope.Store.ReviseDraftHeaderAsync(run.SalesEnvelope("k-header"), Hash("k-header"), SalesDraftCommands.ReviseHeaderV1, draft.Id,
-                (d, input, now) => d.ReviseHeader(5, input, "SENTETIK-reviser", "SENTETIK vade", now), HeaderRevised,
+                (d, input, now) => d.ReviseHeader(5, input, "SENTETIK-reviser", "SENTETIK vade", now), HeaderRevised, "SENTETIK vade",
                 (d, _) => Task.FromResult(new SalesHeaderRevisionInput(d.Header.PartyId, d.Header.CompanyAccountId, d.Header.CurrencyId, null, null, null,
                     null, SalesDueTerms.Create([new SalesDueInstalment(1, SalesDueBasis.OrderDate, 15, "100")]))));
         }

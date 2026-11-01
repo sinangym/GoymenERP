@@ -83,19 +83,19 @@ public sealed partial class SalesDraftService
         }
 
         // SAT-D126 (EK18): every header revision — an approved order's in-place owner/delivery change, a Preparing/Rejected
-        // order's in-place change and a re-approving one alike — is recorded WITH the user's own (trimmed) reason: it is the
-        // audit event's reason (and the "after" picture's `reason`). A blank reason never reaches a save: the domain refuses it
-        // (422) inside the store before anything is written; the fixed text only keeps the audit draft well-formed until then.
+        // order's in-place change and a re-approving one alike — is recorded WITH the user's own reason: the store writes it,
+        // trimmed and whole (up to the domain's 4000 characters), as the audit "after" picture's `reason` (an unbounded JSON
+        // column). The audit event's own Reason column is short (1000), so it carries this command's fixed text, as every other
+        // Sales state command does. A blank or too long reason never reaches a save: the domain refuses it (422) first.
         var audit = new SalesDraftStateAudit("sales.order-draft.header-revised.v1", "ReviseHeader",
-            string.IsNullOrWhiteSpace(request.Reason)
-                ? "Satış siparişinin başlığı gerekçeyle revize edildi (DEC-SAL-002, SAT-D126)"
-                : request.Reason.Trim());
+            "Satış siparişi başlık revizyonu (SAT-D126)");
 
         SalesDraftStateResult? result;
         try
         {
             result = await store.ReviseDraftHeaderAsync(envelope, requestHash, commandName, draftId,
                 (draft, input, now) => draft.ReviseHeader(expectedVersion, input, scope.ActorId, request.Reason, now), audit,
+                request.Reason ?? string.Empty,
                 async (draft, writeCancellationToken) =>
                 {
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
@@ -139,6 +139,9 @@ public sealed partial class SalesDraftService
         }
         catch (ArgumentException)
         {
+            // Only the domain's argument guards on the request reach here (an owner reference without its version, an empty
+            // identity): a malformed request. The store turns any fault of its own audit envelope into a store failure
+            // (SalesDraftStoreCodes.AuditRecordInvalid → 503) before this, so it is never taken for the caller's input.
             throw new SalesDraftServiceException(400, "validation_failed");
         }
         catch (SalesDraftStoreException exception) when (exception.Code == SalesDraftStoreCodes.ConcurrentChange)

@@ -2084,12 +2084,23 @@ public sealed partial class SalesDraftServiceTests
             return result;
         }
 
+        /// <summary>The reason each recorded header revision handed the store (SAT-D126), in order.</summary>
+        public List<string> HeaderRevisionReasons { get; } = [];
+
+        /// <summary>When set, the next header revision fails as the real store does when its audit envelope is refused.</summary>
+        public bool FailHeaderRevisionAudit { get; set; }
+
         public async Task<SalesDraftStateResult?> ReviseDraftHeaderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
             Guid draftId, Func<SalesOrderDraft, SalesHeaderRevisionInput, DateTimeOffset, ApprovedRevisionSnapshot?> mutate,
-            SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<SalesHeaderRevisionInput>> beforeWrite,
+            SalesDraftStateAudit audit, string revisionReason, Func<SalesOrderDraft, CancellationToken, Task<SalesHeaderRevisionInput>> beforeWrite,
             CancellationToken cancellationToken = default)
         {
             if (commandName != SalesDraftCommands.ReviseHeaderV1) throw new ArgumentException("wrong command", nameof(commandName));
+            if (FailHeaderRevisionAudit)
+            {
+                throw new SalesDraftStoreException(SalesDraftStoreCodes.AuditRecordInvalid, "SENTETIK audit zarfı reddedildi");
+            }
+
             ApprovedRevisionSnapshot? archived = null;
             SalesHeaderRevisionInput? input = null;
             var draft = _drafts.SingleOrDefault(candidate => candidate.Id == draftId);
@@ -2097,6 +2108,7 @@ public sealed partial class SalesDraftServiceTests
                 (target, now) => archived = mutate(target, input!, now), audit,
                 async token => input = await beforeWrite(draft!, token), cancellationToken);
             if (archived is not null) Archived.Add(archived);
+            if (result is { Outcome: SalesDraftWriteOutcome.Recorded }) HeaderRevisionReasons.Add(revisionReason.Trim());
             return result;
         }
 

@@ -1,3 +1,4 @@
+using System.Globalization;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
@@ -369,6 +370,52 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task SAT_D126_a_reason_of_1000_1001_or_4000_characters_is_recorded_whole_and_4001_is_the_reasons_own_422()
+    {
+        var world = new World();
+        world.SalesOwners!.Eligible.Add(Owner);
+        Owners(world);
+        var (approved, _) = await AcceptedApprovedAsync(world);
+
+        // The audit event's Reason column holds 1000 characters; the domain, the strict reader and the screen allow 4000. Each
+        // length is recorded whole (the "after" picture's reason), the command answers 200 and the order stays approved.
+        var version = 5;
+        Guid? owner = Owner;
+        foreach (var length in new[] { 1000, 1001, 4000 })
+        {
+            var reason = new string('g', length);
+            var revised = await world.Service().ReviseHeaderAsync(approved.Id,
+                HeaderRevision(version.ToString(CultureInfo.InvariantCulture), owner: owner, reason: reason), Metadata($"k-reason-{length}"));
+            Assert.Equal(("Approved", (version + 1).ToString(CultureInfo.InvariantCulture)), (revised.Detail.Draft.ApprovalState, revised.Detail.Draft.Version));
+            Assert.Equal(reason, world.Store.HeaderRevisionReasons[^1]);
+            Assert.Equal("Satış siparişi başlık revizyonu (SAT-D126)", world.Store.Transitions[^1].Audit.Reason);
+            version++;
+            owner = owner is null ? Owner : null;
+        }
+
+        var tooLong = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseHeaderAsync(approved.Id,
+            HeaderRevision(version.ToString(CultureInfo.InvariantCulture), owner: owner, reason: new string('g', 4001)), Metadata("k-reason-4001")));
+        Assert.Equal((422, "reason"), (tooLong.Status, Assert.Single(tooLong.Errors).Field));
+        Assert.Equal(3, world.Store.HeaderRevisionReasons.Count);
+    }
+
+    [Fact]
+    public async Task A_header_revision_whose_audit_record_cannot_be_built_is_a_store_failure_never_a_field_less_400()
+    {
+        var world = new World();
+        world.SalesOwners!.Eligible.Add(Owner);
+        Owners(world);
+        var (approved, _) = await AcceptedApprovedAsync(world);
+        world.Store.FailHeaderRevisionAudit = true;
+
+        var failed = await Assert.ThrowsAsync<SalesDraftServiceException>(() => world.Service().ReviseHeaderAsync(approved.Id,
+            HeaderRevision("5", owner: Owner, reason: "SENTETIK sorumlu"), Metadata("k-audit-fault")));
+
+        Assert.Equal((503, "service_unavailable"), (failed.Status, failed.Code));
+        Assert.Empty(world.Store.HeaderRevisionReasons);
+    }
+
+    [Fact]
     public async Task SAT_D126_a_change_of_only_the_sales_owner_and_delivery_references_of_an_approved_order_keeps_it_approved_at_its_revision()
     {
         var world = new World();
@@ -390,8 +437,10 @@ public sealed partial class SalesDraftServiceTests
         var transition = world.Store.Transitions[^1];
         Assert.Equal((SalesDraftCommands.ReviseHeaderV1, "sales.order-draft.header-revised.v1", 5L, 6L),
             (transition.Command, transition.Audit.EventType, transition.VersionBefore, transition.VersionAfter));
-        // SAT-D126: the user's own (trimmed) reason is the audit's reason, not a fixed service text.
-        Assert.Equal("SENTETIK sorumlu değişti", transition.Audit.Reason);
+        // SAT-D126: the user's own reason reaches the store whole (trimmed) for the audit "after" picture; the audit event's
+        // short Reason column carries the command's fixed text.
+        Assert.Equal("SENTETIK sorumlu değişti", world.Store.HeaderRevisionReasons[^1]);
+        Assert.Equal("Satış siparişi başlık revizyonu (SAT-D126)", transition.Audit.Reason);
         // Shipping and invoicing are untouched: the current approved revision ships, invoicing is open at Rev.0.
         var answer = await port.GetApprovedLineAsync(approved.Id, line);
         Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, SalesOrderLineRevisionBasisV1.CurrentRevision),

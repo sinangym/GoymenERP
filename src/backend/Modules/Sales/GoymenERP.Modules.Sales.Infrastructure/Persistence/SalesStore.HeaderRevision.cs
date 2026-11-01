@@ -14,10 +14,11 @@ public sealed partial class SalesStore
 {
     public async Task<SalesDraftStateResult?> ReviseDraftHeaderAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         string commandName, Guid draftId, Func<SalesOrderDraft, SalesHeaderRevisionInput, DateTimeOffset, ApprovedRevisionSnapshot?> mutate,
-        SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<SalesHeaderRevisionInput>> beforeWrite,
+        SalesDraftStateAudit audit, string revisionReason, Func<SalesOrderDraft, CancellationToken, Task<SalesHeaderRevisionInput>> beforeWrite,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(mutate);
+        ArgumentNullException.ThrowIfNull(revisionReason);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
@@ -124,9 +125,20 @@ public sealed partial class SalesStore
         Assign(row.MoneyEffectiveThrough, money.EffectiveThrough, value => row.MoneyEffectiveThrough = value);
         Assign(row.MoneyScale, money.Scale, value => row.MoneyScale = value);
 
-        AddAttemptAndAudit(companyId, keyHash, actorId, commandName, requestHash, envelope, draft, null, now, audit, versionBefore,
-            before, HeaderPicture(draft, audit.Reason, archived?.Reason));
-        await SaveAsync(cancellationToken);
+        try
+        {
+            // The domain accepted the reason above (required, trimmed, at most 4000): the "after" picture keeps it whole.
+            AddAttemptAndAudit(companyId, keyHash, actorId, commandName, requestHash, envelope, draft, null, now, audit, versionBefore,
+                before, HeaderPicture(draft, revisionReason.Trim(), archived?.Reason));
+            await SaveAsync(cancellationToken);
+        }
+        catch (ArgumentException exception)
+        {
+            // The audit record's own envelope (not the caller's input) was refused: nothing was stored, and it is a store
+            // failure (503), never the service's field-less 400 for an invalid argument.
+            dbContext.ChangeTracker.Clear();
+            throw Refused(SalesDraftStoreCodes.AuditRecordInvalid, "Başlık revizyonunun audit kaydı oluşturulamadı; hiçbir şey kaydedilmedi.", exception);
+        }
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
