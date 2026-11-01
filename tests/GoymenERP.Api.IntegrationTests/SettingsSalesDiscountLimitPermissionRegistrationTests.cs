@@ -21,8 +21,9 @@ public sealed class SettingsSalesDiscountLimitPermissionRegistrationTests
         Assert.Single(ErpPermissions.All, name => name == SettingsPermissionManifestV1.SalesDiscountLimitsManage);
         Assert.True(ErpPermissions.RequiresCompanyWideScope(SettingsPermissionManifestV1.SalesDiscountLimitsManage));
         Assert.False(ErpPermissions.IsCritical(SettingsPermissionManifestV1.SalesDiscountLimitsManage));
-        Assert.Equal([SettingsPermissionManifestV1.SalesDiscountLimitsManage],
-            ErpPermissions.All.Where(name => name.StartsWith("settings.", StringComparison.Ordinal)));
+        // MOD-03 adds the tax master's own name beside it (SettingsTaxMasterPermissionRegistrationTests).
+        Assert.Equal([SettingsPermissionManifestV1.SalesDiscountLimitsManage, SettingsTaxMasterPermissionManifestV1.TaxMasterManage],
+            ErpPermissions.All.Where(name => name.StartsWith("settings.", StringComparison.Ordinal)).Order(StringComparer.Ordinal));
     }
 
     [Fact]

@@ -48,7 +48,7 @@ function devHeaders(): Record<string, string> {
   return DEV_IDENTITY_ENABLED ? { 'X-Development-User': DEV_USER } : {}
 }
 
-async function readJson<T>(
+export async function readJson<T>(
   path: string,
   companyId: string,
   decode: (raw: unknown) => T | null,
@@ -108,7 +108,7 @@ export type CommandOutcome<T> =
   /** The command may or may not have been applied: retry with the SAME key. */
   | { readonly type: 'unknown'; readonly reason: 'offline' | 'network-error' | 'server' | 'unexpected' }
 
-async function send<T>(
+export async function send<T>(
   method: 'POST' | 'PUT',
   path: string,
   context: CommandContext,
@@ -150,7 +150,7 @@ async function send<T>(
 }
 
 /** A 204 carries no body: reaching the exact status IS the answer. */
-const noBody = (): true => true
+export const noBody = (): true => true
 
 export function createLimitGroup(context: CommandContext, body: CreateGroupBody, signal?: AbortSignal) {
   return send<LimitGroupCreated>('POST', DISCOUNT_LIMIT_GROUPS_PATH, context, body, 201, decodeCreated, signal)

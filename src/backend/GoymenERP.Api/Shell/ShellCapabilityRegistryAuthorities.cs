@@ -378,6 +378,11 @@ internal static class ShellCapabilityRegistryAuthorities
     // ShellCapabilityRegistry.ComputeCandidateRevision (drift-test "Actual:"); the historical name suffix is kept.
     internal const string FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV10 =
         "sha256:q--rbSDxh9OG59EsJMqHYQkZHC0mE8HsjWeU01fya08";
+    // MOD-03 (SAT-D83): the same full normal host with Settings 1.1 (the tax master screen beside the discount limit screen),
+    // derived by ShellCapabilityRegistry.ComputeCandidateRevision over the real providers (drift-test "Actual:"). The 1.0 row
+    // above keeps its name and value; no host composes it any more.
+    internal const string FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV11 =
+        "sha256:8-BkJ1YMFENn9LSV-IsMi0aDQ_X5UnqU_E_I9ixpQPU";
 
     // SAT-D24 / SAT-D44 merged over UI-60 / UI-61: Sales 1.10 adds the expired-quote conversion approval control of the quote
     // detail beside the S-07 / S-08 screens. The six live rows carrying PublishedSales were re-derived by

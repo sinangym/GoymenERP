@@ -127,7 +127,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     // Settings e-Fatura scenario port (ISettingsEInvoiceScenarioPolicyProviderV1 -> ApprovedSettingsPrerequisiteProvider).
     // Comments / scoped in-process registrations only; no OpenAPI-generation, network or hosted-service surface changes.
     private const string ReviewedOpenApiStartupFingerprint =
-        "c561dd712ee9370940120153360dfeed7fce6e9403db91a0c521cd023061d16f";
+        // MOD-03 (EK19) maps the tax master and product item type routes and registers one scoped in-process Settings product
+        // item type adapter, with comments; no OpenAPI-generation, network or hosted-service surface changes.
+        "24f2f221f56770ab839ffae07653823e2bfc82414effc6d976a37f9435dad8f6";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -309,8 +311,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (b384d836… -> 765b00e2…).
             // SAT-D78 / SAT-D84: +2 Settings discount limit SQL facts (future-dated records; withdraw/correct)
             // (765b00e2… -> e68b1182…).
+            // MOD-03 (EK19): +2 Settings tax master SQL facts (tax master lifecycle; product item type → line tax port)
+            // (e68b1182… -> 9c53f777…).
             ["tools/relational_inventory/platform.txt"] =
-                "e68b11823817f70bf891b0ffa32633fdab29b6f7d0c67f4611bd7552709a3a0e",
+                "9c53f7779e22f44c965220f619acec5911a81b7c5183fd4436047cb7ad78f79d",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -422,7 +426,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // deleted, limit records and binding rows are immutable, every row in the context's company).
                 // Re-fingerprinted for SAT-D84: the company-filtered, insert-only limit withdrawal set (company inside its
                 // key and both foreign keys) joins the immutable rows of the write fence.
-                "fab206a200b147c6b44ba65362942e9917179e78aea3f6d5cbdc5d96ff69584f",
+                // Re-fingerprinted for MOD-03: the company-filtered tax master sets (categories, immutable rate records and code list versions with insert-only withdrawals; company inside every key and foreign key) join the write fence (immutable rows, every row in the context company).
+                // Re-fingerprinted for SAT-D93 (Sinan 2026-10-31): the company-filtered VUK 232 withholding threshold fence, its
+                // immutable records and insert-only withdrawals join the write fence.
+                "fa35e2a7d5592a4cd177cf01a17363894c4007aabdaae4ffa1d1eb4635904bce",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -531,7 +538,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // existing Product card context; every durable row and audit event carries CompanyId.
             ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
              + "PriceLists/ProductPriceListDbContext.cs"] =
-                "13a34845ccd59e7dc23ba054c0349344e32e534b3a787124b792468d5f915489",
+                // Re-fingerprinted for MOD-03: the company-filtered product tax classification (classes, version and update facts the only moving columns) and its insert-only command answers join the write guard.
+                "9137cddcd78fc5b15916421dda0fcb447a4c3b2459c2096afae5e752c08cde60",
             // JV03: every Work snapshot, inbox and outbox row is company-filtered and company-keyed;
             // AuditEvent uses the same resolved company fence and the write guard refuses foreign rows.
             [ReviewedWorkDbContextPath] =
@@ -699,7 +707,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/"
                  + "PriceLists/ProductPriceListRegistration.cs"] =
                     new(
-                        "4db2e396c81bcfce6f4c504ed84cdcab0375d91d48b9f0323ab8ed43107e0b59",
+                        // Re-fingerprinted for MOD-03: the named product tax classification service factory and its two port registrations (DI-only, the Settings category reader optional); the database surface and its counts are unchanged.
+                        "f4f2a5e316e01434602bd50e6c8453afb68d0c70a33b3f62f016693932c4375d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1469,7 +1478,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "SettingsModuleExtensions.cs"] =
                     new(
-                        "60645768407be7c064f11ad9b8211b0ec92a86b4ed02bc1b708caa01a1e31405",
+                        // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
+                        "bc03b65e374c3c85d4f842fcea9c79762d62561659476e3436c037dfaf587392",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1629,6 +1639,27 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // MOD-02 (SAT-D9): the list scope; Down refuses (51072) while any customer-specific list remains, so dropping
                 // the scope columns never turns a customer's price into a company-wide one.
+                // MOD-03 (EK19 SAT-D133/D135/D139): Down refuses (51131) while any item-type default record, code list or
+                // VUK 232 threshold exists, before any drop, so a rollback never turns a resolved tax back into "kaynak yok"
+                // (forward fix).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261031194631_AddTaxMaster.cs"] =
+                    new(
+                        "285bff1b47db99f02583ec2465f5da796bd894ed92d90e01004e05503920bb79",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
+                // MOD-03 (EK19 SAT-D134): Down refuses (51132) while any product item type or its command answer exists
+                // (forward fix).
+                ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
+                 + "Migrations/20261031195253_AddProductItemTypes.cs"] =
+                    new(
+                        "94c66a0c670078d3a5068659653d5323a39402c7669d3d578cf529628ae4ea93",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 ["src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/"
                  + "Migrations/20261027123034_AddPriceListScope.cs"] =
                     new(

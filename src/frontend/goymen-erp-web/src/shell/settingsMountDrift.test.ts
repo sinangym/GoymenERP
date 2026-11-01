@@ -20,8 +20,17 @@ describe('shell ↔ Settings discount limit screen contract (SAT-D61…D70)', ()
     expect(settings?.entries).toContain(CAPABILITY.settingsSalesDiscountLimits)
   })
 
-  it('mounts the one static route', () => {
-    expect(settingsRoutes).toHaveLength(1)
+  it('mounts the two static routes', () => {
+    expect(settingsRoutes).toHaveLength(2)
     expect(matchRoutes(settingsRoutes, '/ayarlar/iskonto-limitleri')?.at(-1)?.route.path).toBe('ayarlar/iskonto-limitleri')
+    expect(matchRoutes(settingsRoutes, '/ayarlar/vergi')?.at(-1)?.route.path).toBe('ayarlar/vergi')
+  })
+
+  it('mirrors the MOD-03 tax master id, route and label, with one navigation entry under Ayarlar', () => {
+    expect(CAPABILITY.settingsTaxMaster).toBe(SETTINGS_CAPABILITY.taxMaster)
+    expect(CAPABILITY_ROUTE[CAPABILITY.settingsTaxMaster]).toBe(SETTINGS_ROUTE[SETTINGS_CAPABILITY.taxMaster])
+    expect(CAPABILITY_NAV_LABEL[CAPABILITY.settingsTaxMaster]).toBe(SETTINGS_NAV_LABEL[SETTINGS_CAPABILITY.taxMaster])
+    expect(NAV_CAPABILITIES.filter((item) => item === CAPABILITY.settingsTaxMaster)).toHaveLength(1)
+    expect(NAV_GROUPS.find((group) => group.id === 'settings')?.entries).toContain(CAPABILITY.settingsTaxMaster)
   })
 })

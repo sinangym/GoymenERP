@@ -36,6 +36,10 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
 
     internal DbSet<PriceListProductReference> Products => Set<PriceListProductReference>();
 
+    internal DbSet<ProductItemTypeRow> ItemTypes => Set<ProductItemTypeRow>();
+
+    internal DbSet<ProductItemTypeAttemptRow> ItemTypeAttempts => Set<ProductItemTypeAttemptRow>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -55,6 +59,7 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         ConfigureVersions(modelBuilder);
         ConfigureLines(modelBuilder);
         ConfigureAttempts(modelBuilder);
+        ConfigureItemTypes(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
         modelBuilder.Entity<AuditEvent>()
             .HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
@@ -213,6 +218,49 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// SAT-D134: the company's product item type (demir / hurda / hizmet) and its command answers. The tax per item type is
+    /// the Settings owner's default (SAT-D139); nothing tax-related is stored here.
+    /// </summary>
+    private void ConfigureItemTypes(ModelBuilder modelBuilder)
+    {
+        var entity = modelBuilder.Entity<ProductItemTypeRow>();
+        entity.ToTable("ProductItemTypes", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductItemTypes_Identity", $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid}");
+            table.HasCheckConstraint("CK_ProductItemTypes_ItemType", "[ItemType] IN ('Steel', 'Scrap', 'Service')");
+            table.HasCheckConstraint("CK_ProductItemTypes_Version", "[Version] >= 1 AND LEN([UpdatedBy]) > 0");
+        });
+        entity.HasKey(x => new { x.CompanyId, x.ProductId });
+        entity.Property(x => x.ItemType).HasMaxLength(16).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        entity.Property(x => x.Version).IsConcurrencyToken();
+        entity.Property(x => x.UpdatedBy).HasMaxLength(128).IsRequired();
+        entity.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        entity.HasOne<PriceListProductReference>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
+        entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var attempt = modelBuilder.Entity<ProductItemTypeAttemptRow>();
+        attempt.ToTable("ProductItemTypeAttempts", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_ProductItemTypeAttempts_Identity",
+                $"[CompanyId] <> {EmptyGuid} AND [ProductId] <> {EmptyGuid} AND LEN([CommandName]) > 0 "
+                + "AND LEN([CorrelationId]) > 0 AND LEN([ActorId]) > 0");
+            table.HasCheckConstraint("CK_ProductItemTypeAttempts_Hashes",
+                "LEN([IdempotencyKeyHash]) = 64 AND LEN([RequestHash]) = 64");
+            table.HasCheckConstraint("CK_ProductItemTypeAttempts_Answer",
+                "[StatusCode] BETWEEN 200 AND 599 AND ISJSON([AnswerJson]) = 1");
+        });
+        attempt.HasKey(x => new { x.CompanyId, x.CommandName, x.IdempotencyKeyHash });
+        attempt.Property(x => x.CommandName).HasMaxLength(160).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.IdempotencyKeyHash).HasMaxLength(64).IsUnicode(false).UseCollation(IdentityCollation).IsRequired();
+        attempt.Property(x => x.RequestHash).HasMaxLength(64).IsUnicode(false).IsRequired();
+        attempt.Property(x => x.ActorId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        attempt.Property(x => x.AnswerJson).HasColumnType("nvarchar(max)").IsRequired();
+        attempt.HasOne<PriceListCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
+        attempt.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ApplyWriteGuards()
     {
         foreach (var entry in ChangeTracker.Entries<AuditEvent>())
@@ -261,6 +309,12 @@ public sealed class ProductPriceListDbContext(DbContextOptions<ProductPriceListD
                 string[] allowed = entry.Entity switch
                 {
                     PriceListRow => [nameof(PriceListRow.Name), nameof(PriceListRow.UpdatedAtUtc)],
+                    // SAT-D134: only the item type and the update facts move (its version is the token).
+                    ProductItemTypeRow =>
+                    [
+                        nameof(ProductItemTypeRow.ItemType), nameof(ProductItemTypeRow.UpdatedAtUtc),
+                        nameof(ProductItemTypeRow.UpdatedBy),
+                    ],
                     PriceListVersionRow when (int)entry.OriginalValues[nameof(PriceListVersionRow.State)]! == 1 =>
                     [
                         nameof(PriceListVersionRow.ValidFrom), nameof(PriceListVersionRow.ValidThrough), nameof(PriceListVersionRow.State),

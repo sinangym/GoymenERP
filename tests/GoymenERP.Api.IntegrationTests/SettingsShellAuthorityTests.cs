@@ -18,8 +18,9 @@ using GoymenERP.Modules.Settings.Infrastructure.Shell;
 namespace GoymenERP.Api.IntegrationTests;
 
 /// <summary>
-/// SAT-D61…D70: the Settings 1.0 provider (the discount limit screen) joins the full normal host as its last module, with
-/// one capability on the one non-Critical, company-wide limit name.
+/// SAT-D61…D70: the Settings provider (the discount limit screen) joins the full normal host as its last module, with
+/// one capability on the one non-Critical, company-wide limit name; MOD-03 (Settings 1.1) adds the tax master screen on its
+/// own non-Critical, company-wide name.
 /// </summary>
 public sealed class SettingsShellAuthorityTests
 {
@@ -45,7 +46,7 @@ public sealed class SettingsShellAuthorityTests
         var actual = ShellCapabilityRegistry.ComputeCandidateRevision(providers);
 
         Assert.True(string.Equals(
-                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV10,
+                ShellCapabilityRegistryAuthorities.FullNormalHostWithProductPriceListsSalesQuoteExpiryApprovalAndSettingsV11,
                 actual,
                 StringComparison.Ordinal),
             $"Settings normal-host authority drifted. Actual: {actual}");
@@ -54,7 +55,8 @@ public sealed class SettingsShellAuthorityTests
     [Fact]
     public void The_screen_stands_on_the_one_limit_name_company_wide_in_one_company()
     {
-        var declaration = Assert.Single(new SettingsShellCapabilityProvider().GetDeclarations());
+        var declaration = Assert.Single(new SettingsShellCapabilityProvider().GetDeclarations(),
+            candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.SalesDiscountLimitsCapabilityId);
 
         Assert.Equal(("settings.sales-discount-limits.manage", "/ayarlar/iskonto-limitleri", "AY-ISK-01"),
             (declaration.CapabilityId, declaration.RoutePath, declaration.ScreenId));
@@ -62,5 +64,22 @@ public sealed class SettingsShellAuthorityTests
         Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
         Assert.False(ErpPermissions.IsCritical(SettingsPermissionManifestV1.SalesDiscountLimitsManage));
+    }
+
+    [Fact]
+    public void The_tax_master_screen_stands_on_the_one_tax_master_name_company_wide_in_one_company()
+    {
+        var declarations = new SettingsShellCapabilityProvider().GetDeclarations();
+        Assert.Equal(2, declarations.Count);
+        Assert.Equal("1.1", new SettingsShellCapabilityProvider().ContractVersion);
+        var declaration = Assert.Single(declarations,
+            candidate => candidate.CapabilityId == SettingsShellCapabilityProvider.TaxMasterCapabilityId);
+
+        Assert.Equal(("settings.tax-master.manage", "/ayarlar/vergi", "AY-VRG-01"),
+            (declaration.CapabilityId, declaration.RoutePath, declaration.ScreenId));
+        Assert.Equal([SettingsTaxMasterPermissionManifestV1.TaxMasterManage], declaration.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, declaration.ScopeRequirement);
+        Assert.False(ErpPermissions.IsCritical(SettingsTaxMasterPermissionManifestV1.TaxMasterManage));
     }
 }

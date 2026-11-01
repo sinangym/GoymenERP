@@ -13,12 +13,20 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Shell;
 public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SETTINGS";
-    public const string OwnerContractVersion = "1.0";
+    public const string OwnerContractVersion = "1.1";
 
     public const string SalesDiscountLimitsCapabilityId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRouteId = "settings.sales-discount-limits.manage";
     public const string SalesDiscountLimitsRoutePath = "/ayarlar/iskonto-limitleri";
     public const string SalesDiscountLimitsScreenId = "AY-ISK-01";
+
+    // MOD-03 (SAT-D83, provider 1.1; EK19 SAT-D133…D139): the tax master screen (the default VAT and withholding per item
+    // type, the UBL-TR code lists and the VUK 232 threshold) on settings.tax-master.manage alone, company-wide, in one
+    // company; granted to no role here.
+    public const string TaxMasterCapabilityId = "settings.tax-master.manage";
+    public const string TaxMasterRouteId = "settings.tax-master.manage";
+    public const string TaxMasterRoutePath = "/ayarlar/vergi";
+    public const string TaxMasterScreenId = "AY-VRG-01";
 
     public string Owner => OwnerId;
 
@@ -35,6 +43,16 @@ public sealed class SettingsShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide,
             [SettingsPermissionManifestV1.SalesDiscountLimitsManage],
+            ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(
+            TaxMasterCapabilityId,
+            TaxMasterRouteId,
+            TaxMasterRoutePath,
+            TaxMasterScreenId,
+            ShellCapabilityRoutePrecedence.Static,
+            ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide,
+            [SettingsTaxMasterPermissionManifestV1.TaxMasterManage],
             ImplementationAvailable: true),
     ];
 }

@@ -199,6 +199,8 @@ export interface HarnessConfig {
   readonly onReactivate?: (attempt: number, body: string | null) => Response | Promise<Response>
   readonly onImportPreview?: (body: FormData) => Response | Promise<Response>
   readonly onImportApply?: (attempt: number, body: FormData) => Response | Promise<Response>
+  /** `GET/PUT /product-item-types/{id}` (SAT-D134); defaults to 403 — `product.item-type.manage` is granted to no role. */
+  readonly onItemType?: (method: string, body: string | null) => Response | Promise<Response>
 }
 
 /**
@@ -312,6 +314,9 @@ export function installFetch(config: HarnessConfig = {}) {
       // `products`; `/products?x` does not.
       if (/\/products\/[^?]+/.test(url)) return (await config.onCard?.(url)) ?? json(productCard())
       return (await config.onList?.(url)) ?? json(productPage())
+    }
+    if (url.includes('/product-item-types/')) {
+      return (await config.onItemType?.(method, body)) ?? json({}, 403)
     }
     throw new Error(`unexpected fetch: ${url}`)
   })

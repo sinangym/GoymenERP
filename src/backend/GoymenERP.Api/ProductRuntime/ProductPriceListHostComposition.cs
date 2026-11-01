@@ -34,7 +34,33 @@ public static class ProductPriceListHostComposition
         }
 
         services.TryAddScoped<IProductPriceListServiceV1, UnavailableProductPriceListService>();
+        // SAT-D134: the product item type lives in the same company-scoped context, so it is fail-closed here too (the routes
+        // answer 503 and the Settings line tax port reads "unavailable").
+        services.TryAddScoped<IProductItemTypeServiceV1, UnavailableProductItemTypeService>();
+        services.TryAddScoped<IProductItemTypeReaderV1, UnavailableProductItemTypeService>();
         return services;
+    }
+}
+
+internal sealed class UnavailableProductItemTypeService : IProductItemTypeServiceV1, IProductItemTypeReaderV1
+{
+    public Task<ProductItemTypeViewV1> GetAsync(Guid productId, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductItemTypeViewV1>(Unavailable(cancellationToken));
+
+    public Task<ProductItemTypeResultV1> SetAsync(Guid productId, SetProductItemTypeRequestV1 request,
+        ProductItemTypeCommandMetadataV1 metadata, CancellationToken cancellationToken = default) =>
+        Task.FromException<ProductItemTypeResultV1>(Unavailable(cancellationToken));
+
+    Task<ProductItemTypeReadV1> IProductItemTypeReaderV1.GetAsync(Guid productId, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(new ProductItemTypeReadV1(ProductItemTypeOutcomeV1.Unavailable, null, null));
+    }
+
+    private static ProductItemTypeException Unavailable(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return new ProductItemTypeException(StatusCodes.Status503ServiceUnavailable, ProductItemTypeProblemCodesV1.ProviderUnavailable);
     }
 }
 
