@@ -11,6 +11,8 @@ Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.7, §19.2, §27.7, §
 `docs/ui/CANONICAL_SCREEN_STATUS.csv` (PR-01…17, Q-01…06).
 
 Bu plan kodun 2026-11-01 `main` durumuna (`d7e19e4`) göre yazıldı. Biçim `SATIS_HAZIRLIK_PLANI_v1.md` ile aynıdır.
+Kararlar: **`docs/decisions/SINAN_KARARLARI_2026-11-01_URETIM.md` (URT-D1…D18)**. Eski StokERP üretim modülü
+(`sinangym/StokERP`, `PRODUCTION_FLOW.md`, `UretimServisi`) iş bilgisi ve ekran kolaylığı referansıdır (§2.4).
 
 Şerit kısaltmaları: **CL** Claude, **GP** ChatGPT (spec/kabul/golden), **SN** Sinan (karar). Seviye: K1/K2/K3
 (`GOYMEN_ERP_HIZLI_TESLIM_v4.md`).
@@ -32,8 +34,7 @@ Değişmeyenler:
   `NEEDS-SINAN` sorularıyla ilerler.
 - İnsan kapıları değişmez: grant ve rol ataması, `production.execution.enabled` bayrağının açılması, deployment,
   secret ve `OPEN-*` kapatma.
-- Bu kayıt plan dokümanındadır. `docs/decisions/` altında resmî bir `SINAN_KARARLARI_2026-11-01_URETIM.md` dosyası
-  açılması ayrı bir governance PR'ıdır (U0).
+- Kayıt: `SINAN_KARARLARI_2026-11-01_URETIM.md` §0.
 
 ---
 
@@ -43,8 +44,8 @@ Değişmeyenler:
 
 1. Beş motor (Dilme/Sarım, Soğuk Hadde, Boru/Profil, Boyama, Boy Kesme) gerçek parametre profilleriyle hesap
    yapıyor; hiçbir parametre kodda sabit değil (DEC-PRDCT-001/004, DEC-SET-001, OPEN-007).
-2. Plan durum makinesi `DURUM_MAKINELERI.md`'deki gibi çalışıyor: Taslak → Kontrolde → Onaylı → Kuyrukta → Üretimde →
-   Kısmi/Tamamlandı → İptal/Ters.
+2. Plan durum makinesi çalışıyor: Taslak → Onaylı → Kuyrukta → Üretimde → Kısmi/Tamamlandı → İptal/Ters; tek plan
+   tek emir açar, emir kısım kısım gerçekleşir (URT-D1, D2, D4).
 3. Reçete, formül, tolerans ve parametre sürümü plan onayında snapshot oluyor. Yeni sürüm geçmişi değiştirmiyor
    (DEC-PRDCT-008, AT-049).
 4. Girdi tahsisi, fiilî tüketim, çıktı etiketi ve soy ağacı Stok'ta tek kez kaydediliyor (AT-041, 042, 050).
@@ -54,10 +55,11 @@ Değişmeyenler:
 7. Kuyruk, kontrol merkezi ve takvim aynı veri kaynağını kullanıyor (§7.7).
 8. Satış (kaynak planı, bağlı üretim), Work (onaylar) ve fason akışı gerçek portlarla bağlı. Dış etkiler outbox ile
    gidiyor.
-9. PR-01…PR-17 ekranları ve Q-01…Q-04 çekirdek kalite ekranları yayında. Her ekranda yükleniyor, boş, hata, yasak,
-   çakışma ve bilinmeyen sonuç durumları var.
-10. AT-038, 039, 041…052, 061…063 gerçek SQL ve tarayıcıda geçiyor. `GOLDEN_TEST_SABLONU.csv` motorların golden
-    testleriyle eşleşiyor.
+9. Gelen ve giden fason hizmet siparişine bağlı çalışıyor (URT-D15…D17).
+10. PR-01…PR-17 ekranları yayında. Her ekranda yükleniyor, boş, hata, yasak, çakışma ve bilinmeyen sonuç durumları
+    var. Kalite ekranı ve karantina yok; yalnız ikinci kalite ayrımı var (URT-D14).
+11. AT-038, 039, 041…050, 052, 061…063 gerçek SQL ve tarayıcıda geçiyor (AT-051 URT-D14 ile kapsam dışı).
+    `GOLDEN_TEST_SABLONU.csv` motorların ve StokERP'nin golden örnekleriyle eşleşiyor.
 
 ---
 
@@ -89,9 +91,36 @@ Değişmeyenler:
 
 Hammadde girdi tahsisi, soy ağacı kenarı, kuyruk/takvim/kontrol merkezi, hat/kalıp/kapasite masterı, reçete masterı,
 Soğuk Hadde/Boru/Boya için kayıtlı spec, plan iptali, olgu düzeltmesi, outbox olayı, Satış bağlantısı, Work onay
-adaptörü, fason akışı, kalite/karantina, raporlar. PR-01, 06, 07, 08, 10, 11, 12, 16, 17 ve Q-01…06 ekranları
-yok. Üretim ekran spec'i yok (`docs/ui/screens/` altında üretim klasörü yok; hepsi
+adaptörü, fason akışı, raporlar. PR-01, 06, 07, 08, 10, 11, 12, 16, 17 ekranları yok. Üretim ekran spec'i yok (`docs/ui/screens/` altında üretim klasörü yok; hepsi
 `DECISION_ONLY_REFERENCE_MISSING`).
+
+### 2.4 StokERP karşılaştırması
+
+StokERP'nin üretim modülü Göymen ERP'de istenen akışa çok yakındır: plan → üretime al → kısım kısım gerçekleştir →
+iptal (ters kayıt). Beş form türü (Boy Kesme, Dilme, Boru/Profil, Boyama, Soğuk Hadde), fire cinsleri, ikinci kalite,
+kg oranlı soy ağacı ve hat bazlı kuyruk orada vardı. Formül golden örnekleri iki sistemde aynıdır (master §28 bu
+örneklerden türetildi).
+
+**Alınacaklar (ekran kolaylığı ve iş bilgisi):**
+
+| StokERP | Göymen karşılığı |
+|---|---|
+| `frmUretimFormlari` "Aktif Üretim Kuyruğu": proses sekmeleri (sayılı), sıra yukarı/aşağı, Üretime Al, Gerçekleştir, Plan İptal, PDF | UI-10 kuyruk ekranının düzeni; üretim menüsünün açılış sayfası |
+| `frmPlanlananIslemSec`: stok satırından 5 büyük proses düğmesi | UI-03 ortak plan kabuğu girişi (AT-063 zaten stok satırından açılıyor) |
+| Plan formlarında canlı kalan kg/m/mm, "Kalan tipi" (Bakiye/Hurda/Çapak/Fire) | UI-04…08; kalan tipi ilgili çıktı sınıfına öneri olur |
+| `frmUretimGerceklestir`: plandan önceden dolu hammadde/ürün/fire satırları, "+ Hammadde / + Ürün / + Fire", canlı denge, onay özeti | UI-14 (Hızlı Tamamla = plandan dolu satırlar) |
+| Fire cinsleri masterı (Kenar firesi, Çapak, Talaş, Hurda, 2. kalite…) | Ayarlar fire cinsi listesi (URT-D8) |
+| `ProfilPaketStandartlari` (profil ölçüsü → paket içi adet) | Ürün/paket masterından birim kg ve paket önceliği (MOD-02) |
+| Kg oranlı soy ağacı (`UretimEtiketBaglari`: girdi × çıktı, pay %) | API-22 soy ağacı kenarı |
+| Süre sapması (fiilî − plan dakika), "Riskli / Geç kaldı" kuyruk durumları | API-31/34, UI-01 |
+| Stoktan bağımsız "Hesap Aracı" (5 sekme, PDF) | Mevcut canlı önizleme ucu (`plans/preview`) üzerinde kayıtsız hesap ekranı (UI-21) |
+| Golden testler (boy kesme 18.545,625 kg; dilme 1320 mm; boru 200 dk; boya 76,8 L; hadde 1220,807 m; denge 9.500 / 5.700–3.800 / 3,333–3,333–3,334) | TEK-10 golden kataloğu |
+
+**Alınmayacaklar (StokERP'nin hataları):** ürün kg'ının sessizce ezilmesi (URT-D5 ile kaldırıldı); fire satırının
+stok görünümünde her zaman + sayılması ve hammadde etiketine yazılması; tek gerçekleşme iptalinin bütün formu iptal
+etmesi; gerçekleşme transaction'ı içinde ALTER TABLE; kodda sabit 08:00/480 dk, 7,85, 1,15/1,10; "2"+"kalite" adından
+stok kararı; tek etiket = tek aktif plan bloğu (URT-D3 ile kaldırıldı); %5 fire eşiğinin yalnız log yazması (URT-D7 ile
+onaya bağlandı); müşterinin serbest metin taşınması (URT-D13 ile sipariş bağı).
 
 ---
 
@@ -144,8 +173,10 @@ ve sözleşme testine eklenir. Satış'taki komut iskeleti (`SalesDraftService.C
 
 | ID | Uç | Amaç | Yetki | Karar | Sev. |
 |---|---|---|---|---|---|
-| API-10 | `POST plans/{id}/submission` · `…/rejection` | Taslak → Kontrolde → Onaylı/Red. Hazırlayan ≠ onaylayan | mevcut `plans.write` / `plans.approve` | DURUM_MAKINELERI | K3 |
-| API-11 | `POST plans/{id}/cancellation` | İptal (gerekçe zorunlu); emir açılmış planda red veya ters zinciri | `manufacturing.plans.cancel` (yeni) | Silme yerine iptal | K3 |
+| API-10 | `POST plans/{id}/rejection` | Onay yerine red (gerekçeli; plan Taslak'a döner). Ayrı "Kontrolde" adımı yok; hazırlayan ≠ onaylayan mevcut onayda zorlanır | mevcut `plans.approve` | URT-D2 | K3 |
+| API-11 | `POST plans/{id}/cancellation` | İptal (gerekçe zorunlu); emir açılmış planda red veya ters zinciri; tahsis serbest kalır | `manufacturing.plans.cancel` (yeni) | Silme yerine iptal | K3 |
+| API-15 | Plan ↔ emir 1:1 | Onaylı plandan ikinci emir açma reddi (`manufacturing_plan_order_exists`) | mevcut | URT-D1 | K3 |
+| API-16 | Plan satırı ↔ satış sipariş satırı bağı (isteğe bağlı) | Bağlı satırın müşteri ve sipariş referansı snapshot'lanır | mevcut `plans.write` | URT-D13 | K3 |
 | API-12 | Soğuk Hadde, Boru/Profil, Boyama spec'leri (`PlanColdRollLines`, `PlanTubeLines`, `PlanPaintLines`) plan kaydı ve revizyonunda | Bugün yalnız Dilme ve Boy Kesme spec'i kaydediliyor | mevcut | DEC-PRDCT-001 | K3 (migration) |
 | API-13 | `GET plans/{id}/revisions/{rev}/diff` | Revizyon farkı (PR-09) | `plans.read` | – | K2 |
 | API-14 | `GET plans/{id}/readiness` | Kaynak hazır mı: tahsis, parametre, tolerans, reçete; hazır değilse sebepler | `plans.read` | AT-041 | K2 |
@@ -154,14 +185,15 @@ ve sözleşme testine eklenir. Satış'taki komut iskeleti (`SalesDraftService.C
 
 | ID | Uç | Amaç | Yetki | Karar | Sev. |
 |---|---|---|---|---|---|
-| API-20 | `POST plans/{id}/input-allocations` · `DELETE`→ ters kayıt | Plan girdisini Stok'ta "üretim girdi tahsisi" olarak tut (merkezi tahsis motoru; ayrı rezerv tablosu yok) | `manufacturing.plans.allocate` (yeni) | DEC-STK-003/006, AT-041 | K3 |
+| API-20 | `POST plans/{id}/input-allocations` · `DELETE`→ ters kayıt | Plan girdisini Stok'ta "üretim girdi tahsisi" olarak tut (merkezi tahsis motoru; ayrı rezerv tablosu yok); aynı etiket miktarla birden çok plana bölünebilir, toplam serbest miktarı aşamaz | `manufacturing.plans.allocate` (yeni) | DEC-STK-003/006, AT-041, URT-D3 | K3 |
 | API-21 | Girdi çıkışında tahsis kontrolü | Tüketim tahsisi ve fiziki mevcudu aşamaz | mevcut | AT-042 | K3 |
 | API-22 | Çıktı beyanında soy ağacı kenarı | Her çıktı etiketi tüm girdi etiketlerine bağlanır (Stok'taki `IInventoryLabelGenealogyWriterV1`) | mevcut | DEC-PRDCT-003, AT-050 | K3 |
 | API-23 | `POST orders/{id}/start` | Başlatma: kaynak ve ön koşul kontrolü; kısmi hammaddeyle başlama (asgari parti yok, plan override; eksik kaynak uyarısı, yetkili onay, üretilebilir süre ve tahmini bitiş) | `manufacturing.orders.start` (yeni) | DEC-PRDCT-002, OPEN-006 | K3 |
 | API-24 | `POST orders/{id}/input-substitutions` | Plan sürerken hammadde ekle/değiştir: olay, sebep, yeniden denge (PR-13) | `facts.record` | §7.7 | K3 |
 | API-25 | `POST orders/{id}/facts/{factId}/correction` | Düzeltme: önceki olgu silinmez; ters olgu + yeni olgu zinciri, Stok'ta karşı hareket | `manufacturing.facts.correct` (yeni) | AT-052 | K3 |
-| API-26 | `POST orders/{id}/quick-completion` | "Hızlı Tamamla": plan değerleriyle olguları tek komutta önerir, kullanıcı onaylar | `facts.record` | §7.7 | K3 |
-| API-27 | Çıktı sınıfına göre etiket durumu (ikinci kalite, artık, hurda, WIP kendi kalite/üretim durumuyla) | Satılabilirlik ve depo ayrı | mevcut | DEC-PRDCT-007 | K3 |
+| API-26 | `POST orders/{id}/quick-completion` | "Hızlı Tamamla": plan değerleriyle olguları önerir (StokERP'deki önceden dolu satırlar); ana ürün kg'ı "hammadde − fire − 2. kalite" önerisidir, kullanıcı fiilî tartımı girer ve sistem değiştirmez | `facts.record` | §7.7, URT-D5 | K3 |
+| API-27 | Çıktı sınıfına göre etiket: ikinci kalite ayrı etiket; hurda satılabilir stok etiketi; talaş/proses kaybı stok dışı; fire cinsi Ayarlar listesinden | Satılabilirlik ve depo ayrı | mevcut | DEC-PRDCT-007, URT-D8, URT-D14 | K3 |
+| API-29 | Kapanışta yüksek fire onayı | Fire % proses eşiğini (varsayılan %5) aşarsa Üretim müdürü onayı; mevcut tolerans dışı kapanış istisnasıyla aynı yol | mevcut `orders.close-exception.approve` | URT-D7 | K3 |
 | API-28 | `GET orders/{id}/lineage` | Emirden girdi/çıktı soy ağacı okuması | `orders.read` | AT-050 | K2 |
 
 ### 5.4 Kuyruk, kapasite ve zaman kayıtları
@@ -173,6 +205,15 @@ ve sözleşme testine eklenir. Satış'taki komut iskeleti (`SalesDraftService.C
 | API-32 | `GET schedule?from&to&workCenter` | Takvim/Gantt; kuyrukla aynı kaynak | `manufacturing.queue.read` | §7.7 | K2 |
 | API-33 | `POST orders/{id}/time-records` | Kurulum, duruş, çalışma, bakım ham olayları | `manufacturing.time-records.record` (yeni) | No 105, ERTELENEN (ham olay çekirdekte) | K3 |
 | API-34 | `GET control-center` | Kontrol Merkezi: darboğaz, istisna, gecikme | `orders.read` | §7.7 | K2 |
+
+### 5.4a Fason (URT-D15…D17)
+
+| ID | Uç | Amaç | Yetki | Karar | Sev. |
+|---|---|---|---|---|---|
+| API-35 | Satış: fason hizmet siparişi (mevcut sipariş üzerinde hizmet satırı tipi) | Gelen fason: müşteri malı müşteri adına stokta; plan siparişe bağlanır; çıktı, fire ve hurda müşteriye ait kalır; fatura hizmet bedeli | `sales.orders.*` (mevcut) | URT-D16, SAT-D110 | K3 |
+| API-36 | Üretim: müşteri malıyla plan (mevcut müşteri malı guard'ı) + hizmet sipariş bağı zorunlu | Müşteri malı ancak bağlı fason hizmet siparişiyle planlanır | mevcut | URT-D15/16 | K3 |
+| API-37 | Satın Alma: fason hizmet alış siparişi | Giden fason: malzeme fason lokasyonuna transferle gider, mülkiyet bizde kalır | `purchasing.orders.*` (mevcut) | URT-D17, DEC-STK-008 | K3 |
+| API-38 | `POST subcontract-returns` (Üretim) | Giden fasonun dönüşü: çıktı + fire, gönderilen kg ile URT-D6 toleransıyla dengelenir; soy ağacı kurulur | `manufacturing.subcontract.record` (yeni) | URT-D17 | K3 |
 
 ### 5.5 Raporlar
 
@@ -194,9 +235,9 @@ ve sözleşme testine eklenir. Satış'taki komut iskeleti (`SalesDraftService.C
 | MOD-04 | Satış | Kaynak planı (sipariş satırı → üretim planı) ve iptal/zorla kapatma için bağlı üretim okuması (bugün "kaynak yok") | Satış API-11, `ISalesOrderLinkedSupplyReadPortV1` (Üretim tarafı) | K3 |
 | MOD-05 | Work | Plan onayı, tolerans dışı kapanış, kısmi başlatma onayı için onay kutusu adaptörleri | Work native approval sözleşmesi | K2 |
 | MOD-06 | Organizasyon | Hat/kalıp/vardiya/kapasite (API-30) | `IOrganizationWorkCenterPlanningReferenceV1` v2 | K3 |
-| MOD-07 | Satın Alma / Lojistik | Dış fason: P-xx fason siparişinden başlar, iki bacaklı transfer, fason lokasyondan doğrudan satış sevki | DEC-STK-008, No 71/73 | K3 |
+| MOD-07 | Satış / Satın Alma / Stok | İki yönlü fason, her ikisi hizmet siparişine bağlı: gelen fason Satış hizmet siparişi + müşteri malı; giden fason Satın Alma hizmet siparişi + iki bacaklı transfer, fason lokasyondan doğrudan satış sevki | DEC-STK-008, No 71/73, URT-D15…D17 | K3 |
 | MOD-08 | Platform | Outbox: `manufacturing.output.declared.v1`, `manufacturing.order.closed.v1`, `manufacturing.plan.approved.v1` | ERP-000F | K3 |
-| MOD-09 | Kalite | Karantina bloğu, kalite kararı → yeniden işlemeyi Üretim yürütür (No 70) | W3-KALITE | K3 |
+| MOD-09 | Kalite | **Kapsam dışı (URT-D14):** üretimde karantina yok; yalnız ikinci kalite ayrımı (API-27) | – | – |
 | MOD-10 | Belgeler | Emir/plan için belge sekmesi, iş emri PDF'i (Satış sipariş PDF'i deseni) | mevcut Documents owner-link | K2 |
 | MOD-11 | Kimlik | Kişi adları (TEK-04) | `IUserDirectoryReadPortV1` (hazır) | K2 |
 
@@ -214,7 +255,7 @@ alınır ve `CANONICAL_SCREEN_STATUS.csv` güncellenir.
 | UI-03 | PR-03 Ortak plan kabuğu (bağlam → kaynak → hesap → çıktı → denge → onay) | Kısmen (`PlanCreatePage`) | K2 | API-03, API-14 |
 | UI-04…08 | PR-04 Boy Kesme, PR-05 Dilme/Sarım, PR-06 Boru/Profil, PR-07 Boyama, PR-08 Soğuk Hadde planlayıcıları | 04/05 kısmen; 06/07/08 yok | K2 | API-01, API-12 |
 | UI-09 | PR-09 Plan detayı / revizyon farkı | Kısmen (geçmiş var, fark yok) | K2 | API-13 |
-| UI-10 | PR-10 Aktif Üretim Kuyruğu | Yok | K2 | API-31 |
+| UI-10 | PR-10 Aktif Üretim Kuyruğu (StokERP düzeni: proses sekmeleri, sıra yukarı/aşağı, Üretime Al, Gerçekleştir; menünün açılış sayfası) | Yok | K2 | API-31 |
 | UI-11 | PR-11 Takvim/Gantt | Yok | K2 | API-32 |
 | UI-12 | PR-12 Başlatma | Yok | K2 | API-23 |
 | UI-13 | PR-13 Hammadde ekle/değiştir | Yok | K2 | API-24 |
@@ -223,8 +264,9 @@ alınır ve `CANONICAL_SCREEN_STATUS.csv` güncellenir.
 | UI-16 | PR-16 Reçete/Formül/Tolerans masterı | Yok | K2 | API-01, 02, 04 |
 | UI-17 | PR-17 Hat/Kalıp/Kapasite | Yok | K2 | API-30 |
 | UI-18 | Emir 360 sekmeleri: Özet, Girdiler, Çıktılar, Denge, Soy ağacı, Zaman, Belgeler | Tek sayfa | K2 | API-28, MOD-10 |
-| UI-19 | Durum eksenleri kartı (plan, emir, kalite, stok etkisi) | Yalnız Açık/Kapalı rozeti | K2 | API-10 |
-| UI-20 | Q-01…Q-04 Giriş/Proses/Nihai kalite, Karantina | Yok | K2 | MOD-09 |
+| UI-19 | Durum eksenleri kartı (plan, emir, stok etkisi, onay) | Yalnız Açık/Kapalı rozeti | K2 | API-10 |
+| UI-20 | Fason: gelen fason (sipariş → müşteri malı → plan), giden fason (hizmet alış → gönderim → dönüş dengesi) | Yok | K2 | API-35…38 |
+| UI-21 | Stoktan bağımsız Hesap Aracı (StokERP'deki 5 sekmeli araç; kayıt yok, PDF) | Yok | K2 | mevcut `plans/preview` |
 
 Personalar (No 90, 105; grant değildir): Teknik ofis/Üretim planlama reçete ve plan hazırlar, kuyruğu uygular; Üretim
 müdürü reçeteyi, planı ve tolerans dışı kapanışı onaylar; Hat operatörü/Vardiya amiri olgu ve zaman kaydı girer.
@@ -235,21 +277,26 @@ müdürü reçeteyi, planı ve tolerans dışı kapanışı onaylar; Hat operat�
 
 ---
 
-## 8. Karar bekleyen sorular (NEEDS-SINAN)
+## 8. Kararlar (cevaplandı)
 
-Kod bu sorular için yapılandırılabilir ve fail-closed yazılır; cevap gelene kadar değer seçilmez.
+2026-11-01'de bütün sorular Sinan'a seçenekli olarak soruldu ve cevaplandı:
+`SINAN_KARARLARI_2026-11-01_URETIM.md`.
 
-| No | Soru | İlgili | Engellediği |
-|---|---|---|---|
-| N-01 | Parametre ilk değerleri ve veri sahibi: yoğunluk, hat hızları, kerf, net en/kenar kaybı, iç/maks dış çap, boya katı madde ve fire katsayısı. Göymen verisi mi, web kaynağı + golden mı? | OPEN-007 | Motorların canlı hesabı |
-| N-02 | Hat başına tolerans ilk profilleri: ±%2 varsayılan her hat için yayınlansın mı? | OPEN-005 | Kapanış |
-| N-03 | Bir onaylı plandan birden fazla emir açılabilir mi? | #66 5728934213 | API-10, UI-03 |
-| N-04 | "Kontrolde" adımı her plan için zorunlu mu, yoksa tutar/proses eşiğine bağlı mı? | DURUM_MAKINELERI | API-10 |
-| N-05 | İkinci kalite, geri kazanılabilir artık ve hurdanın stok/depo etkisi | Master §19.2 #12, DEC-PRDCT-007 | API-27 |
-| N-06 | Yuvarlama politikası §28.1: No 83/85 dışındaki aşamalar (WND-010 kırılımı, WND-008 kg dalı, BAL-005 dağıtım) | OPEN-007 | Motor sürüm 2 |
-| N-07 | Soğuk haddede giriş ve hedef ürünün aynı çelik kalitesinde olması şart mı? | README MFG-7 | API-12 |
-| N-08 | Kalite çekirdeği (Q-01…04) Üretim'in ilk sürümüne mi, sonraki dalgaya mı? | W3-KALITE | U6 |
-| N-09 | Şerit kaydının (§0) `docs/decisions/` altına resmî karar dosyası olarak işlenmesi | §0 | Yok (governance) |
+| No | Soru | Cevap |
+|---|---|---|
+| N-01 | Parametre ilk değerleri | URT-D9 (StokERP değerleri: 7,85; boya 20 m/dk, 80 µm, %55, 1,10, eşzamanlı 3), URT-D10 (kerf makine profilinde 0 mm) |
+| N-02 | Tolerans ilk profilleri | URT-D6 (hat başına ±%2), URT-D7 (%5 üstü fire onay ister) |
+| N-03 | Bir plandan birden çok emir | URT-D1 (tek plan = tek emir) |
+| N-04 | "Kontrolde" adımı | URT-D2 (yok; tek onay, hazırlayan ≠ onaylayan) |
+| N-05 | İkinci kalite / artık / hurda stok etkisi | URT-D8 (hurda etiketle stoğa), URT-D14 (ikinci kalite ayrı etiket) |
+| N-06 | Yuvarlama | URT-D12 (sonda; kg 3, birim kg 4 ondalık, AwayFromZero; fark son satıra) |
+| N-07 | Hadde çelik kalitesi | URT-D18 (uyarı, engel değil) |
+| N-08 | Kalite çekirdeği | URT-D14 (karantina yok; yalnız ikinci kalite ayrımı) |
+| N-09 | Şerit kaydı | Karar dosyası §0 |
+| – | Ek: aynı etiket, kısmi gerçekleşme, ürün kg, satış bağı, fason | URT-D3, D4, D5, D13, D15…D17 |
+
+Kalan açık noktalar (kod yapılandırılabilir ve fail-closed): dilme/boru hat hızlarının hat bazlı varsayılanları,
+bobin iç/maks dış çap ve net en/kenar kaybı değerleri (planda girilir), kerf'in gerçek makine değerleri.
 
 ---
 
@@ -275,13 +322,13 @@ Kopyalama yerine önce ortak katmana çıkarılır (TEK-05, 06, 07); Üretim ilk
 
 | Dalga | İçerik | Ön şart |
 |---|---|---|
-| **U0** | Bu plan; §0 karar dosyası (N-09); FZL-01…04; TEK-01…03, TEK-08, TEK-10; TEK-05 ve TEK-06 (ortak altyapı) | – |
-| **U1** | API-01/02 + MOD-01 (parametre ve tolerans profili), API-03 (onay snapshot'ı), API-04 + MOD-02 (reçete), UI-16; TEK-11 karar uyumu; FZL-05 | N-01, N-02 cevabı (değer olmadan da yapı kurulur, fail-closed) |
-| **U2** | API-10…14 (plan yaşam döngüsü, üç yeni spec, fark, hazırlık), UI-03…09, UI-19, TEK-04, PRS-01 | U1 |
-| **U3** | API-20…28 + MOD-03 (tahsis, soy ağacı, başlatma, ikame, düzeltme, hızlı tamamla, etiket durumu), UI-12…14, UI-18, MOD-08 (outbox) | U2, ERP-000F |
+| **U0** | Bu plan ve karar dosyası (URT-D1…D18); `DURUM_MAKINELERI.md`, `ERTELENEN_KAPSAM.md`, W3-KALITE ve `ACIK_KARARLAR.md` (OPEN-005/007) için dar belge PR'ları; FZL-01…04; TEK-01…03, TEK-08, TEK-10; TEK-05 ve TEK-06 (ortak altyapı) | – |
+| **U1** | API-01/02 + MOD-01 (parametre ve tolerans profili), API-03 (onay snapshot'ı), API-04 + MOD-02 (reçete), UI-16; TEK-11 karar uyumu; FZL-05 | – (URT-D6, D7, D9…D12 değerleri ilk profil olarak yayımlanır) |
+| **U2** | API-10…16 (plan yaşam döngüsü, 1:1 emir, satış bağı, üç yeni spec, fark, hazırlık), UI-03…09, UI-19, TEK-04, PRS-01 | U1 |
+| **U3** | API-20…29 + MOD-03 (tahsis, soy ağacı, başlatma, ikame, düzeltme, hızlı tamamla, etiket durumu), UI-12…14, UI-18, MOD-08 (outbox) | U2, ERP-000F |
 | **U4** | API-30…34 + MOD-06 (hat/kapasite, kuyruk, takvim, zaman kayıtları, kontrol merkezi), UI-01, UI-10, UI-11, UI-17 | U3 |
-| **U5** | MOD-04 (Satış kaynak planı ve bağlı üretim), MOD-05 (Work), MOD-07 (fason), MOD-10 (belgeler), API-40…42 + UI-15 | U3 |
-| **U6** | MOD-09 + UI-20 (kalite/karantina, AT-051, yeniden işleme), TEK-07, TEK-09, kabul taraması AT-038…063; `production.execution.enabled` açılışı insan kararıdır | U4, U5, N-08 |
+| **U5** | MOD-04 (Satış kaynak planı ve bağlı üretim), MOD-07 + API-35…38 + UI-20 (iki yönlü fason, hizmet siparişine bağlı), MOD-05 (Work), MOD-10 (belgeler), API-40…42 + UI-15, UI-21 (hesap aracı) | U3 |
+| **U6** | TEK-07, TEK-09, StokERP ile eski–yeni golden karşılaştırması, kabul taraması AT-038…050, 052, 061…063; `production.execution.enabled` açılışı insan kararıdır | U4, U5 |
 
 ---
 
@@ -306,6 +353,6 @@ Bu bölüm iş takibidir; karar değildir.
 
 | İş | PR | Durum |
 |---|---|---|
-| Bu plan | – | taslak PR |
+| Bu plan + karar dosyası URT-D1…D18 | #876 | taslak PR |
 
-Sıradaki işler: U0 (FZL-01…04, TEK-01…03, TEK-05/06), N-01…N-09 soruları Issue #66'ya.
+Sıradaki işler: U0 (FZL-01…04, TEK-01…03, TEK-05/06, belge PR'ları).
