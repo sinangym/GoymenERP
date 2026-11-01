@@ -150,12 +150,18 @@ internal sealed class SalesDraftFixtureStore(SalesDbContext dbContext, ICompanyC
         return new SalesDraftFixtureOutcome(draft.Id, draft.Version, Added: true);
     }
 
+    /// <summary>The SENTETIK fixture's point-due days (test data of the gated browser fixture, not a policy).</summary>
+    private const int FixtureDueDays = 30;
+
     /// <summary>The domain builds and validates the draft exactly as a real create would; only the owner snapshots are synthetic.</summary>
     private static SalesOrderDraft Build(SalesDraftFixtureRequest request)
     {
         var owners = request.Owners;
+        // SAT-D123 (EK18): the approval journeys approve these drafts, so the isolated fixture carries a SENTETIK point due
+        // (order date + 30 days) — acceptance data of the gated fixture only, never a product default (SAT-D127).
         var header = new SalesDraftHeader(owners.PartyId, owners.CompanyAccountId, owners.CurrencyId, request.BusinessDate,
-            DeliveryAddress: Reference(owners.DeliveryAddress), Contact: Reference(owners.Contact));
+            DeliveryAddress: Reference(owners.DeliveryAddress), Contact: Reference(owners.Contact),
+            DueTerms: SalesDueTerms.Create([new SalesDueInstalment(1, SalesDueBasis.OrderDate, FixtureDueDays, "100")]));
         var money = new MoneyProfileSnapshot(request.CompanyId, owners.CurrencyId, SalesOrderDraft.MoneyOperation, owners.MoneyProfileId,
             SnapshotVersion, request.BusinessDate, IsActive: true, owners.EffectiveFrom, EffectiveThrough: null, MoneyScale);
         var draft = SalesOrderDraft.Create(request.DraftId, request.CompanyId, request.DocumentNo, header, money, request.At);

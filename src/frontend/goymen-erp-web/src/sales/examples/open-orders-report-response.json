@@ -36,7 +36,8 @@
           "remainingQuantity": "250.5",
           "completedWithinTolerance": false,
           "awaitingAcceptanceQuantity": "0",
-          "awaitingAcceptanceRevision": null
+          "awaitingAcceptanceRevision": null,
+          "headerRevisionPending": false
         },
         {
           "orderId": "c3c3c3c3-0000-4000-8000-000000000002",
@@ -51,7 +52,8 @@
           "remainingQuantity": "0",
           "completedWithinTolerance": true,
           "awaitingAcceptanceQuantity": "500",
-          "awaitingAcceptanceRevision": "Rev.1"
+          "awaitingAcceptanceRevision": "Rev.1",
+          "headerRevisionPending": false
         },
         {
           "orderId": "c3c3c3c3-0000-4000-8000-000000000005",
@@ -66,7 +68,8 @@
           "remainingQuantity": "0",
           "completedWithinTolerance": false,
           "awaitingAcceptanceQuantity": "300",
-          "awaitingAcceptanceRevision": "Rev.0"
+          "awaitingAcceptanceRevision": "Rev.0",
+          "headerRevisionPending": true
         }
       ],
       "unmeasured": [
@@ -121,7 +124,8 @@
           "remainingQuantity": "10",
           "completedWithinTolerance": false,
           "awaitingAcceptanceQuantity": "0",
-          "awaitingAcceptanceRevision": null
+          "awaitingAcceptanceRevision": null,
+          "headerRevisionPending": false
         }
       ],
       "unmeasured": []

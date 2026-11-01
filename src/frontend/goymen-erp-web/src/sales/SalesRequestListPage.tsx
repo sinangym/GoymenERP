@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { fetchRequestPage } from './poolApi'
 import { REQUEST_STATE, type RequestState, type SalesRequestSummary } from './poolContract'
-import { POOL_TEXT, REQUEST_STATE_TEXT } from './poolText'
+import { POOL_SUBJECT_TEXT, POOL_TEXT, REQUEST_STATE_TEXT } from './poolText'
 import { SALES_POOL_ROUTE, quoteCreatePathFor, salesRequestScreenPath, useSalesPoolCapability } from './poolCapabilities'
 import { PoolContinuation, PoolPartyCell, PoolTabs } from './SalesPoolShared'
 import { usePoolPages } from './usePoolPages'
@@ -112,7 +112,7 @@ function RequestList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="pool-requests-heading">
         {header}
-        <StateBlock state={list.firstState ?? { kind: 'initial-loading' }} subject="satış talepleri" onRetry={list.retryFirst} />
+        <StateBlock state={list.firstState ?? { kind: 'initial-loading' }} subject={POOL_SUBJECT_TEXT.requests} onRetry={list.retryFirst} />
       </section>
     )
   }
@@ -120,7 +120,7 @@ function RequestList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="pool-requests-heading">
         {header}
-        <StateBlock state={{ kind: filter === null ? 'empty-no-data' : 'empty-filtered' }} subject="satış talepleri" />
+        <StateBlock state={{ kind: filter === null ? 'empty-no-data' : 'empty-filtered' }} subject={POOL_SUBJECT_TEXT.requests} />
       </section>
     )
   }

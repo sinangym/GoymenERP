@@ -162,6 +162,12 @@ public static class SalesDraftProblemCodesV1
     public const string RevisionImpactUnavailable = "revision_impact_unavailable";
 
     /// <summary>
+    /// 503 (API-04): the Identity user directory (the sales owner's display and eligibility, SAT-D27) is not composed, cannot
+    /// answer, or cannot confirm the person within one bounded search. The sales owner is not changed on an unverified person.
+    /// </summary>
+    public const string SalesOwnerUnavailable = "sales_owner_provider_unavailable";
+
+    /// <summary>
     /// 409 (partial delivery remainder change, contract delta): the change would reduce a line below what an ACTIVE Inventory
     /// allocation still reserves for it (kg: the active kilograms above new quantity − shipped; a count line: any active
     /// allocation, kilograms and pieces are never compared). Sales releases nothing: the user releases or resizes the allocation in
@@ -239,5 +245,9 @@ public sealed record SalesDraftServiceBindings(
     string? DiscountExceptionApprovePermission = SalesPermissionManifestV1.OrdersDiscountExceptionApprove,
     // SAT-D24 / SAT-D44: the expired-quote conversion approval name (a grant, never implied here).
     string? QuoteExpiredConversionApprovePermission = SalesPermissionManifestV1.QuotesExpiredConversionApprove,
+    // API-04: the header revision's own name (customer, currency, due terms, sales owner, delivery references).
+    string? HeaderPermission = SalesPermissionManifestV1.OrdersHeaderWrite,
+    // SAT-D27 (1): the name a person must hold to be an order's sales owner (the sales-owner picker's eligibility, decided).
+    string? SalesOwnerEligibilityPermission = SalesPermissionManifestV1.DraftsCreate,
     // API-41 / API-42: the Sales reports' own read name (a report's amount additionally needs the price read).
     string? ReportReadPermission = SalesPermissionManifestV1.ReportsRead);

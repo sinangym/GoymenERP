@@ -29,8 +29,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // UI-60 / UI-61 (1.9): the S-07 dispatch list and the S-08 invoice candidates.
         // SAT-D24 / SAT-D44 merged over 1.9 (1.10): the expired-quote conversion approval control of the quote detail.
         // UI-80 (1.11): the Sales reports screen.
-        Assert.Equal(("SALES", "1.11"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(24, declarations.Count);
+        // API-04 (1.12, merged after 1.11): the header-revision control of the detail.
+        Assert.Equal(("SALES", "1.12"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(25, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -108,6 +109,14 @@ public sealed class SalesShellCapabilityProviderContractTests
             (quantity.RouteId, quantity.RoutePath, quantity.ScreenId, quantity.RoutePrecedence, quantity.ContextRequirement, quantity.ScopeRequirement));
         Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, quantity.ParentCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersQuantityWrite], quantity.RequiredPermissions);
+
+        // API-04: the header revision is a control of the detail — the read plus its own name.
+        var header = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.HeaderWriteCapabilityId);
+        Assert.Equal("sales.orders.header.write", header.CapabilityId);
+        Assert.Equal((detail.RouteId, detail.RoutePath, detail.ScreenId, detail.RoutePrecedence, detail.ContextRequirement, detail.ScopeRequirement),
+            (header.RouteId, header.RoutePath, header.ScreenId, header.RoutePrecedence, header.ContextRequirement, header.ScopeRequirement));
+        Assert.Equal(SalesShellCapabilityProvider.DetailCapabilityId, header.ParentCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.DraftsRead, SalesPermissionManifestV1.OrdersHeaderWrite], header.RequiredPermissions);
 
         // No 30 / SAT-D12: the force-close preview and command are a control of the detail — the read plus its own name, never
         // the cancel name.
@@ -282,6 +291,8 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.orders.cancel", SalesPermissionManifestV1.OrdersCancel);
         // DEC-SAL-002: the SEPARATE quantity-revision name; no other Sales name confers it and it confers no approval.
         Assert.Equal("sales.orders.quantity.write", SalesPermissionManifestV1.OrdersQuantityWrite);
+        // API-04: the SEPARATE header-revision name (the plan's literal); no other Sales name confers it and it confers no approval.
+        Assert.Equal("sales.orders.header.write", SalesPermissionManifestV1.OrdersHeaderWrite);
         Assert.Equal("sales.orders.customer-acceptance.record", SalesPermissionManifestV1.OrdersCustomerAcceptanceRecord);
         // No 30: the SEPARATE force-close name, the decision's own literal, distinct from the cancel name.
         Assert.Equal("sales.orders.force-close", SalesPermissionManifestV1.OrdersForceClose);
@@ -301,7 +312,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("sales.invoices.read", SalesPermissionManifestV1.InvoicesRead);
         // API-41 / API-42 (plan §3.4, UI-80): the reports' own read name; no order, quote, invoice or price name confers it.
         Assert.Equal("sales.reports.read", SalesPermissionManifestV1.ReportsRead);
-        Assert.Equal((17, 20), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
+        Assert.Equal((18, 21), (SalesPermissionManifestV1.Version, SalesPermissionManifestV1.Names.Count));
         var exactNames = new HashSet<string>(
             [
                 SalesPermissionManifestV1.DraftsCreate,
@@ -316,6 +327,7 @@ public sealed class SalesShellCapabilityProviderContractTests
                 SalesPermissionManifestV1.OrdersCancel,
                 SalesPermissionManifestV1.OrdersForceClose,
                 SalesPermissionManifestV1.OrdersQuantityWrite,
+                SalesPermissionManifestV1.OrdersHeaderWrite,
                 SalesPermissionManifestV1.RequestsWrite,
                 SalesPermissionManifestV1.RequestsRead,
                 SalesPermissionManifestV1.RequestsApprove,

@@ -1002,7 +1002,7 @@ public sealed class DocumentVaultSqlServerRelationalAcceptanceTests
 
     private static SalesOrderDraft SalesOrder(Guid company, Guid orderId, Guid partyId, string documentNo)
     {
-        var header = new SalesDraftHeader(partyId, Guid.NewGuid(), Currency, BusinessDay, BusinessDay.AddDays(10));
+        var header = new SalesDraftHeader(partyId, Guid.NewGuid(), Currency, BusinessDay, BusinessDay.AddDays(10), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(
             company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "1", BusinessDay, true, ProfileFrom, null, 2);
         var draft = SalesOrderDraft.Create(orderId, company, documentNo, header, money, T0);

@@ -46,7 +46,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(
             [
                 new SalesOpenOrderLineView(draft.Id, draft.DocumentNo, Day, draft.Lines[1].RequestedDeliveryDate ?? draft.Header.RequestedDeliveryDate,
-                    SalesDraftApiV1.Rev0, second, 2, "2.25", "1", "1.25", false, "0", null),
+                    SalesDraftApiV1.Rev0, second, 2, "2.25", "1", "1.25", false, "0", null, false),
             ],
             group.Lines);
         Assert.Empty(group.Unmeasured);

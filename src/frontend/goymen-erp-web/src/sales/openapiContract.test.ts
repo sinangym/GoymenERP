@@ -20,6 +20,13 @@ import listResponse from './examples/list-response.json'
 import revisionsResponse from './examples/revisions-response.json'
 import statusResponse from './examples/status-response.json'
 import totalsResponse from './examples/totals-response.json'
+import riskCheckResponse from './examples/risk-check-response.json'
+import {
+  SALES_REFERENCE_SALES_OWNERS_PATH,
+  salesDraftHeaderPath,
+  salesDraftHeaderRevisionPath,
+  type HeaderRevisionRequest,
+} from './headerRevision'
 import {
   SALES_DRAFT_PATH,
   salesDraftCancellationImpactPath,
@@ -46,6 +53,7 @@ import { salesDraftLinePriceReferencesPath, salesDraftLinePricingPath } from './
 import { salesDraftPdfPath } from './orderPdf'
 import { salesDraftStatusPath } from './orderStatus'
 import { salesDraftTotalsPath } from './orderTotals'
+import { salesDraftRiskCheckPath } from './riskCheck'
 import { validateOrderDraft, type OrderDraftFormValues, type OrderDraftOptions } from './orderDraftForm'
 import {
   REMAINDER_KIND,
@@ -132,6 +140,8 @@ describe('Sales client ↔ canonical OpenAPI', () => {
       salesDraftLoadingProgressPath('ID'),
       salesDraftStatusPath('ID'),
       salesDraftTotalsPath('ID'),
+      // MOD-01 / API-06: the customer risk card.
+      salesDraftRiskCheckPath('ID'),
       salesDraftCancellationImpactPath('ID'),
       salesDraftCancellationPath('ID'),
       salesDraftLinePricingPath('ID'),
@@ -142,12 +152,16 @@ describe('Sales client ↔ canonical OpenAPI', () => {
       SALES_REFERENCE_CURRENCIES_PATH,
       SALES_REFERENCE_CONTACT_INFORMATION_PATH,
       SALES_REFERENCE_PRODUCTS_PATH,
+      // API-04: the revisable header and the SAT-D27 sales-owner list.
+      salesDraftHeaderPath('ID'),
+      SALES_REFERENCE_SALES_OWNERS_PATH,
     ]
     const writes = [
       SALES_DRAFT_PATH,
       salesDraftCommercialRevisionPath('ID'),
       salesDraftPriceFloorExceptionApprovalPath('ID'),
       salesDraftQuantityRevisionPath('ID'),
+      salesDraftHeaderRevisionPath('ID'),
       salesDraftDeliverySchedulePath('ID'),
       salesDraftCancellationPath('ID'),
       remainderChangesPath('ID'),
@@ -165,6 +179,14 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expect(requestSchema(salesDraftCancellationPath('ID'))).toBe('SalesDraftCancelRequest')
     expectFits({ expectedVersion: '4', reason: 'r', impactToken: 'a'.repeat(64) }, 'SalesDraftCancelRequest')
     expect(requestSchema(salesDraftQuantityRevisionPath('ID'))).toBe('SalesDraftQuantityRevisionRequest')
+    // API-04: the whole header as the client sends it, every member present.
+    expect(requestSchema(salesDraftHeaderRevisionPath('ID'))).toBe('SalesDraftHeaderRevisionRequest')
+    const header: HeaderRevisionRequest = {
+      expectedVersion: '4', reason: 'r', partyId: 'p', companyAccountId: 'a', currencyId: 'c', deliveryAddress: null, contact: null,
+      salesOwnerUserId: null, dueTerms: { instalments: [{ sequenceNo: 1, basis: 'ShipmentDate', daysAfter: 30, sharePercent: '100' }] },
+    }
+    expectFits(header, 'SalesDraftHeaderRevisionRequest')
+    expectFits(header.dueTerms!.instalments[0]!, 'SalesDueInstalmentV1')
     expect(requestSchema(salesDraftDeliverySchedulePath('ID'))).toBe('SalesDraftDeliveryScheduleRequest')
     expect(requestSchema(salesDraftCommercialRevisionPath('ID'))).toBe('SalesDraftCommercialRevisionRequest')
     expect(requestSchema(salesDraftPriceFloorExceptionApprovalPath('ID'))).toBe('SalesDraftPriceFloorExceptionApprovalRequest')
@@ -201,6 +223,11 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     const values: OrderDraftFormValues = {
       partyId: createRequest.partyId, companyAccountId: createRequest.companyAccountId, businessDate: createRequest.businessDate,
       currencyId: createRequest.currencyId, requestedDeliveryDate: '', note: '', deliveryAddressId: '', contactId: '',
+      // SAT-D123: a mixed plan typed at create — the create body carries it as `SalesDueTermsV1`.
+      instalments: [
+        { key: 'r1', basis: 'OrderDate', daysAfter: '30', sharePercent: '40' },
+        { key: 'r2', basis: 'ShipmentDate', daysAfter: '60', sharePercent: '60' },
+      ],
       lines: [{
         lineId: example.lineId, productId: example.productId, quantityText: example.quantity, orderUnitId: example.orderUnitId,
         requestedDeliveryDate: '', note: '', slices: null,
@@ -218,6 +245,10 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expect(line.discountPercent.type).toEqual(['null', 'string'])
     expect([line.priceUnitId.type, line.priceUnitId.format]).toEqual([['null', 'string'], 'uuid'])
     expect(built.payload.lines[0]).toMatchObject({ unitPrice: '1250.5', priceUnitId: example.orderUnitId, discountPercent: '12.5' })
+    expectFits(built.payload.dueTerms!, 'SalesDueTermsV1')
+    for (const instalment of built.payload.dueTerms!.instalments) expectFits(instalment, 'SalesDueInstalmentV1')
+    const dueTerms = schema('CreateSalesOrderDraftRequest').properties as Record<string, { readonly oneOf?: readonly { readonly $ref?: string }[] }>
+    expect(dueTerms.dueTerms.oneOf?.map((entry) => entry.$ref ?? null)).toEqual([null, '#/components/schemas/SalesDueTermsV1'])
   })
 
   it('pins every example the component tests decode to the schema the server answers with', () => {
@@ -242,6 +273,17 @@ describe('Sales client ↔ canonical OpenAPI', () => {
     expectFits(totalsResponse, 'SalesOrderDraftTotalsResponse')
     expectFits(totalsResponse.totals, 'SalesDraftDocumentTotalsV1')
     for (const line of totalsResponse.lines) expectFits(line, 'SalesDraftLineTotalV1')
+    expectFits(riskCheckResponse, 'SalesOrderDraftRiskCheckResponse')
+    for (const reason of riskCheckResponse.reasons) expectFits(reason, 'SalesDraftRiskReasonV1')
+    expectFits(riskCheckResponse.inLocalCurrency, 'SalesDraftRiskTotalsV1')
+    for (const figure of [...riskCheckResponse.components, riskCheckResponse.thisOrder, riskCheckResponse.creditLimit,
+      riskCheckResponse.collateral]) {
+      expectFits(figure, 'SalesDraftRiskFigureV1')
+      for (const amount of figure.amounts ?? []) expectFits(amount, 'SalesDraftRiskAmountV1')
+    }
+    // The amount disclosure is the shared price disclosure, never a risk-only spelling.
+    expect((schema('SalesOrderDraftRiskCheckResponse').properties as Record<string, { readonly $ref?: string }>).amountDisclosure.$ref)
+      .toBe('#/components/schemas/SalesPriceDisclosure')
   })
 
   it('answers the detail read as the plain view or the opted-in party-display view, and nothing else', () => {

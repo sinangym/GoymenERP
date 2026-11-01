@@ -12,11 +12,12 @@ using Microsoft.Extensions.Logging;
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
 /// <summary>
-/// MOD-03 tax master (SAT-D83, EK12; SAT-D93, EK13; SAT-D133…D139, EK19): the company's per-item-type default tax (the reviewed
-/// SAT-D139 catalog as the base, Settings records over it), the UBL-TR exemption / withholding code lists and the VUK 232
-/// withholding amount threshold.
+/// MOD-03 tax master (SAT-D83, EK12; SAT-D93, EK13; SAT-D133…D139, EK19; SAT-D158, EK21): the company's per-item-type default
+/// tax (the reviewed SAT-D139 catalog as the base, Settings records over it), the UBL-TR exemption / withholding code lists, the
+/// VUK 232 withholding amount threshold and the buyer situation list (the reviewed SAT-D158 catalog as the base).
 /// <list type="bullet">
-/// <item><b>Nothing is seeded</b>: the only shipped values are Sinan's SAT-D139 defaults, as a reviewed source catalog; every
+/// <item><b>Nothing is seeded</b>: the only shipped values are Sinan's SAT-D139 defaults and the SAT-D158 buyer situations, as
+/// reviewed source catalogs; every
 /// code, the threshold and any other value needs the mali müşavir's confirmation (EK13/EK19) and answers "kaynak yok"
 /// (<see cref="TaxResolutionStatesV1.Unresolved"/>) until entered.</item>
 /// <item><b>Authority</b> (SAT-D83): ONE name, <see cref="SettingsTaxMasterPermissionManifestV1.TaxMasterManage"/>,
@@ -96,7 +97,8 @@ internal sealed partial class SettingsTaxMasterAdministration(
             TaxMasterCalculatorV1.ScheduledThresholds(data, today)
                 .Select(record => ThresholdView(thresholdRows[record.RecordId]))
                 .ToArray());
-        return new TaxMasterViewV1(companyId, today, defaults, lists, threshold);
+        return new TaxMasterViewV1(companyId, today, defaults, lists, threshold,
+            BuyerSituationView(companyId, today, rows, data));
     }
 
     private Guid RequireContextCompany()
@@ -316,6 +318,12 @@ internal sealed partial class SettingsTaxMasterAdministration(
             "Yürürlüğe girmemiş tevkifat tutar sınırı kaydı düzeltildi; gerekçe kayıt içeriğindedir",
         "settings.tax-withholding-threshold.withdrawn.v1" =>
             "Yürürlüğe girmemiş tevkifat tutar sınırı kaydı geri çekildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-buyer-situation-list.published.v1" =>
+            "Alıcı vergi durumu listesi sürümü yayımlandı; gerekçe kayıt içeriğindedir",
+        "settings.tax-buyer-situation-list.corrected.v1" =>
+            "Yürürlüğe girmemiş alıcı vergi durumu listesi sürümü düzeltildi; gerekçe kayıt içeriğindedir",
+        "settings.tax-buyer-situation-list.withdrawn.v1" =>
+            "Yürürlüğe girmemiş alıcı vergi durumu listesi sürümü geri çekildi; gerekçe kayıt içeriğindedir",
         _ => throw new InvalidOperationException("Tanımsız Ayarlar audit olayı."),
     };
 

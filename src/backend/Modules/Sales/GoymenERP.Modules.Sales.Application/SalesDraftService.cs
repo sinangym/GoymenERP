@@ -62,6 +62,8 @@ public sealed partial class SalesDraftService(
     ISalesDiscountLimitGroupSourceV1? discountLimitGroups = null,
     ISalesPartyRiskReadPortV1? partyRisk = null,
     ISettingsSalesQuotePolicyProviderV1? quotePolicies = null,
+    ISalesUserDisplaySourceV1? userDisplays = null,
+    ISalesOwnerCandidateSourceV1? salesOwners = null,
     ISalesReportReadStore? reports = null,
     ISalesPartyDisplaySourceV1? partyDisplays = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
@@ -121,6 +123,17 @@ public sealed partial class SalesDraftService(
         // decides nothing. Asked after the replay (a recorded answer stays the answer) and before any owner is read; not recorded.
         RequireOrderBusinessDate(request.BusinessDate);
 
+        // SAT-D123 / SAT-D127: due terms entered by hand at create (optional; never defaulted) follow their own rules, asking no owner.
+        SalesDueTerms? dueTerms;
+        try
+        {
+            dueTerms = SalesDraftHeaderApiV1.ToDomain(request.DueTerms);
+        }
+        catch (SalesDueTermsException exception)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new(DueTermsField(exception), exception.Code)]);
+        }
+
         // 4. The owners, each answered for this company and business date. A stale product version
         // is recorded as the key's terminal result; if another caller of the same key wins that
         // record meanwhile, the winner's result is answered instead (ADR-011 §8; RaceWon).
@@ -161,7 +174,8 @@ public sealed partial class SalesDraftService(
 
         // 5. The domain builds the draft on the store's document number; the store keeps one save.
         var header = new SalesDraftHeader(request.PartyId, request.CompanyAccountId, request.CurrencyId, request.BusinessDate,
-            request.RequestedDeliveryDate, request.Note, DeliveryAddress: references.DeliveryAddress, Contact: references.Contact);
+            request.RequestedDeliveryDate, request.Note, DeliveryAddress: references.DeliveryAddress, Contact: references.Contact,
+            DueTerms: dueTerms);
         var now = timeProvider.GetUtcNow();
         SalesDraftStoreResult stored;
         try
@@ -935,6 +949,12 @@ public sealed partial class SalesDraftService(
             await RequireReapprovalFloorAsync(scope, permission, current, expectedVersion, commandName, cancellationToken);
         }
 
+        // API-04 (fail-closed): a pending customer or currency change is approved only while no owner record names the order.
+        if (commandName == SalesDraftCommands.ApproveV1)
+        {
+            await RequireHeaderReapprovalClearAsync(scope, permission, current, expectedVersion, cancellationToken);
+        }
+
         // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
         scope = await RequireStillAsync(scope, permission, cancellationToken);
         await RequirePersonaFenceAsync(scope, commandName, current, cancellationToken);
@@ -959,6 +979,11 @@ public sealed partial class SalesDraftService(
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.ApprovalReasonTooLong)
         {
             throw new SalesDraftServiceException(422, SalesDraftProblemCodesV1.ApprovalReasonTooLong, [new("reason", exception.Code)]);
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.DueTermsRequired)
+        {
+            // SAT-D123 (EK18): no approval without due terms; not recorded (entering them with a header revision changes the answer).
+            throw new SalesDraftServiceException(422, "validation_failed", [new("dueTerms", exception.Code)]);
         }
         catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.QuoteRequestNotApproved)
         {
@@ -1249,15 +1274,36 @@ public sealed partial class SalesDraftService(
             throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
         }
 
-        var answer = await GuardedAsync(scope, bindings.CreatePermission,
-            () => contactInformation.GetContactInformationAsync(request.PartyId, request.CompanyAccountId, cancellationToken), cancellationToken);
+        return await ReadContactReferencesAsync(scope, bindings.CreatePermission, request.PartyId, request.CompanyAccountId,
+            request.DeliveryAddress, request.Contact,
+            refusal => TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash, refusal, cancellationToken, commandName),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// The SALES-A2a contact-information read of one party account under <paramref name="permission"/>: each named reference must
+    /// be an ACTIVE address / contact of that account at the owner's version (422 <c>owner_reference_invalid</c> otherwise; a
+    /// stale version is the key's terminal 409 through <paramref name="terminal"/>). The create's rules, shared with the API-04
+    /// header revision. The port must be composed (503 otherwise).
+    /// </summary>
+    private async Task<OwnerReferences> ReadContactReferencesAsync(Scope scope, string? permission, Guid partyId, Guid companyAccountId,
+        SalesDraftOwnerReferenceV1? requestedAddress, SalesDraftOwnerReferenceV1? requestedContact,
+        Func<SalesDraftTerminalRefusal, Task<SalesDraftServiceException>> terminal, CancellationToken cancellationToken)
+    {
+        if (contactInformation is null)
+        {
+            throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.CounterpartyProviderUnavailable);
+        }
+
+        var answer = await GuardedAsync(scope, permission,
+            () => contactInformation.GetContactInformationAsync(partyId, companyAccountId, cancellationToken), cancellationToken);
         SalesPartyContactInformationV1 information;
         switch (answer.Outcome)
         {
             case SalesPartyContactInformationOutcomeV1.Found when answer.Information is { } found:
                 // The account read already bound the account to this company; an answer for another party, account or
                 // company here is the provider contradicting itself, not the user's input: 503, never a user error.
-                if (found.PartyId != request.PartyId || found.CompanyAccountId != request.CompanyAccountId
+                if (found.PartyId != partyId || found.CompanyAccountId != companyAccountId
                     || found.CompanyId != scope.CompanyId)
                 {
                     throw new SalesDraftServiceException(503, SalesDraftProblemCodesV1.ReferenceProviderInvalid);
@@ -1276,9 +1322,9 @@ public sealed partial class SalesDraftService(
 
         var invalid = new List<SalesDraftFieldError>();
         var stale = new List<SalesDraftFieldError>();
-        var deliveryAddress = Resolve("deliveryAddress", request.DeliveryAddress,
+        var deliveryAddress = Resolve("deliveryAddress", requestedAddress,
             information.Addresses.Select(address => (address.Id, address.Version, address.IsActive)), invalid, stale);
-        var contact = Resolve("contact", request.Contact,
+        var contact = Resolve("contact", requestedContact,
             information.Contacts.Select(person => (person.Id, person.Version, person.IsActive)), invalid, stale);
         if (invalid.Count > 0)
         {
@@ -1287,8 +1333,7 @@ public sealed partial class SalesDraftService(
 
         if (stale.Count > 0)
         {
-            throw await TerminalAsync(scope, bindings.CreatePermission, envelope, requestHash,
-                new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale), cancellationToken, commandName);
+            throw await terminal(new SalesDraftTerminalRefusal(409, SalesDraftProblemCodesV1.VersionConflict, stale));
         }
 
         return new OwnerReferences(deliveryAddress, contact);

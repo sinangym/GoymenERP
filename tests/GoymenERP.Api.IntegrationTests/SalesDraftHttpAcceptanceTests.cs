@@ -481,6 +481,23 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
             return Quantity(draftId, request);
         }
 
+        /// <summary>API-04: what the stub answers a header revision / header read with; the calls reach <see cref="HeaderCalls"/>.</summary>
+        public Func<Guid, SalesDraftHeaderRevisionRequest, Task<SalesOrderDraftResponse>> HeaderRevision { get; set; } =
+            (_, _) => throw new SalesDraftServiceException(404, "not_found");
+
+        public Func<Guid, Task<SalesDraftHeaderV1>> Header { get; set; } = _ => throw new SalesDraftServiceException(404, "not_found");
+
+        public List<(Guid DraftId, SalesDraftHeaderRevisionRequest Request, string Key)> HeaderCalls { get; } = [];
+
+        public Task<SalesOrderDraftResponse> ReviseHeaderAsync(Guid draftId, SalesDraftHeaderRevisionRequest request, SalesCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            HeaderCalls.Add((draftId, request, metadata.IdempotencyKey));
+            return HeaderRevision(draftId, request);
+        }
+
+        public Task<SalesDraftHeaderV1> GetDraftHeaderAsync(Guid draftId, CancellationToken cancellationToken = default) => Header(draftId);
+
         /// <summary>DEC-SAL-003: the delivery-schedule update and its history; this stub answers nothing it was not given.</summary>
         public Func<Guid, SalesDraftDeliveryScheduleRequest, Task<SalesOrderDraftResponse>> Schedule { get; set; } =
             (_, _) => throw new SalesDraftServiceException(404, "not_found");
@@ -1052,6 +1069,105 @@ public sealed class SalesDraftHttpAcceptanceTests(GoymenErpApiFactory factory)
         using var unavailable = await client.SendAsync(unavailableRequest);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
         Assert.DoesNotContain(SalesDraftProblemCodesV1.RevisionImpactUnavailable, await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// API-04: the header-revision route's wire — one canonical key and the strict body (every member present, the due terms'
+    /// basis an exact name, the share decimal text, no other member) before the service is reached; 200 with the detail and the
+    /// replay headers on a replay; a blocked change is a 409 naming the owner record; the header read is private and its 404 is
+    /// code-less.
+    /// </summary>
+    [Fact]
+    public async Task Header_revision_uses_the_strict_owner_contract_replay_headers_and_the_header_read_is_private()
+    {
+        var draftId = Guid.NewGuid();
+        var party = Guid.NewGuid();
+        var account = Guid.NewGuid();
+        var currency = Guid.NewGuid();
+        var service = new StubDraftService
+        {
+            HeaderRevision = (_, _) => Task.FromResult(new SalesOrderDraftResponse(Detail(draftId), true, "SENTETIK-header-first")),
+            Header = id => Task.FromResult(new SalesDraftHeaderV1("5", "Rev.1", party, account, currency, null, null, null, null, "Visible",
+                new SalesDueTermsV1([new SalesDueInstalmentV1(1, SalesDueBasisNamesV1.OrderDate, 30, "100")]), false)),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+        var path = $"{SalesEndpoints.DraftsPath}/{draftId:D}/header-revision";
+        var valid = $"{{\"expectedVersion\":\"4\",\"reason\":\"r\",\"partyId\":\"{party:D}\",\"companyAccountId\":\"{account:D}\",\"currencyId\":\"{currency:D}\","
+            + "\"deliveryAddress\":null,\"contact\":null,\"salesOwnerUserId\":null,"
+            + "\"dueTerms\":{\"instalments\":[{\"sequenceNo\":1,\"basis\":\"OrderDate\",\"daysAfter\":30,\"sharePercent\":\"100\"}]}}";
+
+        foreach (var json in new[]
+                 {
+                     "{}",
+                     valid.Replace("\"contact\":null,", "", StringComparison.Ordinal),
+                     valid.Replace("\"contact\":null,", "\"contact\":null,\"responsible\":null,", StringComparison.Ordinal),
+                     valid.Replace("OrderDate", "orderDate", StringComparison.Ordinal),
+                     valid.Replace("\"100\"", "100", StringComparison.Ordinal),
+                     valid.Replace("\"daysAfter\":30", "\"daysAfter\":\"30\"", StringComparison.Ordinal),
+                     valid.Replace(party.ToString("D"), Guid.Empty.ToString("D"), StringComparison.Ordinal),
+                 })
+        {
+            using var invalid = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+            invalid.Headers.Add("Idempotency-Key", "SENTETIK-invalid");
+            using var response = await client.SendAsync(invalid);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        using (var noKey = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent(valid, Encoding.UTF8, "application/json") })
+        using (var response = await client.SendAsync(noKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        using (var text = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent(valid, Encoding.UTF8, "text/plain") })
+        {
+            text.Headers.Add("Idempotency-Key", "SENTETIK-text");
+            using var response = await client.SendAsync(text);
+            Assert.Equal(HttpStatusCode.UnsupportedMediaType, response.StatusCode);
+        }
+
+        Assert.Empty(service.HeaderCalls);
+
+        using (var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent(valid, Encoding.UTF8, "application/json") })
+        {
+            request.Headers.Add("Idempotency-Key", "SENTETIK-header-1");
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-header-first", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+        }
+
+        var call = Assert.Single(service.HeaderCalls);
+        Assert.Equal((draftId, "4", party, "SENTETIK-header-1", 30), (call.DraftId, call.Request.ExpectedVersion, call.Request.PartyId, call.Key,
+            call.Request.DueTerms!.Instalments[0].DaysAfter));
+
+        service.HeaderRevision = (_, _) => throw new SalesDraftServiceException(409, SalesDraftProblemCodesV1.RevisionBlocked,
+            [new("inventory.active-allocations", SalesDraftProblemCodesV1.RevisionBlocked)]);
+        using (var blocked = new HttpRequestMessage(HttpMethod.Post, path) { Content = new StringContent(valid, Encoding.UTF8, "application/json") })
+        {
+            blocked.Headers.Add("Idempotency-Key", "SENTETIK-header-2");
+            using var refused = await client.SendAsync(blocked);
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            var problem = await refused.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(SalesDraftProblemCodesV1.RevisionBlocked, problem.GetProperty("code").GetString());
+            Assert.Equal("inventory.active-allocations", problem.GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+
+        client.DefaultRequestHeaders.Remove("Idempotency-Key");
+        using (var read = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{draftId:D}/header"))
+        {
+            Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+            Assert.Contains("no-store", read.Headers.CacheControl!.ToString(), StringComparison.Ordinal);
+            var body = await read.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(("5", "Visible", "OrderDate"), (body.GetProperty("draftVersion").GetString(), body.GetProperty("dueTermsDisclosure").GetString(),
+                body.GetProperty("dueTerms").GetProperty("instalments")[0].GetProperty("basis").GetString()));
+        }
+
+        service.Header = _ => throw new SalesDraftServiceException(404, "not_found");
+        using var missing = await client.GetAsync($"{SalesEndpoints.DraftsPath}/{Guid.NewGuid():D}/header");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.DoesNotContain("not_found", await missing.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
     [Fact]

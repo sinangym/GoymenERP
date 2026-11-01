@@ -256,7 +256,7 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
 
         private SalesOrderDraft Draft(string documentNo, Customer customer)
         {
-            var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, SettingsCurrencyIdentitiesV1.TurkishLira, Day, Day.AddDays(7));
+            var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, SettingsCurrencyIdentitiesV1.TurkishLira, Day, Day.AddDays(7), DueTerms: TestDueTerms.PointDue30);
             var money = new MoneyProfileSnapshot(CompanyA, SettingsCurrencyIdentitiesV1.TurkishLira, SalesOrderDraft.MoneyOperation, GdcTryProfile,
                 "1", Day, true, new DateOnly(2026, 9, 18), null, 2);
             var draft = SalesOrderDraft.Create(Guid.NewGuid(), CompanyA, documentNo, header, money, T0);

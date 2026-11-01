@@ -169,6 +169,9 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
         var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
         var migration = Array.IndexOf(applied, "20261004160000_AddSalesPriceFloorApprovalReplayResults");
         Assert.True(migration > 0);
+        // SAT-D123: approved orders carry due terms; clear them (this run's own database) so the later header-revision migration's
+        // 51133 guard does not stop the rollback before the guard under test.
+        await run.ExecuteAsync("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL");
         var refusal = await Assert.ThrowsAsync<SqlException>(() =>
             context.GetService<IMigrator>().MigrateAsync(applied[migration - 1]));
         Assert.Equal(51064, refusal.Number);
@@ -206,7 +209,7 @@ public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
 
     private static SalesOrderDraft Draft(string documentNo)
     {
-        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(7));
+        var header = new SalesDraftHeader(Guid.NewGuid(), Guid.NewGuid(), Currency, Day, Day.AddDays(7), DueTerms: TestDueTerms.PointDue30);
         var money = new MoneyProfileSnapshot(Company, Currency, SalesOrderDraft.MoneyOperation, MoneyProfile, "1", Day,
             true, Day.AddDays(-30), null, 2);
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), Company, documentNo, header, money, T0);

@@ -205,7 +205,7 @@ function AllocationLine({ companyId, namespace, routeEntryGeneration, salesOrder
   ]
   return (
     <article className={styles.line} data-testid={`sales-allocation-line-${line.lineId}`} data-attempt-revision={attemptRevision}>
-      <h3 className={styles.lineTitle}>Satır {line.lineNo}: {line.productName}</h3>
+      <h3 className={styles.lineTitle}>{T.lineTitle(line.lineNo, line.productName)}</h3>
       {state.kind === 'initial-loading' ? <p>{T.loading}</p> : null}
       {state.kind !== 'initial-loading' && state.kind !== 'ready' ? (
         <div className={styles.notice} data-tone="error">

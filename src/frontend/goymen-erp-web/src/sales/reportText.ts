@@ -62,6 +62,8 @@ export const REPORT_TEXT = {
     awaitingRevision: (revision: string) => `${revision} müşteri onayı bekliyor`,
     noAcceptedRevision: 'Kabul edilmiş revizyon yok',
     completedWithinTolerance: 'Tolerans içinde tamamlandı',
+    headerRevisionPending:
+      'Cari veya para birimi revizyonu bekliyor; satır ölçülen (kabul edilen ya da onaylı) revizyonun carisinde gösterilir',
     detail: 'Sipariş satırları',
     detailCaption: (product: string, customer: string) => `${customer} — ${product} sipariş satırları`,
     order: 'Sipariş',

@@ -162,6 +162,24 @@ describe('S-04 commands', () => {
     expect(screen.getByTestId('sales-draft-approval-state').textContent).toBe('Hazırlanıyor')
   })
 
+  it('SAT-D123: an approval refused for missing due terms says so and changes nothing', async () => {
+    installFetch({
+      capabilities: ALL_SALES_WITH_APPROVE,
+      onDetail: () => json(detail('PendingApproval', { submittedBy: 'satis-1', submittedAtUtc: '2026-09-19T09:00:00Z', decidedBy: null, decidedAtUtc: null, rejectionReason: null })),
+      onCommand: () => json({
+        status: 422, title: 'Unprocessable', code: 'validation_failed', correlationId: 'c-terms',
+        errors: [{ field: 'dueTerms', code: 'sales_due_terms_required' }],
+      }, 422),
+    })
+    renderSalesApp(`/satis/siparisler/${DRAFT}`)
+    await screen.findByRole('heading', { name: 'SO-2026-0001' })
+    await userEvent.click(screen.getByRole('button', { name: T.approval.approve }))
+
+    const alert = await screen.findByText((text) => text.includes(T.approval.dueTermsRequired))
+    expect(alert.textContent).toContain(T.approval.validation)
+    expect(screen.getByTestId('sales-draft-approval-state').textContent).toBe('Onay bekliyor')
+  })
+
   it('rejects with the typed reason and tells a replayed answer apart by the header', async () => {
     const fetch = installFetch({
       capabilities: ALL_SALES_WITH_APPROVE,

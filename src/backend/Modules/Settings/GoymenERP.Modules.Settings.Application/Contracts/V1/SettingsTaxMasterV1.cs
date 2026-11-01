@@ -36,30 +36,48 @@ public static class TaxItemTypesV1
 }
 
 /// <summary>
-/// SAT-D140 (EK19): the buyer's tax situation, chosen PER ORDER by Sales (order header; never read from the Cari card) and
-/// passed to the line tax port as an input. It changes the SAT-D139 item-type default by the SAT-D74/D93 rule:
-/// <list type="bullet">
-/// <item><see cref="Normal"/> — the default as it is (a new order starts here).</item>
-/// <item><see cref="NotSubjectToWithholding"/> (tevkifata tabi olmayan alıcı) and <see cref="FinalConsumer"/> (nihai tüketici) —
-/// no withholding (SAT-D74: withholding only for a buyer subject to it); VAT unchanged.</item>
-/// <item><see cref="ExportRegistered"/> (ihraç kayıtlı) and <see cref="ExemptionCertificate"/> (istisna belgeli) — the VAT and
-/// withholding treatment and its UBL-TR code are not decided (mali müşavir): both are <c>Unresolved</c>
-/// (<c>buyer_situation_undecided</c>) and the line decides by hand (SAT-D93), never a guess.</item>
-/// </list>
+/// SAT-D140 (EK19) / SAT-D158 (EK21): the buyer's tax situation, chosen PER ORDER by Sales (order header; never read from the Cari
+/// card) and passed to the line tax port as an input. The situations are NOT a fixed enum: they are an effective-dated Settings
+/// list per company (<see cref="TaxBuyerSituationEntryViewV1"/>, SAT-D133 like the other tax tables), each with its tax effect as
+/// data (SAT-D74/D93/D147). These constants are the codes of the reviewed version-0 catalog
+/// (<c>ApprovedTaxBuyerSituationCatalog</c>); Müdür/Admin may add situations in Settings (SAT-D158). A code the list in force
+/// does not carry (unknown or withdrawn) resolves <c>Unresolved</c> (<c>buyer_situation_unknown</c>), never a guess.
 /// </summary>
 public static class TaxBuyerSituationsV1
 {
+    /// <summary>Normal alıcı — the item-type default as it is (a new order starts here).</summary>
     public const string Normal = "Normal";
+
+    /// <summary>Tevkifata tabi olmayan alıcı — no withholding (SAT-D74); VAT unchanged.</summary>
     public const string NotSubjectToWithholding = "NotSubjectToWithholding";
+
+    /// <summary>Nihai tüketici — no withholding (SAT-D74); VAT unchanged.</summary>
     public const string FinalConsumer = "FinalConsumer";
+
+    /// <summary>İhraç kayıtlı — KDV %0 with an exemption code from the list, no withholding, document required (SAT-D147).</summary>
     public const string ExportRegistered = "ExportRegistered";
+
+    /// <summary>İstisna belgeli — KDV %0 with an exemption code from the list, no withholding, document required (SAT-D147).</summary>
     public const string ExemptionCertificate = "ExemptionCertificate";
 
-    public static IReadOnlyList<string> All { get; } =
+    /// <summary>The codes of the reviewed version-0 catalog.</summary>
+    public static IReadOnlyList<string> Catalog { get; } =
         [Normal, NotSubjectToWithholding, FinalConsumer, ExportRegistered, ExemptionCertificate];
+}
 
-    public static bool IsKnown(string? situation) =>
-        situation is Normal or NotSubjectToWithholding or FinalConsumer or ExportRegistered or ExemptionCertificate;
+/// <summary>SAT-D147/D158: how a buyer situation changes the VAT of the item-type default (data on the situation entry).</summary>
+public static class TaxBuyerSituationVatModesV1
+{
+    /// <summary>The item-type default's VAT as it is.</summary>
+    public const string Normal = "Normal";
+
+    /// <summary>
+    /// KDV %0 under an exemption code chosen from the company's exemption code list (SAT-D147); no withholding applies. No code
+    /// chosen, no list, or a code the list does not carry: the code part is <c>Unresolved</c> and the invoice waits.
+    /// </summary>
+    public const string ZeroWithExemptionCode = "ZeroWithExemptionCode";
+
+    public static bool IsKnown(string? mode) => mode is Normal or ZeroWithExemptionCode;
 }
 
 /// <summary>The two UBL-TR code lists (EK13 implementation notes: effective-dated Settings code lists, never hard-coded).</summary>
@@ -90,6 +108,12 @@ public static class TaxMasterInputLimitsV1
     public const int ListCodeMaximumLength = 16;
     public const int ListEntryNameMaximumLength = 200;
     public const int ListMaximumEntries = 500;
+
+    /// <summary>A buyer situation code: ASCII letters and digits, starting with a letter (e.g. "ExportRegistered").</summary>
+    public const int BuyerSituationCodeMaximumLength = 64;
+
+    /// <summary>Entries one buyer situation list version may carry.</summary>
+    public const int BuyerSituationMaximumEntries = 100;
 
     /// <summary>SAT-D68 precedent: the mandatory reason of every change.</summary>
     public const int ReasonMaximumLength = 4000;
@@ -160,6 +184,31 @@ public sealed record PublishTaxCodeListRequestV1(
 public sealed record WithdrawTaxCodeListRequestV1(string? ExpectedVersion, string? Reason);
 
 /// <summary>
+/// SAT-D158: one buyer situation with its tax effect as data. <c>Code</c>: ASCII letters/digits starting with a letter
+/// (≤ 64); <c>Name</c>: the Turkish name (1…200); <c>WithholdingApplies</c>: false removes the default's withholding (SAT-D74);
+/// <c>VatMode</c>: one of <see cref="TaxBuyerSituationVatModesV1"/> (<c>ZeroWithExemptionCode</c> requires
+/// <c>WithholdingApplies</c> false, SAT-D147); <c>DocumentRequired</c>: the order must carry the buyer's document (no, date)
+/// before the invoice (SAT-D147, an order-side check the resolver only flags).
+/// </summary>
+public sealed record TaxBuyerSituationEntryV1(
+    string? Code,
+    string? Name,
+    bool? WithholdingApplies,
+    string? VatMode,
+    bool? DocumentRequired);
+
+/// <summary>
+/// SAT-D158: publish a whole buyer situation list version (it replaces the catalog or the previous version from
+/// <c>EffectiveFrom</c> on; the same date rules as a code list). A situation left out is no longer in force from that date (an
+/// order naming it resolves <c>Unresolved</c>). <c>ExpectedVersion</c> is the list's version ("0" while only the catalog answers).
+/// </summary>
+public sealed record PublishTaxBuyerSituationListRequestV1(
+    string? ExpectedVersion,
+    IReadOnlyList<TaxBuyerSituationEntryV1>? Entries,
+    string? Reason,
+    DateOnly? EffectiveFrom = null);
+
+/// <summary>
 /// Record the withholding amount threshold (VUK 232, SAT-D135) from <c>EffectiveFrom</c> (omitted = today; the same date rules).
 /// <c>Amount</c> is lossless decimal text above 0 (at most 15 integer digits and 4 decimals, never rounded);
 /// <c>CurrencyCode</c> is the ISO 4217 code the amount is in (entered, never assumed). <c>ExpectedVersion</c> is the
@@ -178,7 +227,8 @@ public sealed record TaxMasterViewV1(
     DateOnly BusinessDate,
     IReadOnlyList<TaxItemTypeDefaultSeriesViewV1> ItemTypeDefaults,
     IReadOnlyList<TaxCodeListViewV1> CodeLists,
-    TaxWithholdingThresholdViewV1 WithholdingThreshold);
+    TaxWithholdingThresholdViewV1 WithholdingThreshold,
+    TaxBuyerSituationListViewV1 BuyerSituations);
 
 /// <summary>
 /// One item type's default tax (SAT-D139): its edit fence (<c>Version</c>, "0" while only the catalog answers), the record in
@@ -225,6 +275,38 @@ public sealed record TaxCodeListVersionViewV1(
     string Reason);
 
 public sealed record TaxCodeListEntryViewV1(string Code, string Name);
+
+/// <summary>
+/// SAT-D158: the buyer situation list of the server-resolved company. <c>Version</c> is its edit fence ("0" while only the
+/// reviewed catalog answers); <c>InForce</c> the version in force on the business date (null = "kaynak yok"); scheduled ones.
+/// </summary>
+public sealed record TaxBuyerSituationListViewV1(
+    Guid CompanyId,
+    DateOnly BusinessDate,
+    string Version,
+    TaxBuyerSituationListVersionViewV1? InForce,
+    IReadOnlyList<TaxBuyerSituationListVersionViewV1> Scheduled);
+
+/// <summary>
+/// One buyer situation list version. <c>Source</c> <c>Catalog</c>: the reviewed version 0 (no recorder, cannot be withdrawn);
+/// <c>Record</c>: published in Settings.
+/// </summary>
+public sealed record TaxBuyerSituationListVersionViewV1(
+    string ListVersion,
+    string Source,
+    DateOnly EffectiveFrom,
+    IReadOnlyList<TaxBuyerSituationEntryViewV1> Entries,
+    string? RecordedBy,
+    DateTimeOffset? RecordedAtUtc,
+    string Reason);
+
+/// <summary>One buyer situation and its tax effect (SAT-D158), see <see cref="TaxBuyerSituationEntryV1"/>.</summary>
+public sealed record TaxBuyerSituationEntryViewV1(
+    string Code,
+    string Name,
+    bool WithholdingApplies,
+    string VatMode,
+    bool DocumentRequired);
 
 /// <summary>
 /// The withholding amount threshold (VUK 232 fatura sınırı, SAT-D135: a dated Settings value that starts EMPTY).
@@ -279,6 +361,17 @@ public interface ISettingsTaxMasterAdministrationV1
     /// <summary>Withdraw a threshold record before it takes effect; <c>ExpectedVersion</c> is the threshold's version.</summary>
     Task<TaxMasterCommandResultV1> WithdrawWithholdingThresholdAsync(Guid recordId, WithdrawTaxRecordRequestV1 request,
         SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D158: the buyer situation list (the same authority as <see cref="GetAsync"/>).</summary>
+    Task<TaxBuyerSituationListViewV1> GetBuyerSituationsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D158: publish a whole buyer situation list version.</summary>
+    Task<TaxMasterCommandResultV1> PublishBuyerSituationListAsync(PublishTaxBuyerSituationListRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D158: withdraw a buyer situation list version before it takes effect.</summary>
+    Task<TaxMasterCommandResultV1> WithdrawBuyerSituationListAsync(long listVersion, WithdrawTaxCodeListRequestV1 request,
+        SettingsCommandMetadataV1 metadata, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Whether a tax value was found. <c>Unresolved</c> is "kaynak yok": never 0, never a guessed default.</summary>
@@ -289,6 +382,12 @@ public static class TaxResolutionStatesV1
 
     /// <summary>VAT: "KDV yok" (exempt) by the default; the exemption code is reported separately.</summary>
     public const string Exempt = "Exempt";
+
+    /// <summary>
+    /// VAT: KDV %0 by the buyer situation (SAT-D147, <see cref="TaxBuyerSituationVatModesV1.ZeroWithExemptionCode"/>); the
+    /// exemption code part is reported separately and must be <c>Resolved</c> before the invoice.
+    /// </summary>
+    public const string ZeroRated = "ZeroRated";
 
     /// <summary>Withholding: the default says none applies.</summary>
     public const string NotApplied = "NotApplied";
@@ -312,13 +411,27 @@ public static class TaxResolutionReasonsV1
     public const string CodeNotInList = "code_not_in_list";
     public const string CodeListMissing = "code_list_missing";
     public const string WithholdingThresholdMissing = "withholding_threshold_missing";
-    public const string BuyerSituationUndecided = "buyer_situation_undecided";
     public const string BuyerNotSubjectToWithholding = "buyer_not_subject_to_withholding";
+
+    /// <summary>SAT-D158: the situation code is not in the buyer situation list in force on the date (unknown or withdrawn).</summary>
+    public const string BuyerSituationUnknown = "buyer_situation_unknown";
+
+    /// <summary>SAT-D147: the buyer situation sets KDV %0 under an exemption code and removes the withholding.</summary>
+    public const string BuyerZeroRatedWithExemptionCode = "buyer_zero_rated_with_exemption_code";
+
+    /// <summary>No buyer situation list is in force on the date.</summary>
+    public const string BuyerSituationListMissing = "buyer_situation_list_missing";
 }
 
 /// <summary>
-/// The DEFAULT tax a line starts from (SAT-D134/D139) for one item type, adjusted for the order's buyer situation (SAT-D140,
-/// <see cref="TaxBuyerSituationsV1"/>; <c>BuyerAdjustment</c> names the change, e.g. <c>buyer_not_subject_to_withholding</c>), on
+/// The DEFAULT tax a line starts from (SAT-D134/D139) for one item type, adjusted for the order's buyer situation (SAT-D140/D158:
+/// the entry of the Settings buyer situation list in force, its effect as data; <c>BuyerAdjustment</c> names the change, e.g.
+/// <c>buyer_not_subject_to_withholding</c> or <c>buyer_zero_rated_with_exemption_code</c>; <c>BuyerSituationListVersion</c>,
+/// <c>BuyerVatMode</c> and <c>BuyerDocumentRequired</c> are the applied entry; an unknown or withdrawn situation is
+/// <c>Unresolved</c> with <c>buyer_situation_unknown</c>). SAT-D147: a <c>ZeroWithExemptionCode</c> situation answers VAT
+/// <c>ZeroRated</c> (0 %), no withholding, and the exemption code the order chose, checked against the exemption list in force
+/// (none chosen / no list / not listed: the code part is <c>Unresolved</c> and the invoice waits). <c>BuyerDocumentRequired</c>
+/// true: the invoice also waits until the order carries the buyer's document (no, date) — the order's check, flagged here. On
 /// one business date, in the server-resolved company; the order line may change it per line (SAT-D93). <c>State</c> <c>Unresolved</c> (with <c>Reason</c>) when the product has
 /// no item type or no default is in force — then every other part is empty. Otherwise: VAT <c>Resolved</c> with
 /// <c>VatPercent</c>, or <c>Exempt</c> ("KDV yok") with the exemption code part; withholding <c>Resolved</c> with
@@ -350,7 +463,23 @@ public sealed record SettingsTaxDefaultResolutionV1(
     string? WithholdingCodeState,
     string? WithholdingCode,
     string? WithholdingCodeReason,
-    string? BuyerAdjustment);
+    string? BuyerAdjustment,
+    long? BuyerSituationListVersion,
+    string? BuyerVatMode,
+    bool BuyerDocumentRequired);
+
+/// <summary>
+/// SAT-D158: the buyer situation list in force on a date: <c>Resolved</c> with its entries (each with its tax effect), or
+/// <c>Unresolved</c> (<c>buyer_situation_list_missing</c>).
+/// </summary>
+public sealed record SettingsTaxBuyerSituationListResolutionV1(
+    Guid CompanyId,
+    DateOnly On,
+    string State,
+    long? ListVersion,
+    DateOnly? EffectiveFrom,
+    IReadOnlyList<TaxBuyerSituationEntryViewV1> Entries,
+    string? Reason);
 
 /// <summary>A code list in force on a date: <c>Resolved</c> with its entries, or <c>Unresolved</c> (<c>code_list_missing</c>).</summary>
 public sealed record SettingsTaxCodeListResolutionV1(
@@ -384,14 +513,20 @@ public sealed record SettingsWithholdingThresholdResolutionV1(
 public interface ISettingsLineTaxResolverV1
 {
     /// <summary>
-    /// The default tax for the product's item type (the Product owner answers the type) for the order's buyer situation
-    /// (SAT-D140, one of <see cref="TaxBuyerSituationsV1"/>; an unknown value is <c>settings_tax_master_request_invalid</c>).
+    /// The default tax for the product's item type (the Product owner answers the type) for the order's buyer situation code
+    /// (SAT-D140/D158; a malformed code is <c>settings_tax_master_request_invalid</c>, one the list in force does not carry is
+    /// <c>Unresolved</c>) and, for a <c>ZeroWithExemptionCode</c> situation, the exemption code the order chose (SAT-D147; ignored
+    /// otherwise; a malformed code is <c>settings_tax_master_request_invalid</c>).
     /// </summary>
     Task<SettingsTaxDefaultResolutionV1> ResolveAsync(Guid productId, string buyerSituation, DateOnly on,
-        CancellationToken cancellationToken = default);
+        string? exemptionCode = null, CancellationToken cancellationToken = default);
 
-    /// <summary>The default tax for an item type and buyer situation, so a line can start from it (SAT-D139/D140).</summary>
+    /// <summary>The default tax for an item type and buyer situation, so a line can start from it (SAT-D139/D140/D147).</summary>
     Task<SettingsTaxDefaultResolutionV1> GetItemTypeDefaultAsync(string itemType, string buyerSituation, DateOnly on,
+        string? exemptionCode = null, CancellationToken cancellationToken = default);
+
+    /// <summary>SAT-D158: the buyer situation list in force on <paramref name="on"/>, for the order header's choice.</summary>
+    Task<SettingsTaxBuyerSituationListResolutionV1> GetBuyerSituationsAsync(DateOnly on,
         CancellationToken cancellationToken = default);
 
     Task<SettingsTaxCodeListResolutionV1> GetCodeListAsync(string kind, DateOnly on,

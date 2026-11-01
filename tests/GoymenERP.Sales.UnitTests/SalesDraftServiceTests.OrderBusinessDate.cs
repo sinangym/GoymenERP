@@ -116,7 +116,10 @@ public sealed partial class SalesDraftServiceTests
             world.Service().CreateQuoteAsync(QuoteOf([request]), Metadata("q-2-early")));
         Assert.Equal((422, SalesQuoteProblemCodesV1.RequestUnavailable), (covered.Status, covered.Code));
 
-        var submitted = (await world.Service().SubmitDraftAsync(order.Id, Command(order.Version), Metadata("o-submit"))).Detail.Draft;
+        // SAT-D123: a converted order carries no due terms; they are entered by a header revision before the approval.
+        var withTerms = (await world.Service().ReviseHeaderAsync(order.Id, new SalesDraftHeaderRevisionRequest(order.Version, "SENTETIK vade",
+            order.PartyId, order.CompanyAccountId, order.CurrencyId, null, null, null, TestDueTerms.PointDue30Wire), Metadata("o-terms"))).Detail.Draft;
+        var submitted = (await world.Service().SubmitDraftAsync(order.Id, Command(withTerms.Version), Metadata("o-submit"))).Detail.Draft;
         var approved = (await world.Service().ApproveDraftAsync(order.Id, Command(submitted.Version), Metadata("o-approve"))).Detail.Draft;
         var preview = await world.Service().GetCancellationImpactAsync(order.Id);
         await world.Service().CancelDraftAsync(order.Id, new SalesDraftCancelRequest(approved.Version, "SENTETIK müşteri vazgeçti",

@@ -18,6 +18,7 @@
  * A decoder returns null for anything it cannot vouch for; the caller fails closed.
  */
 
+import type { DueTerms } from './headerRevision'
 import { unplannedQuantity } from './deliveryPlan'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
 
@@ -356,6 +357,11 @@ export interface DraftCreateRequest {
   readonly paymentTerms: OwnerReference | null
   readonly sourceStrategy: OwnerReference | null
   readonly package: OwnerReference | null
+  /**
+   * SAT-D123 / SAT-D127: the due terms entered by hand at create (`SalesDueTermsV1`), or null ("vade yok"; never defaulted).
+   * Each instalment has its own due type, so a mixed plan is one list.
+   */
+  readonly dueTerms: DueTerms | null
 }
 
 export const OWNER_REFERENCE_FIELDS = [

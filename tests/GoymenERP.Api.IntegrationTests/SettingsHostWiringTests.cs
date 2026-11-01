@@ -544,8 +544,16 @@ public sealed class SettingsHostWiringTests
             var unavailable = await Assert.ThrowsAsync<SettingsPrerequisiteException>(
                 () => port.ResolveAsync(Guid.NewGuid(), TaxBuyerSituationsV1.Normal, ExtraApproval));
             Assert.Equal(TaxMasterProblemCodesV1.ProviderUnavailable, unavailable.Code);
+            // SAT-D158: a malformed situation code is a bad request; a well-formed one the list does not carry is "kaynak yok".
             Assert.Equal(TaxMasterProblemCodesV1.RequestInvalid, (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
-                () => port.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, "Somebody", ExtraApproval))).Code);
+                () => port.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, "Some body", ExtraApproval))).Code);
+            Assert.Equal(TaxMasterProblemCodesV1.RequestInvalid, (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, TaxBuyerSituationsV1.ExportRegistered,
+                    ExtraApproval.AddDays(5), exemptionCode: "70-1"))).Code);
+            var unknown = await port.GetItemTypeDefaultAsync(TaxItemTypesV1.Steel, "Somebody", ExtraApproval.AddDays(5));
+            Assert.Equal((TaxResolutionStatesV1.Unresolved, TaxResolutionReasonsV1.BuyerSituationUnknown), (unknown.State, unknown.Reason));
+            var situations = await port.GetBuyerSituationsAsync(ExtraApproval.AddDays(5));
+            Assert.Equal((TaxResolutionStatesV1.Resolved, 0L, 5), (situations.State, situations.ListVersion, situations.Entries.Count));
         }
 
         using (var factory = Host(Gdc, actorAllowedIn: Gsp))

@@ -70,6 +70,11 @@ describe('Açık siparişler (API-41, KPI No 124)', () => {
     expect(screen.queryByRole('columnheader', { name: /^Onaylı/ })).toBeNull()
     expect(within(rows[0]).getByText('800 kg')).toBeTruthy()
     expect(screen.getByTestId('sales-report-line-awaiting-c3c3c3c3-0000-4000-8000-000000000501').textContent).toContain('Rev.0')
+    // API-04: a line whose order has a pending customer/currency revision says so (it stays under the accepted revision's customer).
+    expect(screen.getByTestId('sales-report-line-header-pending-c3c3c3c3-0000-4000-8000-000000000501').textContent).toBe(
+      T.openOrders.headerRevisionPending,
+    )
+    expect(screen.queryByTestId('sales-report-line-header-pending-c3c3c3c3-0000-4000-8000-000000000201')).toBeNull()
     expect(screen.getAllByText(T.openOrders.noAcceptedRevision).length).toBeGreaterThan(0)
     // A group too large to measure shows no sums and asks to narrow the dates; it has no detail table.
     expect(within(rows[2]).getByText(T.openOrders.tooManyOrders(1500))).toBeTruthy()

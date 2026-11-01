@@ -161,7 +161,12 @@ public sealed partial class SalesStore : ISalesReportReadStore
 
     /// <summary>
     /// The current lines of the open-status orders of the filter — Draft lifecycle, approved now or earlier (an archived approved
-    /// revision) — as (draft, account, party, product, unit) rows.
+    /// revision) — as (draft, account, party, product, unit) rows. The account and party are those of the revision the open
+    /// quantity is MEASURED on (API-04 × API-41, SAT-D137; the service's <c>BasisCustomer</c> is the same rule): the
+    /// customer-accepted revision when acceptance is required and one is accepted, else the approved one (the current revision when
+    /// approved, else the last archived revision); the current header for the current revision, else that revision's archived
+    /// header (<c>DraftRevisionHeaders</c>). The customer filter, the group key and the keyset all use it, in SQL — a pending
+    /// customer change never moves an order to the new, unapproved customer, and paging stays exact.
     /// </summary>
     private IQueryable<OpenLineRow> OpenLines(Guid companyId, SalesOpenOrderReportFilter filter)
     {
@@ -181,14 +186,42 @@ public sealed partial class SalesStore : ISalesReportReadStore
             drafts = drafts.Where(row => row.BusinessDate <= to);
         }
 
+        var measured = drafts
+            .Select(row => new
+            {
+                row.Id,
+                row.Revision,
+                row.CompanyAccountId,
+                row.PartyId,
+                BasisRevision = row.CustomerAcceptanceRequired && row.CustomerAcceptedRevision != null
+                    ? row.CustomerAcceptedRevision.Value
+                    : row.ApprovalState == approved
+                        ? row.Revision
+                        : dbContext.DraftRevisions.Where(revision => revision.CompanyId == companyId && revision.DraftId == row.Id)
+                            .Max(revision => (int?)revision.Revision) ?? row.Revision,
+            })
+            .Select(row => new
+            {
+                row.Id,
+                CompanyAccountId = row.BasisRevision == row.Revision
+                    ? row.CompanyAccountId
+                    : dbContext.DraftRevisionHeaders
+                        .Where(header => header.CompanyId == companyId && header.DraftId == row.Id && header.Revision == row.BasisRevision)
+                        .Select(header => header.CompanyAccountId).FirstOrDefault(),
+                PartyId = row.BasisRevision == row.Revision
+                    ? row.PartyId
+                    : dbContext.DraftRevisionHeaders
+                        .Where(header => header.CompanyId == companyId && header.DraftId == row.Id && header.Revision == row.BasisRevision)
+                        .Select(header => header.PartyId).FirstOrDefault(),
+            });
         if (filter.CompanyAccountId is { } account)
         {
-            drafts = drafts.Where(row => row.CompanyAccountId == account);
+            measured = measured.Where(row => row.CompanyAccountId == account);
         }
 
         return dbContext.DraftLines.AsNoTracking()
             .Where(line => line.CompanyId == companyId)
-            .Join(drafts, line => line.DraftId, draft => draft.Id, (line, draft) => new OpenLineRow
+            .Join(measured, line => line.DraftId, draft => draft.Id, (line, draft) => new OpenLineRow
             {
                 DraftId = draft.Id,
                 CompanyAccountId = draft.CompanyAccountId,

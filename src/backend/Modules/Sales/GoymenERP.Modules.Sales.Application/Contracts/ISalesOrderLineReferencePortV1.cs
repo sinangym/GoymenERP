@@ -25,6 +25,12 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// stay <see cref="SalesOrderLineReferenceOutcomeV1.NotApproved"/> (fail-closed). Physical shipping only: invoicing waits
 /// during re-approval (the order status axis carries that gate; no invoicing consumer reads this port).
 /// </para>
+/// <para>
+/// <b>API-04 (header revision, fail-closed).</b> SAT-D103 does not cover a currency change and no decision lets a customer change
+/// ship under the old customer: while the newer revision names another customer (party or account) or another currency than the
+/// last approved revision, every line answers <see cref="SalesOrderLineReferenceOutcomeV1.NotApproved"/> with the state
+/// <c>HeaderRevisionPending</c>. A due-terms, sales-owner or delivery-reference revision keeps the SAT-D103 answer above.
+/// </para>
 /// </summary>
 public interface ISalesOrderLineReferencePortV1
 {

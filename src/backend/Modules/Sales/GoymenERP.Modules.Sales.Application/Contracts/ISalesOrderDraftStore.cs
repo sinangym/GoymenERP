@@ -67,6 +67,9 @@ public static class SalesDraftCommands
     /// <summary>DEC-SAL-002: POST /api/v1/sales/drafts/{id}/quantity-revision — the ordered quantity of every line replaced with a reason; an approved draft is archived and advances a revision.</summary>
     public const string ReviseQuantityV1 = "sales.order-draft.revise-quantity.v1";
 
+    /// <summary>API-04 (DEC-SAL-002, DEC-SAL-008): POST /api/v1/sales/drafts/{id}/header-revision — the header (customer, currency, due terms, sales owner, delivery references) replaced with a reason; an approved draft is archived and advances a revision.</summary>
+    public const string ReviseHeaderV1 = "sales.order-draft.revise-header.v1";
+
     /// <summary>DEC-SAL-005: POST /api/v1/sales/drafts/{id}/cancellation — an approved order's lifecycle Draft → Cancelled after its impact preview.</summary>
     public const string CancelV1 = "sales.order-draft.cancel.v1";
 
@@ -111,6 +114,12 @@ public static class SalesDraftStoreCodes
 
     /// <summary>The list cursor is not this company's, not this ordering's, or malformed (#257: 400).</summary>
     public const string InvalidCursor = "sales_invalid_cursor";
+
+    /// <summary>
+    /// The write's own audit record could not be built (an internal envelope fault, never the caller's input); nothing was
+    /// stored. Mapped like any other store failure (503), never to a field-less 400.
+    /// </summary>
+    public const string AuditRecordInvalid = "sales_audit_record_invalid";
 }
 
 /// <summary>A stored draft could not be written or read; <see cref="Code"/> says why. Nothing was stored.</summary>
@@ -293,6 +302,24 @@ public interface ISalesOrderDraftStore
         Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// API-04: the header revision, one save — the quantity revision's key rules and shape (§3/§4/§7/§8). <paramref name="beforeWrite"/>
+    /// receives the draft as read and is the caller's last word before the mutation (fences, the domain's own preconditions, the
+    /// owners read afresh) and returns what the mutation needs (e.g. the new currency's money profile); any refusal it throws
+    /// leaves nothing written. <paramref name="mutate"/> is the domain's <c>ReviseHeader</c> and returns the archived approved
+    /// snapshot (with its reason and header) when one was made. (A default body refuses for stores that predate API-04: test doubles only.) The store writes that snapshot's rows, the header's revision /
+    /// approval axis / version and its revisable columns (customer, currency + money profile, delivery references, sales owner,
+    /// due terms) together with the attempt record and the audit event, or nothing at all. No line, slice or schedule column
+    /// changes. The command name must be <see cref="SalesDraftCommands.ReviseHeaderV1"/>. <paramref name="revisionReason"/> is the
+    /// user's reason as the domain accepts it (SAT-D126: up to 4000 characters, trimmed): the audit "after" picture's
+    /// <c>reason</c> (an unbounded JSON column); the audit event's own short <c>Reason</c> is <paramref name="audit"/>'s fixed text.
+    /// </summary>
+    Task<SalesDraftStateResult?> ReviseDraftHeaderAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        Guid draftId, Func<SalesOrderDraft, SalesHeaderRevisionInput, DateTimeOffset, ApprovedRevisionSnapshot?> mutate,
+        SalesDraftStateAudit audit, string revisionReason, Func<SalesOrderDraft, CancellationToken, Task<SalesHeaderRevisionInput>> beforeWrite,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("Bu taslak deposu başlık revizyonunu desteklemiyor.");
+
+    /// <summary>
     /// Partial delivery (user decision 2026-09-30): one remainder change step, one save — the state command's key rules
     /// (§3/§4/§7/§8). <paramref name="beforeWrite"/> receives the draft as read (tracked header and lines) and is the caller's
     /// last word before the mutation — its fences, the domain's own preconditions and the owners' floor read afresh; any refusal
@@ -396,6 +423,19 @@ public static class SalesDraftRequestHash
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         return Hash(JsonSerializer.Serialize(
             new { command = commandName, draftId, request.ExpectedVersion, request.Reason, request.Lines }, SalesDraftJson.Options));
+    }
+
+    /// <summary>API-04: the canonical content of a header revision — the command, the draft and every member as sent, in order.</summary>
+    public static string Compute(string commandName, Guid draftId, SalesDraftHeaderRevisionRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
+        return Hash(JsonSerializer.Serialize(
+            new
+            {
+                command = commandName, draftId, request.ExpectedVersion, request.Reason, request.PartyId, request.CompanyAccountId,
+                request.CurrencyId, request.DeliveryAddress, request.Contact, request.SalesOwnerUserId, request.DueTerms,
+            }, SalesDraftJson.Options));
     }
 
     /// <summary>DEC-SAL-003: the canonical content of a delivery-schedule update (command, draft, version, header date and every line's dates, in order).</summary>

@@ -12,6 +12,8 @@ import type {
   RealizationState,
 } from './orderStatus'
 import type { LineTotalState, TaxState } from './orderTotals'
+import type { RemainderState } from './remainderChange'
+import type { DueBasis } from './headerRevision'
 import { APPROVAL_STATE, COMMERCIAL_STAGE, SALES_PROBLEM_CODE, type ApprovalState, type CancellationStatus, type CommercialStage, type SalesProblemCode } from './contract'
 
 export const ORDER_DRAFT_TEXT = {
@@ -185,6 +187,22 @@ export const ORDER_DRAFT_TEXT = {
   },
 } as const
 
+/**
+ * S-03: words that belong to the create page's layout only: short section names, the toggles of the optional details and what a
+ * closed toggle says is already filled in. Every field label and message is ORDER_DRAFT_TEXT's.
+ */
+export const ORDER_CREATE_LAYOUT_TEXT = {
+  list: 'Sipariş taslakları',
+  openDraft: 'Taslağı aç',
+  sections: { customer: 'Müşteri', order: 'Sipariş ve teslimat' },
+  headerMore: 'Termin ve not',
+  lineMore: 'Termin ve açıklama',
+  line: (lineNo: number) => `${lineNo}. satır`,
+  noteFilled: 'not var',
+  lineNoteFilled: 'açıklama var',
+  slicesFilled: (count: number) => `${count} termin dilimi`,
+} as const
+
 /** Messages for the stable codes in `SalesDraftFieldCodesV1`. Never parsed from `title`. */
 export const PROBLEM_CODE_TEXT: Record<SalesProblemCode, string> = {
   [SALES_PROBLEM_CODE.validationFailed]: 'Gönderilen bilgi geçerli değil.',
@@ -284,6 +302,7 @@ export const ORDER_LIST_TEXT = {
   loadingMore: 'Yükleniyor…',
   end: 'Listenin sonu.',
   nextPageFailed: 'Sonraki sayfa alınamadı. Gösterilen satırlar geçerli.',
+  stateSubject: 'sipariş taslakları',
 } as const
 
 export const ORDER_DETAIL_TEXT = {
@@ -366,6 +385,8 @@ export const ORDER_DETAIL_TEXT = {
     belowShipped: 'Bir satırın sipariş miktarı Lojistik\'te sevk edilmiş miktarın altında; miktar sevk edilenin altına inemez.',
     belowLoaded:
       'Bir satırın sipariş miktarı Lojistik\'te yüklenmiş miktarın altında; önce miktar revize edilmeli ya da yükleme düzeltilmelidir.',
+    /** SAT-D123 (EK18): the approval refuses an order without due terms. */
+    dueTermsRequired: 'Siparişin vadesi girilmemiş; vade girilmeden sipariş onaylanamaz. Vadeyi "Başlığı revize et" ile girin.',
     submit: 'Onaya gönder',
     approve: 'Onayla',
     reject: 'Reddet',
@@ -624,6 +645,7 @@ export const ORDER_DETAIL_TEXT = {
     number: 'İrsaliye no',
     eDispatchNumber: 'e-İrsaliye no',
     line: 'Satır',
+    lineQuantity: (lineNo: number | string, quantity: string, unit: string) => `Satır ${lineNo}: ${quantity} ${unit}`,
     more: 'Daha fazla taslak var; tamamı yükleme talimatlarında görünür.',
     subject: 'irsaliye taslakları',
   },
@@ -700,7 +722,7 @@ export const ORDER_DETAIL_TEXT = {
     deliveryAddress: 'Teslim adresi',
     contact: 'Muhatap',
     responsible: 'Sorumlu',
-    paymentTerms: 'Vade',
+    paymentTerms: 'Ödeme koşulu kaydı',
     sourceStrategy: 'Kaynak stratejisi',
     package: 'Paket',
   },
@@ -766,6 +788,9 @@ export const LINE_PRICING_TEXT = {
     submitting: 'İstisna onayı gönderiliyor…',
     unknown: 'Sonuç alınamadı; aynı anahtar ve gövdeyle yeniden deneyin.',
     failed: 'İstisna onaylanmadı. Güncel kaydı okuyup gerekçeleri düzeltin.',
+    forbidden: 'Bu şirkette taban fiyat istisnasını onaylama yetkiniz yok; onay kaydedilmedi.',
+    conflict: 'Fiyatlar siz baktıktan sonra değişti; onay kaydedilmedi. Güncel sipariş yeniden okunuyor.',
+    unavailable: 'Servis şu anda yanıt vermiyor; onay kaydedilmiş olabilir. Aynı anahtar ve gövdeyle yeniden deneyin.',
     retry: 'Aynı onayı yeniden dene',
     abandon: 'Bu denemeyi bırak',
     correct: 'Gerekçeleri düzelt',
@@ -902,6 +927,11 @@ export const REMAINDER_CHANGE_TEXT = {
   retry: 'Aynı işlemi tekrar dene', submitting: 'İşlem kaydediliyor…', completed: 'İşlem kaydedildi; güncel sipariş yeniden okunuyor.',
   unknown: 'Sonuç alınamadı; kayıt yapılmış olabilir. Aynı anahtarla tekrar deneyin.',
   failed: 'İşlem uygulanmadı.', invalid: 'Satır, miktar ve gerekçeyi kontrol edin.',
+  failedWithCode: (code: string) => `İşlem uygulanmadı (${code}).`,
+  unauthenticated: 'Oturumunuz sona erdi; işlem uygulanmadı.',
+  forbidden: 'Bu işlem için yetkiniz yok; işlem uygulanmadı.',
+  conflict: 'Sipariş siz baktıktan sonra değişti; işlem uygulanmadı. Güncel kayıt yeniden okunuyor.',
+  serviceUnavailable: 'Servis ya da Lojistik kaynağı şu anda yanıt vermiyor; işlem uygulanmadı. Biraz sonra yeniden deneyin.',
   authorityLost: 'Bu işlem için güncel yetki bulunmuyor; kayıt gönderilmedi.',
   /** The selected line's Logistics quantities; an unreadable one is named, never shown as zero. */
   lineFacts: (line: {
@@ -909,9 +939,19 @@ export const REMAINDER_CHANGE_TEXT = {
     readonly shipped: string | null
     readonly delivered: string | null
     readonly minimumQuantity: string | null
-  }) =>
-    `Yüklenen: ${line.loaded ?? 'okunamadı'} · Sevk: ${line.shipped ?? 'okunamadı'} · Teslim: ${line.delivered ?? 'okunamadı'} · Alt sınır: ${line.minimumQuantity ?? 'okunamadı'}`,
+  }, unit: string) => {
+    const q = (value: string | null) => (value === null ? 'okunamadı' : `${value} ${unit}`)
+    return `Yüklenen: ${q(line.loaded)} · Sevk: ${q(line.shipped)} · Teslim: ${q(line.delivered)} · Alt sınır: ${q(line.minimumQuantity)}`
+  },
   stateUnavailable: 'Yalnız onaylı ve iptal edilmemiş siparişin kısmi teslimat kalanı değiştirilebilir.',
+  /** The recorded change's state (`Pending` / `Approved` / `Rejected`), in words — never the wire spelling. */
+  state: { Pending: 'Onay bekliyor', Approved: 'Onaylandı', Rejected: 'Reddedildi' } satisfies Record<RemainderState, string>,
+  changeHeading: (changeNo: number) => `${changeNo}. değişiklik`,
+  lineNo: (lineNo: number) => `${lineNo}. satır`,
+  lineOption: (lineNo: number, quantity: string, unit: string) => `${lineNo}. satır · ${quantity} ${unit}`,
+  requestedBy: (person: string, at: string) => `Talep eden: ${person} · ${at}`,
+  decidedBy: (person: string, at: string) => `Karar veren: ${person} · ${at}`,
+  formerMember: (name: string) => `${name} (${ORDER_DETAIL_TEXT.approval.formerMember})`,
 } as const
 
 /** S-04 Sipariş 360: the six locked order-detail tabs (Master §7.2) and their empty states. */
@@ -1191,4 +1231,132 @@ export const ORDER_TOTALS_TEXT = {
   } satisfies Record<TaxState, string>,
   percent: (value: string) => `%${value}`,
   notAvailable: 'Yok',
+} as const
+
+/**
+ * API-04 / S-04: the read-only header summary — the due terms and the sales owner as the header read answers them. The due
+ * terms are price information (`sales.orders.price.read`); without it they are named as withheld, never as "no due terms".
+ */
+export const HEADER_SUMMARY_TEXT = {
+  dueTerms: 'Vade',
+  salesOwner: 'Satış sorumlusu',
+  loading: 'Okunuyor…',
+  unreadable: 'Okunamadı',
+  forbidden: 'Okuma yetkiniz yok',
+  dueTermsWithheld: 'Gizli (fiyat görme yetkisi gerekir)',
+  noDueTerms: 'Vade tanımlı değil',
+  noSalesOwner: 'Atanmadı',
+  /** One instalment in words: its share, its due type and from which date its days run. */
+  instalment: (sharePercent: string, basis: DueBasis, daysAfter: number) =>
+    basis === 'OrderDate'
+      ? `%${sharePercent} · Nokta vade · sipariş tarihinden ${daysAfter} gün sonra`
+      : `%${sharePercent} · Sevk vadesi · her sevkin tarihinden ${daysAfter} gün sonra`,
+} as const
+
+/**
+ * API-04 (DEC-SAL-002, DEC-SAL-008, SAT-D27, SAT-D103): the S-04 header revision — customer account, currency, due terms
+ * ("vade"), sales owner and delivery information. Every rule is the server's; these texts only say what it decided.
+ */
+export const HEADER_REVISION_TEXT = {
+  open: 'Başlığı revize et',
+  heading: 'Başlık revizyonu',
+  close: 'Başlık revizyonundan vazgeç',
+  description:
+    'Cari hesabı, para birimini, vadeyi, satış sorumlusunu ve teslim bilgisini gerekçeyle değiştirin. Satırlar, fiyatlar ve termin bu revizyonda değişmez.',
+  approvedWarning:
+    'Onaylı siparişte yalnız satış sorumlusu veya teslim bilgisi değişirse sipariş onaylı kalır; değişiklik gerekçesiyle kaydedilir. ' +
+    'Vade, cari hesap veya para birimi değişirse mevcut revizyon başlığıyla arşivlenir ve sipariş yeni revizyonla yeniden onaya ' +
+    'girer; vade değişirken sevkiyat son onaylı revizyonla sürer, fatura onay gelene kadar bekler.',
+  customerWarning:
+    'Satırlarında fiyat olan ya da sevki (tahsis, yükleme, irsaliye) başlamış siparişte cari hesap ve para birimi değiştirilemez; ' +
+    'yanlışsa sipariş iptal edilip yeni sipariş açılır. Cari hesap veya para birimi değişirse sipariş yeniden onaylanana kadar sevk edilmez.',
+  pendingCustomer: 'Bu siparişin onay bekleyen revizyonu cari hesabı veya para birimini değiştiriyor; onaylanana kadar sevk edilmez.',
+  stateUnavailable: 'Onay bekleyen, geri çekilmiş, iptal edilmiş veya kapatılmış siparişte başlık revizyonu yapılamaz.',
+  loading: 'Sipariş başlığı okunuyor…',
+  readFailed: 'Sipariş başlığı okunamadı; revizyon formu açılamadı.',
+  readForbidden: 'Bu siparişin başlığını okuma yetkiniz yok.',
+  retryRead: 'Başlığı yeniden oku',
+  dueTermsWithheld:
+    'Vade koşulları fiyat görme yetkisiyle gösterilir. Bu yetki olmadan başlık revizyonu yapılamaz; vade bilinmeden değiştirilmez.',
+  account: 'Cari hesap',
+  accountSearch: 'Cari ara',
+  accountsUnavailable: 'Cari listesi okunamadı; cari hesap değiştirilemez.',
+  currentAccount: 'Mevcut cari hesap',
+  currency: 'Para birimi',
+  currenciesUnavailable: 'Para birimi listesi okunamadı; para birimi değiştirilemez.',
+  currentCurrency: 'Mevcut para birimi',
+  deliveryAddress: 'Teslim adresi',
+  contact: 'Teslim iletişim kişisi',
+  none: 'Yok',
+  contactUnavailable: 'Seçilen carinin adres ve kişi listesi okunamadı.',
+  current: (id: string) => `Mevcut kayıt (${id})`,
+  salesOwner: 'Satış sorumlusu',
+  salesOwnerSearch: 'Satış sorumlusu ara',
+  salesOwnersUnavailable: 'Satış sorumlusu listesi okunamadı; satış sorumlusu değiştirilemez.',
+  salesOwnersMore: 'Daha fazla kişi var; aramayı daraltın.',
+  dueTerms: 'Vade',
+  noDueTerms: 'Vade tanımlı değil. Vade girilmeden sipariş onaylanamaz.',
+  addDueTerms: 'Vade tanımla',
+  removeDueTerms: 'Vadeyi kaldır',
+  addInstalment: 'Taksit ekle',
+  removeInstalment: (no: number) => `${no}. taksiti kaldır`,
+  instalment: (no: number) => `${no}. taksit`,
+  basis: 'Vade tipi',
+  basisName: {
+    OrderDate: 'Nokta vade (sipariş tarihi + gün)',
+    ShipmentDate: 'Sevk vadesi (her sevkin tarihi + gün)',
+  },
+  daysAfter: 'Gün',
+  sharePercent: 'Pay (%)',
+  mixedDueTermsHint:
+    'Her taksitin vade tipi ayrı seçilir; bir kısmı nokta vade, bir kısmı sevk vadesi olan karma vade de girilebilir.',
+  dueTermsHint:
+    'Nokta vadede vade sipariş tarihinden, sevk vadesinde her sevkin kendi tarihinden hesaplanır; takvim günü sayılır, hafta sonu ' +
+    've tatil günü kaydırılmaz. Taksitlerde payların toplamı tam 100 olmalıdır; tutarlar kuruşa yuvarlanır, kalan fark son taksite eklenir.',
+  reason: 'Revizyon gerekçesi',
+  reasonHint: 'Zorunlu; en fazla 4000 karakter.',
+  submit: 'Başlık revizyonunu kaydet',
+  submitting: 'Başlık revizyonu gönderiliyor…',
+  unknown: 'İşlemin sonucu alınamadı; kaydedilmiş olabilir. Aynı işlemi aynı anahtarla tekrar deneyin.',
+  completed: 'Başlık revizyonu kaydedildi. Sipariş yeniden onaya gönderilmelidir.',
+  completedUnapproved: 'Başlık revizyonu kaydedildi.',
+  completedNoReapproval: 'Başlık değişikliği kaydedildi; yalnız satış sorumlusu veya teslim bilgisi değiştiği için sipariş onaylı kalır.',
+  replayed: 'Bu başlık revizyonu daha önce kaydedilmişti; güncel sipariş gösteriliyor.',
+  retry: 'Aynı revizyonu tekrar dene',
+  abandon: 'Bu denemeyi bırak',
+  unauthenticated: 'Oturumunuz sona erdi; başlık revizyonu uygulanmadı.',
+  forbidden: 'Bu şirkette başlık revizyonu (veya fiyat görme) yetkiniz yok; işlem uygulanmadı.',
+  notFound: 'Sipariş bulunamadı; işlem uygulanmadı.',
+  conflict: 'Başlık revizyonu uygulanmadı; güncel kayıt yeniden okunuyor.',
+  versionConflict: 'Kayıt sürümü değişti; güncel başlığı yeniden inceleyin.',
+  validation: 'Başlık revizyonu uygulanmadı; alanları ve gerekçeyi kontrol edin.',
+  unavailable: 'Bağlı kayıt sahiplerine şu anda ulaşılamıyor; başlık değiştirilmedi. Daha sonra tekrar deneyin.',
+  unexpected: 'Başlık revizyonu uygulanmadı. Beklenmeyen bir yanıt alındı.',
+  blockedSource: (source: string) =>
+    source === 'inventory.active-allocations' ? 'Aktif stok tahsisi var.'
+      : source === 'logistics.loading-without-dispatch-note' ? 'Yükleme talimatı satırı var.'
+        : source === 'invoicing.uninvoiced-dispatch-notes' ? 'Onaylı irsaliye var.'
+          : `Bağlı kayıt: ${source}`,
+  /** The server's field codes the screen explains (the field names the member). */
+  fieldCode: {
+    sales_header_revision_priced_lines:
+      'Satırlarında fiyat olan siparişte cari hesap ve para birimi değiştirilemez; yanlışsa sipariş iptal edilip yeni sipariş açılır.',
+    sales_due_terms_required: 'Vade girilmeden sipariş onaylanamaz.',
+    sales_revision_no_change: 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
+    owner_reference_invalid: 'Seçilen kayıt geçerli değil (pasif, bu cariye ait değil veya satış sorumlusu olamaz).',
+    sales_due_terms_shares_not_whole: 'Taksit paylarının toplamı tam olarak 100 olmalıdır.',
+    sales_due_terms_sequence_invalid: 'Taksitler 1’den başlayarak sırayla numaralanmalıdır.',
+    sales_due_terms_days_out_of_range: 'Vade günü izin verilen aralığın dışında.',
+    sales_due_terms_share_invalid: 'Taksit payı 0’dan büyük, en fazla 100 olmalıdır.',
+    sales_due_terms_instalment_count_out_of_range: 'Taksit sayısı izin verilen aralığın dışında.',
+    sales_revision_reason_required: 'Revizyon gerekçesi zorunludur.',
+    passive_company_account: 'Seçilen cari hesap pasif.',
+    unsupported_currency: 'Seçilen para birimi siparişin tarihinde kullanılamıyor.',
+  } as Readonly<Record<string, string>>,
+  localError: (error: { readonly kind: string; readonly row?: number }) =>
+    error.kind === 'reason-required' ? 'Revizyon gerekçesi zorunludur.'
+      : error.kind === 'no-instalment' ? 'En az bir taksit girin veya vadeyi kaldırın.'
+        : error.kind === 'days' ? `${error.row}. taksitte gün 0 ile 36600 arasında tam sayı olmalıdır.`
+          : error.kind === 'share' ? `${error.row}. taksitte pay 0’dan büyük bir sayı olmalıdır.`
+            : 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
 } as const

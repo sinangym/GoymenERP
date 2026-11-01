@@ -2,6 +2,7 @@ import { isReferenceId, isVersionString } from './wirePrimitives'
 
 export const REMAINDER_KIND = { cancel: 'Cancel', revise: 'Revise' } as const
 export const REMAINDER_STATE = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' } as const
+export type RemainderState = (typeof REMAINDER_STATE)[keyof typeof REMAINDER_STATE]
 export const LINE_REMAINDER = { open: 'Open', revised: 'Revised', cancelled: 'Cancelled' } as const
 export const REMAINDER_FLOOR = { readable: 'Readable', unreadable: 'Unreadable' } as const
 

@@ -126,6 +126,8 @@ public enum SalesOpenOrderGroupStateView
 /// text: kilograms ≤ 3 decimals, pieces whole; never rounded). <c>completedWithinTolerance</c> (SAT-D130): shipped short but within
 /// the SAT-D5 tolerance — remaining 0. <c>awaitingAcceptanceQuantity</c>: what the approved revision awaiting customer acceptance
 /// (<c>awaitingAcceptanceRevision</c>) adds above the accepted quantity — max(0, awaiting − accepted); "0" and null when none.
+/// <c>headerRevisionPending</c> (API-04): the order's current customer or currency differs from the measured revision's (a
+/// customer/currency revision not yet approved or not yet accepted); the line stays under the measured revision's customer.
 /// </summary>
 public sealed record SalesOpenOrderLineView(
     Guid OrderId,
@@ -140,7 +142,8 @@ public sealed record SalesOpenOrderLineView(
     string RemainingQuantity,
     bool CompletedWithinTolerance,
     string AwaitingAcceptanceQuantity,
-    string? AwaitingAcceptanceRevision);
+    string? AwaitingAcceptanceRevision,
+    bool HeaderRevisionPending);
 
 /// <summary>API-41: an open order line of the group that is NOT in its sums, and why.</summary>
 public sealed record SalesOpenOrderUnmeasuredLineView(

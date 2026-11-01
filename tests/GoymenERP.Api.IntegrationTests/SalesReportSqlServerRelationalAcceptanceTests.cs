@@ -68,6 +68,7 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
     private static readonly SalesDraftStateAudit Lost = new("sales.quote.lost.v1", "Lose", "SENTETIK kaybedildi");
     private static readonly SalesDraftStateAudit AcceptedAudit =
         new("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance", "SENTETIK müşteri kabul etti");
+    private static readonly SalesDraftStateAudit HeaderAudit = new("sales.order-draft.header-revised.v1", "ReviseHeader", "Satış siparişi başlık revizyonu (SAT-D126)");
     private static readonly SalesDraftStateAudit RevisedAudit = new("sales.order-draft.quantity-revised.v1", "ReviseQuantity", "SENTETIK revizyon");
     private static readonly LogisticsMutationAudit Issued = new("logistics.loading-instruction.issued.v1", "Issue", "SENTETIK yayımlandı");
     private static readonly LogisticsMutationAudit Loaded = new("logistics.loading-instruction.load-recorded.v1", "RecordLoad", "SENTETIK yüklendi");
@@ -279,6 +280,71 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
         _ = orderOfA;
     }
 
+    [SqlServerFact]
+    public async Task A_pending_customer_revision_keeps_the_accepted_open_quantity_under_the_accepted_customer_with_a_marker_on_real_sql()
+    {
+        // API-04 × API-41 (SAT-D137, K3-REVIEW-B P2-1): Rev.0 for customer A approved and accepted (6 kg); a quantity revision to
+        // 9 kg and a header revision to customer B (Rev.1, Preparing: in place). The open quantity is measured on the accepted
+        // Rev.0, so it is grouped, filtered and shown under A — never under the new, unapproved B — and the line says so.
+        await using var run = await Run.StartAsync();
+        var customerA = await run.CustomerAsync(CompanyA, "SENTETIK Eski Cari A.Ş.");
+        var customerB = await run.CustomerAsync(CompanyA, "SENTETIK Yeni Cari A.Ş.");
+        var rev0 = await run.AcceptedDraftAsync(CompanyA, customerA, "c", "6");
+        var line = Assert.Single(rev0.Lines);
+        long version;
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            var revised = (await scope.Store.ReviseDraftQuantityAsync(run.SalesEnvelope("c-quantity"), Hash("c-quantity"),
+                SalesDraftCommands.ReviseQuantityV1, rev0.Id,
+                (d, now) => d.ReviseQuantities(rev0.Version, [new LineQuantityInput(line.Id, "9", 9m)], run.Actor, "SENTETIK miktar", now),
+                RevisedAudit, (_, _) => Task.CompletedTask))!.Draft;
+            var moved = (await scope.Store.ReviseDraftHeaderAsync(run.SalesEnvelope("c-header"), Hash("c-header"),
+                SalesDraftCommands.ReviseHeaderV1, rev0.Id,
+                (d, input, now) => d.ReviseHeader(revised.Version, input, run.Actor, "SENTETIK cari değişti", now), HeaderAudit,
+                "SENTETIK cari değişti",
+                (_, _) => Task.FromResult(new SalesHeaderRevisionInput(customerB.PartyId, customerB.AccountId, Currency, null,
+                    null, null, null, TestDueTerms.PointDue30))))!.Draft;
+            Assert.Equal((1, InternalApprovalState.Preparing, customerB.AccountId), (moved.Revision, moved.ApprovalState, moved.Header.CompanyAccountId));
+            version = moved.Version;
+        }
+
+        var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.ReportsRead);
+        using var client = run.Client(reader, CompanyA);
+        async Task<(Guid Account, string Remaining, string Awaiting, string? AwaitingRevision, bool Pending)> OnlyLineAsync(string query)
+        {
+            var report = await run.ReadAsync(client, SalesEndpoints.ReportOpenOrdersPath + query);
+            var group = Assert.Single(report.GetProperty("groups").EnumerateArray());
+            var only = Assert.Single(group.GetProperty("lines").EnumerateArray());
+            Assert.Equal(rev0.Id, only.GetProperty("orderId").GetGuid());
+            return (group.GetProperty("customer").GetProperty("companyAccountId").GetGuid(), only.GetProperty("remainingQuantity").GetString()!,
+                only.GetProperty("awaitingAcceptanceQuantity").GetString()!, only.GetProperty("awaitingAcceptanceRevision").GetString(),
+                only.GetProperty("headerRevisionPending").GetBoolean());
+        }
+
+        async Task AbsentUnderBAsync()
+        {
+            var underB = await run.ReadAsync(client, $"{SalesEndpoints.ReportOpenOrdersPath}?companyAccountId={customerB.AccountId:D}");
+            Assert.Empty(underB.GetProperty("groups").EnumerateArray());
+        }
+
+        // Pending (Preparing): 6 open under A (the accepted Rev.0), nothing awaiting (Rev.1 is not approved), the marker set.
+        Assert.Equal((customerA.AccountId, "6", "0", (string?)null, true), await OnlyLineAsync(""));
+        Assert.Equal((customerA.AccountId, "6", "0", (string?)null, true), await OnlyLineAsync($"?companyAccountId={customerA.AccountId:D}"));
+        await AbsentUnderBAsync();
+
+        // Rev.1 (customer B, 9 kg) approved inside but not yet accepted: the 3 kg awaiting difference stays on the SAME line under A.
+        await using (var scope = run.SalesStore(CompanyA))
+        {
+            var submitted = await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("c-submit-1"), Hash("c-submit-1"), SalesDraftCommands.SubmitV1,
+                rev0.Id, (d, now) => d.Submit(version, run.Actor, now), Submitted);
+            await scope.Store.UpdateDraftStateAsync(run.SalesEnvelope("c-approve-1", actor: "SENTETIK-approver"), Hash("c-approve-1"),
+                SalesDraftCommands.ApproveV1, rev0.Id, (d, now) => d.Approve(submitted!.Draft.Version, "SENTETIK-approver", now), ApprovedAudit);
+        }
+
+        Assert.Equal((customerA.AccountId, "6", "3", (string?)"Rev.1", true), await OnlyLineAsync($"?companyAccountId={customerA.AccountId:D}"));
+        await AbsentUnderBAsync();
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
 
     private static string Key(JsonElement group) =>
@@ -303,7 +369,9 @@ public sealed class SalesReportSqlServerRelationalAcceptanceTests
     private static SalesOrderDraft Draft(Guid company, Customer customer, string documentNo, DateOnly businessDate,
         IReadOnlyList<string> quantities)
     {
-        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, businessDate, businessDate.AddDays(10));
+        // SAT-D123 (API-04, merged over API-41 / API-42): an order is approved only with due terms.
+        var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, Currency, businessDate, businessDate.AddDays(10),
+            DueTerms: TestDueTerms.PointDue30);
         // Q9: the current service path creates every order with customer acceptance required (not the pre-Q9 default).
         var draft = SalesOrderDraft.Create(Guid.NewGuid(), company, documentNo, header, Money(company, businessDate), T0,
             customerAcceptanceRequired: true);

@@ -540,6 +540,16 @@ public static class ErpPermissions
     public const string SalesOrdersQuantityWrite = "sales.orders.quantity.write";
 
     /// <summary>
+    /// API-04 (DEC-SAL-002, DEC-SAL-008): revise an order's header — customer account, currency, due terms (vade), sales owner
+    /// and delivery references — into a new revision that needs re-approval (Sales owner name
+    /// SalesPermissionManifestV1.OrdersHeaderWrite, same string). Its own name: create, approve, price, quantity, schedule and
+    /// cancel names do not confer it and it confers none of them. Registered, not granted: no seeded role and no real user
+    /// receives it; the grant is a human gate. Company-wide only, like the other Sales names. Not Critical: the revision itself
+    /// returns to the approval flow.
+    /// </summary>
+    public const string SalesOrdersHeaderWrite = "sales.orders.header.write";
+
+    /// <summary>
     /// Q9: records the customer's acceptance of the current internally approved Sales order revision. Its own
     /// name: draft read, create, internal approval and quantity write do not confer it. Registration grants
     /// nothing; only the disposable s04 acceptance actor receives it in that run database. Company-wide only,
@@ -772,6 +782,7 @@ public static class ErpPermissions
             SalesOrdersCancel,
             SalesOrdersForceClose,
             SalesOrdersQuantityWrite,
+            SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
             SalesRequestsWrite,
             SalesRequestsRead,
@@ -909,6 +920,7 @@ public static class ErpPermissions
             SalesOrdersCancel,
             SalesOrdersForceClose,
             SalesOrdersQuantityWrite,
+            SalesOrdersHeaderWrite,
             SalesOrdersCustomerAcceptanceRecord,
             SalesRequestsWrite,
             SalesRequestsRead,
