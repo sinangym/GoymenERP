@@ -2261,7 +2261,7 @@ internal {{declaration}} : IDocumentObjectStoreV1
 
     def test_reviewed_compilation_surface_rejects_build_and_symbol_injection(self) -> None:
         source_paths = generator._source_surface_paths(self.snapshot)
-        self.assertEqual(1228, len(source_paths))
+        self.assertEqual(1237, len(source_paths))
         # API-41 / API-42: the Sales report contracts, the draft service's report half and its open-order report, the store's
         # report queries and the report routes (five compilation files).
         # SAT-D61…D70: the Settings discount limit groups, limits and bindings (contracts, calculator, rows, reads,
