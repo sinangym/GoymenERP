@@ -248,4 +248,6 @@ public sealed record SalesDraftServiceBindings(
     // API-04: the header revision's own name (customer, currency, due terms, sales owner, delivery references).
     string? HeaderPermission = SalesPermissionManifestV1.OrdersHeaderWrite,
     // SAT-D27 (1): the name a person must hold to be an order's sales owner (the sales-owner picker's eligibility, decided).
-    string? SalesOwnerEligibilityPermission = SalesPermissionManifestV1.DraftsCreate);
+    string? SalesOwnerEligibilityPermission = SalesPermissionManifestV1.DraftsCreate,
+    // API-41 / API-42: the Sales reports' own read name (a report's amount additionally needs the price read).
+    string? ReportReadPermission = SalesPermissionManifestV1.ReportsRead);

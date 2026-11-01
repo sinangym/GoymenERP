@@ -25,6 +25,8 @@ export const SALES_CAPABILITY = {
   dispatchesList: 'sales.dispatches.list',
   /** UI-61 S-08 Faturaya Hazır — API-31 under its own `sales.invoices.read` (Sales shell contract 1.9). */
   invoiceCandidatesList: 'sales.invoice-candidates.list',
+  /** UI-80 Satış raporları — API-41 / API-42 under their own `sales.reports.read` (Sales shell contract 1.11). */
+  reportsView: 'sales.reports.view',
 } as const
 
 /** Q9: non-routed control for recording customer acceptance of the current approved revision. */
@@ -85,6 +87,8 @@ export const SALES_ROUTE = {
   dispatches: '/satis/sevkiyatlar',
   /** S-08: static, never a draft id. */
   invoiceCandidates: '/satis/faturaya-hazir',
+  /** UI-80: static, never a draft id. */
+  reports: '/satis/raporlar',
 } as const
 
 export const salesDetailPath = (draftId: string) => `/satis/siparisler/${encodeURIComponent(draftId)}`

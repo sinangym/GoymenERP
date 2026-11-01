@@ -55,6 +55,8 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesRequestStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // API-22…24: the sales quote store is the same Sales store (the conversion writes the order in the quote's one save).
         services.AddScoped<ISalesQuoteStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
+        // API-41 / API-42: the read-only report queries are the same Sales store (one company-filtered context).
+        services.AddScoped<ISalesReportReadStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // The draft use cases (Sales API slice). The host supplies the Cari account port, the Settings
         // provider, the optional Product eligibility port and the central authority; the shell
         // capability provider is registered by the host once the Sales names are in the catalogue.
@@ -64,6 +66,8 @@ public static class SalesModuleExtensions
         // API-20 / API-21: the request use cases share the draft service's fence and owner reads (one scoped instance).
         services.AddScoped<ISalesRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesQuoteService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        // API-41 / API-42: the Sales reports share the draft service's fence, measurement basis and price-read decision.
+        services.AddScoped<ISalesReportService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // MOD-07: the sales order PDF's price facts share the draft service's fence and its price-read decision.
         services.AddScoped<ISalesOrderPrintReadServiceV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesOrderDraftPendingApprovalReadServiceV1,
@@ -144,7 +148,12 @@ public static class SalesModuleExtensions
         // API-04 / SAT-D27: the Identity user directory adapters (the host's central registrations) — the sales owner's display
         // and eligibility; until they are, a sales-owner change is 503, never an unverified person.
         serviceProvider.GetService<ISalesUserDisplaySourceV1>(),
-        serviceProvider.GetService<ISalesOwnerCandidateSourceV1>());
+        serviceProvider.GetService<ISalesOwnerCandidateSourceV1>(),
+        // API-41 / API-42: the report queries (this module's own store).
+        serviceProvider.GetRequiredService<ISalesReportReadStore>(),
+        // API-41 / API-42: the Cari party display (host adapter, registered centrally); until it is, a report naming a customer is
+        // 503, never a guessed name.
+        serviceProvider.GetService<ISalesPartyDisplaySourceV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

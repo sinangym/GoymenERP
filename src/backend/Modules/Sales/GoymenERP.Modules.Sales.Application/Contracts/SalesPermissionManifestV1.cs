@@ -12,7 +12,8 @@ namespace GoymenERP.Modules.Sales.Application.Contracts;
 /// </summary>
 public static class SalesPermissionManifestV1
 {
-    public const int Version = 17;
+    // v17 (#865, API-41/42): sales.reports.read; v18 (API-04, merged after it): sales.orders.header.write.
+    public const int Version = 18;
     public const string Subject = "Sales";
 
     /// <summary>POST /api/v1/sales/drafts, the reference reads of the draft form, and POST …/{id}/submission (SALES-A1: whoever may create a draft may send it for approval).</summary>
@@ -158,10 +159,19 @@ public static class SalesPermissionManifestV1
     /// </summary>
     public const string InvoicesRead = "sales.invoices.read";
 
+    /// <summary>
+    /// API-41 / API-42 (plan §3.4, UI-80): GET /api/v1/sales/reports/open-orders (KPI No 124, the open order quantity), …/lost-
+    /// opportunities (SAT-D25 lost quotes) and …/price-variance (No 25). Its own name: the order, quote, invoice and price names do
+    /// NOT confer it, and it confers none of them — a report's amount additionally needs <see cref="OrdersPriceRead"/> (withheld
+    /// otherwise). Read-only. Company-wide; not Critical; registered, granted to no role (who receives it is a grant decision and a
+    /// human gate).
+    /// </summary>
+    public const string ReportsRead = "sales.reports.read";
+
     public static IReadOnlySet<string> Names { get; } =
         new[] { DraftsCreate, DraftsRead, OrdersApprove, OrdersCustomerAcceptanceRecord, OrdersPriceWrite, OrdersPriceRead,
             OrdersPriceFloorExceptionApprove, OrdersDiscountExceptionApprove, OrdersDeliveryScheduleWrite, OrdersCancel,
             OrdersQuantityWrite, OrdersHeaderWrite, OrdersForceClose, RequestsWrite, RequestsRead, RequestsApprove, QuotesWrite, QuotesRead,
-            QuotesExpiredConversionApprove, InvoicesRead }
+            QuotesExpiredConversionApprove, InvoicesRead, ReportsRead }
             .ToFrozenSet(StringComparer.Ordinal);
 }

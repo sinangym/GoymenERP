@@ -1659,6 +1659,8 @@ public sealed partial class SalesDraftServiceTests
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         /// <summary>SAT-D25 / SAT-D39: the Settings quote policy port; null = not composed.</summary>
         public ISettingsSalesQuotePolicyProviderV1? QuotePolicies { get; set; }
+        /// <summary>API-41 / API-42: the in-memory report queries; null = not composed (503).</summary>
+        public FakeReportStore? Reports { get; set; } = new();
         /// <summary>The server clock of the service and of the in-memory quote store (SAT-D24: the business day comes from it).</summary>
         public TimeProvider Clock { get; set; } = QuoteClock(); // SAT-D71: a fixed server day (Day, Europe/Istanbul) — orders open on or after it.
 
@@ -1682,7 +1684,7 @@ public sealed partial class SalesDraftServiceTests
             return new SalesDraftService(company, User, Authority, ActiveRoleCodes, new FixedCorrelation(), Accounts, Settings,
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
-                SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners);
+                SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays);
         }
 
         public SalesDraftReadServiceV1 ReadService()

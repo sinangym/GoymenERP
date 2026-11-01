@@ -76,6 +76,8 @@ public sealed class SalesShellCapabilityProviderTests
                 ("sales.quotes.list", "/satis/teklifler", SalesPermissionManifestV1.QuotesRead, null),
                 ("sales.quotes.write", "/satis/teklifler/:quoteId",
                     $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesWrite}", "sales.quotes.detail"),
+                // UI-80 (1.11): the Sales reports screen on its own read name.
+                ("sales.reports.view", "/satis/raporlar", SalesPermissionManifestV1.ReportsRead, null),
                 // UI-20: the S-01 request screens and the SAT-D22 single-approver decision control of the detail.
                 ("sales.requests.approve", "/satis/talepler/:requestId",
                     $"{SalesPermissionManifestV1.RequestsRead}+{SalesPermissionManifestV1.RequestsApprove}", "sales.requests.detail"),

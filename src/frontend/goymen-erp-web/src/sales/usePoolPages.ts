@@ -5,7 +5,7 @@
  * resend. Rows are never sorted, filtered or counted on the client (LF-01).
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { classifyOutcome, type RemoteViewState, type ViewOutcome } from '../shell/uiState'
 import { useShellState } from '../shell/shellContext'
@@ -23,12 +23,13 @@ export type PoolPageFetch<T, S> = (
   filter: S | null,
 ) => Promise<ViewOutcome<PoolPageData<T>>>
 
-export function usePoolPages<T extends { readonly id: string }, S extends string>(
+export function usePoolPages<P extends PoolPageData<{ readonly id: string }>, S extends string>(
   namespace: string | null,
   name: string,
-  fetchPage: PoolPageFetch<T, S>,
+  fetchPage: (cursor: string | null, companyId: string, signal: AbortSignal | undefined, filter: S | null) => Promise<ViewOutcome<P>>,
   filter: S | null,
 ) {
+  type T = P['items'][number]
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
@@ -55,6 +56,7 @@ export function usePoolPages<T extends { readonly id: string }, S extends string
 
   const current = more.filter === filter ? more : { filter, rows: [] as readonly T[], cursor: undefined }
   const firstPage = first.data?.type === 'ok-single' ? first.data.data : null
+  const firstItems: readonly T[] = useMemo(() => firstPage?.items ?? [], [firstPage])
   const nextCursor = current.cursor === undefined ? (firstPage?.nextCursor ?? null) : current.cursor
 
   const loadMore = useCallback(async () => {
@@ -67,19 +69,21 @@ export function usePoolPages<T extends { readonly id: string }, S extends string
     if (outcome.type === 'http') boundary.report(outcome.status, snapshot)
     if (outcome.type === 'ok-single') {
       // A page that repeats a row already shown is not appended twice.
-      const seen = new Set([...(firstPage?.items ?? []), ...current.rows].map((row) => row.id))
+      const seen = new Set([...firstItems, ...current.rows].map((row) => row.id))
       setMore({ filter, rows: [...current.rows, ...outcome.data.items.filter((row) => !seen.has(row.id))], cursor: outcome.data.nextCursor })
       setContinuation('idle')
       return
     }
     setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
-  }, [boundary, companyId, current.rows, fetchPage, filter, firstPage, nextCursor])
+  }, [boundary, companyId, current.rows, fetchPage, filter, firstItems, nextCursor])
 
   const firstState: RemoteViewState<unknown> | null =
     firstPage !== null ? null : first.data === undefined ? { kind: 'initial-loading' } : (classifyOutcome(first.data) as RemoteViewState<unknown>)
 
   return {
-    rows: firstPage === null ? null : [...firstPage.items, ...current.rows],
+    rows: firstPage === null ? null : [...firstItems, ...current.rows],
+    /** The first page as decoded: a screen may show page-level facts of it (a report's disclosure), never re-derive rows. */
+    firstPage,
     firstState,
     retryFirst: () => void first.refetch(),
     nextCursor,

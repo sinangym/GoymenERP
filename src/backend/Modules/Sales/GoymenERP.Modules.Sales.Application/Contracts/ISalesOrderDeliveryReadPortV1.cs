@@ -22,6 +22,33 @@ public interface ISalesOrderDeliveryReadPortV1
     /// absent (the consumer reads that as zero). An unknown order answers an empty list.
     /// </summary>
     Task<SalesOrderDeliveryReadAnswerV1> ReadOrderDeliveriesAsync(Guid orderId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// API-41: the same answer for several orders in one read — one <see cref="SalesOrderDeliveryReadAnswerV1"/> per requested
+    /// order (an order the owner holds nothing for answers an empty list), at most <see cref="MaximumBatchSize"/> orders. The
+    /// default asks <see cref="ReadOrderDeliveriesAsync"/> order by order; the owner may answer the batch in one statement. Same
+    /// rules: no authority, the caller's company only, nothing created.
+    /// </summary>
+    async Task<IReadOnlyList<SalesOrderDeliveryReadAnswerV1>> ReadOrdersDeliveriesAsync(IReadOnlyCollection<Guid> orderIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(orderIds);
+        if (orderIds.Count > MaximumBatchSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(orderIds), $"En fazla {MaximumBatchSize} sipariş birlikte okunur.");
+        }
+
+        var answers = new List<SalesOrderDeliveryReadAnswerV1>(orderIds.Count);
+        foreach (var orderId in orderIds.Distinct())
+        {
+            answers.Add(await ReadOrderDeliveriesAsync(orderId, cancellationToken));
+        }
+
+        return answers;
+    }
+
+    /// <summary>The most orders one <see cref="ReadOrdersDeliveriesAsync"/> reads.</summary>
+    const int MaximumBatchSize = 100;
 }
 
 /// <summary>The owner's answer for one Sales order in the context company.</summary>

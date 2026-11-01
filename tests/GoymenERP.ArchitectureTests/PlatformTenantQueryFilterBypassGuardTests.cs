@@ -361,14 +361,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D103 / SAT-D104 / SAT-D111 / SAT-D112 (EK13, EK14), merged over #849's quote facts: the quantity revision's "a
             // loading line blocks" fact replaced by the shipped/loaded floor and re-approval cap fact, +1 price re-approval fact,
             // +1 rejected decrease resubmission fact (K3-REVIEW-B P1-1), kept ordinal-sorted (2b0ee4d9… -> ece55741…).
-            // API-04: +4 header revision facts (route + one save, customer/currency through the store, isolation/authority,
-            // migration backfill and 51133 rollback refusal), kept ordinal-sorted (ece55741… -> dbddfceb…).
-            // SAT-D126 review fix: +2 header revision facts (every revision's own audit reason; 51133's column arms alone),
-            // kept ordinal-sorted (dbddfceb… -> 1cf2afde…).
-            // K3-REVIEW P2-1: +1 header revision fact (1000/1001/4000-character reasons recorded whole), kept ordinal-sorted
-            // (1cf2afde… -> 3d3f2844…).
+            // API-41 / API-42: +2 SalesReportSqlServerRelationalAcceptanceTests facts, kept ordinal-sorted (ece55741… -> a85d5b59…).
+            // API-04 (merged over API-41 / API-42): +4 header revision facts (route + one save, customer/currency through the store,
+            // isolation/authority, migration backfill and 51133 rollback refusal), +2 (every revision's own audit reason; 51133's
+            // column arms alone) and +1 (1000/1001/4000-character reasons recorded whole), kept ordinal-sorted (a85d5b59… -> 2e764e76…).
             ["tools/relational_inventory/sales.txt"] =
-                "3d3f28442efb05f09bd6254166bf0f34e65fe6715bbeddf1dcba04c7a0719a00",
+                "2e764e761b8b7c1629d374a1cde4857710d9ad3c6f16fd079138deba28d47197",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1380,10 +1378,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // and the named service factory (DI-only, the owner ports optional); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D63 (limit-group source) merged over SAT-D25 / SAT-D39 (the draft service also
                     // receives the optional Settings quote policy port, DI-only); the provider branch and its token counts are unchanged.
-                    // Re-fingerprinted for API-04: the draft service also receives the optional Identity directory adapters (the
-                    // sales owner's display and eligibility, DI-only); the provider branch and its token counts are unchanged.
+                    // Re-fingerprinted for API-41 / API-42: the report store and report service registrations over the same Sales store
+                    // and draft service, and the draft service's optional Cari party display (DI-only); provider branch and token counts
+                    // are unchanged.
+                    // Re-fingerprinted for API-04 merged over API-41 / API-42: the draft service also receives the optional Identity
+                    // directory adapters (the sales owner's display and eligibility, DI-only); provider branch and token counts unchanged.
                     new(
-                        "a3736abb404247b35b225ebb4a665c7b3556feb3606c0b87edd481c685125e75",
+                        "EXTFP",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,

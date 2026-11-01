@@ -51,6 +51,27 @@ public sealed class LogisticsSalesOrderDeliveryReadPortTests
         Assert.Equal((CompanyA, Guid.Empty, 0), (answer.CompanyId, answer.OrderId, answer.Lines.Count));
     }
 
+    [Fact]
+    public async Task The_batch_read_refuses_without_a_company_and_above_its_bound_and_answers_empty_ids_without_a_query()
+    {
+        await using (var unresolved = Context(resolved: false))
+        {
+            var refused = new LogisticsSalesOrderDeliveryReadPort(unresolved, new CompanyContext());
+            await Assert.ThrowsAsync<InvalidOperationException>(() => refused.ReadOrdersDeliveriesAsync([Guid.NewGuid()]));
+        }
+
+        var company = new CompanyContext();
+        company.Set(CompanyA);
+        await using var context = Context(resolved: true);
+        var port = new LogisticsSalesOrderDeliveryReadPort(context, company);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            port.ReadOrdersDeliveriesAsync([.. Enumerable.Range(0, ISalesOrderDeliveryReadPortV1.MaximumBatchSize + 1).Select(_ => Guid.NewGuid())]));
+        // Every requested order answers once, for the context company (the connection points nowhere: no query was made).
+        var answers = await port.ReadOrdersDeliveriesAsync([Guid.Empty, Guid.Empty]);
+        Assert.Equal((CompanyA, Guid.Empty, 0), (Assert.Single(answers).CompanyId, answers[0].OrderId, answers[0].Lines.Count));
+    }
+
     /// <summary>The two host settings the module reads (no configuration package in this test project).</summary>
     private sealed class Settings(string connectionString) : IConfiguration
     {

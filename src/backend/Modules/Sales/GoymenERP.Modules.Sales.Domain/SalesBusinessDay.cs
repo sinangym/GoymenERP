@@ -30,6 +30,17 @@ public static class SalesBusinessDay
         var zone = Zone.Value ?? throw new SalesBusinessDayUnavailableException();
         return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(instant, zone).DateTime);
     }
+
+    /// <summary>
+    /// The UTC instant at which the Europe/Istanbul calendar day <paramref name="day"/> begins — the inverse of
+    /// <see cref="DateOf"/> at midnight, so a range of business days is a range of instants without a UTC guess (API-42).
+    /// </summary>
+    public static DateTimeOffset StartOfDayUtc(DateOnly day)
+    {
+        var zone = Zone.Value ?? throw new SalesBusinessDayUnavailableException();
+        var local = day.ToDateTime(TimeOnly.MinValue, DateTimeKind.Unspecified);
+        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, zone), TimeSpan.Zero);
+    }
 }
 
 /// <summary>The host cannot resolve the business day's time zone; no other zone stands in for it.</summary>
