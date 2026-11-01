@@ -225,23 +225,39 @@ function sameTerms(a: DueTerms | null, b: DueTerms | null): boolean {
  * JS number on the wire; whether they add up to 100 is the server's rule (the screen does no arithmetic it would have to trust).
  * When the due terms are withheld from this caller the current terms are unknown here, so the form never offers to send them.
  */
+export type DueTermsFormError = Extract<HeaderFormError, { readonly kind: 'no-instalment' | 'days' | 'share' }>
+
+export type BuiltDueTerms =
+  | { readonly ok: true; readonly dueTerms: DueTerms | null }
+  | { readonly ok: false; readonly error: DueTermsFormError }
+
+/**
+ * The wire due terms from the editor's rows (null rows = "vade yok"), or the first row error. Shared by the header revision and
+ * the S-03 create form (SAT-D123 / SAT-D127: due terms entered by hand at create). Each row keeps its own due type, so a mixed
+ * ("karma") plan — some instalments after the order date, some after each shipment — is one list. The shape only: whether the
+ * shares add up to 100 is the server's rule.
+ */
+export function buildDueTerms(rows: readonly InstalmentRow[] | null): BuiltDueTerms {
+  if (rows === null) return { ok: true, dueTerms: null }
+  if (rows.length === 0) return { ok: false, error: { kind: 'no-instalment' } }
+  const instalments: DueInstalment[] = []
+  for (const [index, row] of rows.entries()) {
+    const days = row.daysAfter.trim()
+    if (!/^[0-9]{1,5}$/.test(days) || Number(days) > DUE_LIMITS.maximumDaysAfter) {
+      return { ok: false, error: { kind: 'days', row: index + 1 } }
+    }
+    const share = parseDecimalInput(row.sharePercent)
+    if (!share.ok || !/[1-9]/.test(share.value)) return { ok: false, error: { kind: 'share', row: index + 1 } }
+    instalments.push({ sequenceNo: index + 1, basis: row.basis, daysAfter: Number(days), sharePercent: share.value })
+  }
+  return { ok: true, dueTerms: { instalments } }
+}
+
 export function buildHeaderRevisionRequest(header: DraftHeader, values: HeaderFormValues): BuiltHeaderRevision {
   if (values.reason.trim() === '') return { ok: false, error: { kind: 'reason-required' } }
-  let dueTerms: DueTerms | null = null
-  if (values.instalments !== null) {
-    if (values.instalments.length === 0) return { ok: false, error: { kind: 'no-instalment' } }
-    const instalments: DueInstalment[] = []
-    for (const [index, row] of values.instalments.entries()) {
-      const days = row.daysAfter.trim()
-      if (!/^[0-9]{1,5}$/.test(days) || Number(days) > DUE_LIMITS.maximumDaysAfter) {
-        return { ok: false, error: { kind: 'days', row: index + 1 } }
-      }
-      const share = parseDecimalInput(row.sharePercent)
-      if (!share.ok || !/[1-9]/.test(share.value)) return { ok: false, error: { kind: 'share', row: index + 1 } }
-      instalments.push({ sequenceNo: index + 1, basis: row.basis, daysAfter: Number(days), sharePercent: share.value })
-    }
-    dueTerms = { instalments }
-  }
+  const terms = buildDueTerms(values.instalments)
+  if (!terms.ok) return { ok: false, error: terms.error }
+  const dueTerms = terms.dueTerms
   const payload: HeaderRevisionRequest = {
     expectedVersion: header.draftVersion,
     reason: values.reason,

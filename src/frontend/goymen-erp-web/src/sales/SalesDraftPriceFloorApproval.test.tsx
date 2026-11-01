@@ -143,4 +143,62 @@ describe('AT-021 below-floor exception approval control', () => {
     expect(within(control).getByRole('alert').textContent).toBe(P.floorApproval.failed)
     expect(within(control).getByRole('button', { name: P.floorApproval.correct })).toBeTruthy()
   })
+
+  it('on a 409 says the prices moved, records nothing and re-reads the order', async () => {
+    let detailReads = 0
+    installFetch({
+      capabilities: WITH_FLOOR,
+      onDetail: () => { detailReads += 1; return json(detail('3')) },
+      onLinePricing: () => json(pricing('3', PENDING)),
+      onPriceFloorExceptionApproval: () => json({ status: 409, code: 'version_conflict' }, 409),
+    })
+    renderSalesApp(path)
+
+    const control = await screen.findByTestId('sales-price-floor-approval')
+    const before = detailReads
+    await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
+    expect((await within(control).findByRole('alert')).textContent).toBe(P.floorApproval.conflict)
+    await waitFor(() => expect(detailReads).toBeGreaterThan(before))
+    expect(within(control).queryByRole('button', { name: P.floorApproval.retry })).toBeNull()
+  })
+
+  it('on a 503 keeps the outcome unknown and retries the SAME key and body', async () => {
+    const posts: RecordedCall[] = []
+    installFetch({
+      capabilities: WITH_FLOOR,
+      onDetail: () => json(detail('3')),
+      onLinePricing: () => json(pricing('3', PENDING)),
+      onPriceFloorExceptionApproval: (call) => {
+        posts.push(call)
+        return json({ status: 503, code: 'service_unavailable' }, 503)
+      },
+    })
+    renderSalesApp(path)
+
+    const control = await screen.findByTestId('sales-price-floor-approval')
+    await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
+    expect(await within(control).findByText(P.floorApproval.unavailable)).toBeTruthy()
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.retry }))
+    await waitFor(() => expect(posts).toHaveLength(2))
+    expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey)
+    expect(posts[1].body).toBe(posts[0].body)
+  })
+
+  it('on a 403 hands the refusal to the real auth boundary: the protected order closes and no approval is left', async () => {
+    installFetch({
+      capabilities: WITH_FLOOR,
+      onDetail: () => json(detail('3')),
+      onLinePricing: () => json(pricing('3', PENDING)),
+      onPriceFloorExceptionApproval: () => json({ status: 403, code: 'forbidden' }, 403),
+    })
+    renderSalesApp(path)
+
+    const control = await screen.findByTestId('sales-price-floor-approval')
+    await userEvent.type(within(control).getByLabelText(P.floorApproval.reason(1)), 'SENTETIK sözleşme')
+    await userEvent.click(within(control).getByRole('button', { name: P.floorApproval.approve }))
+    expect(await screen.findByText('Bulunamadı — sayfa')).toBeTruthy()
+    expect(screen.queryByTestId('sales-price-floor-approval')).toBeNull()
+  })
 })

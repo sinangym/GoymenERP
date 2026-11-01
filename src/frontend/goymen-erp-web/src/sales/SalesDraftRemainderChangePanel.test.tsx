@@ -5,6 +5,7 @@ import detailRaw from './examples/detail-response.json?raw'
 import { decodeDraftDetail, type DraftDetail } from './contract'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
 import { resetPendingRemainderActions } from './pendingRemainderChanges'
+import { REMAINDER_CHANGE_TEXT } from './salesText'
 
 const authBoundary = vi.hoisted(() => ({ capture: vi.fn(() => ({})), report: vi.fn() }))
 vi.mock('../shell/useAuthBoundary', () => ({ useAuthBoundary: () => authBoundary }))
@@ -22,6 +23,8 @@ function approvedBody(version = '4', quantity = '5'): Record<string, any> {
   }
   body.lines[0].quantity = quantity
   body.lines[0].requestedDeliverySlices = null
+  // TEK-11: the order names its unit, so quantities are shown with it.
+  body.lines[0].orderUnitCode = 'KG'
   return body
 }
 
@@ -127,11 +130,16 @@ describe('S-04 partial-delivery remainder panel', () => {
     render(<QueryClientProvider client={secondClient}><SalesDraftRemainderChangePanel detail={reopened} companyId={reopened.draft.companyId}
       namespace="test-company" actorId="approver-a" routeEntryGeneration={2}
       attemptBinding='["approver-a","session-1","company-a","draft-a"]'
+      userDisplays={[{ userId: 'sales-preparer', displayName: 'Sentetik Hazırlayan', isActiveInCompany: true }]}
       canRequest={false} canDecide onRecorded={vi.fn()} /></QueryClientProvider>)
 
     const reopenedPanel = await screen.findByTestId('sales-remainder-changes')
-    expect(await within(reopenedPanel).findByText(/Yüklenen: 2 · Sevk: 2 · Teslim: 1/)).toBeTruthy()
-    expect(within(reopenedPanel).getByText(/1\. satır · 5 → 3 · Approved/)).toBeTruthy()
+    expect(await within(reopenedPanel).findByText(/Yüklenen: 2 KG · Sevk: 2 KG · Teslim: 1 KG/)).toBeTruthy()
+    expect(within(reopenedPanel).getByTestId('sales-remainder-change-1-facts').textContent).toBe('1. satır · 5 KG → 3 KG · Onaylandı')
+    // The state is a Turkish word, never the wire spelling; the people are named by the detail's directory entries.
+    expect(within(reopenedPanel).queryByText(/Approved/)).toBeNull()
+    expect(within(reopenedPanel).getByTestId('sales-remainder-change-1-requested').textContent).toContain('Talep eden: Sentetik Hazırlayan')
+    expect(within(reopenedPanel).getByTestId('sales-remainder-change-1-decided').textContent).toContain('Karar veren: sales-approver')
     expect(within(reopenedPanel).queryByRole('button', { name: 'Onayla' })).toBeNull()
   })
 
@@ -293,5 +301,54 @@ describe('S-04 partial-delivery remainder panel', () => {
     await waitFor(() => expect(within(reopened).queryByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeNull())
     expect(calls).toHaveLength(2)
     expect(calls[1]).toEqual(calls[0])
+  })
+
+  it.each([
+    [403, 'forbidden'],
+    [503, 'service-unavailable'],
+  ] as const)('a %i read shows its own state and no quantity or command', async (status, kind) => {
+    const current = detail()
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ status }), { status })))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
+      namespace="test-company" actorId="actor-a" routeEntryGeneration={1} attemptBinding={`read-${status}`}
+      canRequest canDecide onRecorded={vi.fn()} /></QueryClientProvider>)
+    const panel = await screen.findByTestId('sales-remainder-changes')
+    await waitFor(() => expect(panel.querySelector(`[data-state="${kind}"]`)).not.toBeNull())
+    expect(within(panel).queryByText(/Yüklenen:/)).toBeNull()
+    expect(within(panel).queryByRole('button', { name: 'Onaya gönder' })).toBeNull()
+    expect(authBoundary.report).toHaveBeenCalledWith(status, expect.anything())
+  })
+
+  it.each([
+    [403, REMAINDER_CHANGE_TEXT.forbidden, false],
+    [409, REMAINDER_CHANGE_TEXT.conflict, true],
+    [503, REMAINDER_CHANGE_TEXT.serviceUnavailable, false],
+  ] as const)('a %i command answer says why nothing changed, keeps no retry and re-reads only on a conflict', async (status, message, reread) => {
+    const current = detail()
+    const posts: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
+        return new Response(JSON.stringify(remainderRead(current.lines[0].lineId, current.lines[0].orderUnitId)), { status: 200 })
+      }
+      posts.push(JSON.parse(String(init?.body)))
+      return new Response(JSON.stringify({ status, code: status === 409 ? 'version_conflict' : 'refused' }), {
+        status, headers: { 'Content-Type': 'application/problem+json' },
+      })
+    }))
+    const recorded = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><SalesDraftRemainderChangePanel detail={current} companyId={current.draft.companyId}
+      namespace="test-company" actorId="actor-a" routeEntryGeneration={1} attemptBinding={`command-${status}`}
+      canRequest canDecide={false} onRecorded={recorded} /></QueryClientProvider>)
+    const panel = await screen.findByTestId('sales-remainder-changes')
+    fireEvent.change(await within(panel).findByLabelText('Gerekçe'), { target: { value: 'SENTETIK ret' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Onaya gönder' }))
+    expect(await within(panel).findByText(message)).toBeTruthy()
+    expect(posts).toHaveLength(1)
+    // A terminal refusal settles the attempt: nothing is offered to resend, and the form is usable again.
+    expect(within(panel).queryByRole('button', { name: 'Aynı işlemi tekrar dene' })).toBeNull()
+    expect((within(panel).getByRole('button', { name: 'Onaya gönder' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(recorded).toHaveBeenCalledTimes(reread ? 1 : 0)
   })
 })

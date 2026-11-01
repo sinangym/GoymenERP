@@ -84,7 +84,7 @@ import {
 } from './referenceSource'
 import { SALES_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY, SALES_ROUTE, salesDetailPath } from './capabilities'
 import { contactLabel, formatBusinessDate } from './format'
-import { ORDER_DRAFT_TEXT as T, createFieldErrorText } from './salesText'
+import { ORDER_CREATE_LAYOUT_TEXT as PAGE, ORDER_DRAFT_TEXT as T, createFieldErrorText } from './salesText'
 import type { DraftCreateRequest, DraftMutation } from './contract'
 import { useShellDispatch, useShellState } from '../shell/shellContext'
 import { hasCapability } from '../shell/shellState'
@@ -93,23 +93,9 @@ import { useCompanyDirectory } from '../shell/useShellOrchestrator'
 import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { StatusIndicator } from '../ui/StatusIndicator'
+import { SalesDueTermsEditor } from './SalesDueTermsEditor'
 import styles from './SalesDraftCreatePage.module.css'
 
-/**
- * Words that belong to this page's layout only: short section names, the toggles of the optional details and what a
- * closed toggle says is already filled in. Every field label and message stays in ./salesText.
- */
-const PAGE = {
-  list: 'Sipariş taslakları',
-  openDraft: 'Taslağı aç',
-  sections: { customer: 'Müşteri', order: 'Sipariş ve teslimat' },
-  headerMore: 'Termin ve not',
-  lineMore: 'Termin ve açıklama',
-  line: (lineNo: number) => `${lineNo}. satır`,
-  noteFilled: 'not var',
-  lineNoteFilled: 'açıklama var',
-  slicesFilled: (count: number) => `${count} termin dilimi`,
-} as const
 
 /** The shell's dirty scope: a company switch ASKS while this form holds work. */
 export const SALES_CREATE_DIRTY_SCOPE = 'sales.order.create'
@@ -143,11 +129,13 @@ export function SalesDraftCreatePage() {
  * nothing typed, never undefined.
  */
 function withDeliveryMembers(values: OrderDraftFormValues): OrderDraftFormValues {
-  const remembered: Partial<Pick<OrderDraftFormValues, 'deliveryAddressId' | 'contactId'>> = values
+  const remembered: Partial<Pick<OrderDraftFormValues, 'deliveryAddressId' | 'contactId' | 'instalments'>> = values
   return {
     ...values,
     deliveryAddressId: remembered.deliveryAddressId ?? '',
     contactId: remembered.contactId ?? '',
+    // SAT-D123: an attempt remembered before the create carried due terms had none.
+    instalments: remembered.instalments ?? null,
     lines: values.lines.map((line) => {
       const price: Partial<Pick<LineValues, 'unitPriceText' | 'priceUnitId' | 'discountPercentText'>> = line
       return {
@@ -761,6 +749,16 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                   </Field>
                 </div>
               </More>
+              {/* SAT-D123 / SAT-D127: the due terms typed at create (optional, never defaulted); the header revision's editor. */}
+              <div id={ORDER_FIELD.dueTerms} tabIndex={-1} data-testid="sales-create-due-terms">
+                <SalesDueTermsEditor
+                  rows={values.instalments}
+                  onChange={(instalments) => setValues((v) => ({ ...v, instalments }))}
+                  nextKey={browserIds}
+                  error={errors[ORDER_FIELD.dueTerms] ?? null}
+                  errorId={`${ORDER_FIELD.dueTerms}-error`}
+                />
+              </div>
             </section>
 
             <section className={styles.section} aria-labelledby="sales-create-lines">

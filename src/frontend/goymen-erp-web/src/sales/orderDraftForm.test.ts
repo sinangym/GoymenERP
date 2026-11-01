@@ -21,7 +21,7 @@ import {
   type OrderDraftFormValues,
   type OrderDraftOptions,
 } from './orderDraftForm'
-import { ORDER_DRAFT_TEXT } from './salesText'
+import { HEADER_REVISION_TEXT, ORDER_DRAFT_TEXT } from './salesText'
 
 // The ids of #257's create-request.json. Synthetic schema values, not fixtures.
 const PARTY = '11111111-1111-1111-1111-111111111111'
@@ -82,6 +82,7 @@ function exampleForm(over: Partial<OrderDraftFormValues> = {}): OrderDraftFormVa
     ],
     deliveryAddressId: '',
     contactId: '',
+    instalments: null,
     ...over,
   }
 }
@@ -110,9 +111,46 @@ describe('validateOrderDraft — consumes #257 create-request.json', () => {
     if (!result.ok) return
     // Deep equality with the Backend's own example, including explicit nulls and the
     // absence of company, actor, version, state and approval members.
-    expect(result.payload).toEqual(JSON.parse(createRequestRaw))
+    // SAT-D123: the pinned example predates the create's `dueTerms`; the form sends it as an explicit null ("vade yok").
+    const expected = { ...JSON.parse(createRequestRaw), dueTerms: null }
+    expect(result.payload).toEqual(expected)
     // …and the same member order, so the serialized snapshot is the example's shape.
-    expect(Object.keys(result.payload)).toEqual(Object.keys(JSON.parse(createRequestRaw)))
+    expect(Object.keys(result.payload)).toEqual(Object.keys(expected))
+  })
+
+  it('SAT-D123: sends hand-typed mixed due terms ("karma vade") with each instalment’s own type, in row order', () => {
+    const result = validateOrderDraft(exampleForm({
+      instalments: [
+        { key: 'r1', basis: 'OrderDate', daysAfter: '30', sharePercent: '40' },
+        { key: 'r2', basis: 'ShipmentDate', daysAfter: ' 60 ', sharePercent: '60,0' },
+      ],
+    }), OPTIONS)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.payload.dueTerms).toEqual({ instalments: [
+      { sequenceNo: 1, basis: 'OrderDate', daysAfter: 30, sharePercent: '40' },
+      { sequenceNo: 2, basis: 'ShipmentDate', daysAfter: 60, sharePercent: '60' },
+    ] })
+  })
+
+  it('SAT-D123: refuses an emptied plan and a malformed row under the due-terms field, and maps the server’s due-terms paths there', () => {
+    const empty = validateOrderDraft(exampleForm({ instalments: [] }), OPTIONS)
+    expect(empty.ok).toBe(false)
+    if (!empty.ok) expect(empty.errors[ORDER_FIELD.dueTerms]).toBe(HEADER_REVISION_TEXT.localError({ kind: 'no-instalment' }))
+    const days = validateOrderDraft(exampleForm({
+      instalments: [
+        { key: 'r1', basis: 'OrderDate', daysAfter: '30', sharePercent: '50' },
+        { key: 'r2', basis: 'OrderDate', daysAfter: '36601', sharePercent: '50' },
+      ],
+    }), OPTIONS)
+    expect(days.ok).toBe(false)
+    if (!days.ok) expect(days.errors[ORDER_FIELD.dueTerms]).toBe(HEADER_REVISION_TEXT.localError({ kind: 'days', row: 2 }))
+    const share = validateOrderDraft(exampleForm({ instalments: [{ key: 'r1', basis: 'OrderDate', daysAfter: '0', sharePercent: '0' }] }), OPTIONS)
+    expect(share.ok).toBe(false)
+    if (!share.ok) expect(share.errors[ORDER_FIELD.dueTerms]).toBe(HEADER_REVISION_TEXT.localError({ kind: 'share', row: 1 }))
+    expect(formFieldForServerPath('dueTerms.instalments', [])).toBe(ORDER_FIELD.dueTerms)
+    expect(formFieldForServerPath('dueTerms.instalments[1].daysAfter', [])).toBe(ORDER_FIELD.dueTerms)
+    expect(formFieldForServerPath('dueTerms', [])).toBe(ORDER_FIELD.dueTerms)
   })
 
   it('carries the offered product version as expectedProductVersion', () => {

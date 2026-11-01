@@ -1,0 +1,68 @@
+{
+  "draftVersion": "9007199254740993",
+  "partyId": "11111111-1111-1111-1111-111111111111",
+  "companyAccountId": "55555555-5555-5555-5555-555555555555",
+  "result": "Unavailable",
+  "reasons": [
+    { "component": "ShippedNotInvoiced", "code": "invoicing_owner_missing" },
+    { "component": "ThisOrder", "code": "vat_inclusive_amount_unavailable" },
+    { "component": "CreditLimit", "code": "finance_credit_limit_owner_missing" }
+  ],
+  "amountDisclosure": "Visible",
+  "inLocalCurrency": {
+    "currencyId": "9e60dcf0-f4bd-5bca-b464-f9a2db98e31a",
+    "grossRisk": null,
+    "grossRiskWithThisOrder": null
+  },
+  "inLimitCurrency": null,
+  "components": [
+    {
+      "kind": "OpenReceivables",
+      "source": "finance.open-items",
+      "state": "Available",
+      "taxBasis": "IncludingTax",
+      "amounts": [{ "currencyId": "9e60dcf0-f4bd-5bca-b464-f9a2db98e31a", "amount": "1250.00" }],
+      "reasonCode": null
+    },
+    {
+      "kind": "ShippedNotInvoiced",
+      "source": "sales.invoicing",
+      "state": "NoSource",
+      "taxBasis": null,
+      "amounts": null,
+      "reasonCode": "invoicing_owner_missing"
+    },
+    {
+      "kind": "ApprovedUnshippedRemainder",
+      "source": "sales.approved-order-remainders",
+      "state": "Available",
+      "taxBasis": "IncludingTax",
+      "amounts": [],
+      "reasonCode": null
+    }
+  ],
+  "thisOrder": {
+    "kind": "ThisOrder",
+    "source": "sales.this-order",
+    "state": "Unavailable",
+    "taxBasis": null,
+    "amounts": null,
+    "reasonCode": "vat_inclusive_amount_unavailable"
+  },
+  "creditLimit": {
+    "kind": "CreditLimit",
+    "source": "finance.party-credit-limit",
+    "state": "NoSource",
+    "taxBasis": null,
+    "amounts": null,
+    "reasonCode": "finance_credit_limit_owner_missing"
+  },
+  "collateral": {
+    "kind": "Collateral",
+    "source": "finance.party-collateral",
+    "state": "NoSource",
+    "taxBasis": null,
+    "amounts": null,
+    "reasonCode": "finance_collateral_owner_missing"
+  }
+}

@@ -156,6 +156,13 @@ export const CAPABILITY = {
   salesInvoiceCandidatesList: 'sales.invoice-candidates.list',
   /** UI-80 Satış raporları (API-41 / API-42). Route `/satis/raporlar`. Granted on its own `sales.reports.read`. */
   salesReportsView: 'sales.reports.view',
+  /**
+   * S-01 Talep havuzu (UI-20). Route `/satis/talepler`. Granted on its own `sales.requests.read` (Sales shell 1.8); the
+   * route itself is mounted by the Sales lane's pool gate (`SalesPoolRoute`), this entry only names it in the sidebar.
+   */
+  salesRequestsList: 'sales.requests.list',
+  /** S-01 Teklif havuzu (UI-20). Route `/satis/teklifler`. Granted on its own `sales.quotes.read` (Sales shell 1.8). */
+  salesQuotesList: 'sales.quotes.list',
   /** MFG-02 the company's production orders (MFG-ORD). Route `/uretim/emirler`. */
   manufacturingOrdersList: 'manufacturing.orders.list',
   /**
@@ -309,6 +316,8 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.salesInvoiceCandidatesList]: '/satis/faturaya-hazir',
   // UI-80: another static Sales sibling, never a draft id.
   [CAPABILITY.salesReportsView]: '/satis/raporlar',
+  [CAPABILITY.salesRequestsList]: '/satis/talepler',
+  [CAPABILITY.salesQuotesList]: '/satis/teklifler',
   // Static before the parameter route, the /cari/yeni rule: 'emirler' must never be read as an
   // order id. The lane orders its own route table the same way.
   [CAPABILITY.manufacturingOrdersList]: '/uretim/emirler',

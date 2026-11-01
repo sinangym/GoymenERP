@@ -20,7 +20,7 @@ import {
   type SalesRequestDetail,
   type SalesRequestMutation,
 } from './poolContract'
-import { POOL_TEXT, REQUEST_STATE_TEXT } from './poolText'
+import { POOL_SUBJECT_TEXT, POOL_TEXT, REQUEST_STATE_TEXT } from './poolText'
 import { SALES_POOL_ROUTE, quoteCreatePathFor, useSalesPoolCapability } from './poolCapabilities'
 import { poolNotice, usePoolAttempt } from './poolAttempt'
 import { PoolAttemptNotice, PoolPartyCell } from './SalesPoolShared'
@@ -73,7 +73,7 @@ export function SalesRequestDetailPage() {
         {backLink}
         <StateBlock
           state={outcome === undefined ? { kind: 'initial-loading' } : classifyOutcome(outcome)}
-          subject="satış talebi"
+          subject={POOL_SUBJECT_TEXT.request}
           onRetry={() => void query.refetch()}
         />
       </section>

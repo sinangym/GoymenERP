@@ -117,6 +117,16 @@ describe('SAT-D102 e-belge profile decoder', () => {
     ['a missing viewer', { viewer: null }],
     ['a missing taxIdentityNumberPresent', { taxIdentityNumberPresent: undefined }],
     ['a non-canonical version', { version: '01' }],
+    // Like the Sales decoders: an unknown member anywhere is off-contract, never ignored.
+    ['an unknown top-level member', { vatIdentityNumber: '1234567890' }],
+    ['an unknown member in the code list', { scenarioCodes: { state: 'NotSet', codes: [], source: 'x' } }],
+    ['an unknown member in the default', { settingsDefault: { state: 'NotSet', scenarioCode: null, extra: true } }],
+    [
+      'an unknown member in the effective scenario',
+      { effectiveScenario: { outcome: 'Unresolved', source: 'None', scenarioCode: null, unresolvedReason: 'SettingsDefaultNotSet', x: 1 } },
+    ],
+    ['an unknown member in the viewer', { viewer: { canUpdate: true, canDelete: true } }],
+    ['an array as the viewer', { viewer: [true] }],
   ])('refuses %s', (_name, over) => {
     expect(decodeAccountEDocumentProfile(profile(over), expected)).toBeNull()
   })
