@@ -10,6 +10,14 @@
 `All`/`Critical`/`CompanyWideOnly` kümeleri bu head'de sayıldı; dört şerit bağımsız olarak aynı üç
 sayıya vardı. Kartın tablosu yeniden ölçülmedi.)
 
+**Güncelleme (1 Kasım 2026, EK20/EK21):** Sinan'ın
+[EK20](../decisions/SINAN_KARARLARI_2026-11-01_SATIS_EK20.md) kararları (SAT-D141…D151) iki yeni persona
+(**Satış Uzmanı**, **Muhasebe**) ekledi ve yedi satış/ayar adının personasını söyledi; EK21 (SAT-D153, SAT-D155,
+SAT-D159; PR #870) risk istisnası ve Cari e-belge adlarının personasını söyledi. Tabloya iki sütun ve yalnız bu
+kararların bağladığı satırlar eklendi (aşağıda "EK20/EK21 eşlemesi"). **Kayıtlı ad sayısı yeniden ölçülmedi;**
+bugün `ErpPermissions`'ta tabloda satırı olmayan başka adlar da vardır (ör. teklif/talep, iptal, iskonto istisnası).
+Onlar bu güncellemenin kapsamı değildir ve deny-first kuralıyla kimseye önerilmemiş sayılır.
+
 **Tabloda satırı olmayan ÜÇ ad var, ve üçü de burada adıyla yazılıdır** — çünkü bir sayı, sonraki
 okuyucuya tablonun tam olduğunu söyler. Eksikliği görünür kılmadan sayıyı güncellemek, karta hiç
 dokunmamaktan kötü olurdu:
@@ -17,7 +25,7 @@ dokunmamaktan kötü olurdu:
 | Kayıtlı ad | Ne zaman geldi | Tabloda neden yok |
 |---|---|---|
 | `manufacturing.orders.close` | MFG-ORD, kart ölçüldükten sonra | Sinan'ın §4 metni üretim emrini **kapatma**nın hangi personada olduğunu söylemiyor |
-| `sales.orders.price.write` | SALES-P (K3, #66 5748258299) | K3 personayı **söylüyor** ama grant'ı **önermiyor**: *"Satış Destek, ayrı fiyat-yazma izni **verilmişse** … girebilir"* — koşullu bir cümle. Bir `+` koymak, Sinan'ın bilerek koşullu bıraktığı bir grant'i önerilmiş gösterirdi |
+| `sales.orders.price.write` | SALES-P (K3, #66 5748258299) | ~~K3 personayı **söylüyor** ama grant'ı **önermiyor**: *"Satış Destek, ayrı fiyat-yazma izni **verilmişse** … girebilir"* — koşullu bir cümle.~~ **KAPANDI (1 Kasım 2026, SAT-D151):** Sinan koşulu karşıladı — izin Satış Destek, Satış Uzmanı, Müdür ve Admin'e verilir. Satır artık tabloda (EK20/EK21 eşlemesi) |
 | `finance.manual-receipt.record` | FIN-T05 | Kart (#66 5743678389 §1) "tek dar yetkili operatör" diyor — bir **kişi sayısı**, bir persona değil |
 
 **Üçü de doldurulmadı, çünkü bir satır eklemek bir yetki önerisidir ve kartın kendi kuralı her satırı
@@ -30,6 +38,9 @@ korumak kuralın kendisini korumaktır:
 - **Birinde cümle VAR ama grant önermiyor:** K3, `sales.orders.price.write` için personayı açıkça
   söylüyor (*"Satış Destek … verilmişse"*) ve tam da **koşullu** bıraktığı için bir `+` yazmak,
   Sinan'ın vermediği bir öneriyi ona atfetmek olurdu.
+
+**1 Kasım 2026 notu:** üçüncü ad (`sales.orders.price.write`) SAT-D151 ile kapandı; yukarıdaki iki ad
+(`manufacturing.orders.close`, `finance.manual-receipt.record`) aynı sebeple açık kalır.
 
 Tahminle doldurmak kartı bir öneri olmaktan çıkarıp bir varsayım listesine çevirirdi. **Bunları
 kapatacak şey teknik değil:** ilk ikisi için Sinan'ın personayı söylemesi, üçüncüsü için koşulun
@@ -50,7 +61,9 @@ açmaz.
 
 Uygulama kuralı Sinan'ın koyduğu gibi **deny-first**: bir ad listede yoksa persona onu **almaz**.
 
-## Dört persona, Sinan'ın kendi tanımıyla
+## Personalar, Sinan'ın kendi tanımıyla
+
+İlk dört persona §4'ten (19 Eylül 2026); son ikisi EK20'den (1 Kasım 2026, SAT-D141/D142).
 
 | Persona | Sinan'ın tanımı (özet, §4) |
 |---|---|
@@ -58,6 +71,8 @@ Uygulama kuralı Sinan'ın koyduğu gibi **deny-first**: bir ad listede yoksa pe
 | **Sevkiyatçı** | Alış/satış siparişleri, muhasebe kayıtları, stok, üretim ve operasyonel kayıtları **görebilir**; **fiyatları göremez**, **Finance para hareketleri / banka / tahsilat / ödeme bakiyelerini göremez**. "Görür", create/approve/write vermez; sevkiyatın kendi yükleme/sevk işlemleri dar write izinleriyle verilebilir. |
 | **Satış Destek** | Alış ve satış siparişi **girebilir/düzenleyebilir**; sipariş **onaylayamaz**. |
 | **Müdür** | Siparişleri **onaylayabilir**. Tek başına tüm modüllerde sınırsız read/write veya Finance yetkisi vermez. |
+| **Satış Uzmanı** (SAT-D141) | Ayrı persona; başlangıçta **Satış Destek'in bütün grant'larını** alır: sipariş girer ve düzenler, **onaylayamaz**, sipariş başlığını değiştirir. İleride ayrıştırılabilir (ör. yalnız kendi müşterileri — EK20 açık kalanı). *Uygulama yorumu (geri alınabilir, SAT-D141):* "Satış Destek gibi" kartta Satış Destek'e verilen her izni kapsar, alış siparişi izinleri dahil. EK21'de ayrıca risk istisnasını **talep eder ve onaylar** (kendi talebini onaylayamaz; SAT-D153/D159). |
+| **Muhasebe** (SAT-D142) | Satış modülünde **her şeyi görür**: siparişler, fiyatlar ve tutarlar, raporlar, vergi ayarları. **Sipariş yazmaz, onaylamaz.** Şimdi dış sistemde kesilen faturayı ERP sipariş/irsaliyesiyle **eşleştirir**; fatura modülü gelince (API-32…37) faturayı **keser** (ERP fatura taslağı; hazırlayan ≠ onaylayan, SAT-D88). Vergi ayarlarını yalnız **öneri → müdür sınıfı onay** akışıyla değiştirir (SAT-D146); kalem tipini değiştirmez. Cari e-belge durumunu günceller (SAT-D155). |
 
 ## Önerilen eşleme
 
@@ -74,53 +89,81 @@ aşağıdaki "Sinan'ın cevapları — KARAR" bölümü tabloya üstündür; çe
 çerçevesiyle doldurulur (K4.2); Satış Destek'in stok/üretim satırları artık salt-okunur değildir —
 ayrı plan ve tahsis/rezervasyon komut izinleri eşlenir (K4.4).
 
-| İzin adı | Admin | Sevkiyatçı | Satış Destek | Müdür |
-|---|---|---|---|---|
-| `organization.context.read` | + | + | + | + |
-| `organization.sites.read` | + | + | + | + |
-| `organization.locations.read` | + | + | + | + |
-| `organization.work-centers.read` | + | + | ? | ? |
-| `organization.locations.status.update` | + | — | — | ? |
-| `counterparty.parties.read` | + | + | + | + |
-| `counterparty.parties.create` | + | — | ? | ? |
-| `counterparty.parties.update.basic` | + | — | ? | ? |
-| `counterparty.accounts.create` | + | — | ? | ? |
-| `counterparty.accounts.status.update` | + | — | — | ? |
-| `product.operational-selection.read` | + | + | + | + |
-| `sales.drafts.read` | + | **engelli** | + | + |
-| `sales.drafts.create` | + | — | + | ? |
-| `sales.orders.approve` | + | — | **—** | + |
-| `purchasing.orders.read` | + | + | + | + |
-| `purchasing.orders.create` | + | — | + | ? |
-| `purchasing.orders.approve` | + | — | **—** | + |
-| `inventory.labels.read` | + | + | ? | ? |
-| `inventory.balances.read` | + | + | ? | ? |
-| `inventory.opening-stock.record` | + | — | — | ? |
-| `manufacturing.orders.read` | + | + | ? | ? |
-| `manufacturing.plans.write` | + | — | — | ? |
-| `manufacturing.plans.approve` | + | — | — | ? |
-| `manufacturing.orders.create` | + | — | — | ? |
-| `manufacturing.facts.record` | + | — | — | ? |
-| `logistics.loading-instructions.read` | + | + | ? | ? |
-| `logistics.loading-instructions.create` | + | + | — | ? |
-| `logistics.loads.record` | + | + | — | ? |
-| `accounting.periods.read` | + | ? | — | ? |
-| `accounting.journals.read` | + | **?** | — | ? |
-| `accounting.posting-queues.read` | + | ? | — | ? |
-| `accounting.periods.propose` | + | — | — | ? |
-| `accounting.periods.approve` | + | — | — | ? |
-| `accounting.periods.close` | + | — | — | ? |
-| `finance.bank-account.read` | + | **—** | — | ? |
-| `finance.manual-receipt.draft.read` | + | **—** | — | ? |
-| `finance.manual-receipt.draft.save` | + | **—** | — | ? |
-| `finance.manual-receipt.amount.read` | + | **—** | — | ? |
-| `finance.bank-account.propose` (CRITICAL) | insan kapısı | — | — | — |
-| `finance.bank-account.approve` (CRITICAL) | insan kapısı | — | — | — |
-| `identity.profile.read` | + | + | + | + |
-| `identity.access.request` | + | + | + | + |
-| `identity.access.approve` (CRITICAL) | insan kapısı | — | — | — |
-| `identity.roles.manage` (CRITICAL) | insan kapısı | — | — | — |
-| `identity.audit.read` (CRITICAL) | insan kapısı | — | — | — |
+**EK20/EK21 eşlemesi (1 Kasım 2026).** *Satış Uzmanı* ve *Muhasebe* sütunları ile `sales.orders.approve`
+satırından sonraki satırlar bu tarihte eklendi; eski hücreler değişmedi.
+- **Satış Uzmanı** sütunu, var olan her satırda Satış Destek sütununun **birebir kopyasıdır** (SAT-D141 uygulama
+  yorumu, geri alınabilir). Yukarıdaki K4 kararlarının Satış Destek için bağladığı her şey Satış Uzmanı için de
+  aynen geçerlidir (ör. K4.3 cari oluşturma ayrı izin, K4.4 plan/tahsis).
+- **Muhasebe** sütunu: satış okumaları `+` (SAT-D142 "her şeyi görür"); satış yazma ve onay adları kalın `—`
+  ("sipariş yazmaz ve onaylamaz"). Kararın **susduğu** satış dışı satırlar `?` — "satışta her şeyi görür" cümlesi
+  Accounting, Finance, stok veya üretim okumasını kendiliğinden vermez. Critical adlar her sütunda olduğu gibi `—`.
+- *İtalik* satırların izin adı **henüz yoktur**; karar personayı söyledi, adı sahibinin teknik işi (SAT-D146 uygulama
+  notu, SAT-D142 eşleştirme dilimi, fatura dalgası API-32). Ad gelene kadar bu satırlar hiçbir şey açmaz. Risk
+  istisnasının iki adı `SATIS_HAZIRLIK_PLANI_v1.md` API-07'de planlıdır, manifest'te henüz yoktur.
+- `+ *(yorum)*` = EK21 uygulama notundaki etiketli yorum: Admin "tüm ERP işlevleri" tanımı gereği risk istisnasını
+  hem isteme hem onaylama iznini alır (geri alınabilir).
+
+| İzin adı | Admin | Sevkiyatçı | Satış Destek | Satış Uzmanı | Müdür | Muhasebe |
+|---|---|---|---|---|---|---|
+| `organization.context.read` | + | + | + | + | + | ? |
+| `organization.sites.read` | + | + | + | + | + | ? |
+| `organization.locations.read` | + | + | + | + | + | ? |
+| `organization.work-centers.read` | + | + | ? | ? | ? | ? |
+| `organization.locations.status.update` | + | — | — | — | ? | ? |
+| `counterparty.parties.read` | + | + | + | + | + | ? |
+| `counterparty.parties.create` | + | — | ? | ? | ? | ? |
+| `counterparty.parties.update.basic` | + | — | ? | ? | ? | ? |
+| `counterparty.accounts.create` | + | — | ? | ? | ? | ? |
+| `counterparty.accounts.status.update` | + | — | — | — | ? | ? |
+| `product.operational-selection.read` | + | + | + | + | + | ? |
+| `sales.drafts.read` | + | **engelli** | + | + | + | + |
+| `sales.drafts.create` | + | — | + | + | ? | **—** |
+| `sales.orders.approve` | + | — | **—** | **—** | + | **—** |
+| `sales.reports.read` (SAT-D143) | + | + | + | + | + | + |
+| `sales.orders.price.read` (SAT-D150) | + | **—** | + | + | + | + |
+| `sales.orders.price.write` (SAT-D151) | + | — | + | + | + | **—** |
+| `sales.orders.header.write` (SAT-D144) | + | — | + | + | + | **—** |
+| `sales.orders.risk-exception.request` (SAT-D159; ad henüz kayıtlı değil, API-07) | + *(yorum)* | + | + | + | ? | **—** |
+| `sales.orders.risk-exception.approve` (SAT-D153; ad henüz kayıtlı değil, API-07) | + *(yorum)* | — | **—** | + | + | **—** |
+| `settings.tax-master.manage` (SAT-D145) | + | — | — | — | + | **—** |
+| `product.item-type.manage` (SAT-D145/D149) | + | — | — | — | + | **—** |
+| `counterparty.accounts.e-document.update` (SAT-D155) | + | — | — | — | — | + |
+| *vergi ayarı okuma* (SAT-D146; **ad bekliyor**) | + | ? | ? | ? | + | + |
+| *vergi ayarı önerme* (SAT-D146; **ad bekliyor**) | ? | — | — | — | — | + |
+| *vergi ayarı önerisini onaylama* (SAT-D146; **ad bekliyor**) | + | — | — | — | + | **—** |
+| *dış fatura ↔ sipariş/irsaliye eşleştirme* (SAT-D142; **ad bekliyor**) | ? | — | — | — | — | + |
+| *fatura kesme = ERP fatura taslağı hazırlama* (SAT-D142, API-32; **fatura dalgası, ad bekliyor**) | ? | ? | ? | ? | ? | + *(gelecek)* |
+| `purchasing.orders.read` | + | + | + | + | + | ? |
+| `purchasing.orders.create` | + | — | + | + | ? | ? |
+| `purchasing.orders.approve` | + | — | **—** | **—** | + | ? |
+| `inventory.labels.read` | + | + | ? | ? | ? | ? |
+| `inventory.balances.read` | + | + | ? | ? | ? | ? |
+| `inventory.opening-stock.record` | + | — | — | — | ? | ? |
+| `manufacturing.orders.read` | + | + | ? | ? | ? | ? |
+| `manufacturing.plans.write` | + | — | — | — | ? | ? |
+| `manufacturing.plans.approve` | + | — | — | — | ? | ? |
+| `manufacturing.orders.create` | + | — | — | — | ? | ? |
+| `manufacturing.facts.record` | + | — | — | — | ? | ? |
+| `logistics.loading-instructions.read` | + | + | ? | ? | ? | ? |
+| `logistics.loading-instructions.create` | + | + | — | — | ? | ? |
+| `logistics.loads.record` | + | + | — | — | ? | ? |
+| `accounting.periods.read` | + | ? | — | — | ? | ? |
+| `accounting.journals.read` | + | **?** | — | — | ? | ? |
+| `accounting.posting-queues.read` | + | ? | — | — | ? | ? |
+| `accounting.periods.propose` | + | — | — | — | ? | ? |
+| `accounting.periods.approve` | + | — | — | — | ? | ? |
+| `accounting.periods.close` | + | — | — | — | ? | ? |
+| `finance.bank-account.read` | + | **—** | — | — | ? | ? |
+| `finance.manual-receipt.draft.read` | + | **—** | — | — | ? | ? |
+| `finance.manual-receipt.draft.save` | + | **—** | — | — | ? | ? |
+| `finance.manual-receipt.amount.read` | + | **—** | — | — | ? | ? |
+| `finance.bank-account.propose` (CRITICAL) | insan kapısı | — | — | — | — | — |
+| `finance.bank-account.approve` (CRITICAL) | insan kapısı | — | — | — | — | — |
+| `identity.profile.read` | + | + | + | + | + | ? |
+| `identity.access.request` | + | + | + | + | + | ? |
+| `identity.access.approve` (CRITICAL) | insan kapısı | — | — | — | — | — |
+| `identity.roles.manage` (CRITICAL) | insan kapısı | — | — | — | — | — |
+| `identity.audit.read` (CRITICAL) | insan kapısı | — | — | — | — | — |
 
 ### Gerekçeler (yalnız Sinan'ın cümlelerinden)
 
@@ -132,6 +175,29 @@ ayrı plan ve tahsis/rezervasyon komut izinleri eşlenir (K4.4).
   Bu iki ad Müdür'ün tanımının tam karşılığı.
 - **Finance ayrı tutulur:** "Sevkiyatçı her şeyi görür" banka/tahsilat/ödeme okumalarını bypass
   etmez; dört `finance.*` okuma adı da Sevkiyatçı'da `—`.
+- **EK20/EK21 satırları (1 Kasım 2026), yalnız karar metinlerinden:**
+  - `sales.reports.read` altı personanın hepsinde `+` (SAT-D143). Sevkiyatçı `sales.orders.price.read` almadığı için
+    raporlarda yalnız miktar görür; fiyat sapması raporu ona 403 döner.
+  - `sales.orders.price.read` Sevkiyatçı'da kalın `—`: SAT-D150 onu açıkça dışarıda bırakır.
+  - `sales.orders.price.write` ve `sales.orders.header.write`: Satış Destek, Satış Uzmanı, Müdür, Admin (SAT-D151,
+    SAT-D144). Muhasebe "yazmaz"; Sevkiyatçı'nın "görür"ü write vermez. Başlık değişikliği yeniden onay gerektirirse
+    onayı mevcut sipariş onay iznini tutan verir.
+  - Risk istisnası **talebi**: Sevkiyatçı, Satış Destek, Satış Uzmanı (SAT-D159). Müdür'ün talep edip etmeyeceği
+    söylenmedi → `?`. Muhasebe yazmaz → `—`. **Onayı**: Satış Uzmanı veya Müdür (SAT-D153); Satış Destek ve
+    Sevkiyatçı onaylamaz. İsteyen kendi talebini onaylayamaz — bu persona değil kayıt kuralıdır.
+  - `settings.tax-master.manage` ve `product.item-type.manage`: yalnız Müdür ve Admin, doğrudan geçerli (SAT-D145).
+    Muhasebe vergi ayarını yalnız öneri akışıyla değiştirir (SAT-D146) ve kalem tipini değiştirmez. Kalem tipini
+    bu iki persona dışında kimin **okuyacağı** sorulmadı (EK20 açık kalanı, NEEDS-SINAN); o zamana kadar yalnız
+    `product.item-type.manage` sahipleri okur.
+  - `counterparty.accounts.e-document.update`: Muhasebe ve Admin (SAT-D155). "Muhasebe + Müdür + Admin" ve
+    "Satış Destek/Uzman + Müdür + Admin" seçenekleri gösterildi ve **seçilmedi**; bu yüzden Müdür, Satış Destek
+    ve Satış Uzmanı `—`.
+  - SAT-D146 ad bekleyen üç izin: okuma Muhasebe, Müdür, Admin; öneri **yalnız** Muhasebe; onay **yalnız** Müdür ve
+    Admin. "Muhasebe müdürü" ve "satış müdürü" unvanları ayrı persona kararı gelene kadar ek yetki almaz.
+  - Eşleştirme izni "yalnız Muhasebe'ye verilir" (SAT-D142 uygulama notu); öneri izni de "yalnız Muhasebe". Bu iki
+    satırda Admin hücresi `?`: kartın "Admin tüm ERP işlevleri" kuralı ile kararın açık "yalnız"ı çelişir ve EK21'deki
+    gibi etiketli bir Admin yorumu burada yoktur (NEEDS-SINAN). Diğer personalar "yalnız" gereği `—`. Fatura kesmede
+    yalnız Muhasebe söylendi; diğer personalar `?`.
 - **Critical adlar:** `AI_YETKI_SOZLESMESI.md` ve ADR-004 §6 gereği grant'leri ayrı insan kapısıdır;
   bu kart onları hiçbir personaya *dağıtmaz*, Admin'de bile "insan kapısı" olarak işaretler.
 
@@ -249,5 +315,13 @@ işler sahipleriyle şunlardır ve **hiçbiri bu kartın kapsamı değildir**:
 5. **Cari/hesap oluşturma için ayrı dar izin** — K4.3. Sahibi: Cari owner.
 6. Ardından persona başına rol kodlarının Identity modelinde tasarlanması ve **en sonda** grant'lerin
    insan kapısında açılması.
+7. **EK20/EK21 grant PR'ı** (SAT-D141…D146, SAT-D150/D151, SAT-D153/D155/D159): persona/rol tanımı ve izin eşlemesi
+   yalnız bu kartın EK20/EK21 satırlarını açar; ad bekleyen satırlar (risk istisnası, SAT-D146 vergi önerisi,
+   eşleştirme) adları manifest'e gelince eşlenir. Aynı PR `ErpPermissions` açıklamalarını kararlarla hizalar.
+
+**İnsan kapısı değişmez:** EK20/EK21 grant'ları Sinan'ın somut kararıdır, ama bu kart da, o kararlarla açılacak
+eşleme PR'ı da **gerçek bir kullanıcıya rol atamaz** ve **production'da hiçbir şeyi etkinleştirmez**. Gerçek rol
+ataması, Critical grant'ler ve production aktivasyonu her zaman insan kapısında kalır (SAT-D110; EK20 ve EK21
+"Sınırlar").
 
 İzin adları her durumda sahibinin teknik işidir; bu kart ad önermez ve atama yapmaz.
