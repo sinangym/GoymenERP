@@ -624,6 +624,10 @@ answer is reported as `Conflict` and nothing is written; one audit event per run
   could answer the reopened question). The reopening record is an official `Unverified` record carrying the person
   (`recordedBy`), the reason and the reference "Yeniden doğrulama istendi", with its own audit event; the Kurlar screen (UI
   slice) should show it as a person's request, not a source answer.
+- **Runbook (review B P3-2):** because a 404 needs a second run, a weekend or holiday becomes `NoBulletin` only on the second
+  import that sees it after the next business day's bulletin exists. When the source is opened, schedule the import to run at
+  least twice after the next business day's 15:30 announcement (e.g. Monday 15:30 for a weekend); until then the days after
+  the weekend resolve to "kur bulunamadı" (fail-closed).
 - A day TCMB ever published never becomes `NoBulletin` automatically (review A P2-2): repeated 404s keep it `NotFound`
   (fail-closed) until a bulletin is read again.
 - A day whose official answer is already final (`Published` / `NoBulletin`; a definite half-day answer) is never asked again.

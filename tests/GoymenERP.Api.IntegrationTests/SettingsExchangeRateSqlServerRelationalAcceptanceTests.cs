@@ -79,7 +79,7 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         });
         var (editorSubject, editorActor) = await run.GrantAsync(TestUsers.CompanyA, CompanyA, Read, Correct, Import, MarkHalfDay);
         var (viewerSubject, _) = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, Read);
-        var (editorBSubject, _) = await run.GrantAsync(TestUsers.CompanyB, CompanyB, Read, Correct, Import);
+        var (editorBSubject, _) = await run.GrantAsync(TestUsers.CompanyB, CompanyB, Read, Correct, Import, MarkHalfDay);
         using var editor = run.Client(editorSubject, CompanyA);
         using var viewer = run.Client(viewerSubject, CompanyA);
         using var editorB = run.Client(editorBSubject, CompanyB);
@@ -314,6 +314,12 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         var mark = new MarkExchangeRateHalfDayRequestV1("0", "FullDay", "SENTETIK takvim teyidi");
         await run.CommandAsync(editor, HttpMethod.Post, tuesday, "k-m-1", mark, HttpStatusCode.NoContent);
         await run.CommandAsync(editor, HttpMethod.Post, tuesday, "k-m-1", mark, HttpStatusCode.NoContent, replayed: true);
+        // Review B P3-4: the same key with another body is 409 and changes nothing.
+        using (var reused = await editor.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-1", mark with { State = "HalfDay" })))
+        {
+            await AssertProblemAsync(reused, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.IdempotencyConflict);
+        }
+
         using (var stale = await editor.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-stale", mark with { State = "HalfDay" })))
         {
             await AssertProblemAsync(stale, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
@@ -363,6 +369,11 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         var reopen = new ReverifyExchangeRateDayRequestV1("3", "SENTETIK geçici TCMB cevabı şüphesi");
         await run.CommandAsync(editor, HttpMethod.Post, reverify, "k-r-1", reopen, HttpStatusCode.NoContent);
         await run.CommandAsync(editor, HttpMethod.Post, reverify, "k-r-1", reopen, HttpStatusCode.NoContent, replayed: true);
+        using (var reused = await editor.SendAsync(Json(HttpMethod.Post, reverify, "k-r-1", reopen with { Reason = "SENTETIK başka" })))
+        {
+            await AssertProblemAsync(reused, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.IdempotencyConflict);
+        }
+
         // Fri 16 is no longer an official published day: its manual rate stops the walk (fail-closed), nothing older is used.
         Assert.Equal(RateDayCode("exchange_rate_manual_conflict", "2026-10-16"), Failure(await Resolve(editor, run, "2026-10-19", "USD")));
         Assert.Equal(1, await run.ScalarAsync<int>(
@@ -372,6 +383,26 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-friday",
             new ImportExchangeRatesRequestV1(Day("2026-10-16"), Day("2026-10-16")), HttpStatusCode.OK);
         Assert.Equal(("Resolved", "2026-10-16", "41.65", "Manual", false), Summary(await Resolve(editor, run, "2026-10-19", "USD")));
+
+        // Review B P3-4: company B naming A's days with A's versions reaches only its own (empty) days: 409, A unchanged.
+        var aRecords = await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[ExchangeRateRecords] WHERE [CompanyId] = @c",
+            ("@c", CompanyA));
+        using (var crossMark = await editorB.SendAsync(Json(HttpMethod.Post, tuesday, "k-m-b",
+                   new MarkExchangeRateHalfDayRequestV1("3", "HalfDay", "SENTETIK"))))
+        {
+            await AssertProblemAsync(crossMark, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
+        }
+
+        using (var crossReverify = await editorB.SendAsync(Json(HttpMethod.Post, reverify, "k-r-b",
+                   new ReverifyExchangeRateDayRequestV1("5", "SENTETIK"))))
+        {
+            await AssertProblemAsync(crossReverify, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
+        }
+
+        Assert.Equal(aRecords, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ExchangeRateRecords] WHERE [CompanyId] = @c", ("@c", CompanyA)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ExchangeRateRecords] WHERE [CompanyId] = @c", ("@c", CompanyB)));
 
         // Review A P2-2: a day TCMB once published never becomes "no bulletin" automatically. Thu 15 is re-verified and then
         // answers 404 in two runs while later bulletins exist: it stays NotFound, so a Friday rate day stops on it (fail-closed)

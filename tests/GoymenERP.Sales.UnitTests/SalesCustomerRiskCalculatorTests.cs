@@ -262,6 +262,25 @@ public sealed class SalesCustomerRiskCalculatorTests
     }
 
     [Fact]
+    public void SAT_D206_boundary_43000_21_TL_rounds_to_the_limit_and_is_within()
+    {
+        // Review B P3-1: 43.000,21 TL ÷ 43 = 1.000,00488… EUR → 1.000,00 under SAT-D206 (the final amount rounded half-up to the
+        // currency's scale), equal to the 1.000,00 EUR limit → Within. A direct consequence of Sinan's rounding decision, pinned;
+        // one kuruş more, 43.000,22 TL (1.000,00512…), rounds half-up to 1.000,01 → the first Over.
+        var rates = Rates((Eur, 43m));
+        foreach (var (tl, expected, outcome) in new[]
+                 {
+                     (43000.21m, 1000.00m, SalesRiskOutcome.Within),
+                     (43000.22m, 1000.01m, SalesRiskOutcome.Over),
+                 })
+        {
+            var evaluation = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, Taxed(tl), Taxed(), Taxed(), Taxed(),
+                Limit(1000m, Eur), rates);
+            Assert.Equal((expected, outcome), (evaluation.InLimitCurrency!.GrossRiskWithThisOrder!.Value.Amount, evaluation.Outcome));
+        }
+    }
+
+    [Fact]
     public void SAT_D206_golden_the_intermediate_TL_value_is_not_rounded()
     {
         // SYNTHETIC rates: 1 USD = 1.004 TL, 1 EUR = 0.5 TL. 1 USD → 1.004 TL (kept, not 1.00) → 1.004 ÷ 0.5 = 2.008 EUR → 2.01.
