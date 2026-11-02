@@ -1,6 +1,6 @@
 # Alış (Satın Alma) Modülü Hazırlık Planı v1
 
-Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13)**, **`_ALIS_EK1.md` (ALS-D14…D20)**, **`_ALIS_EK2.md` (ALS-D21…D28)**
+Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13)**, **`_ALIS_EK1.md` (ALS-D14…D20)**, **`_ALIS_EK2.md` (ALS-D21…D28)**, **`_ALIS_EK3.md` (ALS-D29…D43)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.3, §8.2, §10.3, §25.5, §27.3, §28.12, §28.16, §29.3
 (AT-025…028); `docs/decisions/KARAR_SICILI.md` `DEC-PUR-001`, `DEC-CAR-001`, `DEC-STK-002/003/006/008/009`,
@@ -391,7 +391,7 @@ Satın alma müdürü onaylar; Depo kabul kaydeder; Muhasebe gelen faturayı eş
 ## 8. Kararlar
 
 2026-11-02'de dört turda on beş soru soruldu; cevaplar `SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13). Sonraki iki
-karar dosyası: `_ALIS_EK1.md` (ALS-D14…D20, §13.4) ve `_ALIS_EK2.md` (ALS-D21…D28, §13.7). Sonraki
+karar dosyası: `_ALIS_EK1.md` (ALS-D14…D20, §13.4) ve `_ALIS_EK2.md` (ALS-D21…D28, §13.7); kalan sorular `_ALIS_EK3.md` (ALS-D29…D43, §13.8). Sonraki
 turlar `_ALIS_EKn.md` olur. Zaten karara bağlanmış konular yeniden sorulmaz: tolerans bantları ve onaycılar (No 40,
 41, 62, 63), iade faturası (No 20), fatura para birimi (No 26; kur günü ALS-D6 ile kabul günü), talep reddi ve sipariş iptali (No.161), siparişsiz
 kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-003), fason yönü (URT-D15/D17).
@@ -414,10 +414,18 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | N-22…N-24 | Kontrol kuru günü, kur farkı, Üretim talebi | ALS-D14, D15, D16 (§13.4) |
 | N-27 | Ek alış maliyetleri | ALS-D23 (siparişe/kabule masraf satırı); avans açık kalır |
 
-**Açık (sonraki tur):**
+**Açık kalanlar (2026-11-02 sonu):**
 
-| No | Soru |
-|---|---|
+| No | Soru | Durum |
+|---|---|---|
+| N-18 | Tedarikçi performansı ölçütleri | A6'dan önce sorulur |
+| N-20 | Alışta tevkifat, satıcı muafiyeti, ihraç kayıtlı/teşvikli KDV, vade farkının matraha girişi, "ödenecek tutar" tanımı | Mali müşavir; teyide kadar ilgili satırlar "hesaplanamıyor" |
+| N-36 | Bülten kuru dövizli siparişte kontrol kuru olarak kullanılır mı? | A5'ten önce sorulur |
+| – | Sipariş numarası algoritmasının parçaları (ALS-D36) | MIG-01 alan eşlemesinde hubvogal kayıtlarından çıkarılır |
+
+Diğer bütün N soruları cevaplandı (ALS-D1…D43).
+
+---|---|
 | N-09 | Fazla teslimde fazla kısmın faturalaması (No 40 fazla kısmı siparişe bağlar) |
 | N-12 | Termin dilimleri ve sevk bildirimi ilk sürümde mi? |
 | N-14 | Sipariş PDF'i tedarikçiye gönderilecek mi, fiyatlı mı? |
@@ -425,7 +433,6 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | N-17 | Fason dışında hizmet alışı (işçilik vb.) bu modülde mi? (Nakliye ALS-D23/D27 ile masraf satırı) |
 | N-18 | Tedarikçi performansı ölçütleri |
 | N-19 | Hubvogal erişimi: 2026-11-02'de VPN'li ofis bilgisayarından sağlandı; göç (MIG-01) için yeniden gerekecek |
-| N-25, N-26, N-28…N-36 | §13.4 ve §13.7'deki açık sorular |
 | N-20 | Alışta tevkifat ve satıcı muafiyeti (hurda alımı, fason hizmet): kodlar ve oranlar (mali müşavir) |
 
 ---
@@ -488,9 +495,11 @@ Bu bölüm iş takibidir; karar değildir.
 |---|---|---|
 | Bu plan + karar dosyası ALS-D1…D13 | #884 | merge edildi (`ea3f0a19`) |
 | §13 yeniden analiz (v1.1) + EK1 ALS-D14…D20 | #887 | merge edildi (`4475e89b`) |
-| Hubvogal incelemesi (§13.6/§13.7) + EK2 ALS-D21…D28 | #889 | taslak PR |
+| Hubvogal incelemesi (§13.6/§13.7) + EK2 ALS-D21…D28 | #889 | merge edildi (`f7ec453e`) |
+| Kalan sorular (§13.8) + EK3 ALS-D29…D43 | – | taslak PR |
 
-Sıradaki: kalan sorular (N-09, N-12, N-14, N-16…N-18, N-20, N-25, N-26, N-28…N-36), A0 belge ve temizlik PR'ları, ardından A1 (talep onay/ret, kaynak alanı, No.161 iptali, PRS-01).
+Sıradaki: A0 (belge ve temizlik), ardından A1 (PRS-01, talep onay/ret, kaynak alanı, No.161 iptali). Açık sorular §8
+sonundaki tabloda.
 
 ---
 
@@ -631,3 +640,25 @@ Yeni açık sorular:
 | N-35 | Fason işlem (kesme, dilme, profil, büküm) ayrı fason hizmet siparişiyle mi (malzeme fasoncuya gider), alış siparişine masraf satırıyla mı (tedarikçi işleyip getirir) kaydedilir? ALS-D26'da soru anlaşılmadı; örnekle yeniden sorulur |
 | N-36 | Bülten kuru dövizli siparişte kontrol kuru olarak kullanılır mı? |
 | N-37 | Geçiş döneminde (hubvogal ve Göymen ERP birlikteyken) alış irsaliyesi Mikro'ya hangi sistemden aktarılır? |
+
+### 13.8 Kalan soruların cevapları (EK3)
+
+`SINAN_KARARLARI_2026-11-02_ALIS_EK3.md` (ALS-D29…D43). Plana etkileri:
+
+| Karar | Etki |
+|---|---|
+| ALS-D29 fason = yalnız sahipliği değişmeyen mal | N-35 kapandı. Giden fason yalnız A-1 fason hizmet siparişi (API-70…72); masraf satırı (API-23) fason için kullanılmaz; tedarikçinin işleyip sattığı mal normal alıştır. Gelen fason Satış'ta |
+| ALS-D30 tedarikçide hazır mal satışa ayrılabilir | N-30 kapandı. MOD-16 (Satış kaynak planı) ve MOD-14 (Stok tahsis motoru) görev notlarına "gelecek mal olarak ayırma, aynı ton bir kez" eklenir; Alış okuma portu ayrılan miktarı da gösterir |
+| ALS-D31 birlikte kullanım yok | N-37 kapandı. MIG-01: canlıya alma günü açık siparişler taşınır, hubvogal'de alış kapanır, Mikro aktarımı Göymen'den |
+| ALS-D32 fazla teslim aynı fiyatla faturaya | N-09 kapandı. API-52 üçlü kontrolde fazla teslim payı sipariş fiyatıyla karşılaştırılır |
+| ALS-D33 termin dilimleri ilk sürümde | N-12 kapandı; API-30 A3'te kalır |
+| ALS-D34 fiyatlı sipariş PDF'i | N-14 kapandı; API-16 A2b, PRS-02 ile depocu fiyatsız görür |
+| ALS-D35 siparişsiz kabulü Satın alma müdürü onaylar | N-16 kapandı; API-42 A3 |
+| ALS-D36 aynı algoritma, yeni başlangıç | N-29 kapandı; numara serisi Ayarlar'da, parçaların anlamı MIG-01'de doğrulanır |
+| ALS-D37 Takas ve Temel alınmaz | N-31 kapandı; API-98 pozisyon listesi: Ticari, Hizmet, İade, Alış Fason, Satış Fason, Teşvikli, İhracat, İhraç Kayıtlı |
+| ALS-D38 vade farkı: peşin + fark veya tek vadeli fiyat | N-32 kapandı; API-20 iki giriş biçimi; vergi etkisi N-20 |
+| ALS-D39 şoför ad/telefon/TC/plaka, 10 yıl | N-33 kapandı; API-31 kişisel veri alanları yetkili, maskeli, audit'li; imha işlemi ayrı insan kapısı |
+| ALS-D40 fason dışı hizmet alışı Alış'ta | N-17 kapandı; API-41/API-70 hizmet satırı |
+| ALS-D41 TL borç tedarikçi faturasındaki kurla | N-25 kapandı; MOD-04 |
+| ALS-D42 tedarikçi borcu satış riskinden düşülmez | N-26 kapandı; MOD-15 |
+| ALS-D43 metre 2 ondalık, tolerans kg ile aynı | N-28 kapandı; adet/metre A3'te Ayarlar profiliyle |
