@@ -185,6 +185,17 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "[NetUsableWidthMm] IS NULL OR ([NetUsableWidthMm] > 0 AND [Process] = 1)");
             table.HasCheckConstraint("CK_Plans_LineSpeed",
                 "[LineSpeedMetresPerMinute] IS NULL OR ([LineSpeedMetresPerMinute] > 0 AND [Process] IN (1, 3))");
+            ProcessSpecValueChecks(table, "Plans");
+            // U2-b1: each process spec value only on its processes (2 = Cold Rolling, 3 = Tube / Profile, 4 = Paint);
+            // a Paint spec names its paint.
+            table.HasCheckConstraint("CK_Plans_ProcessSpecProcess",
+                "([PackageCount] IS NULL AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL OR [Process] IN (3, 4)) "
+                + "AND ([UnitKg] IS NULL OR [Process] = 3) "
+                + "AND ([PerimeterMm] IS NULL AND [PaintDescription] IS NULL AND [PaintColorCode] IS NULL OR [Process] = 4) "
+                + "AND ([TargetThicknessMm] IS NULL OR [Process] = 2) "
+                + "AND ([Process] <> 4 OR [PaintDescription] IS NOT NULL OR ([PackageCount] IS NULL "
+                + "AND [PiecesPerPackage] IS NULL AND [PieceLengthMm] IS NULL AND [PerimeterMm] IS NULL "
+                + "AND [PaintColorCode] IS NULL))");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -193,6 +204,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.Property(x => x.WindingTargetKg).HasPrecision(18, 3);
         entity.Property(x => x.NetUsableWidthMm).HasPrecision(18, 3);
         entity.Property(x => x.LineSpeedMetresPerMinute).HasPrecision(18, 6);
+        ProcessSpecColumns(entity);
         entity.Property(x => x.CancellationReason).HasMaxLength(ProductionPlan.DecisionReasonMaximumLength);
         entity.Property(x => x.PayloadHash).HasMaxLength(64).IsUnicode(false).IsRequired();
         entity.Property(x => x.Version).IsConcurrencyToken();
@@ -271,6 +283,29 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
     /// plan's own inputs; the revision's work center by (company, work center) to Organization's alternate key, as the
     /// plan's. Append-only: the write guard admits no column of either table.
     /// </summary>
+    /// <summary>Üretim U2-b1: the process spec values' own checks, alike on the plan and each revision.</summary>
+    private static void ProcessSpecValueChecks<TRow>(TableBuilder<TRow> table, string tableName)
+        where TRow : class
+    {
+        table.HasCheckConstraint($"CK_{tableName}_ProcessSpecValues",
+            "([PackageCount] IS NULL OR [PackageCount] >= 1) AND ([PiecesPerPackage] IS NULL OR [PiecesPerPackage] >= 1) "
+            + "AND ([PieceLengthMm] IS NULL OR [PieceLengthMm] > 0) AND ([UnitKg] IS NULL OR [UnitKg] > 0) "
+            + "AND ([PerimeterMm] IS NULL OR [PerimeterMm] > 0) AND ([TargetThicknessMm] IS NULL OR [TargetThicknessMm] > 0) "
+            + "AND ([PaintDescription] IS NULL OR LEN([PaintDescription]) > 0) "
+            + "AND ([PaintColorCode] IS NULL OR LEN([PaintColorCode]) > 0)");
+    }
+
+    private static void ProcessSpecColumns<TRow>(EntityTypeBuilder<TRow> entity)
+        where TRow : class, IPlanProcessSpecColumns
+    {
+        entity.Property(x => x.PieceLengthMm).HasPrecision(18, 3);
+        entity.Property(x => x.UnitKg).HasPrecision(18, 4);
+        entity.Property(x => x.PerimeterMm).HasPrecision(18, 3);
+        entity.Property(x => x.TargetThicknessMm).HasPrecision(18, 3);
+        entity.Property(x => x.PaintDescription).HasMaxLength(PlanProcessSpec.PaintDescriptionMaximumLength);
+        entity.Property(x => x.PaintColorCode).HasMaxLength(PlanProcessSpec.PaintColorCodeMaximumLength);
+    }
+
     private void ConfigurePlanRevisions(ModelBuilder modelBuilder)
     {
         var revision = modelBuilder.Entity<PlanRevisionRow>();
@@ -285,10 +320,12 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "LEN([Reason]) > 0 AND LEN([RevisedBy]) > 0 AND LEN([CorrelationId]) > 0");
             table.HasCheckConstraint("CK_PlanRevisions_LineSpeed",
                 "[LineSpeedMetresPerMinute] IS NULL OR [LineSpeedMetresPerMinute] > 0");
+            ProcessSpecValueChecks(table, "PlanRevisions");
         });
         revision.HasKey(x => new { x.CompanyId, x.PlanId, x.RevisionNo });
         revision.Property(x => x.TargetKg).HasPrecision(18, 3);
         revision.Property(x => x.LineSpeedMetresPerMinute).HasPrecision(18, 6);
+        ProcessSpecColumns(revision);
         revision.Property(x => x.Reason).HasMaxLength(ManufacturingStoreCodes.PlanRevisionReasonMaximumLength).IsRequired();
         revision.Property(x => x.RevisedBy).HasMaxLength(128).IsRequired();
         revision.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();

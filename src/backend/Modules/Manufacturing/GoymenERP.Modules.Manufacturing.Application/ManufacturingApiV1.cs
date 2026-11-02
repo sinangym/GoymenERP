@@ -32,7 +32,7 @@ namespace GoymenERP.Modules.Manufacturing.Application;
 public sealed record SavePlanRequestV1(
     Guid PlanId, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
     SlittingSpecRequestV1? SlittingSpec = null, CutToLengthSpecRequestV1? CutToLengthSpec = null,
-    string? LineSpeedMetresPerMinute = null);
+    string? LineSpeedMetresPerMinute = null, PlanProcessSpecRequestV1? ProcessSpec = null);
 
 public sealed record SlitLineRequestV1(string? BandWidthMm, int Count);
 
@@ -87,7 +87,8 @@ public sealed record CancelPlanRequestV1(long ExpectedVersion, string? Reason);
 /// </summary>
 public sealed record RevisePlanRequestV1(
     long ExpectedVersion, Guid WorkCenterId, IReadOnlyList<PlannedInputRequestV1>? Inputs, TargetRequestV1? Target,
-    string? Reason, CutToLengthSpecRequestV1? CutToLengthSpec = null, string? LineSpeedMetresPerMinute = null);
+    string? Reason, CutToLengthSpecRequestV1? CutToLengthSpec = null, string? LineSpeedMetresPerMinute = null,
+    PlanProcessSpecRequestV1? ProcessSpec = null);
 
 public sealed record CreateOrderRequestV1(Guid OrderId, Guid PlanId);
 
@@ -210,7 +211,8 @@ public sealed record PlanViewV1(
     PlanPreviewViewV1? Calculation = null, SlittingSpecViewV1? SlittingSpec = null,
     CutToLengthSpecViewV1? CutToLengthSpec = null, PlanParameterSnapshotViewV1? ParameterSnapshot = null,
     string? LineSpeedMetresPerMinute = null, Guid? OrderId = null,
-    IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null);
+    IReadOnlyList<PlanRejectionViewV1>? Rejections = null, PlanCancellationViewV1? Cancellation = null,
+    PlanProcessSpecViewV1? ProcessSpec = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -232,7 +234,8 @@ public sealed record PlanRevisionInputViewV1(
 public sealed record PlanRevisionViewV1(
     int Revision, long PlanVersion, Guid WorkCenterId, IReadOnlyList<PlanRevisionInputViewV1> Inputs,
     TargetViewV1? Target, string? Reason, string? RevisedBy, DateTimeOffset RecordedAtUtc,
-    CutToLengthSpecViewV1? CutToLengthSpec = null, string? LineSpeedMetresPerMinute = null);
+    CutToLengthSpecViewV1? CutToLengthSpec = null, string? LineSpeedMetresPerMinute = null,
+    PlanProcessSpecViewV1? ProcessSpec = null);
 
 /// <summary>MFG-PLAN-EDIT: the plan's history, oldest first.</summary>
 public sealed record PlanRevisionListViewV1(Guid PlanId, IReadOnlyList<PlanRevisionViewV1> Revisions);
@@ -466,10 +469,16 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("lineSpeedMetresPerMinute"));
         }
 
+        var processSpec = ParseProcessSpec(request.ProcessSpec);
+        if (processSpec.Invalid)
+        {
+            return Task.FromResult(Invalid<PlanViewV1>(ProcessSpecField));
+        }
+
         var inputs = content.Inputs!;
         var targetKg = content.TargetKg;
-        var canonical = CanonicalSavePlan(request.PlanId, request.WorkCenterId, inputs, request.Target, targetKg,
-            content.SlittingSpec, content.CutToLengthSpec, lineSpeed.Value);
+        var canonical = WithCanonicalProcessSpec(CanonicalSavePlan(request.PlanId, request.WorkCenterId, inputs,
+            request.Target, targetKg, content.SlittingSpec, content.CutToLengthSpec, lineSpeed.Value), processSpec.Value);
 
         // U1-b: the draft's answer (returned AND recorded for replay) uses the profile in force today, read once below.
         PlanParameterSnapshotV1? saveParameters = null;
@@ -496,6 +505,11 @@ public sealed partial class ManufacturingCommandService(
                 if (lineSpeed.Value is not null && !LineSpeedAllowed(process.Value))
                 {
                     return Invalid<PlanViewV1>("lineSpeedMetresPerMinute");
+                }
+
+                if (!ProcessSpecAllowed(processSpec.Value, process.Value))
+                {
+                    return Invalid<PlanViewV1>(ProcessSpecField);
                 }
 
                 var verified = await VerifyPlanContentAsync(
@@ -531,7 +545,7 @@ public sealed partial class ManufacturingCommandService(
                 var plan = new ProductionPlan(request.PlanId, companyId, request.WorkCenterId,
                     process.Value, PlannedInputs(verified.Inputs), Target(request.Target, verified.TargetMass),
                     BuildSlittingSpec(content.SlittingSpec, slittingSpec.WindingTarget),
-                    BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value);
+                    BuildCutToLengthSpec(content.CutToLengthSpec), lineSpeed.Value, processSpec.Value);
                 var outcome = await plans.SavePlanAsync(plan, metadata, cancellationToken);
                 var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
                 return stored is null
@@ -590,6 +604,12 @@ public sealed partial class ManufacturingCommandService(
             return Task.FromResult(Invalid<PlanViewV1>("lineSpeedMetresPerMinute"));
         }
 
+        var processSpec = ParseProcessSpec(request.ProcessSpec);
+        if (processSpec.Invalid)
+        {
+            return Task.FromResult(Invalid<PlanViewV1>(ProcessSpecField));
+        }
+
         var inputs = content.Inputs!;
         var targetKg = content.TargetKg;
         var canonicalInputs = CanonicalPlanInputs(inputs);
@@ -621,6 +641,8 @@ public sealed partial class ManufacturingCommandService(
             node["lineSpeedMetresPerMinute"] = Text(speed);
             canonical = node;
         }
+
+        canonical = WithCanonicalProcessSpec(canonical, processSpec.Value);
 
         // U1-b: the draft's answer (returned AND recorded for replay) uses the profile in force today, read once below.
         PlanParameterSnapshotV1? reviseParameters = null;
@@ -659,6 +681,11 @@ public sealed partial class ManufacturingCommandService(
                     return Invalid<PlanViewV1>("lineSpeedMetresPerMinute");
                 }
 
+                if (!ProcessSpecAllowed(processSpec.Value, process.Value))
+                {
+                    return Invalid<PlanViewV1>(ProcessSpecField);
+                }
+
                 var verified = await VerifyPlanContentAsync(
                     inputs, targetKg, permission, companyId, actorId, cancellationToken);
                 if (verified.Refusal is not null)
@@ -682,7 +709,7 @@ public sealed partial class ManufacturingCommandService(
                 var revised = await planRevisions.RevisePlanContentAsync(planId, request.ExpectedVersion,
                     request.WorkCenterId, process.Value, [.. PlannedInputs(verified.Inputs)],
                     Target(request.Target, verified.TargetMass), BuildCutToLengthSpec(content.CutToLengthSpec),
-                    lineSpeed.Value, reason, metadata, cancellationToken);
+                    lineSpeed.Value, reason, metadata, cancellationToken, processSpec.Value);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok,
                     PlanView(revised, reviseParameters), false, null);
             }, stored => PlanView((ProductionPlan)stored, reviseParameters), cancellationToken);
@@ -2789,7 +2816,8 @@ public sealed partial class ManufacturingCommandService(
             rejection.RejectedByUserId, rejection.RejectedAtUtc, rejection.PlanVersion))],
         plan.Cancellation is { } cancellation
             ? new PlanCancellationViewV1(cancellation.Reason, cancellation.CancelledByUserId, cancellation.CancelledAtUtc)
-            : null);
+            : null,
+        ProcessSpecView(plan.ProcessSpec));
 
     private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
         snapshot is null
@@ -2832,7 +2860,8 @@ public sealed partial class ManufacturingCommandService(
             CommercialContextView(input.CommercialContext), TechnicalSnapshotView(input.TechnicalSnapshot)))],
         revision.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         revision.Reason, revision.RevisedBy, revision.RecordedAtUtc, CutSpecView(revision.CutToLengthSpec),
-        revision.LineSpeedMetresPerMinute is { } lineSpeed ? Text(lineSpeed) : null);
+        revision.LineSpeedMetresPerMinute is { } lineSpeed ? Text(lineSpeed) : null,
+        ProcessSpecView(revision.ProcessSpec));
 
     /// <summary>The stored plan summary as text: the same lossless kilogram text as every other mass here.</summary>
     internal static PlanSummaryViewV1 PlanSummaryView(ManufacturingPlanSummary summary) => new(
