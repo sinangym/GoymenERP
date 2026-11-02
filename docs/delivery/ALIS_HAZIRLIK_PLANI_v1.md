@@ -34,7 +34,7 @@ kolaylığı referansıdır (§2.4).
 - Modül sınırları (ALS-D45 ile daraltıldı): Satış dosyalarını "proje modülleri" konuşması, Üretim dosyalarını Üretim
   şeridi değiştirir; Alış bunlara dokunmaz, görev notu bırakır. Stok'ta Alış'ın ihtiyacı olan eklemeleri (MOD-06, MOD-14)
   bu şerit yapar; Üretim şeridi de Stok'ta çalıştığı için merge sırası notla ayarlanır. Görev notları:
-  `ALIS_SATIS_DEVIR_v1.md` (TEK-03/04 geçişi, MOD-03, MOD-16), `ALIS_URETIM_DEVIR_v1.md` (MOD-01/02; MOD-06/14 bilgi),
+  `ALIS_SATIS_DEVIR_v1.md` (TEK-03/04 geçişi ertelendi, MOD-03, MOD-16), `docs/handoffs/URETIM_ALIS_DEVIR_v1.md` (Üretim'in yazdığı not; yalnız A-1/A-2 = MOD-01/02), MOD-06/14 Stok bilgisi için Alış→Üretim/Stok merge-sırası notu (Alış yazar, A3 başında),
   `ALIS_FINANS_DEVIR_v1.md` (MOD-04, MOD-15),
   `ALIS_LOJISTIK_DEVIR_v1.md` (MOD-07). Notlar ilgili dalga başlarken yazılır.
   Alış portları karşı taraf gelene kadar fail-closed çalışır.
@@ -466,11 +466,11 @@ dosyaları bu şeritte değiştirilmez, Satış'ın geçişi görev notuyla bır
 |---|---|---|
 | **A0** | Bu plan ve karar dosyaları; `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Alış satırları; FZL-01…03; TEK-05…08; hubvogal alan eşlemesi (MIG-01 hazırlığı) | – |
 | **A1** | PRS-01 (persona kartı satırları, §13.3; personalar ALS-D53, talep açanlar ALS-D54, kur düzeltme ALS-D56 — eşleme EK8 §3); TEK-09 durum makinesi; API-01 (talep onay/ret), API-01b (hazırlayanın geri çekmesi, ALS-D46), API-02 (kaynak alanı, A-2), API-03 + UI-01; API-10 + UI-05 (No.161 iptali); FZL-04 | ALS-D2, ALS-D16, ALS-D17 |
-| **A2a** | TEK-01…03; API-20…22 + UI-03 (fiyat, fiyatsız onay, vergi, kur, vade + ödeme planı, işlem türü); API-23 (masraf ve iskonto satırı); API-98 (Ayarlar listeleri); API-15 + API-96 (onay eşiği); PRS-02 (depocunun fiyatsız görünümü). Fiyat modeli baştan satır birimine bağlı kurulur (ALS-D19; A3'te migration gerekmesin); satır giriş birimi + fiyat birimi taşır (ALS-D51) | ALS-D3, D5, D6, D18, D20, D21, D23, D24, D27, D28; Ayarlar merge sırası (B-8); ALS-D38 (vade farkı, API-20); ALS-D29 (fason masraf değil) |
-| **A2b** | API-12/13/17/18 + UI-06 (revizyon, kırılım, teyit, Tedarik No); API-14 + UI-04 (sekmeler, eksenler); API-16 (PDF) | A2a; ALS-D9, D13, D20, D34 |
-| **A3** | API-95 + API-40 (kabul toleransı, kantar fiş no), API-41 (hizmet kabulü), API-42…44 + UI-08; API-11 (satır kapatma, tolerans profiline bağlı); API-30…32 + UI-07 (termin, tedarikçide hazır, yolda); MOD-06, MOD-07, MOD-14 (görev notu `ALIS_URETIM_DEVIR_v1.md`: Stok'ta gelecek arz içinde "tedarikçide hazır" satırı), MOD-16 (Satış görev notu); adet/metre birimleri (ALS-D19, Ayarlar onayından sonra) ve kg ↔ adet ↔ metre çevrimi (ALS-D51, Ürün portu: `docs/handoffs/ALIS_URUN_DEVIR_v1.md`) | API-95 Ayarlar kaydı (B-8); ALS-D33, D43, D30, D39 (API-31); Ürün çevrim portu (ALS-D51); N-38 kapandı (ALS-D55: tolerans satırın giriş biriminde) |
-| **A4** | API-70…72 + UI-11 + MOD-01 (fason, A-1); MOD-02 (Üretim talebi, ALS-D16); MOD-03 (Satış bağlı satın alma, A-3) | A1, A2a; MOD-03 için Satış S6 (API-11, MOD-05) sözleşmesi |
-| **A5** | MOD-12 (outbox); API-50…55 + API-97 + UI-09 (gelen fatura, üçlü kontrol, kur farkı); MOD-04; API-60…62 + UI-10 (iade) | A2b, A3; MOD-15 (B-1, Finans konuşması), Alış outbox + gerekirse ERP-000F (B-3, ALS-D44); ALS-D7/D8/D14/D15, ALS-D41, ALS-D42; iade için Stok iade çıkış portu (MOD-06) |
+| **A2a** | TEK-01…03; API-20…22 + UI-03 (fiyat, fiyatsız onay, vergi, kur, vade + ödeme planı, işlem türü); API-23 (masraf ve iskonto satırı); API-98 (Ayarlar listeleri); API-15 + API-96 (onay eşiği); PRS-02 (depocunun fiyatsız görünümü). Fiyat modeli baştan satır birimine bağlı kurulur (ALS-D19; A3'te migration gerekmesin); satır giriş birimi + fiyat birimi taşır (ALS-D51) | ALS-D3, D5, D6, D18, D20, D21, D23, D24, D27, D28; Ayarlar merge sırası (B-8); ALS-D38 (vade farkı, API-20); ALS-D29 (fason masraf değil); §14.1 A2a-KUR (bilgi amaçlı sipariş kuru) |
+| **A2b** | API-12/13/17/18 + UI-06 (revizyon, kırılım, teyit, Tedarik No); API-14 + UI-04 (sekmeler, eksenler); API-16 (PDF) | A2a; ALS-D9, D13, D20, D34; §14.1 A2b-PDF |
+| **A3** | API-95 + API-40 (kabul toleransı, kantar fiş no), API-41 (hizmet kabulü), API-42…44 + UI-08; API-11 (satır kapatma, tolerans profiline bağlı); API-30…32 + UI-07 (termin, tedarikçide hazır, yolda); MOD-06, MOD-07, MOD-14 (Stok'ta gelecek arz içinde "tedarikçide hazır" satırı; Alış→Üretim/Stok merge-sırası notu A3 başında Alış yazar), MOD-16 (Satış görev notu); adet/metre birimleri (ALS-D19, Ayarlar onayından sonra) ve kg ↔ adet ↔ metre çevrimi (ALS-D51, Ürün portu: `docs/handoffs/ALIS_URUN_DEVIR_v1.md`) | API-95 Ayarlar kaydı (B-8); ALS-D33, D43, D30, D39 (API-31); Ürün çevrim portu (ALS-D51); N-38 kapandı (ALS-D55: tolerans satırın giriş biriminde); §14.1 A3-0, A3-KAPI |
+| **A4** | API-70…72 + UI-11 + MOD-01 (fason, A-1); MOD-02 (Üretim talebi, ALS-D16); MOD-03 (Satış bağlı satın alma, A-3) | A1, A2a; MOD-03 için Satış S6 (API-11, MOD-05) sözleşmesi; §14.1 A4-0 |
+| **A5** | MOD-12 (outbox); API-50…55 + API-97 + UI-09 (gelen fatura, üçlü kontrol, kur farkı); MOD-04; API-60…62 + UI-10 (iade) | A2b, A3; MOD-15 (B-1, Finans konuşması), Alış outbox + gerekirse ERP-000F (B-3, ALS-D44); ALS-D7/D8/D14/D15, ALS-D41, ALS-D42; iade için Stok iade çıkış portu (MOD-06); §14.1 A5-0, A5-KUR |
 | **A6** | API-80/81 + UI-02 (teklif, ALS-D11); API-90…92 + UI-13 (raporlar, performans); MOD-10 + UI-12 (onaylar); MIG-01 (hubvogal göçü); kabul taraması AT-025…028; production aktivasyonu insan kararıdır | A5; N-19 (hubvogal erişimi) |
 
 Bu tablo §13.3 düzeltmelerini ve §13.7 kararlarını içerir (2026-11-02, v1.2).
@@ -657,7 +657,7 @@ Yeni açık sorular:
 | Karar | Etki |
 |---|---|
 | ALS-D29 fason = yalnız sahipliği değişmeyen mal | N-35 kapandı. Giden fason yalnız A-1 fason hizmet siparişi (API-70…72); masraf satırı (API-23) fason için kullanılmaz; tedarikçinin işleyip sattığı mal normal alıştır. Gelen fason Satış'ta |
-| ALS-D30 tedarikçide hazır mal satışa ayrılabilir | N-30 kapandı. MOD-16 (Satış kaynak planı) ve MOD-14 (Stok tahsis motoru) görev notlarına "gelecek mal olarak ayırma, aynı ton bir kez" eklenir (notları Alış şeridi A3 başında yazar: `ALIS_SATIS_DEVIR_v1.md`, `ALIS_URETIM_DEVIR_v1.md`); Alış okuma portu ayrılan miktarı da gösterir |
+| ALS-D30 tedarikçide hazır mal satışa ayrılabilir | N-30 kapandı. MOD-16 (Satış kaynak planı) ve MOD-14 (Stok tahsis motoru) görev notlarına "gelecek mal olarak ayırma, aynı ton bir kez" eklenir (notları Alış şeridi yazar: `docs/handoffs/ALIS_SATIS_DEVIR_v1.md` ve A3 başında Alış→Üretim/Stok merge-sırası notu); Alış okuma portu ayrılan miktarı da gösterir |
 | ALS-D31 birlikte kullanım yok | N-37 kapandı. MIG-01: canlıya alma günü açık siparişler taşınır, hubvogal'de alış kapanır, Mikro aktarımı Göymen'den |
 | ALS-D32 fazla teslim aynı fiyatla faturaya | N-09 kapandı. API-52 üçlü kontrolde fazla teslim payı sipariş fiyatıyla karşılaştırılır |
 | ALS-D33 termin dilimleri ilk sürümde | N-12 kapandı; API-30 A3'te kalır |
@@ -671,3 +671,63 @@ Yeni açık sorular:
 | ALS-D41 TL borç tedarikçi faturasındaki kurla | N-25 kapandı; MOD-04 (görev notu `ALIS_FINANS_DEVIR_v1.md`, Alış şeridi A3 başında yazar ki Finans şeridi A5'e kadar bitirebilsin) |
 | ALS-D42 tedarikçi borcu satış riskinden düşülmez | N-26 kapandı; MOD-15 (aynı Finans görev notu; A5'ten önce yazılır) |
 | ALS-D43 metre 2 ondalık, tolerans kg ile aynı | N-28 kısmen kapandı (ondalık ve tolerans); çevrimin kaynağı sonra ALS-D51/D52 ile kapandı; adet/metre A3'te Ayarlar profiliyle |
+
+---
+
+## 14. Modüller arası bağlantılar (2026-11-02, main @`e7a980c3`)
+
+Bu bölüm iş takibidir; karar değildir (yeni ALS-D yok). Envanter `origin/main` `1db70046` üzerinde çıkarıldı ve
+`e7a980c3` üzerinde yeniden doğrulandı (arada yalnız Üretim ve Finans planları değişti, #918, #917). Biçim Üretim planı §11a ile aynıdır.
+
+**Kural:** Modül başka modülün tablosuna yazmaz; bağ yalnız sürümlü port/outbox ile kurulur (mal kabul ortak işlemi
+bilinçli istisna: Api katmanındaki host, Alış ve Stok katılımcılarını tek senkron transaction'da çalıştırır; her
+katılımcı yalnız kendi tablosuna yazar — D3 dikişi, Purchasing README). main'de bu kuralı çiğneyen Alış kodu
+bulunmadı.
+
+**Kalıcı kural (Alış şeridi süreç kuralı; kaynağı 2026-11-02 modül bağlantı analizi isteği; iş politikası değildir):** her yeni Alış PR açıklamasında bir **"Modül bağlantıları"** satırı bulunur: PR'ın dokunduğu
+bağlantı (bu tablodaki satır), port/olay adı ve sürümü, karşı modüle etkisi; yoksa "yok".
+
+Durum: ✅ main'de impl + DI + test · 🟡 kısmen · ❌ yok · ❓ kapsam sorusu.
+
+| Bağlantı | Üretici → Tüketici | Port/olay | main'de impl+DI | Test | Durum | Plan kalemi | Kimin işi |
+|---|---|---|---|---|---|---|---|
+| Mal kabul → stok girişi | Alış → Stok | `IPurchaseGoodsReceiptTransactionV1` (`Api/PurchasingRuntime/PurchaseGoodsReceiptHost.cs`); Stok `IInventoryGoodsReceiptParticipantV1`, `IInventoryGoodsReceiptSourceV1` | `Program.cs:358-360`; `InventoryModuleExtensions.cs:56` | gerçek SQL: `InventorySqlServerRelationalAcceptanceTests.Goods_receipt_*` (3, `tools/relational_inventory/inventory.txt`), `PurchasingGenuineProductReceiptJourney…` (`purchasing.txt`) | ✅ senkron ortak işlem (bilinçli istisna, outbox değil) | MOD-06 (genişleme) | Alış (Stok eklemeleri dahil, ALS-D45) |
+| Kabul miktarı v2 / kalite blok | Ürün, Stok, Kalite → Alış kabulü | codex P05.1 (#772-776, #782), I04.1A (#750) | açık PR; main'de `InitialBlock = "Free"` sabit (`PurchaseGoodsReceiptContractsV1.cs:45`, ALS-D4) | – | 🟡 | **A3-KAPI**, MOD-06 | Codex (P05.1, #750) → sonra Alış A3 |
+| Gelecek arz v1 | Alış → Lojistik | `IPurchaseOpenLineReadPortV1` | `PurchaseOpenLineReadPort` + `PurchasingModuleExtensions`; tüketici `LogisticsOperationsWorkService` | `LogisticsOperationsWorkServiceTests`, `PurchaseOpenLineReadPortTests` (birim); gerçek SQL `LogisticsOperationsWorkSqlServerRelationalAcceptanceTests` ×3 (`logistics.txt:41-43`) | ✅ (ayrıca Stok ST-01 ekranı `PurchaseSupplySection.tsx`, AT-064) | MOD-07 | Alış + Lojistik |
+| Gelecek arz v2 (termin, tedarikçide hazır, yolda) | Alış → Stok (ST-08), Satış (MOD-16) | `IPurchaseSupplyReferencePortV1` (v1 kayıtlı; v2 yok) | DI var, modül tüketicisi yok | v1: gerçek SQL `PurchasingSqlServerRelationalAcceptanceTests.Expected_supply_read_freshens_accepted_quantity_without_creating_a_second_effect`; v2 yok | 🟡 | **A3-0**, MOD-14, MOD-16 | Alış (port + Stok görünümü); Satış tüketir (`ALIS_SATIS_DEVIR_v1.md` S-A2) |
+| Ürün alış uygunluğu | Ürün → Alış | `IProductPurchaseEligibilityV1` / `IProductPurchaseEligibilityPortV1` | `Program.cs:355`, `PurchasingProductSelectionHostPorts` | `ProductPurchaseSelectionSqlServerRelationalAcceptanceTests` + birim | ✅ | – | Ürün |
+| Birim çevrimi + varsayılan fiyat birimi | Ürün → Alış | `IProductPurchaseUnitConversionV1` (öneri) | yok | – | ❌ | ALS-D51; A2a/A3 | Ürün (`docs/handoffs/ALIS_URUN_DEVIR_v1.md` U-A1) |
+| Tedarikçi cari | Cari → Alış | `IPurchasingPartyAccountPortV1` v1 (tedarikçi rol bayrağı dahil) | `Program.cs:354` | `PurchasingServiceTests`, `CounterpartyPurchasingPartyAccountPortTests`; gerçek SQL `CounterpartyPurchasingRecordPartyDisplaySqlServerRelationalAcceptanceTests` (`counterparty.txt:71`) | ✅ v1; 🟡 fason rolü, vade/ödeme koşulu yok | MOD-08 | Alış |
+| Ayarlar ön koşulu (birim, ölçek) | Ayarlar → Alış | `ISettingsPrerequisiteProvider` | `PurchaseUnitVerifier`, `PurchaseGoodsReceiptHost` | `PurchaseUnitVerifierTests` | ✅ | MOD-05 | – |
+| Kur | Ayarlar → Alış | `ISettingsExchangeRateResolverV1` (#906 merge edildi) | yalnız Satış tüketiyor | – | 🟡 | **A2a-KUR** (siparişte bilgi amaçlı kur, API-21); **A5-KUR** (gelen faturada kontrol kuru snapshot'ı, ALS-D6/D14/D41, B-4) | Alış |
+| Alış politikaları (tolerans, eşik, listeler) | Ayarlar → Alış | API-95…98 sağlayıcıları | yok | – | ❌ | API-95…98, B-8 | Alış (Ayarlar eklemesi, ALS-D45) |
+| Belge kasası | Alış → Belgeler | `IDocumentOwnerLinkPortV1`, tür `purchasing.purchase-order` (`PurchasingDocumentOwnerLinkPort`) | `DocumentsRuntimeExtensions` | `PurchasingDocumentOwnerLinkPortTests` (birim); gerçek SQL `DocumentVaultSqlServerRelationalAcceptanceTests.The_routes_upload_list_and_download_for_a_permitted_actor_and_answer_403_or_404_to_everyone_else` (`platform.txt:17`; `purchasing.purchase-order` sahibi dahil); e2e `tests/e2e/purchasing-pur01/specs/pur01-documents-journey.spec.ts` | ✅ (sipariş PDF'i yok) | **A2b-PDF**, MOD-11, API-16 | Alış |
+| Audit | Alış → Platform | ADR-009 audit zarfı (`PurchasingMutationAudit`) | var | var | ✅ | – | – |
+| Gelen fatura → Finans borç açık kalemi | Alış → Finans | `purchasing.invoice.finalized.v1` (öneri) → kaynak türü `official.incoming-invoice-installment.v1` (#902'de rezerve) | main'de yalnız `official.invoice-installment.v1` (`FinanceOpenItemSourceV1.cs:10`); `FinanceOpenItemDirectionV1` main'de yok (#902 açık, taslak); Alış'ta fatura çekirdeği/olay/outbox yok | – | ❌ | MOD-04, MOD-15, A5 | Finans (#902 merge, F2 kabul portu) + Alış (olay) — `docs/handoffs/ALIS_FINANS_DEVIR_v1.md` |
+| Tedarikçi ödemesi → borç kapama | Finans (Alış okur) | `ManualBankPaymentPreparation` vb. (`ManualBankPaymentV1.cs`) | `PartyId` var; borç açık kalemine dağıtım ve ödeme amacı yok | – | ❌ | Finans planı TEK-02 (ödeme amacı, F1) + API-20 (borca dağıtım, F3) | Finans (`ALIS_FINANS_DEVIR_v1.md` F-A3) |
+| Talep kaynağı (Üretim/Satış/Stok) | Üretim, Satış → Alış | mevcut talep oluşturma ucu + `source` alanı | yok | – | ❌ | API-02, MOD-02 (A-2; Üretim eylemi U5-c) | Alış (alan); Üretim (eylem) — `docs/handoffs/URETIM_ALIS_DEVIR_v1.md` A-2 |
+| Giden fason siparişi | Alış → Üretim | `IPurchaseSubcontractOrderReadPortV1` (öneri, A-1) | yok; açık #770 rakip sözleşme `PurchasingSubcontractOrderContractsV1` | – | ❌ | **A4-0**, MOD-01 | Alış + Codex (#770) + Üretim — `URETIM_ALIS_DEVIR_v1.md` A-1 |
+| Satış siparişine bağlı alış | Alış → Satış | `ISalesOrderLinkedSupplyReadPortV1` (sahibi Satış, S6) | yok; `SalesCancellationImpactSourcesV1.LinkedPurchasing` bugün NoSource | – | ❌ | MOD-03, A4 | Satış (sözleşme) + Alış (adaptör) — `docs/handoffs/ALIS_SATIS_DEVIR_v1.md` |
+| Onay kutusu | Alış → Work | `INativeApprovalReadAdapterV1` | Finans/Stok/Satış adaptörleri var; Alış yok | – | ❌ | MOD-10, A6 | Alış |
+| Olay kaydı | Alış → tüketiciler | Alış outbox + platform dağıtıcı ERP-000F | Alış'ta outbox yok; ERP-000F backlog'da `SPEC_ONLY` | – | ❌ | **A5-0**, MOD-12, B-3 | Alış; dağıtıcı platform (#66 makbuzuyla) |
+| Min. stok → talep önerisi | Stok → Alış | – | main'de minimum stok seviyesi özelliği yok | – | ❓ | **MINSTOK** (sorulacak, NEEDS-SINAN) | Sinan (kapsam) |
+
+### 14.1 Yeni dilimler (dalga tablosuna kısa atıfla eklendi)
+
+| Dilim | Dalga | İçerik | Kapı / ön şart | Sev. |
+|---|---|---|---|---|
+| **A2a-KUR** | A2a | Siparişte **bilgi amaçlı** kur: dövizli sipariş satırı `ISettingsExchangeRateResolverV1` ile güncel kuru gösterir (API-21 "siparişte bilgi amaçlı; faturada tek kur"); siparişe sabit kur yazılmaz (SAT-D172: kur faturaya yazılır, sipariş kur taşımaz) | #906 (merge edildi); TEK-01, API-21 | K2 |
+| **A5-KUR** | A5 | Gelen faturada kur: TL borç tedarikçi faturasındaki kurla (ALS-D41); ERP kontrol kuru her kabul payının kendi gününe göre (ALS-D6/D14, §13 B-4) `ISettingsExchangeRateResolverV1` ile çözülür ve faturaya snapshot olarak yazılır (SAT-D172 deseni); sonradan kur düzeltmesi kesilmiş faturayı değiştirmez | #906; ALS-D6, D14, D41 | K3 |
+| **A2b-PDF** | A2b | Yalnız sipariş PDF'i (API-16; belge kasası bağı ve gerçek SQL testi main'de zaten var) | MOD-11, ALS-D34 | K2 |
+| **A3-0** | A3 başı | `IPurchaseSupplyReferencePortV1` v2: termin dilimi, tedarikçide hazır, yolda, ayrılan miktar (ALS-D22/D25/D30); v1 kırılmaz; ilk tüketici Stok ST-08 görünümü | MOD-14, MOD-16 | K3 |
+| **A3-KAPI** | A3 | Kabul toleransı ve kalite blok işi codex P05.1 (#772-776, #782) ve I04.1A (#750) merge edilmeden başlamaz; sıra: P05.1 → #750 → Alış A3 kabul genişlemesi; `InitialBlock = "Free"` sabiti #750 sonrası yeniden değerlendirilir (karar değişikliği gerekirse NEEDS-SINAN). Codex PR'ları A3 başında merge edilmemişse Issue #66'ya sıra için NEEDS-SINAN yazılır | codex PR'ları | K3 |
+| **A4-0** | A4 başı | #770 `PurchasingSubcontractOrderContractsV1` ile Üretim'in istediği `IPurchaseSubcontractOrderReadPortV1` (A-1) uzlaşması: tek sözleşme, sürümlü, Üretim'in okuduğu alanlar; çifte sözleşme merge edilmez | #770 yazarı (Codex) + Üretim şeridi | K3 |
+| **A5-0** | A5 başı | Alış outbox tablosu (Work/Stok deseni) + dağıtıcı testi (commit ile mesaj kaybı/kopyası yok); ERP-000F hâlâ `SPEC_ONLY` ise dağıtıcı ihtiyacı #66 makbuzuyla çözülür | B-3, ALS-D44 | K3 |
+| **MINSTOK** | – | Minimum stok seviyesinden satın alma talebi önerisi: main'de min. seviye özelliği yok; kapsam sorusu Issue #66'ya **sorulacak** (NEEDS-SINAN; henüz yazılmadı) — cevap gelene kadar plan kalemi açılmaz | Sinan | – |
+
+Karşı taraf notları: Finans `docs/handoffs/ALIS_FINANS_DEVIR_v1.md`; Satış `docs/handoffs/ALIS_SATIS_DEVIR_v1.md`
+(Satış tarafının karşılığı `docs/handoffs/SATIS_MODUL_BAGLANTILARI_v1.md`, Satış PR #919, merge durumuna bağlı; 5l/5m
+sorularının cevabı Alış notunda S-A1/S-A2);
+Ürün `docs/handoffs/ALIS_URUN_DEVIR_v1.md`; Üretim'in Alış'tan istekleri Üretim'in yazdığı
+`docs/handoffs/URETIM_ALIS_DEVIR_v1.md` (A-1/A-2; A-3 yalnız Satış'a yönlendirir; eski `ALIS_URETIM_DEVIR_v1.md` adı buna çevrildi). MOD-06/14
+Stok bilgisi bu notta yoktur; Alış A3 başında kendi Alış→Üretim/Stok merge-sırası notunu yazar.
