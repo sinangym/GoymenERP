@@ -1,6 +1,6 @@
 # Finans Modülü Hazırlık Planı v1
 
-Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Finans şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) ·
+Tarih: 2026-11-02 (v1.1) · Hazırlayan: Claude (cloud oturumu, Finans şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) ·
 Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D13)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.10, §7.11, §8.1, §8.2, §16 Faz 4, §19.3, §27.11 (F-01…F-17),
@@ -74,8 +74,9 @@ Finans modülü aşağıdakilerin hepsi sağlanınca hazırdır:
    kayıt silinmez, ters kayıtla düzeltilir; kapalı dönem değişmez (`occurredOn`, No 108).
 10. F-01…F-17 ekranları (F-14 hariç, §7) yayında; her birinde yükleniyor, boş, hata, yasak, çakışma ve bilinmeyen
     sonuç durumları var.
-11. Açılış: banka/kasa bakiyeleri, açık müşteri/tedarikçi kalemleri, portföydeki çekler, kredi bakiyeleri göç
-    edilmiştir (MIG-02); açılış kaydı gerçek tarihçe gibi gösterilmez.
+11. Açılış: banka/kasa bakiyeleri, açık müşteri/tedarikçi kalemleri, portföydeki çekler, kredi bakiyeleri **elle**
+    girilmiştir (FNS-D12, API-14 Açılış Kaydı); açılış kaydı gerçek tarihçe gibi gösterilmez. Dosya göçü (MIG-02) yalnız
+    yardımcı/kontrol yoludur, zorunlu değildir.
 12. Finans'ı etkileyen açık kararlar ya kapatılmış ya yapılandırılabilir ve fail-closed.
 
 ---
@@ -134,12 +135,8 @@ tahsilatını fiş taslağı kaynağı olarak okuyabilir. Mikro'ya dışa aktar�
 ### 2.4 Hubvogal karşılaştırması (ayrıntı §15)
 
 Hubvogal Göymen'in bugün kullandığı sistemdir; finans bölümünde kasa, banka, çek, kredi, kredi kartı ve DBS modülleri
-olduğu Sinan tarafından belirtildi. Bu oturum hubvogal'e erişemez (VPN). Alış incelemesinden (§13.6) bilinenler:
-sipariş başlığında tedarikçi cari bakiyesi (Kur, Toplam Borç, Toplam Alacak), Nokta Vade ödeme planı (1–12 taksit),
-cari limit / limit boşluğu; masraf tiplerinde "Kredi kartı komisyonu", "Finansman bedeli"; irsaliyede "Cariye İşlendi"
-durumu ve Mikro şubesi. **Finans ekranları görülmeden** alan listesi, durum adları ve numara biçimleri hubvogal'e göre
-eşlenemez; bu plan şimdilik master + Finans v3/v4 paketine dayanır. Ekran görüntüleri gelince §13'e "Hubvogal finans
-incelemesi" eklenir (Alış §13.6 emsali). Hubvogal yalnız referanstır; kör kopya yoktur.
+olduğu Sinan tarafından belirtildi. Finans bölümü 2026-11-02'de Sinan'ın izniyle ofis bilgisayarı üzerinden yalnız okunarak
+incelendi; bulgular §15'tedir. Hubvogal yalnız referanstır; kör kopya yoktur.
 
 ### 2.5 Tasarım paketi (v3/v4) ile kod arasındaki fark
 
@@ -202,7 +199,7 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-01 | (migration) `OpenItems.Direction` + kaynak türü | §3 | — | MOD-15, No 22 | K3 |
 | API-02 | `GET open-items?direction=` | Yöne göre liste | `finance.open-items.read` | — | K2 |
 | API-03 | `GET open-items/direction-quarantine`, `POST open-items/{id}/direction` | "Yön belirsiz" karantina ve yön atama | yeni `finance.open-items.direction.assign` | No 22 | K3 |
-| API-04 | `GET parties/{partyId}/balance-summary` | Toplam alacak / borç / net, para birimi ayrı | `finance.party-ledger.read` | §3 | K2 |
+| API-04 | `GET /finance/party-balance?partyId&companyAccountId` | Toplam alacak / borç / bakiye + açık alacak/borç, para birimi ayrı | `finance.party-ledger.read` | §3 | K2 |
 | API-05 | Cari ekstre: yönlü kalemler + devir bakiyesi (No 136) | Ekstre düzeltmesi | mevcut | No 79/136, OPEN-018 | K3 |
 | API-06 | Risk portu düzeltmesi | Yalnız `Receivable` | sistem bağlamı | ALS-D42 | K3 |
 | API-07 | `POST offsets/preview`, `POST offsets` | **Mahsup:** aynı firmanın alacağı ile borcunu kapatma; maker≠checker | yeni `finance.offset.*` | ALS-D42, DEC-FIN-006 | K3 |
@@ -225,12 +222,13 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-22 | Kur farkı satırı | Çapraz para dağıtımında para olayından türeyen ayrı satır; muhasebe kaynağı | No 34, No 17 | K3 |
 | API-23 | Ödeme ters kaydı | Tahsilattaki FIN-T06 deseninin ödemeye uygulanması | DEC-FIN-006 | K3 |
 | API-24 | Banka masrafı ve kısmi ödeme | Brüt tutar + ayrı masraf para olayı | No 112, No 115 | K3 |
+| API-25 | Masraf ödemesi / iadesi (cariye bağlı olmayan) | Vergi, SGK, maaş, kira, banka masrafı, kredi faizi; kasa/banka hesabı + iki seviyeli masraf türü + belge; açık kaleme dağıtılmaz (hubvogal emsali, R-5) | §17 R-5, MOD-07 | K3 |
 
 ### 5.4 Kasa ve virman (F-05)
 
 | ID | Uç | Amaç | Karar | Sev. |
 |---|---|---|---|---|
-| API-30 | `cash-accounts` öner/onay/liste | Kasa master (şirket, para birimi, sorumlu) | N-05 | K2 |
+| API-30 | `cash-accounts` öner/onay/liste | Kasa master (şirket, para birimi, sorumlu) | N-05 (ASSUMPTION-FIN-CASH) | K3 (yeni tablo + yetki) |
 | API-31 | `cash-movements` taslak/kayıt/ters | Kasadan tahsilat ve ödeme; açık kaleme dağıtılabilir | DEC-FIN-006 | K3 |
 | API-32 | `transfers` preview/commit | Virman: kasa↔banka, banka↔banka, aynı para birimi; döviz alım-satım ayrı tür (N-06) | — | K3 |
 | API-33 | `cash-counts`, gün sonu | Sayım, sayım farkı (eşik üstü müdür onayı), gün kapanışı | v3 §5 rol matrisi; eşik OPEN-009 | K3 |
@@ -242,7 +240,7 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-40 | `GET bank-accounts/{id}/book` | ERP defter bakiyesi ve hareketler (para olaylarından hesaplanır, ayrı bakiye tablosu tutulmaz) | — | K2 |
 | API-41 | `POST bank-statements/import` | Bankadan indirilen ekstre dosyası; dosya hash'i; satır değiştirilmez | OPEN-016 (dosya izinli), N-07 | K3 |
 | API-42 | `POST reconciliation/preview`, `/matches`, `/unmatch` | 1:1, 1:n, n:1, n:n eşleştirme; farkı elle kapatma ayrı yetki | master §7.11 | K3 |
-| API-43 | Ekstreden kaynak önerisi | Eşleşmeyen ekstre satırından tahsilat/ödeme taslağı (insan onaylı) | DEC-AI-004 | K2 |
+| API-43 | Ekstreden kaynak önerisi | Eşleşmeyen ekstre satırından tahsilat/ödeme **taslak önerisi**; kullanıcı açıp kontrol edip kaydetmedikçe hareket yoktur (FNS-D13: ekstre hareket üretmez, kayıt her zaman kullanıcınındır) | DEC-AI-004, FNS-D13 | K2 |
 
 ### 5.6 Ödeme yönetimi (F-15)
 
@@ -385,8 +383,8 @@ API-70…73 DBS, API-77/78 kart, API-80…84 kredi/limit/teminat) bu iki persona
 | N-02 | ~~Şerit~~ → **FNS-D1: hepsi burada** | — | kapandı |
 | N-03 | ~~Mevcut kalemler~~ → **FNS-D7: alacak**; alış borç, satış alacak (§16) | MOD-15 migration | kapandı |
 | N-04 | ~~DBS yönü~~ → **FNS-D3: ikisi de** | — | kapandı |
-| N-05 | ~~Kasa~~ → §15: şirket bazlı, TL/USD/EUR kasaları var | API-30 | kapandı |
-| N-06 | ~~Döviz alım-satımı~~ → §15: hubvogal'deki gibi virman içinde "Döviz Alış/Satış" türü (API-34) | API-32/34 | kapandı |
+| N-05 | Kasa → **ASSUMPTION-FIN-CASH** (hubvogal §15 gözlemi, Sinan kararı değil): şirket bazlı, TL/USD/EUR kasaları; yapılandırılabilir | API-30 | varsayım |
+| N-06 | Döviz alım-satımı → **ASSUMPTION-FIN-FX-TRANSFER** (hubvogal §15 gözlemi, Sinan kararı değil): virman içinde "Döviz Alış/Satış" türü (API-34) | API-32/34 | varsayım |
 | N-07 | ~~Ekstre~~ → **FNS-D13:** hareket elle girilir; internet bankacılığı dosyası ve MT940 yalnız kontrol/mutabakat için içe aktarılır | API-41 | kapandı |
 | N-08 | ~~Verilen çek~~ → **FNS-D8:** müşteri çeki/senedi ciro + kendi çek ve senedimiz | API-60, API-64 | kapandı |
 | N-09 | ~~Kredi türleri~~ → **FNS-D4: hepsi** (taksitli ticari, rotatif/spot, KMH/BCH, Eximbank/akreditif); akreditif/Eximbank kapatma ayrıntısı F7 başında sorulur | API-80…82 | kapandı |
@@ -529,8 +527,8 @@ formlarından çıkarıldı.
   olarak aynı modelde; kredi kartı limiti ayrı (N-10).
 - **Çek bordroları (API-65):** giriş, çıkış ve bankaya tevdi bordrosu (yazdırılabilir belge).
 - **Kasa/banka günlük raporu (API-45):** devir, işlemler, günlük toplam, gün sonu; tarih bazlı bakiye.
-- **Göç (MIG-02):** hubvogal'de ~860 sayfa cari hareket ve çek portföyü var. Açılışta hubvogal kayıtlarından açık
-  kalem, portföydeki çekler, açık DBS/teminat limitleri, kredi bakiyeleri ve kasa/banka bakiyeleri alınır (N-13).
+- **Açılış (FNS-D12):** açılış bakiyeleri **elle** girilir (API-14 Açılış Kaydı). Hubvogal'de ~860 sayfa cari hareket ve
+  çek portföyü var; dosya göçü (MIG-02) istenirse yalnız yardımcı/kontrol yolu olarak eklenir, zorunlu değildir.
 
 ### 15.4 Hubvogal sonrası yeni sorular
 
@@ -577,3 +575,18 @@ Kaynaklar: [Tek Düzen Hesap Planı — muhasebetr.com](https://www.muhasebetr.c
 [Hesap planı açıklamaları — alomaliye.com](https://www.alomaliye.com/2000/12/26/hesap-plani-aciklamalari);
 [Verilen çekler hesabı kayıtları — muhasebenews.com](https://www.muhasebenews.com/?p=165448). Kambiyo (646/656) ve
 VUK 280 satırı genel muhasebe bilgisidir; kaynakla doğrulanamadı, mali müşavir teyidi gerekir.
+
+---
+
+## 17. Revizyon v1.1 (2026-11-02) — #896 doküman review P2'leri
+
+| No | Düzeltme |
+|---|---|
+| R-1 | Açılış metni FNS-D12 ile uyumlu: §1 m.11 ve §15.3 artık "elle giriş (API-14), dosya göçü isteğe bağlı" diyor. FNS-D12'deki "geçici Açılış Kaydı düğmesi" yorumu Sinan'ın 2 Kasım teyidiyle uygulanır; ayrıntı uygulama PR'ında |
+| R-2 | N-05 ve N-06 hubvogal gözlemidir, Sinan kararı değildir: **ASSUMPTION-FIN-CASH** ve **ASSUMPTION-FIN-FX-TRANSFER** olarak işaretlendi; yapılandırılabilir kalır, ilgili dalgada (F3) Issue #66'ya `NEEDS-SINAN` olarak teyit sorulur |
+| R-3 | API-43: ekstre satırından yalnız **taslak önerisi** üretilir; kullanıcı kaydetmedikçe hareket yoktur (FNS-D13) |
+| R-4 | FNS-D11 eksi bakiye kontrolü: işlemin **`occurredOn` tarihindeki ve sonraki** her günün defter bakiyesi eksiye düşmemelidir (geriye tarihli girişte sonraki günler de korunur). Uygulama: F3/F4 kayıt komutunda, hesap bazında kilitli bakiye kontrolü |
+| R-5 | **Cariye bağlı olmayan ödemeler** (vergi, SGK, maaş, kira, banka masrafı, kredi faizi): hubvogal "Masraf Ödemesi/Masraf İadesi" emsali. F3'e **API-25 Masraf ödemesi/iadesi** eklendi: kasa/banka hesabı + masraf türü (iki seviyeli, Ayarlar'da) + belge; cari açık kalemine dağıtılmaz; muhasebe kaynağıdır (MOD-07) |
+| R-6 | K seviyesi düzeltmesi (v4 tanımı: yeni tablo/migration, para, yetki, modüller arası sözleşme = K3): API-30 (kasa master), API-76 (kart master), API-13 (numara serisi, Ayarlar sözleşmesi) **K3**; API-90…92 ve API-97 yeni tablo içerdiğinden **K3**; API-04 salt okuma, migration ve yeni yetki yok → **K2** kalır (PR #912 review'u K2'yi doğruladı); MOD-02/03 Alış ile sözleşme → **K3** |
+| R-7 | §2.4'teki "hubvogal'e erişilemiyor" ifadesi güncellendi (§15'e atıf) |
+| R-8 | API-04'ün gerçek yolu: `GET /finance/party-balance?partyId&companyAccountId` (PR #912) |
