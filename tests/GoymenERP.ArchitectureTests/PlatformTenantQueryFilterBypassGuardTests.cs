@@ -129,7 +129,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedOpenApiStartupFingerprint =
         // MOD-03 (EK19) maps the tax master and product item type routes and registers one scoped in-process Settings product
         // item type adapter, with comments; no OpenAPI-generation, network or hosted-service surface changes.
-        "24f2f221f56770ab839ffae07653823e2bfc82414effc6d976a37f9435dad8f6";
+        // Üretim U1-a maps the Settings Manufacturing parameter / tolerance profile routes; no OpenAPI-generation, network or
+        // hosted-service surface changes.
+        "f52999f9a223ffd086025f2663a704be7f32d6197a80b9506f548a9624351b8f";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -316,7 +318,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D149/D158 (EK20/EK21): +2 Settings tax master SQL facts (buyer situation list; item type move to the shared
             // card) (9c53f777… -> 534be0f1…).
             ["tools/relational_inventory/platform.txt"] =
-                "534be0f1b287823ce1de56809d24c57d8b7e4e895048896f87571869dbffdf51",
+                // Üretim U1-a: +3 Settings manufacturing profile SQL facts (parameter lifecycle; tolerance publication; migration
+                // round trip) (534be0f1… -> 026f3c54…).
+                "026f3c5457f43542771ac4b8d407229523a1b2c9635a8a2f3efe23008b355da1",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -439,7 +443,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for SAT-D158 (EK21): the company-filtered buyer situation list (fence, immutable whole
                 // versions and entries with their tax effect, insert-only withdrawals; company inside every key and foreign key)
                 // joins the write fence.
-                "a83f2f3e314b563f4075efbe2294c95620a7bfe22e414099e1b68618394f63a9",
+                // Re-fingerprinted for Üretim U1-a: the class becomes partial (the Manufacturing profile sets live in
+                // SettingsDbContext.ManufacturingProfiles.cs) and the write fence admits a tolerance registry row only as the
+                // insert of its lifecycle publication (same save, Approved → Published); the new rows join the company check.
+                "992f5504cc1ed013693ffec43fb7d9f75c0f98825408262ca4d3718365af7f8e",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -1475,7 +1482,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/"
                  + "Persistence/SettingsManufacturingToleranceProviderV1.cs"] =
                     new(
-                        "f7c60f914fce9a05f12887586e4b4e8d8c09915bc4c09ef5e0cdb3f3c345af99",
+                        // Re-fingerprinted for Üretim U1-a: the snapshot also carries the URT-D6 mass-balance tolerance
+                        // (an init property); the DbException branch and its token count are unchanged.
+                        "54181fa6f3818ad0a825bb778144fa604c57e8ca1787d401018dad2f6becbd59",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1
@@ -1500,7 +1509,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "SettingsModuleExtensions.cs"] =
                     new(
                         // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
-                        "bc03b65e374c3c85d4f842fcea9c79762d62561659476e3436c037dfaf587392",
+                        // Re-fingerprinted for Üretim U1-a: the Manufacturing parameter port and the profile administration
+                        // behind its two ports (DI-only); the database surface and its counts are unchanged.
+                        "7b19a9a1258072c262a5ee8083c6a967374f797aa01cd915ac457295067d5aa6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1691,6 +1702,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 3
+                        }),
+                // Üretim U1-a: Up re-creates the tolerance registry trigger with the new column and adds three lifecycle guard
+                // triggers; Down refuses (51183) while any profile or mass-balance value exists, then restores the trigger.
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261102082723_AddManufacturingParameterProfiles.cs"] =
+                    new(
+                        "ed23e573cd435383da4b430172e6a4c32c133a6188550ff4979a07907f692ff3",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 6
                         }),
                 // SAT-D158 (EK21): Down refuses (51153) while any buyer situation list exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"

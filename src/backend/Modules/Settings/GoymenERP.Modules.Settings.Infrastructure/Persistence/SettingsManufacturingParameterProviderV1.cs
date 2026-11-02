@@ -38,7 +38,7 @@ public sealed class SettingsManufacturingParameterProviderV1(
         bool anyPublished;
         try
         {
-            published = await ManufacturingParameterProfileReads.PublishedAsync(database, process, cancellationToken);
+            published = await PublishedAsync(process, cancellationToken);
             anyPublished = published.Count > 0 || await database.ManufacturingParameterProfiles.AsNoTracking()
                 .AnyAsync(row => row.Status == ManufacturingProfileStatusesV1.Published, cancellationToken);
         }
@@ -79,6 +79,29 @@ public sealed class SettingsManufacturingParameterProviderV1(
                 .ToArray());
     }
 
+    /// <summary>The company's published versions of the process with their values (company query filter).</summary>
+    private async Task<IReadOnlyList<ManufacturingParameterProfileCandidate>> PublishedAsync(string process,
+        CancellationToken cancellationToken)
+    {
+        var headers = await database.ManufacturingParameterProfiles.AsNoTracking()
+            .Where(row => row.Process == process && row.Status == ManufacturingProfileStatusesV1.Published)
+            .ToListAsync(cancellationToken);
+        if (headers.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = headers.Select(row => row.ProfileId).ToArray();
+        var values = await database.ManufacturingParameterProfileValues.AsNoTracking()
+            .Where(row => ids.Contains(row.ProfileId))
+            .ToListAsync(cancellationToken);
+        var byProfile = values.ToLookup(row => row.ProfileId);
+        return headers.Select(row => new ManufacturingParameterProfileCandidate(row.ProfileId,
+                ManufacturingProfileSourcesV1.Settings, row.Process, row.WorkCenterId, row.ProfileVersion, row.EffectiveFrom,
+                row.EffectiveThrough, ManufacturingParameterProfileReads.Values(byProfile[row.ProfileId])))
+            .ToArray();
+    }
+
     /// <summary>The covering version of one scope: the latest <c>EffectiveFrom</c>, then the highest version.</summary>
     internal static ManufacturingParameterProfileCandidate? Covering(
         IEnumerable<ManufacturingParameterProfileCandidate> candidates, Guid? workCenterId, DateOnly on) =>
@@ -108,28 +131,6 @@ internal sealed record ManufacturingParameterProfileCandidate(
 
 internal static class ManufacturingParameterProfileReads
 {
-    public static async Task<IReadOnlyList<ManufacturingParameterProfileCandidate>> PublishedAsync(SettingsDbContext database,
-        string process, CancellationToken cancellationToken)
-    {
-        var headers = await database.ManufacturingParameterProfiles.AsNoTracking()
-            .Where(row => row.Process == process && row.Status == ManufacturingProfileStatusesV1.Published)
-            .ToListAsync(cancellationToken);
-        if (headers.Count == 0)
-        {
-            return [];
-        }
-
-        var ids = headers.Select(row => row.ProfileId).ToArray();
-        var values = await database.ManufacturingParameterProfileValues.AsNoTracking()
-            .Where(row => ids.Contains(row.ProfileId))
-            .ToListAsync(cancellationToken);
-        var byProfile = values.ToLookup(row => row.ProfileId);
-        return headers.Select(row => new ManufacturingParameterProfileCandidate(row.ProfileId,
-                ManufacturingProfileSourcesV1.Settings, row.Process, row.WorkCenterId, row.ProfileVersion, row.EffectiveFrom,
-                row.EffectiveThrough, Values(byProfile[row.ProfileId])))
-            .ToArray();
-    }
-
     public static IReadOnlyList<ManufacturingParameterValueDataV1> Values(IEnumerable<ManufacturingParameterProfileValueRow> rows) =>
         rows.OrderBy(row => row.ParameterKey, StringComparer.Ordinal)
             .Select(row => new ManufacturingParameterValueDataV1(row.ParameterKey, row.Unit, row.NumericValue, row.ChoiceValue))
