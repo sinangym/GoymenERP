@@ -201,6 +201,7 @@ test('P01 saves one real Product-backed request, closes the form, reopens the sa
   expect(published).toContain('purchasing.requests.detail')
   expect(published).not.toContain('purchasing.requests.create')
   expect(published).not.toContain('purchasing.requests.submit')
+  expect(published).not.toContain('purchasing.requests.approve')
 
   await page.goto(REQUEST_LIST_ROUTE)
   const readerRow = page.getByRole('row').filter({ hasText: `…${requestId.slice(-8)}` })
@@ -226,19 +227,52 @@ test('P01 saves one real Product-backed request, closes the form, reopens the sa
   })
   expect([403, 404]).toContain(elsewhere.status())
 
+  // A1-1 (ALS-D2 / ALS-D16): an order is opened only for an APPROVED request. The Submitted request is refused first,
+  // the creator (its maker) cannot decide it, and the disposable approver approves it at the submitted version.
+  const linkedLine = {
+    lineId: '7b1c0f2e-0000-4a00-8000-000000000098', productId,
+    expectedProductVersion: productVersion, unitId: productUnitId, quantity: '5',
+    sourceRequestLineId: created.detail.lines[0].lineId,
+  }
+  const notYetApproved = await page.request.post(`${env.apiBaseUrl}${ORDERS_PATH}`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': companyId,
+      'Idempotency-Key': `browser-suite:pur01:source-order-before-approval:${requestId}`, 'Content-Type': 'application/json',
+    },
+    data: { supplierPartyId, companyAccountId, sourceRequestId: requestId, effectiveOn: '2026-09-18', lines: [linkedLine] },
+  })
+  expect(notYetApproved.status()).toBe(409)
+  expect(((await notYetApproved.json()) as { code?: string }).code).toBe('purchasing_request_state')
+
+  const approvalPath = `${REQUESTS_PATH}/${requestId}/approval`
+  const makerApproval = await page.request.post(`${env.apiBaseUrl}${approvalPath}`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': companyId,
+      'Idempotency-Key': `browser-suite:pur01:maker-request-approval:${requestId}`, 'Content-Type': 'application/json',
+    },
+    data: { expectedVersion: submittedVersion },
+  })
+  expect(makerApproval.status()).toBe(403)
+
+  const requestApproval = await page.request.post(`${env.apiBaseUrl}${approvalPath}`, {
+    headers: {
+      [DEVELOPMENT_USER_HEADER]: approverActor, 'X-Company-Id': companyId,
+      'Idempotency-Key': `browser-suite:pur01:request-approval:${requestId}`, 'Content-Type': 'application/json',
+    },
+    data: { expectedVersion: submittedVersion },
+  })
+  expect(requestApproval.status()).toBe(200)
+  const approvedRequest = (await requestApproval.json()) as RequestResponse
+  const approvedVersion = (BigInt(submittedVersion) + 1n).toString()
+  expect([approvedRequest.detail.request.id, approvedRequest.detail.request.status, approvedRequest.detail.request.version])
+    .toEqual([requestId, 'Approved', approvedVersion])
+
   const linkedOrderCreate = await page.request.post(`${env.apiBaseUrl}${ORDERS_PATH}`, {
     headers: {
       [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': companyId,
       'Idempotency-Key': `browser-suite:pur01:source-order:${requestId}`, 'Content-Type': 'application/json',
     },
-    data: {
-      supplierPartyId, companyAccountId, sourceRequestId: requestId, effectiveOn: '2026-09-18',
-      lines: [{
-        lineId: '7b1c0f2e-0000-4a00-8000-000000000098', productId,
-        expectedProductVersion: productVersion, unitId: productUnitId, quantity: '5',
-        sourceRequestLineId: created.detail.lines[0].lineId,
-      }],
-    },
+    data: { supplierPartyId, companyAccountId, sourceRequestId: requestId, effectiveOn: '2026-09-18', lines: [linkedLine] },
   })
   expect(linkedOrderCreate.status()).toBe(201)
   const linkedOrder = (await linkedOrderCreate.json()) as ApprovalResponse
