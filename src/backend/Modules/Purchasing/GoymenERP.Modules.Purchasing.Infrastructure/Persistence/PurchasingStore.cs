@@ -115,16 +115,17 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
     }
 
     public async Task<PurchasingRequestStoreResult?> MutateRequestAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
-        Guid requestId, Action<PurchaseRequest, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default)
+        Guid requestId, Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireCommand(commandName);
         RequireAudit(audit);
-        if (commandName != PurchasingCommands.RequestSubmitV1)
+        if (!PurchasingCommands.IsRequestMutation(commandName))
         {
-            throw new ArgumentException("Yalnız gönderme komutu bir talebi değiştirir.", nameof(commandName));
+            throw new ArgumentException("Yalnız gönderme, onay ve ret komutları bir talebi değiştirir.", nameof(commandName));
         }
 
         var companyId = RequireResolvedCompany();
@@ -157,11 +158,17 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         var lineRows = await dbContext.RequestLines.AsNoTracking().Where(line => line.RequestId == requestId).OrderBy(line => line.LineNo)
             .ToListAsync(cancellationToken);
         var request = RestoreRequest(row, lineRows);
+        // A1-1 (No.161 §1): whether an APPROVED order is bound to this request, read in this save; the request row is
+        // the write's concurrency token and every binding order approval moves it (SourcingVersion), so the fact
+        // cannot go stale unseen between this read and the commit.
+        var approvedStatus = (int)PurchaseOrderStatus.Approved;
+        var facts = new PurchaseRequestBindingFacts(await dbContext.Orders.AsNoTracking()
+            .AnyAsync(order => order.SourceRequestId == requestId && order.Status == approvedStatus, cancellationToken));
         var versionBefore = request.Version;
         var before = Snapshot(request);
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked row untouched (nothing below has run).
-        mutate(request, now);
+        mutate(request, facts, now);
         if (request.Version != versionBefore + 1 || request.Id != row.Id || request.CompanyId != companyId || request.Lines.Count != lineRows.Count)
         {
             throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir ve satır eklemez.");
@@ -170,6 +177,12 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         row.Status = (int)request.Status;
         row.Version = request.Version;
         row.UpdatedAtUtc = request.UpdatedAtUtc;
+        row.SubmittedBy = request.SubmittedBy;
+        row.ApprovedBy = request.Approval?.DecidedBy;
+        row.ApprovedAtUtc = request.Approval?.DecidedAtUtc;
+        row.RejectedBy = request.Rejection?.DecidedBy;
+        row.RejectedAtUtc = request.Rejection?.DecidedAtUtc;
+        row.RejectionReason = request.Rejection?.Reason;
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, request.Id, null, now));
         Audit(envelope, companyId, RequestEntityType, request.Id, audit.EventType, audit.Operation, versionBefore, request.Version, before, Snapshot(request), audit.Reason);
         await SaveAsync(cancellationToken);
@@ -402,6 +415,15 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
     {
         var requestRow = await dbContext.Requests.SingleOrDefaultAsync(candidate => candidate.Id == sourceRequestId, cancellationToken)
             ?? throw new InvalidOperationException("Siparişin kaynak talebi bu şirkette bulunamadı.");
+        if (requestRow.Status != (int)PurchaseRequestStatus.Approved)
+        {
+            // A1-1 (ALS-D2, fail-closed): a draft order of a request that is not (or no longer) approved never becomes a
+            // commitment; the request row is tracked, so a concurrent rejection collides on its row version.
+            dbContext.ChangeTracker.Clear();
+            throw new PurchasingStoreException(PurchasingStoreCodes.SourceRequestNotApproved, "Siparişin kaynak talebi onaylı değil.", null,
+                [new PurchasingFieldError("sourceRequestId", "not_approved")]);
+        }
+
         var requestLines = await dbContext.RequestLines.AsNoTracking().Where(line => line.RequestId == sourceRequestId).ToListAsync(cancellationToken);
         var approvedStatus = (int)PurchaseOrderStatus.Approved;
         var otherApprovedOrderIds = await dbContext.Orders.AsNoTracking()
@@ -576,18 +598,43 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
         })];
     }
 
-    /// <summary>Rebuilds the request through the domain in recording order; the stored version must be the one the rebuild reaches.</summary>
+    /// <summary>
+    /// Rebuilds the request through the domain in recording order (lines, submission, approval, rejection); the stored
+    /// version and status must be the ones the rebuild reaches. A submission recorded without its actor (before A1-1) is
+    /// rebuilt without one, so the domain refuses any decision on it (fail-closed).
+    /// </summary>
     private static PurchaseRequest RestoreRequest(PurchaseRequestRow row, IReadOnlyList<PurchaseRequestLineRow> lines)
     {
-        var request = PurchaseRequest.Create(row.Id, row.CompanyId, row.CreatedAtUtc);
+        var request = PurchaseRequest.Create(row.Id, row.CompanyId, row.CreatedBy, row.CreatedAtUtc);
         foreach (var line in lines)
         {
             request.AddLine(request.Version, line.LineId, line.ProductId, line.UnitId, Quantity.Of(line.Quantity, UnitOf(line.UnitIsKilogram)), row.CreatedAtUtc);
         }
 
-        if (row.Status == (int)PurchaseRequestStatus.Submitted)
+        if (row.Status != (int)PurchaseRequestStatus.Draft)
         {
-            request.Submit(request.Version, row.UpdatedAtUtc);
+            if (row.SubmittedBy is { } submittedBy)
+            {
+                request.Submit(request.Version, submittedBy, row.UpdatedAtUtc);
+            }
+            else
+            {
+                request.Submit(request.Version, row.UpdatedAtUtc);
+            }
+        }
+
+        if (row.ApprovedBy is { } approvedBy)
+        {
+            request.Approve(request.Version, approvedBy,
+                row.ApprovedAtUtc ?? throw new InvalidOperationException("Kayıtlı talep onayının zamanı yok."));
+        }
+
+        if (row.Status == (int)PurchaseRequestStatus.Rejected)
+        {
+            // The bound-order rule held when the rejection was recorded; the rebuild does not measure it again.
+            request.Reject(request.Version, row.RejectedBy ?? throw new InvalidOperationException("Kayıtlı talep reddinin aktörü yok."),
+                row.RejectionReason, hasApprovedOrder: false,
+                row.RejectedAtUtc ?? throw new InvalidOperationException("Kayıtlı talep reddinin zamanı yok."));
         }
 
         if (request.Version != row.Version || request.Status != (PurchaseRequestStatus)row.Status)
@@ -738,6 +785,11 @@ public sealed class PurchasingStore(PurchasingDbContext dbContext, ICompanyConte
     {
         status = request.Status.ToString(),
         version = request.Version,
+        submittedBy = request.SubmittedBy,
+        approval = request.Approval is { } approval ? new { decidedBy = approval.DecidedBy, decidedAtUtc = approval.DecidedAtUtc } : null,
+        rejection = request.Rejection is { } rejection
+            ? new { decidedBy = rejection.DecidedBy, decidedAtUtc = rejection.DecidedAtUtc, reason = rejection.Reason }
+            : null,
         lines = request.Lines.Select(line => new { lineId = line.Id, productId = line.ProductId, quantity = line.Quantity.Value }),
     }, Json);
 

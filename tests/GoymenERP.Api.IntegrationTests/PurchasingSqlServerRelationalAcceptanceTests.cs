@@ -58,7 +58,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Equal(PurchasingStoreCodes.SameKeyPayloadMismatch, other.Code);
 
             var submitted = await a.Store.MutateRequestAsync(run.Envelope("k-submit"), Hash("submit-2"), PurchasingCommands.RequestSubmitV1, request.Request.Id,
-                (purchaseRequest, now) => purchaseRequest.Submit(2, now), Submitted);
+                (purchaseRequest, _, now) => purchaseRequest.Submit(2, run.Actor, now), Submitted);
             Assert.Equal((PurchaseRequestStatus.Submitted, 3L), (submitted!.Request.Request.Status, submitted.Request.Request.Version));
         }
 
@@ -116,7 +116,9 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             PurchaseRequest request = (await a.Store.StoreRequestAsync(run.Envelope("k-req"), Hash("req-1"), Day, () => built, VersionsOf(built))).Request.Request;
             requestId = request.Id;
             requestLineId = request.Lines[0].Id;
-            await a.Store.MutateRequestAsync(run.Envelope("k-submit"), Hash("submit-2"), PurchasingCommands.RequestSubmitV1, requestId, (r, now) => r.Submit(2, now), Submitted);
+            await a.Store.MutateRequestAsync(run.Envelope("k-submit"), Hash("submit-2"), PurchasingCommands.RequestSubmitV1, requestId, (r, _, now) => r.Submit(2, run.Actor, now), Submitted);
+            // A1-1 (ALS-D2): orders of a request are approved only while the request is APPROVED, by someone other than its makers.
+            await ApproveRequestAsync(run, a, requestId, 3);
             // Multi-sourcing (Sinan 5738113623 §1): 60 + 50 > 100 is refused at the second approval; 60 + 40 = 100 is not.
             PurchaseOrder builtA = Order(owners, requestId, requestLineId, 60m);
             orderA = (await a.Store.StoreOrderAsync(run.Envelope("k-order-a"), Hash("order-a"), owners.Account, Day, () => builtA, VersionsOf(builtA))).Order.Order.Id;
@@ -164,7 +166,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Null(replay.Order);
         }
 
-        Assert.Equal((1, 1, 7, 1, 2L), await run.OrderCountsAsync(orderB));
+        Assert.Equal((1, 1, 8, 1, 2L), await run.OrderCountsAsync(orderB));
         Assert.Equal(1L, await run.ScalarAsync<long>("SELECT SourcingVersion FROM purchasing.PurchaseRequests WHERE Id = @id", ("@id", requestId)));
 
         await using (StoreScope a = run.Store(CompanyA))
@@ -197,7 +199,8 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             PurchaseRequest request = (await a.Store.StoreRequestAsync(run.Envelope("k-req"), Hash("req-1"), Day, () => built, VersionsOf(built))).Request.Request;
             requestId = request.Id;
             Guid requestLineId = request.Lines[0].Id;
-            await a.Store.MutateRequestAsync(run.Envelope("k-submit"), Hash("submit-2"), PurchasingCommands.RequestSubmitV1, requestId, (r, now) => r.Submit(2, now), Submitted);
+            await a.Store.MutateRequestAsync(run.Envelope("k-submit"), Hash("submit-2"), PurchasingCommands.RequestSubmitV1, requestId, (r, _, now) => r.Submit(2, run.Actor, now), Submitted);
+            await ApproveRequestAsync(run, a, requestId, 3);
             PurchaseOrder builtA = Order(owners, requestId, requestLineId, 6m);
             orderA = (await a.Store.StoreOrderAsync(run.Envelope("k-order-a"), Hash("order-a"), owners.Account, Day, () => builtA, VersionsOf(builtA))).Order.Order.Id;
             PurchaseOrder builtB = Order(owners, requestId, requestLineId, 6m);
@@ -227,7 +230,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType = N'purchasing.purchase-order.approved.v1'"));
         // The loser's key holds nothing: the race left no record, no refusal.
         Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE Outcome = 2"));
-        Assert.Equal(5, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts"));
+        Assert.Equal(6, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts"));
 
         Guid loser = results[0] is PurchasingWriteOutcome.Recorded ? orderB : orderA;
         string loserKey = loser == orderA ? "k-approve-a" : "k-approve-b";
@@ -246,7 +249,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Null(replay.Order);
         }
 
-        Assert.Equal((1, 1, 6, 1, 2L), await run.OrderCountsAsync(loser));
+        Assert.Equal((1, 1, 7, 1, 2L), await run.OrderCountsAsync(loser));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseOrders WHERE Status = 2"));
         Assert.Equal(1L, await run.ScalarAsync<long>("SELECT SourcingVersion FROM purchasing.PurchaseRequests WHERE Id = @id", ("@id", requestId)));
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE Outcome = 2 AND ISJSON(RefusalJson) = 1"));
@@ -410,10 +413,12 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 
     private static IReadOnlyDictionary<Guid, string> NoVersions => new Dictionary<Guid, string>();
 
-    /// <summary>A Draft request of the company with one kg line of the given quantity.</summary>
-    private static PurchaseRequest Request(Owners owners, decimal quantity)
+    /// <summary>A Draft request of the company with one kg line of the given quantity; <paramref name="preparer"/> is the run's actor (the store's CreatedBy).</summary>
+    private static PurchaseRequest Request(Owners owners, decimal quantity, string? preparer = null)
     {
-        PurchaseRequest request = PurchaseRequest.Create(Guid.NewGuid(), owners.Company, T0);
+        PurchaseRequest request = preparer is null
+            ? PurchaseRequest.Create(Guid.NewGuid(), owners.Company, T0)
+            : PurchaseRequest.Create(Guid.NewGuid(), owners.Company, preparer, T0);
         request.AddLine(request.Version, Guid.NewGuid(), Product, KgUnit, Kg(quantity), T0);
         return request;
     }
