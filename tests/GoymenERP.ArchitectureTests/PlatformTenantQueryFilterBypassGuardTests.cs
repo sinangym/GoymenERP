@@ -564,7 +564,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
              + "Persistence/ManufacturingDbContext.cs"] =
                 // Üretim U2-a: the append-only PlanRejections carry the same CompanyId filter and company-leading key and FK;
                 // the plan row admits only its cancellation columns beside the approval; the order index becomes unique.
-                "5a558c630d5155cb44fc949bf0bb64af0dcb75fd48d4d1a90a2f2d6fd4d44f53",
+                // Üretim U2-b1: the plan and revision rows gain the nullable process spec columns and their checks (no new
+                // table, filter, key or bypass).
+                "22ba3bbe36a852feb31884fca74e5761c81421cbfedb5935d5673e537ddd7208",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1224,10 +1226,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Üretim U2-a: the rejection and cancellation writes, the plan rebuilt with its rejections, cancellation and
                 // one order, and the unique (company, plan) order index's 2601/2627 recognised by name as the plan's own
                 // rule; still recognition only, no connection, command or raw SQL; SqlClient count unchanged (1).
+                // Üretim U2-b1: the process spec is written on the plan and revision rows and restored with them through the
+                // same filtered context; SqlClient count unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "38d7a0ad00395960036f1b4f97cfe97f151eb8eb4121381d7f1e07cfec3ec52a",
+                        "5b0511faaa0f6175fd7e805c7768c5dd5015324940770972ba1da9d13cf2077c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
