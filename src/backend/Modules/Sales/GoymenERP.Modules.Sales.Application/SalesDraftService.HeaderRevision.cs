@@ -105,6 +105,12 @@ public sealed partial class SalesDraftService
                         refusal => TerminalAsync(scope, permission, envelope, requestHash, refusal, writeCancellationToken, commandName, draftId),
                         writeCancellationToken);
 
+                    // MOD-03 → Sales (SAT-D140/D105): a changed buyer tax, checked against the Settings lists, and the lines re-resolved.
+                    if (await ResolveHeaderTaxAsync(scope, permission, draft, request, writeCancellationToken) is { } tax)
+                    {
+                        input = input with { BuyerTax = tax.Buyer, LineTaxes = tax.Lines };
+                    }
+
                     // The last fence that can still prevent the write; none after the commit (ORG #321 P3-1).
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);
                     return input;

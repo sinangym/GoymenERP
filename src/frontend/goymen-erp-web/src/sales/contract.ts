@@ -18,6 +18,7 @@
  * A decoder returns null for anything it cannot vouch for; the caller fails closed.
  */
 
+import type { BuyerTaxRequest, LineTaxChoiceRequest } from './orderTax'
 import type { DueTerms } from './headerRevision'
 import { unplannedQuantity } from './deliveryPlan'
 import { isDateOnly, isReferenceId, isVersionString } from './wirePrimitives'
@@ -124,6 +125,8 @@ export interface DraftLineCommercialRequest {
   readonly discountAmount: string | null
   readonly surchargePercent: string | null
   readonly surchargeAmount: string | null
+  /** MOD-03 → Sales (SAT-D93/D97/D105): the line's tax choice; omitted keeps the current one (re-resolved by the server). */
+  readonly tax?: LineTaxChoiceRequest
 }
 
 export interface DraftCommercialRevisionRequest {
@@ -372,6 +375,11 @@ export interface DraftCreateRequest {
    * Each instalment has its own due type, so a mixed plan is one list.
    */
   readonly dueTerms: DueTerms | null
+  /**
+   * MOD-03 → Sales (SAT-D140/D147/D158): the buyer tax situation chosen for the order; omitted = "Normal" (the server's start
+   * value), so a create that keeps the start value is the same content as before the member existed.
+   */
+  readonly buyerTax?: BuyerTaxRequest
 }
 
 export const OWNER_REFERENCE_FIELDS = [

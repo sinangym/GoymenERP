@@ -1,5 +1,6 @@
 import type { DraftCommercialRevisionRequest, DraftDetail } from './contract'
 import type { DraftLinePricing, LinePriceReference } from './linePricing'
+import { buildLineTaxChoice, KEEP_LINE_TAX, type LineTaxChoiceInput } from './orderTax'
 
 export type AdjustmentKind = 'percent' | 'amount'
 
@@ -19,11 +20,17 @@ export interface CommercialRevisionRow {
   readonly discountKind: AdjustmentKind
   readonly surchargeKind: AdjustmentKind
   readonly surchargeValue: string
+  /** MOD-03 → Sales: the line's tax choice (keep / the Settings default / a reasoned change from the Settings lists). */
+  readonly tax?: LineTaxChoiceInput
 }
 
 export type CommercialRevisionBuild =
   | { readonly ok: true; readonly payload: DraftCommercialRevisionRequest }
-  | { readonly ok: false; readonly lineNo: number; readonly reason: 'discount-without-price' | 'price-unit-required' }
+  | {
+    readonly ok: false
+    readonly lineNo: number
+    readonly reason: 'discount-without-price' | 'price-unit-required' | 'tax-situation-required' | 'tax-reason-required'
+  }
 
 /** The form's rows from the detail and, when readable, the line pricing (reference, amounts, surcharge). */
 export function commercialRowsFromDetail(detail: DraftDetail, pricing: DraftLinePricing | null = null): readonly CommercialRevisionRow[] {
@@ -43,6 +50,7 @@ export function commercialRowsFromDetail(detail: DraftDetail, pricing: DraftLine
       discountKind: discountIsAmount ? 'amount' : 'percent',
       surchargeKind: surchargeIsAmount ? 'amount' : 'percent',
       surchargeValue: surchargeIsAmount ? priced!.surchargeAmount! : (priced?.surchargePercent ?? ''),
+      tax: KEEP_LINE_TAX,
     }
   })
 }
@@ -78,7 +86,10 @@ export function buildCommercialRevisionRequest(
     if (unitPrice !== null && selectedUnit === null) {
       return { ok: false, lineNo: row.lineNo, reason: 'price-unit-required' }
     }
+    const tax = buildLineTaxChoice(row.tax ?? KEEP_LINE_TAX)
+    if (!tax.ok) return { ok: false, lineNo: row.lineNo, reason: tax.error }
     lines.push({
+      ...(tax.tax === null ? {} : { tax: tax.tax }),
       lineId: row.lineId,
       unitPrice,
       priceUnitId: unitPrice === null ? null : selectedUnit,

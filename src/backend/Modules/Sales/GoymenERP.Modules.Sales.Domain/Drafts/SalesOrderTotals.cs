@@ -15,10 +15,10 @@ namespace GoymenERP.Modules.Sales.Domain.Drafts;
 /// demir-çelik 2/10) AND the buyer is subject to withholding (Counterparty owner); the share for that code is the Settings
 /// rate. Otherwise null (no withholding).</item>
 /// </list>
-/// None of these sources exists on main yet (the product card VAT class and withholding code, the Settings versioned VAT table,
-/// exception and withholding rate records, the buyer flag — MOD-03), so today no rate reaches <see cref="SalesOrderTotalsCalculator"/> and the tax is
-/// <see cref="SalesTaxState.NoSource"/> (SAT-D73/D74: "kaynak yokken … 'kaynak yok' kalır"). The caller resolves the rate per line
-/// for the order's business date and passes it in; this record only carries it.
+/// MOD-03 → Sales: the rate comes from the line's tax snapshot (<see cref="SalesLineTaxSnapshot.Rate"/>), which the Settings line
+/// tax port resolved for the order's business date (SAT-D134/D139: the item type's default; SAT-D140/D147/D158: the order's buyer
+/// situation). A line without a usable snapshot has no rate and its tax is <see cref="SalesTaxState.NoSource"/> with the reason
+/// (SAT-D73/D74: "kaynak yokken … 'kaynak yok' kalır"); this record only carries the rate.
 /// </summary>
 /// <param name="VatPercent">The VAT rate in percent, 0..100.</param>
 /// <param name="WithholdingShare">The withheld share of the line VAT, 0 &lt; share ≤ 1 (e.g. 0.5 for 5/10); null = no withholding.</param>
@@ -88,7 +88,7 @@ public enum SalesTaxState
     /// <summary>A VAT rate was answered for the line and VAT, withholding, gross and payable are computed.</summary>
     Computed = 1,
 
-    /// <summary>No VAT master answered (MOD-03 does not exist yet): no VAT, withholding, gross or payable amount — never 0.</summary>
+    /// <summary>No usable tax snapshot answered for the line (see its reason): no VAT, withholding, gross or payable amount — never 0.</summary>
     NoSource = 2,
 
     /// <summary>
@@ -98,8 +98,12 @@ public enum SalesTaxState
     NotComputed = 3,
 }
 
-/// <summary>One line's input to the totals calculator: its identity, quantity in the order unit and commercial fields.</summary>
-public sealed record SalesTotalsLineInput(Guid LineId, int LineNo, Guid OrderUnitId, decimal Quantity, CommercialDraftFields Commercial);
+/// <summary>
+/// One line's input to the totals calculator: its identity, quantity in the order unit, commercial fields and (MOD-03 → Sales) the
+/// tax snapshot it carries — used by <see cref="SalesOrderTotalsCalculator.CalculateWithLineTax(IReadOnlyList{SalesTotalsLineInput}, Guid, int)"/>.
+/// </summary>
+public sealed record SalesTotalsLineInput(Guid LineId, int LineNo, Guid OrderUnitId, decimal Quantity, CommercialDraftFields Commercial,
+    SalesLineTaxSnapshot? Tax = null);
 
 /// <summary>
 /// One line's totals. Every amount is <see cref="Money"/> in the document currency at the amount scale; each is null exactly when
@@ -116,7 +120,8 @@ public sealed record SalesLineTotal(
     Money? VatAmount,
     Money? WithheldVatAmount,
     Money? GrossAmount,
-    Money? PayableAmount);
+    Money? PayableAmount,
+    string? TaxReason = null);
 
 /// <summary>
 /// The document totals: the sums of the line amounts (SAT-D11 "toplamlar satırlardan"), never recomputed from a document net.
@@ -134,7 +139,8 @@ public sealed record SalesDocumentTotal(
     Money? VatAmount,
     Money? WithheldVatAmount,
     Money? GrossAmount,
-    Money? PayableAmount)
+    Money? PayableAmount,
+    int TaxUnavailableLineCount = 0)
 {
     public bool IsComplete => State == SalesDocumentTotalState.Computed;
 }
@@ -170,21 +176,46 @@ public sealed record SalesOrderTotals(
 public static class SalesOrderTotalsCalculator
 {
     /// <summary>The totals of <paramref name="draft"/>'s current lines at its money profile's amount scale.</summary>
-    /// <param name="taxRates">The VAT master's answer per line; null while no VAT master exists (every tax is NoSource).</param>
+    /// <param name="taxRates">A rate per line; null computes no tax (every tax is NoSource).</param>
     public static SalesOrderTotals Calculate(SalesOrderDraft draft, Func<Guid, SalesLineTaxRate?>? taxRates = null)
     {
         ArgumentNullException.ThrowIfNull(draft);
-        return Calculate(
-            [.. draft.Lines.Select(line => new SalesTotalsLineInput(line.Id, line.LineNo, line.OrderUnit.UnitId, line.Quantity.Value, line.Commercial))],
-            draft.Header.CurrencyId,
-            // A profile scale beyond System.Decimal's own 28 decimals allows nothing more than 28 does (SalesLineMoney's rule).
-            Math.Min(draft.Money.Scale, Money.MaximumScale),
-            taxRates);
+        return Calculate(Inputs(draft), draft.Header.CurrencyId, DraftScale(draft), taxRates);
     }
+
+    /// <summary>
+    /// MOD-03 → Sales (API-03, SAT-D46): the totals of <paramref name="draft"/>'s current lines with each line's OWN tax snapshot
+    /// (<see cref="SalesLineTaxSnapshot.Rate"/>); a line without a usable one is NoSource with its reason. The API, the risk read and
+    /// any report call this — never a rate of their own.
+    /// </summary>
+    public static SalesOrderTotals CalculateWithLineTax(SalesOrderDraft draft)
+    {
+        ArgumentNullException.ThrowIfNull(draft);
+        return CalculateWithLineTax(Inputs(draft), draft.Header.CurrencyId, DraftScale(draft));
+    }
+
+    /// <summary>The totals of <paramref name="lines"/> with each line's own tax snapshot (see <see cref="CalculateWithLineTax(SalesOrderDraft)"/>).</summary>
+    public static SalesOrderTotals CalculateWithLineTax(IReadOnlyList<SalesTotalsLineInput> lines, Guid currencyId, int amountScale)
+    {
+        ArgumentNullException.ThrowIfNull(lines);
+        var byLine = lines.ToDictionary(line => line.LineId);
+        return Calculate(lines, currencyId, amountScale, lineId => byLine[lineId].Tax?.Rate,
+            lineId => byLine[lineId].Tax?.UnavailableReason ?? SalesLineTaxReasons.SnapshotMissing);
+    }
+
+    private static IReadOnlyList<SalesTotalsLineInput> Inputs(SalesOrderDraft draft) =>
+        [.. draft.Lines.Select(line => new SalesTotalsLineInput(line.Id, line.LineNo, line.OrderUnit.UnitId, line.Quantity.Value,
+            line.Commercial, line.Tax))];
+
+    // A profile scale beyond System.Decimal's own 28 decimals allows nothing more than 28 does (SalesLineMoney's rule).
+    private static int DraftScale(SalesOrderDraft draft) => Math.Min(draft.Money.Scale, Money.MaximumScale);
 
     /// <summary>The totals of <paramref name="lines"/> in <paramref name="currencyId"/> at <paramref name="amountScale"/>.</summary>
     public static SalesOrderTotals Calculate(IReadOnlyList<SalesTotalsLineInput> lines, Guid currencyId, int amountScale,
-        Func<Guid, SalesLineTaxRate?>? taxRates = null)
+        Func<Guid, SalesLineTaxRate?>? taxRates = null) => Calculate(lines, currencyId, amountScale, taxRates, null);
+
+    private static SalesOrderTotals Calculate(IReadOnlyList<SalesTotalsLineInput> lines, Guid currencyId, int amountScale,
+        Func<Guid, SalesLineTaxRate?>? taxRates, Func<Guid, string>? taxReasons)
     {
         ArgumentNullException.ThrowIfNull(lines);
         if (currencyId == Guid.Empty)
@@ -197,13 +228,18 @@ public static class SalesOrderTotalsCalculator
             throw new ArgumentOutOfRangeException(nameof(amountScale), $"Tutar ölçeği 0 ile {Money.MaximumScale} arasında olmalıdır.");
         }
 
-        var totals = lines.Select(line => Line(line, currencyId, amountScale, taxRates)).ToList();
+        var totals = lines.Select(line => Line(line, currencyId, amountScale, taxRates, taxReasons)).ToList();
         var documentTax = taxRates is null ? SalesTaxState.NoSource : SalesTaxState.Computed;
-        return new SalesOrderTotals(currencyId, amountScale, documentTax, totals.AsReadOnly(),
+        // With per-line snapshots the order-level state says whether every line that has an amount found its rate.
+        var orderTax = taxReasons is not null && totals.Any(line => line.TaxState == SalesTaxState.NoSource)
+            ? SalesTaxState.NoSource
+            : documentTax;
+        return new SalesOrderTotals(currencyId, amountScale, orderTax, totals.AsReadOnly(),
             Document(totals, currencyId, amountScale, documentTax));
     }
 
-    private static SalesLineTotal Line(SalesTotalsLineInput line, Guid currencyId, int scale, Func<Guid, SalesLineTaxRate?>? taxRates)
+    private static SalesLineTotal Line(SalesTotalsLineInput line, Guid currencyId, int scale, Func<Guid, SalesLineTaxRate?>? taxRates,
+        Func<Guid, string>? taxReasons)
     {
         ArgumentNullException.ThrowIfNull(line);
         var commercial = line.Commercial ?? throw new ArgumentException("Satırın ticari alanları boş olamaz.", nameof(line));
@@ -224,7 +260,7 @@ public static class SalesOrderTotalsCalculator
             if (taxRates?.Invoke(line.LineId) is not { } rate)
             {
                 return new SalesLineTotal(line.LineId, line.LineNo, SalesLineTotalState.Computed, netUnitPrice, net,
-                    SalesTaxState.NoSource, null, null, null, null, null);
+                    SalesTaxState.NoSource, null, null, null, null, null, taxReasons?.Invoke(line.LineId));
             }
 
             var vat = Money.Of(SalesLinePriceCalculator.RoundedPercentOf(net.Amount, rate.VatPercent, scale), currencyId, scale);
@@ -265,7 +301,7 @@ public static class SalesOrderTotalsCalculator
             if (documentTax != SalesTaxState.Computed || lines.Any(line => line.TaxState != SalesTaxState.Computed))
             {
                 return new SalesDocumentTotal(SalesDocumentTotalState.Computed, 0, 0, 0, net, SalesTaxState.NoSource,
-                    null, null, null, null);
+                    null, null, null, null, lines.Count(line => line.TaxState != SalesTaxState.Computed));
             }
 
             return new SalesDocumentTotal(SalesDocumentTotalState.Computed, 0, 0, 0, net, SalesTaxState.Computed,

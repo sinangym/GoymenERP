@@ -222,6 +222,16 @@ export interface HarnessConfig {
    */
   readonly onTotals?: (url: string, companyId: string | null) => Response | Promise<Response>
   /**
+   * MOD-03 → Sales: GET `/sales/drafts/{id}/tax`; default: the detail this harness last served, every line without a tax snapshot
+   * (`taxOf`, the legacy answer) — 403 when a price is withheld (a 404 when it served none).
+   */
+  readonly onTax?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
+   * MOD-03 → Sales: GET `/sales/tax-options?on=`; default: the reviewed buyer situation list resolved, the exemption code list
+   * not entered (`taxOptionsOf`, SAT-D148).
+   */
+  readonly onTaxOptions?: (url: string, companyId: string | null) => Response | Promise<Response>
+  /**
    * MOD-01 / API-06: GET `/sales/drafts/{id}/risk-check`; default: today's answer for the detail this harness last served for
    * that draft (`riskCheckOf`) — fail-closed `Unavailable` (no invoices, no VAT-included totals, no limit master), amounts
    * withheld exactly when a line's price is (a 404 when it served none).
@@ -372,6 +382,12 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/totals$/.test(url)) {
           return config.onTotals?.(url, call.companyId) ?? totalsOf(details.get(url.replace(/\/totals$/, '')))
         }
+        if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/tax$/.test(url)) {
+          return config.onTax?.(url, call.companyId) ?? taxOf(details.get(url.replace(/\/tax$/, '')))
+        }
+        if (call.method === 'GET' && /\/sales\/tax-options\?on=/.test(url)) {
+          return config.onTaxOptions?.(url, call.companyId) ?? taxOptionsOf(decodeURIComponent(url.split('?on=')[1] ?? ''))
+        }
         if (call.method === 'GET' && /\/sales\/drafts\/[^/?]+\/delivery-schedules$/.test(url)) {
           return config.onDeliverySchedules?.(url, call.companyId) ?? json(ORIGINAL_SCHEDULE)
         }
@@ -413,7 +429,13 @@ export function installFetch(config: HarnessConfig = {}) {
       throw new Error(`unexpected fetch: ${url}`)
     }),
   )
-  return { calls, salesCalls: () => calls.filter((c) => c.url.includes('/sales/')) }
+  // MOD-03 → Sales: the Settings tax lists the forms read (`/sales/tax-options`) are reference data, like the other option
+  // sources; they are kept apart from the order calls the tests count (`taxOptionCalls`).
+  return {
+    calls,
+    salesCalls: () => calls.filter((c) => c.url.includes('/sales/') && !c.url.includes('/sales/tax-options')),
+    taxOptionCalls: () => calls.filter((c) => c.url.includes('/sales/tax-options')),
+  }
 }
 
 /** AT-024: the default progress — every line of the served detail, nothing shipped or delivered, the whole quantity remaining. */
@@ -565,8 +587,11 @@ export function totalsOf(detail: unknown): Response {
       state: line.unitPrice === null ? 'Unpriced' : priced ? 'Computed' : 'PriceUnitNotOrderUnit',
       netUnitPrice: fixture?.net ?? null, netAmount: fixture?.amount ?? null, taxState: priced ? 'NoSource' : 'NotComputed',
       vatPercent: null, vatAmount: null, withholdingShare: null, withheldVatAmount: null, grossAmount: null, payableAmount: null,
+      // MOD-03 → Sales: the fixture's lines carry no tax snapshot (the legacy answer), named on every NoSource line.
+      ...(priced ? { taxReason: 'tax_snapshot_missing' } : {}),
     }
   })
+  const untaxed = lines.filter((line) => line.taxState === 'NoSource').length
   const unpriced = lines.filter((line) => line.state === 'Unpriced').length
   const unconvertible = lines.filter((line) => line.state === 'PriceUnitNotOrderUnit').length
   const complete = lines.length > 0 && unpriced === 0 && unconvertible === 0
@@ -577,14 +602,57 @@ export function totalsOf(detail: unknown): Response {
     revision: body.draft.revision,
     currencyId: body.draft.currencyId,
     amountScale: 2,
-    taxState: 'NoSource',
+    taxState: untaxed > 0 ? 'NoSource' : 'Computed',
     totals: {
       state: complete ? 'Computed' : 'Incomplete', unpricedLineCount: unpriced, priceUnitNotOrderUnitLineCount: unconvertible,
       amountOutOfRangeLineCount: 0,
       netAmount: complete ? `${net.slice(0, -2)}.${net.slice(-2)}` : null, taxState: complete ? 'NoSource' : 'NotComputed',
       vatAmount: null, withheldVatAmount: null, grossAmount: null, payableAmount: null,
+      taxUnavailableLineCount: complete ? untaxed : 0,
     },
     lines,
+  })
+}
+
+/** MOD-03 → Sales: the default tax read — every served line without a snapshot (the legacy answer); 403 when a price is withheld. */
+export function taxOf(detail: unknown): Response {
+  const body = detail as { draft?: { version?: unknown; revision?: string; businessDate?: string }; lines?: { lineId: string; lineNo: number; priceDisclosure: string }[] } | undefined
+  if (typeof body?.draft?.version !== 'string' || !Array.isArray(body.lines)) return json({ status: 404 }, 404)
+  if (body.lines.some((line) => line.priceDisclosure !== 'Visible')) return json({ status: 403 }, 403)
+  return json({
+    draftVersion: body.draft.version,
+    revision: body.draft.revision,
+    businessDate: body.draft.businessDate,
+    buyerTax: null,
+    lines: body.lines.map((line) => ({
+      lineId: line.lineId, lineNo: line.lineNo, hasSnapshot: false, origin: null, resolvedOn: null, buyerSituation: null, itemType: null,
+      state: null, reason: null, vatState: null, vatPercent: null, exemptionCodeState: null, exemptionCode: null, exemptionCodeReason: null,
+      withholdingState: null, withholdingPercent: null, withholdingCodeState: null, withholdingCode: null, withholdingCodeReason: null,
+      buyerAdjustment: null, buyerDocumentRequired: false, settingsSource: null, settingsRecordId: null, settingsRecordVersion: null,
+      buyerSituationListVersion: null, rateState: 'NoSource', unavailableReason: 'tax_snapshot_missing',
+      invoiceBlockers: ['tax_snapshot_missing'], override: null,
+    })),
+  })
+}
+
+/** MOD-03 → Sales: the default tax options — the reviewed version-0 buyer situations, no exemption code entered (SAT-D148). */
+export function taxOptionsOf(on: string): Response {
+  return json({
+    on,
+    buyerSituationsState: 'Resolved',
+    buyerSituationsReason: null,
+    buyerSituationListVersion: 0,
+    buyerSituations: [
+      { code: 'ExemptionCertificate', name: 'İstisna belgeli alıcı', withholdingApplies: false, vatMode: 'ZeroWithExemptionCode', documentRequired: true },
+      { code: 'ExportRegistered', name: 'İhraç kayıtlı satış', withholdingApplies: false, vatMode: 'ZeroWithExemptionCode', documentRequired: true },
+      { code: 'FinalConsumer', name: 'Nihai tüketici', withholdingApplies: false, vatMode: 'Normal', documentRequired: false },
+      { code: 'Normal', name: 'Normal alıcı', withholdingApplies: true, vatMode: 'Normal', documentRequired: false },
+      { code: 'NotSubjectToWithholding', name: 'Tevkifata tabi olmayan alıcı', withholdingApplies: false, vatMode: 'Normal', documentRequired: false },
+    ],
+    exemptionCodesState: 'Unresolved',
+    exemptionCodesReason: 'code_list_missing',
+    exemptionCodes: [],
+    itemTypes: ['Steel', 'Scrap', 'Service'],
   })
 }
 

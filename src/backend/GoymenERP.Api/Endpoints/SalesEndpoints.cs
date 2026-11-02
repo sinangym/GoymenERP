@@ -255,6 +255,8 @@ public static partial class SalesEndpoints
         MapDispatchEndpoints(endpoints);
         // API-41 / API-42 (plan §3.4, UI-80): the read-only Sales reports.
         MapReportEndpoints(endpoints);
+        // MOD-03 → Sales: the Settings tax lists the order screens offer.
+        MapTaxOptions(endpoints);
         return endpoints;
     }
 
@@ -412,6 +414,8 @@ public static partial class SalesEndpoints
         MapDraftRevisions(drafts);
         MapDraftLinePricing(drafts);
         MapDraftTotals(drafts);
+        // MOD-03 → Sales: the order's buyer tax and the lines' tax snapshots.
+        MapDraftTax(drafts);
         MapOrderPdf(drafts);
         MapPriceFloorExceptionApproval(drafts);
         MapDiscountExceptionApproval(drafts);

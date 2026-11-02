@@ -15,7 +15,7 @@ import { resetPendingDrafts } from './pendingDrafts'
 import { unavailableReferenceSource, type UseContactInformation, type UseCurrencyOptions, type UseReferenceOptions } from './referenceSource'
 import { SALES_CAPABILITY, SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
 import { ORDER_FIELD } from './orderDraftForm'
-import { HEADER_REVISION_TEXT as H, ORDER_DRAFT_TEXT as T } from './salesText'
+import { HEADER_REVISION_TEXT as H, ORDER_DRAFT_TEXT as T, ORDER_TAX_TEXT } from './salesText'
 import {
   ACCOUNT,
   ALL_SALES,
@@ -632,7 +632,8 @@ describe('GOY-DS layout (SALES-DS-CREATE-01)', () => {
     // Every visible field keeps its own label; the optional details are not drawn until asked for.
     expect(labelsInOrder()).toEqual([
       T.references.accountSearch, T.field.customer, T.field.businessDate, T.field.currency,
-      T.field.deliveryAddress, T.field.deliveryContact, T.references.productSearch,
+      // MOD-03 → Sales (SAT-D140): the buyer tax situation follows the due terms in the order section.
+      T.field.deliveryAddress, T.field.deliveryContact, ORDER_TAX_TEXT.buyerSituationLabel, T.references.productSearch,
       T.field.product, T.field.quantity, T.field.orderUnit,
     ])
     expect(screen.queryByLabelText(T.field.requestedDeliveryDate)).toBeNull()

@@ -397,7 +397,7 @@ public static class SalesDraftRequestHash
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         var lines = request.Lines?.Select(line => new CommercialRevisionLineHashV1(
             line.LineId, line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PriceReference,
-            line.DiscountAmount, line.SurchargePercent, line.SurchargeAmount)).ToArray();
+            line.DiscountAmount, line.SurchargePercent, line.SurchargeAmount, line.Tax)).ToArray();
         return Hash(JsonSerializer.Serialize(new { command = commandName, draftId, request.ExpectedVersion, lines }, SalesDraftJson.Options));
     }
 
@@ -433,12 +433,21 @@ public static class SalesDraftRequestHash
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
-        return Hash(JsonSerializer.Serialize(
-            new
-            {
-                command = commandName, draftId, request.ExpectedVersion, request.Reason, request.PartyId, request.CompanyAccountId,
-                request.CurrencyId, request.DeliveryAddress, request.Contact, request.SalesOwnerUserId, request.DueTerms,
-            }, SalesDraftJson.Options));
+        // MOD-03 → Sales: the buyer tax joins the content only when given, so an attempt recorded before it keeps its hash.
+        return request.BuyerTax is null
+            ? Hash(JsonSerializer.Serialize(
+                new
+                {
+                    command = commandName, draftId, request.ExpectedVersion, request.Reason, request.PartyId, request.CompanyAccountId,
+                    request.CurrencyId, request.DeliveryAddress, request.Contact, request.SalesOwnerUserId, request.DueTerms,
+                }, SalesDraftJson.Options))
+            : Hash(JsonSerializer.Serialize(
+                new
+                {
+                    command = commandName, draftId, request.ExpectedVersion, request.Reason, request.PartyId, request.CompanyAccountId,
+                    request.CurrencyId, request.DeliveryAddress, request.Contact, request.SalesOwnerUserId, request.DueTerms,
+                    buyerTax = request.BuyerTax,
+                }, SalesDraftJson.Options));
     }
 
     /// <summary>DEC-SAL-003: the canonical content of a delivery-schedule update (command, draft, version, header date and every line's dates, in order).</summary>
@@ -505,5 +514,8 @@ public static class SalesDraftRequestHash
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         string? SurchargePercent,
         [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-        string? SurchargeAmount);
+        string? SurchargeAmount,
+        // MOD-03 → Sales: the line's tax choice, omitted when absent (the same rule as the extensions above).
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        SalesDraftLineTaxChoiceV1? Tax);
 }

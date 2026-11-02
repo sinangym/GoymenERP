@@ -65,7 +65,8 @@ public sealed partial class SalesDraftService(
     ISalesUserDisplaySourceV1? userDisplays = null,
     ISalesOwnerCandidateSourceV1? salesOwners = null,
     ISalesReportReadStore? reports = null,
-    ISalesPartyDisplaySourceV1? partyDisplays = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISalesPartyDisplaySourceV1? partyDisplays = null,
+    ISettingsLineTaxResolverV1? lineTaxes = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -87,6 +88,8 @@ public sealed partial class SalesDraftService(
         // or recorded (a 403 is never a recorded terminal result), and re-measured after the awaited owner
         // reads like the create permission (#276).
         var priced = CommercialFields(request);
+        // MOD-03 → Sales (SAT-D93): a line tax change moves the line's amounts, so it is fenced like a price.
+        priced.AddRange(TaxChangeFields(request));
         if (priced.Count > 0)
         {
             await RequirePriceWriteAsync(scope, priced, cancellationToken);
@@ -139,6 +142,7 @@ public sealed partial class SalesDraftService(
         // record meanwhile, the winner's result is answered instead (ADR-011 §8; RaceWon).
         MoneyProfileSnapshot money;
         OwnerReferences references;
+        CreateTax tax;
         var lineInputs = new List<SalesDraftLineInput>(request.Lines.Count);
         try
         {
@@ -149,6 +153,11 @@ public sealed partial class SalesDraftService(
             {
                 lineInputs.Add(await ReadLineAsync(scope, request, money, index, envelope, requestHash, cancellationToken, commandName));
             }
+
+            // MOD-03 → Sales (SAT-D93/D139/D140): the buyer tax and every line's tax from the Settings line tax port, after the
+            // product owner confirmed each product (the port asks the Product owner for its item type).
+            tax = await ResolveCreateTaxAsync(scope, bindings.CreatePermission, request, cancellationToken);
+            lineInputs = [.. lineInputs.Select(input => input with { Tax = tax.Lines[input.LineId] })];
         }
         catch (RaceWon won)
         {
@@ -175,7 +184,7 @@ public sealed partial class SalesDraftService(
         // 5. The domain builds the draft on the store's document number; the store keeps one save.
         var header = new SalesDraftHeader(request.PartyId, request.CompanyAccountId, request.CurrencyId, request.BusinessDate,
             request.RequestedDeliveryDate, request.Note, DeliveryAddress: references.DeliveryAddress, Contact: references.Contact,
-            DueTerms: dueTerms);
+            DueTerms: dueTerms, BuyerTax: tax.Buyer);
         var now = timeProvider.GetUtcNow();
         SalesDraftStoreResult stored;
         try
@@ -546,6 +555,9 @@ public sealed partial class SalesDraftService(
                 line.SurchargeAmount)))
             .ToArray();
 
+        // MOD-03 → Sales (SAT-D93/D97/D105): every line's tax re-resolved for this revision (a line's choice, or its current one).
+        var taxes = await ResolveRevisionTaxAsync(scope, permission!, draftId, expectedVersion, request, cancellationToken);
+
         // SAT-D2 / SAT-D34 / SAT-D35 / SAT-D81: the reviser's discount limit on the day of the commercial revision (the
         // server's business day, not the draft's business date), read only when a line is discounted against its list-price
         // reference (only then does a limit decide anything).
@@ -561,7 +573,16 @@ public sealed partial class SalesDraftService(
         try
         {
             result = await store.ReviseDraftCommercialAsync(envelope, requestHash, commandName, draftId,
-                (draft, now) => draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now, discountLimit), audit,
+                (draft, now) =>
+                {
+                    // The taxes were resolved on the draft at the expected version; a draft that moved meanwhile is stale.
+                    if (taxes is not null && draft.Version != taxes.DraftVersion)
+                    {
+                        throw new SalesVersionConflictException(expectedVersion, draft.Version);
+                    }
+
+                    return draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now, discountLimit, taxes?.Lines);
+                }, audit,
                 async writeCancellationToken =>
                 {
                     scope = await RequireStillAsync(scope, permission, writeCancellationToken);

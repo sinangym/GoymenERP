@@ -9,7 +9,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// MOD-03 (SAT-D75/D76, SAT-D139): the Settings tax master's answer feeds the ONE amount calculator (<see cref="SalesOrderTotalsCalculator"/>)
 /// unchanged — the VAT percent as is, the withholding percent as its exact share (<see cref="TaxMasterCalculatorV1.WithholdingShare"/>).
 /// Golden cases pin SAT-D75 (withholding from the ROUNDED line VAT) and SAT-D76 (the net unit price is never rounded). The order
-/// line is not wired to the port in this slice (follow-up); every rate here is SENTETIK.
+/// line consumes the port through its tax snapshot (SalesLineTaxSnapshot, MOD-03 → Sales); every rate here is SENTETIK.
 /// </summary>
 public sealed class SalesTaxMasterGoldenTests
 {
