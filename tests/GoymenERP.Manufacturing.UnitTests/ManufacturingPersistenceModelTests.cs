@@ -302,8 +302,16 @@ public sealed class ManufacturingPersistenceModelTests
         {
             var entity = model.GetEntityTypes().Single(type => type.GetTableName() == table);
             var constraint = entity.GetCheckConstraints().Single(check => check.Name == $"CK_{table}_Enums");
-            Assert.Equal("[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)", constraint.Sql);
+            // Üretim U2-a: a plan may be Cancelled (3); an order keeps Open / Closed.
+            Assert.Equal(table == "Plans"
+                ? "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2, 3)"
+                : "[Process] IN (1, 2, 3, 4, 5) AND [Status] IN (1, 2)", constraint.Sql);
         }
+
+        // URT-D1: one order per plan is a unique (company, plan) index.
+        var orders = model.GetEntityTypes().Single(type => type.GetTableName() == "Orders");
+        Assert.Contains(orders.GetIndexes(), index => index.IsUnique
+            && index.Properties.Select(property => property.Name).SequenceEqual(["CompanyId", "PlanId"]));
     }
 
     [Theory]
