@@ -13,9 +13,4 @@
     <ProjectReference Include="../../Product/GoymenERP.Modules.Product.Application/GoymenERP.Modules.Product.Application.csproj" />
     <ProjectReference Include="../../Settings/GoymenERP.Modules.Settings.Application/GoymenERP.Modules.Settings.Application.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <!-- FZL-01: the Inventory-less fact methods are internal and reachable only from these test projects. -->
-    <InternalsVisibleTo Include="GoymenERP.Manufacturing.UnitTests" />
-    <InternalsVisibleTo Include="GoymenERP.Api.IntegrationTests" />
-  </ItemGroup>
 </Project>
