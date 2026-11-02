@@ -1257,7 +1257,9 @@ class WorkflowTests(unittest.TestCase):
             validator.validate_suite_extensions("pur01", reader_grant)
 
         creator_missing_upload = self._pur01_environment()
-        del creator_missing_upload["IdentitySeed__Roles__7__Permissions__5"]
+        # A1-1b: keep the indices contiguous — the withdrawal name (index 6) moves into the upload's slot.
+        creator_missing_upload["IdentitySeed__Roles__7__Permissions__5"] = "purchasing.requests.withdraw"
+        del creator_missing_upload["IdentitySeed__Roles__7__Permissions__6"]
         with self.assertRaisesRegex(ValueError, "pur01-creator requires its exact isolated permissions"):
             validator.validate_suite_extensions("pur01", creator_missing_upload)
 
