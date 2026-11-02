@@ -88,7 +88,8 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 | 5i. İş onay kutusu (sipariş taslağı onayları) | Satış | İş (Work) | `ISalesOrderDraftPendingApprovalReadServiceV1` → `INativeApprovalReadAdapterV1` (`sales.order-draft.v1`) | `SME:75`; host `SalesOrderDraftPendingApprovalAdapterV1` (`API/WorkRuntime/`), `Program.cs:186` | `IT/WorkApprovalEndpointTests.cs`, `IT/NativeApprovalReadQueryV1Tests.cs`, SQL: `IT/SalesOrderDraftPendingApprovalReadSqlServerRelationalAcceptanceTests.cs` | ✅ |
 | 5j. İş onay kutusu (teklif süre aşımı onayı vb.) | Satış | İş | Teklif onayları için adaptör yok; yalnız sipariş taslağı `PendingApproval` listeleniyor | — | — | 🟡 |
 | 5k. Satış sahibi gösterimi ve seçici (SAT-D27, MOD-08) | Kimlik | Satış | `ISalesUserDisplaySourceV1`, `ISalesOwnerCandidateSourceV1` ← `IUserDirectoryReadPortV1` | `SalesUserDisplayHost`, `SalesOwnerCandidateHost` (`API/Endpoints/SalesUserDisplayHost.cs`), `Program.cs:323-325`; `IdentityModuleExtensions.cs:74` | `SUT/SalesReferenceReadHandlerTests.SatD27.cs`, `IT/SalesReferencePoolPermissionHttpTests.cs`, SQL: `IT/IdentityUserDirectorySqlServerRelationalAcceptanceTests.cs` | ✅ |
-| 5l. "Bağlı satın alma" iptal etkisi | Alış | Satış | `LinkedPurchasing = "purchasing.linked-orders"` | Port yok → `NoSource`. Alış'taki `IPurchaseSupplyReferencePortV1` yalnız `ISalesOrderLineReferencePortV1`'in aynası; Satış'a bağ kurmuyor | — | ❌ |
+| 5l. "Bağlı satın alma" iptal etkisi (Alış MOD-03) | Alış | Satış | `LinkedPurchasing = "purchasing.linked-orders"` | Port yok → `NoSource`. Alış'taki `IPurchaseSupplyReferencePortV1` yalnız `ISalesOrderLineReferencePortV1`'in aynası; Satış'a bağ kurmuyor | — | ❌ |
+| 5m. "Tedarikçide hazır" / alış gelecek arzı (Alış MOD-16, ALS-D22/D30) | Alış | Satış (kaynak planı, sipariş ekranı) | `IPurchaseSupplyReferencePortV1` v2 (öneri; `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md:351`) | Yok. Bugünkü `IPurchaseSupplyReferencePortV1` v1 yalnız onaylı alış satırı referansı; gelecek arz/tedarikçide hazır alanı yok. Görev notu `ALIS_SATIS_DEVIR_v1.md` main'de yok | — | ❌ |
 
 ### 6. Diğer Satış bağları
 
@@ -100,6 +101,15 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 | 6d. Kabuk yetenekleri (menü) | Satış | Kabuk | `SalesShellCapabilityProvider` | `Program.cs:381` | Kabuk/C01 testleri | ✅ |
 | 6e. Sipariş taslağı okuma servisi | Satış | Host uçları (PDF, okuma) | `ISalesDraftReadServiceV1` | `Program.cs:334` | `IT/SalesDraftHttpAcceptanceTests.cs`, `IT/SalesOrderPdfHttpAcceptanceTests.cs` | ✅ |
 | 6f. Satış olayları (outbox) | Satış | Finans, Üretim, Lojistik | Öneri: `sales.order.approved.v1`, `sales.order.cancelled.v1`, `sales.invoice.finalized.v1` | Satış'ta outbox yok | — | ❌ (ERP-000F dağıtıcısı yok; bugün senkron port yeterli) |
+
+## Bağımsız analizle karşılaştırma (koordinatör oturumu, main `1db70046`)
+
+| Bağımsız bulgu | Bu not | Fark / kanıt |
+|---|---|---|
+| ❌ Satış faturası → Finans alacak; `sales.invoice.finalized.v1` yok, Finans kabul portu (API-10) ile birlikte planlanacak | 1a ❌ | Uyumlu. Kanıt: `SalesDbContext.cs` outbox yok; `IFinanceInvoiceOpenItemAdmissionPortV1` kodda yok; plan `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §4 |
+| ❌ `IManufacturingSalesOrderLinkReadPortV1` / `ISalesOrderLinkedSupplyReadPortV1` yok; `ISalesSubcontractOrderBindingReadPortV1` uygulamasız (fail-closed) | 2a ❌, 2e 🟡 | Uyumlu. Bağ portunu 🟡 işaretledim: arayüz ve Satış tüketicisi (`SME:175`, `GetService` → 503) var, eksik olan yalnız Üretim+Stok host adaptörü |
+| ❌ Alış → Satış "bağlı tedarik / tedarikçide hazır" (MOD-03/MOD-16) yok; Alış sağlar, Satış tüketir | 5l ❌, 5m ❌ | Uyumlu; bu karşılaştırmayla 5m eklendi. Ek ayrıntı: Alış planına göre `ISalesOrderLinkedSupplyReadPortV1` sözleşmesinin sahibi Satış'tır, Alış uyar (`ALIS_HAZIRLIK_PLANI_v1.md:339`) — aynı Satış portu S-1 (Üretim) ve MOD-03 (Alış) için ortak kullanılır |
+| ✅ Lojistik, stok tahsisi, kur, Cari, Ürün, İş bağları sağlam | 3a–3e, 3g, 5a–5f, 5i, 5k ✅ | **İki küçük fark:** (1) **Kur (4a)** burada 🟡: bağ çalışıyor ve Ayarlar tarafında SQL testi var (`IT/SettingsExchangeRateSqlServerRelationalAcceptanceTests.cs`), ama Satış risk çevrimi yalnız sahte çözümleyiciyle test ediliyor (`SUT/SalesDraftServiceTests.RiskCheck.cs`); `IT/SalesRiskCheckSqlServerRelationalAcceptanceTests.cs` kuru kullanmıyor. (2) **İş (5j)** burada 🟡: Work kutusuna yalnız sipariş taslağı adaptörü bağlı (`API/Program.cs:186` `SalesOrderDraftPendingApprovalAdapterV1`); teklif süre aşımı onayı için adaptör yok. Ayrıca 3f (faturalanmamış irsaliye) fatura sahibi olmadığı için 🟡 |
 
 ## Eksikler ve sahipleri
 
@@ -124,7 +134,8 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 | 4g | Teklif politikası | 🟡 | Kalıcı kayıt + bakım ekranı; veri girişi | **Ayarlar**; veri **Sinan** |
 | 5h | Cari e-belge durumu | ❌ | Cari'den e-belge mükellefiyet okuma portu | **Cari** (üretici), Satış (fatura tüketicisi) |
 | 5j | Teklif onaylarının İş kutusu | 🟡 | Teklif onayları için `INativeApprovalReadAdapterV1` | **Satış/Claude şeridi** |
-| 5l | Bağlı satın alma (iptal etkisi) | ❌ | Satış satırına bağlı satın alma okuma portu | **Alış** (üretici); Satış `NoSource` dalını bağlar |
+| 5l | Bağlı satın alma (iptal etkisi, Alış MOD-03) | ❌ | Veri sağlayan Alış portu (Satış'ın `ISalesOrderLinkedSupplyReadPortV1` sözleşmesine uyar) | **Alış** (üretici); sözleşme sahibi ve tüketici **Satış/Claude** (`docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md:339`) |
+| 5m | "Tedarikçide hazır" dahil alış gelecek arzı (Alış MOD-16) | ❌ | `IPurchaseSupplyReferencePortV1` v2 (MOD-14 ile aynı port) | **Alış** (üretici); kaynak planı/sipariş ekranı tüketicisi **Satış/Claude** (`ALIS_HAZIRLIK_PLANI_v1.md:351`) |
 | 6f | Satış outbox olayları | ❌ | Satış outbox tablosu + olay sözleşmeleri | **Satış/Claude şeridi** (dağıtıcı ERP-000F geldikten sonra) |
 
 ### Üretim şeridinin teyidi (2026-11-02, koordinatör üzerinden)
