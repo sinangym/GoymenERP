@@ -1532,8 +1532,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
                         // Re-fingerprinted for Üretim U1-a (+ SAT-D181 tax rate list port, merged): the Manufacturing parameter port and the profile administration
                         // behind its two ports (DI-only); the database surface and its counts are unchanged.
-                        // Re-fingerprinted after merging main into U1-a/U1-b: both the Manufacturing parameter port (U1-a) and the
-                        // SAT-D181 VAT rate / withholding ratio list port (EK26) are registered (DI-only); counts unchanged.
                         "983a856dd56e364fa22969b6b4f03d476be7de12dca86649048d5b6027964e25",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
