@@ -383,6 +383,8 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
             // The recorded-attempt arm alone: with no draft carrying a sales owner or due terms, the recorded header revision
             // still refuses the rollback.
             await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL, [SalesOwnerUserId] = NULL; SELECT @@ROWCOUNT");
+            // The re-applied SAT-D184 backfill wrote the legacy buyer-tax basis again; clear it so the tax migrations roll back.
+            await run.ScalarAsync<int>(SalesOrderTaxRollback.ClearSql);
             await migrator.MigrateAsync(applied[headers]);
             var attemptArm = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
             Assert.Equal(51133, attemptArm.Number);
