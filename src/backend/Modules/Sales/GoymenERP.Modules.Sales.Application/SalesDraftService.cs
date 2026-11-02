@@ -68,6 +68,7 @@ public sealed partial class SalesDraftService(
     ISalesPartyDisplaySourceV1? partyDisplays = null,
     ISettingsLineTaxResolverV1? lineTaxes = null,
     ISettingsTaxRateListReaderV1? rateLists = null,
+    ISettingsExchangeRateResolverV1? exchangeRates = null,
     IProductItemTypeReaderV1? itemTypes = null,
     ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {

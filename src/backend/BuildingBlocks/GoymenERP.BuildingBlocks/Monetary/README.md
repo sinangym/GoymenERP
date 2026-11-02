@@ -25,8 +25,8 @@ ağ, veritabanı, tatil, hafta günü ya da geriye bakış ayarı yoktur.
 
 ### Kur kaydı sözleşmesi (`ExchangeRateBulletinDay`)
 
-Kur kaydı için henüz bir sahip modül ve tablo yok; çözümleyici yalnız şu sözleşmeyi bekler. Çağıran
-sahibin deposundaki günleri verir. Gelecekteki içe aktarma bu sözleşmeye uymak zorundadır:
+Kur kaydının sahibi **Ayarlar** modülüdür (`settings.ExchangeRate*` tabloları; ana rapor AV-02 "Birim / Para / Kur /
+Vergi"). Çağıran sahibin deposundaki günleri verir. İçe aktarma bu sözleşmeye uymak zorundadır:
 
 - Kayıtlar **yalnız TCMB'nin kendi bültenlerinden** gelir; üçüncü taraf arşivleri (yayım olmayan günü son
   bültenle dolduran seriler) kabul edilmez.
@@ -66,9 +66,25 @@ iş gününü yalnız TCMB'nin yayımı belirler).
   saklanmış bir satır sessizce yok sayılmasın diye modellenmiştir.
 - D ve sonraki günlerin elle kayıtları yürüyüşe girmez.
 
+## Kur günü çözümleyicisi (SAT-D170/D171 dahil)
+
+`RateDayExchangeRate.Resolve(request, bulletinDays, halfDayMarks)` belge ve kontrollerin kullandığı tek hesaplayıcıdır.
+Kur günü D'yi çağıran verir (sevk günü SAT-D90, önce-fatura akışında fatura günü, mal kabul günü ALS-D6, risk kontrol günü
+SAT-D47).
+
+- D'nin arife/yarım gün işareti bilinmek zorundadır (`ExchangeRateHalfDayMark`; resmî otomatik kaynaktan, SAT-D171).
+  İşaret yoksa ya da `Undetermined` ise `exchange_rate_half_day_undetermined` ("kur belirlenemedi").
+- D tam gün → yukarıdaki önceki iş günü kuralı (SAT-D54/D55).
+- D arife/yarım gün → D−1'den geriye **önceki tam iş günü** F bulunur: kesin "bülten yok" günü atlanır, yayımlanmış yarım
+  gün atlanır (art arda yarım günler hepsi atlanır), işareti bilinmeyen yayımlanmış gün `exchange_rate_half_day_undetermined`,
+  doğrulanmamış gün `exchange_rate_day_unconfirmed`. Kur, F için önceki iş günü kuralıdır (F'de Resmî Gazete'de yayımlanan,
+  F'den önceki iş günü 15.30'da açıklanan kur).
+- Altın örnekler: Pazartesi → Cuma; Çarşamba tatil + Perşembe → Salı; Salı arife → Cuma; Pazartesi+Salı yarım gün, Salı →
+  Perşembe; 04.11.2026 → 03.11.2026 (`tests/GoymenERP.Sales.UnitTests/RateDayExchangeRateTests.cs`).
+
 ### Kapsam dışı
 
-- TCMB'den çekme (içe aktarma) bir dış bağlantıdır ve insan kapısındadır; burada ağ erişimi yoktur.
+- TCMB'den çekme (içe aktarma) bir dış bağlantıdır; Ayarlar'daki TCMB kaynağı varsayılan olarak kapalıdır ve bir ortamda
+  açılması insan kapısındadır. Arife/yarım gün kaynağı da kapalıdır (bkz. `src/backend/Modules/Settings/README.md`).
 - Kesin alma saati ve manuel istisna sınırı OPEN-012'de açıktır; çözümleyici yalnız önceki günlerin kaydını
   okuduğundan alma saati yalnız içe aktarmanın zamanlamasını etkiler.
-- Risk kontrolüne bağlanması ayrı dilimdedir.

@@ -733,6 +733,21 @@ public static class ErpPermissions
     public const string SettingsTaxMasterManage = "settings.tax-master.manage";
 
     /// <summary>
+    /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
+    /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
+    /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
+    /// configured official sources (disabled by default; enabling the outbound connection is a human gate). Registered, not
+    /// granted: no role, seed or user receives them here. Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsExchangeRatesRead = "settings.exchange-rates.read";
+
+    /// <inheritdoc cref="SettingsExchangeRatesRead"/>
+    public const string SettingsExchangeRatesCorrect = "settings.exchange-rates.correct";
+
+    /// <inheritdoc cref="SettingsExchangeRatesRead"/>
+    public const string SettingsExchangeRatesImport = "settings.exchange-rates.import";
+
+    /// <summary>
     /// Üretim U1-a API-01 (URT-D9/D10, <c>SINAN_KARARLARI_2026-11-01_URETIM.md</c>): the Settings owner's names for the versioned
     /// Manufacturing parameter profiles (<c>ManufacturingParameterProfileActionsV1</c>) — read, prepare, approve, publish. The
     /// lifecycle enforces approver ≠ preparer and publisher ≠ preparer at command time (D-MFG-PROFILE-AUTH-01=A). Registered,
@@ -914,6 +929,9 @@ public static class ErpPermissions
             DocumentsFilesUpload,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
+            SettingsExchangeRatesRead,
+            SettingsExchangeRatesCorrect,
+            SettingsExchangeRatesImport,
             SettingsManufacturingParameterProfilesRead,
             SettingsManufacturingParameterProfilesPrepare,
             SettingsManufacturingParameterProfilesApprove,
@@ -1061,6 +1079,9 @@ public static class ErpPermissions
             DocumentsFilesUpload,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
+            SettingsExchangeRatesRead,
+            SettingsExchangeRatesCorrect,
+            SettingsExchangeRatesImport,
             SettingsManufacturingParameterProfilesRead,
             SettingsManufacturingParameterProfilesPrepare,
             SettingsManufacturingParameterProfilesApprove,

@@ -22,8 +22,11 @@ public sealed class SettingsSalesDiscountLimitPermissionRegistrationTests
         Assert.True(ErpPermissions.RequiresCompanyWideScope(SettingsPermissionManifestV1.SalesDiscountLimitsManage));
         Assert.False(ErpPermissions.IsCritical(SettingsPermissionManifestV1.SalesDiscountLimitsManage));
         // MOD-03 adds the tax master's own name beside it (SettingsTaxMasterPermissionRegistrationTests); Üretim U1-a adds the
-        // Manufacturing parameter / tolerance profile names (SettingsManufacturingProfilePermissionRegistrationTests).
-        Assert.Equal([SettingsPermissionManifestV1.SalesDiscountLimitsManage, SettingsTaxMasterPermissionManifestV1.TaxMasterManage],
+        // Manufacturing parameter / tolerance profile names (SettingsManufacturingProfilePermissionRegistrationTests); DEC-FIN-010
+        // the three exchange-rate record names (SettingsExchangeRateSourceTests).
+        Assert.Equal([SettingsExchangeRatePermissionManifestV1.Correct, SettingsExchangeRatePermissionManifestV1.Import,
+                SettingsExchangeRatePermissionManifestV1.Read, SettingsPermissionManifestV1.SalesDiscountLimitsManage,
+                SettingsTaxMasterPermissionManifestV1.TaxMasterManage],
             ErpPermissions.All.Where(name => name.StartsWith("settings.", StringComparison.Ordinal)
                     && !name.StartsWith("settings.manufacturing-", StringComparison.Ordinal))
                 .Order(StringComparer.Ordinal));

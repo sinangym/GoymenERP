@@ -164,6 +164,9 @@ public static class SalesModuleExtensions
         serviceProvider.GetService<ISettingsLineTaxResolverV1>(),
         // SAT-D181 (EK26): the Settings VAT rate / withholding ratio lists a line change picks from (empty until entered).
         serviceProvider.GetService<ISettingsTaxRateListReaderV1>(),
+        // SAT-D47 / DEC-FIN-010: the Settings rate-day port (the exchange-rate record), registered by the Settings owner's module;
+        // until it is, a foreign-currency risk amount stays "exchange_rate_unavailable", never converted with a guessed rate.
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>(),
         // SAT-D176 (EK25): the Product owner's item type of the shared product card (SAT-D149), registered by the Product owner;
         // until it is, a subcontract service order is 503, never a line assumed to be a service.
         serviceProvider.GetService<IProductItemTypeReaderV1>(),
