@@ -1975,15 +1975,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 2
                         }),
-                // A1-1b (plan API-01b; ALS-D46): one reviewed statement. Down refuses (51165, used by no other migration)
-                // while any request is Withdrawn, before every drop. Up only re-creates checks and adds nullable columns.
+                // A1-1b (plan API-01b; ALS-D46): two reviewed statements, both before every drop. Down refuses (51165, used by
+                // no other migration) while any request is Withdrawn, and (51166, used by no other migration; #907 review P3)
+                // while a stored decision differs from its maker only by case, which the restored A1-1 check would reject.
+                // Up only re-creates checks and adds nullable columns.
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261102161658_AddPurchaseRequestWithdrawal.cs"] =
                     new(
-                        "aa748ac89dd7a01c9e51591977fab061868e3e73731aafbca386ba5d61211afd",
+                        "e9948461dac12ae23a6f93c9e93e5a468e0ddacafc63ebec339bb317a0e23bf3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
-                            ["Sql"] = 1
+                            ["Sql"] = 2
                         }),
                 // Purchasing acceptance history is durable; Down uses one reviewed statement to refuse
                 // downgrade while any acceptance share exists.

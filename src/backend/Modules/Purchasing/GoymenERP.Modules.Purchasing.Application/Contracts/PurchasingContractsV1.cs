@@ -177,8 +177,9 @@ public static class PurchasingProblemCodesV1
     public const string RequestSameActor = "purchasing_request_same_actor";
 
     /// <summary>
-    /// 409, terminal (§7; A1-1 fail-closed): the request's preparer or submitter is not recorded, so no one may decide it
-    /// (A1-1b: and an unrecorded submitter means no one may withdraw it).
+    /// 409, terminal (§7; A1-1 fail-closed): the request's preparer or submitter is not recorded, so no one may decide it.
+    /// A1-1b (ALS-D47): a withdrawal is refused with this code only when NEITHER maker is recorded; with one recorded, only
+    /// that one may withdraw and anyone else is <see cref="RequestNotPreparer"/>.
     /// </summary>
     public const string RequestMakerUnknown = "purchasing_request_maker_unknown";
 

@@ -250,6 +250,11 @@ public sealed class PurchasingPersistenceModelTests
         var withdrawalGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(withdrawal.DownOperations[0]);
         Assert.Contains("THROW 51165", withdrawalGuard.Sql, StringComparison.Ordinal);
         Assert.Contains("[Status] = 5", withdrawalGuard.Sql, StringComparison.Ordinal);
+        // ... and refuses clearly (51166) when the restored case-insensitive maker-checker check would fail, before any drop.
+        var collationGuard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(withdrawal.DownOperations[1]);
+        Assert.Contains("THROW 51166", collationGuard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[ApprovedBy] = [CreatedBy]", collationGuard.Sql, StringComparison.Ordinal);
+        Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropCheckConstraintOperation>(withdrawal.DownOperations[2]);
         Assert.Empty(withdrawal.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
 
         // Down refuses while a decided request exists (forward fix) before any drop; Up backfills the submitter from its own attempt.
@@ -280,7 +285,7 @@ public sealed class PurchasingPersistenceModelTests
     }
 
     [Fact]
-    public async Task The_write_guard_lets_the_withdrawal_facts_move_but_not_the_submitter_identity_of_another_field()
+    public async Task The_write_guard_lets_the_withdrawal_facts_move_but_not_another_field()
     {
         await using PurchasingDbContext context = Context();
         var row = new PurchaseRequestRow
@@ -294,6 +299,11 @@ public sealed class PurchasingPersistenceModelTests
         row.WithdrawnBy = "SENTETIK";
         row.WithdrawnAtUtc = DateTimeOffset.UtcNow;
         row.WithdrawalReason = "SENTETIK";
+        // The withdrawal facts alone are on the allow-list: the guard passes them (only the database is unreachable here).
+        var onlyFacts = await Assert.ThrowsAnyAsync<Exception>(() => context.SaveChangesAsync());
+        Assert.DoesNotContain("izinli alan", onlyFacts.Message, StringComparison.Ordinal);
+        Assert.IsAssignableFrom<System.Data.Common.DbException>(onlyFacts.InnerException);
+
         row.EffectiveOn = new DateOnly(2026, 11, 3); // not allowed: the business date never moves
         var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
         Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);

@@ -133,7 +133,7 @@ function decodeDecision(value: unknown): PendingPurchaseRequestDecision | null {
     : null
 }
 
-/** A1-1b (ALS-D46): the submitter's unresolved withdrawal attempt kept for an explicit same-payload resend. */
+/** A1-1b (ALS-D46, ALS-D47): the preparer's or submitter's unresolved withdrawal attempt kept for an explicit same-payload resend. */
 export interface PendingPurchaseRequestWithdrawal {
   readonly actorId: string
   readonly companyId: string

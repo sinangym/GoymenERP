@@ -46,7 +46,7 @@ describe('A1-1b request withdrawal wire contract (ALS-D46, ALS-D47)', () => {
       withdrawal: { ...withdrawal, decidedBy: 'SENTETIK-preparer' }, submittedBy: null,
     }))?.submittedBy).toBeNull()
     expect(decodePurchaseRequestDetail(body('Submitted', '3'))?.submittedBy).toBe('SENTETIK-submitter')
-    // A submission recorded before A1-1 carries no submitter; nobody may withdraw it, but it still reads.
+    // A submission recorded before A1-1 carries no submitter; only its recorded preparer may withdraw it, and it still reads.
     expect(decodePurchaseRequestDetail(body('Submitted', '3', { submittedBy: null }))?.submittedBy).toBeNull()
     expect(decodePurchaseRequestDetail(body('Draft', '2', { submittedBy: null }))?.withdrawal).toBeNull()
     // The A1-1 body (without the two fields) still reads, but never as Withdrawn.

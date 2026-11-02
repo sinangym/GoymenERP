@@ -25,7 +25,7 @@ public interface IPurchasingService
     Task<PurchaseRequestResponse> RejectRequestAsync(Guid requestId, RejectPurchaseRequestRequest request, PurchasingCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
-    /// <summary>A1-1b (ALS-D46): Submitted → Withdrawn with a reason under <c>purchasing.requests.withdraw</c>, by the submitter only.</summary>
+    /// <summary>A1-1b (ALS-D46, ALS-D47): Submitted → Withdrawn with a reason under <c>purchasing.requests.withdraw</c>, by the recorded preparer or submitter only.</summary>
     Task<PurchaseRequestResponse> WithdrawRequestAsync(Guid requestId, WithdrawPurchaseRequestRequest request, PurchasingCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 

@@ -20,8 +20,10 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
     /// </para>
     /// <para>
     /// Down refuses (<c>THROW 51165</c>, used by no other migration) while any request is Withdrawn: that state and its facts
-    /// cannot be represented before this migration (forward fix). Otherwise it drops the new check and columns and restores
-    /// the A1-1 checks exactly as <c>AddPurchaseRequestDecisions</c> created them.
+    /// cannot be represented before this migration (forward fix). It also refuses (<c>THROW 51166</c>, used by no other
+    /// migration) while an approver or rejecter equals a maker under the database's default (case-insensitive) collation —
+    /// rows the binary check admits but the restored A1-1 check would reject with a raw 547. Otherwise it drops the new check
+    /// and columns and restores the A1-1 checks exactly as <c>AddPurchaseRequestDecisions</c> created them.
     /// </para>
     /// </summary>
     public partial class AddPurchaseRequestWithdrawal : Migration
@@ -100,6 +102,18 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                 IF EXISTS (SELECT 1 FROM [purchasing].[PurchaseRequests] WHERE [Status] = 5)
                 BEGIN
                     THROW 51165, 'Withdrawn purchase requests exist; AddPurchaseRequestWithdrawal is not rolled back (forward fix).', 1;
+                END;
+                """);
+
+            // #907 review P3: the restored A1-1 maker-checker check compares under the column's default collation; refuse
+            // clearly, before any drop, when a stored decision would violate it (a decider equal to a maker but for case).
+            migrationBuilder.Sql(
+                """
+                IF EXISTS (SELECT 1 FROM [purchasing].[PurchaseRequests]
+                    WHERE ([ApprovedBy] IS NOT NULL AND ([ApprovedBy] = [CreatedBy] OR [ApprovedBy] = [SubmittedBy]))
+                       OR ([RejectedBy] IS NOT NULL AND ([RejectedBy] = [CreatedBy] OR [RejectedBy] = [SubmittedBy])))
+                BEGIN
+                    THROW 51166, 'A purchase request decision differs from its maker only by case; AddPurchaseRequestWithdrawal is not rolled back (forward fix).', 1;
                 END;
                 """);
 

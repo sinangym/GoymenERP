@@ -40,7 +40,7 @@ public static class PurchasingCommands
     /// <summary>A1-1 (No.161 §1): Submitted | Approved → Rejected with a reason, under <c>purchasing.requests.approve</c>.</summary>
     public const string RequestRejectV1 = "purchasing.purchase-request.reject.v1";
 
-    /// <summary>A1-1b (ALS-D46): Submitted → Withdrawn with a reason, by the submitter, under <c>purchasing.requests.withdraw</c>.</summary>
+    /// <summary>A1-1b (ALS-D46, ALS-D47): Submitted → Withdrawn with a reason, by the recorded preparer or submitter, under <c>purchasing.requests.withdraw</c>.</summary>
     public const string RequestWithdrawV1 = "purchasing.purchase-request.withdraw.v1";
 
     public const string OrderCreateV1 = "purchasing.purchase-order.create.v1";

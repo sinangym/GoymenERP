@@ -168,7 +168,7 @@ export interface PurchaseRequestDetail {
   readonly approval?: PurchaseRequestDecision | null
   /** Null until rejected; carries the reason. */
   readonly rejection?: PurchaseRequestDecision | null
-  /** A1-1b: null until the submitter withdraws the request; carries the reason. A body before A1-1b reads as null. */
+  /** A1-1b: null until the preparer or the submitter withdraws the request (ALS-D47); carries the reason. A body before A1-1b reads as null. */
   readonly withdrawal?: PurchaseRequestDecision | null
   /** A1-1b (ALS-D47): the recorded preparer (creator) — one of the two actors who may withdraw — or null if not recorded. */
   readonly preparedBy?: string | null

@@ -244,6 +244,9 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var migration = new AddPurchaseRequestWithdrawal();
         var guard = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(Assert.IsType<SqlOperation>(migration.DownOperations[0]).Sql));
         Assert.Equal(51165, guard.Number);
+        // #907 review P3: the case-only approval above would break the restored case-insensitive A1-1 check; Down says so (51166).
+        var collation = await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(Assert.IsType<SqlOperation>(migration.DownOperations[1]).Sql));
+        Assert.Equal(51166, collation.Number);
         Assert.Equal("Withdrawn", await StatusOfAsync(run, withdrawnId));
         Assert.Equal("Approved", await StatusOfAsync(run, casedId));
     }

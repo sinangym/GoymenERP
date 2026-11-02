@@ -500,8 +500,7 @@ Bu bölüm iş takibidir; karar değildir.
 | Kalan sorular (§13.8) + EK3 ALS-D29…D43 | #891 | taslak PR |
 | A0 belgeleri: FZL-01 (Purchasing README kodla eşit), `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Satın Alma satırları | – | taslak PR |
 | A1-1 (K3): API-01 talep onay/ret + TEK-09 talep ekseni; `purchasing.requests.approve` (yalnız kayıt, grant insan kapısı); siparişin kaynak talebi Onaylı olmalı (ALS-D2/D16); migration `AddPurchaseRequestDecisions`; P-01-DETAIL karar paneli | #900 | merge edildi (`5d569df3`) |
-| A1-1b (K3): API-01b oluşturan veya gönderenin geri çekmesi (ALS-D46, ALS-D47; `Withdrawn` ayrı kapanış durumu) + #900 review P3'leri (maker-checker CHECK ikili karşılaştırma, `maker_unknown` README notu, PUR01 403 açıklaması, UI/HTTP testleri); `purchasing.requests.withdraw` (yalnız kayıt; grant yalnız SENTETIK browser-suite personasında); migration `AddPurchaseRequestWithdrawal`; P-01-DETAIL "Geri çek" | – | #907 | taslak PR |
-| EK6 ALS-D47 (geri çekme yetkisi: oluşturan veya gönderen) | #907 | taslak PR |
+| A1-1b (K3): API-01b oluşturan veya gönderenin geri çekmesi (ALS-D46, ALS-D47; `Withdrawn` ayrı kapanış durumu) + #900 review P3'leri (maker-checker CHECK ikili karşılaştırma, `maker_unknown` README notu, PUR01 403 açıklaması, UI/HTTP testleri); `purchasing.requests.withdraw` (yalnız kayıt; grant yalnız SENTETIK browser-suite personasında); migration `AddPurchaseRequestWithdrawal`; P-01-DETAIL "Geri çek"; karar dosyası EK6 ALS-D47 (geri çekme yetkisi: oluşturan veya gönderen) | #907 | taslak PR |
 
 Sıradaki: A1 — talep kaynağı, No.161 iptali, PRS-01 (A1-1 #900 ile merge edildi; A1-1b oluşturan veya gönderenin geri çekmesi #907 taslak PR'da, DURUM_MAKINELERI satırı o dilimde güncellendi). Açık sorular §8
 sonundaki tabloda.
