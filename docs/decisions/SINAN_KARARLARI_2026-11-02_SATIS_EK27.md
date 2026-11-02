@@ -23,6 +23,14 @@ seçmeli soru cevabı: bir tur, bir soru. Sinan'a her seçeneğin adı **ve aç�
 |---|---|---|---|
 | SAT-D185 | Alıcı belgesinin sonradan girilmesi | Onaylı siparişte alıcı vergi durumu ve istisna kodu **aynı kalarak** yalnız alıcı belgesinin numarası ve/veya tarihi sonradan girilirse **revizyon açılmaz**; iç onay ve müşteri kabulü yeniden istenmez. Değişiklik kimin girdiğiyle, gerekçe ve audit ile kaydedilir (SAT-D126 gibi). Sevk durmaz; belge girildiğinde fatura SAT-D147 gereği kesilebilir hâle gelir (soru 1). Uygulama ayrıntısı (geri alınabilir): satır vergileri yeniden çözülmez; daha önce girilmiş belge bilgisinin düzeltilmesi de aynı yolla yerinde kaydedilir, ama o belgeyle fatura kesildikten sonra yerinde düzeltme yapılmaz (fail-closed); belge girişi başlık yazma izniyle yapılır (`sales.orders.header.write`, SAT-D144), yeni izin açılmaz; alıcı vergi durumu veya istisna kodu da değişiyorsa SAT-D105 ve DEC-SAL-002 gereği revizyon açılır | Başlık revizyonu (API-04), PR #885 |
 
+## Açık kalanlar
+
+- Belge tarihinin, ondan önce yapılmış sevklerin faturasında istisnayı kapsayıp kapsamadığı mali müşavirin konusudur
+  (SAT-D148). Müşavir karar verene kadar sistem, belge tarihinden önceki sevkler için istisnayı kendiliğinden uygulamaz;
+  bu durumdaki fatura bekler (fail-closed, geri alınabilir).
+- Uygulama ayrıntısı (geri alınabilir): müşteri kabulü bekleyen bir revizyon alıcı durumunu değiştirdiyse belge bilgisi
+  o revizyona aittir ve o revizyonla birlikte kabul edilir; kabul edilen eski revizyonun belgesi ayrıca değişmez.
+
 ## Sınırlar
 
 - Bu karar merge kapılarını ve insan kapılarını (deployment, environment, secret, Settings etkinleştirme, grant/rol/Critical,
