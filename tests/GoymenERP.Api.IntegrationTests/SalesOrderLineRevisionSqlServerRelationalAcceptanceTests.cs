@@ -1,5 +1,9 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using GoymenERP.Api.Endpoints;
 using GoymenERP.Api.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
@@ -143,7 +147,70 @@ public sealed class SalesOrderLineRevisionSqlServerRelationalAcceptanceTests
         }
     }
 
+    [SqlServerFact]
+    public async Task The_route_removes_a_line_for_a_granted_actor_replays_its_key_and_refuses_another_company_and_an_ungranted_actor_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var draft = await run.ApprovedDraftAsync(CompanyA, "h");
+        var path = $"{SalesEndpoints.DraftsPath}/{draft.Id:D}/line-revision";
+        var removal = new SalesDraftLineRevisionRequest(draft.Version.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "SENTETIK müşteri satırı istemiyor", [], [new SalesDraftLineRemovalV1(draft.Lines[0].Id, null)]);
+
+        // Another company's actor holding the same name: the order does not exist for it (404), nothing recorded.
+        var subjectOfB = await run.GrantAsync(TestUsers.CompanyB, CompanyB, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersQuantityWrite);
+        using (var clientOfB = run.Client(subjectOfB, CompanyB))
+        {
+            using var refused = await clientOfB.SendAsync(Post(path, "SENTETIK-lines-b", removal));
+            Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+        }
+
+        // Company A's reader without the quantity-write name: 403 before anything is read or recorded.
+        var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead);
+        using (var client = run.Client(reader, CompanyA))
+        {
+            using var forbidden = await client.SendAsync(Post(path, "SENTETIK-lines-a0", removal));
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        }
+
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-lines.v1'"));
+
+        // Granted (the owners answer no allocation and no loading line): Rev.1 in preparation, line 1 passive, the key replays.
+        var writer = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersQuantityWrite);
+        using (var client = run.Client(writer, CompanyA))
+        {
+            using var revised = await client.SendAsync(Post(path, "SENTETIK-lines-a", removal));
+            Assert.Equal(HttpStatusCode.OK, revised.StatusCode);
+            var body = (await revised.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            Assert.Equal(("Rev.1", "Preparing", 1), (body.GetProperty("draft").GetProperty("revision").GetString(),
+                body.GetProperty("draft").GetProperty("approvalState").GetString(), body.GetProperty("lines").GetArrayLength()));
+            var passive = Assert.Single(body.GetProperty("removedLines").EnumerateArray());
+            Assert.Equal((draft.Lines[0].Id.ToString("D"), "Rev.1"), (passive.GetProperty("lineId").GetString(),
+                passive.GetProperty("removedInRevision").GetString()));
+
+            using var replay = await client.SendAsync(Post(path, "SENTETIK-lines-a", removal));
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            Assert.True((await replay.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("isReplay").GetBoolean());
+        }
+
+        Assert.Equal((1, 1), (
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftAttempts] WHERE [CommandName] = N'sales.order-draft.revise-lines.v1'"),
+            await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftLines] WHERE [DraftId] = @id AND [RemovedInRevision] = 1", ("@id", draft.Id))));
+    }
+
     // ---- helpers --------------------------------------------------------------------------------
+
+    private static HttpRequestMessage Post<T>(string path, string key, T body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(body, SalesDraftJson.Options), Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("Idempotency-Key", key);
+        request.Headers.Add("X-Correlation-Id", $"SENTETIK-{Guid.NewGuid():N}");
+        return request;
+    }
 
     private static string Hash(string seed) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(seed)));
 

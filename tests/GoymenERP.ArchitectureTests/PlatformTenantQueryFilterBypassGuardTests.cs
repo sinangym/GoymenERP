@@ -404,11 +404,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
             // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
             // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
-            // SAT-D167 (EK24): +2 SalesOrderLineRevision facts (an approved order's line revision adds a row, passivates a line,
-            // archives Rev.0 and rebuilds; the write guard, CK_DraftLines_LineRevision and the 51142 rollback refusal), kept
-            // ordinal-sorted (1f679068… -> 3d350bea…).
+            // SAT-D167 (EK24): +3 SalesOrderLineRevision facts (an approved order's line revision adds a row, passivates a line,
+            // archives Rev.0 and rebuilds; the write guard, CK_DraftLines_LineRevision and the 51142 rollback refusal; the route's grant,
+            // replay and company refusals), kept
+            // ordinal-sorted (1f679068… -> ba7de976…).
             ["tools/relational_inventory/sales.txt"] =
-                "3d350bea955da41a56b2d450ef18ebc5f641715eb7c52b310d7eb266c1610272",
+                "ba7de9769074274a8cd7974b9da297e0a87c85911ad53905481da764f8661cbb",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.

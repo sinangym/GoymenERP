@@ -346,7 +346,7 @@ term* — the draft never stores one (`paymentTerms` is refused at create, 422 `
 so no field is invented; *currency* — the only approved money profile is GDC/TRY, and a currency change would need a second profile and a
 restated price (a price in the old currency does not carry over); *party* and *product* — a party change re-binds the Cari
 account, the delivery address and the contact, a product change the product snapshot, order unit, price unit and the
-delivery plan's unit: each its own decision. Undecided and implemented fail-closed: who may change an approved order's
+delivery plan's unit: each its own decision (a product change is decided since SAT-D167, EK24 — see "Line revision of an order"). Undecided and implemented fail-closed: who may change an approved order's
 quantity (its own name, granted to nobody — NEEDS-SINAN). What a quantity change does to the owners' records is decided since
 SAT-D104 / SAT-D111 (EK13): the records no longer block it — see "Revisions during re-approval".
 
@@ -669,5 +669,26 @@ dotnet test tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj
 - **Follow-ups (other lanes):** (1) Production host adapters for the read port and the binding hook (until then the customer of a
   fason order cannot change); (2) Stock-lane coordination: SAT-D175's customer-goods match key must equal Stock's "müşteri adına"
   record key, which does not exist on main yet — the port publishes the customer (PartyId + CompanyAccountId) until Stock names it;
-  (3) SAT-D167 line add / product change must call `ConfirmServiceLinesAsync` and keep the per-kg / no-list rule (the domain's
-  `AddLine` already refuses a fason line without the confirmed `Service` type or with a non-kg unit, so a forgotten read fails closed).
+  (3) done in SAT-D167 (below): an added line of a fason order passes `ConfirmServiceLinesAsync` and the per-kg / no-list rule.
+
+## Line revision of an order: add, remove (passive), change product (SAT-D167, EK24; DEC-SAL-002)
+
+Sinan (EK24): "Onaylı siparişte revizyonla yeni satır eklenebilir, sevk edilmemiş satır silinebilir (pasif olur), sevk edilmemiş
+satırın ürünü değiştirilebilir." One command, `POST /api/v1/sales/drafts/{id}/line-revision`
+(`ReviseSalesOrderDraftLinesV1`, strict `{expectedVersion, reason, added[], removed[{lineId, replacedByLineId}]}`).
+
+| Concern | Rule |
+|---|---|
+| Domain | `ReviseLines(expectedVersion, added, removed, actor, reason, now)`: the quantity revision's preconditions (`RequireQuantityRevisable`: version, lifecycle, `PendingApproval`/`Withdrawn` → `sales_state_conflict`, reason required). An added line passes every create rule (`BuildLine`: snapshots, Ö2, commercial pairing, plan, tax snapshot, the fason service/kg rule) and takes the next line number (numbers are never reused). A removed line must be ACTIVE (`sales_revision_lines_mismatch`) with an open remainder (`sales_line_revision_line_shipped`); it goes passive (`RemovedInRevision`), never deleted. A product change is a removal whose `replacedByLineId` names a line added in the same revision for ANOTHER product (`sales_line_replacement_invalid` / `sales_line_replacement_same_product`). At least one active line stays (`sales_line_revision_no_lines_left`). From `Approved`: the approved revision is archived FIRST with the reason, then Rev.N+1 in `Preparing` (re-approval; customer acceptance again when required). One version step. |
+| Passive lines | Out of `Lines`: totals, risk, tax, PDF, the line port, reports' open lines, schedules — every consumer reads active lines only. The detail answers them in `removedLines` (omitted when none) and an added line carries `addedInRevision` ("Rev.N"). The original schedule (0) keeps the create's lines. |
+| Unshipped (owners) | "Sevk edilmemiş" = no stock allocation and no loading instruction on the line, read afresh from `ISalesOrderAllocationReadPortV1` and `ISalesOrderLoadingReadPortV1` (a dispatch note always hangs on a loading instruction); linked → 422 `removed[i].lineId` `sales_line_revision_line_shipped`; an owner not composed / failing → 503 `revision_impact_unavailable` (fail-closed, not recorded). |
+| Added line owners | Product (`ReadProductUnitAsync`, on the order's business date), the line tax from the Settings lists (SAT-D181; a tax change needs the price-write name), a fason order's `ConfirmServiceLinesAsync` + per-kg/no-list rule (SAT-D176/D195). A new line has no list-price reference, so like a create line its discount always needs approval (no floor without a list; a list reference is attached later by the commercial revision). A price, discount or tax change needs `sales.orders.price.write` (SAT-D151). |
+| Shipping during re-approval | The line port answers the last approved revision: an added line is `NotApproved` until approved; a removed line answers `NotFound` at once (it does not ship even while the removal waits — fail-closed; see NEEDS-SINAN). |
+| Authority / idempotency / audit | `sales.orders.quantity.write` (existing name; no new name, no role). Command `sales.order-draft.revise-lines.v1`; content-hashed key; terminal 409s recorded. Audit `sales.order-draft.lines-revised.v1` with the lines before/after. Company-scoped like every Sales read/write (another company: 404). |
+| Persistence | `DraftLines.AddedInRevision`, `RemovedInRevision`, `ReplacedByLineId` (`CK_DraftLines_LineRevision`). The write guard admits exactly `RemovedInRevision` + `ReplacedByLineId` and never lets a removal be undone or changed. Migration `AddDraftLineRevisions`; Down refuses with 51142 while any line revision exists (forward fix). |
+| Frontend | S-04 "Satır ekle / çıkar / ürün değiştir" behind the quantity-write control: per line keep / remove / change product, new lines from the Product owner's list (a fason order lists services only), price only with price-write, required reason, one keyed attempt (retry with the same key); row-named refusals; the added-in badge and the passive lines list. |
+| Evidence | Unit: `SalesOrderDraftLineRevisionTests`, `SalesDraftServiceTests.LineRevision`. Real SQL: `SalesOrderLineRevisionSqlServerRelationalAcceptanceTests` (3). Frontend: `SalesDraftLineRevision.test.tsx`. |
+
+NEEDS-SINAN (fail-closed until decided): (1) the permission of a line revision — the existing `sales.orders.quantity.write` is reused;
+(2) while a removal waits for re-approval (or was rejected) the removed line does not ship under the last approved revision;
+(3) an added line's product, unit and tax are read on the order's business date (not the day of the revision).

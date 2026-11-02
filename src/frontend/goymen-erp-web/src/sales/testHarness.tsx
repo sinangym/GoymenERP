@@ -255,6 +255,8 @@ export interface HarnessConfig {
   readonly onCancellation?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** DEC-SAL-002: a POST on `/sales/drafts/{id}/quantity-revision`. */
   readonly onQuantityRevision?: (call: RecordedCall) => Response | Promise<Response>
+  /** SAT-D167 (EK24): a POST on `/sales/drafts/{id}/line-revision`. */
+  readonly onLineRevision?: (call: RecordedCall) => Response | Promise<Response>
   /** API-04: GET `/sales/drafts/{id}/header` (the S-04 summary and the header-revision form); default: `headerOf` the served detail. */
   readonly onHeader?: (url: string, companyId: string | null) => Response | Promise<Response>
   /** API-04: a POST on `/sales/drafts/{id}/header-revision`. */
@@ -337,6 +339,10 @@ export function installFetch(config: HarnessConfig = {}) {
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/header-revision$/.test(url)) {
           if (config.onHeaderRevision === undefined) throw new Error('unexpected header revision')
           return config.onHeaderRevision(call)
+        }
+        if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/line-revision$/.test(url)) {
+          if (config.onLineRevision === undefined) throw new Error('unexpected line revision')
+          return config.onLineRevision(call)
         }
         if (call.method === 'POST' && /\/sales\/drafts\/[^/?]+\/quantity-revision$/.test(url)) {
           if (config.onQuantityRevision === undefined) throw new Error('unexpected quantity revision')
