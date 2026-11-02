@@ -481,10 +481,10 @@ public static class SalesRiskCurrencyConversion
     }
 
     /// <summary>
-    /// NEEDS-SINAN (#66; EK31 SAT-D200 / EK32 SAT-D203): the rounding of risk currency conversions — whether the intermediate TL
-    /// value is rounded, and how a division's remainder is treated — is decided in the formula golden, not here. Until then the
-    /// only interim rule is this one place: multiplication exact, the division System.Decimal's (28-29 significant digits), no
-    /// intermediate rounding, and ONE SAT-D11 money rounding at the end to the target scale. Change it here alone.
+    /// SAT-D206 (EK34; the rounding EK31 SAT-D200 / EK32 SAT-D203 left open): the intermediate TL value is NOT rounded; only the
+    /// final limit-currency amount is rounded, half-up (<see cref="Money.Round"/>, away from zero), to the target scale — the
+    /// limit currency's approved money profile scale (2 decimals per SAT-D206), never a literal here. Multiplication is exact;
+    /// the division is System.Decimal's (28-29 significant digits). The one place to change if the rule changes.
     /// </summary>
     internal static Money RoundForRisk(decimal exact, Guid currencyId, int scale) => Money.Round(exact, currencyId, scale);
 }

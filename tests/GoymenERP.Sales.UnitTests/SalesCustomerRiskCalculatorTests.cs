@@ -232,7 +232,7 @@ public sealed class SalesCustomerRiskCalculatorTests
     [Fact]
     public void SAT_D203_another_foreign_currency_goes_through_TL_with_both_check_day_rates()
     {
-        // 100 USD × 41.6 = 4160 TL; 4160 ÷ 48.3 = 86.1283643… EUR → 86.13 (NEEDS-SINAN interim rounding: once, at the end).
+        // 100 USD × 41.6 = 4160 TL; 4160 ÷ 48.3 = 86.1283643… EUR → 86.13 (SAT-D206: the TL value unrounded, the EUR amount rounded once, half-up).
         var rates = Rates((Usd, 41.6m), (Eur, 48.3m));
         var evaluation = SalesCustomerRiskCalculator.Evaluate(Local, EurLimit, In(Usd, 100m), In(Eur), In(Eur), In(Eur),
             Limit(1000m, Eur), rates);
@@ -253,7 +253,9 @@ public sealed class SalesCustomerRiskCalculatorTests
     [Fact]
     public void The_conversion_rounds_once_at_the_end_to_the_target_scale()
     {
-        // 1 TL ÷ 3 EUR-rate = 0.333… → 0.33 (no intermediate rounding; the single NEEDS-SINAN rounding hook).
+        // SAT-D206 half-up: 1 TL ÷ 0.8 = 1.25 at scale 1 → 1.3 (away from zero, never banker's 1.2).
+        Assert.Equal(1.3m, SalesRiskCurrencyConversion.Convert(1m, Try, Eur, 1, Rates((Eur, 0.8m)))!.Value.Amount);
+        // 1 TL ÷ 3 EUR-rate = 0.333… → 0.33 (SAT-D206: no intermediate rounding; one half-up rounding at the end).
         Assert.Equal(0.33m, SalesRiskCurrencyConversion.Convert(1m, Try, Eur, 2, Rates((Eur, 3m)))!.Value.Amount);
         Assert.Equal(2m, SalesRiskCurrencyConversion.Convert(2m, Try, Try, 2, Rates())!.Value.Amount);
         Assert.Null(SalesRiskCurrencyConversion.Convert(1m, Usd, Eur, 2, Rates((Usd, 41m))));
