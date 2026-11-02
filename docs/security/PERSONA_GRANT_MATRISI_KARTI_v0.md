@@ -36,13 +36,26 @@ NS'den on birini kapattı: eski Müdür'ün satış/muhasebe dışı yetkileri *
 Genel Müdür + Admin'dedir (SAT-D191); cari yönetimi yalnız Muhasebe Müdürü'ndedir (SAT-D192); SAT-D99 bakiyesi iki
 müdürdedir (SAT-D193); Satış Müdürü ve Genel Müdür taslak açar (SAT-D194). SAT-D188'in "okumalar iki müdüre de" kuralı
 satış ve muhasebe okumalarıyla sınırlandı; öteki modüllerin okumaları o modülün müdürüne gider (EK29 "Bilinçli
-değişiklikler"). Açık kalan tek hücre grubu **NS-11** (fatura kesme).
+değişiklikler"). Açık kalan tek hücre grubu **NS-11** (fatura kesme). *(EK32 SAT-D202 ile kapandı; EK31/EK32
+güncellemesi iki yeni grup açtı: NS-13 fatura onayı, NS-14 kur içe aktarma.)*
 
 **Güncelleme (2 Kasım 2026, EK30):** [EK30](../decisions/SINAN_KARARLARI_2026-11-02_SATIS_EK30.md) (SAT-D196/D197)
 **Finans Uzmanı** (oluşturur) ve **Finans Müdürü** (onaylar) personalarını ekledi; finans artık SAT-D191'in ara dönemine
 bağlı değildir. Genel Müdür finansta yalnız **onay ve onayın gerektirdiği okumayı** alır, oluşturamaz (SAT-D197); K4.2
 Satış ve Muhasebe Müdürü için aynen kalır. EK29 turundaki dört `finance.*` Genel Müdür `+` hücresi bu yüzden geri
 alındı. Ayrıntı: ana tablonun altındaki "Finans personaları" tablosu.
+
+**Güncelleme (2 Kasım 2026, EK31/EK32):** [EK32](../decisions/SINAN_KARARLARI_2026-11-02_SATIS_EK32.md) SAT-D202
+**NS-11**'i kapattı: faturayı **Muhasebe** hazırlar ve keser; **Muhasebe Müdürü, Genel Müdür ve Admin** de kesebilir;
+**Satış** (Satış Uzmanı, Satış Müdürü) faturayı görür ama kesemez; Satış Destek, Sevkiyatçı, Finans Uzmanı ve Finans
+Müdürü kesmez. Fatura taslağı **onayı** (API-33) bu kararın kapsamı dışıdır (SAT-D88/D106 aynen); Muhasebe Müdürü,
+Genel Müdür ve Admin'in onay hücresi EK28'den açıkça türetilemediği için **NS-13** olarak açık kalır.
+[EK31](../decisions/SINAN_KARARLARI_2026-11-02_SATIS_EK31.md) SAT-D199 kur **okumasını** (Satış Uzmanı, Satış Müdürü,
+Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin, Finans Uzmanı, Finans Müdürü) ve SAT-D198 belirlenemeyen arife/yarım
+günün **işaretlenmesini** (Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin) söyledi. Kur kaydının üç adı
+(`settings.exchange-rates.read`, `.correct`, `.import`) #906'dan (`claude/kur-kaydi`; bu güncellemede main'de henüz
+kayıtlı değil) alındı; içe aktarmanın (`.import`) sahibi karara bağlı değildir → **NS-14**. Ayrıntı: aşağıda "EK31/EK32
+eşlemesi" ve kartın sonundaki NEEDS-SINAN listesi.
 
 **Tabloda satırı olmayan ÜÇ ad vardı (1 Kasım 2026'dan beri İKİ: `sales.orders.price.write` SAT-D151 ile kapandı ve tabloya girdi), ve üçü de burada adıyla yazılıdır** — çünkü bir sayı, sonraki
 okuyucuya tablonun tam olduğunu söyler. Eksikliği görünür kılmadan sayıyı güncellemek, karta hiç
@@ -109,13 +122,13 @@ bağlıdır.
 | **Satış Müdürü** (SAT-D187, SAT-D188) | Eski Müdür'ün **satış** yetkilerini alır: satış siparişi onayı (SAT-D6), taban fiyat ve iskonto istisnası onayı (SAT-D1/D2/D37), miktar revizyonunun yeniden onayı (SAT-D3), iptal (SAT-D4), süresi geçmiş teklif onayı (SAT-D24/D44), fiyat ve başlık yazma (SAT-D151, SAT-D144), risk istisnası talebi ve onayı (SAT-D159, SAT-D153), fazla teslim onayı ve kapatma (SAT-D168), kaynak planı (SAT-D179), satış ayarları (SAT-D189). "Müdür" iskonto limit grubu **Satış Müdürü** grubudur (SAT-D188, soru 7). Satış siparişi taslağı açar (SAT-D194; açtığını onaylayamaz). "Faturalanmış, sevk edilmemiş" bakiyeyi Muhasebe Müdürü ile birlikte görür ve yönetir (SAT-D193). **Satış ve muhasebe** okumaları Muhasebe Müdürü ile ortaktır (SAT-D188); öteki modüllerin okumalarını **almaz** (SAT-D191). Vergi/muhasebe yetkisi ve cari yönetimi **almaz** (SAT-D188, SAT-D192). |
 | **Muhasebe Müdürü** (SAT-D187, SAT-D188) | Eski Müdür'ün **vergi/muhasebe** yetkilerini alır: vergi ayarlarını ve kalem tipini doğrudan değiştirme (SAT-D145/D149; SAT-D148/D158/D181 değer ve liste girişi bunun içindedir), Muhasebe'nin vergi ayarı önerisini onaylama (SAT-D146), kur düzeltmesi (SAT-D169), belge tarihinden önceki sevklerde istisna onayı (SAT-D186). Accounting modülünün müdürüdür: muhasebe dönemi ve yevmiye/fiş yetkileri (SAT-D191). Cari kartı açma/değiştirme ve cari hesabını aktif/pasif yapma **yalnız** Muhasebe Müdürü'ndedir (SAT-D192). SAT-D99 bakiyesini Satış Müdürü ile birlikte görür ve yönetir (SAT-D193). **Satış ve muhasebe** okumaları Satış Müdürü ile ortaktır (SAT-D188); öteki modüllerin okumalarını almaz (SAT-D191). Satış yetkisi **almaz**. Muhasebe personasının (SAT-D142) yetkilerini kendiliğinden almaz; aynı kişiye iki persona birlikte verilebilir. |
 | **Genel Müdür** (SAT-D187, SAT-D190) | **Bütün modüllerde** müdürlerin yaptığı onay ve değişiklikleri yapabilir; her müdür hücresinde yetkilidir (SAT-D188, soru 9). Admin'in **sistem yönetimi** yetkileri (kullanıcı, rol, sistem ayarı) bu kapsamda **değildir** (SAT-D190). Öteki modül müdürleri tanımlanana kadar o modüllerin müdür hücrelerini Admin ile birlikte tutar (SAT-D187, SAT-D191). Bu ara dönem hücrelerinin bir kısmı onay değil **operasyonel kayıttır** (`inventory.opening-stock.record`, `manufacturing.facts.record`, `logistics.loads.record`, `logistics.loading-instructions.create`, `organization.locations.status.update`); SAT-D190'ın "onay ve değişiklik" kapsamını aşar ve dayanağı EK29 soru 1'dir (SAT-D191: "rol tanımlanana kadar Genel Müdür ve Admin yapar"). Grant PR'ı bunları bilerek açar. Taslak açabilir (SAT-D194). **Finansta** yalnız onay ve onayın gerektirdiği okumayı alır; finans işlemi oluşturmaz ve banka hesabı okuması gibi genel finans okuması almaz (SAT-D197). |
-| **Finans Uzmanı** (SAT-D196) | Finans işlemini **oluşturur**: taslak kaydetme ve oluşturma için gereken okumalar (ör. banka hesabı seçimi, taslak ve tutarı). **Onaylamaz.** Finans dışında yalnız yedi temel izni alır (SAT-D191 temel; yorum, geri alınabilir — bkz. "Finans personaları"); öteki finans dışı her hücrede `—`. Critical finans adları insan kapısındadır. |
-| **Finans Müdürü** (SAT-D196) | Finans işlemini **onaylar**: onay ve onayın gerektirdiği okumalar. **Oluşturmaz**; hazırlayan ≠ onaylayan. Müdür personası olarak yedi temel izni alır (SAT-D191 temel); öteki finans dışı her hücrede `—`. Bugün kartta Critical olmayan bir finans onay adı olmadığı için finans satırlarında henüz `+` hücresi yoktur. Critical finans adları insan kapısındadır. |
+| **Finans Uzmanı** (SAT-D196) | Finans işlemini **oluşturur**: taslak kaydetme ve oluşturma için gereken okumalar (ör. banka hesabı seçimi, taslak ve tutarı). **Onaylamaz.** Finans dışında yalnız yedi temel izni alır (SAT-D191 temel; yorum, geri alınabilir — bkz. "Finans personaları"); öteki finans dışı her hücrede `—`, **tek istisna** kur okuması `settings.exchange-rates.read` (SAT-D199). Fatura kesmez (SAT-D202). Critical finans adları insan kapısındadır. |
+| **Finans Müdürü** (SAT-D196) | Finans işlemini **onaylar**: onay ve onayın gerektirdiği okumalar. **Oluşturmaz**; hazırlayan ≠ onaylayan. Müdür personası olarak yedi temel izni alır (SAT-D191 temel); öteki finans dışı her hücrede `—`, **tek istisna** kur okuması `settings.exchange-rates.read` (SAT-D199). Fatura kesmez (SAT-D202). Bugün kartta Critical olmayan bir finans onay adı olmadığı için finans satırlarında henüz `+` hücresi yoktur. Critical finans adları insan kapısındadır. |
 | *Satın Alma, Üretim, Stok, Lojistik Müdürü … (yer tutucu)* (SAT-D187, SAT-D191) | Her modülün kendi müdürü, yetkisi kendi modülünde kalır. Bu personalar **o modüllerin karar dosyalarında** tanımlanır (Alış ve Üretim şeritleri; ALS-D3 alış siparişi onayı ve ALS-D6 kur düzeltmesinin güncellenmesi Alış şeridinin işidir; URT-D2 plan onayı Üretim müdüründedir). Karta girene kadar sütunları yoktur. O modüllerde **eski Müdür'ün `+` hücreleri** ile SAT-D191'in o modülün müdürüne verdiği hücreler — tabloda "SAT-D187 ara dönem: … Müdürü" diye işaretli olanlar — **Genel Müdür + Admin**'dedir. Müdürü olmayan modülün (ör. Organizasyon) hücreleri de Genel Müdür + Admin'de kalır (SAT-D191). Kendi modülü dışındaki okumayı almaz (SAT-D191). |
 
 ## Önerilen eşleme
 
-`+` = önerilir · `—` = verilmez (gerekçe aşağıda) · `?` = bu tabloda belirsizdi. · **NS-n** = `NEEDS-SINAN`, müdür ayrımında sınıfı açık olmayan hücre (kartın sonundaki listede; EK29'dan sonra yalnız NS-11).
+`+` = önerilir · `—` = verilmez (gerekçe aşağıda) · `?` = bu tabloda belirsizdi. · **NS-n** = `NEEDS-SINAN`, müdür ayrımında sınıfı açık olmayan hücre (kartın sonundaki listede; EK29'dan sonra yalnız NS-11; EK32'den sonra NS-13 ve NS-14).
 Admin sütunu bilerek boş bırakılmadı: "tüm ERP işlevleri" cümlesi tüm kayıtlı adları kapsar,
 ama Critical adlar ayrı insan kapısına tabidir (aşağıda).
 
@@ -176,12 +189,58 @@ doldurulur; değişen her hücre karar numarasını taşır:
   almaz; Admin'in Critical/sistem yönetimi adları kapsam dışıdır (SAT-D190).
 - İlk turda `? NS-n` işaretlenen hücreler EK29 ile kapandı (yukarıdaki maddeler; kapanış tablosu kartın sonunda).
   Açık kalan tek grup **NS-11** (fatura kesme): üç müdür sütununda `?`, hiçbir şey açmaz (fail-closed).
+  *(2 Kasım 2026: NS-11 EK32 SAT-D202 ile kapandı; bkz. "EK31/EK32 eşlemesi".)*
 - **Yeni satırlar** (bu tarihte eklendi): eski Satış kararlarının tabloda satırı olmayan Müdür hücreleri
   (SAT-D1, SAT-D2/D37/D67, SAT-D4, SAT-D24/D44, SAT-D65/D69, SAT-D99, SAT-D110) ile EK24–EK28'in persona söyleyen
   kararları (SAT-D168, SAT-D169, SAT-D179, SAT-D186, SAT-D189). Bu satırlarda müdür dışı sütunlar yalnız kararın
   kendi metnindendir: kararın saydığı kişi `+`, kararın saydığı kümenin dışında kalan `—` (deny-first), kararın hiç
   değinmediği persona `?`. Bu satırlar da hiçbir şey açmaz; izin adları sahibinin teknik işidir ve atama insan
   kapısıdır.
+
+**EK31/EK32 eşlemesi (2 Kasım 2026, SAT-D198, SAT-D199, SAT-D202).** Aynı satır kuralı geçerlidir (kararın saydığı
+kişi `+`, kararın saydığı kümenin dışında kalan `—`, kararın hiç değinmediği persona `?`). "Müdür (eski)" sütunu EK28
+sonrası kararlarda `yok` yazar. Değişen ya da eklenen satırlar:
+- **Fatura kesme** (SAT-D202, NS-11 kapandı): Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin `+`; Satış Uzmanı ve Satış
+  Müdürü kalın `—` ("görür ama kesemez"); Satış Destek ve Sevkiyatçı `—` (SAT-D202 kapalı liste). Finans Uzmanı ve
+  Finans Müdürü `—` (SAT-D202; "Finans personaları" tablosu).
+- **Fatura taslağı onayı** (API-33, SAT-D88/D106; yeni satır): Muhasebe `+` (SAT-D88; hazırlayan onaylayamaz, SAT-D106);
+  Satış personaları, Satış Destek ve Sevkiyatçı `—` (SAT-D88 yalnız Muhasebe'yi sayar); Muhasebe Müdürü, Genel Müdür ve
+  Admin **`?` NS-13**.
+- **Fatura okuma** (SAT-D202 "Satış görür"; yeni, ad bekliyor): Satış Uzmanı, Satış Müdürü, Muhasebe, Muhasebe Müdürü,
+  Genel Müdür, Admin `+`; Satış Destek, Sevkiyatçı ve Finans personaları `?` (karar değinmiyor).
+- **Kur okuma** `settings.exchange-rates.read` (SAT-D199; yeni satır): saydığı sekiz persona `+`; Satış Destek ve
+  Sevkiyatçı `—` (soru 2'de "Herkes" gösterildi ve seçilmedi).
+- **Kur düzeltmesi** `settings.exchange-rates.correct` (SAT-D169/D188): eski "ad bekliyor" satırı #906'daki adla
+  güncellendi; hücreler değişmedi. Finans personaları `—` (SAT-D199 açıklaması: "Düzeltme yine yalnız Muhasebe/Muhasebe
+  Müdürü/GM/Admin").
+- **Kur içe aktarma** `settings.exchange-rates.import` (#906; yeni satır): **hiçbir kararda sahibi yok** → bütün
+  sütunlar `?` **NS-14**, Admin dahil (fail-closed).
+- **Belirlenemeyen arife/yarım günü işaretleme** (SAT-D198; yeni, ad bekliyor): Muhasebe, Muhasebe Müdürü, Genel
+  Müdür, Admin `+`; öteki personalar `—` (soru 1'in seçeneği bu dört kişiyi sayar).
+
+*Uygulama ayrıntısı (geri alınabilir) — bu güncellemenin yorumları:*
+1. **#906 adları:** üç ad `origin/claude/kur-kaydi` dalındaki `ErpPermissions` ve
+   `SettingsExchangeRatePermissionManifestV1`'den alındı; #906 bu güncelleme yazılırken main'de değildi. Ad #906'nın
+   review'unda değişirse satır adı izler, hücreler değişmez. Ad main'e gelene kadar satırlar hiçbir şey açmaz.
+2. **Fatura kesme adı:** `SATIS_HAZIRLIK_PLANI_v1.md` API-32 planlı adı `sales.invoices.write`'dır (manifest'te yok).
+   Satır bu planlı adı yalnız referans olarak yazar; adın kesinleşmesi Sales owner'ın işidir. SAT-D202'nin "kesme"si
+   taslağı hazırlama ve onaylanmış taslağı kesme adımlarıdır; onay (API-33) ayrı satırdır.
+3. **Fatura onayı (NS-13):** SAT-D88 onayı **Muhasebe** personasına verir, "Müdür"e değil. SAT-D187/D190 Genel Müdür ve
+   Admin'e "müdürlerin yaptığı" işleri verir; Muhasebe Müdürü kart gereği Muhasebe personasının yetkilerini
+   kendiliğinden almaz (SAT-D187 tablosu). Bu yüzden üç personanın API-33 onayı EK28'den **açıkça türetilemez** ve
+   `?` kalır; SAT-D202 de onaylayan kümesini genişletmez. Aynı belirsizlik SAT-D106 tolerans aşımı onayı (API-35) için
+   de geçerlidir; bu kart API-35 için ayrı satır açmaz, NS-13'ün cevabı ona da uygulanır mı diye birlikte sorulur.
+4. **Fatura okuma:** API-32 planında `GET invoices` ve `GET invoices/{id}` yazma adına (`sales.invoices.write`)
+   bağlıdır; "Satış görür ama kesemez" bu planla karşılanamaz. Ayrı bir fatura okuma adı gerekir; kart ad
+   **önermez** (Sales owner'ın işi). Kayıtlı `sales.invoices.read` (SAT-D110) API-31 "faturaya hazır sevkiyatlar"
+   okumasıdır, fatura belgesinin okuması değildir; bu satıra eşlenmez. Fatura fiyat/tutar taşıdığı için Sevkiyatçı'nın
+   `?` hücresi K4.1/SAT-D150 çerçevesinde değerlendirilir. Muhasebe Müdürü, Genel Müdür ve Admin'in okuma `+`'ı
+   SAT-D202'nin onlara verdiği kesme yetkisinden çıkar (kesen, kestiği belgeyi görür); yorumdur, geri alınabilir.
+5. **Yarım gün işaretleme:** kişileri kur düzeltmesininkiyle aynıdır, ama ayrı bir eylemdir (günü işaretler, kuru
+   değiştirmez). `settings.exchange-rates.correct`'e katılıp katılmayacağı ya da ayrı ad alacağı Settings owner'ın
+   teknik işidir; kart birleştirmeyi **önermez**.
+6. **Satış Müdürü ve kur düzeltmesi/işaretleme:** SAT-D188 soru 8 ve SAT-D198 kümesi gereği kalın `—`; kur okuması
+   (SAT-D199) bunu değiştirmez.
 
 | İzin adı | Admin | Sevkiyatçı | Satış Destek | Satış Uzmanı | Müdür (eski) | Muhasebe | Satış Müdürü | Muhasebe Müdürü | Genel Müdür |
 |---|---|---|---|---|---|---|---|---|---|
@@ -221,10 +280,15 @@ doldurulur; değişen her hücre karar numarasını taşır:
 | *vergi ayarı okuma* (SAT-D146; **ad bekliyor**) | + | ? | ? | ? | + | + | + *(SAT-D188 okuma)* | + *(SAT-D188 okuma)* | + *(SAT-D188/D190)* |
 | *vergi ayarı önerme* (SAT-D146, SAT-D163; **ad bekliyor**) | + | — | — | — | — | + | — *(SAT-D146)* | — *(SAT-D146)* | — *(SAT-D146)* |
 | *vergi ayarı önerisini onaylama* (SAT-D146; **ad bekliyor**) | + | — | — | — | + | **—** | **—** *(SAT-D188)* | + *(SAT-D146, SAT-D188)* | + *(SAT-D188/D190)* |
-| *kur düzeltmesi (gerekçeli, audit'li)* (SAT-D169; **ad bekliyor**; alıştaki karşılığı ALS-D6) | + *(SAT-D169)* | — | — | — | + *(SAT-D169 "Müdürler")* | + *(SAT-D169)* | **—** *(SAT-D188, soru 8)* | + *(SAT-D169, SAT-D188)* | + *(SAT-D188/D190)* |
+| `settings.exchange-rates.read` (SAT-D199; ad #906'da, main'de henüz kayıtlı değil) | + *(SAT-D199)* | — *(SAT-D199)* | — *(SAT-D199)* | + *(SAT-D199)* | yok *(EK28 öncesi)* | + *(SAT-D199)* | + *(SAT-D199)* | + *(SAT-D199)* | + *(SAT-D199)* |
+| `settings.exchange-rates.correct` = kur düzeltmesi (gerekçeli, audit'li) (SAT-D169; ad #906'da, main'de henüz kayıtlı değil; alıştaki karşılığı ALS-D6) | + *(SAT-D169)* | — | — | — | + *(SAT-D169 "Müdürler")* | + *(SAT-D169)* | **—** *(SAT-D188, soru 8)* | + *(SAT-D169, SAT-D188)* | + *(SAT-D188/D190)* |
+| `settings.exchange-rates.import` (#906; ad main'de henüz kayıtlı değil; **sahibi karara bağlı değil**) | ? **NS-14** | ? **NS-14** | ? **NS-14** | ? **NS-14** | yok *(EK28 öncesi)* | ? **NS-14** | ? **NS-14** | ? **NS-14** | ? **NS-14** |
+| *belirlenemeyen arife/yarım günü tam/yarım gün olarak gerekçeli işaretleme* (SAT-D198; **ad bekliyor**) | + *(SAT-D198)* | — *(SAT-D198)* | — *(SAT-D198)* | — *(SAT-D198)* | yok *(EK28 öncesi)* | + *(SAT-D198)* | **—** *(SAT-D198)* | + *(SAT-D198)* | + *(SAT-D198)* |
 | *belge tarihinden önceki sevklerde KDV istisnası onayı* (SAT-D186; **ad bekliyor**) | + *(SAT-D186)* | — | — | — | yok *(EK28 öncesi)* | — *(SAT-D186)* | — *(SAT-D186, SAT-D188)* | + *(SAT-D186, SAT-D188)* | + *(SAT-D186)* |
 | *dış fatura ↔ sipariş/irsaliye eşleştirme* (SAT-D142, SAT-D163; **ad bekliyor**) | + | — | — | — | — | + | — *(SAT-D142/D163)* | — *(SAT-D142/D163)* | — *(SAT-D142/D163)* |
-| *fatura kesme = ERP fatura taslağı hazırlama* (SAT-D142, API-32; **fatura dalgası, ad bekliyor**) | ? *(karar yok)* | ? | ? | ? | ? | + *(gelecek)* | ? **NS-11** | ? **NS-11** | ? **NS-11** |
+| *fatura kesme = ERP fatura taslağı hazırlama ve onaylanmış taslağı kesme* (SAT-D142, SAT-D202, API-32; **fatura dalgası, ad bekliyor** — planlı ad `sales.invoices.write`) | + *(SAT-D202)* | — *(SAT-D202)* | — *(SAT-D202)* | **—** *(SAT-D202 "görür ama kesemez")* | ? | + *(SAT-D142, SAT-D202)* | **—** *(SAT-D202 "görür ama kesemez")* | + *(SAT-D202)* | + *(SAT-D202)* |
+| *fatura taslağı onayı* (SAT-D88, SAT-D106, API-33; **fatura dalgası, ad bekliyor** — planlı ad `sales.invoices.approve`) | ? **NS-13** | — *(SAT-D88)* | — *(SAT-D88)* | — *(SAT-D88)* | — *(SAT-D88)* | + *(SAT-D88; hazırlayan onaylayamaz)* | — *(SAT-D88)* | ? **NS-13** | ? **NS-13** |
+| *fatura okuma* (SAT-D202 "Satış görür"; **ad bekliyor** — API-32 planında GET yazma adına bağlı) | + *(SAT-D202)* | ? | ? | + *(SAT-D202)* | yok *(EK28 öncesi)* | + *(SAT-D202)* | + *(SAT-D202)* | + *(SAT-D202)* | + *(SAT-D202)* |
 | `purchasing.orders.read` | + | + | + | + | + | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Satın Alma Müdürü)* |
 | `purchasing.orders.create` | + | — | + | + | ? | ? | — *(SAT-D191)* | — *(SAT-D191)* | + *(SAT-D191, SAT-D187 ara dönem: Satın Alma Müdürü)* |
 | `purchasing.orders.approve` | + | — | **—** | **—** | + | ? | — *(SAT-D187/D188 alış)* | — *(SAT-D187/D188 alış)* | + *(SAT-D187 ara dönem, SAT-D188; ALS-D3)* |
@@ -260,7 +324,9 @@ doldurulur; değişen her hücre karar numarasını taşır:
 **Finans personaları (2 Kasım 2026, EK30 SAT-D196/D197).** Finans Uzmanı ve Finans Müdürü yalnız finans adlarında anlam
 taşıdığı için ana tabloya sütun olarak değil, bu ek tabloyla eklendi. İkisi finans dışında **yalnız yedi temel izni**
 alır (aşağıdaki ilk yedi satır, SAT-D191 temel); ana tablonun öteki bütün finans dışı satırlarında ikisi de **`—`**
-(deny-first). Finans Uzmanı **oluşturur** (taslak kaydetme ve oluşturma
+(deny-first). **İstisna (2 Kasım 2026, EK31 SAT-D199):** kur okuması `settings.exchange-rates.read` ikisine de `+`;
+kur düzeltmesi ve yarım gün işaretlemesi `—` (SAT-D169/D188, SAT-D198), kur içe aktarma `?` NS-14, fatura kesme `—`
+(SAT-D202), fatura onayı `—` (SAT-D88), fatura okuma `?` (karar değinmiyor). Bu satırlar aşağıdaki tablonun sonundadır. Finans Uzmanı **oluşturur** (taslak kaydetme ve oluşturma
 için gereken okumalar), Finans Müdürü **onaylar** (onay ve onayın gerektirdiği okumalar); hazırlayan ≠ onaylayan
 (SAT-D196). Genel Müdür finans işlemini **onaylayabilir ama oluşturamaz**; ona yalnız onay ve onayın gerektirdiği okuma
 verilir (SAT-D197). Satış Müdürü ve Muhasebe Müdürü için K4.2 aynen kalır: genel Finance yok. Admin her iki işi de
@@ -281,7 +347,19 @@ yapabilir (SAT-D187, SAT-D196) ama **kendi kaydını onaylayamaz** (P6, kayıt k
 | `finance.manual-receipt.amount.read` | + | + *(SAT-D196: taslağın tutarı)* | — *(SAT-D196: tablodaki hiçbir onay gerektirmez)* | — *(SAT-D197)* | — *(K4.2)* |
 | `finance.bank-account.propose` (CRITICAL) | insan kapısı | — *(Critical)* | — *(Critical)* | — *(Critical)* | — *(Critical)* |
 | `finance.bank-account.approve` (CRITICAL) | insan kapısı | — *(Critical)* | — *(Critical)* | — *(Critical)* | — *(Critical)* |
+| `settings.exchange-rates.read` (SAT-D199; #906) | + *(SAT-D199)* | + *(SAT-D199)* | + *(SAT-D199)* | + *(SAT-D199)* | + *(SAT-D199)* |
+| `settings.exchange-rates.correct` (SAT-D169/D188; #906) | + *(SAT-D169)* | — *(SAT-D199 açıklaması, SAT-D188)* | — *(SAT-D199 açıklaması, SAT-D188)* | + *(SAT-D188/D190)* | — (Satış Müdürü, SAT-D188 soru 8) / + (Muhasebe Müdürü, SAT-D169/D188) |
+| `settings.exchange-rates.import` (#906) | ? **NS-14** | ? **NS-14** | ? **NS-14** | ? **NS-14** | ? **NS-14** |
+| *belirlenemeyen arife/yarım günü işaretleme* (SAT-D198; ad bekliyor) | + *(SAT-D198)* | — *(SAT-D198)* | — *(SAT-D198)* | + *(SAT-D198)* | — (Satış Müdürü) / + (Muhasebe Müdürü) *(SAT-D198)* |
+| *fatura kesme* (SAT-D202; ad bekliyor) | + *(SAT-D202)* | — *(SAT-D202)* | — *(SAT-D202)* | + *(SAT-D202)* | — (Satış Müdürü) / + (Muhasebe Müdürü) *(SAT-D202)* |
+| *fatura taslağı onayı* (SAT-D88, API-33; ad bekliyor) | ? **NS-13** | — *(SAT-D88)* | — *(SAT-D88)* | ? **NS-13** | — (Satış Müdürü, SAT-D88) / ? **NS-13** (Muhasebe Müdürü) |
+| *fatura okuma* (SAT-D202 "Satış görür"; ad bekliyor) | + *(SAT-D202)* | ? | ? | + *(SAT-D202)* | + *(SAT-D202)* |
 
+- **SAT-D199 istisnası (2 Kasım 2026):** son yedi satır EK31/EK32 eşlemesinin bu tablodaki karşılığıdır; Genel Müdür
+  ve Satış/Muhasebe Müdürü hücreleri ana tablodakinin aynısıdır. Finans personalarının kur okuması finansın SAT-D196
+  "oluşturma/onay" ayrımından değil, doğrudan SAT-D199'un sayımından gelir; bu yüzden ikisi de `+` alır. *Uygulama
+  ayrıntısı (geri alınabilir):* fatura okumasında Finans personaları için `?` yazıldı, `—` değil — SAT-D202 yalnız
+  kesmeyi kapalı liste olarak sayar, okumaya değinmez.
 - **Temel izinler (ilk yedi satır):** SAT-D191'in uygulama ayrıntısı bunları "bütün personalara verilen temel izinler"
   diye tanımlar ve müdürlere de verir; Finans Müdürü bir müdür personası olduğu için alır. Finans Uzmanı için bu bir
   **yorumdur (geri alınabilir)**: SAT-D191 bunları bütün personalara verilen izinler sayar ve bu izinler olmadan persona
@@ -338,9 +416,10 @@ yapabilir (SAT-D187, SAT-D196) ama **kendi kaydını onaylayamaz** (P6, kayıt k
     yetki almaz.~~ **Kapandı (2 Kasım 2026, SAT-D187/D188):** ikisi ayrı personadır; EK20'nin "müdür sınıfı = Müdür +
     Admin" ara okuması kalktı.
   - Dış fatura eşleştirme: Muhasebe ve Admin (SAT-D142, SAT-D163). Diğer personalar `—` (EK20 "yalnız Muhasebe",
-    SAT-D163 yalnız Admin'i ekler). Fatura kesmede yalnız Muhasebe söylendi; diğer personalar `?`.
+    SAT-D163 yalnız Admin'i ekler). ~~Fatura kesmede yalnız Muhasebe söylendi; diğer personalar `?`.
     **Admin dahil:** SAT-D163 Admin'e yalnız eşleştirmeyi ve vergi önerisini ekledi; fatura kesmede Admin için karar
-    yoktur (hücre `? (karar yok)`).
+    yoktur (hücre `? (karar yok)`).~~ **Kapandı (2 Kasım 2026, SAT-D202):** Muhasebe, Muhasebe Müdürü, Genel Müdür ve
+    Admin keser; Satış görür ama kesemez; öteki personalar kesmez. Onay (API-33) ayrı satırdır ve NS-13'te açıktır.
 - **EK24–EK28 satırları ve müdür ayrımı (2 Kasım 2026), yalnız karar metinlerinden:**
   - **Satış onayları Satış Müdürü'ne** (SAT-D188): `sales.orders.approve` (SAT-D6; SAT-D3'teki miktar revizyonunun
     yeniden onayı ve SAT-D14'teki "onaylayan persona aynıdır" da bu izindir; SAT-D174 eşik kapalı), taban fiyat
@@ -508,7 +587,9 @@ işler sahipleriyle şunlardır ve **hiçbiri bu kartın kapsamı değildir**:
    SAT-D186…D190, EK24–EK27 satırları ve EK29 SAT-D191…D194): persona/rol tanımı ve izin eşlemesi yalnız bu kartta **karar numarasıyla
    işaretli her hücre**yi açar — eski satırlardaki SAT-D164, SAT-D188 ve SAT-D191…D194 hücreleri dahil; "Müdür (eski)" sütunu, `?`
    ve **NS-n** hücreleri hiçbir şey açmaz. Ad bekleyen satırlar (risk istisnası, SAT-D146 vergi önerisi, eşleştirme,
-   SAT-D168/D169/D186/D189/D99, `sales.orders.source-plan.write`) adları manifest'e gelince eşlenir. Aynı PR
+   SAT-D168/D169/D186/D189/D99, `sales.orders.source-plan.write`; EK31/EK32'den SAT-D198 işaretleme, SAT-D202 fatura
+   kesme ve okuma, #906'nın üç `settings.exchange-rates.*` adı) adları manifest'e gelince eşlenir; NS-13 ve NS-14 hücreleri
+   hiçbir şey açmaz. Aynı PR
    `ErpPermissions` açıklamalarını kararlarla hizalar.
 
 **İnsan kapısı değişmez:** EK20/EK21, EK28 ve EK29 persona kararları Sinan'ın somut kararıdır, ama bu kart da, o kararlarla açılacak
@@ -518,16 +599,24 @@ ataması, Critical grant'ler ve production aktivasyonu her zaman insan kapısın
 
 İzin adları her durumda sahibinin teknik işidir; bu kart ad önermez ve atama yapmaz.
 
-## NEEDS-SINAN — müdür ayrımı (2 Kasım 2026, SAT-D188 son cümlesi; EK29 ile güncellendi)
+## NEEDS-SINAN — müdür ayrımı (2 Kasım 2026, SAT-D188 son cümlesi; EK29 ve EK31/EK32 ile güncellendi)
 
 SAT-D188 "bir hücre bu sınıflara açıkça girmiyorsa persona kartı PR'ında NEEDS-SINAN yazılır" diyor. İlk turda on iki hücre
-grubu `? NS-n` olarak işaretlendi; EK29 (SAT-D191…D195) on birini kapattı.
+grubu `? NS-n` olarak işaretlendi; EK29 (SAT-D191…D195) on birini, EK32 (SAT-D202) on ikincisini (NS-11) kapattı.
+EK31/EK32 güncellemesi iki yeni grup açtı (NS-13, NS-14).
 
-**Açık kalan:**
+**Açık kalan (2 Kasım 2026, EK31/EK32 güncellemesinden sonra):**
+
+| NS | Hücre | Durum |
+|---|---|---|
+| NS-13 | *fatura taslağı onayı* (SAT-D88, SAT-D106, API-33; tolerans aşımı onayı API-35 aynı soruyla) — Muhasebe Müdürü, Genel Müdür, Admin | SAT-D88 onayı yalnız **Muhasebe** personasına verir; SAT-D202 onaylayan kümesini genişletmez ve bu üç personanın onayını "EK28 SAT-D187/D190 kurallarıyla kartta değerlendirilir" diye bırakır. SAT-D187/D190 "müdürlerin yaptığı" işleri Genel Müdür ve Admin'e verir; fatura onayı bir müdür işi olarak hiçbir kararda sayılmadı ve Muhasebe Müdürü Muhasebe personasının yetkilerini kendiliğinden almaz. Açıkça türetilemediği için üç hücre `?`, **hiçbir şey açmaz** (fail-closed). Soru: Muhasebe Müdürü, Genel Müdür ve Admin fatura taslağını (ve SAT-D106 tolerans farkını) onaylayabilir mi? Hazırlayan ≠ onaylayan (SAT-D106) her durumda kayıt kuralı olarak kalır. |
+| NS-14 | `settings.exchange-rates.import` (#906) — bütün personalar | Kurun TCMB/resmî kaynaktan içe aktarılmasını kimin başlatacağı hiçbir kararda yok (SAT-D169 kurun **otomatik** geldiğini söyler; SAT-D199 okumayı, SAT-D169/D188 düzeltmeyi söyler). Bütün sütunlar `?`, Admin dahil; **hiçbir şey açmaz**. Dış kaynak bağlantısının açılması ayrıca insan kapısıdır (SAT-D198, EK31 "Sınırlar"). Soru: elle içe aktarmayı (otomatik çalışma dışında) kim başlatabilir? |
+
+**EK32 ile kapanan:**
 
 | NS | Hücre | Eski Müdür | Durum |
 |---|---|---|---|
-| NS-11 | *fatura kesme = ERP fatura taslağı hazırlama* (SAT-D142, API-32) | `?` | Fatura dalgası; yalnız Muhasebe söylendi. Hiçbir müdür, Genel Müdür ve Admin için karar yok; SAT-D191 satış/muhasebe **dışı** yetkileri dağıtır ve faturayı açıkça saymaz. Üç müdür sütunu ve Admin `?` kalır, **hiçbir şey açmaz** (fail-closed, deny-first). Soru: fatura taslağını hangi müdür hazırlar/onaylar, Admin dahil mi? |
+| NS-11 | *fatura kesme = ERP fatura taslağı hazırlama* (SAT-D142, API-32) | `?` | Fatura dalgası; yalnız Muhasebe söylendi. Hiçbir müdür, Genel Müdür ve Admin için karar yok; SAT-D191 satış/muhasebe **dışı** yetkileri dağıtır ve faturayı açıkça saymaz. Üç müdür sütunu ve Admin `?` kalır, **hiçbir şey açmaz** (fail-closed, deny-first). Soru: fatura taslağını hangi müdür hazırlar/onaylar, Admin dahil mi? **KAPANDI (SAT-D202):** Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin keser; Satış Uzmanı/Satış Müdürü görür, kesmez; Satış Destek, Sevkiyatçı, Finans personaları kesmez. Onay sorusu NS-13'e taşındı. |
 
 **EK29 ile kapananlar** (hücreler tabloda karar numarasıyla dolduruldu):
 
