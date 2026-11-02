@@ -60,6 +60,30 @@ public sealed class SalesOrderDraftSubcontractTests
         Assert.Equal((line.Id, "250", 250m, "Service"), (basisLine.LineId, basisLine.QuantityText, basisLine.Quantity, basisLine.ItemType));
     }
 
+    [Fact]
+    public void K3_review_A_P3_1_a_rejected_revision_whose_accepted_fallback_names_another_currency_has_no_basis()
+    {
+        var draft = Draft(acceptance: true);
+        draft.AddLine(draft.Version, Line(), T0);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Approve(draft.Version, "SENTETIK-approver", T0);
+        draft.RecordCustomerAcceptance(draft.Version, "SENTETIK-sales", T0);
+
+        // Rev.1 changes the currency (unpriced line), is approved and REJECTED: the accepted Rev.0 names another currency.
+        var otherCurrency = Guid.Parse("5d5d5d5d-5d5d-45d5-85d5-5d5d5d5d5d5d");
+        var money = new MoneyProfileSnapshot(Company, otherCurrency, SalesOrderDraft.MoneyOperation, Guid.Parse("acacacac-acac-4cac-8cac-acacacacacac"),
+            "1", Day, true, new DateOnly(2026, 9, 1), null, 2);
+        draft.ReviseHeader(draft.Version, new SalesHeaderRevisionInput(Party, Account, otherCurrency, money, null, null, null, TestDueTerms.PointDue30),
+            "SENTETIK-writer", "SENTETIK para birimi", T0);
+        draft.Submit(draft.Version, "SENTETIK-writer", T0);
+        draft.Approve(draft.Version, "SENTETIK-approver", T0);
+        draft.RecordCustomerRejection(draft.Version, "SENTETIK-sales", "SENTETIK müşteri reddetti", T0);
+
+        var answer = SalesSubcontractServiceOrderReadPort.Answer(draft);
+        Assert.Equal((SalesSubcontractServiceOrderOutcomeV1.Unreadable, (SalesSubcontractServiceOrderV1?)null,
+            SalesSubcontractServiceOrderUnreadableReasonsV1.NoBasis), (answer.Outcome, answer.Order, answer.Reason));
+    }
+
     private static readonly Guid PieceUnit = Guid.Parse("88888888-8888-4888-8888-888888888888");
     private static readonly Guid PieceProfile = Guid.Parse("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
 

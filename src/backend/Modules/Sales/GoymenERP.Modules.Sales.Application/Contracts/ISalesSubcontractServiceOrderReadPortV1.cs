@@ -137,6 +137,12 @@ public static class SalesSubcontractServiceOrderUnreadableReasonsV1
 
     /// <summary>The Sales store could not read the order.</summary>
     public const string StoreUnavailable = "store_unavailable";
+
+    /// <summary>
+    /// K3 review A P3-1: the customer rejected the last approved revision and the revision it last accepted names another customer or
+    /// currency than the order now does — the order continues on no revision (nothing ships, SAT-D115), so no lines are a basis.
+    /// </summary>
+    public const string NoBasis = "no_basis";
 }
 
 /// <summary>

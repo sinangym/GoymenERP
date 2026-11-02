@@ -659,7 +659,9 @@ dotnet test tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj
   acceptance `NotRequired`/`Accepted`/`Pending`/`Rejected`, lifecycle / `IsOpen`, party + company account, and the service lines
   (product, quantity text/value, order unit) of `BasisRevision` — `Basis` `CurrentRevision`, or `CustomerAcceptedRevision` when the
   customer rejected the last approved revision and the order continues on the accepted one, SAT-D115, the line port's rule) |
-  `NotSubcontractService` | `NotFound` | `Unreadable` (a company other than the server context, or a read fault). Price-free.
+  `NotSubcontractService` | `NotFound` | `Unreadable` (a company other than the server context, a read fault, or — K3 review A
+  P3-1 — `no_basis`: the customer rejected the last approved revision and the accepted one names another customer or currency, so
+  the order continues on no revision). Price-free.
   Registered by `AddSalesModule`; the Production consumer binds to it in its own lane.
 - **Migration:** `AddDraftSubcontractService`; its Down refuses with 51141 while any fason order, fason archive header or line item
   type exists (forward fix).

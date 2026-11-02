@@ -48,9 +48,25 @@ public sealed class SalesSubcontractServiceOrderReadPort(ISalesOrderDraftStore s
             return Unreadable(SalesSubcontractServiceOrderUnreadableReasonsV1.CompanyMismatch);
         }
 
+        return Answer(draft);
+    }
+
+    /// <summary>
+    /// The answer for an order found in the context company. K3 review A P3-1: when the customer rejected the last approved revision
+    /// and the accepted revision the order would continue on names another customer or currency than the header (SAT-D115's fallback
+    /// is unusable — the line port ships nothing then), no revision is a basis: the answer is <c>Unreadable</c>
+    /// (<see cref="SalesSubcontractServiceOrderUnreadableReasonsV1.NoBasis"/>), never the rejected revision's lines.
+    /// </summary>
+    internal static SalesSubcontractServiceOrderAnswerV1 Answer(SalesOrderDraft draft)
+    {
         if (!draft.IsSubcontractService)
         {
             return new SalesSubcontractServiceOrderAnswerV1(SalesSubcontractServiceOrderOutcomeV1.NotSubcontractService, null);
+        }
+
+        if (draft.CustomerAcceptedFallback is { } fallback && SalesOrderDraft.HeaderDiffersFrom(draft.Header, fallback))
+        {
+            return Unreadable(SalesSubcontractServiceOrderUnreadableReasonsV1.NoBasis);
         }
 
         try
