@@ -40,7 +40,8 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         var preview = (await previewResponse.Content.ReadFromJsonAsync<PlanPreviewViewV1>())!;
         Assert.DoesNotContain(preview.MissingParameters,
             parameter => parameter.StartsWith("lines[", StringComparison.Ordinal));
-        Assert.Contains("densityKgPerCubicMetre", preview.MissingParameters);
+        // U1-b: the density comes from the Settings parameter profile (the reviewed catalog, 7850 kg/m³); never defaulted.
+        Assert.DoesNotContain("densityKgPerCubicMetre", preview.MissingParameters);
         Assert.Contains("theoreticalGoodOutputKg", preview.MissingParameters);
 
         var save = new SavePlanRequestV1(planId, workCenter, inputs, target,

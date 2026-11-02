@@ -52,6 +52,9 @@ public sealed class ManufacturingStore(
     // plan's band widths alike — refuses a value at or above it before the save (FİNANS #342 INFO-3: a neutral name).
     private const decimal Decimal18Scale3Limit = 1_000_000_000_000_000m;
 
+    // The exclusive bound of a decimal(18,6) column (12 integer digits): a captured parameter value beyond it is refused.
+    private const decimal Decimal18Scale6Limit = 1_000_000_000_000m;
+
     private static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 
     public async Task<ManufacturingWriteOutcome> SavePlanAsync(ProductionPlan plan, ManufacturingCommandMetadata metadata,
@@ -158,8 +161,19 @@ public sealed class ManufacturingStore(
         return ManufacturingWriteOutcome.Recorded;
     }
 
+    public Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId,
+        DateTimeOffset approvedAt, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        ApprovePlanAsync(planId, expectedVersion, approvedByUserId, approvedAt, parameterSnapshot: null, metadata,
+            cancellationToken);
+
+    /// <summary>
+    /// Üretim U1-b: the approval with its captured Settings parameter profile, in ONE save: the plan's status and
+    /// version, the snapshot header and values, the audit event and the command answer. The slitting gate runs on the
+    /// Product dimensions the plan captured and the profile (<see cref="SlittingPlanParameters.FromCaptured"/>).
+    /// </summary>
     public async Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId,
-        DateTimeOffset approvedAt, ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default)
+        DateTimeOffset approvedAt, PlanParameterSnapshotV1? parameterSnapshot, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default)
     {
         RequireMetadata(metadata);
         var companyId = RequireResolvedCompany();
@@ -168,17 +182,54 @@ public sealed class ManufacturingStore(
         var plan = await RestorePlanAsync(row, cancellationToken);
         var before = PlanAudit(plan);
         var versionBefore = plan.Version;
+        if (parameterSnapshot is not null && parameterSnapshot.Values.Any(value =>
+                value.Number is { } number && (number >= Decimal18Scale6Limit || number <= -Decimal18Scale6Limit
+                    || decimal.Round(number, 6) != number)))
+        {
+            throw Refused(ManufacturingStoreCodes.ValueDoesNotFit, "Parametre değeri kayıt sütununa sığmıyor.");
+        }
 
-        // The domain decides: the version fence first, then "only a draft is approved".
-        plan.Approve(expectedVersion, approvedByUserId, approvedAt);
+        // The domain decides: the version fence first, then "only a draft is approved", then the slitting gate.
+        plan.Approve(expectedVersion, approvedByUserId, approvedAt,
+            SlittingPlanParameters.FromCaptured(plan.Inputs, parameterSnapshot), parameterSnapshot);
 
         row.Status = (int)plan.Status;
         row.ApprovedByUserId = plan.ApprovedByUserId;
         row.ApprovedAtUtc = plan.ApprovedAtUtc;
         row.Version = plan.Version;
         row.UpdatedAtUtc = timeProvider.GetUtcNow();
+        if (parameterSnapshot is not null)
+        {
+            dbContext.PlanParameterSnapshots.Add(new PlanParameterSnapshotRow
+            {
+                CompanyId = companyId,
+                PlanId = plan.Id,
+                ProfileId = parameterSnapshot.ProfileId,
+                ProfileVersion = parameterSnapshot.ProfileVersion,
+                Source = parameterSnapshot.Source,
+                Process = (int)parameterSnapshot.Process,
+                ProfileWorkCenterId = parameterSnapshot.WorkCenterId,
+                EffectiveFrom = parameterSnapshot.EffectiveFrom,
+                EffectiveThrough = parameterSnapshot.EffectiveThrough,
+                SelectedForDate = parameterSnapshot.SelectedForDate,
+                CapturedAtUtc = plan.ApprovedAtUtc!.Value,
+            });
+            foreach (var value in parameterSnapshot.Values)
+            {
+                dbContext.PlanParameterSnapshotValues.Add(new PlanParameterSnapshotValueRow
+                {
+                    CompanyId = companyId,
+                    PlanId = plan.Id,
+                    ParameterKey = value.Key,
+                    Unit = value.Unit,
+                    NumericValue = value.Number,
+                    ChoiceValue = value.Choice,
+                });
+            }
+        }
+
         Audit(metadata, companyId, PlanEntityType, plan.Id, "manufacturing.plan.approved.v1", "Approve",
-            versionBefore, plan.Version, before, PlanAudit(plan), "Üretim planı onayı");
+            versionBefore, plan.Version, before, ApprovalAudit(plan, parameterSnapshot), "Üretim planı onayı");
         Complete(metadata, companyId, plan);
         await SaveAsync(cancellationToken);
         return plan;
@@ -671,6 +722,11 @@ public sealed class ManufacturingStore(
             ApprovalPolicyId = exceptionApproval?.PolicyId,
             ApprovalPolicyVersion = exceptionApproval?.PolicyVersion,
             ApprovedAtUtc = exceptionApproval?.ApprovedAtUtc,
+            PolicySource = policy.Source,
+            PolicyWorkCenterId = policy.WorkCenterId,
+            MassBalanceDifferenceTolerancePercent = policy.MassBalanceDifferenceTolerancePercent is { } massBalance
+                ? Canonical(massBalance)
+                : null,
         });
 
         row.Status = (int)order.Status;
@@ -689,6 +745,11 @@ public sealed class ManufacturingStore(
                     policy.PolicyVersion,
                     process = policy.Process.ToString(),
                     maximumFirePercent = Canonical(policy.MaximumFirePercent),
+                    massBalanceDifferenceTolerancePercent = policy.MassBalanceDifferenceTolerancePercent is { } percent
+                        ? Canonical(percent)
+                        : null,
+                    source = policy.Source,
+                    workCenterId = policy.WorkCenterId,
                     policy.IsActive,
                     policy.EffectiveFrom,
                     policy.EffectiveThrough,
@@ -947,6 +1008,7 @@ public sealed class ManufacturingStore(
             .OrderBy(line => line.Ordinal)
             .ToListAsync(cancellationToken);
         var (headers, revisionInputs, revisionCutLines) = await ReadRevisionsAsync(row, cancellationToken);
+        var parameterSnapshot = await RestoreParameterSnapshotAsync(row, cancellationToken);
         // MFG-PLAN-EDIT: the revisions are replayed through the domain's own rule, in their order, before the approval.
         return ProductionPlan.Restore(row.Id, row.CompanyId, row.WorkCenterId, (ManufacturingProcess)row.Process,
             inputs.Select(input => new PlannedInput(input.ParentRollId, new Kilograms(input.PlannedKg),
@@ -959,7 +1021,40 @@ public sealed class ManufacturingStore(
                         input.ExpectedLabelVersion, RestoreTechnicalSnapshot(input), RestoreCommercialContext(input)))],
                 Target(header.TargetBasis, header.TargetKg),
                 CutRevisionSpec(revisionCutLines.Where(line => line.RevisionNo == header.RevisionNo)))),
-            CutSpec(cutLines));
+            CutSpec(cutLines),
+            parameterSnapshot);
+    }
+
+    /// <summary>
+    /// Üretim U1-b: the parameter profile captured at the plan's approval, or null. A stored snapshot the domain refuses
+    /// (no values, a malformed version, a value of neither shape) is refused, never repaired.
+    /// </summary>
+    private async Task<PlanParameterSnapshotV1?> RestoreParameterSnapshotAsync(PlanRow row,
+        CancellationToken cancellationToken)
+    {
+        var header = await dbContext.PlanParameterSnapshots.AsNoTracking()
+            .SingleOrDefaultAsync(snapshot => snapshot.PlanId == row.Id, cancellationToken);
+        if (header is null)
+        {
+            return null;
+        }
+
+        var values = await dbContext.PlanParameterSnapshotValues.AsNoTracking()
+            .Where(value => value.PlanId == row.Id)
+            .ToListAsync(cancellationToken);
+        try
+        {
+            return new PlanParameterSnapshotV1(header.ProfileId, header.ProfileVersion, header.Source,
+                (ManufacturingProcess)header.Process, header.ProfileWorkCenterId, header.EffectiveFrom,
+                header.EffectiveThrough, header.SelectedForDate,
+                values.Select(value => new PlanParameterValueV1(value.ParameterKey, value.Unit, value.NumericValue,
+                    value.ChoiceValue)));
+        }
+        catch (ArgumentException)
+        {
+            throw new ManufacturingRuleException(ManufacturingRuleCodes.StoredRecordInvalid,
+                "Kayıtlı plan parametre snapshot'ı geçersiz.");
+        }
     }
 
     /// <summary>
@@ -1080,15 +1175,28 @@ public sealed class ManufacturingStore(
                 throw new ArgumentException("Kayıtlı tolerans yüzdesi decimal değildir.");
             }
 
+            decimal? massBalance = null;
+            if (row.MassBalanceDifferenceTolerancePercent is { } massBalanceText)
+            {
+                if (!decimal.TryParse(massBalanceText, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture,
+                        out var parsed))
+                {
+                    throw new ArgumentException("Kayıtlı kütle dengesi yüzdesi decimal değildir.");
+                }
+
+                massBalance = parsed;
+            }
+
             var policy = new ClosureTolerancePolicySnapshotV1(
                 row.CompanyId, row.PolicyId, row.PolicyVersion, (ManufacturingProcess)row.Process,
-                maximumFirePercent, row.IsActive, row.EffectiveFrom, row.EffectiveThrough, row.SelectedForDate);
+                maximumFirePercent, row.IsActive, row.EffectiveFrom, row.EffectiveThrough, row.SelectedForDate,
+                massBalance, row.PolicySource ?? ClosureTolerancePolicySnapshotV1.SettingsSource, row.PolicyWorkCenterId);
             var approval = row.ApprovedByUserId is not Guid approvedBy
                 ? null
                 : ClosureExceptionApprovalV1.Create(
                     row.CompanyId, row.OrderId, approvedBy, row.ApprovalReason!,
                     row.ApprovalOrderVersion ?? 0, row.ApprovalPolicyId ?? Guid.Empty,
-                    row.ApprovalPolicyVersion ?? 0, row.ApprovedAtUtc ?? default);
+                    row.ApprovalPolicyVersion ?? -1, row.ApprovedAtUtc ?? default);
             return (policy, approval);
         }
         catch (ArgumentException)
@@ -1380,6 +1488,28 @@ public sealed class ManufacturingStore(
 
     private static string Hash(string canonical) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+
+    /// <summary>
+    /// The approval's after-state: the plan audit as before and, when a parameter profile was captured (U1-b), the
+    /// profile identity, source, window and values beside it.
+    /// </summary>
+    private static string ApprovalAudit(ProductionPlan plan, PlanParameterSnapshotV1? snapshot) => snapshot is null
+        ? PlanAudit(plan)
+        : JsonSerializer.Serialize(new
+        {
+            plan = JsonSerializer.Deserialize<JsonElement>(PlanAudit(plan)),
+            parameterProfile = new
+            {
+                snapshot.ProfileId,
+                snapshot.ProfileVersion,
+                snapshot.Source,
+                snapshot.WorkCenterId,
+                snapshot.EffectiveFrom,
+                snapshot.EffectiveThrough,
+                snapshot.SelectedForDate,
+                values = snapshot.Values.Select(value => new { value.Key, value.Unit, value.Number, value.Choice }),
+            },
+        }, Json);
 
     private static string PlanAudit(ProductionPlan plan) => plan.Spec is { } spec
         // MFG-6: a plan with a slitting spec carries it in its audit; a plan without one keeps the MFG-5 shape.

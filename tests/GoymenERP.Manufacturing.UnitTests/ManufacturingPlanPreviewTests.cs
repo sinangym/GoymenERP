@@ -304,6 +304,84 @@ public sealed class ManufacturingPlanPreviewTests
         Assert.NotEmpty(view.MissingParameters);
     }
 
+    /// <summary>
+    /// Üretim U1-b (URT-D9): the preview and the save read the Settings parameter profile of the work center in force
+    /// today; its values reach the engines by their own names, the rest stays named; a refused Settings read fails closed.
+    /// </summary>
+    [Fact]
+    public async Task Preview_and_save_use_the_parameter_profile_of_the_line_and_fail_closed_on_its_refusals()
+    {
+        var port = new ParameterPort();
+        var fixture = new Fixture(parameters: port);
+        fixture.WorkCenters.Kind = "Paint";
+        var inputs = new[] { new PlannedInputRequestV1(RollA, "1000", "7") };
+
+        var preview = await fixture.Service.PreviewPlanAsync(new PlanPreviewRequestV1(WorkCenter, inputs, null),
+            Permission, CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Ok, preview.Status);
+        Assert.Equal(("Paint", WorkCenter), (port.Process, port.WorkCenter));
+        Assert.DoesNotContain("filmMicrons", preview.Resource!.MissingParameters);
+        Assert.DoesNotContain("lineSpeedMetresPerMinute", preview.Resource.MissingParameters);
+        Assert.Contains("packageCount", preview.Resource.MissingParameters);
+
+        var saved = await fixture.Service.SavePlanAsync(new SavePlanRequestV1(Guid.NewGuid(), WorkCenter, inputs, null),
+            "u1b-save", Permission, CancellationToken.None);
+        Assert.Equal(ManufacturingApiStatus.Created, saved.Status);
+        Assert.Equal(preview.Resource.MissingParameters, saved.Resource!.Calculation!.MissingParameters);
+        // A draft has no captured snapshot; only the approval captures one.
+        Assert.Null(saved.Resource.ParameterSnapshot);
+
+        port.Refusal = ManufacturingParameterProfileCodesV1.ProfileNotFound;
+        var unknown = await fixture.Service.PreviewPlanAsync(new PlanPreviewRequestV1(WorkCenter, inputs, null),
+            Permission, CancellationToken.None);
+        Assert.Contains("filmMicrons", unknown.Resource!.MissingParameters);
+
+        port.Refusal = "settings_access_denied";
+        Assert.Equal(ManufacturingApiStatus.Denied, (await fixture.Service.PreviewPlanAsync(
+            new PlanPreviewRequestV1(WorkCenter, inputs, null), Permission, CancellationToken.None)).Status);
+        port.Refusal = "settings_profile_invalid";
+        Assert.Equal((ManufacturingApiStatus.Unavailable, "settings_profile_invalid"), (await fixture.Service.PreviewPlanAsync(
+            new PlanPreviewRequestV1(WorkCenter, inputs, null), Permission, CancellationToken.None)) is var invalid
+                ? (invalid.Status, invalid.Code)
+                : default);
+
+        // An answer for another line is not this plan's profile.
+        port.Refusal = null;
+        port.AnswerWorkCenter = Guid.NewGuid();
+        Assert.Equal(ManufacturingApiStatus.Unavailable, (await fixture.Service.PreviewPlanAsync(
+            new PlanPreviewRequestV1(WorkCenter, inputs, null), Permission, CancellationToken.None)).Status);
+    }
+
+    private sealed class ParameterPort : ISettingsManufacturingParameterProviderV1
+    {
+        public string? Process { get; private set; }
+        public Guid? WorkCenter { get; private set; }
+        public string? Refusal { get; set; }
+        public Guid? AnswerWorkCenter { get; set; }
+
+        public Task<ManufacturingParameterProfileSnapshotV1> GetManufacturingParametersAsync(string process,
+            Guid? workCenterId, DateOnly effectiveOn, CancellationToken cancellationToken = default)
+        {
+            Process = process;
+            WorkCenter = workCenterId;
+            if (Refusal is { } code)
+            {
+                throw new SettingsPrerequisiteException(code);
+            }
+
+            return Task.FromResult(new ManufacturingParameterProfileSnapshotV1(Company, process, AnswerWorkCenter,
+                Guid.Parse("e1000000-0000-0000-0000-00000000000e"), "0", ManufacturingProfileSourcesV1.Catalog,
+                new DateOnly(2026, 9, 1), null,
+                [
+                    new ManufacturingParameterValueV1("lineSpeedMetresPerMinute", "m/min", 20m, null),
+                    new ManufacturingParameterValueV1("filmMicrons", "um", 80m, null),
+                    new ManufacturingParameterValueV1("solidsRatio", "ratio", 0.55m, null),
+                    new ManufacturingParameterValueV1("scrapFactor", "factor", 1.10m, null),
+                    new ManufacturingParameterValueV1("simultaneousProfiles", "count", 3m, null),
+                ]));
+        }
+    }
+
     [Fact]
     public async Task A_slitting_spec_is_shared_by_preview_save_and_read_without_defaulting_external_parameters()
     {
@@ -659,7 +737,7 @@ public sealed class ManufacturingPlanPreviewTests
 
     private sealed class Fixture
     {
-        public Fixture(bool withWorkCenters = true)
+        public Fixture(bool withWorkCenters = true, ISettingsManufacturingParameterProviderV1? parameters = null)
         {
             var company = new CompanyContext();
             company.Set(Company);
@@ -672,7 +750,7 @@ public sealed class ManufacturingPlanPreviewTests
             ProductSnapshots = new ProductSnapshotPort(Calls);
             Service = new ManufacturingCommandService(Store, Store, Store, new ManufacturingMassVerifier(new SettingsPort(Calls)),
                 Authority, company, User, correlation, new FixedTime(), ParentRolls, withWorkCenters ? WorkCenters : null,
-                productTechnicalSnapshots: ProductSnapshots);
+                productTechnicalSnapshots: ProductSnapshots, manufacturingParameters: parameters);
             Store.Calls = Calls;
         }
 

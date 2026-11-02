@@ -7,10 +7,14 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
-public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> options, ICompanyContext companyContext)
+public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "settings";
+
+    /// <summary>The server-resolved company, read by the query filters configured in the other partial files.</summary>
+    private ICompanyContext CompanyContext => companyContext;
+
     internal DbSet<ManufacturingTolerancePolicyRow> ManufacturingTolerancePolicies =>
         Set<ManufacturingTolerancePolicyRow>();
 
@@ -83,6 +87,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
         policy.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
 
         ConfigureSalesDiscountLimits(modelBuilder);
+        ConfigureManufacturingProfiles(modelBuilder);
         ConfigureTaxMaster(modelBuilder);
         ConfigureTaxBuyerSituations(modelBuilder);
 
@@ -512,8 +517,8 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
     }
 
     /// <summary>
-    /// Fail-closed write fence: Manufacturing tolerance policies stay read-only here (their approved command workflow is
-    /// separate); nothing is ever deleted; limit records, their withdrawals, binding group rows, tax rate records, code list
+    /// Fail-closed write fence: a Manufacturing tolerance policy is only inserted by its approved command workflow (the
+    /// lifecycle publication, Üretim U1-a) and never changed; nothing is ever deleted; limit records, their withdrawals, binding group rows, tax rate records, code list
     /// versions and their withdrawals are immutable once written; every Settings
     /// row written belongs to this context's resolved company (a multi-company binding write uses one context per company).
     /// </summary>
@@ -526,11 +531,16 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 continue;
             }
 
-            if (entry.Entity is ManufacturingTolerancePolicyRow)
+            // Üretim U1-a: the registry row is written only by its approved command workflow — inserted in the same save
+            // as its lifecycle version moving Approved → Published (ApplyManufacturingProfileWriteGuard).
+            if (entry.Entity is ManufacturingTolerancePolicyRow policy && !IsToleranceRegistryPublication(entry, policy)
+                && !IsToleranceRegistrySupersession(entry, policy))
             {
                 throw new InvalidOperationException(
                     "Manufacturing tolerance policies require the separately approved Settings command workflow.");
             }
+
+            ApplyManufacturingProfileWriteGuard(entry);
 
             if (entry.State == EntityState.Deleted)
             {
@@ -574,6 +584,10 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 TaxBuyerSituationListVersionRow row => row.CompanyId,
                 TaxBuyerSituationEntryRow row => row.CompanyId,
                 TaxBuyerSituationListWithdrawalRow row => row.CompanyId,
+                ManufacturingTolerancePolicyRow row => row.CompanyId,
+                ManufacturingParameterProfileRow row => row.CompanyId,
+                ManufacturingParameterProfileValueRow row => row.CompanyId,
+                ManufacturingToleranceProfileVersionRow row => row.CompanyId,
                 _ => (Guid?)null,
             };
             if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))

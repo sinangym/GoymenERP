@@ -36,6 +36,45 @@ public sealed record SlittingPlanParameters(
 {
     /// <summary>Nothing is known: the state until the Inventory, Product and registry sources exist.</summary>
     public static SlittingPlanParameters Unknown { get; } = new();
+
+    /// <summary>
+    /// Üretim U1-b: the approval gate's outside inputs from what the plan captured — each roll's Product thickness and
+    /// width (the parent width) and the Settings parameter profile's density, line speed, coil diameters and metre
+    /// tolerance (the engines' own key names). <paramref name="labelUsable"/> is Inventory's answer per roll when the caller
+    /// has one. The net usable width has no source yet (entered on the plan, plan v1 §8 — not built): it stays unknown and
+    /// the gate names it. Nothing is defaulted.
+    /// </summary>
+    public static SlittingPlanParameters FromCaptured(IEnumerable<PlannedInput> inputs,
+        PlanParameterSnapshotV1? parameterProfile, IReadOnlyDictionary<Guid, bool>? labelUsable = null)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        var numbers = parameterProfile?.Numbers() ?? new Dictionary<string, decimal>(StringComparer.Ordinal);
+        decimal? Number(string key) => numbers.TryGetValue(key, out var value) ? value : null;
+        var density = Number(DensityKey);
+        var rolls = new Dictionary<Guid, SlittingRollParameters>();
+        foreach (var input in inputs)
+        {
+            ArgumentNullException.ThrowIfNull(input);
+            rolls[input.ParentRollId] = new SlittingRollParameters(
+                LabelUsable: labelUsable is { } labels && labels.TryGetValue(input.ParentRollId, out var usable)
+                    ? usable
+                    : null,
+                NetUsableWidthMm: null,
+                ParentWidthMm: input.TechnicalSnapshot?.WidthMm,
+                ThicknessMm: input.TechnicalSnapshot?.ThicknessMm,
+                DensityKgPerCubicMetre: density);
+        }
+
+        return new SlittingPlanParameters(rolls, Number(LineSpeedKey), Number(InnerDiameterKey),
+            Number(MaximumOuterDiameterKey), Number(ToleranceMetresKey));
+    }
+
+    // The engines' parameter names, which the Settings keys equal (ManufacturingParameterKeysV1).
+    private const string DensityKey = "densityKgPerCubicMetre";
+    private const string LineSpeedKey = "lineSpeedMetresPerMinute";
+    private const string InnerDiameterKey = "innerDiameterMm";
+    private const string MaximumOuterDiameterKey = "maximumOuterDiameterMm";
+    private const string ToleranceMetresKey = "toleranceMetres";
 }
 
 /// <summary>

@@ -87,6 +87,12 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
 
     internal DbSet<PlanRevisionCutLineRow> PlanRevisionCutLines => Set<PlanRevisionCutLineRow>();
 
+    /// <summary>Üretim U1-b: the parameter profile captured at plan approval (append-only).</summary>
+    internal DbSet<PlanParameterSnapshotRow> PlanParameterSnapshots => Set<PlanParameterSnapshotRow>();
+
+    /// <summary>Üretim U1-b: the captured parameter values (append-only).</summary>
+    internal DbSet<PlanParameterSnapshotValueRow> PlanParameterSnapshotValues => Set<PlanParameterSnapshotValueRow>();
+
     internal DbSet<OrderRow> Orders => Set<OrderRow>();
 
     internal DbSet<OrderInputRow> OrderInputs => Set<OrderInputRow>();
@@ -110,6 +116,7 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         ConfigurePlanSlitLines(modelBuilder);
         ConfigurePlanCutLines(modelBuilder);
         ConfigurePlanRevisions(modelBuilder);
+        ConfigurePlanParameterSnapshots(modelBuilder);
         ConfigureOrders(modelBuilder);
         ConfigureOrderInputs(modelBuilder);
         ConfigureOrderClosureDecisions(modelBuilder);
@@ -384,6 +391,59 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         entity.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// Üretim U1-b (DEC-PRDCT-008): one captured parameter profile per approved plan and its values, bound by (company,
+    /// plan) like the plan's inputs; append-only (the write guard admits no modification).
+    /// </summary>
+    private void ConfigurePlanParameterSnapshots(ModelBuilder modelBuilder)
+    {
+        var snapshot = modelBuilder.Entity<PlanParameterSnapshotRow>();
+        snapshot.ToTable("PlanParameterSnapshots", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanParameterSnapshots_Identity",
+                "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [PlanId] <> '00000000-0000-0000-0000-000000000000' "
+                + "AND [ProfileId] <> '00000000-0000-0000-0000-000000000000' AND [Process] IN (1, 2, 3, 4, 5) "
+                + "AND ([ProfileWorkCenterId] IS NULL OR [ProfileWorkCenterId] <> '00000000-0000-0000-0000-000000000000')");
+            table.HasCheckConstraint("CK_PlanParameterSnapshots_Source",
+                "([Source] = 'Catalog' AND [ProfileVersion] = '0') "
+                + "OR ([Source] = 'Settings' AND LEN([ProfileVersion]) > 0 AND [ProfileVersion] NOT LIKE '%[^0-9]%' "
+                + "AND [ProfileVersion] LIKE '%[1-9]%')");
+            table.HasCheckConstraint("CK_PlanParameterSnapshots_Window",
+                "([EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]) AND [SelectedForDate] >= [EffectiveFrom] "
+                + "AND ([EffectiveThrough] IS NULL OR [SelectedForDate] <= [EffectiveThrough])");
+        });
+        snapshot.HasKey(x => new { x.CompanyId, x.PlanId });
+        snapshot.Property(x => x.ProfileVersion).HasMaxLength(PlanParameterSnapshotV1.MaximumVersionLength).IsUnicode(false);
+        snapshot.Property(x => x.Source).HasMaxLength(PlanParameterSnapshotV1.MaximumSourceLength).IsUnicode(false);
+        snapshot.HasOne<PlanRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.Id })
+            .OnDelete(DeleteBehavior.Restrict);
+        snapshot.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+
+        var value = modelBuilder.Entity<PlanParameterSnapshotValueRow>();
+        value.ToTable("PlanParameterSnapshotValues", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_PlanParameterSnapshotValues_Key",
+                "LEN([ParameterKey]) BETWEEN 1 AND 64 AND [ParameterKey] NOT LIKE '%[^A-Za-z0-9]%'");
+            table.HasCheckConstraint("CK_PlanParameterSnapshotValues_Unit", "LEN(LTRIM(RTRIM([Unit]))) > 0");
+            table.HasCheckConstraint("CK_PlanParameterSnapshotValues_Shape",
+                "([NumericValue] IS NOT NULL AND [ChoiceValue] IS NULL) "
+                + "OR ([NumericValue] IS NULL AND [ChoiceValue] IS NOT NULL AND LEN([ChoiceValue]) > 0)");
+        });
+        value.HasKey(x => new { x.CompanyId, x.PlanId, x.ParameterKey });
+        value.Property(x => x.ParameterKey).HasMaxLength(PlanParameterValueV1.MaximumKeyLength).IsUnicode(false)
+            .UseCollation(IdentityCollation);
+        value.Property(x => x.Unit).HasMaxLength(PlanParameterValueV1.MaximumUnitLength).IsUnicode(false);
+        value.Property(x => x.NumericValue).HasPrecision(18, 6);
+        value.Property(x => x.ChoiceValue).HasMaxLength(PlanParameterValueV1.MaximumChoiceLength).IsUnicode(false);
+        value.HasOne<PlanParameterSnapshotRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.PlanId })
+            .HasPrincipalKey(x => new { x.CompanyId, x.PlanId })
+            .OnDelete(DeleteBehavior.Restrict);
+        value.HasQueryFilter(x => x.CompanyId == companyContext.CompanyId);
+    }
+
     private void ConfigureOrderClosureDecisions(ModelBuilder modelBuilder)
     {
         var entity = modelBuilder.Entity<OrderClosureDecisionRow>();
@@ -393,8 +453,16 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
                 "[CompanyId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [OrderId] <> '00000000-0000-0000-0000-000000000000' "
                 + "AND [PolicyId] <> '00000000-0000-0000-0000-000000000000' "
-                + "AND [OrderVersion] >= 1 AND [PolicyVersion] >= 1 AND [Process] IN (1, 2, 3, 4, 5) "
+                + "AND [OrderVersion] >= 1 AND [PolicyVersion] >= 0 AND [Process] IN (1, 2, 3, 4, 5) "
                 + "AND LEN([MaximumFirePercent]) > 0 AND [IsActive] = 1");
+            // U1-b (URT-D23): the catalog is version 0, a published Settings version ≥ 1; a decision stored before U1-b has
+            // no source and is a published version.
+            table.HasCheckConstraint("CK_OrderClosureDecisions_Source",
+                "([PolicySource] = 'Catalog' AND [PolicyVersion] = 0) "
+                + "OR (([PolicySource] IS NULL OR [PolicySource] = 'Settings') AND [PolicyVersion] >= 1)");
+            table.HasCheckConstraint("CK_OrderClosureDecisions_Scope",
+                "([PolicyWorkCenterId] IS NULL OR [PolicyWorkCenterId] <> '00000000-0000-0000-0000-000000000000') "
+                + "AND ([MassBalanceDifferenceTolerancePercent] IS NULL OR LEN([MassBalanceDifferenceTolerancePercent]) > 0)");
             table.HasCheckConstraint("CK_OrderClosureDecisions_Window",
                 "([EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]) "
                 + "AND [SelectedForDate] >= [EffectiveFrom] "
@@ -411,6 +479,8 @@ public sealed class ManufacturingDbContext(DbContextOptions<ManufacturingDbConte
         });
         entity.HasKey(x => new { x.CompanyId, x.OrderId });
         entity.Property(x => x.MaximumFirePercent).HasMaxLength(64).IsUnicode(false).IsRequired();
+        entity.Property(x => x.PolicySource).HasMaxLength(16).IsUnicode(false);
+        entity.Property(x => x.MassBalanceDifferenceTolerancePercent).HasMaxLength(64).IsUnicode(false);
         entity.Property(x => x.ApprovalReason)
             .HasMaxLength(ClosureExceptionApprovalV1.ReasonMaximumLength);
         OrderOf(entity);

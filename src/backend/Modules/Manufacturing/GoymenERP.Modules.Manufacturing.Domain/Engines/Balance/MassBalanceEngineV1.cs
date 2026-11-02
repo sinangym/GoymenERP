@@ -27,6 +27,15 @@ public sealed record ScrapPercentInputV1(decimal? FireKg, decimal? RawMaterialKg
 /// <summary>BAL-004, unrounded.</summary>
 public sealed record ScrapPercentV1(string FormulaVersion, decimal FirePercent);
 
+/// <summary>
+/// URT-D6 inputs: the signed BAL-003 difference and the actual input mass it is measured against (for a roll of an order:
+/// the net issued mass, issued − returned). Both stated by the caller.
+/// </summary>
+public sealed record MassDifferencePercentInputV1(decimal? DifferenceKg, decimal? ActualInputKg);
+
+/// <summary>URT-D6, unrounded and signed (positive = mass nobody accounted for).</summary>
+public sealed record MassDifferencePercentV1(string FormulaVersion, decimal DifferencePercent);
+
 /// <summary>BAL-006 inputs: the actual mass and the actual piece count, both measured facts.</summary>
 public sealed record ActualUnitMassInputV1(decimal? ActualKg, int? ActualCount);
 
@@ -45,9 +54,12 @@ public sealed record ActualUnitMassV1(string FormulaVersion, decimal ActualUnitK
 /// <c>FireKg × 100 / HammaddeKg</c> (one division). Both masses are the caller's: this engine does not decide which
 /// output classes are "fire" or whether the raw material is the issued or the net issued mass.</item>
 /// <item><b>BAL-006</b> (<see cref="ActualUnitMass"/>): <c>GerçekKg / GerçekAdet</c>.</item>
+/// <item><b>URT-D6 difference percent</b> (<see cref="DifferencePercent"/>, Üretim U1-b): <c>Kütle Farkı / Fiilî Girdi × 100</c>,
+/// evaluated as <c>FarkKg × 100 / GirdiKg</c> (one division), signed. The ± tolerance it is compared with is the caller's
+/// (the Settings profile, never a constant here); the difference itself is never reclassified.</item>
 /// <item><b>Not in version 1:</b> BAL-005 (the distribution of an empty actual quantity needs the §28.1 rounding
-/// stage, not decided), tolerance (Ö7: no approved profile) and BAL-001 / BAL-002 (the donor's reference
-/// behaviour only).</item>
+/// stage, not decided) and BAL-001 / BAL-002 (the donor's reference behaviour only). The tolerance values are Settings'
+/// (URT-D6/D7), applied by the order close, not by this engine.</item>
 /// </list>
 /// </summary>
 public static class MassBalanceEngineV1
@@ -89,6 +101,21 @@ public static class MassBalanceEngineV1
         }
 
         return EngineResult<ScrapPercentV1>.Computed(new ScrapPercentV1(FormulaVersion, fire * Percent / rawMaterial));
+    }
+
+    public static EngineResult<MassDifferencePercentV1> DifferencePercent(MassDifferencePercentInputV1 input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var inputs = new EngineInputs();
+        var difference = inputs.SignedMeasure(input.DifferenceKg, "differenceKg");
+        var actualInput = inputs.Measure(input.ActualInputKg, "actualInputKg");
+        if (!inputs.IsComplete)
+        {
+            return inputs.Incomplete<MassDifferencePercentV1>();
+        }
+
+        return EngineResult<MassDifferencePercentV1>.Computed(
+            new MassDifferencePercentV1(FormulaVersion, difference * Percent / actualInput));
     }
 
     public static EngineResult<ActualUnitMassV1> ActualUnitMass(ActualUnitMassInputV1 input)
