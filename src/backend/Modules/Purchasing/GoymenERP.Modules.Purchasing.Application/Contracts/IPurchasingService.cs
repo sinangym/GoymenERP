@@ -17,6 +17,14 @@ public interface IPurchasingService
     Task<PurchaseRequestResponse> SubmitRequestAsync(Guid requestId, SubmitPurchaseRequestRequest request, PurchasingCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 
+    /// <summary>A1-1 (ALS-D2): Submitted → Approved under <c>purchasing.requests.approve</c>; the approver is neither preparer nor submitter.</summary>
+    Task<PurchaseRequestResponse> ApproveRequestAsync(Guid requestId, ApprovePurchaseRequestRequest request, PurchasingCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>A1-1 (No.161 §1): Submitted | Approved → Rejected with a reason; refused while an APPROVED order is bound.</summary>
+    Task<PurchaseRequestResponse> RejectRequestAsync(Guid requestId, RejectPurchaseRequestRequest request, PurchasingCommandMetadata metadata,
+        CancellationToken cancellationToken = default);
+
     Task<PurchaseRequestDetailView> GetRequestDetailAsync(Guid requestId, CancellationToken cancellationToken = default);
 
     Task<PurchaseRequestListResponse> GetRequestListAsync(PurchaseRequestListQuery query, CancellationToken cancellationToken = default);

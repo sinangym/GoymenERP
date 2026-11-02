@@ -128,7 +128,8 @@ export interface CreatePurchaseOrderRequest {
   readonly lines: readonly CreatePurchaseOrderLineRequest[]
 }
 
-export type PurchaseRequestStatus = 'Draft' | 'Submitted'
+/** A1-1: Approved and Rejected are the purchase manager's decisions (ALS-D2, No.161 §1). */
+export type PurchaseRequestStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected'
 
 export interface PurchaseRequestSummary {
   readonly id: string
@@ -150,9 +151,20 @@ export interface PurchaseRequestLine {
   readonly quantity: string
 }
 
+/** A1-1: one decision on a request — who, when and (a rejection only) why. */
+export interface PurchaseRequestDecision {
+  readonly decidedBy: string
+  readonly decidedAtUtc: string
+  readonly reason: string | null
+}
+
 export interface PurchaseRequestDetail {
   readonly request: PurchaseRequestSummary
   readonly lines: readonly PurchaseRequestLine[]
+  /** Null until approved; stays after a later rejection. A body without the field (before A1-1) reads as null. */
+  readonly approval?: PurchaseRequestDecision | null
+  /** Null until rejected; carries the reason. */
+  readonly rejection?: PurchaseRequestDecision | null
 }
 
 export interface PurchaseRequestList {
@@ -217,7 +229,7 @@ function status(value: unknown): value is PurchaseOrderStatus {
 }
 
 function requestStatus(value: unknown): value is PurchaseRequestStatus {
-  return value === 'Draft' || value === 'Submitted'
+  return value === 'Draft' || value === 'Submitted' || value === 'Approved' || value === 'Rejected'
 }
 
 function lineKind(value: unknown): value is PurchaseOrderLineKind {
@@ -357,6 +369,16 @@ function decodeRequestSummary(value: unknown): PurchaseRequestSummary | null {
   return source as unknown as PurchaseRequestSummary
 }
 
+function decodeRequestDecision(value: unknown, withReason: boolean): PurchaseRequestDecision | null {
+  const source = record(value)
+  if (
+    source === null || !exact(source, ['decidedBy', 'decidedAtUtc', 'reason']) ||
+    !text(source.decidedBy) || !(source.decidedBy as string).trim() || !instant(source.decidedAtUtc) ||
+    (withReason ? !text(source.reason) || !(source.reason as string).trim() : source.reason !== null)
+  ) return null
+  return source as unknown as PurchaseRequestDecision
+}
+
 function decodeRequestLine(value: unknown): PurchaseRequestLine | null {
   const source = record(value)
   if (
@@ -447,11 +469,23 @@ export function decodePurchaseRequestList(value: unknown): PurchaseRequestList |
 
 export function decodePurchaseRequestDetail(value: unknown): PurchaseRequestDetail | null {
   const source = record(value)
-  if (source === null || !exact(source, ['request', 'lines']) || !Array.isArray(source.lines)) return null
+  if (source === null || !Array.isArray(source.lines)) return null
+  const legacy = exact(source, ['request', 'lines'])
+  const current = exact(source, ['request', 'lines', 'approval', 'rejection'])
+  if (!legacy && !current) return null
   const request = decodeRequestSummary(source.request)
   const lines = source.lines.map(decodeRequestLine)
   if (request === null || lines.some((line) => line === null) || request.lineCount !== lines.length) return null
-  return { request, lines: lines as PurchaseRequestLine[] }
+  const approval = current && source.approval !== null ? decodeRequestDecision(source.approval, false) : null
+  const rejection = current && source.rejection !== null ? decodeRequestDecision(source.rejection, true) : null
+  if ((current && source.approval !== null && approval === null) || (current && source.rejection !== null && rejection === null)) return null
+  // The decision facts match the status (the backend's CK_PurchaseRequests_Decision); anything else is not trusted.
+  const consistent = request.status === 'Approved' ? approval !== null && rejection === null
+    : request.status === 'Rejected' ? rejection !== null
+      : approval === null && rejection === null
+  if (current && !consistent) return null
+  if (legacy && (request.status === 'Approved' || request.status === 'Rejected')) return null
+  return { request, lines: lines as PurchaseRequestLine[], approval, rejection }
 }
 
 export function decodePurchaseRequestCommandResponse(value: unknown): PurchaseRequestCommandResponse | null {

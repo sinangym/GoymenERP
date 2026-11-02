@@ -20,7 +20,8 @@ namespace GoymenERP.Api.IntegrationTests;
 /// <summary>
 /// PUR-4a: the Purchasing owner's permission names are registered centrally with the same strings (company-wide
 /// only, not Critical, no grant; #66 5743488059), and nothing else is registered under <c>purchasing.</c>; the
-/// Purchasing 1.4 shell provider joins the host set with its own reviewed normal-host authority.
+/// Purchasing 1.5 shell provider (A1-1: + the request decision control) joins the host set with its own reviewed
+/// normal-host authority.
 /// </summary>
 public sealed class PurchasingPermissionAndShellRegistrationTests
 {
@@ -29,6 +30,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
     [InlineData(PurchasingPermissionManifestV1.OrdersRead, ErpPermissions.PurchasingOrdersRead)]
     [InlineData(PurchasingPermissionManifestV1.OrdersApprove, ErpPermissions.PurchasingOrdersApprove)]
     [InlineData(PurchasingPermissionManifestV1.GoodsReceiptsRecord, ErpPermissions.PurchasingGoodsReceiptsRecord)]
+    [InlineData(PurchasingPermissionManifestV1.RequestsApprove, ErpPermissions.PurchasingRequestsApprove)]
     public void The_owner_name_is_the_registered_central_name(string ownerName, string centralName)
     {
         Assert.Equal(ownerName, centralName);
@@ -78,7 +80,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         var purchasing = registry.Registrations
             .Where(item => item.Owner == PurchasingShellCapabilityProvider.OwnerId)
             .ToArray();
-        Assert.Equal(9, purchasing.Length);
+        Assert.Equal(10, purchasing.Length);
         string[] published =
         [
             PurchasingShellCapabilityProvider.GoodsReceiptCapabilityId,
@@ -86,6 +88,7 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
             PurchasingShellCapabilityProvider.CreateCapabilityId,
             PurchasingShellCapabilityProvider.DetailCapabilityId,
             PurchasingShellCapabilityProvider.ListCapabilityId,
+            PurchasingShellCapabilityProvider.RequestApproveCapabilityId,
             PurchasingShellCapabilityProvider.RequestCreateCapabilityId,
             PurchasingShellCapabilityProvider.RequestDetailCapabilityId,
             PurchasingShellCapabilityProvider.RequestListCapabilityId,
@@ -127,6 +130,15 @@ public sealed class PurchasingPermissionAndShellRegistrationTests
         Assert.Equal(requestDetail.RoutePath, requestSubmit.RoutePath);
         Assert.Equal(requestDetail.ContextRequirement, requestSubmit.ContextRequirement);
         Assert.Equal(requestDetail.ScopeRequirement, requestSubmit.ScopeRequirement);
+
+        // A1-1: the request decision control is a child of the request detail with its own name.
+        var requestApprove = Assert.Single(purchasing,
+            item => item.Declaration.CapabilityId == PurchasingShellCapabilityProvider.RequestApproveCapabilityId).Declaration;
+        Assert.Equal(requestDetail.CapabilityId, requestApprove.ParentCapabilityId);
+        Assert.Equal(requestDetail.RoutePath, requestApprove.RoutePath);
+        Assert.Equal(requestDetail.ContextRequirement, requestApprove.ContextRequirement);
+        Assert.Equal(requestDetail.ScopeRequirement, requestApprove.ScopeRequirement);
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsApprove], requestApprove.RequiredPermissions);
     }
 
     [Fact]

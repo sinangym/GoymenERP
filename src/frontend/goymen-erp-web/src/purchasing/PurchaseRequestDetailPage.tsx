@@ -11,7 +11,8 @@ import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { pendingPurchaseRequestSubmissionKey, recallPendingPurchaseRequestSubmission, releasePendingPurchaseRequestSubmission, reservePendingPurchaseRequestSubmission, type PendingPurchaseRequestSubmission } from './pendingRequestStore'
 import { Button } from '../ui/Button'
-import { PURCHASE_REQUEST_STATUS_LABEL, REQUEST_DETAIL_TEXT as T } from './purchasingText'
+import { PURCHASE_REQUEST_STATUS_LABEL, REQUEST_DECISION_TEXT, REQUEST_DETAIL_TEXT as T } from './purchasingText'
+import { PurchaseRequestDecisionPanel } from './PurchaseRequestDecisionPanel'
 import styles from './purchasing.module.css'
 
 /** Navigation hint only: backend authorization still owns both detail reads. */
@@ -53,6 +54,8 @@ function PurchaseRequestDetail({ namespace, returnOrderId }: { readonly namespac
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
   const canSubmit = hasCapability(shell, PURCHASING_CAPABILITY.requestSubmit)
+  // A1-1: the decision control is its own child capability (purchasing.requests.approve); the backend re-measures it.
+  const canDecide = hasCapability(shell, PURCHASING_CAPABILITY.requestApprove)
   const storeKey = pendingPurchaseRequestSubmissionKey(shell.sessionEpoch, actorId, companyId, requestId ?? '')
   const recalled = recallPendingPurchaseRequestSubmission(storeKey)
   const [attempt, setAttempt] = useState<
@@ -92,9 +95,15 @@ function PurchaseRequestDetail({ namespace, returnOrderId }: { readonly namespac
   const frame = (child: ReactNode) => <main className={styles.page}><header><p className={styles.eyebrow}>{T.eyebrow}</p><h1>{T.heading}</h1></header>{child}</main>
   if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />)
   if (state.kind !== 'ready') return frame(<StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />)
-  const { request, lines } = state.data; const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
+  const { request, lines, approval, rejection } = state.data; const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
+  const statusClass = request.status === 'Draft' ? styles.draft : request.status === 'Rejected' ? styles.rejected : styles.approved
+  const decisionFacts = <>{approval ? <div><dt>{REQUEST_DECISION_TEXT.approvalFacts}</dt><dd>{approval.decidedBy} · {new Date(approval.decidedAtUtc).toLocaleString('tr-TR')}</dd></div> : null}{rejection ? <><div><dt>{REQUEST_DECISION_TEXT.rejectionFacts}</dt><dd>{rejection.decidedBy} · {new Date(rejection.decidedAtUtc).toLocaleString('tr-TR')}</dd></div><div><dt>{REQUEST_DECISION_TEXT.reasonFacts}</dt><dd>{rejection.reason}</dd></div></> : null}</>
+  const decision = canDecide && actorId !== null && request.id === requestId && request.companyId === companyId
+    ? <PurchaseRequestDecisionPanel sessionEpoch={shell.sessionEpoch} fenceKey={`${namespace ?? ''}::${shell.routeEntryGeneration}`} actorId={actorId}
+      companyId={companyId} request={request} onSettled={() => query.refetch()} />
+    : null
   const notice = attempt.phase === 'applied' ? <p role="status" className={styles.success}>{attempt.replayed ? T.replayed : T.submitted}</p> : attempt.phase === 'failed' ? <p role="alert" className={styles.error}>{T.notSubmitted(attempt.code ?? attempt.status)}</p> : null
   const showOrderReturn = returnOrderId !== null && namespace !== null && request.id === requestId && request.companyId === companyId
     && hasCapability(shell, PURCHASING_CAPABILITY.requestDetail) && hasCapability(shell, PURCHASING_CAPABILITY.orderDetail)
-  return frame(<>{showOrderReturn && returnOrderId !== null ? <nav aria-label={T.returnNav}><Link to={purchaseOrderDetailPath(returnOrderId)} state={null}>{T.returnLink}</Link></nav> : null}<dl className={styles.facts}><div><dt>{T.request}</dt><dd className={styles.mono}>{request.id}</dd></div><div><dt>{T.status}</dt><dd><span className={request.status === 'Submitted' ? styles.approved : styles.draft}>{request.status === 'Submitted' ? PURCHASE_REQUEST_STATUS_LABEL.Submitted : PURCHASE_REQUEST_STATUS_LABEL.Draft}</span></dd></div><div><dt>{T.version}</dt><dd>{request.version}</dd></div><div><dt>{T.businessDate}</dt><dd>{request.effectiveOn}</dd></div></dl><section><h2>{T.linesHeading}</h2><div className={styles.tableWrap}><table><thead><tr><th>{T.lineNo}</th><th>{T.product}</th><th>{T.unit}</th><th>{T.quantity}</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.quantity}</td></tr>)}</tbody></table></div></section>{canSubmit ? notice : null}{canSubmit && (request.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>{T.submitHeading}</h2><p>{T.submitNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.unknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void send(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.sending : attempt.phase === 'unknown' ? T.retry : T.submit}</Button></section> : null}</>)
+  return frame(<>{showOrderReturn && returnOrderId !== null ? <nav aria-label={T.returnNav}><Link to={purchaseOrderDetailPath(returnOrderId)} state={null}>{T.returnLink}</Link></nav> : null}<dl className={styles.facts}><div><dt>{T.request}</dt><dd className={styles.mono}>{request.id}</dd></div><div><dt>{T.status}</dt><dd><span className={statusClass}>{PURCHASE_REQUEST_STATUS_LABEL[request.status]}</span></dd></div><div><dt>{T.version}</dt><dd>{request.version}</dd></div><div><dt>{T.businessDate}</dt><dd>{request.effectiveOn}</dd></div>{decisionFacts}</dl><section><h2>{T.linesHeading}</h2><div className={styles.tableWrap}><table><thead><tr><th>{T.lineNo}</th><th>{T.product}</th><th>{T.unit}</th><th>{T.quantity}</th></tr></thead><tbody>{lines.map((line) => <tr key={line.lineId}><td>{line.lineNo}</td><td className={styles.mono}>…{line.productId.slice(-8)}</td><td className={styles.mono}>…{line.unitId.slice(-8)}</td><td>{line.quantity}</td></tr>)}</tbody></table></div></section>{canSubmit ? notice : null}{canSubmit && (request.status === 'Draft' || unresolved) ? <section className={styles.actionCard}><h2>{T.submitHeading}</h2><p>{T.submitNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.unknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void send(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.sending : attempt.phase === 'unknown' ? T.retry : T.submit}</Button></section> : null}{decision}</>)
 }

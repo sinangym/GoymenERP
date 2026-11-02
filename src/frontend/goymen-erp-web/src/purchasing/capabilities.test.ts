@@ -8,6 +8,7 @@ describe('purchasing capability contract', () => {
       requestCreate: 'purchasing.requests.create',
       requestDetail: 'purchasing.requests.detail',
       requestSubmit: 'purchasing.requests.submit',
+      requestApprove: 'purchasing.requests.approve',
       orderList: 'purchasing.orders.list',
       orderCreate: 'purchasing.orders.create',
       orderDetail: 'purchasing.orders.detail',
