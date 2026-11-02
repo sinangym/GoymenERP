@@ -580,3 +580,56 @@ D-MFG-PROFILE-AUTH-01=A (the existing `ManufacturingToleranceProfileLifecyclePol
   dates are Europe/Istanbul business dates (the same as before U1-b). Work center ids are not validated against Organization
   (as for parameter profiles). A predecessor whose window was closed by a successor shows the registry window in the view but
   its lifecycle row keeps the prepared one.
+
+## Exchange-rate record (DEC-FIN-010; KUR_GUNU SAT-D54/D55; EK24 SAT-D169…D172; OPEN-012 partial)
+
+Owner: Settings (master report §16 "Ana Veriler: … kur …", AV-02 "Birim / Para / Kur / Vergi"; Settings already owns the
+currency identities and money profiles). Company-scoped; nothing is seeded.
+
+| Part | What |
+|---|---|
+| Tables | `ExchangeRateDays` (one row per company and calendar day, the edit fence), `ExchangeRateRecords` (append-only: official bulletin answer `Published` / `NoBulletin` / `Unverified`, manual correction `Manual`+`Published` with a reason, official half-day answer `FullDay` / `HalfDay` / `Undetermined`), `ExchangeRateRecordRates` (forex selling per ONE unit in TRY, `decimal(28,10)`, never rounded). Records and rate lines are immutable (write fence); the day's current answer of a kind is its highest record version. |
+| Migration | `20261102143743_AddExchangeRateRecords` (dotnet ef). `Down` refuses with `THROW 51201` while any record exists (forward fix); an empty store rolls back freely. |
+| Calculator | `RateDayExchangeRate` (BuildingBlocks/Monetary): SAT-D54/D55 + SAT-D170/D171, fail-closed. |
+| Read port | `ISettingsExchangeRateResolverV1.ResolveAsync(rateDay, source, target)` → `ExchangeRateResolutionV1`: the rate as exact text with its provenance (bulletin day, source `Tcmb`, `Official`/`Manual`, record id and version, half-day rule applied, previous full business day) — what an invoice snapshots (SAT-D172); or `Unavailable` with the code and the day that stopped it. Needs an authenticated actor with company access; computed fresh on each call. |
+| Names | `settings.exchange-rates.read`, `settings.exchange-rates.correct` (SAT-D169/D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), `settings.exchange-rates.import`. Registered, company-wide, not Critical, **granted to no role** (human gate). |
+| Routes | `GET /api/v1/settings/exchange-rates?from&to` (≤ 62 days), `GET …/resolution?rateDay&currencyCode`, `POST …/days/{date}/corrections` (204), `POST …/imports` (200 with a per-day summary; ≤ 31 past days). |
+
+**Correction (SAT-D169).** One currency on a day TCMB officially published (any other day is 422
+`exchange_rate_day_not_published`: a manual record never makes or unmakes a business day, SAT-D55). Reason (≤ 1000),
+Idempotency-Key, the day's expected version, one audit event `settings.exchange-rate.corrected.v1` (before/after value);
+the same value again is a no-op. It is a new record next to the official one, so it reaches only documents that read the
+rate afterwards. The size limit of a correction is open (OPEN-012).
+
+**Import.** `IExchangeRateBulletinSourceV1` / `IExchangeRateHalfDaySourceV1`. Only past days are asked (today and later are
+refused, so the open cut-off hour never matters). An unverified answer never overwrites a definite one; a different definite
+answer is reported as `Conflict` and nothing is written; one audit event per run that recorded something.
+
+**Sources — human gate.** Both are **disabled by default** and the repository ships no configuration for them:
+- TCMB (`TcmbExchangeRateBulletinSource`): enabled only when `Settings:ExchangeRates:TcmbEnabled=true`; then
+  `Settings:ExchangeRates:TcmbBaseAddress` must be an https URL ending in `/` (anything else fails at startup; optional
+  `TcmbTimeoutSeconds`). It reads only the dated archive `kurlar/yyyyMM/ddMMyyyy.xml` (404 → "no bulletin" candidate; other
+  status, timeout, another day's bulletin or unreadable XML → `Unverified`); `today.xml` is not used because it could fill a
+  day with another day's bulletin. No secret is needed. While disabled the import answers 503 (on the wire the platform's
+  `service_unavailable`; the list read's `bulletinSourceEnabled` says why) and records nothing.
+- A 404 is recorded as `NoBulletin` only when a LATER bulletin exists — received in the same run or already recorded;
+  otherwise the day stays `Unverified` and the next run asks again (a 404 can also mean "not yet published" or an archive
+  gap).
+- A day whose official answer is already final (`Published` / `NoBulletin`; a definite half-day answer) is never asked again.
+- Arife / half day (SAT-D171): no reviewed automatic official source is wired; every day stays `Undetermined`, so the
+  resolver chooses no rate ("kur belirlenemedi") until a human enables a reviewed source.
+
+**Follow-ups (decided in EK31, `SINAN_KARARLARI_2026-11-02_SATIS_EK31.md`; not in this slice):**
+- **SAT-D198** (A P2-1 / B P2-3, the SAT-D171 escape): when the automatic source cannot decide a day, Muhasebe, Muhasebe
+  Müdürü, Genel Müdür or Admin mark it full or half day with a reason (audited); the mark never overrides a definite automatic
+  answer. This slice has no manual half-day mark yet: an undetermined day stays "kur belirlenemedi" (fail-closed) until that
+  command lands.
+- **SAT-D199**: who reads the rates (Satış Uzmanı, Satış Müdürü, Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin, Finans
+  Uzmanı, Finans Müdürü) — the persona card for `settings.exchange-rates.read`; the real grant stays a human gate.
+- **SAT-D200**: TL amounts against a foreign-currency credit limit are converted by DIVIDING by the check day's TCMB rate
+  (fail-closed when unresolved; no cross rate between two foreign currencies). The risk calculator here still converts only
+  foreign → TRY by multiplication; the division is a follow-up.
+
+**Consumers.** Sales risk (SAT-D47) converts foreign → TRY amounts with the check day's rate through the port (never frozen);
+a TL amount against a foreign limit stays `exchange_rate_unavailable` (the formula is not decided). The invoice snapshot and
+the dispatch invoice-group rate (SAT-D90/D101) are later slices; Purchasing uses the same rule (ALS-D6).

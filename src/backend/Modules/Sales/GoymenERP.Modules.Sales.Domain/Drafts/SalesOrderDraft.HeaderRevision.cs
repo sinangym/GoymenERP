@@ -7,6 +7,9 @@ namespace GoymenERP.Modules.Sales.Domain.Drafts;
 /// MOD-03 → Sales (SAT-D140/D147/D158): <see cref="BuyerTax"/> is the order's buyer tax situation after the revision (null = keep
 /// the current one; it is never cleared) and <see cref="LineTaxes"/> every line's tax snapshot re-resolved for it (each current line
 /// exactly once; null = the lines keep theirs), given by the caller exactly when the buyer tax changes.
+/// SAT-D175 (EK25): <see cref="SubcontractCustomerUnbound"/> is the caller's confirmation, read from the Production owner, that NO
+/// production plan or customer-goods allocation is linked to this subcontract service order; without it (false — the default, and
+/// the answer when the owner cannot be read) the customer of such an order does not change (fail-closed).
 /// </summary>
 public sealed record SalesHeaderRevisionInput(
     Guid PartyId,
@@ -18,13 +21,18 @@ public sealed record SalesHeaderRevisionInput(
     Guid? SalesOwnerUserId,
     SalesDueTerms? DueTerms,
     SalesBuyerTax? BuyerTax = null,
-    IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?>? LineTaxes = null);
+    IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?>? LineTaxes = null,
+    bool SubcontractCustomerUnbound = false);
 
 public sealed partial class SalesOrderDraft
 {
     /// <summary>SAT-D152 (EK21): the Turkish text of the quote-customer lock (the screen shows its own copy of it).</summary>
     public const string QuoteCustomerLockedMessage =
         "Tekliften dönen siparişin carisi değiştirilemez (SAT-D152); başka müşteri için sipariş iptal edilip yeni teklif ya da sipariş açılır.";
+
+    /// <summary>SAT-D175 (EK25): the Turkish text of the subcontract-customer lock (the screen shows its own copy of it).</summary>
+    public const string SubcontractCustomerLockedMessage =
+        "Fason hizmet siparişine bağlı üretim planı ya da müşteri malı tahsisi varken (ya da bu okunamazken) siparişin carisi değiştirilemez (SAT-D175).";
 
     /// <summary>
     /// No 162 / SAT-D152: the quote this order was converted from (null for an order created directly). Set once, by the
@@ -95,6 +103,13 @@ public sealed partial class SalesOrderDraft
         if (customerChanged && SourceQuoteId is not null)
         {
             throw new SalesRuleException(SalesRuleCodes.HeaderRevisionQuoteCustomer, QuoteCustomerLockedMessage);
+        }
+
+        // SAT-D175 (EK25, beside SAT-D128/D152): the customer's goods are processed under a subcontract service order; while a
+        // production plan or a customer-goods allocation is linked to it — or that is not confirmed absent — its customer is fixed.
+        if (customerChanged && IsSubcontractService && !input.SubcontractCustomerUnbound)
+        {
+            throw new SalesRuleException(SalesRuleCodes.SubcontractCustomerLocked, SubcontractCustomerLockedMessage);
         }
 
         if ((customerChanged || currencyChanged) && lines.Any(line => line.Commercial.UnitPrice is not null))
@@ -247,7 +262,7 @@ public sealed partial class SalesOrderDraft
     /// <summary>The header as it stands, for an archive (API-04).</summary>
     private RevisionHeaderSnapshot CurrentHeaderSnapshot() =>
         new(Header.PartyId, Header.CompanyAccountId, Header.CurrencyId, Header.DeliveryAddress, Header.Contact,
-            Header.SalesOwnerUserId, Header.DueTerms, Header.BuyerTax);
+            Header.SalesOwnerUserId, Header.DueTerms, Header.BuyerTax, Header.IsSubcontractService);
 
     /// <summary>The create's money-profile rules for the revised currency on the order's business date.</summary>
     private MoneyProfileSnapshot RequireRevisedMoney(MoneyProfileSnapshot money, Guid currencyId)
