@@ -1,7 +1,7 @@
 # Finans Modülü Hazırlık Planı v1
 
 Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Finans şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) ·
-Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D5)**
+Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D9)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.10, §7.11, §8.1, §8.2, §16 Faz 4, §19.3, §27.11 (F-01…F-17),
 §28.14–28.16, §29.6 (AT-058); `docs/decisions/KARAR_SICILI.md` `DEC-FIN-001…016`, `DEC-SET-001`, `DEC-INT-001`,
@@ -163,7 +163,7 @@ sayılır; yeni türle yazılırsa o firmanın Satış risk okuması tamamen kap
 | Parça | Öneri | Gerekçe |
 |---|---|---|
 | Alan | `FinanceOpenItems.Direction` zorunlu: `Receivable` (müşteri alacağı) / `Payable` (tedarikçi borcu) | Yön kalemin kendisinde; türden tahmin edilmez |
-| Mevcut satırlar | Kaynak türü `official.invoice-installment.v1` olan satırlar `Receivable` ile doldurulur (bugün yalnız satış faturası taksitleri bu türle girer, SAT-D85). Production'da veri yok; migration `Down` veri varsa reddeder (mevcut `THROW 51051` deseni) | N-03 teyidi |
+| Mevcut satırlar | Kaynak türü `official.invoice-installment.v1` olan satırlar `Receivable` ile doldurulur (bugün yalnız satış faturası taksitleri bu türle girer, SAT-D85). Production'da veri yok; migration `Down` veri varsa reddeder (mevcut `THROW 51051` deseni) | **FNS-D7** |
 | Yeni kaynak türü | `official.incoming-invoice-installment.v1` → `Payable` (Alış MOD-04) | Kaynak türü yönü belirler; serbest seçim yok |
 | İçe aktarma | CSV şablonu v2'ye `direction` sütunu; boşsa satır **"yön belirsiz" karantinasına** düşer, Finans sorumlusu yön atar (No 22) | Karar No 22 |
 | Cari ekstre | Alacak kalemi → cari **borç** tarafı; borç kalemi → cari **alacak** tarafı; tahsilat → alacak, ödeme → borç (şirketin bakışıyla, mevcut `PartyLedgerSide`) | Hubvogal "Toplam Borç / Toplam Alacak" |
@@ -261,7 +261,7 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-61 | Alınan çek: bankaya teminat | Riskte "teminatta" sınıfı | No 109 | K3 |
 | API-62 | Karşılıksız / iade sonrası | Müşteri alacağı yeniden açılır; ciro edilmişse ciro edilen tarafa borç olayı | No 109 | K3 |
 | API-63 | Tahsil sonrası ters | Bugün yok | DEC-FIN-016 | K3 |
-| API-64 | **Verilen** çek/senet | Çek defteri (banka hesabı bazlı yaprak), kendi çekimizin keşidesi, tedarikçi borcuna dağıtım, vade günü bankadan ödenme, iptal/iade | DEC-FIN-016, N-08 | K3 |
+| API-64 | **Verilen** çek/senet | Çek defteri (banka hesabı bazlı yaprak) ve senet serisi, kendi çek/senedimizin keşidesi, tedarikçi borcuna dağıtım, vade günü bankadan ödenme, iptal/iade/karşılıksız | DEC-FIN-016, **FNS-D8** | K3 |
 
 ### 5.8 DBS (F-07)
 
@@ -378,14 +378,14 @@ K6/K7/K8/K14, SAT-D51/D52/D85/D96, ALS-D41/D42/D44.
 |---|---|---|---|
 | N-01 | ~~Hubvogal finans ekranları~~ → **§15'te incelendi** (2026-11-02). Eski soru: Hubvogal'in finans ekranlarının (kasa, banka, çek/senet, kredi, kredi kartı, DBS, cari ekstre) liste ve kayıt ekranı görüntülerini paylaşabilir misin? | Alan, durum ve numara eşlemesi; göç (MIG-02) | F0 |
 | N-02 | ~~Şerit~~ → **FNS-D1: hepsi burada** | — | kapandı |
-| N-03 | Bugün içe aktarılmış açık kalemlerin hepsi müşteri alacağı sayılsın mı? (Production'da veri yok; test verisi) | MOD-15 migration | F1 |
+| N-03 | ~~Mevcut kalemler~~ → **FNS-D7: alacak**; alış borç, satış alacak (§16) | MOD-15 migration | kapandı |
 | N-04 | ~~DBS yönü~~ → **FNS-D3: ikisi de** | — | kapandı |
 | N-05 | ~~Kasa~~ → §15: şirket bazlı, TL/USD/EUR kasaları var | API-30 | kapandı |
 | N-06 | ~~Döviz alım-satımı~~ → §15: hubvogal'deki gibi virman içinde "Döviz Alış/Satış" türü (API-34) | API-32/34 | kapandı |
 | N-07 | Banka ekstrelerini hangi bankalardan, hangi dosya biçiminde (Excel/CSV/MT940) alıyorsunuz? | API-41 | F4 |
-| N-08 | Kendi çekinizi (verilen çek) ve senedinizi kullanıyor musunuz; çek defteri takibi istenir mi? | API-64 | F5 |
+| N-08 | ~~Verilen çek~~ → **FNS-D8:** müşteri çeki/senedi ciro + kendi çek ve senedimiz | API-60, API-64 | kapandı |
 | N-09 | ~~Kredi türleri~~ → **FNS-D4: hepsi** (taksitli ticari, rotatif/spot, KMH/BCH, Eximbank/akreditif); akreditif/Eximbank kapatma ayrıntısı F7 başında sorulur | API-80…82 | kapandı |
-| N-10 | Şirket kredi kartları: kaç kart, kart borcu hangi hesaptan ödenir, harcama hangi masraf türleriyle girilir? | API-76…78 | F5 |
+| N-10 | ~~Kredi kartı~~ → **FNS-D9: tam takip** | API-76…78 | kapandı |
 | N-11 | Ödeme talimatı nasıl gidiyor bugün: internet bankacılığına elle mi, toplu ödeme dosyasıyla mı? | API-51 | F6 |
 | N-12 | Dekont/makbuz numarası istenir mi; hubvogal'deki biçim korunsun mu? | API-13 | F2 |
 | N-13 | Açılış (canlıya geçiş) bakiyeleri hubvogal'den mi, Mikro'dan mı alınacak? | MIG-02 | F8 |
@@ -475,10 +475,10 @@ Bu bölüm iş takibidir; karar değildir.
 | İş | PR | Durum |
 |---|---|---|
 | Bu plan (v1) | — | taslak PR |
-| F0 karar dosyası FNS-D1…D5 (şerit, öncelik, DBS iki yön, kredi türleri, döviz) + hubvogal incelemesi §15 | #896 | taslak PR; kalan sorular N-03, N-07, N-08, N-10…N-18 |
+| F0 karar dosyası FNS-D1…D5 (şerit, öncelik, DBS iki yön, kredi türleri, döviz) + hubvogal incelemesi §15 | #896 | taslak PR; kalan sorular N-07, N-11…N-13, N-15…N-18 |
 | F1 MOD-15 borç/alacak | — | sırada |
 
-Sıradaki: N-03 cevaplanınca F1 (borç/alacak yönü, MOD-15) başlar.
+Sıradaki: F1 (borç/alacak yönü, MOD-15) — ön şartlar tamam (FNS-D2, FNS-D7).
 
 ---
 
@@ -530,8 +530,44 @@ formlarından çıkarıldı.
 
 | No | Soru |
 |---|---|
-| N-14 | Cari Kur Grubu: bir firmanın TL carisi ile USD carisi hubvogal'deki gibi **ayrı hesap** mı kalsın, yoksa tek cari altında para birimi bazında bakiye mi? |
+| N-14 | ~~Cari Kur Grubu~~ → **FNS-D6: tek cari, para birimi bazında bakiye** |
 | N-15 | "Kur Pozisyonu: Yurtiçi / Yurtdışı" neyi ayırıyor (ithalat/ihracat, yurtdışı banka, yurtdışı cari)? |
 | N-16 | Banka/kasa hesabı eksiye düşebilsin mi (KMH/BCH dışında)? |
 | N-17 | Bir çek kısmen tahsil edilebiliyor mu ("Kalan" alanı)? |
 | N-18 | Ödeme tiplerindeki "X GÜN DBS" ile "X GÜN DBS VADE" farkı nedir? |
+
+---
+
+## 16. Muhasebe şartlarıyla eşleme (FNS-D7 araştırması)
+
+Sinan'ın isteği: "alış ile satış ayrı olacak biri borç biri alacak sayacak bunu web muhasebe şartlarında da araştır".
+Resmî defter Mikro'dadır (DEC-FIN-001); Finans fiş üretmez. Aşağıdaki tablo Göymen kavramlarının Tekdüzen Hesap
+Planı (THP, Muhasebe Sistemi Uygulama Genel Tebliği) karşılığıdır; **yalnız anlam eşlemesidir**, hesap kodu ve alt
+hesap yapısı mali müşavir teyidiyle Muhasebe modülünün onaylı hesap planı aynasında (ACC) kesinleşir.
+
+| Göymen kavramı | Yön (Finans) | THP karşılığı | Normal bakiye | Not |
+|---|---|---|---|---|
+| Satış faturası taksiti (açık kalem) | `Receivable` | 120 Alıcılar | Borç | Cari bazında alt hesap (THP 120 ana hesap düzeyinde tutulmaz) |
+| Alış faturası taksiti (açık kalem) | `Payable` | 320 Satıcılar | Alacak | — |
+| Alınan müşteri çeki | Kaynak (araç) | 101 Alınan Çekler | Borç | Tahsil/ciro/karşılıksız ayrı olay; karşılıksız → alacak yeniden açılır (No 109) |
+| Alınan müşteri senedi | Kaynak (araç) | 121 Alacak Senetleri | Borç | Vadesi bir yıldan uzun olanlar uzun vadeli hesaba (muhasebe sınıflaması) |
+| Kendi çekimiz (FNS-D8) | Ödeme aracı | 103 Verilen Çekler ve Ödeme Emirleri (−) | Alacak | Keşidede 320 borç / 103 alacak; vadede 103 borç / 102 alacak |
+| Kendi senedimiz (FNS-D8) | Ödeme aracı | 321 Borç Senetleri | Alacak | — |
+| Kasa | Hesap | 100 Kasa | Borç | Döviz kasası ayrı alt hesap (FNS-D5) |
+| Banka hesabı | Hesap | 102 Bankalar | Borç | KMH/BCH eksi bakiyesi kredi niteliğinde (N-16) |
+| POS tahsilatı (valör bekleyen) | Kaynak | 108 Diğer Hazır Değerler | Borç | Müşteri brütle kapanır, komisyon gider (DEC-FIN-014) |
+| Müşteriden avans | Kaynak (siparişe dağıtım) | 340 Alınan Sipariş Avansları | Alacak | Fatura gelince kaleme aktarılır (API-21) |
+| Tedarikçiye avans | Kaynak (siparişe dağıtım) | 159 Verilen Sipariş Avansları | Borç | — |
+| Banka kredisi | Hazine | 300 Banka Kredileri (uzun vadeli kısım 400) | Alacak | Faiz ve BSMV ayrı satır (FNS-D4, hubvogal taksit planı) |
+| Şirket kredi kartı borcu | Hazine | 309 Diğer Mali Borçlar | Alacak | Harcama tedarikçi borcunu kart borcuna dönüştürür (FNS-D9) |
+| Kur farkı (No 34) | Ayrı satır | 646 Kambiyo Kârları / 656 Kambiyo Zararları | — | Dönem sonu dövizli bakiye değerlemesi (VUK 280) Muhasebe kaynağıdır, Finans hesaplamaz |
+| Banka masrafı (No 112) | Para olayı | 780 Finansman Giderleri / 770 (muhasebe seçer) | — | Muhasebe kaynağı (MOD-07) |
+
+Sonuç (FNS-D7): Finans'ta yön iki değerlidir ve kaynak belgeden gelir — satış → `Receivable` (cari ekstrede **borç**
+tarafı, firma bize borçlu), alış → `Payable` (cari ekstrede **alacak** tarafı, biz firmaya borçluyuz). Aynı firmanın
+iki yönlü bakiyesi ayrı görünür, netleşmez; mahsup ayrı işlemdir (ALS-D42). Bu, THP'deki 120/320 ayrımıyla aynıdır.
+
+Kaynaklar: [Tek Düzen Hesap Planı — muhasebetr.com](https://www.muhasebetr.com/tekduzenhesapplani);
+[Hesap planı açıklamaları — alomaliye.com](https://www.alomaliye.com/2000/12/26/hesap-plani-aciklamalari);
+[Verilen çekler hesabı kayıtları — muhasebenews.com](https://www.muhasebenews.com/?p=165448). Kambiyo (646/656) ve
+VUK 280 satırı genel muhasebe bilgisidir; kaynakla doğrulanamadı, mali müşavir teyidi gerekir.

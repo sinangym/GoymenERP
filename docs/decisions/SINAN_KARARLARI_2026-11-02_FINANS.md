@@ -2,7 +2,7 @@
 
 Kaynak: Sinan Göymen'in 2 Kasım 2026 tarihli Claude cloud oturumunda (Finans konuşması), Finans modülü hazırlık
 incelemesi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md`) sırasında sorulan seçenekli sorulara verdiği **doğrudan
-cevaplar**. Bir seçenekli tur (dört soru) ve bir serbest cevap; beş karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
+cevaplar**. İki seçenekli tur (sekiz soru) ve bir serbest cevap; dokuz karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
 cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 
 ## 0. Yetki ve sınır
@@ -27,6 +27,10 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 | FNS-D3 | DBS yönü | **İkisi de.** Seçenek açıklaması: hem müşteriden DBS ile tahsilat, hem tedarikçiye DBS ile ödeme | DEC-FIN-008 yalnız müşteri riskini tanımlıyordu | Plan API-70…73, N-04 |
 | FNS-D4 | Kullanılan kredi türleri | Seçilen: **Taksitli ticari kredi, Rotatif / spot, KMH / BCH, Eximbank / akreditif**; ek cevap aynen: **"Hepsini"** | Plan N-09 açıktı | Plan API-80…82, N-09 |
 | FNS-D5 | Döviz | Cevap aynen: **"Döviz ve dövizli işlemler olacak"** | Plan F3/F4'te döviz yalnız para birimi alanıydı; OPEN-012 kur saati açık | Plan §15.3, API-32/34, No 34 |
+| FNS-D6 | Cari para birimi (hubvogal "Cari Kur Grubu") | Seçenek: **Tek cari, PB bazında bakiye.** Seçenek açıklaması: firma tek cari; her fatura ve ödeme kendi para biriminde; ekstre ve bakiye TL, USD, EUR ayrı gösterilir. Kur farkı ayrı satır | Hubvogal'de aynı firmanın TL ve USD carisi ayrı hesap | Plan N-14, §15, API-04, No 34 |
+| FNS-D7 | Mevcut açık kalemler ve yön | Seçenek: **Evet, alacak say.** Ek cevap aynen: **"alış ile satış ayrı olacak biri borç biri alacak sayacak bunu web muhasebe şartlarında da araştır"** | Plan N-03; Alış §13 B-1 | MOD-15, plan §3, §16 |
+| FNS-D8 | Tedarikçiye verilen çek/senet | Cevap aynen: **"Müşteri çeki senedi de verilebilir, kendi çek senetimizi de verebiliriz"** | Plan N-08; hubvogal'de yalnız ciro ("Ödendi") görüldü | API-60, API-64, DEC-FIN-016 |
+| FNS-D9 | Şirket kredi kartı takibi | Seçenek: **Tam takip.** Seçenek açıklaması: kart, limit, her harcama (belge, harcayan, masraf türü), ekstre ve ekstre ödemesi ayrı takip edilir (DEC-FIN-015) | Plan N-10; hubvogal'de kart yalnız limit | API-76…78 |
 
 ## 2. Notlar (geri alınabilir)
 
@@ -53,6 +57,19 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
   Döviz alış/satış (TL hesaptan döviz hesabına) ayrı işlem türüdür (hubvogal emsali, plan §15). Dövizli bakiyelerin
   dönem sonu değerlemesi Muhasebe kaynağıdır; değerleme kuralı tahminle seçilmez. Hubvogal'in "Cari Kur Grubu" ve
   "Kur Pozisyonu" alanlarının karşılığı ayrıca sorulur (plan N-14, N-15).
+
+- **FNS-D6:** cari (Party) tek kayıttır; para birimi hesap değil, açık kalem ve para olayının alanıdır. Ekstre, bakiye
+  özeti ve risk para birimi bazında ayrı gösterilir, tek sayıya netlenmez (AT-011). Hubvogal göçünde (MIG-02) aynı
+  firmanın TL ve USD carileri tek cariye birleştirilir; kaynak hesap kimliği göç kaydında saklanır.
+- **FNS-D7:** mevcut (test) açık kalemlerin hepsi `Receivable` (müşteri alacağı) olarak doldurulur. Satıştan doğan kalem
+  alacak (Tekdüzen Hesap Planı 120 Alıcılar karşılığı), alıştan doğan kalem borçtur (320 Satıcılar karşılığı); plan
+  §16'daki eşleme mali müşavir teyidine kadar yalnız anlam eşlemesidir, Finans fiş üretmez (DEC-FIN-001, DEC-FIN-004).
+- **FNS-D8:** tedarikçiye ödeme üç araçla yapılabilir: müşteri çekinin/senedinin cirosu (alınan çek "ciro edildi",
+  rücu riski No 109), **kendi çekimiz** (keşide; vadede bankadan ödenir) ve **kendi senedimiz**. Kendi çek/senedimiz
+  çek defteri/senet seri takibiyle tutulur; iptal ve karşılıksız durumları ayrı olaydır.
+- **FNS-D9:** kart harcaması tedarikçi borcunu kart borcuna dönüştürür; banka çıkışı ekstre ödemesindedir
+  (DEC-FIN-015). Harcama belgesi, harcayan kişi ve masraf türü zorunlu alandır; masraf türü listesi hubvogal'deki iki
+  seviyeli yapı emsaliyle Ayarlar'dadır.
 
 ## 3. Değişmeyenler
 
