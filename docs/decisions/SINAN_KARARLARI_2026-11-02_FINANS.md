@@ -2,7 +2,7 @@
 
 Kaynak: Sinan Göymen'in 2 Kasım 2026 tarihli Claude cloud oturumunda (Finans konuşması), Finans modülü hazırlık
 incelemesi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md`) sırasında sorulan seçenekli sorulara verdiği **doğrudan
-cevaplar**. İki seçenekli tur (sekiz soru) ve bir serbest cevap; dokuz karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
+cevaplar**. Üç seçenekli tur (on iki soru) ve bir serbest cevap; on üç karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
 cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 
 ## 0. Yetki ve sınır
@@ -31,6 +31,10 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 | FNS-D7 | Mevcut açık kalemler ve yön | Seçenek: **Evet, alacak say.** Ek cevap aynen: **"alış ile satış ayrı olacak biri borç biri alacak sayacak bunu web muhasebe şartlarında da araştır"** | Plan N-03; Alış §13 B-1 | MOD-15, plan §3, §16 |
 | FNS-D8 | Tedarikçiye verilen çek/senet | Cevap aynen: **"Müşteri çeki senedi de verilebilir, kendi çek senetimizi de verebiliriz"** | Plan N-08; hubvogal'de yalnız ciro ("Ödendi") görüldü | API-60, API-64, DEC-FIN-016 |
 | FNS-D9 | Şirket kredi kartı takibi | Seçenek: **Tam takip.** Seçenek açıklaması: kart, limit, her harcama (belge, harcayan, masraf türü), ekstre ve ekstre ödemesi ayrı takip edilir (DEC-FIN-015) | Plan N-10; hubvogal'de kart yalnız limit | API-76…78 |
+| FNS-D10 | F1 incelemede beklerken sıradaki iş | Seçenek: **F1b + F2'ye başla.** Seçenek açıklaması: cari bakiye özeti (Toplam Borç/Alacak) ve Alış/Satış faturasının açık kaleme dönüşmesi; F1'in üstüne ayrı PR'lar olarak | Plan §10 F1b/F2 | API-04, API-10…12 |
+| FNS-D11 | Banka/kasa eksi bakiye | Seçenek: **Hayır, engellensin.** Seçenek açıklaması: KMH/BCH gibi kredili hesaplar hariç, bakiye eksiye düşecek işlem kaydedilmez | Plan N-16; hubvogal'de bazı döviz hesapları eksi | API-31/32/40 |
+| FNS-D12 | Açılış bakiyeleri | Cevap aynen: **"Elle girilebilir olmalı, bunun için ayrı geçici nasıl bir buton ile mi yapılabilir"** | Plan N-13 (hubvogal mi Mikro mu) | MIG-02, API-14 |
+| FNS-D13 | Banka hareketi ve ekstre | Cevap aynen: **"Hareketler elle girilecek ama kontrol için internet bankacılığı ve mt940 standart dosya olabilir"** | Plan N-07 | API-41, API-42 |
 
 ## 2. Notlar (geri alınabilir)
 
@@ -70,6 +74,19 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 - **FNS-D9:** kart harcaması tedarikçi borcunu kart borcuna dönüştürür; banka çıkışı ekstre ödemesindedir
   (DEC-FIN-015). Harcama belgesi, harcayan kişi ve masraf türü zorunlu alandır; masraf türü listesi hubvogal'deki iki
   seviyeli yapı emsaliyle Ayarlar'dadır.
+
+- **FNS-D11:** kayıt anında hesabın (para birimi bazında) defter bakiyesi işlem sonrası eksiye düşecekse işlem
+  reddedilir; ret kodu açıktır, sessiz kırpma yoktur. İstisna: hesap türü kredili (KMH/BCH, FNS-D4) ve tanımlı limit
+  içindeyse. Kontrol eşzamanlı kayıtlara karşı veritabanı tarafında da korunur (sürüm/kilit).
+- **FNS-D12 yorumu (geri alınabilir, Sinan teyit eder):** açılış bakiyeleri **elle** girilir; dosya göçü zorunlu değildir.
+  Bunun için ayrı bir **"Açılış Kaydı"** işlemi önerilir: yalnız Ayarlar'daki "açılış dönemi açık" anahtarı açıkken
+  görünür (geçici buton); Finans Uzmanı hazırlar, Finans Müdürü onaylar (SAT-D196); kaydı "açılış" türüyle işaretlenir ve
+  gerçek tarihçe gibi gösterilmez (Finans v3 geliştirme notları §8); dönem kapatılınca buton kaybolur, açılış kaydı
+  sonradan ancak ters kayıtla düzeltilir. Kapsam: açık müşteri/tedarikçi faturaları ve taksitleri, kasa ve banka
+  bakiyeleri, portföydeki alınan/verilen çek-senetler, kredi kalan anapara ve taksitleri, açık DBS/teminat limitleri.
+- **FNS-D13:** banka hareketi **elle** kaydedilir (kaynak her zaman kullanıcı kaydıdır). İnternet bankacılığı dosyası
+  (Excel/CSV) ve **MT940** yalnız **kontrol** içindir: içe aktarılan ekstre satırı hareket üretmez, mevcut elle
+  kayıtlarla eşleştirilir (mutabakat); eşleşmeyen satır "elle kaydedilmemiş hareket" uyarısı olur.
 
 ## 3. Değişmeyenler
 

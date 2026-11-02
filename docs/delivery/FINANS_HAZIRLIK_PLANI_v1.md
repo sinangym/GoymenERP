@@ -1,7 +1,7 @@
 # Finans Modülü Hazırlık Planı v1
 
 Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Finans şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) ·
-Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D9)**
+Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D13)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.10, §7.11, §8.1, §8.2, §16 Faz 4, §19.3, §27.11 (F-01…F-17),
 §28.14–28.16, §29.6 (AT-058); `docs/decisions/KARAR_SICILI.md` `DEC-FIN-001…016`, `DEC-SET-001`, `DEC-INT-001`,
@@ -387,13 +387,13 @@ API-70…73 DBS, API-77/78 kart, API-80…84 kredi/limit/teminat) bu iki persona
 | N-04 | ~~DBS yönü~~ → **FNS-D3: ikisi de** | — | kapandı |
 | N-05 | ~~Kasa~~ → §15: şirket bazlı, TL/USD/EUR kasaları var | API-30 | kapandı |
 | N-06 | ~~Döviz alım-satımı~~ → §15: hubvogal'deki gibi virman içinde "Döviz Alış/Satış" türü (API-34) | API-32/34 | kapandı |
-| N-07 | Banka ekstrelerini hangi bankalardan, hangi dosya biçiminde (Excel/CSV/MT940) alıyorsunuz? | API-41 | F4 |
+| N-07 | ~~Ekstre~~ → **FNS-D13:** hareket elle girilir; internet bankacılığı dosyası ve MT940 yalnız kontrol/mutabakat için içe aktarılır | API-41 | kapandı |
 | N-08 | ~~Verilen çek~~ → **FNS-D8:** müşteri çeki/senedi ciro + kendi çek ve senedimiz | API-60, API-64 | kapandı |
 | N-09 | ~~Kredi türleri~~ → **FNS-D4: hepsi** (taksitli ticari, rotatif/spot, KMH/BCH, Eximbank/akreditif); akreditif/Eximbank kapatma ayrıntısı F7 başında sorulur | API-80…82 | kapandı |
 | N-10 | ~~Kredi kartı~~ → **FNS-D9: tam takip** | API-76…78 | kapandı |
 | N-11 | Ödeme talimatı nasıl gidiyor bugün: internet bankacılığına elle mi, toplu ödeme dosyasıyla mı? | API-51 | F6 |
 | N-12 | Dekont/makbuz numarası istenir mi; hubvogal'deki biçim korunsun mu? | API-13 | F2 |
-| N-13 | Açılış (canlıya geçiş) bakiyeleri hubvogal'den mi, Mikro'dan mı alınacak? | MIG-02 | F8 |
+| N-13 | ~~Açılış~~ → **FNS-D12:** elle girilir; geçici "Açılış Kaydı" işlemi (açılış dönemi açıkken görünür, maker≠checker) | MIG-02 | kapandı |
 
 ### 8.3 Açık kalanlar (insan kapısı; plan bunları seçmez)
 
@@ -479,11 +479,12 @@ Bu bölüm iş takibidir; karar değildir.
 
 | İş | PR | Durum |
 |---|---|---|
-| Bu plan (v1) | — | taslak PR |
-| F0 karar dosyası FNS-D1…D5 (şerit, öncelik, DBS iki yön, kredi türleri, döviz) + hubvogal incelemesi §15 | #896 | taslak PR; kalan sorular N-07, N-11…N-13, N-15…N-18 |
-| F1 MOD-15 borç/alacak | — | sırada |
+| Bu plan (v1) + karar dosyası FNS-D1…D13 + hubvogal incelemesi §15 | #896 | taslak PR; kalan sorular N-11, N-12, N-15, N-17, N-18 |
+| F1 MOD-15 borç/alacak | #902 | taslak PR; CI ve iki review bekliyor |
 
-Sıradaki: F1 (borç/alacak yönü, MOD-15) — ön şartlar tamam (FNS-D2, FNS-D7).
+Sıradaki (FNS-D10): F1b (API-04 cari bakiye özeti) ve F2 (API-10…12 fatura kabul portu), F1'in üstüne ayrı PR'lar.
+Yeni iş (FNS-D12): **API-14 Açılış Kaydı** — geçici, Ayarlar anahtarıyla açılan, maker≠checker açılış girişi (F8'den
+öne alınabilir).
 
 ---
 
@@ -537,7 +538,7 @@ formlarından çıkarıldı.
 |---|---|
 | N-14 | ~~Cari Kur Grubu~~ → **FNS-D6: tek cari, para birimi bazında bakiye** |
 | N-15 | "Kur Pozisyonu: Yurtiçi / Yurtdışı" neyi ayırıyor (ithalat/ihracat, yurtdışı banka, yurtdışı cari)? |
-| N-16 | Banka/kasa hesabı eksiye düşebilsin mi (KMH/BCH dışında)? |
+| N-16 | ~~Eksi bakiye~~ → **FNS-D11: engellenir** (KMH/BCH limit içinde hariç) |
 | N-17 | Bir çek kısmen tahsil edilebiliyor mu ("Kalan" alanı)? |
 | N-18 | Ödeme tiplerindeki "X GÜN DBS" ile "X GÜN DBS VADE" farkı nedir? |
 
