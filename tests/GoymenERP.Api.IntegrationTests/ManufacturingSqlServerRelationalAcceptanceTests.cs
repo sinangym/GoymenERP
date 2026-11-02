@@ -716,12 +716,17 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await store.Plans.SavePlanAsync(plan, Metadata(run));
         }
 
-        var planConstraint = await run.ScalarAsync<string>(
-            "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
-            + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')");
-        var orderConstraint = await run.ScalarAsync<string>(
-            "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
-            + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')");
+        // The constraints as the process migration leaves them (U2-a's later Status 3 is undone on the way down).
+        string planConstraint = string.Empty, orderConstraint = string.Empty;
+        async Task CaptureConstraintsAsync()
+        {
+            planConstraint = await run.ScalarAsync<string>(
+                "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Plans_Enums' "
+                + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Plans]')");
+            orderConstraint = await run.ScalarAsync<string>(
+                "SELECT [definition] FROM sys.check_constraints WHERE [name] = N'CK_Orders_Enums' "
+                + "AND [parent_object_id] = OBJECT_ID(N'[manufacturing].[Orders]')");
+        }
 
         async Task AssertDownRefusedBeforeMutation()
         {
@@ -744,6 +749,7 @@ public sealed partial class ManufacturingSqlServerRelationalAcceptanceTests
             await using var context = run.Context(CompanyA);
             await context.GetService<IMigrator>().MigrateAsync(processMigration);
             Assert.Equal(processMigration, (await context.Database.GetAppliedMigrationsAsync()).Last());
+            await CaptureConstraintsAsync();
         }
 
         // Plans alone block the downgrade.

@@ -543,7 +543,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // filter and company-leading keys and FKs; the closure decision gains source, line and mass-balance columns.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "c5a93f576c5a302fadeb104c0bc31b3ffd2ef3aed0f9ff92b5f9d44d4ea4622b",
+                // Üretim U2-a: the append-only PlanRejections carry the same CompanyId filter and company-leading key and FK;
+                // the plan row admits only its cancellation columns beside the approval; the order index becomes unique.
+                "5a558c630d5155cb44fc949bf0bb64af0dcb75fd48d4d1a90a2f2d6fd4d44f53",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1173,11 +1175,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // command service); the one provider branch is unchanged (EnsureCreated 1, Migrate 1).
                 // Re-fingerprinted for MFG-PLAN-EDIT: one scoped registration of the plan-revision store over the same
                 // ManufacturingStore; the provider branch and its token counts are unchanged.
+                // Re-fingerprinted for Üretim U2-a: one scoped registration of the plan lifecycle store (rejection,
+                // cancellation) over the same ManufacturingStore; the provider branch and its token counts are unchanged.
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/"
                  + "ManufacturingModuleExtensions.cs"] =
                     new(
-                        "60fc1bdd7449ced2c19ab698d23b754e60a1fbe4c3da380c5dcff3dde3e23119",
+                        "8910b5105b4980de121faa91aa37b27e2e6139c7983b950b9e02a9f8b7d859bd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1198,10 +1202,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // through the same filtered context; the reviewed SqlClient API count remains unchanged.
                 // Üretim U1-b: the approval persists the captured parameter snapshot and the close decision its source, line
                 // and mass-balance percent, through the same filtered context; SqlClient count unchanged (1).
+                // Üretim U2-a: the rejection and cancellation writes, the plan rebuilt with its rejections, cancellation and
+                // one order, and the unique (company, plan) order index's 2601/2627 recognised by name as the plan's own
+                // rule; still recognition only, no connection, command or raw SQL; SqlClient count unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "86c0ba7f5c2af054804af9945bc5974cc7d09976c93b9a36d567b0d536467d35",
+                        "38d7a0ad00395960036f1b4f97cfe97f151eb8eb4121381d7f1e07cfec3ec52a",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1773,6 +1780,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
+                        }),
+                // Üretim U2-a: Up's first raw SQL refuses (51188) while a plan already has more than one order, before the
+                // unique (company, plan) index; Down's first raw SQL refuses (51187) while any cancellation, rejection or
+                // plan-entered value exists (forward fix), before anything is dropped.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261102181335_AddManufacturingPlanLifecycle.cs"] =
+                    new(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
                         }),
                 // SAT-D158 (EK21): Down refuses (51153) while any buyer situation list exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
