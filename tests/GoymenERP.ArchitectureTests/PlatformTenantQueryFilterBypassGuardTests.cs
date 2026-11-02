@@ -129,7 +129,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedOpenApiStartupFingerprint =
         // MOD-03 (EK19) maps the tax master and product item type routes and registers one scoped in-process Settings product
         // item type adapter, with comments; no OpenAPI-generation, network or hosted-service surface changes.
-        "24f2f221f56770ab839ffae07653823e2bfc82414effc6d976a37f9435dad8f6";
+        // Purchasing A0 (FZL-03) rewrites two Purchasing comments only (eligibility port is registered; order screens no
+        // longer "staged") (24f2f221… -> f46fcab5…); no registration, generation, network or hosted-service change.
+        "f46fcab5932654b60c81f41ce997c39ffed37a4727b32e571886a7ab20a1df57";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
