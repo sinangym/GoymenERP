@@ -1833,6 +1833,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         {
                             ["Sql"] = 2
                         }),
+                // Üretim U2-b1: Down's only raw SQL refuses (51186) while any plan-entered process value, or a plan-sourced
+                // snapshot value other than the U2-a line speed, exists (forward fix), before anything is dropped.
+                ["src/backend/Modules/Manufacturing/"
+                 + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
+                 + "20261102224501_AddManufacturingPlanProcessSpecs.cs"] =
+                    new(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
+                        }),
                 // SAT-D158 (EK21): Down refuses (51153) while any buyer situation list exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261101143556_AddTaxBuyerSituationLists.cs"] =
