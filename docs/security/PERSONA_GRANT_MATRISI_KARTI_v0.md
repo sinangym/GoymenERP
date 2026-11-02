@@ -109,8 +109,8 @@ bağlıdır.
 | **Satış Müdürü** (SAT-D187, SAT-D188) | Eski Müdür'ün **satış** yetkilerini alır: satış siparişi onayı (SAT-D6), taban fiyat ve iskonto istisnası onayı (SAT-D1/D2/D37), miktar revizyonunun yeniden onayı (SAT-D3), iptal (SAT-D4), süresi geçmiş teklif onayı (SAT-D24/D44), fiyat ve başlık yazma (SAT-D151, SAT-D144), risk istisnası talebi ve onayı (SAT-D159, SAT-D153), fazla teslim onayı ve kapatma (SAT-D168), kaynak planı (SAT-D179), satış ayarları (SAT-D189). "Müdür" iskonto limit grubu **Satış Müdürü** grubudur (SAT-D188, soru 7). Satış siparişi taslağı açar (SAT-D194; açtığını onaylayamaz). "Faturalanmış, sevk edilmemiş" bakiyeyi Muhasebe Müdürü ile birlikte görür ve yönetir (SAT-D193). **Satış ve muhasebe** okumaları Muhasebe Müdürü ile ortaktır (SAT-D188); öteki modüllerin okumalarını **almaz** (SAT-D191). Vergi/muhasebe yetkisi ve cari yönetimi **almaz** (SAT-D188, SAT-D192). |
 | **Muhasebe Müdürü** (SAT-D187, SAT-D188) | Eski Müdür'ün **vergi/muhasebe** yetkilerini alır: vergi ayarlarını ve kalem tipini doğrudan değiştirme (SAT-D145/D149; SAT-D148/D158/D181 değer ve liste girişi bunun içindedir), Muhasebe'nin vergi ayarı önerisini onaylama (SAT-D146), kur düzeltmesi (SAT-D169), belge tarihinden önceki sevklerde istisna onayı (SAT-D186). Accounting modülünün müdürüdür: muhasebe dönemi ve yevmiye/fiş yetkileri (SAT-D191). Cari kartı açma/değiştirme ve cari hesabını aktif/pasif yapma **yalnız** Muhasebe Müdürü'ndedir (SAT-D192). SAT-D99 bakiyesini Satış Müdürü ile birlikte görür ve yönetir (SAT-D193). **Satış ve muhasebe** okumaları Satış Müdürü ile ortaktır (SAT-D188); öteki modüllerin okumalarını almaz (SAT-D191). Satış yetkisi **almaz**. Muhasebe personasının (SAT-D142) yetkilerini kendiliğinden almaz; aynı kişiye iki persona birlikte verilebilir. |
 | **Genel Müdür** (SAT-D187, SAT-D190) | **Bütün modüllerde** müdürlerin yaptığı onay ve değişiklikleri yapabilir; her müdür hücresinde yetkilidir (SAT-D188, soru 9). Admin'in **sistem yönetimi** yetkileri (kullanıcı, rol, sistem ayarı) bu kapsamda **değildir** (SAT-D190). Öteki modül müdürleri tanımlanana kadar o modüllerin müdür hücrelerini Admin ile birlikte tutar (SAT-D187, SAT-D191). Bu ara dönem hücrelerinin bir kısmı onay değil **operasyonel kayıttır** (`inventory.opening-stock.record`, `manufacturing.facts.record`, `logistics.loads.record`, `logistics.loading-instructions.create`, `organization.locations.status.update`); SAT-D190'ın "onay ve değişiklik" kapsamını aşar ve dayanağı EK29 soru 1'dir (SAT-D191: "rol tanımlanana kadar Genel Müdür ve Admin yapar"). Grant PR'ı bunları bilerek açar. Taslak açabilir (SAT-D194). **Finansta** yalnız onay ve onayın gerektirdiği okumayı alır; finans işlemi oluşturmaz ve banka hesabı okuması gibi genel finans okuması almaz (SAT-D197). |
-| **Finans Uzmanı** (SAT-D196) | Finans işlemini **oluşturur**: taslak kaydetme ve oluşturma için gereken okumalar (ör. banka hesabı seçimi, taslak ve tutarı). **Onaylamaz.** Finans dışında yetki almaz. Critical finans adları insan kapısındadır. |
-| **Finans Müdürü** (SAT-D196) | Finans işlemini **onaylar**: onay ve onayın gerektirdiği okumalar. **Oluşturmaz**; hazırlayan ≠ onaylayan. Bugün kartta Critical olmayan bir finans onay adı olmadığı için tabloda henüz `+` hücresi yoktur. Critical finans adları insan kapısındadır. |
+| **Finans Uzmanı** (SAT-D196) | Finans işlemini **oluşturur**: taslak kaydetme ve oluşturma için gereken okumalar (ör. banka hesabı seçimi, taslak ve tutarı). **Onaylamaz.** Finans dışında yalnız yedi temel izni alır (SAT-D191 temel; yorum, geri alınabilir — bkz. "Finans personaları"); öteki finans dışı her hücrede `—`. Critical finans adları insan kapısındadır. |
+| **Finans Müdürü** (SAT-D196) | Finans işlemini **onaylar**: onay ve onayın gerektirdiği okumalar. **Oluşturmaz**; hazırlayan ≠ onaylayan. Müdür personası olarak yedi temel izni alır (SAT-D191 temel); öteki finans dışı her hücrede `—`. Bugün kartta Critical olmayan bir finans onay adı olmadığı için finans satırlarında henüz `+` hücresi yoktur. Critical finans adları insan kapısındadır. |
 | *Satın Alma, Üretim, Stok, Lojistik Müdürü … (yer tutucu)* (SAT-D187, SAT-D191) | Her modülün kendi müdürü, yetkisi kendi modülünde kalır. Bu personalar **o modüllerin karar dosyalarında** tanımlanır (Alış ve Üretim şeritleri; ALS-D3 alış siparişi onayı ve ALS-D6 kur düzeltmesinin güncellenmesi Alış şeridinin işidir; URT-D2 plan onayı Üretim müdüründedir). Karta girene kadar sütunları yoktur. O modüllerde **eski Müdür'ün `+` hücreleri** ile SAT-D191'in o modülün müdürüne verdiği hücreler — tabloda "SAT-D187 ara dönem: … Müdürü" diye işaretli olanlar — **Genel Müdür + Admin**'dedir. Müdürü olmayan modülün (ör. Organizasyon) hücreleri de Genel Müdür + Admin'de kalır (SAT-D191). Kendi modülü dışındaki okumayı almaz (SAT-D191). |
 
 ## Önerilen eşleme
@@ -258,8 +258,9 @@ doldurulur; değişen her hücre karar numarasını taşır:
 | `identity.audit.read` (CRITICAL) | insan kapısı | — | — | — | — | — | — *(Critical)* | — *(Critical)* | — *(Critical)* |
 
 **Finans personaları (2 Kasım 2026, EK30 SAT-D196/D197).** Finans Uzmanı ve Finans Müdürü yalnız finans adlarında anlam
-taşıdığı için ana tabloya sütun olarak değil, bu ek tabloyla eklendi; ana tablonun öteki satırlarında ikisi de **`—`**
-(deny-first; kararlar onlara finans dışında bir şey vermez). Finans Uzmanı **oluşturur** (taslak kaydetme ve oluşturma
+taşıdığı için ana tabloya sütun olarak değil, bu ek tabloyla eklendi. İkisi finans dışında **yalnız yedi temel izni**
+alır (aşağıdaki ilk yedi satır, SAT-D191 temel); ana tablonun öteki bütün finans dışı satırlarında ikisi de **`—`**
+(deny-first). Finans Uzmanı **oluşturur** (taslak kaydetme ve oluşturma
 için gereken okumalar), Finans Müdürü **onaylar** (onay ve onayın gerektirdiği okumalar); hazırlayan ≠ onaylayan
 (SAT-D196). Genel Müdür finans işlemini **onaylayabilir ama oluşturamaz**; ona yalnız onay ve onayın gerektirdiği okuma
 verilir (SAT-D197). Satış Müdürü ve Muhasebe Müdürü için K4.2 aynen kalır: genel Finance yok. Admin her iki işi de
@@ -267,6 +268,13 @@ yapabilir (SAT-D187, SAT-D196) ama **kendi kaydını onaylayamaz** (P6, kayıt k
 
 | İzin adı | Admin | Finans Uzmanı | Finans Müdürü | Genel Müdür | Satış Müdürü / Muhasebe Müdürü |
 |---|---|---|---|---|---|
+| `organization.context.read` | + | + *(SAT-D191 temel — "bütün personalara verilen temel izinler"; SAT-D164 emsali; yorum, geri alınabilir)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel; ana tablo)* | + *(SAT-D191 temel; ana tablo)* |
+| `organization.sites.read` | + | + *(SAT-D191 temel — "bütün personalara verilen temel izinler"; SAT-D164 emsali; yorum, geri alınabilir)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel; ana tablo)* | + *(SAT-D191 temel; ana tablo)* |
+| `organization.locations.read` | + | + *(SAT-D191 temel — "bütün personalara verilen temel izinler"; SAT-D164 emsali; yorum, geri alınabilir)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel; ana tablo)* | + *(SAT-D191 temel; ana tablo)* |
+| `identity.profile.read` | + | + *(SAT-D191 temel — "bütün personalara verilen temel izinler"; SAT-D164 emsali; yorum, geri alınabilir)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel; ana tablo)* | + *(SAT-D191 temel; ana tablo)* |
+| `identity.access.request` | + | + *(SAT-D191 temel — "bütün personalara verilen temel izinler"; SAT-D164 emsali; yorum, geri alınabilir)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel; ana tablo)* | + *(SAT-D191 temel; ana tablo)* |
+| `counterparty.parties.read` | + | + *(SAT-D191 temel — "bütün personalara verilen temel izinler"; SAT-D164 emsali; yorum, geri alınabilir)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel; ana tablo)* | + *(SAT-D191 temel; ana tablo)* |
+| `product.operational-selection.read` | + | + *(SAT-D191 temel — "bütün personalara verilen temel izinler"; SAT-D164 emsali; yorum, geri alınabilir)* | + *(SAT-D191 temel)* | + *(SAT-D191 temel; ana tablo)* | + *(SAT-D191 temel; ana tablo)* |
 | `finance.bank-account.read` | + | + *(SAT-D196: taslak kaydetme ekranı bu okumayı ister)* | — *(SAT-D196: tablodaki hiçbir onay gerektirmez)* | **—** *(SAT-D197)* | — *(K4.2)* |
 | `finance.manual-receipt.draft.read` | + | + *(SAT-D196)* | — *(SAT-D196: tablodaki hiçbir onay gerektirmez)* | — *(SAT-D197)* | — *(K4.2)* |
 | `finance.manual-receipt.draft.save` | + | + *(SAT-D196)* | **—** *(SAT-D196: müdür oluşturmaz)* | **—** *(SAT-D197)* | — *(K4.2)* |
@@ -274,6 +282,11 @@ yapabilir (SAT-D187, SAT-D196) ama **kendi kaydını onaylayamaz** (P6, kayıt k
 | `finance.bank-account.propose` (CRITICAL) | insan kapısı | — *(Critical)* | — *(Critical)* | — *(Critical)* | — *(Critical)* |
 | `finance.bank-account.approve` (CRITICAL) | insan kapısı | — *(Critical)* | — *(Critical)* | — *(Critical)* | — *(Critical)* |
 
+- **Temel izinler (ilk yedi satır):** SAT-D191'in uygulama ayrıntısı bunları "bütün personalara verilen temel izinler"
+  diye tanımlar ve müdürlere de verir; Finans Müdürü bir müdür personası olduğu için alır. Finans Uzmanı için bu bir
+  **yorumdur (geri alınabilir)**: SAT-D191 bunları bütün personalara verilen izinler sayar ve bu izinler olmadan persona
+  oturumda şirket bağlamını ve kendi profilini açamaz (Muhasebe için SAT-D164 emsali). Genel Müdür ve Satış/Muhasebe
+  Müdürü hücreleri ana tablodakinin aynısıdır.
 - Bugün tablodaki dört Critical olmayan finans adının hiçbiri bir **onay** değildir; bu yüzden Finans Müdürü ve Genel
   Müdür bu tabloda hiçbir `+` almaz. Onayın gerektirdiği okuma, onay adı karta eklendiğinde o onayla birlikte
   değerlendirilir (ör. `finance.manual-receipt.reverse.approve`). Critical `finance.bank-account.approve` insan
