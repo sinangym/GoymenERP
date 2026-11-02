@@ -273,6 +273,53 @@ public static class SalesRuleCodes
     /// <summary>The delivery slices of a line add up to more than the line; a shortfall is "unplanned", never "delivered".</summary>
     public const string SlicesExceedQuantity = "sales_slices_exceed_quantity";
 
+    // ---- MOD-03 → Sales: the order's tax (SAT-D93/D97/D140/D147/D158) -----------------------------------------------------
+
+    /// <summary>SAT-D140/D158: the buyer situation code is malformed (shape only; the Settings list decides membership).</summary>
+    public const string TaxBuyerSituationInvalid = "sales_tax_buyer_situation_invalid";
+
+    /// <summary>SAT-D158: the buyer situation is not in the Settings buyer situation list in force on the order's business date.</summary>
+    public const string TaxBuyerSituationUnknown = "sales_tax_buyer_situation_unknown";
+
+    /// <summary>SAT-D147: the exemption code is malformed (shape only).</summary>
+    public const string TaxExemptionCodeInvalid = "sales_tax_exemption_code_invalid";
+
+    /// <summary>SAT-D147 / SAT-D93: the exemption code is not in the Settings exemption list in force on the order's business date.</summary>
+    public const string TaxExemptionCodeUnknown = "sales_tax_exemption_code_unknown";
+
+    /// <summary>SAT-D147: an exemption code is chosen only for a situation whose effect is "KDV %0 with an exemption code".</summary>
+    public const string TaxExemptionCodeNotApplicable = "sales_tax_exemption_code_not_applicable";
+
+    /// <summary>SAT-D147: the buyer's document number and date are given together (and the number is at most 64 characters).</summary>
+    public const string TaxBuyerDocumentIncomplete = "sales_tax_buyer_document_incomplete";
+
+    /// <summary>SAT-D147: a buyer document is given only for a situation that requires one.</summary>
+    public const string TaxBuyerDocumentNotApplicable = "sales_tax_buyer_document_not_applicable";
+
+    /// <summary>SAT-D139: the item type of a line's tax override is not one of the Settings item types.</summary>
+    public const string TaxItemTypeUnknown = "sales_tax_item_type_unknown";
+
+    /// <summary>SAT-D97: a line's tax override needs a reason.</summary>
+    public const string TaxOverrideReasonRequired = "sales_tax_override_reason_required";
+
+    /// <summary>SAT-D97: the reason of a line's tax override is at most 4000 characters.</summary>
+    public const string TaxOverrideReasonTooLong = "sales_tax_override_reason_too_long";
+
+    /// <summary>SAT-D181: the picked VAT rate is not an entry of the Settings VAT rate list in force (or no list is entered).</summary>
+    public const string TaxVatRateUnknown = "sales_tax_vat_rate_unknown";
+
+    /// <summary>SAT-D181 (EK26) / SAT-D93 / SAT-D147: a picked VAT rate of 0 needs an exemption code from the exemption list.</summary>
+    public const string TaxExemptionCodeRequired = "sales_tax_exemption_code_required";
+
+    /// <summary>SAT-D181: the picked withholding ratio is not an entry of the Settings withholding ratio list in force (or none entered).</summary>
+    public const string TaxWithholdingRatioUnknown = "sales_tax_withholding_ratio_unknown";
+
+    /// <summary>SAT-D147/D181: a withholding ratio is picked only for a line that carries VAT (never KDV %0 or an exempt default).</summary>
+    public const string TaxWithholdingNotApplicable = "sales_tax_withholding_not_applicable";
+
+    /// <summary>A line's tax snapshot names another product than the line (a stale or crossed resolution; internal).</summary>
+    public const string TaxSnapshotMismatch = "sales_tax_snapshot_mismatch";
+
     /// <summary>
     /// A line-level guard fired although the aggregate had already checked the same bound. The
     /// aggregate is the single authority; this code marks the second, defensive check.

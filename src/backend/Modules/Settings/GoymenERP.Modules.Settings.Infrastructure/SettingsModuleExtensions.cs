@@ -44,6 +44,9 @@ public static class SettingsModuleExtensions
         // product-based read answers 503.
         services.AddScoped<ISettingsTaxMasterAdministrationV1, SettingsTaxMasterAdministration>();
         services.AddScoped<ISettingsLineTaxResolverV1, SettingsTaxMasterReader>();
+        // SAT-D181 (EK26): the VAT rate / withholding ratio lists a Sales line's reasoned tax change picks from (read-only; empty
+        // until entered, SAT-D148; maintenance is the SAT-D146 slice).
+        services.AddScoped<ISettingsTaxRateListReaderV1, SettingsTaxRateListReader>();
         return services;
     }
 

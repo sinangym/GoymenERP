@@ -6,7 +6,8 @@
  *
  * The screen never adds, multiplies or rounds an amount (AGENTS.md: "Fiyat/formül/toleransı ekran içinde yeniden yazma"):
  * every number is the server calculator's text. A value the server could not compute is shown as a word with its reason —
- * an unpriced line, a line priced in another unit, an incomplete document, a VAT master that does not exist yet — never as
+ * an unpriced line, a line priced in another unit, an incomplete document, a line whose tax the Settings values do not give yet
+ * (MOD-03 → Sales, with the server's reason) — never as
  * zero. A caller who may not see prices (any line `Withheld`) is not asked: the card says why nothing is shown. An order
  * without lines is not asked either — there is nothing to total, and no line says whether prices are disclosed — and the card
  * says so neutrally (never "forbidden"). A failed, forbidden or foreign answer shows no amount at all.
@@ -152,7 +153,9 @@ function TotalsBody({ detail, currency, totals }: { readonly detail: DraftDetail
   } else if (document.state === TOTALS_STATE.amountOutOfRange) {
     notes.push({ key: 'document-out-of-range', text: T.documentOutOfRange })
   }
-  if (totals.taxState === TOTALS_STATE.noSource) notes.push({ key: 'tax-no-source', text: T.taxNoSource })
+  if (totals.taxState === TOTALS_STATE.noSource) {
+    notes.push({ key: 'tax-no-source', text: T.taxNoSource(totals.lines.filter((line) => line.taxState === TOTALS_STATE.noSource).length) })
+  }
   else if (document.state === TOTALS_STATE.computed && !taxed) notes.push({ key: 'tax-partial', text: T.taxPartial })
   return (
     <>
@@ -237,6 +240,9 @@ function LineRow({
         <StatusIndicator tone={LINE_TONE[line.state]}>{T.lineState[line.state]}</StatusIndicator>
         {' '}
         <StatusIndicator tone={TAX_TONE[line.taxState]}>{`${T.vat}: ${T.taxState[line.taxState]}`}</StatusIndicator>
+        {line.taxReason === null ? null : (
+          <span className={pages.muted} data-testid={`${id}-tax-reason`}>{' '}{T.taxReason(line.taxReason)}</span>
+        )}
       </td>
     </tr>
   )

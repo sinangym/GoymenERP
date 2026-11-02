@@ -11,6 +11,7 @@
  * returns null for anything it cannot vouch for; the caller fails closed.
  */
 
+import { buildBuyerTax, START_BUYER_SITUATION, type BuyerSituationOption, type BuyerTax, type BuyerTaxInput, type BuyerTaxRequest } from './orderTax'
 import { salesDraftDetailPath } from './contract'
 import { isReferenceId, isVersionString, parseDecimalInput } from './wirePrimitives'
 
@@ -69,6 +70,8 @@ export interface HeaderRevisionRequest {
   readonly contact: OwnerRef | null
   readonly salesOwnerUserId: string | null
   readonly dueTerms: DueTerms | null
+  /** MOD-03 → Sales (SAT-D140/D105): the new buyer tax situation; omitted = unchanged (the server's rule). */
+  readonly buyerTax?: BuyerTaxRequest
 }
 
 export interface SalesOwnerOption {
@@ -188,6 +191,7 @@ export type HeaderFormError =
   | { readonly kind: 'days'; readonly row: number }
   | { readonly kind: 'share'; readonly row: number }
   | { readonly kind: 'no-change' }
+  | { readonly kind: 'buyer-tax'; readonly error: 'situation-required' | 'document-incomplete' }
 
 export type BuiltHeaderRevision =
   | { readonly ok: true; readonly payload: HeaderRevisionRequest }
@@ -253,11 +257,38 @@ export function buildDueTerms(rows: readonly InstalmentRow[] | null): BuiltDueTe
   return { ok: true, dueTerms: { instalments } }
 }
 
-export function buildHeaderRevisionRequest(header: DraftHeader, values: HeaderFormValues): BuiltHeaderRevision {
+/**
+ * MOD-03 → Sales: the buyer tax part of a header revision — the form's input (null: not offered, e.g. the current one is not
+ * readable here), the order's current buyer tax as the tax read answered it and the chosen situation's Settings entry.
+ */
+export interface BuyerTaxRevision {
+  readonly input: BuyerTaxInput | null
+  readonly current: BuyerTax | null
+  readonly situation: BuyerSituationOption | undefined
+}
+
+/**
+ * Whether the request names the order's current buyer tax. An order written before the tax wiring has none: the form starts it
+ * at the start value ("Normal"), which is then no change either (the server keeps the order as it is until another is chosen).
+ */
+function sameBuyerTax(request: BuyerTaxRequest, current: BuyerTax | null): boolean {
+  const base = current ?? { situation: START_BUYER_SITUATION, exemptionCode: null, documentNo: null, documentDate: null }
+  return request.situation === base.situation && (request.exemptionCode ?? null) === base.exemptionCode
+    && (request.documentNo ?? null) === base.documentNo && (request.documentDate ?? null) === base.documentDate
+}
+
+export function buildHeaderRevisionRequest(header: DraftHeader, values: HeaderFormValues, buyer?: BuyerTaxRevision): BuiltHeaderRevision {
   if (values.reason.trim() === '') return { ok: false, error: { kind: 'reason-required' } }
   const terms = buildDueTerms(values.instalments)
   if (!terms.ok) return { ok: false, error: terms.error }
   const dueTerms = terms.dueTerms
+  let buyerTax: BuyerTaxRequest | null = null
+  if (buyer?.input != null) {
+    const built = buildBuyerTax(buyer.input, buyer.situation)
+    if (!built.ok) return { ok: false, error: { kind: 'buyer-tax', error: built.error } }
+    // Sent only when it changes the order's buyer tax: an unchanged one is not a change (and keeps the replay content as before).
+    buyerTax = sameBuyerTax(built.buyerTax, buyer.current) ? null : built.buyerTax
+  }
   const payload: HeaderRevisionRequest = {
     expectedVersion: header.draftVersion,
     reason: values.reason,
@@ -268,8 +299,9 @@ export function buildHeaderRevisionRequest(header: DraftHeader, values: HeaderFo
     contact: values.contact,
     salesOwnerUserId: values.salesOwnerUserId,
     dueTerms,
+    ...(buyerTax === null ? {} : { buyerTax }),
   }
-  const unchanged = payload.partyId === header.partyId && payload.companyAccountId === header.companyAccountId
+  const unchanged = buyerTax === null && payload.partyId === header.partyId && payload.companyAccountId === header.companyAccountId
     && payload.currencyId === header.currencyId && sameRef(payload.deliveryAddress, header.deliveryAddress)
     && sameRef(payload.contact, header.contact) && payload.salesOwnerUserId === header.salesOwnerUserId
     && sameTerms(payload.dueTerms, header.dueTerms)

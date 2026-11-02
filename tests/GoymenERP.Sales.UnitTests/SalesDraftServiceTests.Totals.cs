@@ -29,11 +29,14 @@ public sealed partial class SalesDraftServiceTests
         // 1.25 kg × 11.475 = 14.34375 → 14.34; 2.25 kg × 99.5 = 223.875 → 223.88 (SAT-D11: half away from zero, per line).
         Assert.Equal(
             [
-                new SalesDraftLineTotalV1(first, 1, KgUnit, "1.25", "Computed", "11.475", "14.34", "NoSource", null, null, null, null, null, null),
-                new SalesDraftLineTotalV1(second, 2, KgUnit, "2.25", "Computed", "99.5", "223.88", "NoSource", null, null, null, null, null, null),
+                // MOD-03 → Sales: no Settings line tax port is composed here, so no line carries a tax snapshot (named, never 0).
+                new SalesDraftLineTotalV1(first, 1, KgUnit, "1.25", "Computed", "11.475", "14.34", "NoSource", null, null, null, null, null, null,
+                    "tax_snapshot_missing"),
+                new SalesDraftLineTotalV1(second, 2, KgUnit, "2.25", "Computed", "99.5", "223.88", "NoSource", null, null, null, null, null, null,
+                    "tax_snapshot_missing"),
             ],
             totals.Lines);
-        Assert.Equal(new SalesDraftDocumentTotalsV1("Computed", 0, 0, 0, "238.22", "NoSource", null, null, null, null), totals.Totals);
+        Assert.Equal(new SalesDraftDocumentTotalsV1("Computed", 0, 0, 0, "238.22", "NoSource", null, null, null, null, 2), totals.Totals);
         // The draft read, the price read BEFORE the draft is read, the draft read's fence after it, the price read last.
         Assert.Equal([ReadPermission, PriceReadPermission, ReadPermission, PriceReadPermission], world.Authority.Measured);
         Assert.Equal((attempts, envelopes), (world.Store.Attempts, world.Store.Envelopes.Count));
@@ -50,7 +53,7 @@ public sealed partial class SalesDraftServiceTests
 
         var line = Assert.Single(totals.Lines);
         Assert.Equal(("Unpriced", null, null, "NotComputed"), (line.State, line.NetUnitPrice, line.NetAmount, line.TaxState));
-        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "NotComputed", null, null, null, null), totals.Totals);
+        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 1, 0, 0, null, "NotComputed", null, null, null, null, 0), totals.Totals);
     }
 
     [Fact]
@@ -69,7 +72,7 @@ public sealed partial class SalesDraftServiceTests
 
         Assert.Equal(new SalesDraftLineTotalV1(lineId, 1, KgUnit, "999999999999999.999", "AmountOutOfRange", null, null, "NotComputed",
             null, null, null, null, null, null), Assert.Single(totals.Lines));
-        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 0, 0, 1, null, "NotComputed", null, null, null, null), totals.Totals);
+        Assert.Equal(new SalesDraftDocumentTotalsV1("Incomplete", 0, 0, 1, null, "NotComputed", null, null, null, null, 0), totals.Totals);
     }
 
     [Fact]
@@ -89,15 +92,15 @@ public sealed partial class SalesDraftServiceTests
         var totals = await world.Service().GetDraftTotalsAsync(created.Draft.Id);
 
         Assert.All(totals.Lines, line => Assert.Equal(("Computed", "600000000000000000000000000.01"), (line.State, line.NetAmount)));
-        Assert.Equal(new SalesDraftDocumentTotalsV1("AmountOutOfRange", 0, 0, 0, null, "NotComputed", null, null, null, null),
+        Assert.Equal(new SalesDraftDocumentTotalsV1("AmountOutOfRange", 0, 0, 0, null, "NotComputed", null, null, null, null, 0),
             totals.Totals);
     }
 
     [Fact]
     public async Task The_risk_check_of_the_same_out_of_range_order_answers_its_unavailable_path_never_an_exception()
     {
-        // Review B P2-1, second half: the risk read never multiplies an order amount (SAT-D46: its VAT-included amount is API-03's,
-        // whose VAT has no source), so the out-of-range order is "Unavailable" there too — no OverflowException, no 500.
+        // Review B P2-1, second half: the risk read values the order through API-03's calculator (SAT-D46), whose out-of-range
+        // amount is no amount — so the order is "Unavailable" there too (amount_invalid) — no OverflowException, no 500.
         var world = new World { PartyRisk = new FakePartyRisk(FinanceLike([new(Lira, 100m)])) };
         var created = (await world.Service().CreateDraftAsync(RequestWithQuantity("999999999999999.999", null),
             Metadata("k-risk-overflow"))).Detail;
@@ -107,7 +110,7 @@ public sealed partial class SalesDraftServiceTests
         var check = await world.Service().GetDraftRiskCheckAsync(created.Draft.Id);
 
         Assert.Equal("Unavailable", check.Result);
-        Assert.Equal(("ThisOrder", "Unavailable", SalesDraftRiskReasonCodesV1.VatInclusiveAmountUnavailable),
+        Assert.Equal(("ThisOrder", "Unavailable", "amount_invalid"),
             (check.ThisOrder.Kind, check.ThisOrder.State, check.ThisOrder.ReasonCode));
     }
 

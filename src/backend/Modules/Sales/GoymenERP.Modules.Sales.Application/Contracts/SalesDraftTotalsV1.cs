@@ -32,7 +32,10 @@ public static class SalesDraftTotalsStatesV1
     /// </summary>
     public const string Incomplete = "Incomplete";
 
-    /// <summary>Tax: no VAT master answered (MOD-03 not on main) — no VAT, withholding, gross or payable amount.</summary>
+    /// <summary>
+    /// Tax: no usable tax snapshot for the line (MOD-03 → Sales: the Settings line tax port gave no rate — see the line's
+    /// <c>taxReason</c>; empty Settings values stay "kaynak yok", SAT-D148) — no VAT, withholding, gross or payable amount.
+    /// </summary>
     public const string NoSource = "NoSource";
 
     /// <summary>Tax: the base is missing (the line or the document has no amount).</summary>
@@ -74,7 +77,11 @@ public sealed record SalesDraftLineTotalV1(
     string? WithholdingShare,
     string? WithheldVatAmount,
     string? GrossAmount,
-    string? PayableAmount);
+    string? PayableAmount,
+    // MOD-03 → Sales: why the line's tax is NoSource (the Settings port's reason verbatim, e.g. item_type_default_missing,
+    // buyer_situation_unknown, or Sales' tax_snapshot_missing); omitted when the tax is computed or not computable (no amount).
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? TaxReason = null);
 
 /// <summary>
 /// The document: sums of the line amounts. <c>state</c> <c>Computed</c>, <c>Incomplete</c> (with the counts of lines that have
@@ -91,4 +98,6 @@ public sealed record SalesDraftDocumentTotalsV1(
     string? VatAmount,
     string? WithheldVatAmount,
     string? GrossAmount,
-    string? PayableAmount);
+    string? PayableAmount,
+    // MOD-03 → Sales: how many lines have no usable tax when the document's tax is NoSource (0 otherwise). Always written (required).
+    int TaxUnavailableLineCount);

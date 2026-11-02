@@ -94,6 +94,9 @@ import { Button } from '../ui/Button'
 import { Field } from '../ui/Field'
 import { StatusIndicator } from '../ui/StatusIndicator'
 import { SalesDueTermsEditor } from './SalesDueTermsEditor'
+import { BuyerTaxFields } from './SalesTaxFields'
+import { EMPTY_BUYER_TAX_INPUT, readOptions, situationOf } from './orderTax'
+import { useTaxOptions } from './useTaxOptions'
 import styles from './SalesDraftCreatePage.module.css'
 
 
@@ -183,6 +186,9 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
   const [productSearch, setProductSearch] = useState('')
   const [chosenProducts, setChosenProducts] = useState<readonly { readonly effectiveOn: string; readonly option: ProductOption }[]>([])
   const source = useOptions(companyId, values.businessDate, accountSearch, productSearch)
+  // MOD-03 → Sales (SAT-D140/D158): the Settings buyer situation list in force on the order's business date.
+  const taxOptionsRead = useTaxOptions(shell, companyId, values.businessDate === '' ? null : values.businessDate)
+  const buyerTaxValue = values.buyerTax ?? EMPTY_BUYER_TAX_INPUT
   const useContactInformation = useContext(SalesContactInformationSourceContext)
   const delivery = useContactInformation(companyId, values.partyId, values.companyAccountId)
   /** The full options (lines included) — only when every owner has answered for this company/date/search. */
@@ -378,6 +384,7 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
       accounts === null ? options : { ...options, accounts },
       deliveryOptions,
       priceWrite,
+      situationOf(readOptions(taxOptionsRead.data).options, buyerTaxValue.situation),
     )
     if (!validation.ok) {
       // Nothing was sent, so no key is minted.
@@ -758,6 +765,19 @@ function CreateForm({ binding, companyId }: { readonly binding: string; readonly
                   error={errors[ORDER_FIELD.dueTerms] ?? null}
                   errorId={`${ORDER_FIELD.dueTerms}-error`}
                 />
+              </div>
+              {/* MOD-03 → Sales (SAT-D140): the buyer tax situation, chosen per order from the Settings list. */}
+              <div id={ORDER_FIELD.buyerTax} tabIndex={-1} data-testid="sales-create-buyer-tax-field">
+                <BuyerTaxFields
+                  idPrefix="sales-create"
+                  value={buyerTaxValue}
+                  outcome={taxOptionsRead.data}
+                  disabled={false}
+                  onChange={(buyerTax) => setValues((v) => ({ ...v, buyerTax }))}
+                />
+                {errors[ORDER_FIELD.buyerTax] === undefined ? null : (
+                  <p role="alert" className={styles.error} id={`${ORDER_FIELD.buyerTax}-error`}>{errors[ORDER_FIELD.buyerTax]}</p>
+                )}
               </div>
             </section>
 

@@ -337,6 +337,7 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
         // pre-migration state is reproduced as SQL Server would have held it (no terms) before the rollback is tried.
         await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL WHERE [Id] = @id; SELECT @@ROWCOUNT", ("@id", draft.Id));
         await run.ScalarAsync<int>("UPDATE [sales].[DraftRevisionHeaders] SET [DueTermsJson] = NULL WHERE [DraftId] = @id; SELECT @@ROWCOUNT", ("@id", draft.Id));
+        await run.ScalarAsync<int>(SalesOrderTaxRollback.ClearSql);
         await using (var context = run.SalesContext(CompanyA))
         {
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
@@ -363,7 +364,9 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
             var applied = (await context.Database.GetAppliedMigrationsAsync()).ToArray();
             var headers = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftHeaderRevisions", StringComparison.Ordinal));
             var migrator = context.GetService<IMigrator>();
-            // Every later migration (SAT-D115 AddDraftCustomerRejections: no rejection here) rolls back first; stop on this one.
+            // Every later migration (SAT-D115 AddDraftCustomerRejections: no rejection here; the MOD-03 tax migrations over the
+            // pre-tax state) rolls back first; stop on this one.
+            await run.ScalarAsync<int>(SalesOrderTaxRollback.ClearSql);
             await migrator.MigrateAsync(applied[headers]);
             var error = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
             Assert.Equal(51133, error.Number);
@@ -380,6 +383,8 @@ public sealed class SalesOrderHeaderRevisionSqlServerRelationalAcceptanceTests
             // The recorded-attempt arm alone: with no draft carrying a sales owner or due terms, the recorded header revision
             // still refuses the rollback.
             await run.ScalarAsync<int>("UPDATE [sales].[Drafts] SET [DueTermsJson] = NULL, [SalesOwnerUserId] = NULL; SELECT @@ROWCOUNT");
+            // The re-applied SAT-D184 backfill wrote the legacy buyer-tax basis again; clear it so the tax migrations roll back.
+            await run.ScalarAsync<int>(SalesOrderTaxRollback.ClearSql);
             await migrator.MigrateAsync(applied[headers]);
             var attemptArm = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[headers - 1]));
             Assert.Equal(51133, attemptArm.Number);

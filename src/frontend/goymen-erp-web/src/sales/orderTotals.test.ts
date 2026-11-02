@@ -37,7 +37,7 @@ const totals = (): Body => JSON.parse(totalsResponseRaw) as Body
 function complete(): Body {
   const body = totals()
   body.lines[1] = { ...body.lines[0], lineId: LINE_2, lineNo: 2, quantity: '2', netUnitPrice: '100', netAmount: '200.00' }
-  body.totals = { ...body.totals, state: 'Computed', unpricedLineCount: 0, netAmount: '214.34', taxState: 'NoSource' }
+  body.totals = { ...body.totals, state: 'Computed', unpricedLineCount: 0, netAmount: '214.34', taxState: 'NoSource', taxUnavailableLineCount: 2 }
   return body
 }
 
@@ -49,6 +49,7 @@ function taxed(): Body {
     ...body.lines[0], lineId: LINE_2, lineNo: 2, quantity: '2', netUnitPrice: '100', netAmount: '200.00',
   }
   for (const [index, line] of body.lines.entries()) {
+    delete line.taxReason
     Object.assign(line, index === 0
       ? { taxState: 'Computed', vatPercent: '20', vatAmount: '2.87', withholdingShare: null, withheldVatAmount: '0.00', grossAmount: '17.21', payableAmount: '17.21' }
       : { taxState: 'Computed', vatPercent: '20', vatAmount: '40.00', withholdingShare: '0.5', withheldVatAmount: '20.00', grossAmount: '240.00', payableAmount: '220.00' })
@@ -56,6 +57,7 @@ function taxed(): Body {
   body.totals = {
     state: 'Computed', unpricedLineCount: 0, priceUnitNotOrderUnitLineCount: 0, amountOutOfRangeLineCount: 0, netAmount: '214.34',
     taxState: 'Computed', vatAmount: '42.87', withheldVatAmount: '20.00', grossAmount: '257.21', payableAmount: '237.21',
+    taxUnavailableLineCount: 0,
   }
   return body
 }
@@ -82,7 +84,7 @@ describe('decodeOrderTotals', () => {
     const decoded = decodeOrderTotals(taxed(), detail)
     expect(decoded?.totals).toEqual({
       state: 'Computed', unpricedLineCount: 0, priceUnitNotOrderUnitLineCount: 0, amountOutOfRangeLineCount: 0, netAmount: '214.34',
-      taxState: 'Computed',
+      taxState: 'Computed', taxUnavailableLineCount: 0,
       tax: { vatAmount: '42.87', withheldVatAmount: '20.00', grossAmount: '257.21', payableAmount: '237.21' },
     })
     expect(decoded?.lines[1]).toMatchObject({ vatPercent: '20', withholdingShare: '0.5', tax: { withheldVatAmount: '20.00', payableAmount: '220.00' } })
@@ -102,6 +104,8 @@ describe('decodeOrderTotals', () => {
     const empty = { ...detail, lines: [] }
     const body = totals()
     body.lines = []
+    // MOD-03 → Sales: no line lacks a tax, so the order-level tax is not NoSource.
+    body.taxState = 'Computed'
     body.totals = { ...body.totals, unpricedLineCount: 0 }
     expect(decodeOrderTotals(body, empty)?.totals).toMatchObject({ state: 'Incomplete', unpricedLineCount: 0, netAmount: null })
     // A "complete" zero-line document (mutation m2) is refused.
@@ -112,6 +116,8 @@ describe('decodeOrderTotals', () => {
   it('reads a line beyond the decimal range as AmountOutOfRange with no amount, and the document as Incomplete', () => {
     const body = totals()
     Object.assign(body.lines[0], { state: 'AmountOutOfRange', netUnitPrice: null, netAmount: null, taxState: 'NotComputed' })
+    delete body.lines[0].taxReason
+    body.taxState = 'Computed'
     body.totals = { ...body.totals, amountOutOfRangeLineCount: 1 }
     const decoded = decodeOrderTotals(body, detail)
     expect(decoded?.lines[0]).toMatchObject({ state: 'AmountOutOfRange', netAmount: null, tax: null })
@@ -120,7 +126,7 @@ describe('decodeOrderTotals', () => {
 
   it('reads a document sum beyond the decimal range as AmountOutOfRange with no net, every line still shown', () => {
     const body = complete()
-    body.totals = { ...body.totals, state: 'AmountOutOfRange', netAmount: null, taxState: 'NotComputed' }
+    body.totals = { ...body.totals, state: 'AmountOutOfRange', netAmount: null, taxState: 'NotComputed', taxUnavailableLineCount: 0 }
     expect(decodeOrderTotals(body, detail)?.totals).toMatchObject({ state: 'AmountOutOfRange', netAmount: null, tax: null })
     expect(decodeOrderTotals({ ...body, totals: { ...body.totals, netAmount: '214.34' } }, detail)).toBeNull()
   })
@@ -156,6 +162,13 @@ describe('decodeOrderTotals', () => {
     ['an out-of-range line with an amount', (b) => { Object.assign(b.lines[0], { state: 'AmountOutOfRange', taxState: 'NotComputed' }) }],
     ['an incomplete document called out of range', (b) => { b.totals.state = 'AmountOutOfRange' }],
     ['an amount scale out of range', (b) => { b.amountScale = 29 }],
+    // MOD-03 → Sales: the tax reason is present exactly on a NoSource line, and the document counts the untaxed lines.
+    ['a NoSource line without its reason', (b) => { delete b.lines[0].taxReason }],
+    ['a reason on a NotComputed line', (b) => { b.lines[1].taxReason = 'tax_snapshot_missing' }],
+    ['a reason that is not a code', (b) => { b.lines[0].taxReason = 'Ayarlar boş' }],
+    ['a missing untaxed-line count', (b) => { delete b.totals.taxUnavailableLineCount }],
+    ['an untaxed-line count on a document without a NoSource tax', (b) => { b.totals.taxUnavailableLineCount = 1 }],
+    ['a top-level tax Computed while a line has none', (b) => { b.taxState = 'Computed' }],
   ]
   it.each(refusals)('refuses %s', (_, mutate) => {
     const body = totals()
@@ -170,6 +183,8 @@ describe('decodeOrderTotals', () => {
     }],
     ['a taxed line without its VAT rate', (b) => { b.lines[0].vatPercent = null }],
     ['a taxed line with a null payable', (b) => { b.lines[1].payableAmount = null }],
+    ['a top-level tax NoSource while every line is taxed', (b) => { b.taxState = 'NoSource' }],
+    ['a reason on a taxed line', (b) => { b.lines[0].taxReason = 'tax_snapshot_missing' }],
   ]
   it.each(taxedRefusals)('refuses %s', (_, mutate) => {
     const body = taxed()
@@ -203,13 +218,13 @@ describe('API-03 OpenAPI pin', () => {
   })
 
   it.each([
-    ['SalesOrderDraftTotalsResponse', ['amountScale', 'currencyId', 'draftVersion', 'lines', 'revision', 'taxState', 'totals']],
+    ['SalesOrderDraftTotalsResponse', ['amountScale', 'currencyId', 'draftVersion', 'lines', 'revision', 'taxState', 'totals'], []],
     ['SalesDraftDocumentTotalsV1', ['amountOutOfRangeLineCount', 'grossAmount', 'netAmount', 'payableAmount', 'priceUnitNotOrderUnitLineCount', 'state', 'taxState',
-      'unpricedLineCount', 'vatAmount', 'withheldVatAmount']],
+      'taxUnavailableLineCount', 'unpricedLineCount', 'vatAmount', 'withheldVatAmount'], []],
     ['SalesDraftLineTotalV1', ['grossAmount', 'lineId', 'lineNo', 'netAmount', 'netUnitPrice', 'orderUnitId', 'payableAmount', 'quantity',
-      'state', 'taxState', 'vatAmount', 'vatPercent', 'withheldVatAmount', 'withholdingShare']],
-  ])('%s: the decoder reads exactly the members the contract declares, all required', (name, keys) => {
+      'state', 'taxState', 'vatAmount', 'vatPercent', 'withheldVatAmount', 'withholdingShare'], ['taxReason']],
+  ])('%s: the decoder reads exactly the members the contract declares (MOD-03 → Sales members not required)', (name, keys, added) => {
     expect([...(schema(name).required ?? [])].sort()).toEqual([...keys].sort())
-    expect(Object.keys(schema(name).properties ?? {}).sort()).toEqual([...keys].sort())
+    expect(Object.keys(schema(name).properties ?? {}).sort()).toEqual([...keys, ...added].sort())
   })
 })
