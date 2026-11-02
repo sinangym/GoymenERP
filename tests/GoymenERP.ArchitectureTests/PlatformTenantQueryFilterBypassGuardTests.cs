@@ -660,9 +660,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
     private const string ReviewedFinanceInvoiceOpenItemAdmissionServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceInvoiceOpenItemAdmissionService.cs";
-    private const string ReviewedFinanceInvoiceOpenItemAdmissionParticipantPath =
-        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
-        + "Persistence/FinanceInvoiceOpenItemAdmissionParticipant.cs";
     private const string ReviewedFinanceOpenItemReadServicePath =
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/"
         + "FinanceOpenItemReadService.cs";
@@ -703,8 +700,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 [ReviewedFinanceOpenItemSourceAdmissionServicePath] = ("FinanceDbContext", 1),
                 // MOD-04 (F2a) invoice admission: the one counted site is a target-typed refusal result.
                 [ReviewedFinanceInvoiceOpenItemAdmissionServicePath] = ("FinanceDbContext", 1),
-                // ALS-D62: the enlisted participant builds one FinanceDbContext on the producer's borrowed connection.
-                [ReviewedFinanceInvoiceOpenItemAdmissionParticipantPath] = ("FinanceDbContext", 1),
                 // Target-typed DTO/cursor/ReadResult return sites are conservatively counted as context
                 // constructions. FI04 has four exact sites; all database access is tenant-filtered EF/DI.
                 [ReviewedFinanceOpenItemReadServicePath] = ("FinanceDbContext", 4),
@@ -1362,16 +1357,6 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // R16/P04: reviewed provider participants. Exact source and provider-boundary token counts are
                 // pinned; changes require a fresh source review rather than broadening this allowlist.
-                // ALS-D62: Finance's invoice admission participant borrows the producer's open connection and
-                // transaction like the Inventory participant below; no raw SQL, no commit/rollback, no filter bypass.
-                [ReviewedFinanceInvoiceOpenItemAdmissionParticipantPath] =
-                    new(
-                        "1ae206cfe7febd8ac91c859204853563e4c5e81869d155c81b6cfb105b348e4e",
-                        new Dictionary<string, int>(StringComparer.Ordinal)
-                        {
-                            ["System.Data.Common"] = 1,
-                            ["DbConnection"] = 3
-                        }),
                 [ReviewedInventoryGoodsReceiptParticipantPath] =
                     new(
                         "acf2f2e6f6c34e6a585c255c4ca89c69ee8098a465ee2ea5a55d18ea904bde0a",
