@@ -298,7 +298,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Settings tolerance serialization: +3 valid/invalid predecessor and empty round-trip SQL facts.
             // M01.2: +1 real-SQL lossless cut-line preview/save/replay/revise/reopen fact.
             ["tools/relational_inventory/manufacturing.txt"] =
-                "e03d7c7b483536bb99f07d3c7ad5b9e174770bf320accd34e25cb7ac44505699",
+                // Üretim U1-b: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (parameter snapshot at approval and
+                // catalog tolerance at close) (e03d7c7b… -> 7f38855d…).
+                "7f38855db8071e72e6686d5c8140eef39a3102a2afa00df9d0ac06320f076a76",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
@@ -323,7 +325,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             ["tools/relational_inventory/platform.txt"] =
                 // Üretim U1-a: +3 Settings manufacturing profile SQL facts (parameter lifecycle; tolerance publication; migration
                 // round trip) (534be0f1… -> 026f3c54…).
-                "026f3c5457f43542771ac4b8d407229523a1b2c9635a8a2f3efe23008b355da1",
+                // Üretim U1-b: +1 Settings manufacturing profile SQL fact (tolerance line scope, catalog fallback, supersession)
+                // (026f3c54… -> 69a1024a…).
+                "69a1024a041b3eb86e20c80dc871402df112fed0def350aa8918950c193296a9",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
