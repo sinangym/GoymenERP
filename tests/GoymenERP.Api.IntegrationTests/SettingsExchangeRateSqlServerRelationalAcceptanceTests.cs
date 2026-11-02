@@ -304,6 +304,13 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             await AssertProblemAsync(undetermined, HttpStatusCode.BadRequest, ExchangeRateProblemCodesV1.RequestInvalid);
         }
 
+        // Review A P3-4: a day that has not come yet is not marked (422, nothing stored).
+        using (var future = await editor.SendAsync(Json(HttpMethod.Post, $"{Root}/days/{run.Today.AddDays(1):yyyy-MM-dd}/half-day-marks",
+                   "k-m-future", new MarkExchangeRateHalfDayRequestV1("0", "FullDay", "SENTETIK"))))
+        {
+            await AssertProblemAsync(future, HttpStatusCode.UnprocessableEntity, ExchangeRateProblemCodesV1.MarkFutureDay);
+        }
+
         var mark = new MarkExchangeRateHalfDayRequestV1("0", "FullDay", "SENTETIK takvim teyidi");
         await run.CommandAsync(editor, HttpMethod.Post, tuesday, "k-m-1", mark, HttpStatusCode.NoContent);
         await run.CommandAsync(editor, HttpMethod.Post, tuesday, "k-m-1", mark, HttpStatusCode.NoContent, replayed: true);
@@ -366,6 +373,22 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             new ImportExchangeRatesRequestV1(Day("2026-10-16"), Day("2026-10-16")), HttpStatusCode.OK);
         Assert.Equal(("Resolved", "2026-10-16", "41.65", "Manual", false), Summary(await Resolve(editor, run, "2026-10-19", "USD")));
 
+        // Review A P2-2: a day TCMB once published never becomes "no bulletin" automatically. Thu 15 is re-verified and then
+        // answers 404 in two runs while later bulletins exist: it stays NotFound, so a Friday rate day stops on it (fail-closed)
+        // instead of sliding onto an older rate.
+        await run.CommandAsync(editor, HttpMethod.Post, $"{Root}/days/2026-10-15/reverification", "k-r-15",
+            new ReverifyExchangeRateDayRequestV1("2", "SENTETIK"), HttpStatusCode.NoContent);
+        bulletins.Override(Day("2026-10-15"), NoBulletin("2026-10-15"));
+        foreach (var key in new[] { "k-import-15a", "k-import-15b" })
+        {
+            await run.CommandJsonAsync(editor, $"{Root}/imports", key,
+                new ImportExchangeRatesRequestV1(Day("2026-10-15"), Day("2026-10-15")), HttpStatusCode.OK);
+        }
+
+        var thursday = (await run.JsonAsync(editor, $"{Root}?from=2026-10-15&to=2026-10-15")).GetProperty("days")[0];
+        Assert.Equal(ExchangeRateBulletinStatesV1.NotFound, thursday.GetProperty("bulletinState").GetString());
+        Assert.Equal(RateDayCode("exchange_rate_day_unconfirmed", "2026-10-15"), Failure(await Resolve(editor, run, "2026-10-16", "USD")));
+
         // The rollback is refused while rate records exist (forward fix); nothing is dropped. The state amendment refuses first
         // (51202: NotFound and manual half-day records exist), so every exchange-rate migration stays applied.
         await using var context = run.SettingsContext(CompanyA, out _);
@@ -398,6 +421,13 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         {
             // The platform answers every 503 with its own public code; the list read says the source is disabled.
             await AssertProblemAsync(disabled, HttpStatusCode.ServiceUnavailable, "service_unavailable");
+        }
+
+        // Review A P2-1: without an enabled source a day is not reopened (503, nothing recorded).
+        using (var reverify = await client.SendAsync(Json(HttpMethod.Post, $"{Root}/days/2026-10-15/reverification", "k-r-disabled",
+                   new ReverifyExchangeRateDayRequestV1("0", "SENTETIK"))))
+        {
+            await AssertProblemAsync(reverify, HttpStatusCode.ServiceUnavailable, "service_unavailable");
         }
 
         var list = await run.JsonAsync(client, $"{Root}?from=2026-10-15&to=2026-10-16");

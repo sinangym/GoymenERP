@@ -296,6 +296,12 @@ public sealed partial class SalesDraftServiceTests
             (asked.Source, asked.Target)));
         Assert.Equal([InvoiceRead, InvoiceRead, InvoiceRead, InvoiceRead, InvoiceRead, InvoiceRead], dispatch.Authority.Measured);
 
+        // Review A P3-2: an answer for another target currency than TL is never used.
+        rates.Target = DispatchOtherCurrency;
+        var otherTarget = await dispatch.Service().GetInvoiceCandidatesAsync(new SalesInvoiceCandidateQuery(null));
+        Assert.All(otherTarget.Groups, group => Assert.Equal(SalesInvoiceRateStateView.Unresolved, group.Key.ExchangeRate.State));
+        rates.Target = null;
+
         // A failing port: unresolved, never a guessed rate.
         rates.Fail = true;
         var failing = await dispatch.Service().GetInvoiceCandidatesAsync(new SalesInvoiceCandidateQuery(null));
@@ -307,6 +313,7 @@ public sealed partial class SalesDraftServiceTests
         : ISettingsExchangeRateResolverV1
     {
         public bool Fail { get; set; }
+        public Guid? Target { get; set; }
         public List<(DateOnly Day, Guid Source, Guid Target)> Asked { get; } = [];
 
         public Task<ExchangeRateResolutionV1> ResolveAsync(DateOnly rateDay, Guid sourceCurrencyId, Guid targetCurrencyId,
@@ -319,7 +326,7 @@ public sealed partial class SalesDraftServiceTests
             }
 
             var (bulletin, rate, code) = answer(rateDay);
-            return Task.FromResult(new ExchangeRateResolutionV1(rateDay, sourceCurrencyId, targetCurrencyId, null,
+            return Task.FromResult(new ExchangeRateResolutionV1(rateDay, sourceCurrencyId, Target ?? targetCurrencyId, null,
                 code is null ? ExchangeRateResolutionStatesV1.Resolved : ExchangeRateResolutionStatesV1.Unavailable,
                 ExchangeRateSourcesV1.Tcmb, false, null, bulletin, rate, code is null ? ExchangeRateProvenancesV1.Official : null,
                 code is null ? Guid.NewGuid() : null, code is null ? "1" : null, code, code is null ? null : rateDay));

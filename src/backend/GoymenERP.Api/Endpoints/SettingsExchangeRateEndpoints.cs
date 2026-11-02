@@ -164,6 +164,7 @@ public static class SettingsExchangeRateEndpoints
                 ExchangeRateProblemCodesV1.IdempotencyConflict,
                 ExchangeRateProblemCodesV1.VersionConflict,
                 ExchangeRateProblemCodesV1.HalfDayDetermined)
+            .ProducesErpUnprocessableEntity(ExchangeRateProblemCodesV1.MarkFutureDay)
             .ProducesErpServiceUnavailable(ExchangeRateProblemCodesV1.ProviderUnavailable)
             .ProducesErpAuthenticatedProblems();
 

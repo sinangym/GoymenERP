@@ -309,6 +309,7 @@ public sealed class SalesDispatchReadService(
                 var resolution = await exchangeRates.ResolveAsync(day, currency, SettingsCurrencyIdentitiesV1.TurkishLira, cancellationToken);
                 view = resolution is { State: ExchangeRateResolutionStatesV1.Resolved, BulletinDate: { } bulletinDate, SellingRate: { } rate }
                        && resolution.SourceCurrencyId == currency && resolution.RateDay == day
+                       && resolution.TargetCurrencyId == SettingsCurrencyIdentitiesV1.TurkishLira
                     ? new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Resolved, null, bulletinDate, rate, null)
                     : new SalesInvoiceGroupRateView(SalesInvoiceRateStateView.Unresolved, day, null, null,
                         resolution.Code ?? ExchangeRateProblemCodesV1.ProviderUnavailable);

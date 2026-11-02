@@ -208,6 +208,13 @@ internal sealed class SettingsExchangeRateAdministration(
             return Unstored(reasonRefusal, metadata);
         }
 
+        if (date > SettingsBusinessDate.Today(timeProvider))
+        {
+            // Review A P3-4: only a day that has come (or today) is marked; a future day waits for the automatic source.
+            return Unstored(Problem(422, ExchangeRateProblemCodesV1.MarkFutureDay, "İleri tarih.",
+                "Henüz gelmemiş bir gün elle işaretlenmez; otomatik kaynağın cevabı beklenir."), metadata);
+        }
+
         var state = request.State!;
         var subject = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
@@ -276,6 +283,14 @@ internal sealed class SettingsExchangeRateAdministration(
         if (ReasonRefusal(request.Reason, out var reason) is { } reasonRefusal)
         {
             return Unstored(reasonRefusal, metadata);
+        }
+
+        if (!bulletinSource.IsEnabled)
+        {
+            // Review A P2-1: without an enabled source nothing could ever answer the reopened question, so the day would stay
+            // "kur belirlenemedi" for good. Environment state, not the key's answer: nothing is recorded or stored.
+            return Unstored(Problem(503, ExchangeRateProblemCodesV1.SourceDisabled, "Kur kaynağı kapalı.",
+                "TCMB kur kaynağı bu ortamda etkin değil; gün yeniden doğrulamaya açılamaz."), metadata);
         }
 
         var subject = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -480,12 +495,16 @@ internal sealed class SettingsExchangeRateAdministration(
         bool laterBulletin, string actorId, DateTimeOffset now, List<object> recorded)
     {
         var current = rows.Current(date, ExchangeRateRecordKindsV1.Bulletin, ExchangeRateProvenancesV1.Official)?.State;
+        // Review A P2-2: a day TCMB ever published is a business day; no 404 later turns it into "no bulletin" automatically (that
+        // would slide documents onto an older rate). It stays NotFound — fail-closed — until a bulletin is read again.
+        var everPublished = rows.Records.Any(record => record.Date == date && record.Kind == ExchangeRateRecordKindsV1.Bulletin
+            && record.Provenance == ExchangeRateProvenancesV1.Official && record.State == ExchangeRateBulletinStatesV1.Published);
         string? state = current switch
         {
             _ when ExchangeRateBulletinStatesV1.IsFinal(current) => null,
             _ when answer.State == ExchangeRateBulletinStatesV1.Published => ExchangeRateBulletinStatesV1.Published,
             _ when answer.State == ExchangeRateBulletinStatesV1.NoBulletin => current == ExchangeRateBulletinStatesV1.NotFound
-                ? laterBulletin ? ExchangeRateBulletinStatesV1.NoBulletin : null
+                ? laterBulletin && !everPublished ? ExchangeRateBulletinStatesV1.NoBulletin : null
                 : ExchangeRateBulletinStatesV1.NotFound,
             null => ExchangeRateBulletinStatesV1.Unverified,
             _ => null,

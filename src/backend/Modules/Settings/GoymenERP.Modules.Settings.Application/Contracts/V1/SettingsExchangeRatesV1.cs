@@ -46,6 +46,9 @@ public static class ExchangeRateProblemCodesV1
     /// <summary>SAT-D198: the automatic source already gave the day a definite half-day answer; a manual mark never overrides it.</summary>
     public const string HalfDayDetermined = "exchange_rate_half_day_determined";
 
+    /// <summary>SAT-D198: a manual half-day mark is only for today or a past day; a future day waits for the automatic source.</summary>
+    public const string MarkFutureDay = "exchange_rate_mark_future_day";
+
     /// <summary>Re-verification reopens only a day whose official bulletin answer is final (Published / NoBulletin).</summary>
     public const string DayNotFinal = "exchange_rate_day_not_final";
 
@@ -80,7 +83,7 @@ public static class ExchangeRateBulletinStatesV1
     /// <summary>
     /// TCMB answered "the dated file does not exist" (404) once. Not final: a 404 becomes <see cref="NoBulletin"/> only when it
     /// is seen again in a LATER run while a later bulletin exists (one transient 404 never turns a business day into a
-    /// holiday). The resolver treats it like <see cref="Unverified"/> (fail-closed).
+    /// holiday), and never on a day TCMB ever published. The resolver treats it like <see cref="Unverified"/> (fail-closed).
     /// </summary>
     public const string NotFound = "NotFound";
 

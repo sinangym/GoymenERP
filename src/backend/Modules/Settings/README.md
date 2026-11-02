@@ -620,13 +620,19 @@ answer is reported as `Conflict` and nothing is written; one audit event per run
   NoBulletin) by appending an official `Unverified` record. It chooses nothing — no rate, no business-day decision; the
   resolver stops on the day (fail-closed; a manual rate on it is a manual conflict until then) and the next import asks TCMB
   again under the rules above. The import name, not the correction name: it only re-opens the source's question, which is
-  what an importer does; deciding a value stays with the correction.
+  what an importer does; deciding a value stays with the correction. Refused with 503 while the source is disabled (nothing
+  could answer the reopened question). The reopening record is an official `Unverified` record carrying the person
+  (`recordedBy`), the reason and the reference "Yeniden doğrulama istendi", with its own audit event; the Kurlar screen (UI
+  slice) should show it as a person's request, not a source answer.
+- A day TCMB ever published never becomes `NoBulletin` automatically (review A P2-2): repeated 404s keep it `NotFound`
+  (fail-closed) until a bulletin is read again.
 - A day whose official answer is already final (`Published` / `NoBulletin`; a definite half-day answer) is never asked again.
 - Arife / half day (SAT-D171): no reviewed automatic official source is wired; every day stays `Undetermined`, so the
   resolver chooses no rate ("kur belirlenemedi") until a human enables a reviewed source or a person marks the day (SAT-D198).
 - **SAT-D198 manual half-day mark** (`POST …/days/{date}/half-day-marks`, `settings.exchange-rates.half-day.mark`): `FullDay`
-  or `HalfDay` with a reason, version, key and audit `settings.exchange-rate.half-day-marked.v1`, only while the automatic
-  source has no definite answer for the day (409 `exchange_rate_half_day_determined` otherwise). A later definite automatic
+  or `HalfDay` with a reason, version, key and audit `settings.exchange-rate.half-day-marked.v1`, only for today or a past day
+  (422 `exchange_rate_mark_future_day`) and only while the automatic source has no definite answer for the day (409
+  `exchange_rate_half_day_determined` otherwise). A later definite automatic
   answer wins over the mark. Issued documents keep the rate they snapshotted (SAT-D172).
 
 **Follow-ups:**
