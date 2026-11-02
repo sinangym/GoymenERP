@@ -1,7 +1,7 @@
 # Finans → Satış görev notu v1
 
 Tarih: 2026-11-02 · Yazan: Finans şeridi (Claude) · Alıcı: Satış modülünü yürüten konuşma
-Kararlar: FNS-D2, FNS-D7, FNS-D14 (`docs/decisions/SINAN_KARARLARI_2026-11-02_FINANS.md`); SAT-D85/D86/D96/D172;
+Kararlar: FNS-D2, FNS-D7, FNS-D14 (`docs/decisions/SINAN_KARARLARI_2026-11-02_FINANS.md`); SAT-D85/D86/D96/D129/D172/D208;
 DEC-FIN-005/006. Bağlam: `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §6 MOD-04/MOD-05, §18; Satış notu
 `docs/handoffs/SATIS_MODUL_BAGLANTILARI_v1.md`. Finans şeridi Satış dosyalarını değiştirmez. Bu not iş tanımıdır; Satış'ın
 kendi karar, review ve merge kapıları geçerlidir.
@@ -18,7 +18,10 @@ kendi karar, review ve merge kapıları geçerlidir.
 - **Idempotency:** `CommandMetadata.IdempotencyKey`, öneri `sales-invoice:{invoiceId}:{invoiceVersion}`. Aynı anahtar ve
   payload aynı kullanıcıyla tekrar oynatılır (başka payload ya da kullanıcı → `IdempotencyConflict`); aynı fatura aynı
   sürüm ve aynı satırlarla yeni bir kabulle gelirse ikinci kalem açılmaz; farklı satır **veya farklı sürümle**
-  `finance_invoice_already_admitted` döner. Değişen fatura iptal + yeniden kesimdir (SAT-D96, Finans F2b).
+  `finance_invoice_already_admitted` döner. Yorum: değişen fatura iptal (ters kayıt, SAT-D96) ve yeniden kesimle düzeltilir (Finans F2b).
+- **İşlem sınırı:** Finans kendi işleminde yazar (tek `SaveChanges`); Satış'ın veritabanı işlemine katılmaz. Satış
+  kesinleşmeyi "Finans kabulü bekliyor" durumuyla commit eder, sonra portu aynı anahtarla çağırır; hata ya da zaman
+  aşımında aynı anahtarla yeniden dener.
 - **Yetki:** port kendi yetkisini taşımaz; Satış kendi kesinleştirme yetkisini ölçer. Bağlamdaki şirket ve kullanıcı
   sunucu bağlamına eşit olmalıdır.
 - **Taşıma:** ERP-000F dağıtıcısı gelene kadar senkron port (SINAN 10-21 No 55). Dağıtıcıdan sonra aynı payload

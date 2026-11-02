@@ -13,8 +13,17 @@ Bağlam: `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §6 MOD-01…03, §18; Alı
 ## FA-2 · Gelen fatura kabul portu (F-A2, API-10)
 
 Satış ile aynı port: `IFinanceInvoiceOpenItemAdmissionPortV1`, `Producer = Purchasing`. Alanlar, idempotency ve taşıma
-`docs/handoffs/FINANS_SATIS_DEVIR_v1.md` FS-1 ile aynıdır. `ExchangeRate` tedarikçi faturasındaki kurdur (ALS-D41);
-`FunctionalAmount` Alış calculator'ından gelir. Tedarikçi borcu satış riskinden düşülmez (ALS-D42).
+`docs/handoffs/FINANS_SATIS_DEVIR_v1.md` FS-1 ile aynıdır, şu farklarla:
+
+- Idempotency anahtarı önerisi `purchasing-invoice:{invoiceId}:{invoiceVersion}`.
+- `ExchangeRate` tedarikçi faturasındaki kurdur (ALS-D41); `FunctionalAmount` Alış calculator'ından gelir. ERP kontrol
+  kuru (ALS-D6) açık kaleme yazılmaz; kontrol Alış'tadır, olay payload'unda kalabilir.
+- Σ taksit tutarı = ödenecek tutar şartını üretici (Alış calculator'ı) sağlar; port fatura toplamını almaz, her
+  taksiti olduğu gibi saklar.
+- **İşlem sınırı:** Finans kendi işleminde yazar; Alış'ın veritabanı işlemine katılmaz. Alış kesinleşmeyi "Finans kabulü
+  bekliyor" durumuyla commit eder, sonra portu çağırır, hatada aynı anahtarla yeniden dener. ALS-D62'nin işlem sınırı
+  ayrıntısı A5'te bu öneriyle netleşir.
+- Tedarikçi borcu satış riskinden düşülmez (ALS-D42).
 
 ## FA-3 · Sipariş başlığında bakiye (MOD-02)
 

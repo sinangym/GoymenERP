@@ -2,7 +2,7 @@
 
 Kaynak: Sinan Göymen'in 2 Kasım 2026 tarihli Claude cloud oturumunda (Finans konuşması), Finans modülü hazırlık
 incelemesi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md`) sırasında sorulan seçenekli sorulara verdiği **doğrudan
-cevaplar**. Üç seçenekli tur (on iki soru) ve bir serbest cevap; on üç karar. FNS-D14 ve FNS-D15 aynı gün koordinatör oturumu aracılığıyla aktarılmıştır. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
+cevaplar**. Üç seçenekli tur (on iki soru) ve bir serbest cevap; on üç karar. FNS-D14 ve FNS-D15 aynı gün koordinatör oturumu aracılığıyla aktarılmıştır (doğrudan cevap değil, aktarım); toplam on beş karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
 cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 
 ## 0. Yetki ve sınır
@@ -92,8 +92,10 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 
 - **FNS-D14 yorumu (geri alınabilir, Sinan teyit eder):** kararın metni yukarıdaki tablodadır. Bu planın okuması üç
   katmandır: (1) Cari kartı (Counterparty) yalnız ana veridir, hareket taşımaz; (2) cari hareket ve açık kalem alt
-  defteri Finans'ın açık kalem motorudur (fatura taksiti, tahsilat/ödeme, kısmi kapama, bakiye); (3) 120/320 fişi
-  Accounting'de aynı kaynak olaydan üretilir, elle ikinci kayıt yapılmaz. **Taşıma seçilmemiştir:** outbox/inbox ya da
+  defteri Finans'ın açık kalem motorudur (fatura taksiti, tahsilat/ödeme, kısmi kapama); bakiye ve risk saklanmaz, açık
+  kalemlerden hesaplanır; (3) muhasebe fişi Accounting'de aynı kaynak olaydan taslak olarak üretilir ve onayla kesinleşir
+  (SAT-D208), elle ikinci kayıt yapılmaz. 120/320 eşlemesi FNS-D7 gereği mali müşavir teyidine kadar yalnız anlam
+  eşlemesidir. **Taşıma seçilmemiştir:** outbox/inbox ya da
   MOD-07'deki mevcut kaynak sağlayıcı (`...JournalSourceProviderV1`) deseni; seçim Accounting dilimiyle yapılır.
   Ekranda cari ekstresi ve bakiye özetinin "Muhasebe > Cari Hesaplar" girişinden açılması ana rapor §7.10 ve
   DEC-FIN-005/006 ile uyumlu bir öneridir, karar değildir.

@@ -607,13 +607,13 @@ Durum: ✅ main'de implementasyon + DI + gerçek-SQL/contract testi · 🟡 kıs
 
 | Bağ | Üretici → tüketici | Port / olay | Durum | Dilim |
 |---|---|---|---|---|
-| Satış faturası → alacak kalemi | Satış → Finans | `IFinanceInvoiceOpenItemAdmissionPortV1` (Producer=Sales); dispatcher sonrası `sales.invoice.finalized.v1` | ❌ — Finans portu F2a PR'ında (host kaydı yok); Satış üreticisi fatura dalgasında | F2a + Satış API-32…37 |
+| Satış faturası → alacak kalemi | Satış → Finans | `IFinanceInvoiceOpenItemAdmissionPortV1` (Producer=Sales); dispatcher sonrası `sales.invoice.finalized.v1` | ❌ — Finans portu F2a'da yazıldı, PR bekliyor, main'de yok (host kaydı da yok); Satış üreticisi fatura dalgasında | F2a + Satış API-32…37 |
 | Gelen fatura → borç kalemi | Alış → Finans | aynı port (Producer=Purchasing); sonra `purchasing.invoice.finalized.v1` | ❌ — F1 (#902) yönü, F2a portu; Alış A5 | F2a + Alış A5 |
 | Fatura iptali/iadesi → ters kalem | Satış/Alış → Finans | iptal portu / olayı (SAT-D96) | ❌ | F2b |
 | Satış risk okuması | Finans → Satış | `ISalesPartyRiskReadPortV1` (`FinanceSalesPartyRiskReadPortV1`) | 🟡 port main'de (DI + SQL testli); yalnız-alacak filtresi #902'de (taslak); limit/teminat NoSource (OPEN-010) | API-06, API-85 (F6) |
 | Tedarikçi ödemesi → borç kalemi | Finans içi; Alış okur | elle banka ödemesi + dağıtım | 🟡 ödeme var, borç kalemine dağıtım yok; TEK-02 | F3 (API-20) |
-| Ödendi/kısmi ödendi, avans | Finans → Satış/Alış | `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | ❌ — Finans'ta outbox yok | F2 outbox dilimi (ERP-000F sonrası) |
-| Muhasebe fişi (120/320) | Finans → Accounting | aynı kaynak olay (FNS-D14); taşıma seçilmedi (outbox/inbox ya da kaynak sağlayıcı) | 🟡 elle tahsilat için salt-okuma `FinanceManualReceiptNormalJournalSourceProviderV1` (Accounting DI'da); satış/alış faturası (120/320) için ❌ | Outbox dilimi + MOD-07 |
+| Ödendi/kısmi ödendi, avans | Finans → Satış/Alış | `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | ❌ — Finans'ta outbox yok | F2-OB (ERP-000F sonrası) |
+| Muhasebe fişi (120/320) | Finans → Accounting | aynı kaynak olay (FNS-D14); taşıma seçilmedi (outbox/inbox ya da kaynak sağlayıcı) | 🟡 elle tahsilat için salt-okuma `FinanceManualReceiptNormalJournalSourceProviderV1` (Accounting DI'da); satış/alış faturası (120/320) için ❌. Fiş taslaktır, onayla kesinleşir (SAT-D208) | Outbox dilimi + MOD-07 |
 | Kur → döviz değerleme | Ayarlar → Finans | `ISettingsExchangeRateResolverV1` (#906, main'de) | ❌ — Finans okumuyor | F7 (API-95) |
 | Cari ana veri / uygunluk | Cari → Finans | `IFinancePartyAccountPort` (`CounterpartyFinancePartyAccountPort`) | ✅ mevcut port; yeni alan **ertelendi: Cari başlayınca** (MOD-06) | — |
 | Onay kutusu | Finans → Work | mevcut Work gözlem portu | 🟡 yalnız resmî fatura içe aktarma onayı (`FinanceInvoiceImportPendingApprovalAdapterV1`); ters kayıt önerisi Finans'ın kendi onay ucunda, Work kuyruğu yok; ödeme/mahsup kuyrukları yok | MOD-09 |
@@ -623,7 +623,8 @@ Eklenen dilim: **F2-OB (Finans outbox).** Açık kalem, tahsilat ve ödeme olayl
 yayınlanır; tüketiciler Accounting (fiş), Satış ve Alış (ödeme durumu). Ön şart platform dağıtıcısı ERP-000F (MOD-11);
 dağıtıcı yokken olaylar yazılmaz, bağ senkron sürümlü porttur (SINAN 10-21 No 55). K3.
 
-Ekran önerisi (FNS-D14 yorumu, Sinan teyit eder): cari ekstresi (UI-02) ve bakiye özeti (API-04, #912) "Muhasebe > Cari
-Hesaplar" girişinden açılır.
+Ekran önerisi (FNS-D14 yorumu, Sinan teyit eder): ana rapor §7.10'daki M-03 "Muhasebe > Cari Hesaplar" yeni cari master
+açmaz; Finans'ın cari ekstresini (API-05) ve bakiye özetini (API-04, #912) okur. F-03 Açık Kalemler ve Dağıtım ekranı
+(UI-02) Finans menüsünde kalır.
 
 Devir notları: `docs/handoffs/FINANS_SATIS_DEVIR_v1.md`, `docs/handoffs/FINANS_ALIS_DEVIR_v1.md`.
