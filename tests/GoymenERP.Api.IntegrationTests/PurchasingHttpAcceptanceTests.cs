@@ -238,6 +238,97 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     }
 
     [Fact]
+    public async Task A_request_is_approved_and_rejected_over_its_own_routes_with_strict_bodies_and_replayed_terminal_refusals()
+    {
+        // A1-1 (plan API-01): POST …/approval and …/rejection answer 200 with the request and its decision; a terminal
+        // refusal (409, §7) replays with the first attempt's headers; a malformed body never reaches the service.
+        var id = Guid.NewGuid();
+        var decidedAt = new DateTimeOffset(2026, 11, 2, 10, 0, 0, TimeSpan.Zero);
+        var service = new StubService
+        {
+            ApproveRequest = (requestId, body) => Task.FromResult(new PurchaseRequestResponse(
+                RequestDetail(requestId, "Approved", "4") with { Approval = new PurchaseRequestDecisionView("SENTETIK-manager", decidedAt, null) },
+                false, "SENTETIK-corr-approve")),
+            RejectRequest = (requestId, body) => Task.FromResult(new PurchaseRequestResponse(
+                RequestDetail(requestId, "Rejected", "5") with { Rejection = new PurchaseRequestDecisionView("SENTETIK-manager", decidedAt, body.Reason) },
+                false, "SENTETIK-corr-reject")),
+        };
+        using var host = CreateHost(service);
+        using var client = CreateClient(host);
+
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/approval", "SENTETIK-request-approve", """{"expectedVersion":"3"}""")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+            var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            Assert.Equal(("Approved", "4"), (detail.GetProperty("request").GetProperty("status").GetString(), detail.GetProperty("request").GetProperty("version").GetString()));
+            Assert.Equal("SENTETIK-manager", detail.GetProperty("approval").GetProperty("decidedBy").GetString());
+            Assert.Equal(JsonValueKind.Null, detail.GetProperty("rejection").ValueKind);
+        }
+
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/rejection", "SENTETIK-request-reject",
+                   """{"expectedVersion":"4","reason":"SENTETIK ihtiyaç kalktı"}""")))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var detail = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail");
+            Assert.Equal("Rejected", detail.GetProperty("request").GetProperty("status").GetString());
+            Assert.Equal("SENTETIK ihtiyaç kalktı", detail.GetProperty("rejection").GetProperty("reason").GetString());
+        }
+
+        var calls = service.Calls;
+        foreach (var (path, body) in new[]
+                 {
+                     ("approval", """{"expectedVersion":"3","reason":"x"}"""),
+                     ("approval", """{"expectedVersion":3}"""),
+                     ("rejection", """{"expectedVersion":"4"}"""),
+                     ("rejection", """{"expectedVersion":"4","reason":null}"""),
+                     ("rejection", """{"expectedVersion":"0","reason":"x"}"""),
+                 })
+        {
+            using var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/{path}", $"SENTETIK-bad-{Guid.NewGuid():N}", body));
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        using (var missingKey = new HttpRequestMessage(HttpMethod.Post, $"{PurchasingApiV1.RequestsPath}/{id:D}/approval")
+               { Content = new StringContent("""{"expectedVersion":"3"}""", Encoding.UTF8, "application/json") })
+        using (var response = await client.SendAsync(missingKey))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(PurchasingProblemCodesV1.CommandMetadataInvalid, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        Assert.Equal(calls, service.Calls);
+
+        service.RejectRequest = (_, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestHasApprovedOrder,
+            [new("status", "purchasing_request_has_approved_order")], isReplay: true, originalCorrelationId: "SENTETIK-first-reject");
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/rejection", "SENTETIK-request-reject-blocked",
+                   """{"expectedVersion":"4","reason":"SENTETIK"}""")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
+            Assert.Equal("SENTETIK-first-reject", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
+            var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(PurchasingProblemCodesV1.RequestHasApprovedOrder, problem.GetProperty("code").GetString());
+        }
+
+        service.ApproveRequest = (_, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestSameActor,
+            [new("actor", "purchasing_request_same_actor")]);
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/approval", "SENTETIK-request-self", """{"expectedVersion":"3"}""")))
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal(PurchasingProblemCodesV1.RequestSameActor, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+        }
+
+        service.RejectRequest = (_, _) => throw new PurchasingServiceException(422, PurchasingProblemCodesV1.RequestRejectionReasonRequired,
+            [new("reason", "purchasing_request_rejection_reason_required")]);
+        using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/rejection", "SENTETIK-request-blank", """{"expectedVersion":"4","reason":" "}""")))
+        {
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, response.StatusCode);
+            Assert.Equal("reason", (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors")[0].GetProperty("field").GetString());
+        }
+    }
+
+    [Fact]
     public async Task Order_detail_exposes_only_the_ordered_immutable_acceptance_history()
     {
         var first = Guid.Parse("61000000-0000-0000-0000-000000000001");
@@ -583,6 +674,10 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         public int Calls { get; private set; }
         public Func<Task<PurchaseRequestResponse>> CreateRequest { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseRequestResponse>> Submit { get; set; } = () => throw new InvalidOperationException("not expected");
+        public Func<Guid, ApprovePurchaseRequestRequest, Task<PurchaseRequestResponse>> ApproveRequest { get; set; }
+            = (_, _) => throw new InvalidOperationException("not expected");
+        public Func<Guid, RejectPurchaseRequestRequest, Task<PurchaseRequestResponse>> RejectRequest { get; set; }
+            = (_, _) => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> CreateOrder { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Task<PurchaseOrderResponse>> Approve { get; set; } = () => throw new InvalidOperationException("not expected");
         public Func<Guid, Task<PurchaseOrderDetailView>> GetOrder { get; set; } = _ => throw new InvalidOperationException("not expected");
@@ -625,6 +720,20 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
         {
             Calls++;
             return Submit();
+        }
+
+        public Task<PurchaseRequestResponse> ApproveRequestAsync(Guid requestId, ApprovePurchaseRequestRequest request, PurchasingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return ApproveRequest(requestId, request);
+        }
+
+        public Task<PurchaseRequestResponse> RejectRequestAsync(Guid requestId, RejectPurchaseRequestRequest request, PurchasingCommandMetadata metadata,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return RejectRequest(requestId, request);
         }
 
         public Task<PurchaseRequestDetailView> GetRequestDetailAsync(Guid requestId, CancellationToken cancellationToken = default) =>
