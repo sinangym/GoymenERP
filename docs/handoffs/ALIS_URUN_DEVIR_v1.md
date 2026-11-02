@@ -5,6 +5,11 @@ Karar: `docs/decisions/SINAN_KARARLARI_2026-11-02_ALIS_EK7.md` ALS-D51 (çevrim 
 kartından varsayılan, siparişte değiştirilebilir). Alış şeridi Ürün dosyalarını değiştirmez. Bu not iş tanımıdır;
 Ürün'ün kendi karar, review ve merge kapıları geçerlidir. Arayüz adları öneridir.
 
+**Durum: ertelendi — Ürün başlayınca (ALS-D58, `SINAN_KARARLARI_2026-11-02_ALIS_EK9.md`).** Önce Satış, Alış, Finans ve
+Üretim bitirilir; bu istek Ürün modülü çalışması başlayana kadar beklemededir. O zamana kadar Alış yeni Ürün portu,
+tablosu veya ekranı açmaz; çevrim gerektiren sonuçlar "hesaplanamıyor" kalır (fail-closed). Fiyat birimini siparişi
+düzenleyen değiştirir (ALS-D60); port gelene kadar varsayılan fiyat birimi okunamaz.
+
 ## U-A1 · kg ↔ adet ↔ metre çevrimi ve varsayılan fiyat birimi (ALS-D51, DEC-PRD-006)
 
 - **Bugün:** Ürün modülü çevrim varsaymıyor (README: "There is no assumed conversion"; U-08 çevrim politikası
