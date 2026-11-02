@@ -33,8 +33,9 @@ public sealed record ApprovedManufacturingToleranceStartingValue(
 /// diameters and metre tolerance are not decided and are not shipped (unknown, never 0). A Settings version published later
 /// replaces a catalog profile from its own date; a work center's own profile wins over it (URT-D9 "hat bazında").</description></item>
 /// <item><term>Tolerance starting values</term><description>Maximum fire 5 % per process (URT-D7) and the ± 2 % mass-balance
-/// difference (URT-D6). The close path reads only published registry versions (version ≥ 1, <c>OrderClosureAssessment</c>), so
-/// these are offered as the starting values of the first published version, not read by the close path.</description></item>
+/// difference (URT-D6), version 0. URT-D23 (Sinan, 2026-11-02, <c>SINAN_KARARLARI_2026-11-02_URETIM_EK2.md</c>): they are live
+/// for the order close — the scoped tolerance read serves them when no published version of the line or the process covers
+/// the date, and the close decision stores the source and version.</description></item>
 /// </list>
 /// Ids are UUIDv5 in namespace <c>e9a41596-9abd-5184-a339-27195ede7be1</c> (parameters, = UUIDv5(URL,
 /// "https://github.com/sinangym/GoymenERP/settings/manufacturing-parameter-profiles"); names

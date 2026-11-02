@@ -156,7 +156,10 @@ public static class ManufacturingProfileStatusesV1
     public const string Approved = nameof(ManufacturingToleranceProfileStatusV1.Approved);
     public const string Published = nameof(ManufacturingToleranceProfileStatusV1.Published);
 
-    /// <summary>A reviewed tolerance starting value (URT-D6/D7) that no reader serves until it is published as a version.</summary>
+    /// <summary>
+    /// A reviewed tolerance starting value (URT-D6/D7), version 0. Since URT-D23 the scoped tolerance read serves it to the
+    /// order close when no published version of the scope covers the date.
+    /// </summary>
     public const string StartingValue = "StartingValue";
 }
 

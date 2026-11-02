@@ -59,9 +59,10 @@ public sealed partial class ManufacturingCommandService
     /// the fresh fence again; the plan's own domain rules (at least one roll, no roll twice). Any refusal is the save's
     /// own answer for the same content (status, code, field), so the screen can say why and on which field.
     /// Then the ONE plan calculator on the would-be plan with the outside parameters known today: the Product
-    /// dimensions captured on each input (<see cref="PlanCalculationParameters.FromCapturedSnapshots"/>). Every engine
-    /// parameter without a source yet (density, speed, kerf, …) answers <c>Unavailable</c> and is named. No command
-    /// record, no audit, no store write.
+    /// dimensions captured on each input and, since U1-b, the Settings parameter profile of the work center in force
+    /// today (<see cref="PlanCalculationParameters.FromCapturedSnapshots(IEnumerable{PlannedInput}, PlanParameterSnapshotV1?)"/>).
+    /// Every engine parameter the profile does not carry answers <c>Unavailable</c> and is named. No command record, no
+    /// audit, no store write.
     /// </summary>
     public async Task<ManufacturingApiResult<PlanPreviewViewV1>> PreviewPlanAsync(PlanPreviewRequestV1? request,
         string permission, CancellationToken cancellationToken)
@@ -121,6 +122,14 @@ public sealed partial class ManufacturingCommandService
             return Refusal<PlanPreviewViewV1>(slittingSpec.Refusal);
         }
 
+        // U1-b: the save's own read of the parameter profile in force today (same refusals as the save).
+        var parameters = await ReadParameterProfileAsync(process.Value, request.WorkCenterId, approval: false,
+            cancellationToken);
+        if (parameters.Refusal is not null)
+        {
+            return Refusal<PlanPreviewViewV1>(parameters.Refusal);
+        }
+
         if (await FenceCapturedAsync<PlanPreviewViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
         {
             return fenced;
@@ -150,7 +159,7 @@ public sealed partial class ManufacturingCommandService
 
         return new ManufacturingApiResult<PlanPreviewViewV1>(ManufacturingApiStatus.Ok,
             PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan,
-                PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))),
+                PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs, parameters.Snapshot))),
             false, null);
     }
 

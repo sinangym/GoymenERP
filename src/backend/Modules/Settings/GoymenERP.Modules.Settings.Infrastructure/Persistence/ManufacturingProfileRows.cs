@@ -46,6 +46,10 @@ internal sealed class ManufacturingToleranceProfileVersionRow
     public Guid CompanyId { get; set; }
     public Guid ProfileId { get; set; }
     public string Process { get; set; } = string.Empty;
+
+    /// <summary>U1-b (URT-D6): the line this version is scoped to; null = the whole process.</summary>
+    public Guid? WorkCenterId { get; set; }
+
     public long ProfileVersion { get; set; }
     public long StateVersion { get; set; }
     public string Status { get; set; } = string.Empty;

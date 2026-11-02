@@ -30,12 +30,13 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         await RequireAsync(ManufacturingToleranceProfileReadActionV1.Read, companyId, cancellationToken);
         var rows = await ReadAsync(() =>
             database.ManufacturingToleranceProfileVersions.AsNoTracking().ToListAsync(cancellationToken));
+        var windows = await ReadAsync(() => RegistryWindowsAsync(cancellationToken));
         await RequireStillAsync(ManufacturingToleranceProfileReadActionV1.Read, companyId, cancellationToken);
         return new ManufacturingToleranceProfileListViewV1(
             companyId,
             SettingsBusinessDate.Today(timeProvider),
             rows.OrderBy(row => row.Process, StringComparer.Ordinal).ThenByDescending(row => row.ProfileVersion)
-                .Select(ToleranceView).ToArray(),
+                .Select(row => ToleranceView(row, windows)).ToArray(),
             ApprovedManufacturingProfileCatalog.ToleranceFor(companyId).Select(StartingValueView).ToArray());
     }
 
@@ -46,10 +47,11 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         await RequireAsync(ManufacturingToleranceProfileReadActionV1.Read, companyId, cancellationToken);
         var row = await ReadAsync(() => database.ManufacturingToleranceProfileVersions.AsNoTracking()
             .SingleOrDefaultAsync(version => version.ProfileId == profileId, cancellationToken));
+        var windows = await ReadAsync(() => RegistryWindowsAsync(cancellationToken));
         await RequireStillAsync(ManufacturingToleranceProfileReadActionV1.Read, companyId, cancellationToken);
         if (row is not null)
         {
-            return ToleranceView(row);
+            return ToleranceView(row, windows);
         }
 
         return ApprovedManufacturingProfileCatalog.ToleranceFor(companyId)
@@ -73,6 +75,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         }
 
         if (request.Process is not { } process || !SettingsManufacturingProcessesV1.IsCanonical(process)
+            || request.WorkCenterId == Guid.Empty
             || !ManufacturingProfileValueRulesV1.TryReadPercent(request.MaximumFirePercent, out var maximumFire)
             || !ManufacturingProfileValueRulesV1.TryReadPercent(request.MassBalanceDifferenceTolerancePercent, out var massBalance))
         {
@@ -94,16 +97,30 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         }
 
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var requestHash = IdempotencyHash.ComputePayload(new
-        {
-            ExpectedVersion = expectedVersion,
-            Process = process,
-            MaximumFirePercent = ManufacturingProfileValueRulesV1.Format(maximumFire),
-            MassBalanceDifferenceTolerancePercent = ManufacturingProfileValueRulesV1.Format(massBalance),
-            Reason = reason,
-            request.EffectiveFrom,
-            request.EffectiveThrough,
-        });
+        // A process-wide request keeps the U1-a payload shape (its stored hash stays valid); a line scope adds its id.
+        var workCenterId = request.WorkCenterId;
+        var requestHash = workCenterId is null
+            ? IdempotencyHash.ComputePayload(new
+            {
+                ExpectedVersion = expectedVersion,
+                Process = process,
+                MaximumFirePercent = ManufacturingProfileValueRulesV1.Format(maximumFire),
+                MassBalanceDifferenceTolerancePercent = ManufacturingProfileValueRulesV1.Format(massBalance),
+                Reason = reason,
+                request.EffectiveFrom,
+                request.EffectiveThrough,
+            })
+            : IdempotencyHash.ComputePayload(new
+            {
+                ExpectedVersion = expectedVersion,
+                Process = process,
+                MaximumFirePercent = ManufacturingProfileValueRulesV1.Format(maximumFire),
+                MassBalanceDifferenceTolerancePercent = ManufacturingProfileValueRulesV1.Format(massBalance),
+                Reason = reason,
+                request.EffectiveFrom,
+                request.EffectiveThrough,
+                WorkCenterId = workCenterId,
+            });
         if (await FindExecutionAsync(TolerancePrepareCommand, keyHash, cancellationToken) is { } existing)
         {
             await RequireStillAsync(permission, companyId, cancellationToken);
@@ -137,6 +154,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration
             CompanyId = companyId,
             ProfileId = draft.ProfileId,
             Process = process,
+            WorkCenterId = workCenterId,
             ProfileVersion = draft.ProfileVersion,
             MaximumFirePercent = maximumFire,
             MassBalanceDifferenceTolerancePercent = massBalance,
@@ -151,6 +169,7 @@ internal sealed partial class SettingsManufacturingProfileAdministration
                 CompanyId = companyId,
                 draft.ProfileId,
                 Process = process,
+                WorkCenterId = workCenterId,
                 draft.ProfileVersion,
                 Status = ManufacturingProfileStatusesV1.Draft,
                 MaximumFirePercent = ManufacturingProfileValueRulesV1.Format(maximumFire),
@@ -243,13 +262,23 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         var stateBefore = row!.StateVersion;
         var statusBefore = row.Status;
         ApplyLifecycle(row, next!);
+        ManufacturingTolerancePolicyRow? superseded = null;
         if (publish)
         {
+            // U1-b: an open-ended published predecessor of the same scope that starts earlier is superseded — its window
+            // closes on the day before this version starts, in this same save (the registry trigger's one permitted change).
+            superseded = await ReadAsync(() => SupersedablePredecessorAsync(row, cancellationToken));
+            if (superseded is not null)
+            {
+                superseded.EffectiveThrough = row.EffectiveFrom.AddDays(-1);
+            }
+
             database.ManufacturingTolerancePolicies.Add(new ManufacturingTolerancePolicyRow
             {
                 CompanyId = companyId,
                 ProfileId = row.ProfileId,
                 Process = row.Process,
+                WorkCenterId = row.WorkCenterId,
                 Version = row.ProfileVersion,
                 MaximumFirePercent = row.MaximumFirePercent,
                 MassBalanceDifferenceTolerancePercent = row.MassBalanceDifferenceTolerancePercent,
@@ -270,12 +299,20 @@ internal sealed partial class SettingsManufacturingProfileAdministration
                 CompanyId = companyId,
                 ProfileId = profileId,
                 row.Process,
+                row.WorkCenterId,
                 row.ProfileVersion,
                 row.Status,
                 MaximumFirePercent = ManufacturingProfileValueRulesV1.Format(row.MaximumFirePercent),
                 MassBalanceDifferenceTolerancePercent = ManufacturingProfileValueRulesV1.Format(row.MassBalanceDifferenceTolerancePercent),
                 row.EffectiveFrom,
                 row.EffectiveThrough,
+                Superseded = superseded is null ? null : new
+                {
+                    superseded.ProfileId,
+                    superseded.Version,
+                    superseded.EffectiveFrom,
+                    superseded.EffectiveThrough,
+                },
             }, reason, metadata);
         await RequireStillAsync(permission, companyId, cancellationToken);
         var published = row;
@@ -299,16 +336,43 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         return Math.Max(lifecycle, registry);
     }
 
-    /// <summary>Whether a published registry row of the process (another profile) shares a day with this version's window.</summary>
+    /// <summary>
+    /// Whether a published registry row of the same process and line scope (another profile) shares a day with this version's
+    /// window — except an open-ended predecessor that starts earlier, which publication supersedes (U1-b).
+    /// </summary>
     private Task<bool> OverlapsPublishedAsync(ManufacturingToleranceProfileVersionRow version, CancellationToken cancellationToken)
     {
         var from = version.EffectiveFrom;
         var through = version.EffectiveThrough ?? DateOnly.MaxValue;
+        var workCenterId = version.WorkCenterId;
         return database.ManufacturingTolerancePolicies.AsNoTracking()
-            .AnyAsync(row => row.Process == version.Process && row.ProfileId != version.ProfileId
+            .AnyAsync(row => row.Process == version.Process && row.WorkCenterId == workCenterId
+                             && row.ProfileId != version.ProfileId
                              && row.EffectiveFrom <= through
-                             && (row.EffectiveThrough == null || row.EffectiveThrough >= from), cancellationToken);
+                             && (row.EffectiveThrough == null || row.EffectiveThrough >= from)
+                             && !(row.EffectiveThrough == null && row.EffectiveFrom < from), cancellationToken);
     }
+
+    /// <summary>The open-ended published predecessor of the same scope that starts before this version (tracked), if any.</summary>
+    private Task<ManufacturingTolerancePolicyRow?> SupersedablePredecessorAsync(
+        ManufacturingToleranceProfileVersionRow version, CancellationToken cancellationToken)
+    {
+        var from = version.EffectiveFrom;
+        var workCenterId = version.WorkCenterId;
+        return database.ManufacturingTolerancePolicies
+            .Where(row => row.Process == version.Process && row.WorkCenterId == workCenterId
+                          && row.ProfileId != version.ProfileId
+                          && row.EffectiveThrough == null && row.EffectiveFrom < from)
+            .OrderByDescending(row => row.EffectiveFrom)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    /// <summary>The registry window of each published version (a successor may have closed an open-ended one).</summary>
+    private async Task<IReadOnlyDictionary<Guid, DateOnly?>> RegistryWindowsAsync(CancellationToken cancellationToken) =>
+        (await database.ManufacturingTolerancePolicies.AsNoTracking()
+            .Select(row => new { row.ProfileId, row.EffectiveThrough })
+            .ToListAsync(cancellationToken))
+        .ToDictionary(row => row.ProfileId, row => row.EffectiveThrough);
 
     private static ManufacturingToleranceProfileLifecycleV1 ToleranceLifecycle(ManufacturingToleranceProfileVersionRow row) => new(
         row.CompanyId, row.ProfileId, row.Process, row.ProfileVersion, row.StateVersion,
@@ -330,7 +394,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         row.PublicationReason = state.PublicationReason;
     }
 
-    private static ManufacturingToleranceProfileViewV1 ToleranceView(ManufacturingToleranceProfileVersionRow row) => new(
+    private static ManufacturingToleranceProfileViewV1 ToleranceView(ManufacturingToleranceProfileVersionRow row,
+        IReadOnlyDictionary<Guid, DateOnly?> registryWindows) => new(
         row.ProfileId,
         ManufacturingProfileSourcesV1.Settings,
         row.Process,
@@ -340,7 +405,9 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         ManufacturingProfileValueRulesV1.Format(row.MaximumFirePercent),
         ManufacturingProfileValueRulesV1.Format(row.MassBalanceDifferenceTolerancePercent),
         row.EffectiveFrom,
-        row.EffectiveThrough,
+        row.Status == ManufacturingProfileStatusesV1.Published && registryWindows.TryGetValue(row.ProfileId, out var through)
+            ? through
+            : row.EffectiveThrough,
         row.PreparedBy,
         row.PreparedAtUtc,
         row.PreparationReason,
@@ -349,7 +416,8 @@ internal sealed partial class SettingsManufacturingProfileAdministration
         row.ApprovalReason,
         row.PublishedBy,
         row.PublishedAtUtc,
-        row.PublicationReason);
+        row.PublicationReason,
+        row.WorkCenterId);
 
     private static ManufacturingToleranceProfileViewV1 StartingValueView(ApprovedManufacturingToleranceStartingValue entry) => new(
         entry.ProfileId,

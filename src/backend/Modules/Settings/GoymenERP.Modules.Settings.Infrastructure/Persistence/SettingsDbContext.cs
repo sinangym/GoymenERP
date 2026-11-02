@@ -533,7 +533,8 @@ public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext
 
             // Üretim U1-a: the registry row is written only by its approved command workflow — inserted in the same save
             // as its lifecycle version moving Approved → Published (ApplyManufacturingProfileWriteGuard).
-            if (entry.Entity is ManufacturingTolerancePolicyRow policy && !IsToleranceRegistryPublication(entry, policy))
+            if (entry.Entity is ManufacturingTolerancePolicyRow policy && !IsToleranceRegistryPublication(entry, policy)
+                && !IsToleranceRegistrySupersession(entry, policy))
             {
                 throw new InvalidOperationException(
                     "Manufacturing tolerance policies require the separately approved Settings command workflow.");

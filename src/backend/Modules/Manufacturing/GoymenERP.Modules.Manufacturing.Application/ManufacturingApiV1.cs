@@ -149,11 +149,32 @@ public sealed record CutToLengthLineViewV1(Guid LineId, int Sequence, string Len
 
 public sealed record CutToLengthSpecViewV1(IReadOnlyList<CutToLengthLineViewV1> Lines);
 
+/// <summary>
+/// One captured parameter value (Üretim U1-b): the engine input name (= the Settings key), its unit and either the
+/// number as lossless invariant text or the choice.
+/// </summary>
+public sealed record PlanParameterValueViewV1(string Key, string Unit, string? Number, string? Choice);
+
+/// <summary>
+/// The Settings parameter profile captured when the plan was approved (DEC-PRDCT-008, URT-D9): the exact profile id,
+/// version text, source (<c>Catalog</c> = reviewed version 0, <c>Settings</c> = a published version), the line it is scoped
+/// to (null = the process profile), its window, the date it was selected for and its values. Every later calculation of
+/// the plan uses these values; a newer profile published later never changes them.
+/// </summary>
+public sealed record PlanParameterSnapshotViewV1(
+    Guid ProfileId, string ProfileVersion, string Source, Guid? WorkCenterId, DateOnly EffectiveFrom,
+    DateOnly? EffectiveThrough, DateOnly SelectedForDate, IReadOnlyList<PlanParameterValueViewV1> Values);
+
+/// <summary>
+/// A plan. <see cref="ParameterSnapshot"/> (U1-b, additive) is the profile captured at approval; null for a draft (whose
+/// <see cref="Calculation"/> uses the profile in force today), for a plan approved before U1-b and for an approval for
+/// which Settings had no profile of the process.
+/// </summary>
 public sealed record PlanViewV1(
     Guid PlanId, Guid CompanyId, Guid WorkCenterId, string Process, string Status, long Version,
     IReadOnlyList<PlannedInputViewV1> Inputs, TargetViewV1? Target, Guid? ApprovedByUserId, DateTimeOffset? ApprovedAtUtc,
     PlanPreviewViewV1? Calculation = null, SlittingSpecViewV1? SlittingSpec = null,
-    CutToLengthSpecViewV1? CutToLengthSpec = null);
+    CutToLengthSpecViewV1? CutToLengthSpec = null, PlanParameterSnapshotViewV1? ParameterSnapshot = null);
 
 /// <summary>
 /// MFG-PLAN-EDIT: one planned parent roll of a history entry, with the Inventory label version accepted for it
@@ -360,7 +381,8 @@ public sealed partial class ManufacturingCommandService(
     ISettingsManufacturingToleranceProviderV1? manufacturingTolerances = null,
     IProductManufacturingTechnicalSnapshotV1? productTechnicalSnapshots = null,
     ICounterpartyManufacturingPartyAccountSourceV1? partyAccounts = null,
-    IInventoryContextualParentRollReferencesV1? contextualParentRolls = null)
+    IInventoryContextualParentRollReferencesV1? contextualParentRolls = null,
+    ISettingsManufacturingParameterProviderV1? manufacturingParameters = null)
 {
     // These owner-provider codes stay inside the application result. The public endpoint continues to
     // collapse every unavailable answer to service_unavailable; the disposable MFG fixture may map the
@@ -437,6 +459,14 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(slittingSpec.Refusal);
                 }
 
+                // U1-b: the parameter profile in force today, for the draft's calculation; Settings' refusals fail closed.
+                var parameters = await ReadParameterProfileAsync(process.Value, request.WorkCenterId,
+                    approval: false, cancellationToken);
+                if (parameters.Refusal is not null)
+                {
+                    return Refusal<PlanViewV1>(parameters.Refusal);
+                }
+
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
@@ -452,8 +482,8 @@ public sealed partial class ManufacturingCommandService(
                 var stored = await plans.FindPlanAsync(plan.Id, cancellationToken);
                 return stored is null
                     ? NotFoundResult<PlanViewV1>()
-                    : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Created, PlanView(stored),
-                        outcome == ManufacturingWriteOutcome.Replayed, null);
+                    : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Created,
+                        PlanView(stored, parameters.Snapshot), outcome == ManufacturingWriteOutcome.Replayed, null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
 
@@ -976,10 +1006,31 @@ public sealed partial class ManufacturingCommandService(
 
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.ApprovePlan,
             new { planId, expectedVersion = request.ExpectedVersion }, ManufacturingApiStatus.Ok,
-            async (metadata, actor, _) =>
+            async (metadata, actor, companyId) =>
             {
+                // U1-b (DEC-PRDCT-008, URT-D9): the Settings parameter profile of the plan's line is captured with the
+                // approval. The stored state answers first: a missing, stale or non-draft plan never queries Settings.
+                PlanParameterSnapshotV1? snapshot = null;
+                var current = await plans.FindPlanAsync(planId, cancellationToken);
+                if (current is { Status: PlanStatus.Draft } && current.Version == request.ExpectedVersion)
+                {
+                    var parameters = await ReadParameterProfileAsync(current.Process, current.WorkCenterId,
+                        approval: true, cancellationToken);
+                    if (parameters.Refusal is not null)
+                    {
+                        return Refusal<PlanViewV1>(parameters.Refusal);
+                    }
+
+                    if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actor, cancellationToken) is { } fenced)
+                    {
+                        return fenced;
+                    }
+
+                    snapshot = parameters.Snapshot;
+                }
+
                 var approved = await plans.ApprovePlanAsync(planId, request.ExpectedVersion, actor,
-                    timeProvider.GetUtcNow(), metadata, cancellationToken);
+                    timeProvider.GetUtcNow(), snapshot, metadata, cancellationToken);
                 return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(approved), false, null);
             }, stored => PlanView((ProductionPlan)stored), cancellationToken);
     }
@@ -1340,10 +1391,13 @@ public sealed partial class ManufacturingCommandService(
                 fact.ParentRollId, OutputClass.ProcessLoss, mass, at, metadata, cancellationToken), cancellationToken);
 
     /// <summary>
-    /// Closes the order at the version the caller read. Settings supplies the exact company/process/date tolerance;
-    /// Manufacturing persists it and derives fire (Scrap + ProcessLoss) and net issued mass from its own facts. A
-    /// positive unexplained difference still requires an explicit fact. An out-of-tolerance result requires the
+    /// Closes the order at the version the caller read. Settings supplies the exact company/line/process/date tolerance
+    /// (URT-D6: the order's work center version, else the process version, else the version-0 catalog, URT-D23);
+    /// Manufacturing persists it with its source and version and derives fire (Scrap + ProcessLoss) and net issued mass
+    /// from its own facts. A roll's unexplained difference within the ± mass-balance tolerance is accepted as it is
+    /// (URT-D5; never reclassified); outside it, or a fire percent above the maximum (URT-D7), the close requires the
     /// separate permission passed by the host and a reason bound to company/order/actor/order version/policy version.
+    /// Without a known mass-balance tolerance a positive unexplained difference still requires an explicit fact.
     /// A closed order refuses a second close; the same key replays the first answer (ADR-011 §4), and a stale version
     /// is a recorded terminal conflict (§7).
     /// </summary>
@@ -1401,8 +1455,9 @@ public sealed partial class ManufacturingCommandService(
                 ManufacturingToleranceProfileV1 profile;
                 try
                 {
-                    profile = await manufacturingTolerances.GetManufacturingToleranceAsync(
-                        requestedProcess, selectedForDate, cancellationToken);
+                    // URT-D6/D23: the order's own line first, then the process, then the version-0 catalog.
+                    profile = await manufacturingTolerances.GetScopedManufacturingToleranceAsync(
+                        requestedProcess, current.WorkCenterId, selectedForDate, cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -1421,7 +1476,8 @@ public sealed partial class ManufacturingCommandService(
                 }
 
                 if (profile.CompanyId != current.CompanyId
-                    || !string.Equals(profile.Process, requestedProcess, StringComparison.Ordinal))
+                    || !string.Equals(profile.Process, requestedProcess, StringComparison.Ordinal)
+                    || profile.WorkCenterId is { } line && line != current.WorkCenterId)
                 {
                     return new ManufacturingApiResult<OrderViewV1>(ManufacturingApiStatus.Unavailable, null, false,
                         ClosureAssessmentCodesV1.PolicyScopeMismatch);
@@ -1430,7 +1486,11 @@ public sealed partial class ManufacturingCommandService(
                 var policy = new ClosureTolerancePolicySnapshotV1(
                     profile.CompanyId, profile.Profile.ProfileId, profile.Profile.Version, current.Process,
                     profile.MaximumFirePercent, profile.IsActive, profile.EffectiveFrom, profile.EffectiveThrough,
-                    selectedForDate);
+                    selectedForDate, profile.MassBalanceDifferenceTolerancePercent,
+                    profile.Source == ManufacturingProfileSourcesV1.Catalog
+                        ? ClosureTolerancePolicySnapshotV1.CatalogSource
+                        : ClosureTolerancePolicySnapshotV1.SettingsSource,
+                    profile.WorkCenterId);
                 var assessment = current.AssessClosure(policy);
                 if (assessment.Disposition is not (ClosureDispositionV1.Balanced
                     or ClosureDispositionV1.ApprovalRequired))
@@ -1686,9 +1746,14 @@ public sealed partial class ManufacturingCommandService(
                 return Denied<PlanViewV1>();
             }
 
-            return plan is null
-                ? NotFoundResult<PlanViewV1>()
-                : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(plan), false, null);
+            if (plan is null)
+            {
+                return NotFoundResult<PlanViewV1>();
+            }
+
+            // A draft's calculation uses the profile in force today; a read never fails on Settings (unknown instead).
+            var live = plan.Status == PlanStatus.Draft ? await ReadLiveParameterProfileAsync(plan, cancellationToken) : null;
+            return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(plan, live), false, null);
         }
         catch (ManufacturingStoreException exception) when (exception.Code == ManufacturingStoreCodes.ConcurrentChange)
         {
@@ -2537,18 +2602,33 @@ public sealed partial class ManufacturingCommandService(
     /// <summary>ADR-011 §2: the uppercase hex SHA-256 of the UTF-8 text.</summary>
     internal static string Sha256(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
-    internal static PlanViewV1 PlanView(ProductionPlan plan) => new(
+    /// <summary>
+    /// The plan as text. Its calculation uses the parameter profile captured at approval; a draft (which has none) uses
+    /// <paramref name="liveParameters"/>, the profile in force today when the caller read one (DEC-PRDCT-008: an approved
+    /// plan is never recalculated with a newer profile).
+    /// </summary>
+    internal static PlanViewV1 PlanView(ProductionPlan plan, PlanParameterSnapshotV1? liveParameters = null) => new(
         plan.Id, plan.CompanyId, plan.WorkCenterId, plan.Process.ToString(), plan.Status.ToString(), plan.Version,
         [.. plan.Inputs.Select(input => new PlannedInputViewV1(input.ParentRollId, Text(input.PlannedMass.Value),
             TechnicalSnapshotView(input.TechnicalSnapshot), CommercialContextView(input.CommercialContext)))],
         plan.Target is { } target ? new TargetViewV1(target.Basis.ToString(), Text(target.Mass.Value)) : null,
         plan.ApprovedByUserId, plan.ApprovedAtUtc,
         PlanPreviewView(plan.WorkCenterId, ProductionPlanCalculatorV1.Calculate(plan,
-            PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs))),
+            PlanCalculationParameters.FromCapturedSnapshots(plan.Inputs,
+                plan.Status == PlanStatus.Approved ? plan.ParameterSnapshot : liveParameters))),
         plan.Spec is { } spec ? new SlittingSpecViewV1(
             [.. spec.Lines.Select(line => new SlitLineViewV1(Text(line.BandWidthMm), line.Count))],
             spec.WindingTargetKg is { } winding ? Text(winding.Value) : null) : null,
-        CutSpecView(plan.CutToLengthSpec));
+        CutSpecView(plan.CutToLengthSpec),
+        ParameterSnapshotView(plan.ParameterSnapshot));
+
+    private static PlanParameterSnapshotViewV1? ParameterSnapshotView(PlanParameterSnapshotV1? snapshot) =>
+        snapshot is null
+            ? null
+            : new PlanParameterSnapshotViewV1(snapshot.ProfileId, snapshot.ProfileVersion, snapshot.Source,
+                snapshot.WorkCenterId, snapshot.EffectiveFrom, snapshot.EffectiveThrough, snapshot.SelectedForDate,
+                [.. snapshot.Values.Select(value => new PlanParameterValueViewV1(value.Key, value.Unit,
+                    value.Number is { } number ? Text(number) : null, value.Choice))]);
 
     private static CutToLengthSpecViewV1? CutSpecView(CutToLengthSpec? spec) => spec is null
         ? null

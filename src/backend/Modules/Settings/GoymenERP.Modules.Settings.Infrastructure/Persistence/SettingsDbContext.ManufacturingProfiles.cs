@@ -38,6 +38,9 @@ public sealed partial class SettingsDbContext
             table.HasCheckConstraint("CK_SettingsMfgTolerance_MassBalance",
                 "[MassBalanceDifferenceTolerancePercent] IS NULL OR ([MassBalanceDifferenceTolerancePercent] >= 0 "
                 + "AND [MassBalanceDifferenceTolerancePercent] <= 100)");
+            // U1-b (URT-D6): an optional line scope; the registry trigger keeps windows of one scope from overlapping.
+            table.HasCheckConstraint("CK_SettingsMfgTolerance_WorkCenter",
+                $"[WorkCenterId] IS NULL OR [WorkCenterId] <> {emptyGuid}");
         });
         policy.Property(x => x.MassBalanceDifferenceTolerancePercent).HasPrecision(9, 6);
 
@@ -92,6 +95,8 @@ public sealed partial class SettingsDbContext
             table.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Company", $"[CompanyId] <> {emptyGuid}");
             table.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Profile", $"[ProfileId] <> {emptyGuid}");
             table.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Process", $"[Process] IN {processes}");
+            table.HasCheckConstraint("CK_SettingsMfgToleranceVersions_WorkCenter",
+                $"[WorkCenterId] IS NULL OR [WorkCenterId] <> {emptyGuid}");
             table.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Versions", "[ProfileVersion] > 0 AND [StateVersion] > 0");
             table.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Percents",
                 "[MaximumFirePercent] >= 0 AND [MaximumFirePercent] <= 100 "
@@ -120,8 +125,34 @@ public sealed partial class SettingsDbContext
             version.State == EntityState.Modified
             && version.Entity.CompanyId == policy.CompanyId && version.Entity.ProfileId == policy.ProfileId
             && version.Entity.ProfileVersion == policy.Version
+            && version.Entity.WorkCenterId == policy.WorkCenterId
             && version.Entity.Status == ManufacturingProfileStatusesV1.Published
             && Equals(version.Property(row => row.Status).OriginalValue, ManufacturingProfileStatusesV1.Approved));
+
+    /// <summary>
+    /// U1-b: the one permitted change of a published registry row — its open-ended window closed on the day before a
+    /// successor of the same company, process and line scope starts, the successor being published in the same save
+    /// (<see cref="IsToleranceRegistryPublication"/>). Every other column stays as it is; the DB trigger agrees (51002).
+    /// </summary>
+    private bool IsToleranceRegistrySupersession(
+        Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry, ManufacturingTolerancePolicyRow policy)
+    {
+        if (entry.State != EntityState.Modified || policy.EffectiveThrough is not { } through
+            || entry.Property(nameof(ManufacturingTolerancePolicyRow.EffectiveThrough)).OriginalValue is not null
+            || entry.Properties.Any(property => property.IsModified
+                && property.Metadata.Name != nameof(ManufacturingTolerancePolicyRow.EffectiveThrough)))
+        {
+            return false;
+        }
+
+        return ChangeTracker.Entries<ManufacturingTolerancePolicyRow>().Any(successor =>
+            successor.State == EntityState.Added
+            && successor.Entity.CompanyId == policy.CompanyId && successor.Entity.Process == policy.Process
+            && successor.Entity.WorkCenterId == policy.WorkCenterId && successor.Entity.ProfileId != policy.ProfileId
+            && successor.Entity.EffectiveFrom > policy.EffectiveFrom
+            && through == successor.Entity.EffectiveFrom.AddDays(-1)
+            && IsToleranceRegistryPublication(successor, successor.Entity));
+    }
 
     /// <summary>Values are insert-only; a published header or tolerance version never changes (the DB triggers agree).</summary>
     private static void ApplyManufacturingProfileWriteGuard(Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry entry)
