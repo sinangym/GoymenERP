@@ -9,7 +9,7 @@ adı ve açıklamasıdır. Claude yalnız soruyu ve seçenekleri hazırlamışt�
 
 `SINAN_KARARLARI_2026-11-02_ALIS.md` §0 aynen geçerlidir: kararlar yapılandırılabilir ve fail-closed uygulanır;
 hiçbir `OPEN-*` kapanmaz; persona eşlemesi grant değildir; sayısal değerler kod sabiti olmaz. Başka modüle düşen
-işler o şeritlere görev notuyla bırakılır. Saklama/imha politikası (ALS-D38) AGENTS.md gereği ayrı politikadır; bu
+işler o şeritlere görev notuyla bırakılır. Saklama/imha politikası (ALS-D39) AGENTS.md gereği ayrı politikadır; bu
 karar süreyi seçer, imha işleminin canlıda çalıştırılması ayrı insan kapısıdır.
 
 ## 1. Kararlar
@@ -40,14 +40,16 @@ Not: on altı soru on beş satırdadır; ALS-D39 3. turdaki şoför bilgisi soru
   kendi malı fasoncuya gider, mülkiyet Göymen'de kalır → **fason hizmet alış siparişi** (A-1). Gelen fason: müşterinin
   malı Göymen'e gelir, Göymen hizmet faturası keser → **Satış** şeridi (URETIM_SATIS_DEVIR S-3). Tedarikçinin kendi
   malını işleyip satması **fason değildir, normal mal alışıdır**. Bu nedenle fason işlemler masraf satırıyla
-  kaydedilmez; hubvogal'deki "Fason – …" masraf tipleri Göymen'e masraf tipi olarak taşınmaz (MIG-01 eşlemesinde
-  hizmet tipine bağlanır).
+  kaydedilmez.
 - **ALS-D43, ALS-D19'un açık ayrıntısını kapatır;** adet/metre profilleri Ayarlar'da onaylanana kadar fail-closed
   kuralı (EK1 §2) aynen geçerlidir. Ö2'nin kg kuralı değişmez.
 - **ALS-D37:** "Takas" pozisyonu Göymen'e alınmaz; takas işlemleri alışta ve satışta ayrı siparişlerle yapılır.
   "Temel" pozisyonu "Ticari" ile aynıdır, ayrı alınmaz.
 
 ## 2. Notlar (geri alınabilir)
+
+- **ALS-D29 göç notu:** hubvogal'deki "Fason – …" masraf tipleri Göymen'e masraf tipi olarak taşınmaz; MIG-01 alan
+  eşlemesinde ilgili fason hizmet tipine bağlanması önerilir (göç tercihi, kayıt örnekleriyle doğrulanır).
 
 - **ALS-D36 yorumu:** hubvogal numara biçimi (`0213-01-72-261026-024`) aynı algoritmayla Göymen'de yeniden başlar;
   eski numaralar taşınmaz. Biçimin parçalarının anlamı (ilk blok cari kodu mu, "01" ve "72" ne) MIG-01 alan
