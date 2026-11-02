@@ -378,8 +378,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // revision awaits nothing) fact, kept ordinal-sorted (af6987da… -> 55482d2d…).
             // K3-REVIEW-B P2-1 / P2-2, SAT-D165 / SAT-D166 (EK23): +1 SalesOrderPdf (the accepted revision is printed, never the
             // reason) and +1 SalesRiskCheck (the remainder is the accepted revision's) fact, kept ordinal-sorted (55482d2d… -> a921318d…).
+            // MOD-03 → Sales (SAT-D93/D97/D105/D140/D147): +3 SalesOrderTax facts (an approved order's tax change archives the
+            // approved tax and the tax/totals routes answer the stored snapshots; a buyer tax change moves the header and line tax
+            // columns; the real Settings tax options and the 51135 rollback refusal), kept ordinal-sorted (a921318d… -> 1c5c3996…).
+            // SAT-D184 (EK26): +1 SalesOrderTax fact (the BackfillDraftBuyerTax migration writes "Normal" once on a legacy order),
+            // kept ordinal-sorted (1c5c3996… -> 4fa6ad29…).
             ["tools/relational_inventory/sales.txt"] =
-                "a921318de33cdad00f001934e21c3fa67290b1b4cca70b86c497840c2f1966c4",
+                "4fa6ad296d5c8787ee3ed7de27ae4eccf4cb48def7031d8a5d87586d9c0061f2",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -478,9 +483,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // header's write guard widened by exactly the revisable header columns; no query-filter bypass or direct database surface.
             // Re-fingerprinted for SAT-D115: the company-filtered DraftCustomerRejections table (company-leading key and FK to the
             // draft, append-only in the write guard); no query-filter bypass or direct database surface.
+            // Re-fingerprinted for MOD-03 → Sales: four nullable JSON columns (BuyerTaxJson on Drafts / DraftRevisionHeaders, TaxJson
+            // on DraftLines / DraftRevisionLines) with ISJSON check constraints, and the write guard widened by exactly
+            // Drafts.BuyerTaxJson and DraftLines.TaxJson; no query-filter bypass or direct database surface.
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "845384e4c4a3841b9cea43a24e2b4a8b94dcada8965403fee745ad0e45f0990f",
+                "ac77429518b71f3af72cf33e879b6ed9fa80722c37c79a453f2a1e48f3818475",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1408,8 +1416,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // are unchanged.
                     // Re-fingerprinted for API-04 merged over API-41 / API-42: the draft service also receives the optional Identity
                     // directory adapters (the sales owner's display and eligibility, DI-only); provider branch and token counts unchanged.
+                    // Re-fingerprinted for MOD-03 → Sales: the draft service also receives the optional Settings line tax port and is
+                    // registered as the tax read service (DI-only); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D181 (EK26): the draft service also receives the optional Settings rate list port (DI-only).
                     new(
-                        "06f4fe6b7a6a090b57955753792343ca082c964b70079f0e53b24749c28c032c",
+                        "b19e11cca0827ed1d16027630cab928e4ee7917e1ab99f64db2e6ea1e3bdd145",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1452,8 +1463,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // the restore reads those rows through the same filtered context; SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D115 / SAT-D152: the state command appends a customer-rejection row and the restore
                     // reads those rows (and binds the source quote) through the same filtered context; SqlClient count unchanged.
+                    // Re-fingerprinted for MOD-03 → Sales: the line, archive and header rows carry the buyer tax / line tax JSON written
+                    // and restored through the same filtered context (SalesTaxJson); SqlClient count unchanged.
                     new(
-                        "f15894a84e8452b836f3c4e8b3db3df834f1dfa12f086ff37c551403a823ca89",
+                        "5686ed18e1a9c6b3f97591935282efb1e93db0e7603376402be9e0e12f97129e",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1509,7 +1522,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "SettingsModuleExtensions.cs"] =
                     new(
                         // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
-                        // Re-fingerprinted for Üretim U1-a: the Manufacturing parameter port and the profile administration
+                        // Re-fingerprinted for Üretim U1-a (+ SAT-D181 tax rate list port, merged): the Manufacturing parameter port and the profile administration
                         // behind its two ports (DI-only); the database surface and its counts are unchanged.
                         "7b19a9a1258072c262a5ee8083c6a967374f797aa01cd915ac457295067d5aa6",
                         new Dictionary<string, int>(StringComparer.Ordinal)
@@ -2017,6 +2030,18 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // is recorded (row or recorded attempt); the THROW precedes the DropTable, an empty table rolls back freely. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261101143750_AddDraftCustomerRejections.cs"] =
                     new("8cd14cc9c383002f48c83fabfb21b5a87bcf7f50daadce9d0563f885bfc73901",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // MOD-03 → Sales: the Down's only raw SQL is Sales' refusal (51135, used by no other migration) while any order or
+                // archived revision carries a buyer tax or a line tax snapshot; the THROW precedes every drop. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102071113_AddDraftOrderTax.cs"] =
+                    new("044a5787cc02e0c83a8dad54c743fedff2c374d3d22961fc47e27ecca4787231",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D184 (EK26): Up's only raw SQL writes the buyer tax "Normal" once on every Sales order without one (the store's
+                // exact JSON, one statement, no other table); Down is a documented no-op (forward fix).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102090531_BackfillDraftBuyerTax.cs"] =
+                    new("fd822bd630315a4f8b78b9e948073c74ce01b289f5823f30f0718f01ca6f946d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

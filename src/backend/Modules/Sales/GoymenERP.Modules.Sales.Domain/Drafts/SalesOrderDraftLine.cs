@@ -21,7 +21,7 @@ public sealed class SalesOrderDraftLine
 
     public SalesOrderDraftLine(Guid id, int lineNo, ProductSnapshot product, UnitProfileSnapshot orderUnit,
         Quantity quantity, string quantityText, DateOnly? requestedDeliveryDate, string? note,
-        CommercialDraftFields commercial, IReadOnlyList<DeliverySlice> slices)
+        CommercialDraftFields commercial, IReadOnlyList<DeliverySlice> slices, SalesLineTaxSnapshot? tax = null)
     {
         Id = Identity.Require(id, nameof(id));
         LineNo = lineNo >= 1 ? lineNo : throw new ArgumentOutOfRangeException(nameof(lineNo));
@@ -39,6 +39,7 @@ public sealed class SalesOrderDraftLine
         RequestedDeliveryDate = requestedDeliveryDate;
         Note = note;
         Commercial = commercial ?? throw new ArgumentNullException(nameof(commercial));
+        Tax = tax;
         ArgumentNullException.ThrowIfNull(slices);
         this.slices = [.. slices];
         var planned = this.slices.Aggregate(Quantity.Zero(quantity.Unit), (sum, slice) => sum.Add(slice.Quantity));
@@ -69,6 +70,23 @@ public sealed class SalesOrderDraftLine
     public string? Note { get; }
 
     public CommercialDraftFields Commercial { get; private set; }
+
+    /// <summary>
+    /// MOD-03 → Sales (SAT-D93/D139/D140): the line's tax as the Settings line tax port resolved it (or the salesperson changed it
+    /// with a reason, SAT-D97); null for a line written before the tax wiring or when no tax port answered — "kaynak yok", never 0.
+    /// </summary>
+    public SalesLineTaxSnapshot? Tax { get; private set; }
+
+    /// <summary>The aggregate replaces the tax snapshot (a commercial revision or a buyer situation change); its rules ran first.</summary>
+    internal void ReplaceTax(SalesLineTaxSnapshot? tax)
+    {
+        if (tax is not null && tax.ProductId != Product.ProductId)
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Vergi anlık görüntüsü başka ürünün (iç değişmez).");
+        }
+
+        Tax = tax;
+    }
 
     /// <summary>The aggregate's commercial revision replaces the fields; the rules were applied by the aggregate first.</summary>
     internal void ReplaceCommercial(CommercialDraftFields commercial) =>

@@ -34,6 +34,7 @@
  *    checked here; whether the shares add up to 100 is the server's rule.
  */
 
+import { buildBuyerTax, EMPTY_BUYER_TAX_INPUT, START_BUYER_SITUATION, type BuyerSituationOption, type BuyerTaxInput } from './orderTax'
 import {
   LIMITS,
   ORDER_KIND,
@@ -46,7 +47,7 @@ import {
 } from './contract'
 import { unplannedQuantity } from './deliveryPlan'
 import { buildDueTerms, type DueTermsFormError, type InstalmentRow } from './headerRevision'
-import { HEADER_REVISION_TEXT, ORDER_DRAFT_TEXT } from './salesText'
+import { HEADER_REVISION_TEXT, ORDER_DRAFT_TEXT, ORDER_TAX_TEXT } from './salesText'
 import { isDateOnly, parseDecimalInput, parseQuantityInput, type DecimalInputError, type QuantityInputError } from './wirePrimitives'
 
 /** What the owners currently offer. Filled only from a real selection source. */
@@ -119,6 +120,8 @@ export interface OrderDraftFormValues {
   readonly contactId: string
   /** SAT-D123: null = no due terms ("vade yok"); otherwise the editor's rows as typed. */
   readonly instalments: readonly InstalmentRow[] | null
+  /** MOD-03 → Sales (SAT-D140): the buyer tax inputs; absent (an older remembered form) = the start value "Normal". */
+  readonly buyerTax?: BuyerTaxInput
 }
 
 /** SALES-A2a: what the Cari owner lists for the chosen account; null while nothing is offered (not read, or failed). */
@@ -149,6 +152,7 @@ export const ORDER_FIELD = {
   deliveryAddress: 'deliveryAddress',
   contact: 'contact',
   dueTerms: 'dueTerms',
+  buyerTax: 'buyerTax',
 } as const
 
 export const lineFieldId = (lineId: string, field: LineField) => `lines.${lineId}.${field}`
@@ -393,6 +397,8 @@ export function validateOrderDraft(
   delivery: DeliveryReferenceOptions | null = null,
   /** UI-14: the shell published the price-write control; without it no price member is read or sent. */
   priceWrite = false,
+  /** MOD-03 → Sales: the Settings entry of the chosen buyer situation (its exemption / document needs), when read. */
+  buyerSituation?: BuyerSituationOption,
 ): OrderDraftValidation {
   const text = ORDER_DRAFT_TEXT.validation
   const errors: Record<string, string> = {}
@@ -432,6 +438,13 @@ export function validateOrderDraft(
   // SAT-D123: the due terms follow the delivery references in DOM order.
   const terms = buildDueTerms(values.instalments)
   if (!terms.ok) errors[ORDER_FIELD.dueTerms] = dueTermsMessage(terms.error)
+
+  // MOD-03 → Sales: the buyer tax follows the due terms in DOM order; the start value is not sent (the server's own start).
+  const buyerTaxInput = values.buyerTax ?? EMPTY_BUYER_TAX_INPUT
+  const buyerTax = buildBuyerTax(buyerTaxInput, buyerSituation)
+  if (!buyerTax.ok) errors[ORDER_FIELD.buyerTax] = ORDER_TAX_TEXT.buildError[buyerTax.error]
+  const sendBuyerTax = buyerTax.ok && !(buyerTax.buyerTax.situation === START_BUYER_SITUATION
+    && buyerTax.buyerTax.exemptionCode === undefined && buyerTax.buyerTax.documentNo === undefined)
 
   if (values.lines.length === 0) errors[ORDER_FIELD.lines] = text.linesRequired
   else if (values.lines.length > LIMITS.lines) errors[ORDER_FIELD.lines] = text.tooManyLines
@@ -529,6 +542,7 @@ export function validateOrderDraft(
       sourceStrategy: null,
       package: null,
       dueTerms: terms.ok ? terms.dueTerms : null,
+      ...(sendBuyerTax && buyerTax.ok ? { buyerTax: buyerTax.buyerTax } : {}),
     },
   }
 }

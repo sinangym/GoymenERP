@@ -14,7 +14,8 @@
     "vatAmount": null,
     "withheldVatAmount": null,
     "grossAmount": null,
-    "payableAmount": null
+    "payableAmount": null,
+    "taxUnavailableLineCount": 0
   },
   "lines": [
     {
@@ -31,7 +32,8 @@
       "withholdingShare": null,
       "withheldVatAmount": null,
       "grossAmount": null,
-      "payableAmount": null
+      "payableAmount": null,
+      "taxReason": "tax_snapshot_missing"
     },
     {
       "lineId": "aaaaaaaa-1111-4111-8111-000000000002",

@@ -100,6 +100,7 @@ import {
 import type { OrderCommandOutcome } from './orderAttempt'
 import { decodeOrderStatus, salesDraftStatusPath, type OrderStatus } from './orderStatus'
 import { decodeOrderTotals, salesDraftTotalsPath, type OrderTotals } from './orderTotals'
+import { decodeOrderTax, decodeTaxOptions, salesDraftTaxPath, salesTaxOptionsPath, type OrderTax, type TaxOptions } from './orderTax'
 import { decodeRiskCheck, salesDraftRiskCheckPath, type RiskCheck } from './riskCheck'
 import type { ViewOutcome } from '../shell/uiState'
 import type { OrderDraftOptions } from './orderDraftForm'
@@ -356,6 +357,34 @@ export async function fetchDraftTotals(
   if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
   const totals = decodeOrderTotals(raw.body, detail)
   return totals === null ? { type: 'malformed' } : { type: 'ok-single', data: totals }
+}
+
+/**
+ * MOD-03 → Sales: the order's buyer tax and every line's tax snapshot (GET, under the draft read AND the price read). Data only
+ * when it describes exactly this detail (`decodeOrderTax`); anything else is `malformed`. A non-200 keeps its status and body.
+ */
+export async function fetchDraftTax(
+  detail: DraftDetail,
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<ViewOutcome<OrderTax>> {
+  const raw = await request(salesDraftTaxPath(detail.draft.id), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const tax = decodeOrderTax(raw.body, detail)
+  return tax === null ? { type: 'malformed' } : { type: 'ok-single', data: tax }
+}
+
+/**
+ * MOD-03 → Sales (SAT-D158): the Settings tax lists the order forms offer for the business date `on` (GET, under the draft read).
+ * An empty list is data with its reason (SAT-D148), never an error.
+ */
+export async function fetchTaxOptions(on: string, companyId: string, signal?: AbortSignal): Promise<ViewOutcome<TaxOptions>> {
+  const raw = await request(salesTaxOptionsPath(on), { headers: headers(companyId) }, signal)
+  if ('failure' in raw) return readFailure(raw.failure)
+  if (raw.status !== 200) return { type: 'http', status: raw.status, body: raw.body }
+  const options = decodeTaxOptions(raw.body, on)
+  return options === null ? { type: 'malformed' } : { type: 'ok-single', data: options }
 }
 
 /**

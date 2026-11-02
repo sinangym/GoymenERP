@@ -195,9 +195,11 @@ public sealed class SalesOrderCustomerRejectionSqlServerRelationalAcceptanceTest
         var rejections = Array.FindIndex(applied, migration => migration.EndsWith("_AddDraftCustomerRejections", StringComparison.Ordinal));
         Assert.True(rejections > 0);
         var migrator = context.GetService<IMigrator>();
+        // Review A P1: the MOD-03 tax migrations come after; over the pre-tax state they roll back first, then 51134 refuses.
+        await run.ScalarAsync<int>(SalesOrderTaxRollback.ClearSql);
         var refused = await Assert.ThrowsAsync<SqlException>(() => migrator.MigrateAsync(applied[rejections - 1]));
         Assert.Equal(51134, refused.Number);
-        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied[..(rejections + 1)], await context.Database.GetAppliedMigrationsAsync());
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[DraftCustomerRejections]"));
     }
 

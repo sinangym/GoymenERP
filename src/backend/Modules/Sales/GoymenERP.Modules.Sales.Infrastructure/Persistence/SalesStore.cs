@@ -527,6 +527,11 @@ public sealed partial class SalesStore(
                 lineRow.PriceUnitId = line.Commercial.PriceUnitId;
                 lineRow.DiscountPercent = line.Commercial.DiscountPercent;
                 lineRow.PricingJson = SalesLinePricingJson.Serialize(line.Commercial);
+                // MOD-03 → Sales: assigned only when the snapshot moved (a value-equal one keeps its stored JSON).
+                if (!Equals(SalesTaxJson.RestoreLine(lineRow.TaxJson), line.Tax))
+                {
+                    lineRow.TaxJson = SalesTaxJson.SerializeLine(line.Tax);
+                }
             }
         }
 
@@ -577,6 +582,7 @@ public sealed partial class SalesStore(
                 PriceUnitId = line.Commercial.PriceUnitId,
                 DiscountPercent = line.Commercial.DiscountPercent,
                 PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
+                TaxJson = SalesTaxJson.SerializeLine(line.Tax),
             });
         }
 
@@ -594,6 +600,7 @@ public sealed partial class SalesStore(
             ContactVersion = header.Contact?.ExpectedVersion,
             SalesOwnerUserId = header.SalesOwnerUserId,
             DueTermsJson = SalesDueTermsJson.Serialize(header.DueTerms),
+            BuyerTaxJson = SalesTaxJson.SerializeBuyer(header.BuyerTax),
         });
     }
 
@@ -1448,6 +1455,8 @@ public sealed partial class SalesStore(
             // SAT-D2 / API-12: the discount-limit check (who set the discount, the limit applied, the approval).
             line.Commercial.DiscountCheck,
             netUnitPrice = SalesLinePriceCalculator.NetUnitPriceText(line.Commercial),
+            // MOD-03 → Sales (SAT-D93/D97): the line's tax snapshot, with the override's reason when the salesperson changed it.
+            tax = line.Tax,
         }).ToArray(),
     };
 
@@ -1559,7 +1568,7 @@ public sealed partial class SalesStore(
                 Reference(row.DeliveryAddressId, row.DeliveryAddressVersion), Reference(row.ContactId, row.ContactVersion),
                 Reference(row.ResponsibleId, row.ResponsibleVersion), Reference(row.PaymentTermsId, row.PaymentTermsVersion),
                 Reference(row.SourceStrategyId, row.SourceStrategyVersion), Reference(row.PackageId, row.PackageVersion),
-                SalesDueTermsJson.Restore(row.DueTermsJson), row.SalesOwnerUserId);
+                SalesDueTermsJson.Restore(row.DueTermsJson), row.SalesOwnerUserId, SalesTaxJson.RestoreBuyer(row.BuyerTaxJson));
             var money = new MoneyProfileSnapshot(row.CompanyId, row.CurrencyId, row.MoneyOperation, row.MoneyProfileId,
                 row.MoneyProfileVersion, row.MoneyEffectiveOn, row.MoneyIsActive, row.MoneyEffectiveFrom, row.MoneyEffectiveThrough,
                 row.MoneyScale);
@@ -1587,7 +1596,7 @@ public sealed partial class SalesStore(
                     line.RequestedDeliveryDate,
                     line.Note,
                     SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson),
-                    lineSlices), row.UpdatedAtUtc);
+                    lineSlices, SalesTaxJson.RestoreLine(line.TaxJson)), row.UpdatedAtUtc);
                 if (restored.LineNo != line.LineNo)
                 {
                     throw new InvalidOperationException("Kayıtlı satır numaraları taslağın satır sırasıyla uyuşmuyor.");
@@ -1611,7 +1620,8 @@ public sealed partial class SalesStore(
                     archived.MoneyProfileId, archived.MoneyProfileVersion, archived.MoneyScale, archived.ArchivedAtUtc, archived.ArchivedBy,
                     [.. revisionLines.Where(line => line.DraftId == row.Id && line.Revision == archived.Revision).OrderBy(line => line.LineNo)
                         .Select(line => new RevisionLineSnapshot(line.LineId, line.LineNo, line.ProductId, line.ProductVersion, line.OrderUnitId,
-                            line.QuantityText, SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson)))],
+                            line.QuantityText, SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson),
+                            SalesTaxJson.RestoreLine(line.TaxJson)))],
                     archived.Reason,
                     // API-04: every archive has its header row (AddDraftHeaderRevisions backfilled the older ones); none is refused.
                     RevisionHeader(revisionHeaders.SingleOrDefault(header => header.DraftId == row.Id && header.Revision == archived.Revision)
@@ -1905,7 +1915,8 @@ public sealed partial class SalesStore(
 
     private static RevisionHeaderSnapshot RevisionHeader(DraftRevisionHeaderRow row) =>
         new RevisionHeaderSnapshot(row.PartyId, row.CompanyAccountId, row.CurrencyId, Reference(row.DeliveryAddressId, row.DeliveryAddressVersion),
-            Reference(row.ContactId, row.ContactVersion), row.SalesOwnerUserId, SalesDueTermsJson.Restore(row.DueTermsJson));
+            Reference(row.ContactId, row.ContactVersion), row.SalesOwnerUserId, SalesDueTermsJson.Restore(row.DueTermsJson),
+            SalesTaxJson.RestoreBuyer(row.BuyerTaxJson));
 
     private static string DraftAudit(SalesOrderDraft draft) => JsonSerializer.Serialize(new
     {

@@ -458,10 +458,12 @@ export const ORDER_DETAIL_TEXT = {
     versionConflict: 'Kayıt sürümü değişti; güncel değerleri yeniden inceleyin.',
     validation: 'Fiyat revizyonu uygulanmadı; satır değerlerini kontrol edin.',
     unexpected: 'Fiyat revizyonu uygulanmadı. Beklenmeyen bir yanıt alındı.',
-    localError: (lineNo: number, reason: 'discount-without-price' | 'price-unit-required') =>
+    localError: (lineNo: number, reason: 'discount-without-price' | 'price-unit-required' | 'tax-situation-required' | 'tax-reason-required') =>
       reason === 'discount-without-price'
         ? `${lineNo}. satırda iskonto için birim fiyat gerekir.`
-        : `${lineNo}. satırda birim fiyat için fiyat birimi gerekir.`,
+        : reason === 'price-unit-required'
+          ? `${lineNo}. satırda birim fiyat için fiyat birimi gerekir.`
+          : `${lineNo}. satır: ${ORDER_TAX_TEXT.buildError[reason]}`,
   },
   /** DEC-SAL-002 / AT-023: the quantity revision ("Revizyon oluştur"). Texts only; the rules are the server's. */
   quantityRevision: {
@@ -860,6 +862,21 @@ export const LINE_PRICING_TEXT = {
     sales_price_calculation_overflow: 'Fiyat hesabı desteklenen sayı sınırını aşıyor.',
     price_reference_unavailable: 'Seçilen liste fiyatı artık bu satırı fiyatlamıyor; yeniden getirin.',
     price_reference_currency_mismatch: 'Liste fiyatı siparişin para biriminde değil.',
+    // MOD-03 → Sales (SAT-D93/D97/D140/D147/D158): the tax choices' rule codes.
+    sales_tax_buyer_situation_invalid: 'Alıcı durumu kodu geçersiz.',
+    sales_tax_buyer_situation_unknown: "Alıcı durumu Ayarlar'daki geçerli listede yok.",
+    sales_tax_exemption_code_invalid: 'İstisna kodu geçersiz.',
+    sales_tax_exemption_code_unknown: "İstisna kodu Ayarlar'daki geçerli listede yok.",
+    sales_tax_exemption_code_not_applicable: 'İstisna kodu yalnız KDV %0 uygulanan alıcı durumunda seçilir.',
+    sales_tax_buyer_document_incomplete: 'Belge numarası ve tarihi birlikte girilir.',
+    sales_tax_buyer_document_not_applicable: 'Bu alıcı durumu belge istemiyor; belge bilgisi girilmez.',
+    sales_tax_item_type_unknown: 'Kalem tipi Ayarlar listesinde yok.',
+    sales_tax_override_reason_required: 'Satır vergisi değişikliği için gerekçe zorunludur.',
+    sales_tax_override_reason_too_long: 'Gerekçe en fazla 4000 karakter olabilir.',
+    sales_tax_vat_rate_unknown: "KDV oranı Ayarlar'daki geçerli listede yok.",
+    sales_tax_withholding_ratio_unknown: "Tevkifat oranı Ayarlar'daki geçerli listede yok.",
+    sales_tax_withholding_not_applicable: '%0 KDV ya da KDV yok olan satırda tevkifat seçilmez.',
+    sales_tax_exemption_code_required: '%0 KDV seçimi istisna kodu ister.',
   } as Record<string, string>,
   lineError: (lineNo: number, text: string) => `${lineNo}. satır: ${text}`,
 } as const
@@ -1186,6 +1203,115 @@ export const ORDER_STATUS_TEXT = {
 } as const
 
 /** API-03 / UI-15: the order totals card (SAT-D11, delegation No 15). Every amount is the server's; the screen computes none. */
+/**
+ * MOD-03 → Sales (SAT-D93/D139/D140/D147/D148): the Settings line tax port's and Sales' reason codes in words. An unknown code
+ * is shown as itself (a newer server), never hidden.
+ */
+const TAX_REASON_TEXT: Readonly<Record<string, string>> = {
+  tax_snapshot_missing: 'satırın vergi kaydı yok (vergi bağlantısından önce yazılmış)',
+  tax_rate_incomplete: 'vergi kaydı eksik',
+  tax_unresolved: 'Ayarlar vergi bilgisini veremedi',
+  buyer_document_missing: 'alıcının belgesi (no, tarih) siparişte yok',
+  product_item_type_missing: 'ürün kartında kalem tipi seçilmemiş',
+  product_not_found: 'ürün bulunamadı',
+  item_type_unknown: 'kalem tipi tanınmıyor',
+  item_type_default_missing: "Ayarlar'da bu kalem tipinin varsayılan vergisi girilmemiş",
+  exemption_code_missing: 'istisna kodu seçilmemiş',
+  withholding_code_missing: "Ayarlar'da tevkifat kodu girilmemiş",
+  code_not_in_list: "kod Ayarlar'daki listede yok",
+  code_list_missing: "Ayarlar'da kod listesi girilmemiş",
+  withholding_threshold_missing: "Ayarlar'da tevkifat eşiği (VUK 232) girilmemiş",
+  buyer_situation_unknown: "alıcı durumu Ayarlar'daki listede yok",
+  buyer_situation_list_missing: "Ayarlar'da alıcı durumu listesi yok",
+}
+
+export const taxReasonText = (code: string): string => TAX_REASON_TEXT[code] ?? code
+
+/** MOD-03 → Sales: the order's tax card (S-04) and the tax inputs of the order forms. */
+export const ORDER_TAX_TEXT = {
+  heading: 'Vergi (KDV / tevkifat)',
+  note:
+    "Satırların KDV ve tevkifatı Ayarlar'daki vergi tanımından, ürünün kalem tipine ve siparişin alıcı durumuna göre sunucuda " +
+    'belirlenir ve satırda saklanır; ekranda hesaplanmaz. Değer girilmemişse "hesaplanamıyor" görünür, tahmin edilmez.',
+  subject: 'sipariş vergisi',
+  forbidden: 'Vergi bilgileri fiyat bilgisidir; fiyatları görme yetkiniz olmadığı için gösterilmiyor.',
+  noLines: 'Siparişte satır yok.',
+  unreadable: 'Vergi bilgisi okunamadı; hiçbir oran gösterilmiyor.',
+  serviceUnavailable: 'Vergi servisi şu anda yanıt veremiyor; biraz sonra yeniden deneyin.',
+  buyerSituation: 'Alıcı vergi durumu',
+  buyerSituationMissing: 'Seçilmemiş (vergi bağlantısından önce yazılmış sipariş)',
+  exemptionCode: 'İstisna kodu',
+  document: 'Alıcı belgesi',
+  documentValue: (number: string, date: string) => `${number} · ${date}`,
+  none: 'Yok',
+  linesCaption: 'Satır vergileri',
+  column: {
+    lineNo: 'Satır',
+    product: 'Ürün',
+    basis: 'Dayanak',
+    vat: 'KDV',
+    withholding: 'Tevkifat',
+    codes: 'Kodlar',
+    state: 'Durum',
+    invoice: 'Fatura için eksik',
+  },
+  origin: { Default: "Ayarlar varsayılanı", Override: 'Satırda değiştirildi' } as Readonly<Record<string, string>>,
+  overrideBy: (reason: string, by: string) => `Gerekçe: ${reason} (${by})`,
+  vatState: (state: string | null, percent: string | null) =>
+    state === 'Resolved' && percent !== null ? `%${percent}`
+      : state === 'Exempt' ? 'KDV yok (istisna)'
+        : state === 'ZeroRated' ? 'KDV %0'
+          : 'Hesaplanamıyor',
+  withholdingState: (state: string | null, percent: string | null) =>
+    state === 'Resolved' && percent !== null ? `KDV'nin %${percent}'i`
+      : state === 'NotApplied' ? 'Uygulanmaz'
+        : 'Hesaplanamıyor',
+  code: (label: string, code: string | null, state: string | null) =>
+    state === 'NotRequired' || state === null ? null : `${label}: ${code ?? 'yok'}`,
+  rateComputed: 'Hesaplanıyor',
+  rateNoSource: 'Hesaplanamıyor',
+  invoiceReady: 'Eksik yok',
+  itemType: { Steel: 'Demir', Scrap: 'Hurda', Service: 'Hizmet' } as Readonly<Record<string, string>>,
+  situationFallback: (code: string) => code,
+  // Form inputs (create, header revision, price revision).
+  buyerSituationLabel: 'Alıcı vergi durumu',
+  buyerSituationHint:
+    "Ayarlar'daki alıcı durumu listesinden seçilir (SAT-D140); yeni sipariş “Normal” başlar. İhraç kayıtlı / istisna belgeli " +
+    'alıcıda KDV %0 olur; istisna kodu ve belge bilgisi eksikse fatura bekler.',
+  optionsLoading: 'Alıcı durumları okunuyor…',
+  optionsUnavailable: "Alıcı durumu listesi okunamadı; sipariş “Normal” alıcı durumuyla açılır.",
+  optionsEmpty: (reason: string | null) => `Ayarlar'da alıcı durumu listesi yok (${reason === null ? '—' : taxReasonText(reason)}).`,
+  exemptionCodeLabel: 'İstisna kodu',
+  exemptionCodeNone: 'Seçilmedi (fatura bekler)',
+  exemptionCodesEmpty: "Ayarlar'da istisna kodu listesi henüz girilmemiş; kod seçilemez, fatura bekler.",
+  documentNoLabel: 'Belge numarası',
+  documentDateLabel: 'Belge tarihi',
+  documentHint: 'Belge numarası ve tarihi birlikte girilir; eksikse sipariş açılır ama fatura bekler.',
+  lineTaxLabel: 'Vergi',
+  lineTaxMode: { keep: 'Değiştirme', default: "Ayarlar varsayılanına dön", override: 'Satırda değiştir' } as const,
+  lineTaxSituation: 'Satırın alıcı durumu',
+  lineTaxItemType: 'Kalem tipi varsayılanı',
+  lineTaxItemTypeProduct: 'Ürünün kendi kalem tipi',
+  lineTaxReason: 'Değişiklik gerekçesi',
+  lineTaxHint:
+    "Yalnız Ayarlar'daki değerler seçilir (SAT-D93, SAT-D181: KDV oranı ve tevkifat oranı listeleri; %0 KDV istisna kodu ister); " +
+    'gerekçe zorunludur ve sipariş onayıyla birlikte onaylanır (SAT-D97). Onaylı siparişte değişiklik yeni revizyon açar (SAT-D105).',
+  lineTaxVatRate: 'KDV oranı (Ayarlar listesinden)',
+  lineTaxWithholdingRatio: 'Tevkifat oranı (Ayarlar listesinden)',
+  lineTaxRateDefault: 'Varsayılandaki oran',
+  rateListEmpty: "Ayarlar'da oran listesi henüz girilmemiş; yalnız varsayılan oran kullanılabilir.",
+  /** Review A P3: a price revision re-reads every line's tax from Settings, also the lines whose tax choice is not touched. */
+  reresolveHint:
+    "Kaydedince satırların vergisi Ayarlar'dan yeniden okunur — vergisi değiştirilmeyen satırlar da (o güne kadar Ayarlar'da bir " +
+    'değer değiştiyse yeni değer gelir).',
+  buildError: {
+    'situation-required': 'Alıcı vergi durumu seçin.',
+    'document-incomplete': 'Belge numarası ve tarihi birlikte girilir.',
+    'tax-situation-required': 'Satırın vergisi değişiyorsa alıcı durumunu seçin.',
+    'tax-reason-required': 'Satırın vergisi değişiyorsa gerekçe yazın.',
+  } as const,
+} as const
+
 export const ORDER_TOTALS_TEXT = {
   heading: 'Sipariş toplamları',
   note:
@@ -1218,10 +1344,12 @@ export const ORDER_TOTALS_TEXT = {
   documentOutOfRange:
     'Satır tutarları hesaplandı ama belge toplamı sistemin sayı sınırını aşıyor; toplam gösterilmiyor (kesilmiş bir tutar gösterilmez).',
   noLines: 'Siparişte satır yok; toplanacak tutar yok.',
-  taxNoSource:
-    "KDV ve tevkifat oranlarının kaynağı (Ayarlar'daki KDV/tevkifat tanımı) henüz yok. KDV, tevkifat, KDV dahil toplam ve " +
-    'ödenecek tutar gösterilmiyor; sıfır sayılmaz.',
-  taxPartial: 'Bazı satırların KDV oranı tanımlı olmadığı için belge KDV toplamı gösterilmiyor.',
+  taxNoSource: (lines: number) =>
+    `${lines} satırın vergisi hesaplanamıyor (Ayarlar'da değer girilmemiş ya da satırın vergi kaydı yok; nedeni satırda yazıyor). ` +
+    'KDV, tevkifat, KDV dahil toplam ve ödenecek tutar gösterilmiyor; sıfır sayılmaz.',
+  taxPartial: 'Bazı satırların vergisi hesaplanamadığı için belge vergi toplamı gösterilmiyor.',
+  /** MOD-03 → Sales: why a line's tax is not computed (the server's reason code in words). */
+  taxReason: (code: string) => `Vergi: ${taxReasonText(code)}`,
   column: {
     lineNo: 'Satır',
     product: 'Ürün',
@@ -1379,5 +1507,6 @@ export const HEADER_REVISION_TEXT = {
       : error.kind === 'no-instalment' ? 'En az bir taksit girin veya vadeyi kaldırın.'
         : error.kind === 'days' ? `${error.row}. taksitte gün 0 ile 36600 arasında tam sayı olmalıdır.`
           : error.kind === 'share' ? `${error.row}. taksitte pay 0’dan büyük bir sayı olmalıdır.`
-            : 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
+            : error.kind === 'buyer-tax' ? 'Alıcı vergi durumunu seçin; belge numarası ve tarihi birlikte girilir.'
+              : 'Başlıkta hiçbir değer değişmedi; onay boşuna düşürülmez.',
 } as const

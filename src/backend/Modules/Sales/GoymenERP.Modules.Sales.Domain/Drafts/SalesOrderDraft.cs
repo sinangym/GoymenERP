@@ -107,7 +107,8 @@ public sealed record SalesDraftHeader(
     OwnerReference? SourceStrategy = null,
     OwnerReference? Package = null,
     SalesDueTerms? DueTerms = null,
-    Guid? SalesOwnerUserId = null);
+    Guid? SalesOwnerUserId = null,
+    SalesBuyerTax? BuyerTax = null);
 
 /// <summary>Everything a line needs at <see cref="SalesOrderDraft.AddLine"/>; the owner snapshots come from the ports, the rest from the client.</summary>
 public sealed record SalesDraftLineInput(
@@ -119,7 +120,8 @@ public sealed record SalesDraftLineInput(
     DateOnly? RequestedDeliveryDate = null,
     string? Note = null,
     CommercialDraftFields? Commercial = null,
-    IReadOnlyList<DeliverySliceInput>? RequestedDeliverySlices = null);
+    IReadOnlyList<DeliverySliceInput>? RequestedDeliverySlices = null,
+    SalesLineTaxSnapshot? Tax = null);
 
 public sealed record DeliverySliceInput(Guid SliceId, Guid OrderUnitId, string QuantityText, decimal Quantity, DateOnly RequestedDeliveryDate);
 
@@ -351,8 +353,9 @@ public sealed partial class SalesOrderDraft
         RequireCommercial(commercial, input.Product, input.LineId);
 
         var slices = RequireSlices(input.RequestedDeliverySlices, input.OrderUnit, quantity);
+        RequireTaxSnapshot(input.Tax, input.Product);
         var line = new SalesOrderDraftLine(input.LineId, lines.Count + 1, input.Product, input.OrderUnit, quantity,
-            input.QuantityText, input.RequestedDeliveryDate, input.Note, commercial, slices);
+            input.QuantityText, input.RequestedDeliveryDate, input.Note, commercial, slices, input.Tax);
         lines.Add(line);
         Touch(now);
         return line;
@@ -875,8 +878,15 @@ public sealed partial class SalesOrderDraft
     /// the caller's replay, decided before this method runs, never this refusal. Returns the archived
     /// snapshot when one was made (the store persists it in the same save as the draft), else null.
     /// </summary>
+    /// <remarks>
+    /// MOD-03 → Sales (SAT-D93/D97/D105): <paramref name="taxes"/> is every line's tax snapshot as the caller re-resolved it through
+    /// the Settings line tax port for this revision (keyed by line id; each current line exactly once) — or null when no tax port is
+    /// composed, which keeps the lines' snapshots as they are. A changed tax snapshot is a change of the revision like a changed
+    /// price: on an approved order it archives the approved revision (with its tax) and re-enters approval (SAT-D105); its approval
+    /// is the order's approval (SAT-D97).
+    /// </remarks>
     public ApprovedRevisionSnapshot? ReviseCommercial(long expectedVersion, IReadOnlyList<LineCommercialInput> inputs, string actorId,
-        DateTimeOffset now, SalesDiscountLimit? discountLimit = null)
+        DateTimeOffset now, SalesDiscountLimit? discountLimit = null, IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?>? taxes = null)
     {
         RequireVersion(expectedVersion);
         var actor = RequireActor(actorId);
@@ -929,8 +939,11 @@ public sealed partial class SalesOrderDraft
             replacements.Add((line, WithDiscountLimitCheck(PrepareFloorException(fields, actor, now), limit, actor, now)));
         }
 
+        RequireLineTaxes(taxes);
+
         // The discount check is the revision's own record (who checked, when), not a value the person changed.
-        if (replacements.All(pair => pair.Line.Commercial with { DiscountCheck = null } == pair.Fields with { DiscountCheck = null }))
+        if (replacements.All(pair => pair.Line.Commercial with { DiscountCheck = null } == pair.Fields with { DiscountCheck = null })
+            && (taxes is null || lines.All(line => line.Tax == taxes[line.Id])))
         {
             throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
                 "Fiyat revizyonu hiçbir değeri değiştirmiyor; onay boşuna düşürülmez.");
@@ -941,10 +954,7 @@ public sealed partial class SalesOrderDraft
         {
             // The approved revision as it stands, archived BEFORE anything of it changes.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
-                now.ToUniversalTime(), actor,
-                [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
-                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
-                Header: CurrentHeaderSnapshot());
+                now.ToUniversalTime(), actor, ArchiveLines(), Header: CurrentHeaderSnapshot());
             archivedRevisions.Add(archived);
             Revision += 1;
             ApprovalState = InternalApprovalState.Preparing;
@@ -954,10 +964,47 @@ public sealed partial class SalesOrderDraft
         foreach (var (line, fields) in replacements)
         {
             line.ReplaceCommercial(fields);
+            if (taxes is not null)
+            {
+                line.ReplaceTax(taxes[line.Id]);
+            }
         }
 
         Touch(now);
         return archived;
+    }
+
+    /// <summary>The lines of the revision being archived, as they stand: identity, quantity, commercial fields and tax snapshot.</summary>
+    private IReadOnlyList<RevisionLineSnapshot> ArchiveLines() =>
+        [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
+            line.OrderUnit.UnitId, line.QuantityText, line.Commercial, line.Tax))];
+
+    /// <summary>A line's tax snapshot belongs to the line's product (a crossed or stale resolution is refused).</summary>
+    private static void RequireTaxSnapshot(SalesLineTaxSnapshot? tax, ProductSnapshot product)
+    {
+        if (tax is not null && tax.ProductId != product.ProductId)
+        {
+            throw new SalesRuleException(SalesRuleCodes.TaxSnapshotMismatch, "Satırın vergi anlık görüntüsü başka ürün için çözülmüş.");
+        }
+    }
+
+    /// <summary>Re-resolved taxes name every current line exactly once, each for the line's own product.</summary>
+    private void RequireLineTaxes(IReadOnlyDictionary<Guid, SalesLineTaxSnapshot?>? taxes)
+    {
+        if (taxes is null)
+        {
+            return;
+        }
+
+        if (taxes.Count != lines.Count || lines.Any(line => !taxes.ContainsKey(line.Id)))
+        {
+            throw new SalesRuleException(SalesRuleCodes.TaxSnapshotMismatch, "Vergi anlık görüntüleri taslağın her satırını tam bir kez adlandırır.");
+        }
+
+        foreach (var line in lines)
+        {
+            RequireTaxSnapshot(taxes[line.Id], line.Product);
+        }
     }
 
     /// <summary>
@@ -1140,10 +1187,7 @@ public sealed partial class SalesOrderDraft
         {
             // The approved revision as it stands, archived BEFORE anything of it changes — with the reason it is superseded.
             archived = new ApprovedRevisionSnapshot(Revision, Approval, Money.ProfileId, Money.ProfileVersion, Money.Scale,
-                now.ToUniversalTime(), actor,
-                [.. lines.Select(line => new RevisionLineSnapshot(line.Id, line.LineNo, line.Product.ProductId, line.Product.ProductVersion,
-                    line.OrderUnit.UnitId, line.QuantityText, line.Commercial))],
-                trimmedReason, CurrentHeaderSnapshot());
+                now.ToUniversalTime(), actor, ArchiveLines(), trimmedReason, CurrentHeaderSnapshot());
             archivedRevisions.Add(archived);
             Revision += 1;
             ApprovalState = InternalApprovalState.Preparing;

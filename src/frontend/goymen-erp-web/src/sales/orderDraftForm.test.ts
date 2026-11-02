@@ -442,3 +442,24 @@ describe('UI-14 — price entry on the new order', () => {
     expect(formFieldForServerPath('draft', sent)).toBeNull()
   })
 })
+
+describe('MOD-03 → Sales: the buyer tax at create (SAT-D140/D147)', () => {
+  const exportRegistered = { code: 'ExportRegistered', name: 'İhraç kayıtlı satış', withholdingApplies: false, vatMode: 'ZeroWithExemptionCode', documentRequired: true }
+
+  it('omits the start value "Normal" (the server’s own start) and sends another chosen situation with its document', () => {
+    const plain = validateOrderDraft(exampleForm(), OPTIONS)
+    expect(plain.ok && 'buyerTax' in plain.payload).toBe(false)
+    const chosen = validateOrderDraft(exampleForm({
+      buyerTax: { situation: 'ExportRegistered', exemptionCode: '', documentNo: 'IK-1', documentDate: '2026-09-12' },
+    }), OPTIONS, null, false, exportRegistered)
+    expect(chosen.ok && chosen.payload.buyerTax).toEqual({ situation: 'ExportRegistered', documentNo: 'IK-1', documentDate: '2026-09-12' })
+  })
+
+  it('refuses a document number without its date on the buyer tax field before anything is sent', () => {
+    const refused = validateOrderDraft(exampleForm({
+      buyerTax: { situation: 'ExportRegistered', exemptionCode: '', documentNo: 'IK-1', documentDate: '' },
+    }), OPTIONS, null, false, exportRegistered)
+    expect(refused.ok).toBe(false)
+    expect(!refused.ok && refused.errors[ORDER_FIELD.buyerTax]).toBe('Belge numarası ve tarihi birlikte girilir.')
+  })
+})

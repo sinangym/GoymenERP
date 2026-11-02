@@ -7,8 +7,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 /// <summary>
 /// API-04 (DEC-SAL-002, DEC-SAL-008): the header revision's one save — the quantity revision's key rules (ADR-011 §3/§4/§7/§8),
 /// the tracked header, the caller's last word, the domain's mutation, the archived approved revision with its header, the
-/// header's revision / approval axis and its revisable columns, the attempt and the audit event. No line, slice or schedule row
-/// is tracked or written.
+/// header's revision / approval axis and its revisable columns, the attempt and the audit event. No slice or schedule row is
+/// tracked or written; a line row changes only its tax snapshot, and only when the buyer tax situation changed (MOD-03 → Sales,
+/// SAT-D140): never a quantity or commercial column.
 /// </summary>
 public sealed partial class SalesStore
 {
@@ -69,6 +70,8 @@ public sealed partial class SalesStore
             return null;
         }
 
+        // MOD-03 → Sales: the line rows are tracked so a buyer tax change can move their tax snapshot in this save.
+        var lineRows = await dbContext.DraftLines.Where(line => line.DraftId == draftId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
         var input = await beforeWrite(draft, cancellationToken)
             ?? throw new InvalidOperationException("Başlık revizyonu girdisi boş olamaz.");
@@ -116,6 +119,20 @@ public sealed partial class SalesStore
         Assign(row.ContactVersion, header.Contact?.ExpectedVersion, value => row.ContactVersion = value);
         Assign(row.SalesOwnerUserId, header.SalesOwnerUserId, value => row.SalesOwnerUserId = value);
         Assign(row.DueTermsJson, SalesDueTermsJson.Serialize(header.DueTerms), value => row.DueTermsJson = value);
+        if (!Equals(SalesTaxJson.RestoreBuyer(row.BuyerTaxJson), header.BuyerTax))
+        {
+            row.BuyerTaxJson = SalesTaxJson.SerializeBuyer(header.BuyerTax);
+        }
+
+        foreach (var lineRow in lineRows)
+        {
+            var line = draft.Lines.Single(candidate => candidate.LineNo == lineRow.LineNo);
+            if (!Equals(SalesTaxJson.RestoreLine(lineRow.TaxJson), line.Tax))
+            {
+                lineRow.TaxJson = SalesTaxJson.SerializeLine(line.Tax);
+            }
+        }
+
         Assign(row.MoneyOperation, money.Operation, value => row.MoneyOperation = value);
         Assign(row.MoneyProfileId, money.ProfileId, value => row.MoneyProfileId = value);
         Assign(row.MoneyProfileVersion, money.ProfileVersion, value => row.MoneyProfileVersion = value);
@@ -171,5 +188,8 @@ public sealed partial class SalesStore
         contact = draft.Header.Contact,
         salesOwnerUserId = draft.Header.SalesOwnerUserId,
         dueTerms = SalesDraftHeaderApiV1.ToWire(draft.Header.DueTerms),
+        // MOD-03 → Sales (SAT-D140/D147): the buyer tax situation and the lines' tax as re-resolved for it.
+        buyerTax = draft.Header.BuyerTax,
+        lineTaxes = draft.Lines.Select(line => new { line.LineNo, line.Tax }).ToArray(),
     };
 }

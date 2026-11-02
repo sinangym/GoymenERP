@@ -44,6 +44,9 @@ public static class SettingsModuleExtensions
         // product-based read answers 503.
         services.AddScoped<ISettingsTaxMasterAdministrationV1, SettingsTaxMasterAdministration>();
         services.AddScoped<ISettingsLineTaxResolverV1, SettingsTaxMasterReader>();
+        // SAT-D181 (EK26): the VAT rate / withholding ratio lists a Sales line's reasoned tax change picks from (read-only; empty
+        // until entered, SAT-D148; maintenance is the SAT-D146 slice).
+        services.AddScoped<ISettingsTaxRateListReaderV1, SettingsTaxRateListReader>();
         // Üretim U1-a (API-01/02, MOD-01; URT-D6/D7/D9/D10): the Manufacturing parameter port over published Settings
         // versions and the reviewed version-0 catalog, and the parameter / tolerance profile lifecycle administration.
         services.AddScoped<ISettingsManufacturingParameterProviderV1, SettingsManufacturingParameterProviderV1>();
