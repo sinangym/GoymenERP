@@ -3,8 +3,9 @@
  * DEC-DOC-004 file name. The screen chooses nothing about the content: the server prints the current revision and decides
  * by the caller's price read whether prices appear. States: idle, loading (the button is busy and says so), saved (a polite
  * status line), and a problem — forbidden (403), not found in this company (404), changed meanwhile (409, try again), too
- * long for one PDF (422 `sales_order_pdf_too_large`, no retry) or failed (any other answer, offline or a body that is not a
- * PDF; try again).
+ * long for one PDF (422 `sales_order_pdf_too_large`, no retry), not printable while the customer/currency revision after a
+ * customer rejection is unresolved (409 `sales_order_pdf_customer_revision_pending`, SAT-D165; no retry) or failed (any
+ * other answer, offline or a body that is not a PDF; try again).
  */
 
 import { useEffect, useId, useRef, useState } from 'react'
@@ -13,7 +14,7 @@ import { downloadOrderPdf, saveOrderPdf } from './orderPdf'
 import { SALES_ORDER_PDF_TEXT as T } from './salesText'
 import styles from './SalesOrderPdfAction.module.css'
 
-type Problem = 'forbidden' | 'notFound' | 'changed' | 'tooLarge' | 'failed'
+type Problem = 'forbidden' | 'notFound' | 'changed' | 'tooLarge' | 'customerRevisionPending' | 'failed'
 
 type State =
   | { readonly kind: 'idle' }
@@ -26,15 +27,23 @@ const PROBLEM_TEXT: Record<Problem, string> = {
   notFound: T.notFound,
   changed: T.changed,
   tooLarge: T.tooLarge,
+  customerRevisionPending: T.customerRevisionPending,
   failed: T.failed,
 }
 
 /** The server's stable code of an order too long for one PDF (422): a retry gives the same answer. */
 const ORDER_PDF_TOO_LARGE = 'sales_order_pdf_too_large'
 
+/**
+ * SAT-D165 (EK23): the customer rejected the current revision and the accepted one names another customer or currency (409):
+ * no PDF until that revision is resolved; a retry gives the same answer.
+ */
+const ORDER_PDF_CUSTOMER_REVISION_PENDING = 'sales_order_pdf_customer_revision_pending'
+
 function problemOf(status: number, code: string | null): Problem {
   if (status === 403) return 'forbidden'
   if (status === 404) return 'notFound'
+  if (status === 409 && code === ORDER_PDF_CUSTOMER_REVISION_PENDING) return 'customerRevisionPending'
   if (status === 409) return 'changed'
   if (status === 422 && code === ORDER_PDF_TOO_LARGE) return 'tooLarge'
   return 'failed'

@@ -48,6 +48,10 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
 
     private static readonly SalesDraftStateAudit Submitted = new("sales.order-draft.submitted.v1", "Submit", "SENTETIK onaya gönderildi");
     private static readonly SalesDraftStateAudit Approved = new("sales.order-draft.approved.v1", "Approve", "SENTETIK onaylandı");
+    private static readonly SalesDraftStateAudit Accepted = new("sales.order-draft.customer-acceptance-recorded.v1", "RecordCustomerAcceptance", "SENTETIK müşteri kabul etti");
+    private static readonly SalesDraftStateAudit CustomerRejected = new("sales.order-draft.customer-rejection-recorded.v1", "RecordCustomerRejection", "SENTETIK müşteri reddetti");
+    private static readonly SalesDraftStateAudit QuantityRevised = new("sales.order-draft.quantity-revised.v1", "ReviseQuantity", "SENTETIK miktar revizyonu");
+    private const string InternalRejectionReason = "SENTETIK-GIZLI-GEREKCE-SQL";
 
     [SqlServerFact]
     public async Task The_order_pdf_prints_prices_only_under_the_price_read_only_in_its_own_company_and_writes_nothing_on_real_sql()
@@ -118,6 +122,49 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
 
         // A read: no attempt, audit event, vault document or version change in any module.
         Assert.Equal(before, await run.EffectsAsync(draft.Id));
+    }
+
+    /// <summary>
+    /// SAT-D165 (EK23) on the real host, store and owners: the customer accepted Rev.0 (6 kg at 12.50 TRY) and rejected the
+    /// approved Rev.1 (7.777 kg). The order PDF is the accepted Rev.0 — its quantity and price, "Rev.0" in the footer, v01 in the
+    /// file name, no draft watermark, the note "Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer" — and the
+    /// rejection's internal reason never appears, with or without the price read.
+    /// </summary>
+    [SqlServerFact]
+    public async Task SAT_D165_after_a_customer_rejection_the_order_pdf_is_the_accepted_revision_without_the_reason_on_real_sql()
+    {
+        await using var run = await Run.StartAsync();
+        var customer = await run.CustomerAsync("SENTETIK PDF Ret Müşterisi A.Ş.");
+        var draft = await run.CustomerRejectedPricedDraftAsync(customer, "7.777", InternalRejectionReason);
+        Assert.Equal((9L, 1, 0), (draft.Version, draft.Revision, draft.CustomerAcceptedFallback!.Revision));
+        var path = SalesDraftApiV1.OrderPdfPath.Replace("{id}", draft.Id.ToString("D"), StringComparison.Ordinal);
+        var reader = await run.GrantAsync(TestUsers.CompanyA, CompanyA, SalesPermissionManifestV1.DraftsRead,
+            SalesPermissionManifestV1.OrdersPriceRead);
+        using var client = run.Factory.CreateClientFor(reader, CompanyA);
+
+        using var priced = await client.GetAsync(path);
+
+        Assert.Equal(HttpStatusCode.OK, priced.StatusCode);
+        Assert.Equal($"Satış_Siparişi_{draft.DocumentNo}_SENTETIK_PDF_Ret_Müşterisi_A.Ş_2026-10-27_v01_Onaylı.pdf",
+            priced.Content.Headers.ContentDisposition!.FileNameStar);
+        var text = await TextAsync(priced);
+        Assert.Contains("12.50 TRY / kg", text, StringComparison.Ordinal);
+        Assert.Contains("Rev.0 kabul edildi", text, StringComparison.Ordinal);
+        Assert.Contains("Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer", text, StringComparison.Ordinal);
+        Assert.Contains($"{draft.DocumentNo} · Rev.0 · ", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("7.777", text, StringComparison.Ordinal);
+        Assert.DoesNotContain($"{draft.DocumentNo} · Rev.1", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(InternalRejectionReason, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("TASLAK", text, StringComparison.Ordinal);
+
+        var withoutPrice = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, SalesPermissionManifestV1.DraftsRead);
+        using var pricelessClient = run.Factory.CreateClientFor(withoutPrice, CompanyA);
+        using var priceless = await pricelessClient.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, priceless.StatusCode);
+        var pricelessText = await TextAsync(priceless);
+        Assert.Contains("Rev.1 müşteri tarafından reddedildi; sipariş Rev.0 ile sürer", pricelessText, StringComparison.Ordinal);
+        Assert.DoesNotContain("7.777", pricelessText, StringComparison.Ordinal);
+        Assert.DoesNotContain(InternalRejectionReason, pricelessText, StringComparison.Ordinal);
     }
 
     private static async Task<string> TextAsync(HttpResponseMessage response)
@@ -237,6 +284,36 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
             return developmentUser;
         }
 
+        /// <summary>
+        /// The priced line (6 kg) of an order that requires the customer's acceptance: Rev.0 approved and accepted, revised to
+        /// <paramref name="quantity"/>, approved inside and rejected by the customer, through the real Sales store (version 9).
+        /// </summary>
+        public async Task<SalesOrderDraft> CustomerRejectedPricedDraftAsync(Customer customer, string quantity, string reason)
+        {
+            await using var scope = SalesStore(CompanyA);
+            var draft = (await scope.Store.StoreDraftAsync(Envelope("pdf-rj-create"), Hash("pdf-rj-create"),
+                documentNo => Draft(documentNo, customer, acceptanceRequired: true))).Draft;
+            var line = Assert.Single(draft.Lines).Id;
+            await scope.Store.UpdateDraftStateAsync(Envelope("pdf-rj-submit"), Hash("pdf-rj-submit"), SalesDraftCommands.SubmitV1, draft.Id,
+                (d, now) => d.Submit(2, Actor, now), Submitted);
+            await scope.Store.UpdateDraftStateAsync(Envelope("pdf-rj-approve", "SENTETIK-approver"), Hash("pdf-rj-approve"),
+                SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(3, "SENTETIK-approver", now), Approved);
+            await scope.Store.UpdateDraftStateAsync(Envelope("pdf-rj-accept"), Hash("pdf-rj-accept"),
+                SalesDraftCommands.RecordCustomerAcceptanceV1, draft.Id, (d, now) => d.RecordCustomerAcceptance(4, Actor, now), Accepted);
+            await scope.Store.ReviseDraftQuantityAsync(Envelope("pdf-rj-revise"), Hash("pdf-rj-revise"), SalesDraftCommands.ReviseQuantityV1,
+                draft.Id, (d, now) => d.ReviseQuantities(5, [new LineQuantityInput(line, quantity,
+                    decimal.Parse(quantity, System.Globalization.CultureInfo.InvariantCulture))], Actor, "SENTETIK miktar revizyonu", now),
+                QuantityRevised, (_, _) => Task.CompletedTask);
+            await scope.Store.UpdateDraftStateAsync(Envelope("pdf-rj-submit-1"), Hash("pdf-rj-submit-1"), SalesDraftCommands.SubmitV1, draft.Id,
+                (d, now) => d.Submit(6, Actor, now), Submitted);
+            await scope.Store.UpdateDraftStateAsync(Envelope("pdf-rj-approve-1", "SENTETIK-approver"), Hash("pdf-rj-approve-1"),
+                SalesDraftCommands.ApproveV1, draft.Id, (d, now) => d.Approve(7, "SENTETIK-approver", now), Approved);
+            var rejected = await scope.Store.UpdateDraftStateAsync(Envelope("pdf-rj-reject"), Hash("pdf-rj-reject"),
+                SalesDraftCommands.RecordCustomerRejectionV1, draft.Id, (d, now) => d.RecordCustomerRejection(8, Actor, reason, now),
+                CustomerRejected);
+            return rejected!.Draft;
+        }
+
         public async ValueTask DisposeAsync()
         {
             await Factory.DisposeAsync();
@@ -254,12 +331,13 @@ public sealed class SalesOrderPdfSqlServerRelationalAcceptanceTests
             await command.ExecuteNonQueryAsync();
         }
 
-        private SalesOrderDraft Draft(string documentNo, Customer customer)
+        private SalesOrderDraft Draft(string documentNo, Customer customer, bool acceptanceRequired = false)
         {
             var header = new SalesDraftHeader(customer.PartyId, customer.AccountId, SettingsCurrencyIdentitiesV1.TurkishLira, Day, Day.AddDays(7), DueTerms: TestDueTerms.PointDue30);
             var money = new MoneyProfileSnapshot(CompanyA, SettingsCurrencyIdentitiesV1.TurkishLira, SalesOrderDraft.MoneyOperation, GdcTryProfile,
                 "1", Day, true, new DateOnly(2026, 9, 18), null, 2);
-            var draft = SalesOrderDraft.Create(Guid.NewGuid(), CompanyA, documentNo, header, money, T0);
+            var draft = SalesOrderDraft.Create(Guid.NewGuid(), CompanyA, documentNo, header, money, T0,
+                customerAcceptanceRequired: acceptanceRequired);
             var unit = new UnitProfileSnapshot(CompanyA, KgUnit, "kg", "weight", KgProfile, "1", true, 3, 3, true, new DateOnly(2026, 9, 1), null);
             var binding = new UnitBindingSnapshot(CompanyA, KgUnit, KgProfile, "1");
             var product = new ProductSnapshot(Product, "1", "SENTETIK-PDF-001", "Sentetik PDF bandı", Day, binding, binding, binding);

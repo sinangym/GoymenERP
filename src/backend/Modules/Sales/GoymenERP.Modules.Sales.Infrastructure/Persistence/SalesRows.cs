@@ -358,6 +358,23 @@ internal sealed class DraftCancellationRow : ISalesTenantRow
 }
 
 /// <summary>
+/// SAT-D115 (EK14): one recorded customer rejection of an internally approved revision (append-only, at most one per revision):
+/// the revision, who recorded it, when, why, the draft version it produced and the correlation. Never modified, never deleted;
+/// the order continues on the revision the customer last accepted.
+/// </summary>
+internal sealed class DraftCustomerRejectionRow : ISalesTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid DraftId { get; set; }
+    public int Revision { get; set; }
+    public string RejectedBy { get; set; } = string.Empty;
+    public DateTimeOffset RejectedAtUtc { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long DraftVersion { get; set; }
+    public string CorrelationId { get; set; } = string.Empty;
+}
+
+/// <summary>
 /// No 30 / SAT-D12: the recorded force-closure of an approved order (append-only, at most one per draft): the revision closed,
 /// who, when, why, the draft version it produced, the impact preview the user confirmed (its token and each category's status
 /// and blocking flag, as JSON) and every line's closed remainder (ordered, shipped, closed remainder as exact text, as JSON).

@@ -205,6 +205,7 @@ public sealed class SalesDraftReadServiceV1(
 
     private static Guid[] ActorUserIds(SalesOrderDraftDetailView detail) =>
         [.. new[] { detail.Approval.SubmittedBy, detail.Approval.DecidedBy, detail.CustomerAcceptance.AcceptedBy }
+            .Concat((detail.CustomerAcceptance.Rejections ?? []).Select(rejection => rejection.RejectedBy))
             .Select(actor => Guid.TryParseExact(actor, "D", out var id) ? id : Guid.Empty)
             .Where(id => id != Guid.Empty)
             .Distinct()

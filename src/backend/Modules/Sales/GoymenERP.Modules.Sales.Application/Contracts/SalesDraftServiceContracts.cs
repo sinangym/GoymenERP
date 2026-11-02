@@ -31,6 +31,14 @@ public static class SalesDraftProblemCodesV1
     /// </summary>
     public const string OrderPdfTooLarge = "sales_order_pdf_too_large";
 
+    /// <summary>
+    /// 409 (SAT-D165, EK23; K3-REVIEW-B round 2): the customer rejected the current approved revision and the revision the
+    /// customer last accepted names another customer or currency than the order's header — the accepted revision cannot be
+    /// printed under its own header here, and the rejected one is never printed (the watermark option was not chosen). No PDF
+    /// until the customer/currency revision is resolved (a new revision approved and accepted, or the order cancelled).
+    /// </summary>
+    public const string OrderPdfCustomerRevisionPending = "sales_order_pdf_customer_revision_pending";
+
     /// <summary>422: the currency has no approved money profile, or the profile is not in effect on the business date.</summary>
     public const string UnsupportedCurrency = "unsupported_currency";
 
