@@ -1656,6 +1656,9 @@ public sealed partial class SalesDraftServiceTests
         public ISalesDiscountLimitGroupSourceV1? DiscountLimitGroups { get; set; }
         /// <summary>MOD-01 / API-06: the customer-finance owner's risk-input port; null = not composed.</summary>
         public ISalesPartyRiskReadPortV1? PartyRisk { get; set; }
+
+        /// <summary>SAT-D47: the Settings rate-day port (absent by default, like an uncomposed owner).</summary>
+        public ISettingsExchangeRateResolverV1? ExchangeRates { get; set; }
         public FixedActiveRoleCodeReader ActiveRoleCodes { get; } = new();
         /// <summary>SAT-D25 / SAT-D39: the Settings quote policy port; null = not composed.</summary>
         public ISettingsSalesQuotePolicyProviderV1? QuotePolicies { get; set; }
@@ -1689,7 +1692,7 @@ public sealed partial class SalesDraftServiceTests
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes, RateLists);
+                LineTaxes, RateLists, ExchangeRates);
         }
 
         public SalesDraftReadServiceV1 ReadService()

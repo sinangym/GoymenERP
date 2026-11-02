@@ -1,4 +1,5 @@
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
+using GoymenERP.Modules.Settings.Infrastructure.ExchangeRates;
 using GoymenERP.Modules.Settings.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -47,6 +48,22 @@ public static class SettingsModuleExtensions
         // SAT-D181 (EK26): the VAT rate / withholding ratio lists a Sales line's reasoned tax change picks from (read-only; empty
         // until entered, SAT-D148; maintenance is the SAT-D146 slice).
         services.AddScoped<ISettingsTaxRateListReaderV1, SettingsTaxRateListReader>();
+        // DEC-FIN-010 / SAT-D54/D55/D169…D172: the exchange-rate record, its administration and the rate-day read port. Both
+        // official sources stay disabled unless configuration enables them explicitly (an https base address is required);
+        // enabling the outbound connection in an environment is a human gate.
+        services.AddScoped<ISettingsExchangeRateAdministrationV1, SettingsExchangeRateAdministration>();
+        services.AddScoped<ISettingsExchangeRateResolverV1, SettingsExchangeRateResolverV1>();
+        var exchangeRateSources = ExchangeRateSourceOptions.Read(configuration);
+        if (exchangeRateSources.TcmbEnabled)
+        {
+            services.TryAddSingleton<IExchangeRateBulletinSourceV1>(_ => new TcmbExchangeRateBulletinSource(new HttpClient
+            {
+                BaseAddress = exchangeRateSources.TcmbBaseAddress, Timeout = exchangeRateSources.TcmbTimeout,
+            }));
+        }
+
+        services.TryAddSingleton<IExchangeRateBulletinSourceV1, DisabledExchangeRateBulletinSource>();
+        services.TryAddSingleton<IExchangeRateHalfDaySourceV1, DisabledExchangeRateHalfDaySource>();
         return services;
     }
 

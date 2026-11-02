@@ -724,6 +724,21 @@ public static class ErpPermissions
     public const string SettingsTaxMasterManage = "settings.tax-master.manage";
 
     /// <summary>
+    /// DEC-FIN-010 / KUR_GUNU / EK24 SAT-D169…D172: the Settings exchange-rate record's names
+    /// (<c>SettingsExchangeRatePermissionManifestV1</c>): read the record and a rate-day resolution, correct a rate with a reason
+    /// (SAT-D169; EK28 SAT-D188 intended holders: Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin), and run the import from the
+    /// configured official sources (disabled by default; enabling the outbound connection is a human gate). Registered, not
+    /// granted: no role, seed or user receives them here. Company-wide only. Not Critical.
+    /// </summary>
+    public const string SettingsExchangeRatesRead = "settings.exchange-rates.read";
+
+    /// <inheritdoc cref="SettingsExchangeRatesRead"/>
+    public const string SettingsExchangeRatesCorrect = "settings.exchange-rates.correct";
+
+    /// <inheritdoc cref="SettingsExchangeRatesRead"/>
+    public const string SettingsExchangeRatesImport = "settings.exchange-rates.import";
+
+    /// <summary>
     /// ERP-000G / AT-065 (document vault core): the vault owner's names (DocumentsPermissionManifestV1). Read lists an
     /// owner record's documents and downloads a clean version; upload stores a new document on an owner record. Both
     /// are measured ON TOP of the owner record's own read (the Cari party: counterparty.parties.read), so a document is
@@ -870,6 +885,9 @@ public static class ErpPermissions
             DocumentsFilesUpload,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
+            SettingsExchangeRatesRead,
+            SettingsExchangeRatesCorrect,
+            SettingsExchangeRatesImport,
             IdentityProfileRead,
             IdentityAccessRequest,
             IdentityAccessApprove,
@@ -1008,6 +1026,9 @@ public static class ErpPermissions
             DocumentsFilesUpload,
             SettingsSalesDiscountLimitsManage,
             SettingsTaxMasterManage,
+            SettingsExchangeRatesRead,
+            SettingsExchangeRatesCorrect,
+            SettingsExchangeRatesImport,
             IdentityAuditRead,
             IdentityAssignmentsRead,
         ],

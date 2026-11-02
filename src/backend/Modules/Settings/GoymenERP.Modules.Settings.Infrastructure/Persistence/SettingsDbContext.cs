@@ -56,6 +56,12 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
     internal DbSet<TaxBuyerSituationListWithdrawalRow> TaxBuyerSituationListWithdrawals =>
         Set<TaxBuyerSituationListWithdrawalRow>();
 
+    internal DbSet<ExchangeRateDayRow> ExchangeRateDays => Set<ExchangeRateDayRow>();
+
+    internal DbSet<ExchangeRateRecordRow> ExchangeRateRecords => Set<ExchangeRateRecordRow>();
+
+    internal DbSet<ExchangeRateRecordRateRow> ExchangeRateRecordRates => Set<ExchangeRateRecordRateRow>();
+
     internal DbSet<CommandExecution> CommandExecutions => Set<CommandExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -85,6 +91,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
         ConfigureSalesDiscountLimits(modelBuilder);
         ConfigureTaxMaster(modelBuilder);
         ConfigureTaxBuyerSituations(modelBuilder);
+        ConfigureExchangeRates(modelBuilder);
 
         // The platform audit and command-result tables are their owners' (excluded from Settings' migrations); Settings
         // writes them in the same SaveChanges as its own rows and reads them only through the company filter.
@@ -494,6 +501,73 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
         withdrawal.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
     }
 
+    /// <summary>
+    /// DEC-FIN-010 / KUR_GUNU / SAT-D169…D171: the company's rate record. A day row is the edit fence; its records are
+    /// append-only (official bulletin answers, manual corrections, official half-day answers) with their rate lines, all keyed
+    /// by the company so a record can never point at another company's day.
+    /// </summary>
+    private void ConfigureExchangeRates(ModelBuilder modelBuilder)
+    {
+        const string emptyGuid = "'00000000-0000-0000-0000-000000000000'";
+        const string binaryCollation = "Latin1_General_100_BIN2";
+
+        var day = modelBuilder.Entity<ExchangeRateDayRow>();
+        day.ToTable("ExchangeRateDays", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsExchangeRateDays_Company", $"[CompanyId] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsExchangeRateDays_Version", "[Version] > 0 AND [LastRecordVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsExchangeRateDays_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+        });
+        day.HasKey(x => new { x.CompanyId, x.Date });
+        day.Property(x => x.Version).IsConcurrencyToken();
+        day.Property(x => x.UpdatedBy).HasMaxLength(128);
+        day.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var record = modelBuilder.Entity<ExchangeRateRecordRow>();
+        record.ToTable("ExchangeRateRecords", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsExchangeRateRecords_Id", $"[Id] <> {emptyGuid}");
+            table.HasCheckConstraint("CK_SettingsExchangeRateRecords_Version", "[RecordVersion] > 0");
+            table.HasCheckConstraint("CK_SettingsExchangeRateRecords_Source", "[Source] = 'Tcmb'");
+            table.HasCheckConstraint("CK_SettingsExchangeRateRecords_State",
+                "([Kind] = 'Bulletin' AND [Provenance] = 'Official' AND [State] IN ('Published', 'NoBulletin', 'Unverified'))"
+                + " OR ([Kind] = 'Bulletin' AND [Provenance] = 'Manual' AND [State] = 'Published')"
+                + " OR ([Kind] = 'HalfDay' AND [Provenance] = 'Official' AND [State] IN ('FullDay', 'HalfDay', 'Undetermined'))");
+            // DEC-FIN-010: a manual change always carries its reason.
+            table.HasCheckConstraint("CK_SettingsExchangeRateRecords_ManualReason",
+                "[Provenance] <> 'Manual' OR LEN(LTRIM(RTRIM(ISNULL([Reason], N'')))) > 0");
+            table.HasCheckConstraint("CK_SettingsExchangeRateRecords_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0");
+        });
+        record.HasKey(x => new { x.CompanyId, x.Id });
+        record.HasIndex(x => new { x.CompanyId, x.Date, x.RecordVersion }).IsUnique();
+        record.Property(x => x.Kind).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        record.Property(x => x.Provenance).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        record.Property(x => x.State).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        record.Property(x => x.Source).HasMaxLength(16).IsUnicode(false).UseCollation(binaryCollation);
+        record.Property(x => x.RecordedBy).HasMaxLength(128);
+        record.Property(x => x.Reason).HasMaxLength(1000);
+        record.Property(x => x.SourceReference).HasMaxLength(400);
+        record.HasOne<ExchangeRateDayRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.Date })
+            .OnDelete(DeleteBehavior.Restrict);
+        record.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+
+        var rate = modelBuilder.Entity<ExchangeRateRecordRateRow>();
+        rate.ToTable("ExchangeRateRecordRates", Schema, table =>
+        {
+            table.HasCheckConstraint("CK_SettingsExchangeRateRecordRates_Currency",
+                "LEN([CurrencyCode]) = 3 AND [CurrencyCode] NOT LIKE '%[^A-Z]%' AND [CurrencyCode] <> 'TRY'");
+            table.HasCheckConstraint("CK_SettingsExchangeRateRecordRates_Rate", "[SellingRate] > 0");
+        });
+        rate.HasKey(x => new { x.CompanyId, x.RecordId, x.CurrencyCode });
+        rate.Property(x => x.CurrencyCode).HasMaxLength(3).IsUnicode(false).UseCollation(binaryCollation);
+        rate.Property(x => x.SellingRate).HasPrecision(28, 10);
+        rate.HasOne<ExchangeRateRecordRow>().WithMany()
+            .HasForeignKey(x => new { x.CompanyId, x.RecordId })
+            .OnDelete(DeleteBehavior.Restrict);
+        rate.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
+    }
+
     public override int SaveChanges() => SaveChanges(acceptAllChangesOnSuccess: true);
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
@@ -514,7 +588,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
     /// <summary>
     /// Fail-closed write fence: Manufacturing tolerance policies stay read-only here (their approved command workflow is
     /// separate); nothing is ever deleted; limit records, their withdrawals, binding group rows, tax rate records, code list
-    /// versions and their withdrawals are immutable once written; every Settings
+    /// versions and their withdrawals, and exchange-rate records and their rate lines are immutable once written; every Settings
     /// row written belongs to this context's resolved company (a multi-company binding write uses one context per company).
     /// </summary>
     private void ApplyWriteGuards()
@@ -553,6 +627,11 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 throw new InvalidOperationException("Vergi oranı kaydı ve kod listesi sürümü değiştirilemez; yeni kayıt yazılır.");
             }
 
+            if (entry.State == EntityState.Modified && entry.Entity is ExchangeRateRecordRow or ExchangeRateRecordRateRow)
+            {
+                throw new InvalidOperationException("Kur kaydı değiştirilemez; yeni kayıt eklenir.");
+            }
+
             var companyId = entry.Entity switch
             {
                 SalesDiscountLimitGroupRow row => row.CompanyId,
@@ -574,6 +653,9 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
                 TaxBuyerSituationListVersionRow row => row.CompanyId,
                 TaxBuyerSituationEntryRow row => row.CompanyId,
                 TaxBuyerSituationListWithdrawalRow row => row.CompanyId,
+                ExchangeRateDayRow row => row.CompanyId,
+                ExchangeRateRecordRow row => row.CompanyId,
+                ExchangeRateRecordRateRow row => row.CompanyId,
                 _ => (Guid?)null,
             };
             if (companyId is { } owner && (!companyContext.IsResolved || owner != companyContext.CompanyId))

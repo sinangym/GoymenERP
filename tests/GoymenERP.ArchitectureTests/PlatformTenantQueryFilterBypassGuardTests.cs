@@ -131,7 +131,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // item type adapter, with comments; no OpenAPI-generation, network or hosted-service surface changes.
         // Purchasing A0 (FZL-03) rewrites two Purchasing comments only (eligibility port is registered; order screens no
         // longer "staged") (24f2f221… -> f46fcab5…); no registration, generation, network or hosted-service change.
-        "f46fcab5932654b60c81f41ce997c39ffed37a4727b32e571886a7ab20a1df57";
+        // DEC-FIN-010 / SAT-D169 maps the Settings exchange-rate routes (f46fcab5… -> 3bddd4ea…); no registration, generation,
+        // network or hosted-service change (the TCMB source is composed inside AddSettingsModule and is off by default).
+        "3bddd4ea1132d764db4f464322b54ec68151900695973df37e921522f1c9b09b";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -317,8 +319,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (e68b1182… -> 9c53f777…).
             // SAT-D149/D158 (EK20/EK21): +2 Settings tax master SQL facts (buyer situation list; item type move to the shared
             // card) (9c53f777… -> 534be0f1…).
+            // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
+            // empty-store rollback) (534be0f1… -> a90275a7…).
             ["tools/relational_inventory/platform.txt"] =
-                "534be0f1b287823ce1de56809d24c57d8b7e4e895048896f87571869dbffdf51",
+                "a90275a769e001bfbaad623ba1675175df299bbe597a82edbe94417f57005092",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -446,7 +450,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for SAT-D158 (EK21): the company-filtered buyer situation list (fence, immutable whole
                 // versions and entries with their tax effect, insert-only withdrawals; company inside every key and foreign key)
                 // joins the write fence.
-                "a83f2f3e314b563f4075efbe2294c95620a7bfe22e414099e1b68618394f63a9",
+                // Re-fingerprinted for DEC-FIN-010 / KUR_GUNU / SAT-D169…D171: the company-filtered exchange-rate record (day fence,
+                // append-only records and their rate lines; company inside every key and foreign key) joins the write fence
+                // (records and rate lines immutable, every row in the context company).
+                "c1aace30b528c39a050ef7f1083c655cfa298bab9be094bf4357f66d0678762c",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -1414,8 +1421,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for MOD-03 → Sales: the draft service also receives the optional Settings line tax port and is
                     // registered as the tax read service (DI-only); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D181 (EK26): the draft service also receives the optional Settings rate list port (DI-only).
+                    // Re-fingerprinted for SAT-D47 (DEC-FIN-010): the draft service also receives the optional Settings rate-day port
+                    // (DI-only); provider branch and token counts unchanged.
                     new(
-                        "b19e11cca0827ed1d16027630cab928e4ee7917e1ab99f64db2e6ea1e3bdd145",
+                        "be018ffa11b612b2dbe0e1216546f1095594e4cdff586b89f36a68fc1e90d565",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1516,7 +1525,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
                         // Re-fingerprinted for SAT-D181 (EK26): the read-only VAT rate / withholding ratio list port (DI-only); counts unchanged.
-                        "23143a95f41013a25c5c53bac04dc8345b73c607f5f3a86368332a2fe72a6b89",
+                        // Re-fingerprinted for DEC-FIN-010 / SAT-D169: the exchange-rate administration, the rate-day port and the two
+                        // official sources (disabled unless configuration names an https TCMB address; DI-only); counts unchanged.
+                        "2d8a332c4879b61535d77b6583d47af21d4f4851b63be51cf971363405cbc8f8",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1707,6 +1718,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 3
+                        }),
+                // DEC-FIN-010 / SAT-D169…D171: Down refuses (51201) while any exchange-rate record exists (forward fix).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261102143743_AddExchangeRateRecords.cs"] =
+                    new(
+                        "91f70d3e3d62e83d7ce2293b5707acfcb62d91416a35703653afbe2f582d79ab",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
                         }),
                 // SAT-D158 (EK21): Down refuses (51153) while any buyer situation list exists (forward fix).
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
