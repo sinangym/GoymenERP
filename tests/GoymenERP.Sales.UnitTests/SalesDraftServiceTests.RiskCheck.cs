@@ -1,5 +1,6 @@
 using GoymenERP.Modules.Sales.Application;
 using GoymenERP.Modules.Sales.Application.Contracts;
+using GoymenERP.Modules.Sales.Domain.Drafts;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Sales.UnitTests;
@@ -375,6 +376,70 @@ public sealed partial class SalesDraftServiceTests
     }
 
     /// <summary>The answer shape of the Finance owner on main: receivables as given (taxes included), limit and collateral without a master.</summary>
+    [Fact]
+    public async Task SAT_D47_a_foreign_receivable_is_converted_with_the_check_day_rate_of_the_settings_record_and_never_without_it()
+    {
+        var usd = ExchangeRateCurrencyIdentitiesV1.ForIsoCode("USD");
+        var world = new World();
+        var draft = await world.Service().CreateDraftAsync(Priced(), Metadata("k-fx"));
+        world.Deliveries = new FakeDeliveries(order => new(Company, order, []));
+        world.PartyRisk = new FakePartyRisk((party, account) => new SalesPartyRiskReadAnswerV1(Company, party, account,
+            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, "finance.open-items", [new(usd, 10m), new(Lira, 5m)], true, null),
+            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, "finance.party-credit-limit", [new(Lira, 1000m)], null, null),
+            new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.NoSource, "finance.party-collateral", [], null, "finance_collateral_owner_missing")));
+        var rateReason = new SalesDraftRiskReasonV1("OpenReceivables", SalesRiskReasonCodes.ExchangeRateUnavailable);
+
+        // No rate port composed: the USD receivable is never converted.
+        var withoutPort = await world.Service().GetDraftRiskCheckAsync(draft.Detail.Draft.Id);
+        Assert.Contains(rateReason, withoutPort.Reasons);
+
+        // The port answers "kur belirlenemedi" (SAT-D171): still unavailable, never a fallback rate.
+        var rates = new FakeExchangeRates(ExchangeRateResolutionStatesV1.Unavailable, null);
+        world.ExchangeRates = rates;
+        Assert.Contains(rateReason, (await world.Service().GetDraftRiskCheckAsync(draft.Detail.Draft.Id)).Reasons);
+        Assert.Equal([(Day, usd, Lira)], rates.Asked);
+
+        // Resolved for the CHECK day (the server's business day, not frozen): the receivable enters the TL total.
+        rates.State = ExchangeRateResolutionStatesV1.Resolved;
+        rates.Rate = "41.6";
+        var converted = await world.Service().GetDraftRiskCheckAsync(draft.Detail.Draft.Id);
+        Assert.DoesNotContain(rateReason, converted.Reasons);
+        Assert.Equal([(Day, usd, Lira), (Day, usd, Lira)], rates.Asked);
+
+        // A port that fails or answers another pair is never trusted.
+        rates.Throw = true;
+        Assert.Contains(rateReason, (await world.Service().GetDraftRiskCheckAsync(draft.Detail.Draft.Id)).Reasons);
+        rates.Throw = false;
+        rates.AnswerTarget = usd;
+        Assert.Contains(rateReason, (await world.Service().GetDraftRiskCheckAsync(draft.Detail.Draft.Id)).Reasons);
+    }
+
+    /// <summary>A SYNTHETIC Settings rate-day port: the case's answer, and the requests it was asked.</summary>
+    private sealed class FakeExchangeRates(string state, string? rate) : ISettingsExchangeRateResolverV1
+    {
+        public string State { get; set; } = state;
+        public string? Rate { get; set; } = rate;
+        public bool Throw { get; set; }
+        public Guid? AnswerTarget { get; set; }
+        public List<(DateOnly Day, Guid Source, Guid Target)> Asked { get; } = [];
+
+        public Task<ExchangeRateResolutionV1> ResolveAsync(DateOnly rateDay, Guid sourceCurrencyId, Guid targetCurrencyId,
+            CancellationToken cancellationToken = default)
+        {
+            Asked.Add((rateDay, sourceCurrencyId, targetCurrencyId));
+            if (Throw)
+            {
+                throw new SettingsPrerequisiteException(ExchangeRateProblemCodesV1.ProviderUnavailable);
+            }
+
+            var resolved = State == ExchangeRateResolutionStatesV1.Resolved;
+            return Task.FromResult(new ExchangeRateResolutionV1(rateDay, sourceCurrencyId, AnswerTarget ?? targetCurrencyId, "USD", State,
+                ExchangeRateSourcesV1.Tcmb, false, null, resolved ? rateDay.AddDays(-3) : null, resolved ? Rate : null,
+                resolved ? ExchangeRateProvenancesV1.Official : null, resolved ? Guid.NewGuid() : null, resolved ? "1" : null,
+                resolved ? null : "exchange_rate_half_day_undetermined", resolved ? null : rateDay));
+        }
+    }
+
     private static Func<Guid, Guid, SalesPartyRiskReadAnswerV1> FinanceLike(IReadOnlyList<SalesPartyRiskAmountV1> receivables) =>
         (party, account) => new SalesPartyRiskReadAnswerV1(Company, party, account,
             new SalesPartyRiskFigureV1(SalesPartyRiskFigureStateV1.Available, "finance.open-items", receivables, true, null),

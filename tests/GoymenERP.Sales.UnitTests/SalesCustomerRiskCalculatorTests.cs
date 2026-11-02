@@ -170,6 +170,41 @@ public sealed class SalesCustomerRiskCalculatorTests
         Assert.Null(evaluation.InLocalCurrency!.GrossRisk);
     }
 
+    [Fact]
+    public void SAT_D47_a_foreign_amount_is_converted_into_a_TRY_total_only_by_the_check_day_rate_of_exactly_that_pair()
+    {
+        // SYNTHETIC rate: 1 USD = 41.6543 TRY. 10.25 USD → 426.956575 → 426.96 at the TL scale (one rounding, SAT-D11).
+        var rates = new Dictionary<(Guid, Guid), ExchangeRate> { [(Usd, Try)] = ExchangeRate.Of(Usd, Try, 41.6543m) };
+        var mixed = SalesRiskInput.Available([new SalesRiskAmount(Try, 100m), new SalesRiskAmount(Usd, 10.25m)],
+            SalesRiskTaxBasis.IncludingTax);
+
+        var evaluation = SalesCustomerRiskCalculator.Evaluate(Local, Local, mixed, Taxed(), Taxed(), Taxed(1m), Limit(527.96m), rates);
+
+        Assert.Empty(evaluation.Reasons);
+        Assert.Equal(526.96m, evaluation.InLimitCurrency!.GrossRisk!.Value.Amount);
+        Assert.Equal(527.96m, evaluation.InLimitCurrency.GrossRiskWithThisOrder!.Value.Amount);
+        Assert.Equal(SalesRiskOutcome.Within, evaluation.Outcome);
+        Assert.Equal(SalesRiskOutcome.Over,
+            SalesCustomerRiskCalculator.Evaluate(Local, Local, mixed, Taxed(), Taxed(), Taxed(1.01m), Limit(527.96m), rates).Outcome);
+
+        // No inverse is derived: a TRY amount against a USD limit stays unavailable even with the USD → TRY rate.
+        var usdLimit = SalesCustomerRiskCalculator.Evaluate(Local, UsdLimit, Taxed(10m), Taxed(), Taxed(), Taxed(), Limit(1000m, Usd),
+            rates);
+        Assert.Equal(SalesRiskOutcome.Unavailable, usdLimit.Outcome);
+        Assert.Equal([new SalesRiskReason(SalesRiskComponents.OpenReceivables, SalesRiskReasonCodes.ExchangeRateUnavailable)],
+            usdLimit.Reasons);
+
+        // A rate filed under the wrong pair is never used; without a rate the amount stays unavailable (fail-closed).
+        var misfiled = new Dictionary<(Guid, Guid), ExchangeRate> { [(Usd, Try)] = ExchangeRate.Of(Try, Usd, 0.024m) };
+        foreach (var candidate in new IReadOnlyDictionary<(Guid, Guid), ExchangeRate>?[] { null, misfiled, new Dictionary<(Guid, Guid), ExchangeRate>() })
+        {
+            var refused = SalesCustomerRiskCalculator.Evaluate(Local, Local, mixed, Taxed(), Taxed(), Taxed(), Limit(1000m), candidate);
+            Assert.Equal(SalesRiskOutcome.Unavailable, refused.Outcome);
+            Assert.Equal([new SalesRiskReason(SalesRiskComponents.OpenReceivables, SalesRiskReasonCodes.ExchangeRateUnavailable)],
+                refused.Reasons);
+        }
+    }
+
     public static TheoryData<string, SalesRiskOutcome> UsdDecisions => new()
     {
         // this order (USD) against a USD 1000.00 limit with USD 900.00 already at risk; the TL total cannot be made (no rate).

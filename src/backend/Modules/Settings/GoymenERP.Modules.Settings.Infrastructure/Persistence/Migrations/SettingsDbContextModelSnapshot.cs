@@ -259,6 +259,148 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateDayRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<long>("LastRecordVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("UpdatedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "Date");
+
+                    b.ToTable("ExchangeRateDays", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsExchangeRateDays_Actor", "LEN(LTRIM(RTRIM([UpdatedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateDays_Company", "[CompanyId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateDays_Version", "[Version] > 0 AND [LastRecordVersion] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRateRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("RecordId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("CurrencyCode")
+                        .HasMaxLength(3)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(3)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<decimal>("SellingRate")
+                        .HasPrecision(28, 10)
+                        .HasColumnType("decimal(28,10)");
+
+                    b.HasKey("CompanyId", "RecordId", "CurrencyCode");
+
+                    b.ToTable("ExchangeRateRecordRates", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecordRates_Currency", "LEN([CurrencyCode]) = 3 AND [CurrencyCode] NOT LIKE '%[^A-Z]%' AND [CurrencyCode] <> 'TRY'");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecordRates_Rate", "[SellingRate] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Provenance")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long>("RecordVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("RecordedBy")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(400)
+                        .HasColumnType("nvarchar(400)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(16)")
+                        .UseCollation("Latin1_General_100_BIN2");
+
+                    b.HasKey("CompanyId", "Id");
+
+                    b.HasIndex("CompanyId", "Date", "RecordVersion")
+                        .IsUnique();
+
+                    b.ToTable("ExchangeRateRecords", "settings", t =>
+                        {
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Id", "[Id] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_ManualReason", "[Provenance] <> 'Manual' OR LEN(LTRIM(RTRIM(ISNULL([Reason], N'')))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Recorded", "LEN(LTRIM(RTRIM([RecordedBy]))) > 0");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Source", "[Source] = 'Tcmb'");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_State", "([Kind] = 'Bulletin' AND [Provenance] = 'Official' AND [State] IN ('Published', 'NoBulletin', 'Unverified')) OR ([Kind] = 'Bulletin' AND [Provenance] = 'Manual' AND [State] = 'Published') OR ([Kind] = 'HalfDay' AND [Provenance] = 'Official' AND [State] IN ('FullDay', 'HalfDay', 'Undetermined'))");
+
+                            t.HasCheckConstraint("CK_SettingsExchangeRateRecords_Version", "[RecordVersion] > 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingParameterProfileRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -1436,6 +1578,24 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("CK_SettingsTaxWithholdingThresholdWithdrawals_Replacement", "[ReplacedByRecordId] IS NULL OR [ReplacedByRecordId] <> [RecordId]");
                         });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRateRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "RecordId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateRecordRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Settings.Infrastructure.Persistence.ExchangeRateDayRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "Date")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Settings.Infrastructure.Persistence.ManufacturingParameterProfileValueRow", b =>

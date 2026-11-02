@@ -160,7 +160,10 @@ public static class SalesModuleExtensions
         // a create stores no tax snapshot ("kaynak yok") and a command naming a tax choice is 503, never a guessed rate.
         serviceProvider.GetService<ISettingsLineTaxResolverV1>(),
         // SAT-D181 (EK26): the Settings VAT rate / withholding ratio lists a line change picks from (empty until entered).
-        serviceProvider.GetService<ISettingsTaxRateListReaderV1>());
+        serviceProvider.GetService<ISettingsTaxRateListReaderV1>(),
+        // SAT-D47 / DEC-FIN-010: the Settings rate-day port (the exchange-rate record), registered by the Settings owner's module;
+        // until it is, a foreign-currency risk amount stays "exchange_rate_unavailable", never converted with a guessed rate.
+        serviceProvider.GetService<ISettingsExchangeRateResolverV1>());
 
     /// <summary>Applies Sales's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializeSalesModuleAsync(

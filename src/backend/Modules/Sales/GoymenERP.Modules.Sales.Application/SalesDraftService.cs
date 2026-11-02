@@ -67,7 +67,8 @@ public sealed partial class SalesDraftService(
     ISalesReportReadStore? reports = null,
     ISalesPartyDisplaySourceV1? partyDisplays = null,
     ISettingsLineTaxResolverV1? lineTaxes = null,
-    ISettingsTaxRateListReaderV1? rateLists = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISettingsTaxRateListReaderV1? rateLists = null,
+    ISettingsExchangeRateResolverV1? exchangeRates = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
