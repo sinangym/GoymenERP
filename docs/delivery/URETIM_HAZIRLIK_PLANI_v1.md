@@ -351,7 +351,7 @@ geri dönüş planı.
 
 ---
 
-## 12. Durum (2026-11-01)
+## 12. Durum (2026-11-02)
 
 Bu bölüm iş takibidir; karar değildir.
 
@@ -361,6 +361,7 @@ Bu bölüm iş takibidir; karar değildir.
 | U0: README güncel durum, rota tip dönüşümü, eski devir notu (FZL-02/04) | #877 | taslak PR |
 | U0: TEK-02 tasarım sistemi `Button` | #878 | taslak PR |
 | U0: TEK-03 metin dosyaları (#878 üzerine) | #879 | taslak PR |
-| U1-a: API-01/02 + MOD-01 — Ayarlar'da sürümlü parametre profili (başlık + tipli değer satırı), tolerans profili yazma yolu (hazırla → onayla → yayımla), URT-D6/D7/D9/D10 başlangıç değerleri katalog sürüm 0 | branch `claude/uretim-u1-parametre` | geliştirmede (PR açılmadı); Üretim tüketimi sonraki dilim |
+| U1-a: API-01/02 + MOD-01 — Ayarlar'da sürümlü parametre profili (başlık + tipli değer satırı), tolerans profili yazma yolu (hazırla → onayla → yayımla), URT-D6/D7/D9/D10 başlangıç değerleri katalog sürüm 0 | branch `claude/uretim-u1-parametre` | #890 (review) |
+| U1-b: Üretim parametre profilini önizleme/kayıt/onayda okur, onayda snapshot'lar (DEC-PRDCT-008); tolerans hat kapsamı (iş merkezi → proses → sürüm-0 katalog, URT-D6/D23), açık uçlu yayımlı sürümün halefle kapanması; kapanışta fire azamisi + ±kütle dengesi toleransı (URT-D5/D7), kaynak+sürüm kapanış kaydında | branch `claude/uretim-u1b-tuketim` (#890 üzerine) | geliştirmede (PR açılmadı); açık: planda yetkili tolerans değişikliği (yeni izin), dilmede planda girilen net en / hat hızı ve onayda etiket okuması |
 
 Sıradaki işler: U0 kalanı — FZL-01 + FZL-03 (CI doğrulamalı), TEK-01 dosya bölme, TEK-05/06 ortak altyapı, #876 merge'ünden sonra belge PR'ları.
