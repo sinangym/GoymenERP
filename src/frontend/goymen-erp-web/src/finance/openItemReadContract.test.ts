@@ -61,6 +61,8 @@ describe('FI04 open item decoder', () => {
     ['a missing direction', without('direction')],
     ['an unknown direction', wire({ direction: 'Both' })],
     ['a numeric direction', wire({ direction: 1 })],
+    ['a sales installment marked payable', wire({ direction: 'Payable' })],
+    ['a purchase installment marked receivable', wire({ sourceKind: 'official.incoming-invoice-installment.v1' })],
     ['an unknown status', wire({ status: 'Overdue' })],
     ['a numeric status', wire({ status: 1 })],
     ['a status without amounts', wire({ initialAmount: redacted, outstandingAmount: redacted })],

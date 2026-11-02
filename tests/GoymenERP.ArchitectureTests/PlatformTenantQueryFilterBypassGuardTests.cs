@@ -253,8 +253,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // no longer deducted — review A P2-1), ordinal-sorted (cb46a836… -> 7dc420a3…).
             // MOD-15 / FNS-D7: +1 party-ledger direction fact (payable credit row, CK_OpenItems_Direction, receivable-only
             // risk), ordinal-sorted (7dc420a3… -> cf9cecf6…).
+            // MOD-15 review B P3: +1 direction-migration fact on a populated store, ordinal-sorted (cf9cecf6… -> c7ce4f0f…).
             ["tools/relational_inventory/finance.txt"] =
-                "cf9cecf6724f3c9023a8276710a089854f4562de7f229e678f16d4e1fb3c8d99",
+                "c7ce4f0fb5bb6eb6745b65182dd012504f7aaf197f73ffb523702c3922bcce87",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
