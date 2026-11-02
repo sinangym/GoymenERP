@@ -16,8 +16,8 @@ internal sealed class OrganizationCompanyReference
 /// after the first commit. SourcingVersion moves with every
 /// order approval that binds to this request, so two approvals against the same request — or an approval and a
 /// rejection (No.161 §1) — collide on the row version and the loser measures again. CreatedBy is the preparer and
-/// SubmittedBy the submitter: the makers no decision may come from (ALS-D2); SubmittedBy is also the only actor a
-/// withdrawal may come from (ALS-D46).
+/// SubmittedBy the submitter: the makers no decision may come from (ALS-D2); they are also the only actors a
+/// withdrawal may come from (ALS-D46, ALS-D47).
 /// </summary>
 internal sealed class PurchaseRequestRow : IPurchasingTenantRow
 {

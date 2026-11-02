@@ -28,7 +28,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 /// <para>
 /// 1.6 (A1-1b, plan API-01b; ALS-D46): the request withdrawal control (<see cref="RequestWithdrawCapabilityId"/>) is a
 /// child of the request detail, measured with its own name <see cref="PurchasingPermissionManifestV1.RequestsWithdraw"/>;
-/// "only the submitter" is the service's rule on the command (the screen shows it only to the recorded submitter).
+/// "only the preparer or the submitter" (ALS-D47) is the service's rule on the command (the screen shows it only to them).
 /// </para>
 /// </summary>
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider

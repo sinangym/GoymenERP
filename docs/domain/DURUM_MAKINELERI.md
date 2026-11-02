@@ -24,10 +24,10 @@ Kaynak: kod (`src/backend/Modules/Purchasing/**`), `SINAN_KARARLARI_2026-11-02_A
   A1-1). Talep taahhüt değildir. Onay yalnız Gönderildi talepte; ret Gönderildi veya Onaylı talepte, gerekçe zorunlu,
   talebe bağlı Onaylı sipariş varken reddedilmez (No.161 §1). Hazırlayan (oluşturan) ve gönderen karar veremez;
   gönderen kaydı yoksa karar verilemez (fail-closed). Yetki `purchasing.requests.approve` (ALS-D2); audit aynı kayıtta.
-- Talep geri çekme (A1-1b, ALS-D46): Gönderildi → Geri çekildi (`Withdrawn`; Reddedildi'den ayrı, kapanış durumu,
-  siparişe dönüşmez). Yalnız talebi **gönderen** kişi, gerekçeyle (zorunlu, en fazla 4000 karakter) geri çeker; EK5
-  notundaki "oluşturan/gönderen" ifadesi uygulamada en dar okumayla "gönderen" alınmıştır (oluşturan başka biriyse geri
-  çekemez). Taslak, Onaylı, Reddedildi talep geri çekilmez; gönderen kaydı yoksa kimse geri çekemez (fail-closed);
+- Talep geri çekme (A1-1b, ALS-D46, ALS-D47): Gönderildi → Geri çekildi (`Withdrawn`; Reddedildi'den ayrı, kapanış
+  durumu, siparişe dönüşmez). Talebi **oluşturan veya gönderen** kişi, gerekçeyle (zorunlu, en fazla 4000 karakter)
+  geri çeker; başka kimse geri çekemez. Yalnız kayıtlı kimlik eşleşir: gönderen kaydı yoksa (A1-1 öncesi) yalnız
+  oluşturan, ikisi de yoksa kimse geri çekemez (fail-closed). Taslak, Onaylı, Reddedildi talep geri çekilmez;
   talebe bağlı Onaylı sipariş varken geri çekilmez (No.161 §1 koruması). Yetki `purchasing.requests.withdraw` (öneri;
   gerçek kullanıcıya grant insan kapısında); audit aynı kayıtta. Stok veya para olayı yok.
 - Sipariş: Taslak → Onaylı (`PurchaseOrderStatus` Draft / Approved). Satır yalnız taslağa eklenir; onay tek adımlı

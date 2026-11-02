@@ -45,7 +45,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
     private const string GoodsReceiptCapability = "purchasing.goods-receipts.record";
     // A1-1 (plan API-01, ALS-D2): the request decision control; only the disposable approver holds it (maker != checker).
     private const string RequestApproveCapability = "purchasing.requests.approve";
-    // A1-1b (plan API-01b, ALS-D46): the request withdrawal control; only the disposable creator (the submitter) holds it.
+    // A1-1b (plan API-01b, ALS-D46): the request withdrawal control; only the disposable creator (preparer and submitter) holds it.
     private const string RequestWithdrawCapability = "purchasing.requests.withdraw";
     private const string StockLabelCapability = "inventory.stock-positions.list";
     private const string SupplierLegalName =

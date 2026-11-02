@@ -3163,7 +3163,7 @@ public sealed partial class OpenApiContractGenerationTests
                 "validation_failed"],
             ["WithdrawPurchaseRequestV1:400"] = ["command_metadata_invalid", "validation_failed"],
             ["WithdrawPurchaseRequestV1:409"] = ["concurrent_change", "purchasing_request_decision_state", "purchasing_request_has_approved_order",
-                "purchasing_request_maker_unknown", "purchasing_request_not_submitter", "same_key_payload_mismatch", "version_conflict"],
+                "purchasing_request_maker_unknown", "purchasing_request_not_preparer", "same_key_payload_mismatch", "version_conflict"],
             ["WithdrawPurchaseRequestV1:422"] = ["purchasing_request_withdrawal_reason_required", "purchasing_request_withdrawal_reason_too_long",
                 "validation_failed"],
             ["GetPurchaseOrdersV1:400"] = ["invalid_cursor", "validation_failed"],
@@ -4020,6 +4020,7 @@ public sealed partial class OpenApiContractGenerationTests
                     ("approval", "oneOf:ref:PurchaseRequestDecisionView|type:null"),
                     ("rejection", "oneOf:ref:PurchaseRequestDecisionView|type:null"),
                     ("withdrawal", "oneOf:ref:PurchaseRequestDecisionView|type:null"),
+                    ("preparedBy", "type:null|string"),
                     ("submittedBy", "type:null|string")),
                 ["PurchaseRequestDecisionView"] = ObjectSchema(
                     ["decidedBy", "decidedAtUtc", "reason"],

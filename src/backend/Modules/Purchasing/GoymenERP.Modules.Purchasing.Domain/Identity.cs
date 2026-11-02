@@ -55,8 +55,8 @@ public static class PurchasingRuleCodes
     /// <summary>A1-1b (ALS-D46): only a Submitted request (no decision yet) is withdrawn.</summary>
     public const string RequestNotWithdrawable = "purchasing_request_not_withdrawable";
 
-    /// <summary>A1-1b (ALS-D46): only the request's submitter withdraws it.</summary>
-    public const string RequestNotSubmitter = "purchasing_request_not_submitter";
+    /// <summary>A1-1b (ALS-D46, ALS-D47): only the request's preparer (creator) or submitter withdraws it.</summary>
+    public const string RequestNotPreparer = "purchasing_request_not_preparer";
 
     /// <summary>A1-1b (ALS-D46): a withdrawal needs a reason.</summary>
     public const string RequestWithdrawalReasonRequired = "purchasing_request_withdrawal_reason_required";

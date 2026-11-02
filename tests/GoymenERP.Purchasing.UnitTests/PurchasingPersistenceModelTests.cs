@@ -228,13 +228,15 @@ public sealed class PurchasingPersistenceModelTests
         var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
         Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Status" && check.Sql == "[Status] IN (1, 2, 3, 4, 5)");
         Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Decision"
-            && check.Sql.Contains("[Status] = 5 AND [SubmittedBy] IS NOT NULL", StringComparison.Ordinal));
+            && check.Sql.Contains("[Status] = 5 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0)", StringComparison.Ordinal));
         // #900 review P3: maker ≠ checker compares binary, the domain's ordinal rule.
         Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_MakerChecker"
             && check.Sql.Contains("[ApprovedBy] COLLATE Latin1_General_100_BIN2 <> [CreatedBy] COLLATE Latin1_General_100_BIN2", StringComparison.Ordinal)
             && check.Sql.Contains("[RejectedBy] COLLATE Latin1_General_100_BIN2 <> [SubmittedBy] COLLATE Latin1_General_100_BIN2", StringComparison.Ordinal));
-        // A1-1b (ALS-D46): only the submitter withdraws (binary), with a reason; no other status carries withdrawal facts.
+        // A1-1b (ALS-D46, ALS-D47): only the preparer or the submitter withdraws (binary), with a reason; no other status
+        // carries withdrawal facts.
         Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Withdrawal"
+            && check.Sql.Contains("[WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [CreatedBy] COLLATE Latin1_General_100_BIN2", StringComparison.Ordinal)
             && check.Sql.Contains("[WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [SubmittedBy] COLLATE Latin1_General_100_BIN2", StringComparison.Ordinal)
             && check.Sql.Contains("[Status] <> 5 AND [WithdrawnBy] IS NULL", StringComparison.Ordinal));
         Assert.Equal((128, 128, 128, 4000), (requests.FindProperty(nameof(PurchaseRequestRow.SubmittedBy))!.GetMaxLength(),

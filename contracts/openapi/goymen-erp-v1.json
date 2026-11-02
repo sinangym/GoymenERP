@@ -69330,7 +69330,7 @@
               "purchasing_request_decision_state",
               "purchasing_request_has_approved_order",
               "purchasing_request_maker_unknown",
-              "purchasing_request_not_submitter",
+              "purchasing_request_not_preparer",
               "same_key_payload_mismatch",
               "version_conflict"
             ]
@@ -101315,6 +101315,12 @@
               {
                 "$ref": "#/components/schemas/PurchaseRequestDecisionView"
               }
+            ]
+          },
+          "preparedBy": {
+            "type": [
+              "null",
+              "string"
             ]
           },
           "submittedBy": {

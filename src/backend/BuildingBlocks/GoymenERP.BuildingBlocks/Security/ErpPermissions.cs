@@ -656,9 +656,9 @@ public static class ErpPermissions
     public const string PurchasingRequestsApprove = "purchasing.requests.approve";
 
     /// <summary>
-    /// A1-1b (plan API-01b; ALS-D46): the submitter withdraws their own Submitted purchase request with a reason — the
+    /// A1-1b (plan API-01b; ALS-D46, ALS-D47): the preparer or submitter withdraws their Submitted purchase request with a reason — the
     /// Purchasing owner's name (PurchasingPermissionManifestV1.RequestsWithdraw), apart from entering and from the
-    /// manager's decision; neither confers the other. "Only the submitter" is enforced by the Purchasing service on the
+    /// manager's decision; neither confers the other. "Only the preparer or submitter" is enforced by the Purchasing service on the
     /// command, not through this catalogue. Registered, not granted: no role, seed or user receives it here (only SENTETIK
     /// browser-suite personas in disposable stacks). Company-wide only. Not Critical.
     /// </summary>

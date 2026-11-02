@@ -336,9 +336,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // backfill + Down refusal), kept ordinal-sorted (23decb33… -> 27a9dd4f…).
             // A1-1b (plan API-01b; ALS-D46): +4 request withdrawal SQL facts (one save + only-the-submitter + withdrawal
             // check, bound approved order vs draft order, company isolation, Down refusal + binary maker-checker), kept
-            // ordinal-sorted (27a9dd4f… -> 88f2c7a5…).
+            // ordinal-sorted (27a9dd4f… -> 88f2c7a5…). ALS-D47 (creator or submitter withdraws): +1 fact for creator ≠
+            // submitter, a third party and a legacy request, and the one-save fact renamed for it (88f2c7a5… -> 37e3e2bd…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "88f2c7a5aa27732ec49bc3b717fdd2ae9b6f756f9198da685f58f5d827dbe062",
+                "37e3e2bd77b3f3e386731c8790f3bd5d2d038dc9556a078c4d0a6f1d07e025e5",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -509,10 +510,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // guard's decision-fact allow-list; filters and keys unchanged.
             // Re-measured for A1-1b: the withdrawal columns and check, the Withdrawn branch of the decision check, the
             // binary maker-checker comparison (#900 review P3) and the write guard's withdrawal-fact allow-list; filters
-            // and keys unchanged.
+            // and keys unchanged. Re-measured for ALS-D47: the withdrawal check accepts the preparer or the submitter.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "e5a257494e654fdbac9421fc6ff28f2eb10756c74072b8990d41f1321ea103ab",
+                "c4cd14f013acc7010061c680f786d53e49346a749d7104c6add23a7c736d58b2",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1891,7 +1892,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
                  + "Persistence/Migrations/20261102161658_AddPurchaseRequestWithdrawal.cs"] =
                     new(
-                        "208695df9d3fc05ece2235bac69f671d56733528e73e3cd514ed9811db0607bb",
+                        "aa748ac89dd7a01c9e51591977fab061868e3e73731aafbca386ba5d61211afd",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

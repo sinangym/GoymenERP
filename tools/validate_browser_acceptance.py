@@ -398,7 +398,7 @@ SUITE_IDENTITY_PERMISSIONS = {
     # A1-1 (plan API-01): the disposable approver alone adds purchasing.requests.approve (maker != checker: the
     # creator who prepares and submits the request never holds it).
     # A1-1b (plan API-01b, ALS-D46): the disposable creator alone adds purchasing.requests.withdraw (only the
-    # submitter withdraws its own submitted request; the approver never holds it).
+    # preparer or submitter withdraws a submitted request (ALS-D47); the approver never holds it).
     "pur01": ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.orders.create",
               "counterparty.parties.read", "product.operational-selection.read",
               "documents.files.read", "documents.files.upload",

@@ -6,10 +6,12 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
 {
     /// <summary>
-    /// A1-1b (plan API-01b, TEK-09; ALS-D46): the purchase request's Withdrawn (5) state — the submitter's own withdrawal of a
-    /// still Submitted request, a separate outcome from Rejected — with its facts (WithdrawnBy, WithdrawnAtUtc,
-    /// WithdrawalReason) and a check that a Withdrawn request has exactly them, from exactly its submitter, and any other
-    /// status none of them. The decision check gains the Withdrawn branch (submitter recorded, no approval or rejection).
+    /// A1-1b (plan API-01b, TEK-09; ALS-D46, ALS-D47): the purchase request's Withdrawn (5) state — the preparer's or the
+    /// submitter's withdrawal of a still Submitted request, a separate outcome from Rejected — with its facts (WithdrawnBy,
+    /// WithdrawnAtUtc, WithdrawalReason) and a check that a Withdrawn request has exactly them, from exactly its preparer
+    /// (CreatedBy) or recorded submitter, and any other status none of them. The decision check gains the Withdrawn branch
+    /// (no approval or rejection; the submitter only if recorded, since the preparer may withdraw a request submitted
+    /// before A1-1).
     /// <para>
     /// #900 review P3: the maker ≠ checker check is re-created with a binary comparison (<c>Latin1_General_100_BIN2</c>),
     /// the domain's ordinal rule; under the database's case-insensitive default a decider differing from a maker only by
@@ -69,7 +71,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                 name: "CK_PurchaseRequests_Decision",
                 schema: "purchasing",
                 table: "PurchaseRequests",
-                sql: "([Status] = 1 AND [SubmittedBy] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 2 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [RejectedBy] IS NOT NULL AND LEN([RejectedBy]) > 0 AND [RejectedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND (([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL))) OR ([Status] = 5 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)");
+                sql: "([Status] = 1 AND [SubmittedBy] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 2 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) OR ([Status] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [RejectedBy] IS NOT NULL AND LEN([RejectedBy]) > 0 AND [RejectedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 AND (([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL))) OR ([Status] = 5 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)");
 
             migrationBuilder.AddCheckConstraint(
                 name: "CK_PurchaseRequests_MakerChecker",
@@ -87,7 +89,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                 name: "CK_PurchaseRequests_Withdrawal",
                 schema: "purchasing",
                 table: "PurchaseRequests",
-                sql: "([Status] = 5 AND [WithdrawnBy] IS NOT NULL AND LEN([WithdrawnBy]) > 0 AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawalReason] IS NOT NULL AND LEN([WithdrawalReason]) > 0 AND [SubmittedBy] IS NOT NULL AND [WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [SubmittedBy] COLLATE Latin1_General_100_BIN2) OR ([Status] <> 5 AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawalReason] IS NULL)");
+                sql: "([Status] = 5 AND [WithdrawnBy] IS NOT NULL AND LEN([WithdrawnBy]) > 0 AND [WithdrawnAtUtc] IS NOT NULL AND [WithdrawalReason] IS NOT NULL AND LEN([WithdrawalReason]) > 0 AND ([WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [CreatedBy] COLLATE Latin1_General_100_BIN2 OR ([SubmittedBy] IS NOT NULL AND [WithdrawnBy] COLLATE Latin1_General_100_BIN2 = [SubmittedBy] COLLATE Latin1_General_100_BIN2))) OR ([Status] <> 5 AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawalReason] IS NULL)");
         }
 
         /// <inheritdoc />

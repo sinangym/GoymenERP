@@ -5,9 +5,10 @@ using GoymenERP.Modules.Purchasing.Domain.Requests;
 namespace GoymenERP.Purchasing.UnitTests;
 
 /// <summary>
-/// A1-1b (plan API-01b, TEK-09; ALS-D46): the submitter's withdrawal in the domain — Submitted → Withdrawn with a required
-/// reason, only by the submitter (ordinal), refused from Draft / Approved / Rejected / Withdrawn, refused for an unrecorded
-/// submitter (fail-closed) and while an APPROVED order is bound. A separate terminal outcome from Rejected. SENTETIK.
+/// A1-1b (plan API-01b, TEK-09; ALS-D46, ALS-D47): the withdrawal in the domain — Submitted → Withdrawn with a required
+/// reason, only by the preparer (creator) or the submitter (ordinal), refused from Draft / Approved / Rejected / Withdrawn,
+/// refused when neither maker is recorded (fail-closed) and while an APPROVED order is bound. A separate terminal outcome
+/// from Rejected. SENTETIK.
 /// </summary>
 public sealed class PurchaseRequestWithdrawalTests
 {
@@ -52,21 +53,29 @@ public sealed class PurchaseRequestWithdrawalTests
         Assert.Equal(PurchasingRuleCodes.RequestNotRejectable, Code(() => request.Reject(4, Manager, "SENTETIK", false, T0)));
     }
 
-    [Theory]
-    [InlineData(Manager)]
-    [InlineData(Preparer)]
-    public void Only_the_submitter_withdraws_not_the_manager_nor_a_preparer_who_did_not_submit(string actor)
+    [Fact]
+    public void A_third_party_is_refused_not_the_manager_nor_anyone_else()
     {
         var request = Submitted();
-        Assert.Equal(PurchasingRuleCodes.RequestNotSubmitter, Code(() => request.Withdraw(3, actor, "SENTETIK", false, T0)));
+        Assert.Equal(PurchasingRuleCodes.RequestNotPreparer, Code(() => request.Withdraw(3, Manager, "SENTETIK", false, T0)));
         Assert.Equal((PurchaseRequestStatus.Submitted, 3L, null), (request.Status, request.Version, request.Withdrawal));
     }
 
     [Fact]
-    public void The_submitter_comparison_is_ordinal()
+    public void A_preparer_who_did_not_submit_withdraws_too()
+    {
+        // ALS-D47 (Sinan 2026-11-02): "oluşturan veya gönderen".
+        var request = Submitted();
+        request.Withdraw(3, Preparer, "SENTETIK", false, T0);
+        Assert.Equal((PurchaseRequestStatus.Withdrawn, Preparer), (request.Status, request.Withdrawal!.DecidedBy));
+    }
+
+    [Fact]
+    public void The_maker_comparison_is_ordinal()
     {
         var request = Submitted();
-        Assert.Equal(PurchasingRuleCodes.RequestNotSubmitter, Code(() => request.Withdraw(3, Submitter.ToUpperInvariant(), "SENTETIK", false, T0)));
+        Assert.Equal(PurchasingRuleCodes.RequestNotPreparer, Code(() => request.Withdraw(3, Submitter.ToUpperInvariant(), "SENTETIK", false, T0)));
+        Assert.Equal(PurchasingRuleCodes.RequestNotPreparer, Code(() => request.Withdraw(3, Preparer.ToUpperInvariant(), "SENTETIK", false, T0)));
     }
 
     [Fact]
@@ -109,13 +118,29 @@ public sealed class PurchaseRequestWithdrawalTests
     }
 
     [Fact]
-    public void An_unrecorded_submitter_is_refused_never_assumed()
+    public void With_one_maker_unrecorded_only_the_recorded_one_withdraws_and_with_none_nobody_does()
     {
-        // A submission recorded before A1-1 (no actor): nobody — not even the preparer — may withdraw it.
-        var request = Draft();
-        request.Submit(2, T0);
-        Assert.Null(request.SubmittedBy);
-        Assert.Equal(PurchasingRuleCodes.RequestMakerUnknown, Code(() => request.Withdraw(3, Preparer, "SENTETIK", false, T0)));
+        // A submission recorded before A1-1 (no actor): only the recorded preparer may withdraw it.
+        var legacy = Draft();
+        legacy.Submit(2, T0);
+        Assert.Null(legacy.SubmittedBy);
+        Assert.Equal(PurchasingRuleCodes.RequestNotPreparer, Code(() => legacy.Withdraw(3, Submitter, "SENTETIK", false, T0)));
+        legacy.Withdraw(3, Preparer, "SENTETIK", false, T0);
+        Assert.Equal(PurchaseRequestStatus.Withdrawn, legacy.Status);
+
+        // No preparer recorded: only the submitter.
+        var noPreparer = PurchaseRequest.Create(Guid.NewGuid(), Company, T0);
+        noPreparer.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Quantity.Of(1m, QuantityUnit.Kilogram), T0);
+        noPreparer.Submit(2, Submitter, T0);
+        Assert.Equal(PurchasingRuleCodes.RequestNotPreparer, Code(() => noPreparer.Withdraw(3, Preparer, "SENTETIK", false, T0)));
+        noPreparer.Withdraw(3, Submitter, "SENTETIK", false, T0);
+        Assert.Equal(PurchaseRequestStatus.Withdrawn, noPreparer.Status);
+
+        // Neither recorded: nobody (fail-closed).
+        var unknown = PurchaseRequest.Create(Guid.NewGuid(), Company, T0);
+        unknown.AddLine(1, Guid.NewGuid(), Guid.NewGuid(), KgUnit, Quantity.Of(1m, QuantityUnit.Kilogram), T0);
+        unknown.Submit(2, T0);
+        Assert.Equal(PurchasingRuleCodes.RequestMakerUnknown, Code(() => unknown.Withdraw(3, Preparer, "SENTETIK", false, T0)));
     }
 
     [Fact]

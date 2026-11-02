@@ -184,7 +184,7 @@ public static class PurchasingEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.RequestDecisionState,
-                PurchasingProblemCodesV1.RequestNotSubmitter, PurchasingProblemCodesV1.RequestMakerUnknown,
+                PurchasingProblemCodesV1.RequestNotPreparer, PurchasingProblemCodesV1.RequestMakerUnknown,
                 PurchasingProblemCodesV1.RequestHasApprovedOrder, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
                 PurchasingProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.RequestWithdrawalReasonRequired,

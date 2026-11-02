@@ -30,8 +30,8 @@ public sealed record ApprovePurchaseRequestRequest(string ExpectedVersion);
 public sealed record RejectPurchaseRequestRequest(string ExpectedVersion, string Reason);
 
 /// <summary>
-/// A1-1b (ALS-D46): POST …/requests/{id}/withdrawal — Submitted → Withdrawn at the expected version, by the request's
-/// submitter only, with the reason (required, at most 4000 characters, never cut), refused while an APPROVED order is
+/// A1-1b (ALS-D46, ALS-D47): POST …/requests/{id}/withdrawal — Submitted → Withdrawn at the expected version, by the
+/// request's preparer (creator) or submitter only, with the reason (required, at most 4000 characters, never cut), refused while an APPROVED order is
 /// bound to the request (No.161 §1).
 /// </summary>
 public sealed record WithdrawPurchaseRequestRequest(string ExpectedVersion, string Reason);
@@ -71,8 +71,8 @@ public sealed record PurchaseRequestDecisionView(string DecidedBy, DateTimeOffse
 /// <summary>
 /// The request with its lines; <see cref="Approval"/> and <see cref="Rejection"/> (A1-1) and <see cref="Withdrawal"/>
 /// (A1-1b) are the recorded decisions, null until made. An approval stays visible after a later rejection.
-/// <see cref="SubmittedBy"/> (A1-1b) is the recorded submitter — the only actor who may withdraw — or null (a Draft, or
-/// a submission recorded without its actor).
+/// <see cref="PreparedBy"/> and <see cref="SubmittedBy"/> (A1-1b) are the recorded makers — the only actors who may
+/// withdraw (ALS-D47) — or null when not recorded (the submitter of a Draft, or of a submission recorded without its actor).
 /// </summary>
 public sealed record PurchaseRequestDetailView(PurchaseRequestSummaryView Request, IReadOnlyList<PurchaseRequestLineView> Lines)
 {
@@ -81,6 +81,8 @@ public sealed record PurchaseRequestDetailView(PurchaseRequestSummaryView Reques
     public PurchaseRequestDecisionView? Rejection { get; init; }
 
     public PurchaseRequestDecisionView? Withdrawal { get; init; }
+
+    public string? PreparedBy { get; init; }
 
     public string? SubmittedBy { get; init; }
 }
@@ -189,8 +191,11 @@ public static class PurchasingProblemCodesV1
     /// <summary>422: the rejection reason is longer than 4000 characters (refused, never cut).</summary>
     public const string RequestRejectionReasonTooLong = "purchasing_request_rejection_reason_too_long";
 
-    /// <summary>409, terminal (§7; A1-1b, ALS-D46): the actor is not the request's submitter; only the submitter withdraws it.</summary>
-    public const string RequestNotSubmitter = "purchasing_request_not_submitter";
+    /// <summary>
+    /// 409, terminal (§7; A1-1b, ALS-D46/ALS-D47): the actor is neither the request's recorded preparer (creator) nor its
+    /// recorded submitter; only they withdraw it.
+    /// </summary>
+    public const string RequestNotPreparer = "purchasing_request_not_preparer";
 
     /// <summary>422 (A1-1b): the withdrawal reason is missing or blank.</summary>
     public const string RequestWithdrawalReasonRequired = "purchasing_request_withdrawal_reason_required";

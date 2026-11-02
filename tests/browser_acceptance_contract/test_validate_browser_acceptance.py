@@ -1111,7 +1111,7 @@ class WorkflowTests(unittest.TestCase):
             validator.validate_suite_extensions("pur01", creator_with_decision)
 
     def test_pur01_request_withdrawal_belongs_only_to_the_creator(self):
-        # A1-1b (ALS-D46): only the submitter withdraws; the disposable creator prepares and submits its requests.
+        # A1-1b (ALS-D46, ALS-D47): only the preparer or submitter withdraws; the disposable creator prepares and submits its requests.
         environment = self._pur01_environment()
 
         validator.validate_suite_extensions("pur01", environment)

@@ -37,13 +37,14 @@ vi.mock('./api', () => ({ fetchPurchaseRequest: vi.fn() }))
 vi.mock('./requestSubmissionApi', () => ({ submitPurchaseRequest: vi.fn() }))
 vi.mock('./requestDecisionApi', () => ({ decidePurchaseRequest: vi.fn() }))
 
-function detail(status: PurchaseRequestStatus, version: string, submittedBy: string | null = ACTOR): PurchaseRequestDetail {
+function detail(status: PurchaseRequestStatus, version: string, submittedBy: string | null = ACTOR, preparedBy: string | null = ACTOR): PurchaseRequestDetail {
   return {
     request: { id: REQUEST, companyId: COMPANY, status, version, effectiveOn: '2026-11-02', createdAtUtc: AT, updatedAtUtc: AT, lineCount: 0 },
     lines: [],
     approval: status === 'Approved' ? { decidedBy: 'SENTETIK-manager', decidedAtUtc: AT, reason: null } : null,
     rejection: null,
     withdrawal: status === 'Withdrawn' ? { decidedBy: submittedBy ?? ACTOR, decidedAtUtc: AT, reason: 'SENTETIK yanlış ürün' } : null,
+    preparedBy,
     submittedBy: status === 'Draft' ? null : submittedBy,
   }
 }
@@ -72,20 +73,30 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); clients.splice(0).forEach((client) => client.clear()) })
 
-describe('P-01-DETAIL request withdrawal (A1-1b, ALS-D46)', () => {
+describe('P-01-DETAIL request withdrawal (A1-1b, ALS-D46, ALS-D47)', () => {
   it('offers no withdrawal without the purchasing.requests.withdraw child capability', async () => {
     scenario.canWithdraw = false; mount(); await ready()
     expect(screen.queryByRole('button', { name: 'Geri çek' })).toBeNull()
   })
 
-  it('offers no withdrawal to anyone but the recorded submitter, nor when no submitter is recorded', async () => {
-    vi.mocked(fetchPurchaseRequest).mockResolvedValue({ type: 'ok-single', data: detail('Submitted', '3', OTHER) })
+  it('offers no withdrawal to anyone but a recorded preparer or submitter', async () => {
+    vi.mocked(fetchPurchaseRequest).mockResolvedValue({ type: 'ok-single', data: detail('Submitted', '3', OTHER, OTHER) })
     mount(); await ready()
     expect(screen.queryByRole('button', { name: 'Geri çek' })).toBeNull()
     cleanup()
-    vi.mocked(fetchPurchaseRequest).mockResolvedValue({ type: 'ok-single', data: detail('Submitted', '3', null) })
+    vi.mocked(fetchPurchaseRequest).mockResolvedValue({ type: 'ok-single', data: detail('Submitted', '3', null, null) })
     mount(); await ready()
     expect(screen.queryByRole('button', { name: 'Geri çek' })).toBeNull()
+  })
+
+  it.each([
+    ['the preparer when someone else submitted', OTHER, ACTOR],
+    ['the submitter when someone else prepared', ACTOR, OTHER],
+    ['the preparer of a request with no recorded submitter', null, ACTOR],
+  ])('offers the withdrawal to %s (ALS-D47)', async (_name, submittedBy, preparedBy) => {
+    vi.mocked(fetchPurchaseRequest).mockResolvedValue({ type: 'ok-single', data: detail('Submitted', '3', submittedBy, preparedBy) })
+    mount(); await ready()
+    expect(screen.getByRole('button', { name: 'Geri çek' })).toBeTruthy()
   })
 
   it.each(['Draft', 'Approved', 'Withdrawn'] as const)('offers no withdrawal on a %s request', async (status) => {
@@ -161,7 +172,7 @@ describe('P-01-DETAIL request withdrawal (A1-1b, ALS-D46)', () => {
   })
 
   it.each([
-    ['purchasing_request_not_submitter', 'Talebi yalnız gönderen kişi geri çekebilir.'],
+    ['purchasing_request_not_preparer', 'Talebi yalnız oluşturan veya gönderen kişi geri çekebilir.'],
     ['purchasing_request_decision_state', 'Yalnız gönderilmiş ve henüz karar verilmemiş talep geri çekilir.'],
     ['purchasing_request_has_approved_order', 'Talebe bağlı onaylı sipariş var; önce bağlı sipariş iptal edilmelidir.'],
     ['version_conflict', 'Talep bu sırada değişti; güncel sürüm yeniden okundu.'],

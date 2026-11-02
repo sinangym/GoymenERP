@@ -7,7 +7,7 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
 
 - **Plan and decisions:** the module's roadmap is `docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md` (waves A0…A6); the
   business decisions are `docs/decisions/SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13), `_ALIS_EK1.md`
-  (ALS-D14…D20), `_ALIS_EK2.md` (ALS-D21…D28), `_ALIS_EK3.md` (ALS-D29…D43), `_ALIS_EK5.md` (ALS-D46) and
+  (ALS-D14…D20), `_ALIS_EK2.md` (ALS-D21…D28), `_ALIS_EK3.md` (ALS-D29…D43), `_ALIS_EK5.md` (ALS-D46), `_ALIS_EK6.md` (ALS-D47) and
   `SINAN_KARARLARI_2026-10-27_NO161_TALEP_RED_SIPARIS_IPTAL.md` (request rejection, cancellation of an approved
   order's unaccepted remainder). Those decisions are **not implemented yet** unless a line below says so; the target
   states are listed in `docs/domain/DURUM_MAKINELERI.md` ("Satın Alma") and the ownership split in
@@ -33,25 +33,26 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   `pur01` browser-suite approver in its disposable stack).
 - **Legacy `purchasing_request_maker_unknown` (#900 review P3):** a request submitted before A1-1 whose submit attempt
   is not in `purchasing.PurchaseAttempts` keeps `SubmittedBy = NULL` after the migration's backfill (nothing is
-  guessed). Such a request stays Submitted and visible, but no one can approve, reject or (A1-1b) withdraw it — every
-  decision answers the terminal 409 `purchasing_request_maker_unknown`. There is no repair command; a forward fix (a
+  guessed). Such a request stays Submitted and visible, but no one can approve or reject it — every decision answers
+  the terminal 409 `purchasing_request_maker_unknown`; only its recorded preparer may withdraw it (A1-1b, ALS-D47). There is no repair command; a forward fix (a
   reviewed data correction recording the real submitter) is an operations decision, not a code default. In a fresh
   database every submission records its submitter, so the code is reachable only for such legacy rows.
-- **Request withdrawal (A1-1b, plan API-01b; ALS-D46):** `POST requests/{id}/withdrawal` (Submitted → **Withdrawn**, a
-  separate terminal outcome from Rejected so reports never mix the submitter's withdrawal with a manager's refusal;
+- **Request withdrawal (A1-1b, plan API-01b; ALS-D46, ALS-D47):** `POST requests/{id}/withdrawal` (Submitted →
+  **Withdrawn**, a separate terminal outcome from Rejected so reports never mix a maker's withdrawal with a manager's refusal;
   `reason` required, at most 4000 characters, never cut, the rejection's blank rule) under its own name
   `purchasing.requests.withdraw` (`PurchasingService.RequestDecisions.cs`; command `purchasing.purchase-request.withdraw.v1`,
-  audit `purchasing.purchase-request.withdrawn.v1` in the same save). **Only the recorded submitter** (`SubmittedBy`,
-  ordinal) withdraws — the most restrictive reading of EK5's "oluşturan/gönderen": a preparer who did not submit cannot
-  (`purchasing_request_not_submitter`); an unrecorded submitter refuses it for everyone (`purchasing_request_maker_unknown`);
+  audit `purchasing.purchase-request.withdrawn.v1` in the same save). **Only the recorded preparer (`CreatedBy`) or the
+  recorded submitter (`SubmittedBy`)** withdraws, ordinal comparison (ALS-D47, Sinan 2026-11-02: "oluşturan veya
+  gönderen"); anyone else is `purchasing_request_not_preparer`; an unrecorded maker never matches, and when neither is
+  recorded nobody withdraws (`purchasing_request_maker_unknown`);
   Draft / Approved / Rejected / Withdrawn are `purchasing_request_decision_state` (field code
   `purchasing_request_not_withdrawable`); an APPROVED order bound to the request (possible only for orders approved
   before A1-1, when Submitted requests could source orders) refuses it (`purchasing_request_has_approved_order`,
   No.161 §1's guard). The reason's 422s: `purchasing_request_withdrawal_reason_required` / `_too_long`. The detail view
-  carries `withdrawal` (by, at, reason) and the recorded `submittedBy`. Migration
+  carries `withdrawal` (by, at, reason) and the recorded `preparedBy` and `submittedBy`. Migration
   `20261102161658_AddPurchaseRequestWithdrawal` adds `WithdrawnBy` / `WithdrawnAtUtc` / `WithdrawalReason`, the
-  Withdrawn branch of `CK_PurchaseRequests_Decision`, `CK_PurchaseRequests_Withdrawal` (withdrawer = submitter, binary
-  comparison; no withdrawal facts on any other status) and re-creates `CK_PurchaseRequests_MakerChecker` with a binary
+  Withdrawn branch of `CK_PurchaseRequests_Decision`, `CK_PurchaseRequests_Withdrawal` (withdrawer = preparer or
+  recorded submitter, binary comparison; no withdrawal facts on any other status) and re-creates `CK_PurchaseRequests_MakerChecker` with a binary
   comparison (`Latin1_General_100_BIN2`, the domain's ordinal rule; #900 review P3 — under the database's
   case-insensitive default a decider differing from a maker only by case passed the domain and failed the check). Its
   Down refuses (`THROW 51165`) while a request is Withdrawn. Grant of the name is a human gate: no real role, seed or
@@ -96,7 +97,7 @@ superseded statements marked **Superseded (2026-11-02)**. Where they disagree, t
   children), all `SingleCompany` and `ImplementationAvailable`. Frontend `src/frontend/goymen-erp-web/src/purchasing/`:
   `PurchaseRequestListPage`, `PurchaseRequestCreatePage`, `PurchaseRequestDetailPage` (+ `PurchaseRequestDecisionPanel`:
   approve / reject with reason, unknown-result resend of the same key; `PurchaseRequestWithdrawalPanel`: "Geri çek"
-  with reason, shown only to the recorded submitter), `PurchaseOrderListPage`,
+  with reason, shown only to the recorded preparer or submitter), `PurchaseOrderListPage`,
   `PurchaseOrderCreatePage`, `PurchaseOrderDetailPage`, `GoodsReceiptPanel`, `GoodsReceiptDetail`,
   `GoodsReceiptQuantityComparison` (routes in `purchasingRoutes.tsx`).
 - **Ports out:** `IPurchaseSupplyReferencePortV1` (expected supply, never stock), `IPurchaseOpenLineReadPortV1`

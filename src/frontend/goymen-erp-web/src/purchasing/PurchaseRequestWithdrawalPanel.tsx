@@ -33,9 +33,10 @@ export interface PurchaseRequestWithdrawalPanelProps {
 }
 
 /**
- * A1-1b (plan API-01b; ALS-D46): the submitter withdraws their own Submitted request with a required reason. Shown only
- * behind the `purchasing.requests.withdraw` child capability and only to the recorded submitter (the caller measures
- * both); the backend re-measures the name, the version, "only the submitter" and a bound approved order on every call.
+ * A1-1b (plan API-01b; ALS-D46, ALS-D47): the preparer or the submitter withdraws their Submitted request with a required
+ * reason. Shown only behind the `purchasing.requests.withdraw` child capability and only to the recorded preparer or
+ * submitter (the caller measures both); the backend re-measures the name, the version, "only the preparer or the
+ * submitter" and a bound approved order on every call.
  * This panel only keeps an unresolved snapshot (same key, version and reason) for an explicit resend and re-reads the
  * record after a definite answer.
  */

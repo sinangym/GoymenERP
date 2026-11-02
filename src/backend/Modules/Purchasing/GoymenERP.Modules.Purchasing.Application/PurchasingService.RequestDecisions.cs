@@ -12,9 +12,9 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// their own request (hazırlayan ≠ onaylayan), an unknown maker (fail-closed) and — for a rejection — an APPROVED order
 /// bound to the request, which the store measures inside the same save. A missing or too long reason is a 422 (not terminal).
 /// <para>
-/// A1-1b (ALS-D46): the submitter's withdrawal of their own Submitted request runs on the same path under its own name
-/// <c>purchasing.requests.withdraw</c>; its terminal refusals are a state other than Submitted, an unrecorded submitter
-/// (fail-closed), an actor other than the submitter and a bound APPROVED order.
+/// A1-1b (ALS-D46, ALS-D47): the preparer's or submitter's withdrawal of their Submitted request runs on the same path
+/// under its own name <c>purchasing.requests.withdraw</c>; its terminal refusals are a state other than Submitted, no
+/// recorded maker at all (fail-closed), an actor who is neither recorded maker and a bound APPROVED order.
 /// </para>
 /// </summary>
 public sealed partial class PurchasingService
@@ -43,7 +43,7 @@ public sealed partial class PurchasingService
         ArgumentNullException.ThrowIfNull(request);
         return DecideRequestAsync(requestId, request, request.ExpectedVersion, metadata, PurchasingCommands.RequestWithdrawV1, bindings.RequestWithdrawPermission,
             (target, facts, actor, version, now) => target.Withdraw(version, actor, request.Reason, facts.HasApprovedOrder, now),
-            new PurchasingMutationAudit("purchasing.purchase-request.withdrawn.v1", "Withdraw", "Satınalma talebi gönderen tarafından geri çekildi"),
+            new PurchasingMutationAudit("purchasing.purchase-request.withdrawn.v1", "Withdraw", "Satınalma talebi oluşturan veya gönderen tarafından geri çekildi"),
             cancellationToken);
     }
 
@@ -93,11 +93,11 @@ public sealed partial class PurchasingService
             return await DecisionTerminalAsync(scope, permission, envelope, requestHash, commandName,
                 PurchasingProblemCodesV1.RequestSameActor, "actor", exception.Code, cancellationToken);
         }
-        catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.RequestNotSubmitter)
+        catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.RequestNotPreparer)
         {
-            // ALS-D46: only the submitter withdraws; terminal for this key.
+            // ALS-D47: only the preparer or the submitter withdraws; terminal for this key.
             return await DecisionTerminalAsync(scope, permission, envelope, requestHash, commandName,
-                PurchasingProblemCodesV1.RequestNotSubmitter, "actor", exception.Code, cancellationToken);
+                PurchasingProblemCodesV1.RequestNotPreparer, "actor", exception.Code, cancellationToken);
         }
         catch (PurchasingRuleException exception) when (exception.Code == PurchasingRuleCodes.RequestMakerUnknown)
         {

@@ -4,8 +4,8 @@ using GoymenERP.Modules.Purchasing.Domain;
 namespace GoymenERP.Purchasing.UnitTests;
 
 /// <summary>
-/// A1-1b (plan API-01b; ALS-D46): the submitter's withdrawal through the service — the <c>purchasing.requests.withdraw</c>
-/// name, "only the submitter", the terminal refusals recorded under the key and replayed, the reason's 422, the audit
+/// A1-1b (plan API-01b; ALS-D46, ALS-D47): the withdrawal through the service — the <c>purchasing.requests.withdraw</c>
+/// name, "only the preparer or the submitter", the terminal refusals recorded under the key and replayed, the reason's 422, the audit
 /// event and the detail's withdrawal and submitter. SENTETIK / NOT_ENV.
 /// </summary>
 public sealed partial class PurchasingServiceTests
@@ -22,7 +22,7 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal(("Withdrawn", "4", false), (withdrawn.Detail.Request.Status, withdrawn.Detail.Request.Version, withdrawn.IsReplay));
         Assert.Equal(PurchasingPermissionManifestV1.RequestsWithdraw, world.Authority.LastPermission);
         Assert.Equal((Actor, "SENTETIK yanlış ürün"), (withdrawn.Detail.Withdrawal!.DecidedBy, withdrawn.Detail.Withdrawal.Reason));
-        Assert.Equal(Actor, withdrawn.Detail.SubmittedBy);
+        Assert.Equal((Actor, Actor), (withdrawn.Detail.PreparedBy, withdrawn.Detail.SubmittedBy));
         Assert.Null(withdrawn.Detail.Rejection);
         Assert.Null(withdrawn.Detail.Approval);
         Assert.Equal(("purchasing.purchase-request.withdrawn.v1", "Withdraw"), (world.Store.Audits.Last().EventType, world.Store.Audits.Last().Operation));
@@ -38,37 +38,51 @@ public sealed partial class PurchasingServiceTests
     }
 
     [Fact]
-    public async Task Nobody_but_the_submitter_withdraws_and_the_refusal_is_terminal()
+    public async Task A_third_party_cannot_withdraw_and_the_refusal_is_terminal()
     {
         var world = new World();
         var id = await SubmittedRequestAsync(world);
 
         var other = await world.AsApprover(() => Assert.ThrowsAsync<PurchasingServiceException>(() =>
             world.Service().WithdrawRequestAsync(id, new WithdrawPurchaseRequestRequest("3", "SENTETIK"), Metadata("k-other"))));
-        Assert.Equal((409, PurchasingProblemCodesV1.RequestNotSubmitter, "actor", PurchasingRuleCodes.RequestNotSubmitter, false),
+        Assert.Equal((409, PurchasingProblemCodesV1.RequestNotPreparer, "actor", PurchasingRuleCodes.RequestNotPreparer, false),
             (other.Status, other.Code, other.Errors[0].Field, other.Errors[0].Code, other.IsReplay));
         var again = await world.AsApprover(() => Assert.ThrowsAsync<PurchasingServiceException>(() =>
             world.Service().WithdrawRequestAsync(id, new WithdrawPurchaseRequestRequest("3", "SENTETIK"), Metadata("k-other", correlation: "retry"))));
-        Assert.Equal((409, PurchasingProblemCodesV1.RequestNotSubmitter, true), (again.Status, again.Code, again.IsReplay));
+        Assert.Equal((409, PurchasingProblemCodesV1.RequestNotPreparer, true), (again.Status, again.Code, again.IsReplay));
         Assert.Single(world.Store.Refusals);
         Assert.Equal(("Submitted", "3"), ((await world.Service().GetRequestDetailAsync(id)).Request.Status, (await world.Service().GetRequestDetailAsync(id)).Request.Version));
     }
 
     [Fact]
-    public async Task A_preparer_who_did_not_submit_cannot_withdraw_but_the_submitter_can()
+    public async Task When_the_creator_and_the_submitter_differ_either_withdraws_and_a_third_party_cannot()
     {
+        // ALS-D47 (Sinan 2026-11-02): "oluşturan veya gönderen". The approver persona submits what the actor prepared.
+        async Task<Guid> PreparedByActorSubmittedByApprover(World world, string suffix)
+        {
+            var id = (await world.Service().CreateRequestAsync(RequestOf("5"), Metadata($"k-req-{suffix}"))).Detail.Request.Id;
+            await world.AsApprover(() => world.Service().SubmitRequestAsync(id, new SubmitPurchaseRequestRequest("2"), Metadata($"k-submit-{suffix}")));
+            return id;
+        }
+
         var world = new World();
-        var id = (await world.Service().CreateRequestAsync(RequestOf("5"), Metadata("k-req"))).Detail.Request.Id;
-        // The approver persona submits the request the actor prepared: the submitter is the one who withdraws (ALS-D46).
-        await world.AsApprover(() => world.Service().SubmitRequestAsync(id, new SubmitPurchaseRequestRequest("2"), Metadata("k-submit")));
+        var byCreator = await PreparedByActorSubmittedByApprover(world, "a");
+        var creator = await world.Service().WithdrawRequestAsync(byCreator, new WithdrawPurchaseRequestRequest("3", "SENTETIK"), Metadata("k-creator"));
+        Assert.Equal(("Withdrawn", Actor, Actor, Approver), (creator.Detail.Request.Status, creator.Detail.Withdrawal!.DecidedBy,
+            creator.Detail.PreparedBy, creator.Detail.SubmittedBy));
 
-        var preparer = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
-            world.Service().WithdrawRequestAsync(id, new WithdrawPurchaseRequestRequest("3", "SENTETIK"), Metadata("k-preparer")));
-        Assert.Equal((409, PurchasingProblemCodesV1.RequestNotSubmitter), (preparer.Status, preparer.Code));
+        var bySubmitter = await PreparedByActorSubmittedByApprover(world, "b");
+        var submitter = await world.AsApprover(() =>
+            world.Service().WithdrawRequestAsync(bySubmitter, new WithdrawPurchaseRequestRequest("3", "SENTETIK"), Metadata("k-submitter")));
+        Assert.Equal(("Withdrawn", Approver), (submitter.Detail.Request.Status, submitter.Detail.Withdrawal!.DecidedBy));
 
-        var withdrawn = await world.AsApprover(() =>
-            world.Service().WithdrawRequestAsync(id, new WithdrawPurchaseRequestRequest("3", "SENTETIK"), Metadata("k-submitter")));
-        Assert.Equal(("Withdrawn", Approver), (withdrawn.Detail.Request.Status, withdrawn.Detail.Withdrawal!.DecidedBy));
+        var third = await PreparedByActorSubmittedByApprover(world, "c");
+        world.User.CurrentActor = "synthetic-third-actor";
+        var refused = await Assert.ThrowsAsync<PurchasingServiceException>(() =>
+            world.Service().WithdrawRequestAsync(third, new WithdrawPurchaseRequestRequest("3", "SENTETIK"), Metadata("k-third")));
+        Assert.Equal((409, PurchasingProblemCodesV1.RequestNotPreparer, "actor"), (refused.Status, refused.Code, refused.Errors[0].Field));
+        world.User.CurrentActor = Actor;
+        Assert.Equal("Submitted", (await world.Service().GetRequestDetailAsync(third)).Request.Status);
     }
 
     [Fact]

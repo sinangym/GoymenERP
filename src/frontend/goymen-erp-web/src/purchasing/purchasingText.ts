@@ -189,10 +189,10 @@ export const REQUEST_DECISION_PROBLEM_TEXT: Readonly<Record<string, string>> = {
   same_key_payload_mismatch: 'Aynı işlem anahtarı başka bir içerikle kullanıldı.',
 }
 
-/** A1-1b (plan API-01b; ALS-D46): the submitter's withdrawal control's user texts. */
+/** A1-1b (plan API-01b; ALS-D46, ALS-D47): the preparer's or submitter's withdrawal control's user texts. */
 export const REQUEST_WITHDRAWAL_TEXT = {
   heading: 'Talebi geri çek',
-  note: 'Gönderdiğiniz talebi, henüz karar verilmemişken gerekçeyle geri çekebilirsiniz. Geri çekilen talep kapanır, siparişe dönüşmez ve ret sayılmaz; sipariş, fiyat veya stok hareketi üretmez.',
+  note: 'Oluşturduğunuz veya onaya gönderdiğiniz talebi, henüz karar verilmemişken gerekçeyle geri çekebilirsiniz. Geri çekilen talep kapanır, siparişe dönüşmez ve ret sayılmaz; sipariş, fiyat veya stok hareketi üretmez.',
   withdraw: 'Geri çek',
   withdrawing: 'Geri çekiliyor…',
   reasonLabel: 'Geri çekme gerekçesi',
@@ -213,8 +213,8 @@ export const REQUEST_WITHDRAWAL_TEXT = {
 export const REQUEST_WITHDRAWAL_PROBLEM_TEXT: Readonly<Record<string, string>> = {
   version_conflict: 'Talep bu sırada değişti; güncel sürüm yeniden okundu.',
   purchasing_request_decision_state: 'Yalnız gönderilmiş ve henüz karar verilmemiş talep geri çekilir.',
-  purchasing_request_not_submitter: 'Talebi yalnız gönderen kişi geri çekebilir.',
-  purchasing_request_maker_unknown: 'Talebi gönderen bilinmiyor; talep geri çekilemez.',
+  purchasing_request_not_preparer: 'Talebi yalnız oluşturan veya gönderen kişi geri çekebilir.',
+  purchasing_request_maker_unknown: 'Talebi oluşturan ve gönderen bilinmiyor; talep geri çekilemez.',
   purchasing_request_has_approved_order: 'Talebe bağlı onaylı sipariş var; önce bağlı sipariş iptal edilmelidir.',
   purchasing_request_withdrawal_reason_required: 'Geri çekme gerekçesi zorunludur.',
   purchasing_request_withdrawal_reason_too_long: 'Geri çekme gerekçesi 4000 karakteri aşamaz.',

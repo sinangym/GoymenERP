@@ -600,8 +600,8 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
     [Fact]
     public async Task A_request_is_withdrawn_over_its_own_route_with_a_strict_body_and_replayed_terminal_refusals()
     {
-        // A1-1b (plan API-01b; ALS-D46): POST …/withdrawal answers 200 with the Withdrawn request, its withdrawal and the
-        // recorded submitter; a terminal refusal (409, §7) replays with the first attempt's headers; a malformed body never
+        // A1-1b (plan API-01b; ALS-D46, ALS-D47): POST …/withdrawal answers 200 with the Withdrawn request, its withdrawal and
+        // the recorded preparer and submitter; a terminal refusal (409, §7) replays with the first attempt's headers; a malformed body never
         // reaches the service; a blank reason is the domain's 422 on the reason field.
         var id = Guid.NewGuid();
         var withdrawnAt = new DateTimeOffset(2026, 11, 2, 11, 0, 0, TimeSpan.Zero);
@@ -611,6 +611,7 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
                 RequestDetail(requestId, "Withdrawn", "4") with
                 {
                     Withdrawal = new PurchaseRequestDecisionView("SENTETIK-submitter", withdrawnAt, body.Reason),
+                    PreparedBy = "SENTETIK-preparer",
                     SubmittedBy = "SENTETIK-submitter",
                 },
                 false, "SENTETIK-corr-withdraw")),
@@ -628,6 +629,7 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
             Assert.Equal("SENTETIK-submitter", detail.GetProperty("withdrawal").GetProperty("decidedBy").GetString());
             Assert.Equal("SENTETIK yanlış ürün", detail.GetProperty("withdrawal").GetProperty("reason").GetString());
             Assert.Equal("SENTETIK-submitter", detail.GetProperty("submittedBy").GetString());
+            Assert.Equal("SENTETIK-preparer", detail.GetProperty("preparedBy").GetString());
             Assert.Equal(JsonValueKind.Null, detail.GetProperty("rejection").ValueKind);
         }
 
@@ -647,15 +649,15 @@ public sealed class PurchasingHttpAcceptanceTests(GoymenErpApiFactory factory) :
 
         Assert.Equal(calls, service.Calls);
 
-        service.WithdrawRequest = (_, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestNotSubmitter,
-            [new("actor", "purchasing_request_not_submitter")], isReplay: true, originalCorrelationId: "SENTETIK-first-withdraw");
+        service.WithdrawRequest = (_, _) => throw new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestNotPreparer,
+            [new("actor", "purchasing_request_not_preparer")], isReplay: true, originalCorrelationId: "SENTETIK-first-withdraw");
         using (var response = await client.SendAsync(Post($"{PurchasingApiV1.RequestsPath}/{id:D}/withdrawal", "SENTETIK-request-withdraw-other",
                    """{"expectedVersion":"3","reason":"SENTETIK"}""")))
         {
             Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
             Assert.Equal("true", Assert.Single(response.Headers.GetValues("Idempotency-Replayed")));
             Assert.Equal("SENTETIK-first-withdraw", Assert.Single(response.Headers.GetValues("Idempotency-Original-Correlation-Id")));
-            Assert.Equal(PurchasingProblemCodesV1.RequestNotSubmitter, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
+            Assert.Equal(PurchasingProblemCodesV1.RequestNotPreparer, (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString());
         }
 
         service.WithdrawRequest = (_, _) => throw new PurchasingServiceException(422, PurchasingProblemCodesV1.RequestWithdrawalReasonRequired,

@@ -57,8 +57,8 @@ function PurchaseRequestDetail({ namespace, returnOrderId }: { readonly namespac
   const canSubmit = hasCapability(shell, PURCHASING_CAPABILITY.requestSubmit)
   // A1-1: the decision control is its own child capability (purchasing.requests.approve); the backend re-measures it.
   const canDecide = hasCapability(shell, PURCHASING_CAPABILITY.requestApprove)
-  // A1-1b (ALS-D46): the withdrawal control is its own child capability (purchasing.requests.withdraw), shown only to the
-  // recorded submitter; the backend re-measures the name and "only the submitter".
+  // A1-1b (ALS-D46, ALS-D47): the withdrawal control is its own child capability (purchasing.requests.withdraw), shown only
+  // to the recorded preparer or submitter; the backend re-measures the name and "only the preparer or the submitter".
   const canWithdraw = hasCapability(shell, PURCHASING_CAPABILITY.requestWithdraw)
   const storeKey = pendingPurchaseRequestSubmissionKey(shell.sessionEpoch, actorId, companyId, requestId ?? '')
   const recalled = recallPendingPurchaseRequestSubmission(storeKey)
@@ -99,7 +99,7 @@ function PurchaseRequestDetail({ namespace, returnOrderId }: { readonly namespac
   const frame = (child: ReactNode) => <main className={styles.page}><header><p className={styles.eyebrow}>{T.eyebrow}</p><h1>{T.heading}</h1></header>{child}</main>
   if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />)
   if (state.kind !== 'ready') return frame(<StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />)
-  const { request, lines, approval, rejection, withdrawal, submittedBy } = state.data; const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
+  const { request, lines, approval, rejection, withdrawal, preparedBy, submittedBy } = state.data; const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
   const statusClass = request.status === 'Draft' ? styles.draft : request.status === 'Rejected' || request.status === 'Withdrawn' ? styles.rejected : styles.approved
   const withdrawalFacts = withdrawal ? <><div><dt>{REQUEST_WITHDRAWAL_TEXT.withdrawalFacts}</dt><dd>{withdrawal.decidedBy} · {new Date(withdrawal.decidedAtUtc).toLocaleString('tr-TR')}</dd></div><div><dt>{REQUEST_WITHDRAWAL_TEXT.reasonFacts}</dt><dd>{withdrawal.reason}</dd></div></> : null
   const decisionFacts = <>{approval ? <div><dt>{REQUEST_DECISION_TEXT.approvalFacts}</dt><dd>{approval.decidedBy} · {new Date(approval.decidedAtUtc).toLocaleString('tr-TR')}</dd></div> : null}{rejection ? <><div><dt>{REQUEST_DECISION_TEXT.rejectionFacts}</dt><dd>{rejection.decidedBy} · {new Date(rejection.decidedAtUtc).toLocaleString('tr-TR')}</dd></div><div><dt>{REQUEST_DECISION_TEXT.reasonFacts}</dt><dd>{rejection.reason}</dd></div></> : null}</>
@@ -107,7 +107,8 @@ function PurchaseRequestDetail({ namespace, returnOrderId }: { readonly namespac
     ? <PurchaseRequestDecisionPanel sessionEpoch={shell.sessionEpoch} fenceKey={`${namespace ?? ''}::${shell.routeEntryGeneration}`} actorId={actorId}
       companyId={companyId} request={request} onSettled={() => query.refetch()} />
     : null
-  const withdrawalControl = canWithdraw && actorId !== null && submittedBy !== null && submittedBy !== undefined && submittedBy === actorId
+  const isMaker = actorId !== null && ((preparedBy ?? null) === actorId || (submittedBy ?? null) === actorId)
+  const withdrawalControl = canWithdraw && actorId !== null && isMaker
     && request.id === requestId && request.companyId === companyId
     ? <PurchaseRequestWithdrawalPanel sessionEpoch={shell.sessionEpoch} fenceKey={`${namespace ?? ''}::${shell.routeEntryGeneration}`} actorId={actorId}
       companyId={companyId} request={request} onSettled={() => query.refetch()} />

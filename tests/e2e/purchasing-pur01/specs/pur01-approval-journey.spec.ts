@@ -588,8 +588,8 @@ test('PUR01 approves through the real API, reopens the same record and replays t
 })
 
 
-test('P01-WD the submitter withdraws its own submitted request from the detail with a reason; other actors are fenced (A1-1b)', async ({ page }) => {
-  // A1-1b (plan API-01b, ALS-D46): only the submitter withdraws a still Submitted request, with a reason; the result is
+test('P01-WD the creator-submitter withdraws its own submitted request from the detail with a reason; other actors are fenced (A1-1b)', async ({ page }) => {
+  // A1-1b (plan API-01b, ALS-D46, ALS-D47): only the preparer or the submitter withdraws a still Submitted request, with a reason; the result is
   // Withdrawn, a separate outcome from Rejected. The creator prepares and submits; it alone holds purchasing.requests.withdraw.
   await signInAs(page, creatorActor)
   const creatorHeaders = { [DEVELOPMENT_USER_HEADER]: creatorActor, 'X-Company-Id': companyId, 'Content-Type': 'application/json' }
@@ -627,7 +627,7 @@ test('P01-WD the submitter withdraws its own submitted request from the detail w
   }
   expect((await readRequest(page, creatorActor, requestId)).request).toMatchObject({ status: 'Submitted', version: submittedVersion })
 
-  // The submitter opens the request detail and withdraws it through the real control.
+  // The creator (preparer and submitter) opens the request detail and withdraws it through the real control.
   await page.goto(`${REQUEST_LIST_ROUTE}/${requestId}`)
   await expect(page.getByText(requestId, { exact: true })).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('heading', { level: 2, name: 'Talebi geri çek' })).toBeVisible()

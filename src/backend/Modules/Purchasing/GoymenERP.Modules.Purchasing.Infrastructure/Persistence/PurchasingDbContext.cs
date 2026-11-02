@@ -30,8 +30,9 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
     /// <summary>
     /// A1-1: Draft has no decision fact; Submitted may lack its submitter only for a submission recorded before A1-1 (the
     /// domain then refuses every decision, fail-closed); Approved has its submitter and approval and no rejection; Rejected
-    /// has its submitter, rejection and reason, and keeps an earlier approval if there was one. A1-1b: Withdrawn (5) has its
-    /// submitter and no approval or rejection; its own facts are <see cref="RequestWithdrawalCheck"/>'s.
+    /// has its submitter, rejection and reason, and keeps an earlier approval if there was one. A1-1b: Withdrawn (5) has no
+    /// approval or rejection, and its submitter only if one was recorded (the preparer may withdraw a request submitted
+    /// before A1-1, ALS-D47); its own facts are <see cref="RequestWithdrawalCheck"/>'s.
     /// </summary>
     internal const string RequestDecisionCheck =
         "([Status] = 1 AND [SubmittedBy] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
@@ -43,7 +44,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + "OR ([Status] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [RejectedBy] IS NOT NULL AND LEN([RejectedBy]) > 0 "
         + "AND [RejectedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 "
         + "AND (([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL))) "
-        + "OR ([Status] = 5 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        + "OR ([Status] = 5 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
         + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL)";
 
     /// <summary>
@@ -58,13 +59,14 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         + " AND [SubmittedBy] IS NOT NULL AND [RejectedBy] COLLATE " + IdentityCollation + " <> [SubmittedBy] COLLATE " + IdentityCollation + "))";
 
     /// <summary>
-    /// A1-1b (ALS-D46): a Withdrawn request has its withdrawer (exactly the submitter, binary comparison), the time and a
-    /// non-blank reason; any other status has none of the three.
+    /// A1-1b (ALS-D46, ALS-D47): a Withdrawn request has its withdrawer (exactly the preparer or the recorded submitter,
+    /// binary comparison), the time and a non-blank reason; any other status has none of the three.
     /// </summary>
     internal const string RequestWithdrawalCheck =
         "([Status] = 5 AND [WithdrawnBy] IS NOT NULL AND LEN([WithdrawnBy]) > 0 AND [WithdrawnAtUtc] IS NOT NULL "
-        + "AND [WithdrawalReason] IS NOT NULL AND LEN([WithdrawalReason]) > 0 AND [SubmittedBy] IS NOT NULL "
-        + "AND [WithdrawnBy] COLLATE " + IdentityCollation + " = [SubmittedBy] COLLATE " + IdentityCollation + ") "
+        + "AND [WithdrawalReason] IS NOT NULL AND LEN([WithdrawalReason]) > 0 "
+        + "AND ([WithdrawnBy] COLLATE " + IdentityCollation + " = [CreatedBy] COLLATE " + IdentityCollation
+        + " OR ([SubmittedBy] IS NOT NULL AND [WithdrawnBy] COLLATE " + IdentityCollation + " = [SubmittedBy] COLLATE " + IdentityCollation + "))) "
         + "OR ([Status] <> 5 AND [WithdrawnBy] IS NULL AND [WithdrawnAtUtc] IS NULL AND [WithdrawalReason] IS NULL)";
 
     /// <summary>One create attempt per stored order; the approve command's attempts share the order id.</summary>
@@ -127,7 +129,7 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
             table.HasCheckConstraint("CK_PurchaseRequests_Decision", RequestDecisionCheck);
             // ALS-D2 (defence in depth beside the domain): a decision never comes from the preparer or the submitter.
             table.HasCheckConstraint("CK_PurchaseRequests_MakerChecker", RequestMakerCheckerCheck);
-            // ALS-D46 (defence in depth beside the domain): only the submitter withdraws, with a reason.
+            // ALS-D46/ALS-D47 (defence in depth beside the domain): only the preparer or the submitter withdraws, with a reason.
             table.HasCheckConstraint("CK_PurchaseRequests_Withdrawal", RequestWithdrawalCheck);
         });
         entity.HasKey(x => x.Id);

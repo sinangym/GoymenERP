@@ -14,7 +14,7 @@ public enum PurchaseRequestStatus
     Rejected = 4,
 
     /// <summary>
-    /// A1-1b (ALS-D46): the submitter withdrew the still Submitted request with a reason; terminal, a separate outcome from
+    /// A1-1b (ALS-D46, ALS-D47): the preparer or the submitter withdrew the still Submitted request with a reason; terminal, a separate outcome from
     /// <see cref="Rejected"/> (a manager's refusal) so reports never mix the two. Nothing is deleted.
     /// </summary>
     Withdrawn = 5,
@@ -38,10 +38,11 @@ public enum PurchaseRequestStatus
 /// caller measures that fact inside the same save.
 /// </para>
 /// <para>
-/// A1-1b (ALS-D46): <c>Submitted → Withdrawn</c> (<see cref="Withdraw"/>, reason required) by the request's submitter only
-/// (the most restrictive reading of EK5's "oluşturan/gönderen": the actor who sent it for approval). A request whose
-/// submitter is not recorded cannot be withdrawn (fail-closed); an Approved request is never withdrawn (its rejection
-/// stays a manager's decision), and a bound APPROVED order refuses the withdrawal as it refuses a rejection (No.161 §1).
+/// A1-1b (ALS-D46, ALS-D47): <c>Submitted → Withdrawn</c> (<see cref="Withdraw"/>, reason required) by the request's
+/// preparer (creator) or its submitter, nobody else (Sinan 2026-11-02, "oluşturan veya gönderen"). Only a recorded maker
+/// counts: when neither is recorded the request cannot be withdrawn (fail-closed). An Approved request is never withdrawn
+/// (its rejection stays a manager's decision), and a bound APPROVED order refuses the withdrawal as it refuses a
+/// rejection (No.161 §1).
 /// </para>
 /// </summary>
 public sealed class PurchaseRequest
@@ -81,7 +82,7 @@ public sealed class PurchaseRequest
     /// <summary>The rejection (No.161 §1), if any, with its reason.</summary>
     public PurchaseRequestDecision? Rejection { get; private set; }
 
-    /// <summary>A1-1b (ALS-D46): the submitter's withdrawal, if any, with its reason.</summary>
+    /// <summary>A1-1b (ALS-D46, ALS-D47): the preparer's or submitter's withdrawal, if any, with its reason.</summary>
     public PurchaseRequestDecision? Withdrawal { get; private set; }
 
     /// <summary>A read-only view; the list behind it never leaves this record.</summary>
@@ -173,10 +174,11 @@ public sealed class PurchaseRequest
     }
 
     /// <summary>
-    /// ALS-D46: the submitter withdraws their own SUBMITTED request with a reason (required, never defaulted or cut; the
-    /// rejection's bound and blank rule). Any other state is <see cref="PurchasingRuleCodes.RequestNotWithdrawable"/>;
-    /// an unrecorded submitter is <see cref="PurchasingRuleCodes.RequestMakerUnknown"/>; anyone but the submitter
-    /// (ordinal) is <see cref="PurchasingRuleCodes.RequestNotSubmitter"/>; a bound APPROVED order
+    /// ALS-D46 / ALS-D47: the preparer or the submitter withdraws their SUBMITTED request with a reason (required, never
+    /// defaulted or cut; the rejection's bound and blank rule). Any other state is
+    /// <see cref="PurchasingRuleCodes.RequestNotWithdrawable"/>; when neither maker is recorded it is
+    /// <see cref="PurchasingRuleCodes.RequestMakerUnknown"/>; anyone but a recorded maker (ordinal) is
+    /// <see cref="PurchasingRuleCodes.RequestNotPreparer"/>; a bound APPROVED order
     /// (<paramref name="hasApprovedOrder"/>, measured by the caller inside the same save) is
     /// <see cref="PurchasingRuleCodes.RequestHasApprovedOrder"/>.
     /// </summary>
@@ -190,14 +192,15 @@ public sealed class PurchaseRequest
         }
 
         var text = RequireWithdrawalReason(reason);
-        if (SubmittedBy is null)
+        if (PreparedBy is null && SubmittedBy is null)
         {
-            throw new PurchasingRuleException(PurchasingRuleCodes.RequestMakerUnknown, "Talebi gönderen bilinmiyor; talep geri çekilemez.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestMakerUnknown, "Talebi oluşturan ve gönderen bilinmiyor; talep geri çekilemez.");
         }
 
-        if (!string.Equals(actor, SubmittedBy, StringComparison.Ordinal))
+        // ALS-D47: a recorded maker only; an unknown one never matches.
+        if (!string.Equals(actor, PreparedBy, StringComparison.Ordinal) && !string.Equals(actor, SubmittedBy, StringComparison.Ordinal))
         {
-            throw new PurchasingRuleException(PurchasingRuleCodes.RequestNotSubmitter, "Talebi yalnız gönderen kişi geri çekebilir.");
+            throw new PurchasingRuleException(PurchasingRuleCodes.RequestNotPreparer, "Talebi yalnız oluşturan veya gönderen kişi geri çekebilir.");
         }
 
         if (hasApprovedOrder)

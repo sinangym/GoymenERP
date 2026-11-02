@@ -4,7 +4,7 @@ import { decodePurchaseRequestCommandResponse, type PurchaseRequestCommandRespon
 /** A1-1 (plan API-01): the two decisions on a request; each has its own route and its own status after it. */
 export type RequestDecisionKind = 'approval' | 'rejection'
 
-/** A1-1b (plan API-01b; ALS-D46): the submitter's withdrawal rides the same command shape on its own route. */
+/** A1-1b (plan API-01b; ALS-D46, ALS-D47): the preparer's or submitter's withdrawal rides the same command shape on its own route. */
 export type RequestCommandKind = RequestDecisionKind | 'withdrawal'
 
 export type RequestDecisionOutcome =

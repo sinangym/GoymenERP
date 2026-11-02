@@ -23,7 +23,8 @@ const summary = (status: string, version: string) => ({
 })
 const withdrawal = { decidedBy: 'SENTETIK-submitter', decidedAtUtc: at, reason: 'SENTETIK yanlış ürün' }
 const body = (status: string, version: string, extra: Record<string, unknown> = {}) => ({
-  request: summary(status, version), lines: [line], approval: null, rejection: null, withdrawal: null, submittedBy: 'SENTETIK-submitter', ...extra,
+  request: summary(status, version), lines: [line], approval: null, rejection: null, withdrawal: null,
+  preparedBy: 'SENTETIK-preparer', submittedBy: 'SENTETIK-submitter', ...extra,
 })
 
 function response(payload: unknown, status = 200, headers: Record<string, string> = {}) {
@@ -33,11 +34,17 @@ function response(payload: unknown, status = 200, headers: Record<string, string
 beforeEach(() => sessionStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
 
-describe('A1-1b request withdrawal wire contract (ALS-D46)', () => {
-  it('decodes the withdrawal and the recorded submitter, and keeps them consistent with the status', () => {
+describe('A1-1b request withdrawal wire contract (ALS-D46, ALS-D47)', () => {
+  it('decodes the withdrawal and the recorded makers, and keeps them consistent with the status', () => {
     const withdrawn = decodePurchaseRequestDetail(body('Withdrawn', '4', { withdrawal }))
     expect(withdrawn?.withdrawal?.reason).toBe('SENTETIK yanlış ürün')
-    expect(withdrawn?.submittedBy).toBe('SENTETIK-submitter')
+    expect([withdrawn?.preparedBy, withdrawn?.submittedBy]).toEqual(['SENTETIK-preparer', 'SENTETIK-submitter'])
+    // ALS-D47: the preparer withdraws too, also a request submitted before A1-1 (no recorded submitter).
+    expect(decodePurchaseRequestDetail(body('Withdrawn', '4', { withdrawal: { ...withdrawal, decidedBy: 'SENTETIK-preparer' } }))
+      ?.withdrawal?.decidedBy).toBe('SENTETIK-preparer')
+    expect(decodePurchaseRequestDetail(body('Withdrawn', '4', {
+      withdrawal: { ...withdrawal, decidedBy: 'SENTETIK-preparer' }, submittedBy: null,
+    }))?.submittedBy).toBeNull()
     expect(decodePurchaseRequestDetail(body('Submitted', '3'))?.submittedBy).toBe('SENTETIK-submitter')
     // A submission recorded before A1-1 carries no submitter; nobody may withdraw it, but it still reads.
     expect(decodePurchaseRequestDetail(body('Submitted', '3', { submittedBy: null }))?.submittedBy).toBeNull()
@@ -53,8 +60,9 @@ describe('A1-1b request withdrawal wire contract (ALS-D46)', () => {
     ['withdrawn without a withdrawal', body('Withdrawn', '4')],
     ['withdrawn without a reason', body('Withdrawn', '4', { withdrawal: { ...withdrawal, reason: null } })],
     ['withdrawn with a blank reason', body('Withdrawn', '4', { withdrawal: { ...withdrawal, reason: ' ' } })],
-    ['withdrawn by someone other than the submitter', body('Withdrawn', '4', { withdrawal: { ...withdrawal, decidedBy: 'SENTETIK-other' } })],
-    ['withdrawn without a submitter', body('Withdrawn', '4', { withdrawal, submittedBy: null })],
+    ['withdrawn by someone other than a maker', body('Withdrawn', '4', { withdrawal: { ...withdrawal, decidedBy: 'SENTETIK-other' } })],
+    ['withdrawn by an unrecorded submitter', body('Withdrawn', '4', { withdrawal, submittedBy: null })],
+    ['a blank preparer', body('Submitted', '3', { preparedBy: ' ' })],
     ['withdrawn and approved', body('Withdrawn', '4', { withdrawal, approval: { decidedBy: 'SENTETIK-manager', decidedAtUtc: at, reason: null } })],
     ['submitted with a withdrawal', body('Submitted', '3', { withdrawal })],
     ['a draft with a submitter', body('Draft', '2')],
@@ -81,9 +89,9 @@ describe('A1-1b request withdrawal wire contract (ALS-D46)', () => {
   it('treats a 200 that does not carry Withdrawn as unknown, and a refusal as failed with its code', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ detail: body('Submitted', '3'), isReplay: false, originalCorrelationId: 'corr-1' })))
     expect(await decidePurchaseRequest(companyId, requestId, 'withdrawal', '3', keyId, 'x')).toEqual({ type: 'unknown', reason: 'undecodable' })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ code: 'purchasing_request_not_submitter' }, 409, { 'Idempotency-Replayed': 'true' })))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ code: 'purchasing_request_not_preparer' }, 409, { 'Idempotency-Replayed': 'true' })))
     expect(await decidePurchaseRequest(companyId, requestId, 'withdrawal', '3', keyId, 'x'))
-      .toEqual({ type: 'failed', status: 409, code: 'purchasing_request_not_submitter', replayed: true })
+      .toEqual({ type: 'failed', status: 409, code: 'purchasing_request_not_preparer', replayed: true })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('network')))
     expect((await decidePurchaseRequest(companyId, requestId, 'withdrawal', '3', keyId, 'x')).type).toBe('unknown')
   })
