@@ -213,7 +213,7 @@ public sealed class FinanceAllocationReadSqlServerRelationalAcceptanceTests
                     RecordedBy = "synthetic-f03-fixture",
                 });
                 db.OpenItems.Add(new FinanceOpenItemRow
-                {
+                { Direction = FinanceOpenItemDirectionCodes.Receivable,
                     Id = openItemId,
                     CompanyId = companyId,
                     SourceKind = "synthetic.invoice-installment.v1",

@@ -70,6 +70,12 @@ internal static class FinanceAllocationPolicy
         {
             throw Failure("request", "finance_allocation_reference_invalid");
         }
+        // MOD-15 / ALS-D42: a receipt (money in) closes only a receivable. Closing a payable with a receipt would be an
+        // offset, which is its own approved Finance operation, never a side effect of an allocation.
+        if (openItem.Direction != FinanceOpenItemDirectionCodes.Receivable)
+        {
+            throw Failure("openItemId", "finance_allocation_direction_mismatch");
+        }
 
         if (sourceState is not null
             && (sourceState.CompanyId != source.CompanyId || sourceState.SourceId != source.Id

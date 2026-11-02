@@ -7,8 +7,15 @@ namespace GoymenERP.Modules.Finance.Contracts;
 /// </summary>
 public static class FinanceOpenItemSourceKinds
 {
+    /// <summary>A sales (outgoing) official invoice installment: a receivable (SAT-D85).</summary>
     public const string ApprovedOfficialInvoiceInstallment = "official.invoice-installment.v1";
     public const string OfficialInvoiceInstallmentDocument = "official-invoice-installment";
+
+    /// <summary>
+    /// A purchase (incoming) official invoice installment: a payable (MOD-15, MOD-04, ALS-D7). Reserved here so the
+    /// direction is fixed by the kind; its producer (the Purchasing invoice finalisation port) comes with MOD-04.
+    /// </summary>
+    public const string ApprovedOfficialIncomingInvoiceInstallment = "official.incoming-invoice-installment.v1";
 }
 
 public sealed record FinanceOpenItemSourceReference(

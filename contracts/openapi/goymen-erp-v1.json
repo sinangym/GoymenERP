@@ -95673,6 +95673,12 @@
           }
         }
       },
+      "FinanceOpenItemDirectionV1": {
+        "enum": [
+          "Receivable",
+          "Payable"
+        ]
+      },
       "FinanceOpenItemPageV1": {
         "required": [
           "companyId",
@@ -95721,7 +95727,8 @@
           "status",
           "createdAtUtc",
           "initialAmount",
-          "outstandingAmount"
+          "outstandingAmount",
+          "direction"
         ],
         "type": "object",
         "properties": {
@@ -95788,6 +95795,9 @@
           },
           "outstandingAmount": {
             "$ref": "#/components/schemas/AmountView"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/FinanceOpenItemDirectionV1"
           }
         }
       },
@@ -101623,7 +101633,8 @@
           "ManualReceipt",
           "ManualReceiptReversal",
           "CustomerInstrumentCollection",
-          "ManualBankPayment"
+          "ManualBankPayment",
+          "PayableOpenItem"
         ]
       },
       "PartyLedgerSide": {

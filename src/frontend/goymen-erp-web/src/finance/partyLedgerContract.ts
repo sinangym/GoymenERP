@@ -22,6 +22,7 @@ export const PARTY_LEDGER_ENTRY_KINDS = [
   'ManualReceiptReversal',
   'CustomerInstrumentCollection',
   'ManualBankPayment',
+  'PayableOpenItem',
 ] as const
 export type PartyLedgerEntryKind = (typeof PARTY_LEDGER_ENTRY_KINDS)[number]
 export type PartyLedgerSide = 'Debit' | 'Credit'
@@ -146,7 +147,11 @@ const SIDE_OF: Readonly<Record<PartyLedgerEntryKind, PartyLedgerSide>> = {
   ManualReceiptReversal: 'Debit',
   CustomerInstrumentCollection: 'Credit',
   ManualBankPayment: 'Debit',
+  PayableOpenItem: 'Credit',
 }
+
+/** A receivable or a payable open item (MOD-15): the two kinds that carry the invoice document and due date. */
+const isOpenItemKind = (kind: PartyLedgerEntryKind) => kind === 'OpenItem' || kind === 'PayableOpenItem'
 
 function decodeEntry(value: unknown, currencyId: string, from: string, to: string): PartyLedgerEntry | null {
   if (!isRecord(value) || !hasExactKeys(value, ENTRY_KEYS)) return null
@@ -161,8 +166,8 @@ function decodeEntry(value: unknown, currencyId: string, from: string, to: strin
   // Each link belongs to its kind only.
   if ((value.reversesSourceId === null) !== (kind !== 'ManualReceiptReversal')) return null
   if (value.instrumentId !== null && kind !== 'CustomerInstrumentCollection') return null
-  if (kind !== 'OpenItem' && (value.documentId !== null || value.dueOn !== null)) return null
-  if (kind === 'OpenItem' && value.documentId === null) return null
+  if (!isOpenItemKind(kind) && (value.documentId !== null || value.dueOn !== null)) return null
+  if (isOpenItemKind(kind) && value.documentId === null) return null
   const amount = decodeAmount(value.amount, currencyId, false)
   const runningBalance = decodeBalance(value.runningBalance, currencyId)
   if (amount === null || runningBalance === null || amount.disclosure !== runningBalance.amount.disclosure) return null

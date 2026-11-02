@@ -64,9 +64,12 @@ internal sealed class FinanceSalesPartyRiskReadPortV1(FinanceDbContext dbContext
         CancellationToken cancellationToken)
     {
         var open = FinanceOpenItemStatuses.Open;
+        // MOD-15 / ALS-D42: only RECEIVABLE items are the customer's risk. A payable to the same party (it may also be a
+        // supplier, DEC-CAR-001) is the company's own debt: it is neither added nor netted off here.
+        var receivable = FinanceOpenItemDirectionCodes.Receivable;
         var rows = await dbContext.OpenItems.AsNoTracking()
             .Where(row => row.CompanyId == companyId && row.PartyId == partyId && row.CompanyAccountId == companyAccountId
-                && row.Status == open)
+                && row.Status == open && row.Direction == receivable)
             .Select(row => new { row.CurrencyId, row.SourceKind, row.OutstandingAmountText })
             .ToListAsync(cancellationToken);
 
