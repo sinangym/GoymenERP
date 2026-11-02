@@ -40,7 +40,12 @@ public static class ExchangeRateProblemCodesV1
     /// <summary>A rate with more decimals or digits than the record stores (a storage limit, never rounded).</summary>
     public const string ValueDoesNotFit = "exchange_rate_value_does_not_fit";
 
-    /// <summary>The official bulletin source is not enabled in this environment (the default; enabling it is a human gate).</summary>
+    /// <summary>
+    /// The official bulletin source is not enabled in this environment (the default; enabling it is a human gate). Internal only
+    /// (service answer, logs and service tests): like every 503, the platform writes it on the wire as the code-less
+    /// <c>service_unavailable</c>, so it is not part of the OpenAPI contract; the list read's <c>bulletinSourceEnabled</c> tells
+    /// the screen why.
+    /// </summary>
     public const string SourceDisabled = "exchange_rate_source_disabled";
 
     public const string AccessDenied = "settings_access_denied";

@@ -216,23 +216,66 @@ internal sealed class SettingsExchangeRateAdministration(
             return Done("import", metadata, subject, Replay(existing, requestHash, metadata));
         }
 
-        var fetched = new List<(DateOnly Date, ExchangeRateBulletinFetchV1 Bulletin, ExchangeRateHalfDayFetchV1? HalfDay)>();
+        // B P3-1 ("internetten tekrar tekrar çekme"): a day whose official answer is already final (Published / NoBulletin, or a
+        // definite half-day answer) is not asked again; only unrecorded or still unverified / undetermined days are.
+        ExchangeRateRows known;
+        bool publishedAfterRange;
+        try
+        {
+            known = await ExchangeRateRows.ReadAsync(database, from, to, track: false, cancellationToken);
+            publishedAfterRange = await ExchangeRateRows.AnyOfficialPublishedAfterAsync(database, to, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new SettingsPrerequisiteException(ExchangeRateProblemCodesV1.ProviderUnavailable);
+        }
+
+        var fetched = new List<(DateOnly Date, ExchangeRateBulletinFetchV1? Bulletin, ExchangeRateHalfDayFetchV1? HalfDay,
+            bool HalfDayFinal)>();
         for (var date = from; date <= to; date = date.AddDays(1))
         {
-            fetched.Add((date, await FetchBulletinAsync(date, cancellationToken),
-                halfDaySource.IsEnabled ? await FetchHalfDayAsync(date, cancellationToken) : null));
+            var bulletinFinal = known.BulletinState(date) is ExchangeRateBulletinStatesV1.Published or ExchangeRateBulletinStatesV1.NoBulletin;
+            var halfDayFinal = known.Current(date, ExchangeRateRecordKindsV1.HalfDay, ExchangeRateProvenancesV1.Official)?.State
+                is ExchangeRateHalfDayStatesV1.FullDay or ExchangeRateHalfDayStatesV1.HalfDay;
+            fetched.Add((date,
+                bulletinFinal ? null : await FetchBulletinAsync(date, cancellationToken),
+                halfDaySource.IsEnabled && !halfDayFinal ? await FetchHalfDayAsync(date, cancellationToken) : null,
+                halfDayFinal));
+        }
+
+        // B P2-2: TCMB's 404 for a dated file is final only once a LATER bulletin exists (received in this run or already
+        // recorded): before that a 404 can mean "not yet published" or an archive gap, so the day stays unverified and the
+        // next run asks again.
+        var publishedDays = fetched.Where(day => day.Bulletin?.State == ExchangeRateBulletinStatesV1.Published).Select(day => day.Date)
+            .Concat(fetched.Where(day => known.BulletinState(day.Date) == ExchangeRateBulletinStatesV1.Published).Select(day => day.Date))
+            .ToArray();
+        for (var index = 0; index < fetched.Count; index++)
+        {
+            var day = fetched[index];
+            if (day.Bulletin?.State == ExchangeRateBulletinStatesV1.NoBulletin
+                && !publishedAfterRange && !publishedDays.Any(published => published > day.Date))
+            {
+                fetched[index] = day with
+                {
+                    Bulletin = new ExchangeRateBulletinFetchV1(day.Date, ExchangeRateBulletinStatesV1.Unverified, [],
+                        Reference((day.Bulletin.SourceReference ?? string.Empty) + " (sonraki bir bülten görülmeden kesin sayılmaz)")),
+                };
+            }
         }
 
         var rows = await ReadForCommandAsync(from, to, cancellationToken);
         var now = timeProvider.GetUtcNow();
         var outcomes = new List<ExchangeRateImportDayV1>();
         var recorded = new List<object>();
-        foreach (var (date, bulletin, halfDay) in fetched)
+        foreach (var (date, bulletin, halfDay, halfDayFinal) in fetched)
         {
-            var bulletinOutcome = ImportBulletin(rows, companyId, date, bulletin, metadata.ActorId, now, recorded);
-            var halfDayOutcome = halfDay is null
-                ? ExchangeRateImportOutcomesV1.SourceDisabled
-                : ImportHalfDay(rows, companyId, date, halfDay, metadata.ActorId, now, recorded);
+            var bulletinOutcome = bulletin is null
+                ? ExchangeRateImportOutcomesV1.Unchanged
+                : ImportBulletin(rows, companyId, date, bulletin, metadata.ActorId, now, recorded);
+            var halfDayOutcome = halfDay is not null
+                ? ImportHalfDay(rows, companyId, date, halfDay, metadata.ActorId, now, recorded)
+                : halfDayFinal ? ExchangeRateImportOutcomesV1.Unchanged
+                : ExchangeRateImportOutcomesV1.SourceDisabled;
             outcomes.Add(new ExchangeRateImportDayV1(date, bulletinOutcome, halfDayOutcome));
         }
 

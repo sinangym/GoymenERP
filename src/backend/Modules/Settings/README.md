@@ -553,13 +553,23 @@ refused, so the open cut-off hour never matters). An unverified answer never ove
 answer is reported as `Conflict` and nothing is written; one audit event per run that recorded something.
 
 **Sources — human gate.** Both are **disabled by default** and the repository ships no configuration for them:
-- TCMB (`TcmbExchangeRateBulletinSource`): enabled only when `Settings:ExchangeRates:TcmbEnabled=true` **and**
-  `Settings:ExchangeRates:TcmbBaseAddress` is an https URL ending in `/` (optional `TcmbTimeoutSeconds`). It reads only the
-  dated archive `kurlar/yyyyMM/ddMMyyyy.xml` (404 → `NoBulletin`; other status, timeout, another day's bulletin or unreadable
-  XML → `Unverified`); `today.xml` is not used because it could fill a day with another day's bulletin. No secret is needed.
-  While disabled the import answers 503 and records nothing.
+- TCMB (`TcmbExchangeRateBulletinSource`): enabled only when `Settings:ExchangeRates:TcmbEnabled=true`; then
+  `Settings:ExchangeRates:TcmbBaseAddress` must be an https URL ending in `/` (anything else fails at startup; optional
+  `TcmbTimeoutSeconds`). It reads only the dated archive `kurlar/yyyyMM/ddMMyyyy.xml` (404 → "no bulletin" candidate; other
+  status, timeout, another day's bulletin or unreadable XML → `Unverified`); `today.xml` is not used because it could fill a
+  day with another day's bulletin. No secret is needed. While disabled the import answers 503 (on the wire the platform's
+  `service_unavailable`; the list read's `bulletinSourceEnabled` says why) and records nothing.
+- A 404 is recorded as `NoBulletin` only when a LATER bulletin exists — received in the same run or already recorded;
+  otherwise the day stays `Unverified` and the next run asks again (a 404 can also mean "not yet published" or an archive
+  gap).
+- A day whose official answer is already final (`Published` / `NoBulletin`; a definite half-day answer) is never asked again.
 - Arife / half day (SAT-D171): no reviewed automatic official source is wired; every day stays `Undetermined`, so the
   resolver chooses no rate ("kur belirlenemedi") until a human enables a reviewed source.
+
+**Follow-up (open, A P2-1 / B P2-3, asked of Sinan via the coordinator).** SAT-D171 says the SAT-D169 correctors can fix the
+rate when a day's arife / half-day status cannot be determined. This slice does not yet offer that escape: a correction is
+only a rate value on a day TCMB published, and there is no manual half-day mark. Whether the escape is a manual half-day mark
+or a document-level rate is Sinan's answer; until then an undetermined day stays "kur belirlenemedi" (fail-closed).
 
 **Consumers.** Sales risk (SAT-D47) converts foreign → TRY amounts with the check day's rate through the port (never frozen);
 a TL amount against a foreign limit stays `exchange_rate_unavailable` (the formula is not decided). The invoice snapshot and

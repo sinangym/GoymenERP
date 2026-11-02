@@ -153,14 +153,16 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
             await AssertProblemAsync(badCurrency, HttpStatusCode.BadRequest, ExchangeRateProblemCodesV1.RequestInvalid);
         }
 
-        // A re-import never overwrites: same answers are unchanged; a different definite answer is a conflict, nothing written.
+        // A re-import never asks again for a day whose official answer is final (B P3-1): only the two unverified days are asked,
+        // nothing changes (even though the source would now answer differently for a final day), no audit.
         bulletins.Override(Day("2026-10-15"), Published("2026-10-15", ("USD", "99"), ("EUR", "48.25")));
         var again = await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-2", importBody, HttpStatusCode.OK);
-        var againOutcomes = again.GetProperty("days").EnumerateArray()
-            .ToDictionary(day => day.GetProperty("date").GetString()!, day => day.GetProperty("bulletinOutcome").GetString());
-        Assert.Equal(ExchangeRateImportOutcomesV1.Conflict, againOutcomes["2026-10-15"]);
-        Assert.All(againOutcomes.Where(pair => pair.Key != "2026-10-15"),
-            pair => Assert.Equal(ExchangeRateImportOutcomesV1.Unchanged, pair.Value));
+        Assert.All(again.GetProperty("days").EnumerateArray(), day =>
+        {
+            Assert.Equal(ExchangeRateImportOutcomesV1.Unchanged, day.GetProperty("bulletinOutcome").GetString());
+            Assert.Equal(ExchangeRateImportOutcomesV1.Unchanged, day.GetProperty("halfDayOutcome").GetString());
+        });
+        Assert.Equal([Day("2026-10-21"), Day("2026-10-22")], bulletins.Asked.Skip(8));
         Assert.Equal(16, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [settings].[ExchangeRateRecords]"));
         Assert.Equal(1, await run.ScalarAsync<int>(
             "SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [EventType] = N'settings.exchange-rate.imported.v1'"));
@@ -240,6 +242,26 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         {
             await AssertProblemAsync(crossCompany, HttpStatusCode.Conflict, ExchangeRateProblemCodesV1.VersionConflict);
         }
+
+        // B P2-2: a 404 is final only once a LATER bulletin exists. Sat/Sun 24-25 alone: 404 → still unverified (asked again);
+        // once Monday 26 is published in the same run, the 404s are recorded as "no bulletin".
+        bulletins.Override(Day("2026-10-24"), NoBulletin("2026-10-24"));
+        bulletins.Override(Day("2026-10-25"), NoBulletin("2026-10-25"));
+        var weekend = await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-weekend",
+            new ImportExchangeRatesRequestV1(Day("2026-10-24"), Day("2026-10-25")), HttpStatusCode.OK);
+        Assert.All(weekend.GetProperty("days").EnumerateArray(), day =>
+            Assert.Equal(ExchangeRateImportOutcomesV1.Recorded, day.GetProperty("bulletinOutcome").GetString()));
+        var weekendDays = (await run.JsonAsync(editor, $"{Root}?from=2026-10-24&to=2026-10-26")).GetProperty("days").EnumerateArray()
+            .ToDictionary(day => day.GetProperty("date").GetString()!, day => day.GetProperty("bulletinState").GetString());
+        Assert.Equal((ExchangeRateBulletinStatesV1.Unverified, ExchangeRateBulletinStatesV1.Unverified),
+            (weekendDays["2026-10-24"], weekendDays["2026-10-25"]));
+        bulletins.Override(Day("2026-10-26"), Published("2026-10-26", ("USD", "41.9")));
+        await run.CommandJsonAsync(editor, $"{Root}/imports", "k-import-monday",
+            new ImportExchangeRatesRequestV1(Day("2026-10-24"), Day("2026-10-26")), HttpStatusCode.OK);
+        weekendDays = (await run.JsonAsync(editor, $"{Root}?from=2026-10-24&to=2026-10-26")).GetProperty("days").EnumerateArray()
+            .ToDictionary(day => day.GetProperty("date").GetString()!, day => day.GetProperty("bulletinState").GetString());
+        Assert.Equal((ExchangeRateBulletinStatesV1.NoBulletin, ExchangeRateBulletinStatesV1.NoBulletin, ExchangeRateBulletinStatesV1.Published),
+            (weekendDays["2026-10-24"], weekendDays["2026-10-25"], weekendDays["2026-10-26"]));
 
         // The rollback is refused while rate records exist (forward fix, 51201); nothing is dropped.
         await using var context = run.SettingsContext(CompanyA, out _);
@@ -339,9 +361,11 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
         : IExchangeRateBulletinSourceV1
     {
         private readonly Dictionary<DateOnly, ExchangeRateBulletinFetchV1> _answers = new(answers);
-        private int _calls;
+        private readonly List<DateOnly> _asked = [];
 
-        public int Calls => _calls;
+        public int Calls => _asked.Count;
+
+        public IReadOnlyList<DateOnly> Asked => _asked;
 
         public bool IsEnabled => true;
 
@@ -349,7 +373,11 @@ public sealed class SettingsExchangeRateSqlServerRelationalAcceptanceTests
 
         public Task<ExchangeRateBulletinFetchV1> FetchAsync(DateOnly date, CancellationToken cancellationToken = default)
         {
-            Interlocked.Increment(ref _calls);
+            lock (_asked)
+            {
+                _asked.Add(date);
+            }
+
             return _answers.TryGetValue(date, out var answer)
                 ? Task.FromResult(answer)
                 : throw new HttpRequestException("SENTETIK ağ hatası");

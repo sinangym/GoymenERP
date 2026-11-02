@@ -3369,7 +3369,7 @@ public sealed partial class OpenApiContractGenerationTests
             ["CorrectSettingsExchangeRateV1:409"] = ["exchange_rate_idempotency_conflict", "exchange_rate_version_conflict"],
             ["CorrectSettingsExchangeRateV1:422"] = ["exchange_rate_day_not_published"],
             ["CorrectSettingsExchangeRateV1:503"] = ["settings_provider_unavailable"],
-            ["ImportSettingsExchangeRatesV1:400"] = ["exchange_rate_command_metadata_invalid", "exchange_rate_reason_required", "exchange_rate_reason_too_long", "exchange_rate_request_invalid"],
+            ["ImportSettingsExchangeRatesV1:400"] = ["exchange_rate_command_metadata_invalid", "exchange_rate_request_invalid"],
             ["ImportSettingsExchangeRatesV1:409"] = ["exchange_rate_idempotency_conflict", "exchange_rate_version_conflict"],
             ["ImportSettingsExchangeRatesV1:503"] = ["settings_provider_unavailable"],
             ["GetProductItemTypeV1:400"] = ["product_item_type_request_invalid"],

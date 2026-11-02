@@ -39,6 +39,13 @@ public static class SettingsExchangeRateEndpoints
         ExchangeRateProblemCodesV1.ReasonTooLong,
     ];
 
+    // The import carries no reason: only the request and command-metadata refusals.
+    private static readonly string[] ImportBadRequestCodes =
+    [
+        ExchangeRateProblemCodesV1.RequestInvalid,
+        ExchangeRateProblemCodesV1.CommandMetadataInvalid,
+    ];
+
     public static IEndpointRouteBuilder MapSettingsExchangeRateEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup(ExchangeRatesPath)
@@ -139,7 +146,7 @@ public static class SettingsExchangeRateEndpoints
             .WithIdempotencyContract(StatusCodes.Status200OK, StatusCodes.Status409Conflict)
             .Accepts<ImportExchangeRatesRequestV1>("application/json")
             .Produces<ExchangeRateImportSummaryV1>(StatusCodes.Status200OK)
-            .ProducesErpBadRequest(CommandBadRequestCodes)
+            .ProducesErpBadRequest(ImportBadRequestCodes)
             .AllowsCodeLessErpBadRequestBody()
             .ProducesErpUnsupportedMediaType()
             .ProducesErpConflict(

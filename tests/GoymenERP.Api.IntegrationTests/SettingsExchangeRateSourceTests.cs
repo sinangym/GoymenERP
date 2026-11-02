@@ -92,17 +92,31 @@ public sealed class SettingsExchangeRateSourceTests
 
     [Theory]
     [InlineData(null, null)]
-    [InlineData("true", null)]
-    [InlineData("true", "http://www.tcmb.gov.tr/")]
+    [InlineData(null, "https://www.tcmb.gov.tr/")]
     [InlineData("false", "https://www.tcmb.gov.tr/")]
+    [InlineData("false", "http://www.tcmb.gov.tr")]
     [InlineData("yes", "https://www.tcmb.gov.tr/")]
-    public void The_sources_stay_disabled_unless_explicitly_enabled_with_an_https_address(string? enabled, string? address)
+    public void The_sources_stay_disabled_unless_explicitly_enabled(string? enabled, string? address)
     {
         var services = Services(enabled, address);
 
         Assert.IsType<DisabledExchangeRateBulletinSource>(services.GetRequiredService<IExchangeRateBulletinSourceV1>());
         Assert.False(services.GetRequiredService<IExchangeRateBulletinSourceV1>().IsEnabled);
         Assert.IsType<DisabledExchangeRateHalfDaySource>(services.GetRequiredService<IExchangeRateHalfDaySourceV1>());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("http://www.tcmb.gov.tr/")]
+    [InlineData("https://www.tcmb.gov.tr")]
+    [InlineData("https://www.tcmb.gov.tr/kurlar")]
+    [InlineData("https://www.tcmb.gov.tr/?x=1/")]
+    [InlineData("not a url/")]
+    public void An_explicit_enable_with_an_address_that_is_not_https_ending_in_a_slash_fails_at_startup(string? address)
+    {
+        var failure = Assert.Throws<InvalidOperationException>(() => Services("true", address));
+        Assert.Contains("TcmbBaseAddress", failure.Message, StringComparison.Ordinal);
     }
 
     [Fact]

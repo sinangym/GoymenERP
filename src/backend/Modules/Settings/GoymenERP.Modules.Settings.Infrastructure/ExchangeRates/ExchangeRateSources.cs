@@ -21,15 +21,27 @@ public sealed record ExchangeRateSourceOptions(bool TcmbEnabled, Uri? TcmbBaseAd
         ArgumentNullException.ThrowIfNull(configuration);
         var section = configuration.GetSection(SectionName);
         var enabled = bool.TryParse(section["TcmbEnabled"], out var flag) && flag;
-        var address = Uri.TryCreate(section["TcmbBaseAddress"], UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
-            ? uri
-            : null;
         var timeout = int.TryParse(section["TcmbTimeoutSeconds"], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds)
                       && seconds > 0
             ? TimeSpan.FromSeconds(seconds)
             : DefaultTimeout;
-        // Enabled only with an explicit https base address: a flag alone never opens a connection.
-        return new ExchangeRateSourceOptions(enabled && address is not null, address, timeout);
+        if (!enabled)
+        {
+            return new ExchangeRateSourceOptions(false, null, timeout);
+        }
+
+        // An explicit enable with an unusable address is a configuration error, refused at startup (never a silent fallback):
+        // https only, and the address must end with '/' so the relative archive path is appended, not substituted.
+        var text = section["TcmbBaseAddress"];
+        if (string.IsNullOrEmpty(text) || !text.EndsWith('/')
+            || !Uri.TryCreate(text, UriKind.Absolute, out var address) || address.Scheme != Uri.UriSchemeHttps
+            || !address.AbsoluteUri.EndsWith('/') || !string.IsNullOrEmpty(address.Query) || !string.IsNullOrEmpty(address.Fragment))
+        {
+            throw new InvalidOperationException(
+                "Settings:ExchangeRates:TcmbBaseAddress, TcmbEnabled açıkken '/' ile biten bir https adresi olmalıdır.");
+        }
+
+        return new ExchangeRateSourceOptions(true, address, timeout);
     }
 }
 

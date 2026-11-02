@@ -73,6 +73,12 @@ internal sealed record ExchangeRateRows(
         return new ExchangeRateRows(days, records, rates);
     }
 
+    public static Task<bool> AnyOfficialPublishedAfterAsync(SettingsDbContext database, DateOnly date,
+        CancellationToken cancellationToken) =>
+        database.ExchangeRateRecords.AsNoTracking().AnyAsync(record => record.Date > date
+            && record.Kind == ExchangeRateRecordKindsV1.Bulletin && record.Provenance == ExchangeRateProvenancesV1.Official
+            && record.State == ExchangeRateBulletinStatesV1.Published, cancellationToken);
+
     public static Task<bool> AnyBeforeAsync(SettingsDbContext database, DateOnly date, CancellationToken cancellationToken) =>
         database.ExchangeRateRecords.AsNoTracking().AnyAsync(record => record.Date < date, cancellationToken);
 
