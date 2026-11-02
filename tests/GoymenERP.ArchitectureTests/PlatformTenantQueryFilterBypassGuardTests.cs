@@ -1411,8 +1411,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // directory adapters (the sales owner's display and eligibility, DI-only); provider branch and token counts unchanged.
                     // Re-fingerprinted for MOD-03 → Sales: the draft service also receives the optional Settings line tax port and is
                     // registered as the tax read service (DI-only); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D181 (EK26): the draft service also receives the optional Settings rate list port (DI-only).
                     new(
-                        "7dca0b484a7628307c841e0864dbebf058dc026dae48f0b7d97be8ab44ca9c79",
+                        "b19e11cca0827ed1d16027630cab928e4ee7917e1ab99f64db2e6ea1e3bdd145",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1512,7 +1513,8 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "SettingsModuleExtensions.cs"] =
                     new(
                         // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
-                        "bc03b65e374c3c85d4f842fcea9c79762d62561659476e3436c037dfaf587392",
+                        // Re-fingerprinted for SAT-D181 (EK26): the read-only VAT rate / withholding ratio list port (DI-only); counts unchanged.
+                        "23143a95f41013a25c5c53bac04dc8345b73c607f5f3a86368332a2fe72a6b89",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1992,6 +1994,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // archived revision carries a buyer tax or a line tax snapshot; the THROW precedes every drop. Forward fix.
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102071113_AddDraftOrderTax.cs"] =
                     new("044a5787cc02e0c83a8dad54c743fedff2c374d3d22961fc47e27ecca4787231",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D184 (EK26): Up's only raw SQL writes the buyer tax "Normal" once on every Sales order without one (the store's
+                // exact JSON, one statement, no other table); Down is a documented no-op (forward fix).
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102090531_BackfillDraftBuyerTax.cs"] =
+                    new("fd822bd630315a4f8b78b9e948073c74ce01b289f5823f30f0718f01ca6f946d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while
