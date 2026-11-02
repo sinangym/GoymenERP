@@ -17,8 +17,11 @@ Kaynak: Sinan'ın 2 Kasım 2026 kararı, koordinatör oturumu üzerinden iletild
   **fail-closed** kalır (bugünkü `NoSource` / `Unavailable` / 503 davranışı).
 - Bu nedenle sahibi bu modüller olan eksikler aşağıda **"ertelendi: <modül> başlayınca"** diye işaretlidir. Satış tarafında
   yalnız mevcut portu tüketen veya test ekleyen işler (yeni port/tablo/ekran açmadan) ertelenmez.
-- **1a notu:** Satış faturası → alacak açık kalemi bağı, borç/alacağın Cari'de mi tutulacağına Sinan karar verene kadar
-  **kilitlenmez** (sözleşme ve sahip taraf açık kalır; ne Satış olayı ne Finans kabul portu bu belirsizlikte sabitlenir).
+- **1a kararı (Sinan, 2 Kasım 2026, koordinatör üzerinden):** Satış faturası → Finans alacak açık kalemi **tek kayıttır**; Cari
+  kartına ayrıca hareket yazılmaz. Muhasebe fişi (120 Alıcılar) **aynı kaynak olaydan** Muhasebe'de üretilir. Sözleşme bir
+  **outbox olayıdır:** `sales.invoice.finalized.v1`; tüketicileri Finans (API-10, alacak açık kalemi) ve Muhasebe (fiş).
+  Sahipler: **Satış** — olay sözleşmesi + Satış outbox'ı; **Finans** — API-10 tüketicisi (inbox/dedup); **Muhasebe** — fiş
+  tüketicisi (inbox/dedup).
 
 ## Okuma yöntemi
 
@@ -49,7 +52,7 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 
 | Bağlantı | Üretici | Tüketici | Port/olay | main'de impl + DI | Test | Durum |
 |---|---|---|---|---|---|---|
-| 1a. Satış faturası → Finans alacak açık kalemi | Satış (fatura çekirdeği) | Finans | Öneri: `sales.invoice.finalized.v1` + senkron `IFinanceInvoiceOpenItemAdmissionPortV1` (Finans API-10, `docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §4) | **Yok.** Satış'ta fatura varlığı yok; Finans açık kalemleri yalnız CSV içe aktarılan `official.invoice-installment.v1` kaynağından doğuyor (`Modules/Finance/.../FinanceOpenItemSourcePolicy.cs`). Port adı kodda geçmiyor | — | ❌ (kilitlenmez: borç/alacağın Cari'de tutulup tutulmayacağı Sinan kararını bekliyor) |
+| 1a. Satış faturası → Finans alacak açık kalemi + Muhasebe fişi (120) | Satış (fatura çekirdeği) | Finans (API-10), Muhasebe (fiş) | Karar: outbox olayı `sales.invoice.finalized.v1` (tek kayıt; Cari kartına hareket yazılmaz). Finans'ın senkron `IFinanceInvoiceOpenItemAdmissionPortV1` önerisi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §4) bu kararla olay tüketimine döner | **Yok.** Satış'ta fatura varlığı ve outbox yok; Finans açık kalemleri yalnız CSV içe aktarılan `official.invoice-installment.v1` kaynağından doğuyor (`Modules/Finance/.../FinanceOpenItemSourcePolicy.cs`); Muhasebe'de tüketici yok | — | ❌ (yaklaşım kararlı, uygulama yok) |
 | 1b. Finans → Satış risk okuması: açık alacak − dağıtılmamış tahsilat | Finans | Satış (MOD-01 / API-06 risk kontrolü) | `ISalesPartyRiskReadPortV1` (`SC/ISalesPartyRiskReadPortV1.cs`) | `FinanceSalesPartyRiskReadPortV1` (`Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceSalesPartyRiskReadPortV1.cs`), `FinanceModuleExtensions.cs:90` `AddScoped`; Satış `SME` `GetService` (yoksa `Unavailable`, risk asla "Within" değil) | `tests/GoymenERP.Finance.UnitTests/FinanceSalesPartyRiskReadPortV1Tests.cs`, `SUT/SalesDraftServiceTests.RiskCheck.cs`, SQL: `IT/SalesRiskCheckSqlServerRelationalAcceptanceTests.cs`, `IT/FinanceRecordSqlServerRelationalAcceptanceTests.cs` | ✅ |
 | 1c. Finans → Satış: kredi limiti ve teminat | Finans | Satış | Aynı port, `CreditLimit` / `Collateral` figürleri | Port her zaman `NoSource` döner (`finance_credit_limit_owner_missing`); master yok (Finans API-85, OPEN-010) | Birim testte `NoSource` doğrulanıyor | 🟡 |
 | 1d. Finans → Satış: açık kalem kapandı / ödeme kaydedildi olayı (risk tazeleme) | Finans | Satış | Öneri: `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | Finans'ta outbox yok; Satış inbox yok. Risk bugün her okumada port üzerinden taze hesaplandığı için işlevsel boşluk yok | — | ❌ (gerek: dağıtıcı ERP-000F) |
@@ -139,8 +142,9 @@ Bakış açısı farkı: Üretim planı §11a (`docs/delivery/URETIM_HAZIRLIK_PL
 
 | # | Bağlantı | Durum | Eksik taraf | Sahibi |
 |---|---|---|---|---|
-| 1a | Satış faturası → alacak açık kalemi | ❌ | Satış fatura çekirdeği + `sales.invoice.finalized.v1` içeriği | **Satış/Claude şeridi** (ALS-D44: fatura çekirdeği Satış'ta) |
-| 1a | — | ❌ | `IFinanceInvoiceOpenItemAdmissionPortV1` kabul portu, `Receivable` yönü (MOD-15/MOD-04, Finans API-10) | **Finans** |
+| 1a | Satış faturası → alacak açık kalemi + 120 fişi | ❌ | Satış fatura çekirdeği + `sales.invoice.finalized.v1` olay sözleşmesi + Satış outbox'ı | **Satış/Claude şeridi** (ALS-D44: fatura çekirdeği Satış'ta) |
+| 1a | — | ❌ | API-10 olay tüketicisi (inbox/dedup), taksit başına `Receivable` açık kalem (MOD-15/MOD-04) | **Finans** |
+| 1a | — | ❌ | Aynı olaydan 120 Alıcılar fişi üreten tüketici (inbox/dedup) | **Muhasebe** |
 | 1c | Kredi limiti / teminat | 🟡 | Limit ve teminat master'ı (API-85; OPEN-010 açık) | **Finans** |
 | 1d | Finans olayları → Satış | ❌ | Finans outbox + Satış inbox (dağıtıcı ERP-000F) | **Finans** (üretici), Satış (tüketici; dağıtıcı sonrası) |
 | 1e | Eşleşmemiş avans (iptal etkisi) | ❌ | Siparişe bağlı avans kaydı ve okuma portu (Finans API-21) | **Finans**; Satış tarafı `NoSource` dalını porta bağlar |
