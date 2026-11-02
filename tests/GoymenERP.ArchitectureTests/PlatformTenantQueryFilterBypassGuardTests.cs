@@ -379,8 +379,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // columns; the real Settings tax options and the 51135 rollback refusal), kept ordinal-sorted (a921318d… -> 1c5c3996…).
             // SAT-D184 (EK26): +1 SalesOrderTax fact (the BackfillDraftBuyerTax migration writes "Normal" once on a legacy order),
             // kept ordinal-sorted (1c5c3996… -> 4fa6ad29…).
+            // SAT-D175…D178 (EK25): +2 SalesSubcontractServiceOrder facts (the flag, item type and free price persisted and the read
+            // port answered for its company only; the write guard, CK_DraftLines_ItemType and the 51141 rollback refusal), kept
+            // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
             ["tools/relational_inventory/sales.txt"] =
-                "4fa6ad296d5c8787ee3ed7de27ae4eccf4cb48def7031d8a5d87586d9c0061f2",
+                "0886d9fff3ca880cc062c786675c8a1a2dc20c6e12809ee005758ba0c7806060",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -479,9 +482,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for MOD-03 → Sales: four nullable JSON columns (BuyerTaxJson on Drafts / DraftRevisionHeaders, TaxJson
             // on DraftLines / DraftRevisionLines) with ISJSON check constraints, and the write guard widened by exactly
             // Drafts.BuyerTaxJson and DraftLines.TaxJson; no query-filter bypass or direct database surface.
+            // Re-fingerprinted for SAT-D175/D176 (EK25): Drafts / DraftRevisionHeaders.IsSubcontractService and DraftLines.ItemType
+            // (CK_DraftLines_ItemType); the write guard is NOT widened (the flag and the item type never change after the insert).
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "ac77429518b71f3af72cf33e879b6ed9fa80722c37c79a453f2a1e48f3818475",
+                "c9363c0337d70bec52dd5111ea2e8513e242a9f55386ee73e79e6ed89678d9e1",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1412,8 +1417,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for MOD-03 → Sales: the draft service also receives the optional Settings line tax port and is
                     // registered as the tax read service (DI-only); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D181 (EK26): the draft service also receives the optional Settings rate list port (DI-only).
+                    // Re-fingerprinted for SAT-D175/D176 (EK25): the draft service also receives the optional Product item type reader and
+                    // the subcontract binding hook, and the subcontract service order read port is registered over the same store (DI-only).
                     new(
-                        "b19e11cca0827ed1d16027630cab928e4ee7917e1ab99f64db2e6ea1e3bdd145",
+                        "676e0d26479f6da0e5f8f18a1b2c4a2ba3a39d110ce4e44dc28f12a8ed0c7ec7",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1458,8 +1465,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // reads those rows (and binds the source quote) through the same filtered context; SqlClient count unchanged.
                     // Re-fingerprinted for MOD-03 → Sales: the line, archive and header rows carry the buyer tax / line tax JSON written
                     // and restored through the same filtered context (SalesTaxJson); SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D175/D176 (EK25): the header, archive header and line rows carry the subcontract flag and
+                    // the line item type, written and restored through the same filtered context; SqlClient count unchanged.
                     new(
-                        "5686ed18e1a9c6b3f97591935282efb1e93db0e7603376402be9e0e12f97129e",
+                        "8022ea18063d45ad370fd43797de932b97ca7ac9306ac0c325285ee1f43e0334",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -2000,6 +2009,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // exact JSON, one statement, no other table); Down is a documented no-op (forward fix).
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102090531_BackfillDraftBuyerTax.cs"] =
                     new("fd822bd630315a4f8b78b9e948073c74ce01b289f5823f30f0718f01ca6f946d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D175…D178 (EK25): the Down's only raw SQL is Sales' refusal (51141, used by no other migration) while any
+                // subcontract order, archived "fason" header, line item type or stored price-list absence exists; the THROW precedes
+                // every drop. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102115043_AddDraftSubcontractService.cs"] =
+                    new("cf5c8ab9c7600cc04f935364d71c295148d543c0179cebf97d2dffbc9698ac11",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

@@ -15335,6 +15335,13 @@
             }
           },
           {
+            "name": "itemType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "X-Correlation-Id",
             "in": "header",
             "description": "Optional client correlation identifier; the server creates one when absent.",
@@ -87978,6 +87985,12 @@
                 "$ref": "#/components/schemas/SalesDraftBuyerTaxV1"
               }
             ]
+          },
+          "subcontractService": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
@@ -103729,6 +103742,16 @@
                 "$ref": "#/components/schemas/SalesDraftDiscountLimitCheckV1"
               }
             ]
+          },
+          "listAbsence": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SalesDraftPriceListAbsenceV1"
+              }
+            ]
           }
         }
       },
@@ -104453,6 +104476,35 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SalesDraftPriceListAbsenceV1": {
+        "required": [
+          "currencyCode",
+          "effectiveOn",
+          "unitPrice",
+          "writtenBy",
+          "writtenAtUtc"
+        ],
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string"
+          },
+          "effectiveOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "unitPrice": {
+            "type": "string"
+          },
+          "writtenBy": {
+            "type": "string"
+          },
+          "writtenAtUtc": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -107258,6 +107310,12 @@
             "items": {
               "$ref": "#/components/schemas/SalesOrderDraftProductSnapshotViewV1"
             }
+          },
+          "subcontractService": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },

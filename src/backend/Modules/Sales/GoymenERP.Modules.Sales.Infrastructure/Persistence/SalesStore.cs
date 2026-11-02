@@ -601,6 +601,7 @@ public sealed partial class SalesStore(
             SalesOwnerUserId = header.SalesOwnerUserId,
             DueTermsJson = SalesDueTermsJson.Serialize(header.DueTerms),
             BuyerTaxJson = SalesTaxJson.SerializeBuyer(header.BuyerTax),
+            IsSubcontractService = header.IsSubcontractService,
         });
     }
 
@@ -1454,6 +1455,8 @@ public sealed partial class SalesStore(
             line.Commercial.FloorException,
             // SAT-D2 / API-12: the discount-limit check (who set the discount, the limit applied, the approval).
             line.Commercial.DiscountCheck,
+            // SAT-D178 (EK25): who wrote which free subcontract service price (the list held neither a price nor a floor).
+            line.Commercial.ListAbsence,
             netUnitPrice = SalesLinePriceCalculator.NetUnitPriceText(line.Commercial),
             // MOD-03 → Sales (SAT-D93/D97): the line's tax snapshot, with the override's reason when the salesperson changed it.
             tax = line.Tax,
@@ -1568,7 +1571,8 @@ public sealed partial class SalesStore(
                 Reference(row.DeliveryAddressId, row.DeliveryAddressVersion), Reference(row.ContactId, row.ContactVersion),
                 Reference(row.ResponsibleId, row.ResponsibleVersion), Reference(row.PaymentTermsId, row.PaymentTermsVersion),
                 Reference(row.SourceStrategyId, row.SourceStrategyVersion), Reference(row.PackageId, row.PackageVersion),
-                SalesDueTermsJson.Restore(row.DueTermsJson), row.SalesOwnerUserId, SalesTaxJson.RestoreBuyer(row.BuyerTaxJson));
+                SalesDueTermsJson.Restore(row.DueTermsJson), row.SalesOwnerUserId, SalesTaxJson.RestoreBuyer(row.BuyerTaxJson),
+                row.IsSubcontractService);
             var money = new MoneyProfileSnapshot(row.CompanyId, row.CurrencyId, row.MoneyOperation, row.MoneyProfileId,
                 row.MoneyProfileVersion, row.MoneyEffectiveOn, row.MoneyIsActive, row.MoneyEffectiveFrom, row.MoneyEffectiveThrough,
                 row.MoneyScale);
@@ -1596,7 +1600,7 @@ public sealed partial class SalesStore(
                     line.RequestedDeliveryDate,
                     line.Note,
                     SalesLinePricingJson.Restore(line.UnitPrice, line.PriceUnitId, line.DiscountPercent, line.PricingJson),
-                    lineSlices, SalesTaxJson.RestoreLine(line.TaxJson)), row.UpdatedAtUtc);
+                    lineSlices, SalesTaxJson.RestoreLine(line.TaxJson), line.ItemType), row.UpdatedAtUtc);
                 if (restored.LineNo != line.LineNo)
                 {
                     throw new InvalidOperationException("Kayıtlı satır numaraları taslağın satır sırasıyla uyuşmuyor.");
@@ -1916,7 +1920,7 @@ public sealed partial class SalesStore(
     private static RevisionHeaderSnapshot RevisionHeader(DraftRevisionHeaderRow row) =>
         new RevisionHeaderSnapshot(row.PartyId, row.CompanyAccountId, row.CurrencyId, Reference(row.DeliveryAddressId, row.DeliveryAddressVersion),
             Reference(row.ContactId, row.ContactVersion), row.SalesOwnerUserId, SalesDueTermsJson.Restore(row.DueTermsJson),
-            SalesTaxJson.RestoreBuyer(row.BuyerTaxJson));
+            SalesTaxJson.RestoreBuyer(row.BuyerTaxJson), row.IsSubcontractService);
 
     private static string DraftAudit(SalesOrderDraft draft) => JsonSerializer.Serialize(new
     {
@@ -1930,6 +1934,8 @@ public sealed partial class SalesStore(
         draft.Header.CompanyAccountId,
         draft.Header.CurrencyId,
         draft.Header.BusinessDate,
+        // SAT-D175 (EK25): the "fason" flag is part of the create's audit record.
+        subcontractService = draft.IsSubcontractService,
         money = new { draft.Money.Operation, draft.Money.ProfileId, draft.Money.ProfileVersion },
         lines = draft.Lines.Select(line => new
         {
@@ -1940,6 +1946,9 @@ public sealed partial class SalesStore(
             line.OrderUnit.UnitId,
             quantity = line.QuantityText,
             slices = line.RequestedDeliverySlices.Count,
+            // SAT-D176 / SAT-D178: the confirmed item type, and who wrote which free subcontract price (null otherwise).
+            itemType = line.ItemType,
+            listAbsence = line.Commercial.ListAbsence,
         }),
     }, Json);
 

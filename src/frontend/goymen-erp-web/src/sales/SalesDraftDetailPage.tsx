@@ -575,6 +575,12 @@ export function DraftView({
               {lifecycleText} · {APPROVAL_STATE_TEXT[draft.approvalState]}
             </span>
           </StatusIndicator>
+          {draft.subcontractService === true ? (
+            // SAT-D175 (EK25): an incoming subcontract service ("fason hizmet") order — a normal order otherwise, so neutral.
+            <StatusIndicator tone="neutral" className={styles.badge}>
+              <span data-testid="sales-draft-subcontract">{ORDER_DRAFT_TEXT.subcontract.summary}</span>
+            </StatusIndicator>
+          ) : null}
           {pdfAction}
         </div>
       </header>

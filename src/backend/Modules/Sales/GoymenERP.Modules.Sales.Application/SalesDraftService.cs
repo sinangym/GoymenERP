@@ -67,7 +67,9 @@ public sealed partial class SalesDraftService(
     ISalesReportReadStore? reports = null,
     ISalesPartyDisplaySourceV1? partyDisplays = null,
     ISettingsLineTaxResolverV1? lineTaxes = null,
-    ISettingsTaxRateListReaderV1? rateLists = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
+    ISettingsTaxRateListReaderV1? rateLists = null,
+    IProductItemTypeReaderV1? itemTypes = null,
+    ISalesSubcontractOrderBindingReadPortV1? subcontractBindings = null) : ISalesDraftService, ISalesRequestService, ISalesQuoteService, ISalesReportService
 {
     private const int DefaultPageSize = 50;
     private const int MaximumPageSize = 100;
@@ -144,6 +146,10 @@ public sealed partial class SalesDraftService(
         MoneyProfileSnapshot money;
         OwnerReferences references;
         CreateTax tax;
+        // SAT-D175 (EK25): an incoming subcontract service ("fason") order; fixed here, never changed afterwards.
+        var subcontract = request.SubcontractService == true;
+        IReadOnlySet<Guid> freePrices = new HashSet<Guid>();
+        string? freePriceCurrency = null;
         var lineInputs = new List<SalesDraftLineInput>(request.Lines.Count);
         try
         {
@@ -159,6 +165,15 @@ public sealed partial class SalesDraftService(
             // product owner confirmed each product (the port asks the Product owner for its item type).
             tax = await ResolveCreateTaxAsync(scope, bindings.CreatePermission, request, cancellationToken);
             lineInputs = [.. lineInputs.Select(input => input with { Tax = tax.Lines[input.LineId] })];
+
+            if (subcontract)
+            {
+                // SAT-D176: only service lines (the Product owner's item type); SAT-D178: a typed price the list has no price or
+                // floor for is free of the discount-limit routing.
+                lineInputs = await ConfirmServiceLinesAsync(scope, bindings.CreatePermission, lineInputs, cancellationToken);
+                (freePrices, freePriceCurrency) = await FindFreeSubcontractPricesAsync(scope, bindings.CreatePermission, request.PartyId,
+                    request.CompanyAccountId, request.CurrencyId, request.BusinessDate, lineInputs, cancellationToken);
+            }
         }
         catch (RaceWon won)
         {
@@ -185,7 +200,7 @@ public sealed partial class SalesDraftService(
         // 5. The domain builds the draft on the store's document number; the store keeps one save.
         var header = new SalesDraftHeader(request.PartyId, request.CompanyAccountId, request.CurrencyId, request.BusinessDate,
             request.RequestedDeliveryDate, request.Note, DeliveryAddress: references.DeliveryAddress, Contact: references.Contact,
-            DueTerms: dueTerms, BuyerTax: tax.Buyer);
+            DueTerms: dueTerms, BuyerTax: tax.Buyer, IsSubcontractService: subcontract);
         var now = timeProvider.GetUtcNow();
         SalesDraftStoreResult stored;
         try
@@ -197,13 +212,20 @@ public sealed partial class SalesDraftService(
                     customerAcceptanceRequired: true);
                 foreach (var input in lineInputs)
                 {
-                    draft.AddLine(draft.Version, input.Commercial is { } commercial
+                    var commercial = input.Commercial is { } typed && freePrices.Contains(input.LineId)
+                        ? WithListAbsence(typed, freePriceCurrency!, request.BusinessDate, scope.ActorId, now)
+                        : input.Commercial;
+                    draft.AddLine(draft.Version, commercial is not null
                         ? input with { Commercial = SalesOrderDraft.WithDiscountLimitCheck(commercial, discountLimit, scope.ActorId, now) }
                         : input, now);
                 }
 
                 return draft;
             });
+        }
+        catch (SalesRuleException exception) when (exception.Code == SalesRuleCodes.SubcontractLineNotService)
+        {
+            throw new SalesDraftServiceException(422, "validation_failed", [new("subcontractService", exception.Code)]);
         }
         catch (SalesRuleException exception)
         {
@@ -550,6 +572,9 @@ public sealed partial class SalesDraftService(
         var resolved = await ResolvePriceReferencesAsync(scope, permission!, draftId, request, cancellationToken);
         scope = resolved.Scope;
 
+        // SAT-D178 (EK25): on a subcontract service order, a typed price whose list chain holds neither a price nor a floor is free.
+        var free = await FindRevisionFreeSubcontractPricesAsync(scope, permission!, draftId, request, cancellationToken);
+
         var inputs = request.Lines
             .Select(line => new LineCommercialInput(line.LineId, new CommercialDraftFields(line.UnitPrice, line.PriceUnitId, line.DiscountPercent,
                 resolved.References.TryGetValue(line.LineId, out var reference) ? reference : null, line.DiscountAmount, line.SurchargePercent,
@@ -582,7 +607,10 @@ public sealed partial class SalesDraftService(
                         throw new SalesVersionConflictException(expectedVersion, draft.Version);
                     }
 
-                    return draft.ReviseCommercial(expectedVersion, inputs, scope.ActorId, now, discountLimit, taxes?.Lines);
+                    var priced = free.Lines.Count == 0 ? inputs : [.. inputs.Select(input => free.Lines.Contains(input.LineId)
+                        ? input with { Commercial = WithListAbsence(input.Commercial, free.CurrencyCode!, free.On, scope.ActorId, now) }
+                        : input)];
+                    return draft.ReviseCommercial(expectedVersion, priced, scope.ActorId, now, discountLimit, taxes?.Lines);
                 }, audit,
                 async writeCancellationToken =>
                 {
@@ -1741,7 +1769,7 @@ public sealed partial class SalesDraftService(
         new(draft.Id, draft.CompanyId, draft.DocumentNo, draft.Kind.ToString(), draft.State.ToString(),
             draft.Version.ToString(CultureInfo.InvariantCulture), SalesDraftApiV1.RevisionText(draft.Revision), draft.Header.PartyId,
             draft.Header.CompanyAccountId, draft.Header.CurrencyId, draft.Header.BusinessDate, draft.CreatedAtUtc, draft.Lines.Count,
-            draft.ApprovalState.ToString(), CommercialStage(draft), ProductSnapshots(draft));
+            draft.ApprovalState.ToString(), CommercialStage(draft), ProductSnapshots(draft), draft.IsSubcontractService ? true : null);
 
     private static IReadOnlyList<SalesOrderDraftProductSnapshotViewV1> ProductSnapshots(SalesOrderDraft draft) =>
         [.. draft.Lines

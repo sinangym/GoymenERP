@@ -92,6 +92,9 @@ public sealed record CustomerAcceptanceFacts(int Revision, string AcceptedBy, Da
 /// none, never a default) and <see cref="SalesOwnerUserId"/> the Identity user who is the order's sales owner (SAT-D27); both
 /// are set or changed only by <see cref="SalesOrderDraft.ReviseHeader"/>. The older <see cref="PaymentTerms"/> /
 /// <see cref="Responsible"/> owner references stay refused at create (no owner port) and are not used.
+/// SAT-D175 (EK25): <see cref="IsSubcontractService"/> is the "fason" flag of an incoming subcontract service order (we process the
+/// customer's goods; the goods belong to the order's customer — there is no separate owner field). Given at create only, never
+/// changed (no revision moves it); such an order carries only service lines (SAT-D176).
 /// </summary>
 public sealed record SalesDraftHeader(
     Guid PartyId,
@@ -108,9 +111,14 @@ public sealed record SalesDraftHeader(
     OwnerReference? Package = null,
     SalesDueTerms? DueTerms = null,
     Guid? SalesOwnerUserId = null,
-    SalesBuyerTax? BuyerTax = null);
+    SalesBuyerTax? BuyerTax = null,
+    bool IsSubcontractService = false);
 
-/// <summary>Everything a line needs at <see cref="SalesOrderDraft.AddLine"/>; the owner snapshots come from the ports, the rest from the client.</summary>
+/// <summary>
+/// Everything a line needs at <see cref="SalesOrderDraft.AddLine"/>; the owner snapshots come from the ports, the rest from the client.
+/// SAT-D176 (EK25): <see cref="ItemType"/> is the Product owner's item type of the line's product, given (and required to be
+/// <see cref="SalesOrderDraft.ServiceItemType"/>) exactly on a subcontract service order; null on every other order.
+/// </summary>
 public sealed record SalesDraftLineInput(
     Guid LineId,
     ProductSnapshot Product,
@@ -121,7 +129,8 @@ public sealed record SalesDraftLineInput(
     string? Note = null,
     CommercialDraftFields? Commercial = null,
     IReadOnlyList<DeliverySliceInput>? RequestedDeliverySlices = null,
-    SalesLineTaxSnapshot? Tax = null);
+    SalesLineTaxSnapshot? Tax = null,
+    string? ItemType = null);
 
 public sealed record DeliverySliceInput(Guid SliceId, Guid OrderUnitId, string QuantityText, decimal Quantity, DateOnly RequestedDeliveryDate);
 
@@ -354,11 +363,71 @@ public sealed partial class SalesOrderDraft
 
         var slices = RequireSlices(input.RequestedDeliverySlices, input.OrderUnit, quantity);
         RequireTaxSnapshot(input.Tax, input.Product);
+        RequireLineItemType(input.ItemType);
         var line = new SalesOrderDraftLine(input.LineId, lines.Count + 1, input.Product, input.OrderUnit, quantity,
-            input.QuantityText, input.RequestedDeliveryDate, input.Note, commercial, slices, input.Tax);
+            input.QuantityText, input.RequestedDeliveryDate, input.Note, commercial, slices, input.Tax, input.ItemType);
         lines.Add(line);
         Touch(now);
         return line;
+    }
+
+    // ---- subcontract service order (SAT-D175…D178, EK25) -------------------------------------------
+
+    /// <summary>
+    /// SAT-D176 / SAT-D149: the item type of a service product as the Product owner's shared card names it (the same wire value as
+    /// the Product and Settings item types, pinned equal by a test). Sales chooses no item type; it only compares the owner's answer.
+    /// </summary>
+    public const string ServiceItemType = "Service";
+
+    /// <summary>SAT-D175 (EK25): whether this is an incoming subcontract service ("fason hizmet") order; fixed at create.</summary>
+    public bool IsSubcontractService => Header.IsSubcontractService;
+
+    /// <summary>
+    /// SAT-D176: a subcontract service order takes only service lines — the line's item type is the Product owner's answer and must
+    /// be <see cref="ServiceItemType"/>; a goods line, or a line whose item type is unknown, is refused
+    /// (<see cref="SalesRuleCodes.SubcontractLineNotService"/>). A normal order's rules are unchanged: its lines carry no item type.
+    /// </summary>
+    private void RequireLineItemType(string? itemType)
+    {
+        if (IsSubcontractService)
+        {
+            if (!string.Equals(itemType, ServiceItemType, StringComparison.Ordinal))
+            {
+                throw new SalesRuleException(SalesRuleCodes.SubcontractLineNotService,
+                    "Fason hizmet siparişinde yalnız kalem tipi hizmet olan ürün satırı olur; mal satışı ayrı, normal siparişle yapılır.");
+            }
+
+            return;
+        }
+
+        if (itemType is not null)
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant, "Normal sipariş satırı kalem tipi taşımaz (iç değişmez).");
+        }
+    }
+
+    /// <summary>
+    /// SAT-D178: a price-list absence is admitted only on the manually priced line of a subcontract service order, with no list
+    /// reference and no floor exception, bound to the line's exact unit price and price unit, on the draft's business date, with
+    /// the writer recorded. Anything else is an internal invariant (the caller builds it only from the owner's "no price" answer).
+    /// </summary>
+    private void RequireListAbsence(CommercialDraftFields commercial, Guid lineId)
+    {
+        if (commercial.ListAbsence is not { } absence)
+        {
+            return;
+        }
+
+        if (!IsSubcontractService || commercial.UnitPrice is null || commercial.Reference is not null || commercial.FloorException is not null
+            || !string.Equals(absence.UnitPrice, commercial.UnitPrice, StringComparison.Ordinal)
+            || absence.PriceUnitId != commercial.PriceUnitId || absence.EffectiveOn != Money.EffectiveOn
+            || string.IsNullOrWhiteSpace(absence.CurrencyCode) || string.IsNullOrWhiteSpace(absence.WrittenBy)
+            || absence.WrittenBy.Length > MaximumActorLength)
+        {
+            throw new SalesRuleException(SalesRuleCodes.InternalInvariant,
+                "Fiyat listesi yokluğu yalnız fason hizmet siparişinin elle fiyatlanan satırına, o fiyata bağlı olarak verilir (iç değişmez).",
+                lineId);
+        }
     }
 
     // ---- manual price and discount (K3, Sinan 5748258299) ------------------------------------------
@@ -377,6 +446,7 @@ public sealed partial class SalesOrderDraft
     {
         RequireLineCommercialFields(commercial, product, Money.Scale);
         RequirePricingDetail(commercial, lineId);
+        RequireListAbsence(commercial, lineId);
         ValidateDiscountCheck(commercial, lineId);
     }
 
@@ -941,8 +1011,9 @@ public sealed partial class SalesOrderDraft
 
         RequireLineTaxes(taxes);
 
-        // The discount check is the revision's own record (who checked, when), not a value the person changed.
-        if (replacements.All(pair => pair.Line.Commercial with { DiscountCheck = null } == pair.Fields with { DiscountCheck = null })
+        // The discount check is the revision's own record (who checked, when), not a value the person changed; so is who wrote a
+        // free subcontract price and when (SAT-D178) — only whether the list holds no price for the line is compared.
+        if (replacements.All(pair => Comparable(pair.Line.Commercial) == Comparable(pair.Fields))
             && (taxes is null || lines.All(line => line.Tax == taxes[line.Id])))
         {
             throw new SalesRuleException(SalesRuleCodes.RevisionNoChange,
@@ -973,6 +1044,13 @@ public sealed partial class SalesOrderDraft
         Touch(now);
         return archived;
     }
+
+    /// <summary>The commercial values a person changes: without the revision's own records (the check, the absence's writer and time).</summary>
+    private static CommercialDraftFields Comparable(CommercialDraftFields fields) => fields with
+    {
+        DiscountCheck = null,
+        ListAbsence = fields.ListAbsence is { } absence ? absence with { WrittenBy = string.Empty, WrittenAtUtc = default } : null,
+    };
 
     /// <summary>The lines of the revision being archived, as they stand: identity, quantity, commercial fields and tax snapshot.</summary>
     private IReadOnlyList<RevisionLineSnapshot> ArchiveLines() =>
@@ -1473,7 +1551,9 @@ public sealed partial class SalesOrderDraft
         if (snapshot.Revision != expected || snapshot.Revision >= Revision
             || snapshot.Approval.DecidedBy is null || snapshot.Approval.DecidedAtUtc is null || snapshot.Approval.RejectionReason is not null
             || snapshot.Lines.Count == 0 || string.IsNullOrWhiteSpace(snapshot.ArchivedBy)
-            || (snapshot.Reason is { } reason && (string.IsNullOrWhiteSpace(reason) || reason.Length > MaximumRevisionReasonLength)))
+            || (snapshot.Reason is { } reason && (string.IsNullOrWhiteSpace(reason) || reason.Length > MaximumRevisionReasonLength))
+            // SAT-D175: the "fason" flag never changes, so an archived header names the order's own flag.
+            || (snapshot.Header is { } header && header.IsSubcontractService != IsSubcontractService))
         {
             throw new InvalidOperationException("Kayıtlı revizyon geçmişi taslakla uyuşmuyor.");
         }

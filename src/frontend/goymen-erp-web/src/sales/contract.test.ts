@@ -222,6 +222,21 @@ describe('decodeDraftDetail / decodeDraftPage', () => {
     expect(decodeDraftPage(present)?.items[0].productSnapshots).toEqual([productSnapshot])
   })
 
+  it('SAT-D175: reads the fason flag only as true; omitted or null is a normal order; anything else fails closed', () => {
+    expect(decodeDraftPage(parse(listResponse))?.items[0]).not.toHaveProperty('subcontractService')
+    const flagged = clone(parse(listResponse)) as any
+    flagged.items[0].subcontractService = true
+    expect(decodeDraftPage(flagged)?.items[0].subcontractService).toBe(true)
+    const nullable = clone(parse(listResponse)) as any
+    nullable.items[0].subcontractService = null
+    expect(decodeDraftPage(nullable)?.items[0]).not.toHaveProperty('subcontractService')
+    for (const wrong of [false, 'true', 1]) {
+      const bad = clone(parse(listResponse)) as any
+      bad.items[0].subcontractService = wrong
+      expect(decodeDraftPage(bad)).toBeNull()
+    }
+  })
+
   it('requires all six non-null snapshot fields and refuses invalid text, ids and unknown parsed keys', () => {
     for (const field of Object.keys(productSnapshot)) {
       const missing = clone(parse(listResponse)) as any

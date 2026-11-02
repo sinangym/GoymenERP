@@ -82,6 +82,28 @@ export interface LinePricing {
   readonly floorException: PriceFloorException | null
   /** SAT-D2 / API-12 (additive member): the discount-limit check of a positive discount; null when there is none. */
   readonly discountCheck: DiscountLimitCheck | null
+  /**
+   * SAT-D178 (EK25, additive member): the free manual price of a subcontract service line — the list held neither a price nor
+   * a floor when it was written (who, when); null on every other line.
+   */
+  readonly listAbsence: PriceListAbsence | null
+}
+
+/** SAT-D178: the list held neither a price nor a floor for this subcontract service line when its price was written. */
+export interface PriceListAbsence {
+  readonly currencyCode: string
+  readonly effectiveOn: string
+  readonly unitPrice: string
+  readonly writtenBy: string
+  readonly writtenAtUtc: string
+}
+
+function decodeListAbsence(value: unknown): PriceListAbsence | null {
+  const o = exact(value, ['currencyCode', 'effectiveOn', 'unitPrice', 'writtenBy', 'writtenAtUtc'])
+  if (o === null || !isText(o.currencyCode) || typeof o.effectiveOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(o.effectiveOn)
+    || !isNullableDecimal(o.unitPrice) || o.unitPrice === null || !isText(o.writtenBy) || typeof o.writtenAtUtc !== 'string'
+    || Number.isNaN(Date.parse(o.writtenAtUtc))) return null
+  return o as unknown as PriceListAbsence
 }
 
 export interface PriceFloorException {
@@ -250,6 +272,7 @@ export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null 
   for (const raw of response.lines) {
     // SAT-D2 / API-12: `discountCheck` is an additive member; any other unknown member still fails closed.
     const o = exact(raw, PRICING_KEYS) ?? exact(raw, [...PRICING_KEYS, 'discountCheck'])
+      ?? exact(raw, [...PRICING_KEYS, 'discountCheck', 'listAbsence'])
     if (o === null || !isText(o.lineId) || !isCount(o.lineNo) || !isNullableDecimal(o.unitPrice)
       || !(o.priceUnitId === null || isText(o.priceUnitId))
       || !(o.priceSource === null || o.priceSource === 'Reference' || o.priceSource === 'Manual')
@@ -261,12 +284,16 @@ export function decodeDraftLinePricing(value: unknown): DraftLinePricing | null 
     if (o.floorException !== null && floorException === null) return null
     const discountCheck = o.discountCheck === undefined || o.discountCheck === null ? null : decodeDiscountCheck(o.discountCheck)
     if (o.discountCheck !== undefined && o.discountCheck !== null && discountCheck === null) return null
+    // SAT-D178: a free subcontract price is the line's own typed price, with no list reference and no discount check.
+    const listAbsence = o.listAbsence === undefined || o.listAbsence === null ? null : decodeListAbsence(o.listAbsence)
+    if (o.listAbsence !== undefined && o.listAbsence !== null && (listAbsence === null || listAbsence.unitPrice !== o.unitPrice
+      || o.priceReference !== null || discountCheck !== null)) return null
     // A price and its net travel together; a source without a price is off-contract.
     if ((o.unitPrice === null) !== (o.netUnitPrice === null) || (o.unitPrice === null) !== (o.priceSource === null)) return null
     lines.push({
       lineId: o.lineId, lineNo: o.lineNo, unitPrice: o.unitPrice, priceUnitId: o.priceUnitId, priceSource: o.priceSource,
       priceReference: reference, discountPercent: o.discountPercent, discountAmount: o.discountAmount, surchargePercent: o.surchargePercent,
-      surchargeAmount: o.surchargeAmount, netUnitPrice: o.netUnitPrice, floorException, discountCheck,
+      surchargeAmount: o.surchargeAmount, netUnitPrice: o.netUnitPrice, floorException, discountCheck, listAbsence,
     })
   }
   return { version: response.version, lines }

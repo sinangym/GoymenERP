@@ -1689,8 +1689,14 @@ public sealed partial class SalesDraftServiceTests
                 NoProducts ? null : Products, Store, Bindings, Clock, NoContactInformation ? null : ContactInformation, Deliveries,
                 Allocations, Loadings, PriceReferences, CustomerReturns, Requests, Quotes ??= new FakeQuoteStore(Store, Requests, () => Clock),
                 SalesPolicies, DiscountLimitGroups, PartyRisk, QuotePolicies, NoUserDisplays ? null : UserDisplays, SalesOwners, Reports, PartyDisplays,
-                LineTaxes, RateLists);
+                LineTaxes, RateLists, ItemTypes, SubcontractBindings);
         }
+
+        /// <summary>SAT-D176: the Product owner's item type reader (null = not composed).</summary>
+        public IProductItemTypeReaderV1? ItemTypes { get; set; }
+
+        /// <summary>SAT-D175: the Production / customer-goods binding hook (null = not composed).</summary>
+        public ISalesSubcontractOrderBindingReadPortV1? SubcontractBindings { get; set; }
 
         public SalesDraftReadServiceV1 ReadService()
         {
@@ -2009,6 +2015,8 @@ public sealed partial class SalesDraftServiceTests
     {
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesOrderDraft? Draft, SalesDraftTerminalRefusal? Refusal, string Correlation, SalesDraftReplayResult? Result)> _attempts = [];
         private readonly List<SalesOrderDraft> _drafts = [];
+        /// <summary>SAT-D175: the stored drafts as the domain holds them (read-only view for assertions).</summary>
+        public IReadOnlyList<SalesOrderDraft> Drafts => _drafts;
         public List<SalesDraftWriteEnvelope> Envelopes { get; } = [];
         public int Attempts => _attempts.Count;
         public List<(SalesDraftWriteEnvelope Envelope, SalesDraftTerminalRefusal Refusal, Guid? DraftId)> Refusals { get; } = [];

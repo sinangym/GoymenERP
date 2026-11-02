@@ -565,6 +565,10 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("nvarchar(128)");
 
+                    b.Property<string>("ItemType")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<Guid>("LineId")
                         .HasColumnType("uniqueidentifier");
 
@@ -711,6 +715,8 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.ToTable("DraftLines", "sales", t =>
                         {
                             t.HasCheckConstraint("CK_DraftLines_Identity", "[LineId] <> '00000000-0000-0000-0000-000000000000' AND [ProductId] <> '00000000-0000-0000-0000-000000000000' AND [OrderUnitId] <> '00000000-0000-0000-0000-000000000000' AND [OrderUnitProfileId] <> '00000000-0000-0000-0000-000000000000'");
+
+                            t.HasCheckConstraint("CK_DraftLines_ItemType", "[ItemType] IS NULL OR [ItemType] = N'Service'");
 
                             t.HasCheckConstraint("CK_DraftLines_LineNo", "[LineNo] >= 1");
 
@@ -947,6 +953,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
                     b.Property<string>("DueTermsJson")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("IsSubcontractService")
+                        .HasColumnType("bit");
+
                     b.Property<Guid>("PartyId")
                         .HasColumnType("uniqueidentifier");
 
@@ -1179,6 +1188,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence.Migrations
 
                     b.Property<string>("DueTermsJson")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsSubcontractService")
+                        .HasColumnType("bit");
 
                     b.Property<int>("Kind")
                         .HasColumnType("int");

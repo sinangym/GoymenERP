@@ -317,6 +317,18 @@ public static class SalesRuleCodes
     /// <summary>SAT-D147/D181: a withholding ratio is picked only for a line that carries VAT (never KDV %0 or an exempt default).</summary>
     public const string TaxWithholdingNotApplicable = "sales_tax_withholding_not_applicable";
 
+    /// <summary>
+    /// SAT-D175/D176 (EK25): a subcontract service ("fason hizmet") order carries ONLY lines whose product's item type is service
+    /// (SAT-D149); a goods line is sold on a separate, normal order. Also the answer when the item type cannot be confirmed.
+    /// </summary>
+    public const string SubcontractLineNotService = "sales_subcontract_line_not_service";
+
+    /// <summary>
+    /// SAT-D175 (EK25): the customer of a subcontract service order does not change while a production plan or a customer-goods
+    /// allocation is linked to it — or while that cannot be read (fail-closed).
+    /// </summary>
+    public const string SubcontractCustomerLocked = "sales_subcontract_customer_locked";
+
     /// <summary>A line's tax snapshot names another product than the line (a stale or crossed resolution; internal).</summary>
     public const string TaxSnapshotMismatch = "sales_tax_snapshot_mismatch";
 

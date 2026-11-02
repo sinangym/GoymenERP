@@ -48,6 +48,17 @@ export const ORDER_DRAFT_TEXT = {
     help: 'Siparişin para biriminde, isteğe bağlı. Ondalık basamak sınırını ve iskonto aralığını sunucu denetler; satır tutarını ve toplamı yalnız sunucu hesaplar.',
     /** Shown beside a line's price fields: a list-price reference is chosen on the saved order, not here. */
     referenceLater: 'Liste fiyatı referansı ve taban fiyat kontrolü kaydedilen siparişin fiyat revizyonunda seçilir.',
+    /** SAT-D177/D178 (EK25): the price rule of a subcontract service line, shown on a "fason" order's price fields. */
+    subcontractFree:
+      'Fason hizmet: fiyat listeden gelebilir ya da elle yazılabilir. Listede bu hizmetin fiyatı da tabanı da yoksa elle yazılan fiyat serbesttir (iskonto onayına gitmez, kim yazdığıyla kayda geçer); listede fiyat veya taban varsa iskonto ve taban kuralları uygulanır.',
+  },
+  /** SAT-D175/D176 (EK25): the incoming subcontract service ("fason hizmet") order flag at create. */
+  subcontract: {
+    toggle: 'Fason hizmet siparişi',
+    help: 'Müşterinin malını biz işleriz, işçiliği faturalarız. Yalnız kalem tipi "Hizmet" olan ürün satırı eklenebilir; mal satışı ayrı, normal siparişle yapılır. İşaret sipariş açılırken verilir, sonradan değiştirilmez.',
+    lockedByLines: 'Satırlarda ürün seçiliyken fason işareti değiştirilemez; önce satırlardaki ürünleri kaldırın.',
+    pickerNote: 'Fason siparişte ürün listesi yalnız kalem tipi "Hizmet" olan ürünleri gösterir.',
+    summary: 'Fason hizmet siparişi',
   },
   choose: 'Seçin',
   /** SALES-A2a: the empty choice of an optional reference — nothing is sent, never a default. */
@@ -253,6 +264,9 @@ export function problemCodeText(code: string | null): string | null {
  * `draft` when the domain refuses). The same codes as the commercial revision; the texts describe the server's rule.
  */
 const CREATE_PRICE_FIELD_TEXT: Readonly<Record<string, string>> = {
+  // SAT-D176 (EK25): a subcontract service order's line must be a service product (the Product owner's item type).
+  sales_subcontract_line_not_service:
+    'Fason hizmet siparişinde yalnız kalem tipi "Hizmet" olan ürün seçilebilir; mal satışı ayrı, normal siparişle yapılır.',
   sales_price_scale_exceeded: 'Birim fiyat para biriminin onaylı ondalık basamak sayısını aşıyor; fiyat yuvarlanmaz.',
   sales_price_unit_unsupported: 'Fiyat birimi ürünün stok, satış ya da sipariş birimi olmalı.',
   sales_price_unit_pairing: 'Birim fiyat ve fiyat birimi birlikte verilir.',
@@ -284,6 +298,8 @@ export const COMMERCIAL_STAGE_TEXT: Record<CommercialStage, string> = {
 }
 
 export const ORDER_LIST_TEXT = {
+  /** SAT-D175 (EK25): the list's short mark of an incoming subcontract service ("fason hizmet") order. */
+  subcontract: 'Fason',
   heading: 'Satış siparişi taslakları',
   newDraft: 'Yeni taslak',
   caption: 'Seçili şirketteki sipariş taslakları, en yeni önce',
@@ -789,6 +805,9 @@ export const LINE_PRICING_TEXT = {
   unreadable: 'Satır fiyat ayrıntıları okunamadı.',
   reference: 'Referans liste fiyatı',
   noReference: 'Referans yok (elle fiyat)',
+  /** SAT-D178 (EK25): a free subcontract service price — the list held neither a price nor a floor when it was written. */
+  freeSubcontractPrice: 'Serbest fason fiyatı (listede fiyat ve taban yok; iskonto onayı gerekmez)',
+  freeSubcontractPriceWriter: (writer: string, at: string) => `Elle yazan: ${writer} · ${at}`,
   referenceText: (name: string, versionNo: number, price: string, currency: string) => `${name} · Sürüm ${versionNo}: ${price} ${currency}`,
   floorText: (floor: string) => `alt fiyat ${floor}`,
   vatExclusive: 'KDV hariç net',
@@ -1483,6 +1502,9 @@ export const HEADER_REVISION_TEXT = {
           : `Bağlı kayıt: ${source}`,
   /** The server's field codes the screen explains (the field names the member). */
   fieldCode: {
+    // SAT-D175 (EK25): a linked production plan or customer-goods allocation locks the subcontract order's customer.
+    sales_subcontract_customer_locked:
+      'Fason hizmet siparişine bağlı üretim planı ya da müşteri malı tahsisi varken siparişin carisi değiştirilemez.',
     // SAT-D152 (EK21): the quote's customer stays on the converted order.
     sales_header_revision_quote_customer:
       'Tekliften dönen siparişin carisi değiştirilemez; başka müşteri için sipariş iptal edilip yeni teklif ya da sipariş açılır.',

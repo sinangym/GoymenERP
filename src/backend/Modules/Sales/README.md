@@ -624,3 +624,34 @@ dotnet test tests/GoymenERP.Sales.UnitTests/GoymenERP.Sales.UnitTests.csproj
 | Reads | `GET /api/v1/sales/drafts/{id}/tax` (`GetSalesOrderDraftTaxV1`, draft read + price read, SAT-D150): the buyer tax and every line's snapshot with Sales' reading (`rateState`, `unavailableReason`, `invoiceBlockers` — unresolved codes, a missing buyer document; the gate itself is API-32's). `GET /api/v1/sales/tax-options?on=` (`GetSalesTaxOptionsV1`, draft read): the Settings buyer situation list, exemption code list and item types in force on the date, an empty list with its Settings reason. |
 | Migration | `AddDraftOrderTax` (dotnet ef): four nullable JSON columns with ISJSON check constraints; the write guard admits `Drafts.BuyerTaxJson` and `DraftLines.TaxJson` only. Down refuses with 51135 while any snapshot or buyer tax is stored (forward fix). |
 | Not here | The invoice's VUK 232 threshold check and the invoice wait gate (API-32), the PDF's tax lines, a free VAT rate per line (only Settings values; see the PR's NEEDS-SINAN). |
+
+## Subcontract service ("gelen fason hizmet") order (SAT-D175…D178, EK25; handoff S-3)
+
+- **Flag (SAT-D175):** `subcontractService: true` on the create (`CreateSalesOrderDraftRequest`); stored in
+  `sales.Drafts.IsSubcontractService` and repeated on every archived header (`DraftRevisionHeaders.IsSubcontractService`). Set at
+  create only — no command changes it (the write guard does not admit the column). Approval, risk, customer acceptance and
+  revisions are the normal order's. The processed goods belong to the order's customer (no separate owner field; URT-D22 matches
+  the customer goods by this customer). Detail/list: `draft.subcontractService` (`true` only; omitted for a normal order).
+- **Lines (SAT-D176):** only products whose shared card item type is `Service` (SAT-D149), read from the Product owner
+  (`IProductItemTypeReaderV1`); a goods / unset / unknown type is 422 `lines[i].productId` `sales_subcontract_line_not_service`;
+  an unreadable owner is 503 `product_item_type_unavailable` (never assumed a service). The confirmed type is stored in
+  `DraftLines.ItemType` (`CK_DraftLines_ItemType`: null or `Service`). A normal order asks nothing new. SAT-D167 line add / product
+  change does not exist yet; when it does, it must run the same check. The product picker narrows with
+  `GET /api/v1/sales/references/products?itemType=Service` (an unreadable item type is 503).
+- **Price (SAT-D177/D178):** a typed price on a service line whose Product tier chain answers `NoPrice` (neither a price nor a
+  floor) carries a `PriceListAbsenceSnapshot` (in `PricingJson.listAbsence`: price unit, currency code, date, the exact price,
+  who wrote it, when) and needs no discount-limit approval — SAT-D36/D43's fail-closed routing is lifted for that line only. The
+  price-write permission (SAT-D151) is still required; the audit records the absence. A list with a price or floor keeps every
+  existing rule; an absent or out-of-contract price owner leaves the line on the existing approval routing (fail-closed).
+- **Customer lock (SAT-D175):** a customer change of a subcontract order asks `ISalesSubcontractOrderBindingReadPortV1`
+  (production plan / customer-goods allocation); not composed or unreadable → 503 `subcontract_binding_unavailable`; bound → 422
+  `companyAccountId` `sales_subcontract_customer_locked`. No host adapter exists yet (the Production lane's), so today the customer
+  of a subcontract order does not change.
+- **Tax:** the service line resolves through the existing line tax snapshot (Settings, by item type); the subcontract withholding
+  stays whatever Settings answers — fail-closed until the advisor's codes exist (SAT-D110).
+- **Read port for Production (S-3):** `ISalesSubcontractServiceOrderReadPortV1` (`sales.subcontract-service-order.v1`,
+  `SalesSubcontractServiceOrderReadPort`): company + order id → `Found` (approval state, `IsApproved`, customer acceptance state,
+  lifecycle / `IsOpen`, party + company account, service lines with product, quantity text/value, order unit) | `NotSubcontractService`
+  | `NotFound` | `Unreadable` (a company other than the server context, or a read fault). Price-free. Registered by
+  `AddSalesModule`; the Production consumer binds to it in its own lane.
+- **Migration:** `AddDraftSubcontractService`; its Down refuses with 51141 while any subcontract data exists (forward fix).

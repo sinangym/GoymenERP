@@ -81,6 +81,9 @@ internal sealed class DraftRow : ISalesTenantRow
     /// <summary>MOD-03 → Sales (SAT-D140/D147): the order's buyer tax situation as JSON (<c>SalesTaxJson</c>); null = written before the tax wiring.</summary>
     public string? BuyerTaxJson { get; set; }
 
+    /// <summary>SAT-D175 (EK25): the "fason" flag of an incoming subcontract service order; written once at create, never changed.</summary>
+    public bool IsSubcontractService { get; set; }
+
     public string MoneyOperation { get; set; } = string.Empty;
     public Guid MoneyProfileId { get; set; }
     public string MoneyProfileVersion { get; set; } = string.Empty;
@@ -155,6 +158,9 @@ internal sealed class DraftLineRow : ISalesTenantRow
 
     /// <summary>MOD-03 → Sales (SAT-D93/D139): the line's tax snapshot (JSON, <c>SalesTaxJson</c>); null = none ("kaynak yok").</summary>
     public string? TaxJson { get; set; }
+
+    /// <summary>SAT-D176 (EK25): the Product owner's item type confirmed for a subcontract service order's line ("Service"); null otherwise.</summary>
+    public string? ItemType { get; set; }
 }
 
 /// <summary>One requested delivery slice of a line. Append-only.</summary>
@@ -241,6 +247,9 @@ internal sealed class DraftRevisionHeaderRow : ISalesTenantRow
 
     /// <summary>MOD-03 → Sales: the buyer tax situation the revision was approved with (JSON); null = archived before the tax wiring.</summary>
     public string? BuyerTaxJson { get; set; }
+
+    /// <summary>SAT-D175 (EK25): the order's "fason" flag as the revision was approved (false for every archive before the flag).</summary>
+    public bool IsSubcontractService { get; set; }
 }
 
 /// <summary>A line of an archived approved revision: identity, quantity text and the commercial fields exactly as they were. Append-only.</summary>

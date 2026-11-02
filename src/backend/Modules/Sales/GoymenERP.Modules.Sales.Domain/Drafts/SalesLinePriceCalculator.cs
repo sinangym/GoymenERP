@@ -74,12 +74,14 @@ public static class SalesLinePriceCalculator
     /// reference: its discounted unit price BEFORE the maturity surcharge (vade farkı) is below the list price — a manual price
     /// below list counts even with no discount field, and a surcharge can never hide a discount. Without a reference: always
     /// (the price cannot be measured against a list price, so every such priced line goes to approval whatever its discount
-    /// fields). A line without a price never needs it.
+    /// fields). A line without a price never needs it. SAT-D178 (EK25): nor does the manually priced service line of a subcontract
+    /// service order whose price list holds neither a price nor a floor for it (<see cref="CommercialDraftFields.IsFreeSubcontractPrice"/>;
+    /// the aggregate admits that absence only on such an order) — the one exception to the "without a reference: always" rule.
     /// </summary>
     public static bool NeedsDiscountCheck(CommercialDraftFields commercial)
     {
         ArgumentNullException.ThrowIfNull(commercial);
-        if (commercial.UnitPrice is null)
+        if (commercial.UnitPrice is null || commercial.IsFreeSubcontractPrice)
         {
             return false;
         }

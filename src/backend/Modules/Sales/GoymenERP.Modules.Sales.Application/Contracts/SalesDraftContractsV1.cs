@@ -21,7 +21,12 @@ public sealed record CreateSalesOrderDraftRequest(
     // MOD-03 → Sales (SAT-D140/D147/D158): the buyer tax situation chosen for this order (omitted = "Normal", SAT-D140's start
     // value). Omitted from the canonical replay content when absent, so an older create's attempt identity is unchanged.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    SalesDraftBuyerTaxV1? BuyerTax = null);
+    SalesDraftBuyerTaxV1? BuyerTax = null,
+    // SAT-D175 (EK25): true opens an incoming subcontract service ("fason hizmet") order — only service lines (SAT-D176), fixed at
+    // create. Omitted (or false) = a normal order; omitted from the canonical replay content when absent, so an older create's
+    // attempt identity is unchanged.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    bool? SubcontractService = null);
 
 public sealed record SalesOrderDraftLineRequest(
     Guid LineId, Guid ProductId, string ExpectedProductVersion, Guid OrderUnitId,
@@ -60,7 +65,10 @@ public sealed record SalesOrderDraftSummaryView(
     string ApprovalState,
     SalesCommercialStageV1? CommercialStage = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null);
+    IReadOnlyList<SalesOrderDraftProductSnapshotViewV1>? ProductSnapshots = null,
+    // SAT-D175 (EK25): true for an incoming subcontract service ("fason") order; omitted for every other order.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    bool? SubcontractService = null);
 
 /// <summary>
 /// Product presentation already accepted from the Product owner and stored on the order line.
@@ -148,7 +156,18 @@ public sealed record SalesDraftPriceResolutionV1(string Outcome, DateOnly Effect
 public sealed record SalesDraftLinePricingV1(Guid LineId, int LineNo, string? UnitPrice, Guid? PriceUnitId, string? PriceSource,
     SalesDraftPriceReferenceV1? PriceReference, string? DiscountPercent, string? DiscountAmount, string? SurchargePercent,
     string? SurchargeAmount, string? NetUnitPrice, SalesDraftPriceFloorExceptionV1? FloorException,
-    SalesDraftDiscountLimitCheckV1? DiscountCheck = null);
+    SalesDraftDiscountLimitCheckV1? DiscountCheck = null,
+    // SAT-D178 (EK25): the free manual price of a subcontract service line — the list held neither a price nor a floor when it
+    // was written (who wrote it, when); omitted on every other line.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    SalesDraftPriceListAbsenceV1? ListAbsence = null);
+
+/// <summary>
+/// SAT-D178 (EK25): the Product price list chain held NEITHER a price NOR a floor for this subcontract service line when its manual
+/// price was written, so that price needs no discount-limit approval; who wrote it and when (the audit detail).
+/// </summary>
+public sealed record SalesDraftPriceListAbsenceV1(string CurrencyCode, DateOnly EffectiveOn, string UnitPrice, string WrittenBy,
+    DateTimeOffset WrittenAtUtc);
 
 public sealed record SalesDraftPriceFloorExceptionV1(string RequestedBy, DateTimeOffset RequestedAtUtc,
     string? ApprovedBy, DateTimeOffset? ApprovedAtUtc, string? Reason);
