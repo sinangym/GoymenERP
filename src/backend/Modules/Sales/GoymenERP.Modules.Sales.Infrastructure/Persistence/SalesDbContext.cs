@@ -442,6 +442,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_DraftLines_Pricing", "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
             // MOD-03 → Sales: the tax snapshot is JSON when present; unlike the pricing detail it needs no price (SAT-D93).
             table.HasCheckConstraint("CK_DraftLines_Tax", "[TaxJson] IS NULL OR ISJSON([TaxJson]) = 1");
+            // SAT-D176 (EK25): only a subcontract service order's line records its confirmed item type, and that is a service.
+            table.HasCheckConstraint("CK_DraftLines_ItemType", "[ItemType] IS NULL OR [ItemType] = N'" + SalesOrderDraft.ServiceItemType + "'");
             table.HasCheckConstraint("CK_DraftLines_Window",
                 "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
         });
@@ -467,6 +469,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.DiscountPercent).HasMaxLength(128);
         entity.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.TaxJson).HasColumnType("nvarchar(max)");
+        entity.Property(x => x.ItemType).HasMaxLength(32);
         entity.HasOne<DraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })

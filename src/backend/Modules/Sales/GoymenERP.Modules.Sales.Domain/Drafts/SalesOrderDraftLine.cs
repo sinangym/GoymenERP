@@ -21,7 +21,7 @@ public sealed class SalesOrderDraftLine
 
     public SalesOrderDraftLine(Guid id, int lineNo, ProductSnapshot product, UnitProfileSnapshot orderUnit,
         Quantity quantity, string quantityText, DateOnly? requestedDeliveryDate, string? note,
-        CommercialDraftFields commercial, IReadOnlyList<DeliverySlice> slices, SalesLineTaxSnapshot? tax = null)
+        CommercialDraftFields commercial, IReadOnlyList<DeliverySlice> slices, SalesLineTaxSnapshot? tax = null, string? itemType = null)
     {
         Id = Identity.Require(id, nameof(id));
         LineNo = lineNo >= 1 ? lineNo : throw new ArgumentOutOfRangeException(nameof(lineNo));
@@ -40,6 +40,7 @@ public sealed class SalesOrderDraftLine
         Note = note;
         Commercial = commercial ?? throw new ArgumentNullException(nameof(commercial));
         Tax = tax;
+        ItemType = itemType;
         ArgumentNullException.ThrowIfNull(slices);
         this.slices = [.. slices];
         var planned = this.slices.Aggregate(Quantity.Zero(quantity.Unit), (sum, slice) => sum.Add(slice.Quantity));
@@ -76,6 +77,12 @@ public sealed class SalesOrderDraftLine
     /// with a reason, SAT-D97); null for a line written before the tax wiring or when no tax port answered — "kaynak yok", never 0.
     /// </summary>
     public SalesLineTaxSnapshot? Tax { get; private set; }
+
+    /// <summary>
+    /// SAT-D176 (EK25): the Product owner's item type of the line's product as it was confirmed when the line was added — always
+    /// <see cref="SalesOrderDraft.ServiceItemType"/> on a subcontract service order, null on every other order (not read there).
+    /// </summary>
+    public string? ItemType { get; }
 
     /// <summary>The aggregate replaces the tax snapshot (a commercial revision or a buyer situation change); its rules ran first.</summary>
     internal void ReplaceTax(SalesLineTaxSnapshot? tax)

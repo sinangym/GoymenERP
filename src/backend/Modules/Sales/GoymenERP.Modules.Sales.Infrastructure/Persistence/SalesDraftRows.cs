@@ -60,6 +60,7 @@ internal static class SalesDraftRows
             SalesOwnerUserId = header.SalesOwnerUserId,
             DueTermsJson = SalesDueTermsJson.Serialize(header.DueTerms),
             BuyerTaxJson = SalesTaxJson.SerializeBuyer(header.BuyerTax),
+            IsSubcontractService = header.IsSubcontractService,
             SourceQuoteId = sourceQuoteId,
             SourceQuoteRevision = sourceQuoteRevision,
             MoneyOperation = money.Operation,
@@ -123,6 +124,7 @@ internal static class SalesDraftRows
                 DiscountPercent = line.Commercial.DiscountPercent,
                 PricingJson = SalesLinePricingJson.Serialize(line.Commercial),
                 TaxJson = SalesTaxJson.SerializeLine(line.Tax),
+                ItemType = line.ItemType,
             });
             var sliceNo = 0;
             foreach (var slice in line.RequestedDeliverySlices)

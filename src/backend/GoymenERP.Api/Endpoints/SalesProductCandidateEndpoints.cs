@@ -9,13 +9,14 @@ using GoymenERP.Modules.Sales.Application.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.Endpoints;
 
 public static class SalesProductCandidateEndpoints
 {
     public const string Path = "/api/v1/sales/references/products";
-    private static readonly HashSet<string> QueryNames = new(["q", "effectiveOn", "limit"], StringComparer.Ordinal);
+    private static readonly HashSet<string> QueryNames = new(["q", "effectiveOn", "limit", "itemType"], StringComparer.Ordinal);
 
     public static IEndpointRouteBuilder MapSalesProductCandidateEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -23,6 +24,7 @@ public static class SalesProductCandidateEndpoints
             [FromQuery] string? q,
             [FromQuery] DateOnly effectiveOn,
             [FromQuery] int? limit,
+            [FromQuery] string? itemType,
             HttpContext context,
             ICompanyContext company,
             ICurrentUser user,
@@ -38,13 +40,36 @@ public static class SalesProductCandidateEndpoints
             if (scope.Status != StatusCodes.Status200OK) return Problem(scope.Status);
             if (!HasOnlySingleQuery(context.Request.Query) || !HasExactDate(context.Request.Query, "effectiveOn"))
                 return Problem(StatusCodes.Status400BadRequest, "validation_failed");
+            // SAT-D176 (EK25): a subcontract service order's picker asks for one item type (the Product owner's wire value).
+            if (itemType is not null && !ProductItemTypesV1.IsKnown(itemType))
+                return Problem(StatusCodes.Status400BadRequest, "validation_failed");
 
             try
             {
                 var result = await candidates.SearchAsync(new(q, effectiveOn, limit ?? 25), cancellationToken);
                 if (!await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken))
                     return Problem(StatusCodes.Status403Forbidden);
-                return Results.Ok(result);
+                if (itemType is null) return Results.Ok(result);
+
+                // SAT-D176: only the candidates whose shared product card (SAT-D149) names the asked item type. The window stays
+                // the owner's (SearchWindowFull unchanged); an unreadable item type is 503, never a candidate assumed to match.
+                if (context.RequestServices.GetService<IProductItemTypeReaderV1>() is not { } itemTypes)
+                    return Problem(StatusCodes.Status503ServiceUnavailable, "service_unavailable");
+                var matching = new List<ProductSalesCandidateV1>(result.Items.Count);
+                foreach (var candidate in result.Items)
+                {
+                    var answer = await itemTypes.GetAsync(candidate.ProductId, cancellationToken);
+                    if (answer.Outcome == ProductItemTypeOutcomeV1.Denied)
+                        return Problem(StatusCodes.Status403Forbidden);
+                    if (answer.Outcome == ProductItemTypeOutcomeV1.Unavailable)
+                        return Problem(StatusCodes.Status503ServiceUnavailable, "service_unavailable");
+                    if (answer.Outcome == ProductItemTypeOutcomeV1.Found && string.Equals(answer.ItemType, itemType, StringComparison.Ordinal))
+                        matching.Add(candidate);
+                }
+
+                if (!await StillAuthorizedAsync(scope, company, user, authority, names, cancellationToken))
+                    return Problem(StatusCodes.Status403Forbidden);
+                return Results.Ok(result with { Items = matching });
             }
             catch (ProductValidationException)
             {

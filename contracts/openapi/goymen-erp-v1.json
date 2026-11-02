@@ -15335,6 +15335,13 @@
             }
           },
           {
+            "name": "itemType",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "name": "X-Correlation-Id",
             "in": "header",
             "description": "Optional client correlation identifier; the server creates one when absent.",
@@ -93415,6 +93422,12 @@
                 "$ref": "#/components/schemas/SalesDraftBuyerTaxV1"
               }
             ]
+          },
+          "subcontractService": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
@@ -113796,6 +113809,12 @@
             "items": {
               "$ref": "#/components/schemas/SalesOrderDraftProductSnapshotViewV1"
             }
+          },
+          "subcontractService": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
