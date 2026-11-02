@@ -171,18 +171,22 @@ public sealed class SalesOrderLineReferencePort(ISalesOrderDraftStore store, ICo
     }
 
     /// <summary>
-    /// The lines a physical-shipping consumer may be offered, in line order: the active lines, and — SAT-D211 (EK36) — a line the
-    /// CURRENT revision removed (SAT-D167) while that revision stands rejected exactly as it was decided: the rejection keeps the
-    /// last approved revision for shipping, so the line comes back and ships under it (its standing is measured against that
-    /// revision like any line). While the removal is being prepared or waits for approval, or once the rejected revision is changed
-    /// again, the removed line is not offered (NotFound; fail-closed); a removal of an earlier revision is final.
+    /// The lines a physical-shipping consumer may be offered, in line order: the active lines, and — SAT-D211 (EK36) — a line a
+    /// line revision removed (SAT-D167) while that revision stands REJECTED exactly as it was decided: internally (<c>Rejected</c>,
+    /// unchanged since the decision) or by the customer (SAT-D115: internally approved, the customer rejected it and the order goes
+    /// on under the last accepted revision). The rejection keeps the last approved / accepted revision for shipping, so the line comes
+    /// back and ships under it when that revision holds it (its standing is measured against that revision like any line; a line the
+    /// basis does not hold stays out). While the removal is being prepared or waits for a decision, or once the rejected revision is
+    /// changed again, a removed line is not offered (NotFound; fail-closed); a removal that was approved (and accepted) is final.
     /// </summary>
     internal static IEnumerable<SalesOrderDraftLine> ShippableLines(SalesOrderDraft draft)
     {
-        var restoredByRejection = draft.ApprovalState == InternalApprovalState.Rejected
+        var rejectedAsDecided = draft.ApprovalState == InternalApprovalState.Rejected
             && draft.Approval.DecidedAtUtc is { } decidedAt && draft.UpdatedAtUtc <= decidedAt;
-        return restoredByRejection
-            ? draft.AllLines.Where(line => !line.IsRemoved || line.RemovedInRevision == draft.Revision)
+        var customerRejected = draft.ApprovalState == InternalApprovalState.Approved && !draft.IsCustomerAccepted
+            && draft.CustomerAcceptedFallback is not null;
+        return rejectedAsDecided || customerRejected
+            ? draft.AllLines.Where(line => !line.IsRemoved || Stand(draft, line).RefusedState is null)
             : draft.Lines.OrderBy(line => line.LineNo);
     }
 

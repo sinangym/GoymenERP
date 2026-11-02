@@ -158,6 +158,28 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task A_removed_line_comes_back_under_the_last_accepted_revision_when_the_customer_rejects_the_removal()
+    {
+        // SAT-D211 (EK36) with SAT-D115: the customer rejects the internally approved Rev.1 that removed the line.
+        var world = new World();
+        var (approved, line) = await AcceptedApprovedAsync(world);
+        Owners(world);
+        var port = LinePort(world);
+        await world.Service().ReviseLinesAsync(approved.Id, LineRevision("5", [AddedLine()], [new SalesDraftLineRemovalV1(line)]), Metadata("k-d211c"));
+        await world.Service().SubmitDraftAsync(approved.Id, Command("6"), Metadata("k-d211c-submit"));
+        await world.Service().ApproveDraftAsync(approved.Id, Command("7"), Metadata("k-d211c-approve"));
+        // Approved internally, the customer has not decided: the removed line is not shipped.
+        Assert.Equal(SalesOrderLineReferenceOutcomeV1.NotFound, (await port.GetApprovedLineAsync(approved.Id, line)).Outcome);
+
+        await world.Service().RecordCustomerRejectionAsync(approved.Id, Command("8", "SENTETIK müşteri satırı geri istedi"), Metadata("k-d211c-reject"));
+
+        var answer = await port.GetApprovedLineForLoadingAsync(approved.Id, line, Day);
+        Assert.Equal((SalesOrderLineReferenceOutcomeV1.Approved, 0, "1.25", "1.25", "CustomerRejected"),
+            (answer.Outcome, answer.Line!.Revision, answer.Line.QuantityText, answer.Line.ShippingCapQuantityText, answer.Line.PendingApprovalState));
+        Assert.Equal(line, Assert.Single((await port.ListApprovedLinesAsync(10, null)).Items).LineId);
+    }
+
+    [Fact]
     public async Task An_added_line_is_read_for_the_revision_day_and_the_existing_lines_keep_their_business_date_snapshots()
     {
         // SAT-D212 (EK36): the order is dated three days after the server's business day (Day); a line added today is read for Day.
