@@ -1,6 +1,6 @@
 # Alış (Satın Alma) Modülü Hazırlık Planı v1
 
-Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13)**, **`_ALIS_EK1.md` (ALS-D14…D20)**, **`_ALIS_EK2.md` (ALS-D21…D28)**, **`_ALIS_EK3.md` (ALS-D29…D43)**, **`_ALIS_EK4.md` (ALS-D44…D45)**, **`_ALIS_EK5.md` (ALS-D46)**, **`_ALIS_EK7.md` (ALS-D48…D52)**
+Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D13)**, **`_ALIS_EK1.md` (ALS-D14…D20)**, **`_ALIS_EK2.md` (ALS-D21…D28)**, **`_ALIS_EK3.md` (ALS-D29…D43)**, **`_ALIS_EK4.md` (ALS-D44…D45)**, **`_ALIS_EK5.md` (ALS-D46)**, **`_ALIS_EK7.md` (ALS-D48…D52)**, **`_ALIS_EK8.md` (ALS-D53…D56)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.3, §8.2, §10.3, §25.5, §27.3, §28.12, §28.16, §29.3
 (AT-025…028); `docs/decisions/KARAR_SICILI.md` `DEC-PUR-001`, `DEC-CAR-001`, `DEC-STK-002/003/006/008/009`,
@@ -152,7 +152,7 @@ kalıptır ve Satış'ta çalışan bileşenlerle kurulur; kalan kısım ya yön
 | Durum eksenleri, sekmeler (`SalesOrderStatusAxes`, `SalesOrderTabs`) | Alış eksenleri: onay, kabul, faturalama, iade | API-14, UI-04 |
 | Sipariş PDF'i, belgeler (`SalesOrderPdfAction`, `SalesOrderDocumentsWorkspace`) | Tedarikçiye sipariş PDF'i, P-05 belgeler sekmesi | API-16, MOD-11 |
 | Onay deseni (taban fiyat/iskonto istisnası; hazırlayan ≠ onaylayan) | Talep, sipariş, fiyat farkı onayı (ALS-D2/D3/D8) | API-01, 15, 53 |
-| Kur kaydı (SAT-D169…D172) | Aynı kural, kabul gününe göre (ALS-D6) | API-21 |
+| Kur kaydı (SAT-D169…D172) | Aynı kural, kabul gününe göre (ALS-D6); düzeltme Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin (ALS-D56) | API-21 |
 | Açık sipariş raporu, raporlar sayfası | Açık alış siparişleri, fiyat sapması | API-90…92, UI-13 |
 | Bekleyen deneme depoları (`pending*.ts`, `orderAttempt.ts`) | Aynı "cevabı kaybolan istek" deseni | TEK-04 |
 
@@ -390,7 +390,10 @@ Satış politika kaydı (`ApprovedSalesPolicyCatalog`) ve üretim tolerans yaşa
 | UI-13 | P-12 Tedarikçi Performansı ve raporlar | K2 | API-90…92 |
 
 Persona önerileri (grant değildir; karta giriş yalnız Sinan'ın cümlesiyle): Satın alma uzmanı talep/sipariş girer,
-Satın alma müdürü onaylar; Depo kabul kaydeder; Muhasebe gelen faturayı eşleştirir. **PRS-01** persona kartı satırları
+Satın alma müdürü onaylar; Depo kabul kaydeder; Muhasebe gelen faturayı eşleştirir. **ALS-D53** (EK8) iki personayı
+tanımladı: Satın Alma Uzmanı hazırlar ve kendi talebini geri çeker, onaylamaz; Satın Alma Müdürü, Genel Müdür ve Admin
+onaylar/reddeder. **ALS-D54**: talebi Satın Alma Uzmanı, Satın Alma Müdürü, Satış Destek ve Satış Uzmanı açar. Kart
+eşlemesi EK8 §3 "Kart için not"tadır; kart PRS-01 PR'ında güncellenir. **PRS-01** persona kartı satırları
 (GP, K3), **PRS-02** depocunun fiyatsız sipariş görünümü (K3).
 
 ---
@@ -407,11 +410,11 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | No | Soru | Cevap |
 |---|---|---|
 | N-01 | Şerit | ALS-D1 (hepsi Claude'da) |
-| N-02 | Talep onayı | ALS-D2 (Satın alma müdürü onaylar) |
+| N-02 | Talep onayı | ALS-D2 (Satın alma müdürü onaylar); personalar ALS-D53, talep açanlar ALS-D54 |
 | N-03 | Sipariş onayı ve tutar eşiği | ALS-D3 (tek onay, eşik kapalı) |
 | N-04 | Teklif / tedarikçi karşılaştırma | ALS-D11 (A6 dalgası) |
 | N-05 | Fiyat biçimi | ALS-D5 (elle, iskontolu; StokERP ve hubvogal referans) |
-| N-06 | Alış faturası kuru | ALS-D6 (Satış kuralı, kabul gününe göre) |
+| N-06 | Alış faturası kuru | ALS-D6 (Satış kuralı, kabul gününe göre); düzeltme rol listesi ALS-D56 (Muhasebe, Muhasebe Müdürü, Genel Müdür, Admin; Satın Alma Müdürü düzeltemez) |
 | N-07 | Gelen fatura girişi | ALS-D7 (Mikro'dan içe aktar + eşleştir) |
 | N-08 | Fatura farkı | ALS-D8 (her fark, ucuz gelse de, müdür onayı; tolerans 0; No 25 bilinçli olarak değişti) |
 | N-10 | Revizyon | ALS-D9 (Rev+1 ve yeniden onay) |
@@ -424,6 +427,8 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | N-27 | Ek alış maliyetleri | ALS-D23 (siparişe/kabule masraf satırı); ALS-D50 (avans Finans'ta ödeme; gümrük/ithalat ALS-D23 masraf satırı, ayrı ithalat dosyası yok) |
 | N-28 (kalan) | kg ↔ adet ↔ metre çevrimi | ALS-D51 (çevrim ürün kartından; fiyat birimi ürün kartından varsayılan, siparişte değişir), ALS-D52 (fatura gerçekleşen irsaliye miktarıyla) |
 | N-36 | hubvogal bülten kuru alanı (üretici/fabrika bülteni) | ALS-D49 (bu alan Göymen ERP'ye alınmaz/taşınmaz; TCMB kur bülteni (KUR_GUNU, ALS-D6) etkilenmez) |
+| N-38 | Kabul toleransı (ALS-D43) hangi birimde ölçülür | ALS-D55 (satırın giriş birimi; kantar kg'ı ↔ irsaliye kg'ı farkı ayrıca OPEN-003 kuralıyla) |
+| – | Satın alma personaları ve talebi kimin açtığı (PRS-01) | ALS-D53 (Satın Alma Uzmanı + Satın Alma Müdürü), ALS-D54 (Satın alma + Satış); grant değildir |
 
 **Açık kalanlar (2026-11-02 sonu):**
 
@@ -432,7 +437,6 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | N-20 | Alışta tevkifat, satıcı muafiyeti, ihraç kayıtlı/teşvikli KDV, vade farkının matraha girişi, "ödenecek tutar" tanımı | Mali müşavir; teyide kadar ilgili satırlar "hesaplanamıyor" |
 | – | Sipariş numarası algoritmasının parçaları (ALS-D36) | MIG-01 alan eşlemesinde hubvogal kayıtlarından çıkarılır |
 | – | N-19: hubvogal erişimi göç (MIG-01) için yeniden gerekecek (karar değil, bağımlılık) | MIG-01'den önce |
-| N-38 | Kabul toleransı (ALS-D43) hangi birimde ölçülür: giriş birimi, fiyat birimi (ALS-D51) veya kantar kg'ı? | A3'ten önce sorulur |
 
 Bunlar dışındaki N soruları cevaplandı (ALS-D1…D43); uygulama sırasında gelen kararlar EK4 (ALS-D44/D45), EK5 (ALS-D46) ve EK7 (ALS-D48…D52; N-18, N-36, N-27 kalan, N-28 kalan kapandı).
 
@@ -461,10 +465,10 @@ dosyaları bu şeritte değiştirilmez, Satış'ın geçişi görev notuyla bır
 | Dalga | İçerik | Ön şart |
 |---|---|---|
 | **A0** | Bu plan ve karar dosyaları; `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Alış satırları; FZL-01…03; TEK-05…08; hubvogal alan eşlemesi (MIG-01 hazırlığı) | – |
-| **A1** | PRS-01 (persona kartı satırları, §13.3); TEK-09 durum makinesi; API-01 (talep onay/ret), API-01b (hazırlayanın geri çekmesi, ALS-D46), API-02 (kaynak alanı, A-2), API-03 + UI-01; API-10 + UI-05 (No.161 iptali); FZL-04 | ALS-D2, ALS-D16, ALS-D17 |
+| **A1** | PRS-01 (persona kartı satırları, §13.3; personalar ALS-D53, talep açanlar ALS-D54, kur düzeltme ALS-D56 — eşleme EK8 §3); TEK-09 durum makinesi; API-01 (talep onay/ret), API-01b (hazırlayanın geri çekmesi, ALS-D46), API-02 (kaynak alanı, A-2), API-03 + UI-01; API-10 + UI-05 (No.161 iptali); FZL-04 | ALS-D2, ALS-D16, ALS-D17 |
 | **A2a** | TEK-01…03; API-20…22 + UI-03 (fiyat, fiyatsız onay, vergi, kur, vade + ödeme planı, işlem türü); API-23 (masraf ve iskonto satırı); API-98 (Ayarlar listeleri); API-15 + API-96 (onay eşiği); PRS-02 (depocunun fiyatsız görünümü). Fiyat modeli baştan satır birimine bağlı kurulur (ALS-D19; A3'te migration gerekmesin); satır giriş birimi + fiyat birimi taşır (ALS-D51) | ALS-D3, D5, D6, D18, D20, D21, D23, D24, D27, D28; Ayarlar merge sırası (B-8); ALS-D38 (vade farkı, API-20); ALS-D29 (fason masraf değil) |
 | **A2b** | API-12/13/17/18 + UI-06 (revizyon, kırılım, teyit, Tedarik No); API-14 + UI-04 (sekmeler, eksenler); API-16 (PDF) | A2a; ALS-D9, D13, D20, D34 |
-| **A3** | API-95 + API-40 (kabul toleransı, kantar fiş no), API-41 (hizmet kabulü), API-42…44 + UI-08; API-11 (satır kapatma, tolerans profiline bağlı); API-30…32 + UI-07 (termin, tedarikçide hazır, yolda); MOD-06, MOD-07, MOD-14 (görev notu `ALIS_URETIM_DEVIR_v1.md`: Stok'ta gelecek arz içinde "tedarikçide hazır" satırı), MOD-16 (Satış görev notu); adet/metre birimleri (ALS-D19, Ayarlar onayından sonra) ve kg ↔ adet ↔ metre çevrimi (ALS-D51, Ürün portu: `docs/handoffs/ALIS_URUN_DEVIR_v1.md`) | API-95 Ayarlar kaydı (B-8); ALS-D33, D43, D30, D39 (API-31); Ürün çevrim portu (ALS-D51); N-38 |
+| **A3** | API-95 + API-40 (kabul toleransı, kantar fiş no), API-41 (hizmet kabulü), API-42…44 + UI-08; API-11 (satır kapatma, tolerans profiline bağlı); API-30…32 + UI-07 (termin, tedarikçide hazır, yolda); MOD-06, MOD-07, MOD-14 (görev notu `ALIS_URETIM_DEVIR_v1.md`: Stok'ta gelecek arz içinde "tedarikçide hazır" satırı), MOD-16 (Satış görev notu); adet/metre birimleri (ALS-D19, Ayarlar onayından sonra) ve kg ↔ adet ↔ metre çevrimi (ALS-D51, Ürün portu: `docs/handoffs/ALIS_URUN_DEVIR_v1.md`) | API-95 Ayarlar kaydı (B-8); ALS-D33, D43, D30, D39 (API-31); Ürün çevrim portu (ALS-D51); N-38 kapandı (ALS-D55: tolerans satırın giriş biriminde) |
 | **A4** | API-70…72 + UI-11 + MOD-01 (fason, A-1); MOD-02 (Üretim talebi, ALS-D16); MOD-03 (Satış bağlı satın alma, A-3) | A1, A2a; MOD-03 için Satış S6 (API-11, MOD-05) sözleşmesi |
 | **A5** | MOD-12 (outbox); API-50…55 + API-97 + UI-09 (gelen fatura, üçlü kontrol, kur farkı); MOD-04; API-60…62 + UI-10 (iade) | A2b, A3; MOD-15 (B-1, Finans konuşması), Alış outbox + gerekirse ERP-000F (B-3, ALS-D44); ALS-D7/D8/D14/D15, ALS-D41, ALS-D42; iade için Stok iade çıkış portu (MOD-06) |
 | **A6** | API-80/81 + UI-02 (teklif, ALS-D11); API-90…92 + UI-13 (raporlar, performans); MOD-10 + UI-12 (onaylar); MIG-01 (hubvogal göçü); kabul taraması AT-025…028; production aktivasyonu insan kararıdır | A5; N-19 (hubvogal erişimi) |
