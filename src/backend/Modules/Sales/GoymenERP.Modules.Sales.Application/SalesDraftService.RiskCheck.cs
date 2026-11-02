@@ -79,8 +79,10 @@ public sealed partial class SalesDraftService
         var limitCurrency = party.CreditLimit is { State: SalesRiskInputState.Available, Amounts: [{ } limitAmount] }
             ? await RiskCurrencyAsync(scope, draft, limitAmount.CurrencyId, cancellationToken)
             : null;
+        var rates = await RiskExchangeRatesAsync(scope, [local, limitCurrency],
+            [party.OpenReceivables, shippedNotInvoiced, remainder, thisOrder], cancellationToken);
         var evaluation = SalesCustomerRiskCalculator.Evaluate(local, limitCurrency, party.OpenReceivables, shippedNotInvoiced,
-            remainder, thisOrder, party.CreditLimit);
+            remainder, thisOrder, party.CreditLimit, rates);
 
         // The price read is asked last, after every other fence: the freshest word on whether amounts cross.
         var disclosure = await DiscloseAsync(scope, cancellationToken);
@@ -163,6 +165,66 @@ public sealed partial class SalesDraftService
         return profile.IsActive && profile.EffectiveFrom <= day && (profile.EffectiveThrough is null || profile.EffectiveThrough >= day)
             ? new SalesRiskCurrency(currencyId, Math.Min(profile.Scale, Money.MaximumScale))
             : null;
+    }
+
+    /// <summary>
+    /// SAT-D47 (DEC-FIN-010; SAT-D54/D55/D170): the rates that convert a foreign-currency risk amount into a TRY total, from the
+    /// Settings rate-day port for the CHECK day (the server's Europe/Istanbul business day) — computed on every check, never
+    /// frozen (SAT-D172). Only foreign → TRY pairs exist (TCMB selling rates); a TL amount against a foreign limit has no rate
+    /// here (its formula is not decided) and stays <c>exchange_rate_unavailable</c>. A rate the port cannot resolve ("kur
+    /// bulunamadı/belirlenemedi"), an absent port or a failing one leaves the pair out, so that amount stays unavailable; a lost
+    /// authority stays a 403.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<(Guid Source, Guid Target), ExchangeRate>> RiskExchangeRatesAsync(Scope scope,
+        IEnumerable<SalesRiskCurrency?> targets, IEnumerable<SalesRiskInput> inputs, CancellationToken cancellationToken)
+    {
+        var rates = new Dictionary<(Guid Source, Guid Target), ExchangeRate>();
+        var tryTarget = SettingsCurrencyIdentitiesV1.TurkishLira;
+        if (exchangeRates is null || !targets.Any(target => target?.CurrencyId == tryTarget))
+        {
+            return rates;
+        }
+
+        var sources = inputs
+            .Where(input => input.State == SalesRiskInputState.Available)
+            .SelectMany(input => input.Amounts)
+            .Where(amount => amount is not null && amount.CurrencyId != tryTarget && amount.CurrencyId != Guid.Empty)
+            .Select(amount => amount!.CurrencyId)
+            .Distinct()
+            .ToArray();
+        if (sources.Length == 0)
+        {
+            return rates;
+        }
+
+        var checkDay = ServerBusinessDay();
+        foreach (var source in sources)
+        {
+            ExchangeRateResolutionV1 resolution;
+            try
+            {
+                resolution = await GuardedAsync(scope, bindings.ReadPermission,
+                    () => exchangeRates.ResolveAsync(checkDay, source, tryTarget, cancellationToken), cancellationToken);
+            }
+            catch (SettingsPrerequisiteException exception) when (exception.Code == ExchangeRateProblemCodesV1.AccessDenied)
+            {
+                throw new SalesDraftServiceException(403, "forbidden");
+            }
+            catch (Exception exception) when (exception is not (OperationCanceledException or SalesDraftServiceException))
+            {
+                continue;
+            }
+
+            if (resolution.State == ExchangeRateResolutionStatesV1.Resolved && resolution.SourceCurrencyId == source
+                && resolution.TargetCurrencyId == tryTarget && resolution.RateDay == checkDay
+                && decimal.TryParse(resolution.SellingRate, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value)
+                && value > 0m)
+            {
+                rates[(source, tryTarget)] = ExchangeRate.Of(source, tryTarget, value);
+            }
+        }
+
+        return rates;
     }
 
     // ---- the customer-finance owner ---------------------------------------------------------------------------------------

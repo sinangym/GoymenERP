@@ -222,8 +222,10 @@ public sealed class SalesOrderTaxSqlServerRelationalAcceptanceTests
         var backfill = Array.FindIndex(applied, migration => migration.EndsWith("_BackfillDraftBuyerTax", StringComparison.Ordinal));
         Assert.True(backfill > 0);
         var migrator = context.GetService<IMigrator>();
-        await migrator.MigrateAsync(applied[backfill - 1]);
 
+        // The legacy order is written through today's store (it writes every later migration's columns too, e.g. SAT-D175's
+        // AddDraftSubcontractService), with no buyer tax — the state SQL Server held before the backfill — and the schema is
+        // then rolled back to before the backfill (the later migrations' Downs pass over a normal order) and applied again.
         Guid legacyId;
         await using (var scope = run.SalesStore(CompanyA))
         {
@@ -231,6 +233,7 @@ public sealed class SalesOrderTaxSqlServerRelationalAcceptanceTests
                 documentNo => Draft(CompanyA, documentNo, legacy: true))).Draft.Id;
         }
 
+        await migrator.MigrateAsync(applied[backfill - 1]);
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM [sales].[Drafts] WHERE [Id] = @id AND [BuyerTaxJson] IS NULL",
             ("@id", legacyId)));
         await migrator.MigrateAsync();

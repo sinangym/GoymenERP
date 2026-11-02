@@ -73,7 +73,8 @@ public sealed partial class SalesOrderDraft
             throw StateConflict("İskonto istisnası yalnız hazırlanan veya reddedilmiş taslakta onaylanır.");
         }
 
-        var overLimit = lines.Where(line => NeedsDiscountApproval(line.Commercial)).ToArray();
+        // SAT-D195: a subcontract service line's price is approved by the order's internal approval, never as a discount exception.
+        var overLimit = lines.Where(line => !IsSubcontractService && NeedsDiscountApproval(line.Commercial)).ToArray();
         if (overLimit.Length == 0 || inputs.Count != overLimit.Length
             || inputs.Any(input => input is null)
             || inputs.Select(input => input.LineId).Distinct().Count() != inputs.Count
@@ -141,7 +142,9 @@ public sealed partial class SalesOrderDraft
 
     private void RequireDiscountExceptionsApproved()
     {
-        if (lines.Any(line => NeedsDiscountApproval(line.Commercial) && line.Commercial.DiscountCheck?.IsApproved != true))
+        // SAT-D195: no discount-limit gate on a subcontract service order (no list to measure against; its internal approval decides).
+        if (!IsSubcontractService
+            && lines.Any(line => NeedsDiscountApproval(line.Commercial) && line.Commercial.DiscountCheck?.IsApproved != true))
         {
             throw new SalesRuleException(SalesRuleCodes.DiscountExceptionPending,
                 "Limiti aşan (ya da limiti tanımlı olmayan) her iskonto farklı yetkili tarafından gerekçeli onaylanmalıdır.");

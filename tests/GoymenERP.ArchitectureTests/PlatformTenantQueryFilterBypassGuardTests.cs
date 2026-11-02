@@ -134,7 +134,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // Purchasing A0 (FZL-03, main) rewrites two Purchasing comments only (eligibility port is registered; order screens
         // no longer "staged"); merged with U1-a (f52999f9…/f46fcab5… -> 722a6d6d…); no registration, generation, network or
         // hosted-service change.
-        "722a6d6db067b8ae641b4e0e27e8379f52b937802c906674bde7f4b6fe435d20";
+        // DEC-FIN-010 / SAT-D169 maps the Settings exchange-rate routes; no registration, generation, network or hosted-service
+        // change (the TCMB source is composed inside AddSettingsModule and is off by default) (722a6d6d… -> d219b1f5…).
+        "d219b1f55a22def9d2be84284f8879dbedfca95e9404fbe19086ef430c619e77";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
@@ -322,12 +324,16 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // (e68b1182… -> 9c53f777…).
             // SAT-D149/D158 (EK20/EK21): +2 Settings tax master SQL facts (buyer situation list; item type move to the shared
             // card) (9c53f777… -> 534be0f1…).
+            // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
+            // empty-store rollback) (534be0f1… -> a90275a7…).
             ["tools/relational_inventory/platform.txt"] =
                 // Üretim U1-a: +3 Settings manufacturing profile SQL facts (parameter lifecycle; tolerance publication; migration
                 // round trip) (534be0f1… -> 026f3c54…).
                 // Üretim U1-b: +1 Settings manufacturing profile SQL fact (tolerance line scope, catalog fallback, supersession)
                 // (026f3c54… -> 69a1024a…).
-                "69a1024a041b3eb86e20c80dc871402df112fed0def350aa8918950c193296a9",
+                // DEC-FIN-010 / SAT-D54/D55/D169…D172: +2 Settings exchange-rate SQL facts (record lifecycle; disabled sources and
+                // empty-store rollback) (69a1024a… -> 84945670…).
+                "84945670f9b50efefba59c5525b76a105634b7669da0bd890fb3ce141cbc2ffb",
 
             // product
             // DEC-CAR-003: +4 ProductDeactivationSqlServerRelationalAcceptanceTests facts (d7dbec7f… -> ddeead62…).
@@ -397,8 +403,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // columns; the real Settings tax options and the 51135 rollback refusal), kept ordinal-sorted (a921318d… -> 1c5c3996…).
             // SAT-D184 (EK26): +1 SalesOrderTax fact (the BackfillDraftBuyerTax migration writes "Normal" once on a legacy order),
             // kept ordinal-sorted (1c5c3996… -> 4fa6ad29…).
+            // SAT-D175/D176 (EK25): +2 SalesSubcontractServiceOrder facts (the flag, item type and price persisted and the read
+            // port answered for its company only; the write guard, CK_DraftLines_ItemType and the 51141 rollback refusal), kept
+            // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
+            // SAT-D195 (EK29): +1 SalesSubcontractServiceOrder fact (a quantity revision of an approved fason order re-enters its
+            // internal approval with no discount check) and the first fact renamed (per-kg price), kept ordinal-sorted (0886d9ff… -> 1f679068…).
             ["tools/relational_inventory/sales.txt"] =
-                "4fa6ad296d5c8787ee3ed7de27ae4eccf4cb48def7031d8a5d87586d9c0061f2",
+                "1f679068e55e0a30d83cf29e6497cedc6eb1efd7ce3b079bc80f05ccc3aa9b62",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -467,7 +478,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // insert of its lifecycle publication (same save, Approved → Published); the new rows join the company check.
                 // Re-fingerprinted for Üretim U1-b: the write fence also admits the one supersession update of a published
                 // tolerance registry row (its open-ended window closed beside the successor's publication in the same save).
-                "8ece5e3cc5a0eaed79dd44455fbca347eff9e9c82084c215e160da0cfc06e9a7",
+                // Re-fingerprinted for DEC-FIN-010 / KUR_GUNU / SAT-D169…D171: the company-filtered exchange-rate record (day fence,
+                // append-only records and their rate lines; company inside every key and foreign key) joins the write fence
+                // (records and rate lines immutable, every row in the context company).
+                "4c558a477888627dffdfacc253aa659a98bba06a68bc867e5e10a699d04437f3",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -502,9 +516,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // Re-fingerprinted for MOD-03 → Sales: four nullable JSON columns (BuyerTaxJson on Drafts / DraftRevisionHeaders, TaxJson
             // on DraftLines / DraftRevisionLines) with ISJSON check constraints, and the write guard widened by exactly
             // Drafts.BuyerTaxJson and DraftLines.TaxJson; no query-filter bypass or direct database surface.
+            // Re-fingerprinted for SAT-D175/D176 (EK25): Drafts / DraftRevisionHeaders.IsSubcontractService and DraftLines.ItemType
+            // (CK_DraftLines_ItemType); the write guard is NOT widened (the flag and the item type never change after the insert).
             ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/"
              + "Persistence/SalesDbContext.cs"] =
-                "ac77429518b71f3af72cf33e879b6ed9fa80722c37c79a453f2a1e48f3818475",
+                "c9363c0337d70bec52dd5111ea2e8513e242a9f55386ee73e79e6ed89678d9e1",
             // LOG-4a: company-scoped like Organization; every tenant row (instructions, lines, shares, attempts) and
             // AuditEvent carries the CompanyId filter. A standard entry, not an exception.
             ["src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/"
@@ -1447,8 +1463,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // Re-fingerprinted for MOD-03 → Sales: the draft service also receives the optional Settings line tax port and is
                     // registered as the tax read service (DI-only); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D181 (EK26): the draft service also receives the optional Settings rate list port (DI-only).
+                    // Re-fingerprinted for SAT-D47 (DEC-FIN-010): the draft service also receives the optional Settings rate-day port
+                    // (DI-only); provider branch and token counts unchanged.
+                    // Re-fingerprinted for SAT-D175/D176 (EK25): the draft service also receives the optional Product item type reader and
+                    // the subcontract binding hook, and the subcontract service order read port is registered over the same store (DI-only).
                     new(
-                        "b19e11cca0827ed1d16027630cab928e4ee7917e1ab99f64db2e6ea1e3bdd145",
+                        "5b0ba111a28f9c6a697c83812e58ffa8486d5801a6911956213adc68efd29de9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1493,8 +1513,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // reads those rows (and binds the source quote) through the same filtered context; SqlClient count unchanged.
                     // Re-fingerprinted for MOD-03 → Sales: the line, archive and header rows carry the buyer tax / line tax JSON written
                     // and restored through the same filtered context (SalesTaxJson); SqlClient count unchanged.
+                    // Re-fingerprinted for SAT-D175/D176 (EK25): the header, archive header and line rows carry the subcontract flag and
+                    // the line item type, written and restored through the same filtered context; SqlClient count unchanged.
                     new(
-                        "5686ed18e1a9c6b3f97591935282efb1e93db0e7603376402be9e0e12f97129e",
+                        "216ca928f51a8d3c68278e6ff59b91cd4ffd2014df3b4edde5cd9e4e1db82456",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
@@ -1554,7 +1576,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
                         // Re-fingerprinted for Üretim U1-a (+ SAT-D181 tax rate list port, merged): the Manufacturing parameter port and the profile administration
                         // behind its two ports (DI-only); the database surface and its counts are unchanged.
-                        "983a856dd56e364fa22969b6b4f03d476be7de12dca86649048d5b6027964e25",
+                        // Re-fingerprinted for DEC-FIN-010 / SAT-D169: the exchange-rate administration, the rate-day port and the two
+                        // official sources (disabled unless configuration names an https TCMB address; DI-only); counts unchanged.
+                        "8e31d38534536624b5036973fbe81963c911618fa1b1a8247f8e19010d7e278c",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1745,6 +1769,15 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 3
+                        }),
+                // DEC-FIN-010 / SAT-D169…D171: Down refuses (51201) while any exchange-rate record exists (forward fix).
+                ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
+                 + "Migrations/20261102143743_AddExchangeRateRecords.cs"] =
+                    new(
+                        "91f70d3e3d62e83d7ce2293b5707acfcb62d91416a35703653afbe2f582d79ab",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 1
                         }),
                 // Üretim U1-a: Up re-creates the tolerance registry trigger with the new column and adds three lifecycle guard
                 // triggers; Down refuses (51183) while any profile or mass-balance value exists, then restores the trigger.
@@ -2093,6 +2126,13 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // exact JSON, one statement, no other table); Down is a documented no-op (forward fix).
                 ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102090531_BackfillDraftBuyerTax.cs"] =
                     new("fd822bd630315a4f8b78b9e948073c74ce01b289f5823f30f0718f01ca6f946d",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        { ["Sql"] = 1 }),
+                // SAT-D175/D176 (EK25): the Down's only raw SQL is Sales' refusal (51141, used by no other migration) while any
+                // subcontract order, archived "fason" header or line item type exists; the THROW precedes
+                // every drop. Forward fix.
+                ["src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/Migrations/20261102115043_AddDraftSubcontractService.cs"] =
+                    new("46c360a4b22d6cadc80cb18a6ddca57e214f9819ddd8e25fa4b6fddaa0868760",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         { ["Sql"] = 1 }),
                 // AT-053: the Down's only raw SQL is Logistics' module refusal (51056, used by no other migration) while

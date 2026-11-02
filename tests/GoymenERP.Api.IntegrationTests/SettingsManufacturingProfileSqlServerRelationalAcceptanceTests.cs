@@ -577,7 +577,11 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             var rollback = await Assert.ThrowsAsync<SqlException>(() =>
                 context.GetService<IMigrator>().MigrateAsync(applied[index - 1]));
             Assert.Equal(51185, rollback.Number); // U1-b: the newest profile migration refuses first (forward fix)
-            Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
+            // EF reverts the later migrations first, each in its own transaction: an empty later Settings store (the exchange-rate
+            // record, AddExchangeRateRecords) rolls back freely; the refusing migration and everything before it stay applied.
+            var refusing = Array.FindIndex(applied, name => name.EndsWith("_AddManufacturingToleranceLineScope", StringComparison.Ordinal));
+            Assert.True(refusing >= index);
+            Assert.Equal(applied.Take(refusing + 1), await context.Database.GetAppliedMigrationsAsync());
         }
 
         public async Task<string> GrantAsync(string developmentUser, Guid company, params string[] permissions)

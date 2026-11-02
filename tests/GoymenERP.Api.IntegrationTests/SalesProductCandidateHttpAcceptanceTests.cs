@@ -101,7 +101,42 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
         Assert.DoesNotContain("private_owner_detail", body, StringComparison.Ordinal);
     }
 
-    private WebApplicationFactory<Program> CreateHost(ControlledAuthority authority, StubCandidates owner) =>
+    [Fact]
+    public async Task A_subcontract_picker_gets_only_the_candidates_whose_product_card_is_a_service_and_an_unreadable_type_is_503()
+    {
+        // SAT-D176 (EK25): `itemType=Service` keeps the owner's window but only the service products (the shared card, SAT-D149).
+        var service = Guid.Parse("71717171-7171-4171-8171-717171717171");
+        var owner = new StubCandidates(new([
+            new(ProductId, "7", "PRD-7", "Bant", [new(UnitId, "kg", ProfileId, "3")]),
+            new(service, "2", "HZM-1", "Sentetik işçilik", [new(UnitId, "kg", ProfileId, "3")]),
+        ], true));
+        var itemTypes = new StubItemTypes { [ProductId] = new(ProductItemTypeOutcomeV1.Found, ProductItemTypesV1.Steel, 1),
+            [service] = new(ProductItemTypeOutcomeV1.Found, ProductItemTypesV1.Service, 1) };
+        using var host = CreateHost(new ControlledAuthority(), owner, itemTypes);
+        using var client = CreateClient(host);
+
+        using (var response = await client.GetAsync(SalesProductCandidateEndpoints.Path + "?effectiveOn=2026-09-22&itemType=Service"))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            Assert.True(document.RootElement.GetProperty("searchWindowFull").GetBoolean());
+            Assert.Equal("HZM-1", Assert.Single(document.RootElement.GetProperty("items").EnumerateArray()).GetProperty("code").GetString());
+        }
+
+        using (var unknown = await client.GetAsync(SalesProductCandidateEndpoints.Path + "?effectiveOn=2026-09-22&itemType=Hizmet"))
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+        }
+
+        itemTypes[service] = new(ProductItemTypeOutcomeV1.Unavailable, null, null);
+        using (var unavailable = await client.GetAsync(SalesProductCandidateEndpoints.Path + "?effectiveOn=2026-09-22&itemType=Service"))
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+            Assert.DoesNotContain("HZM-1", await unavailable.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+    }
+
+    private WebApplicationFactory<Program> CreateHost(ControlledAuthority authority, StubCandidates owner, StubItemTypes? itemTypes = null) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IErpAuthorizationService>();
@@ -110,7 +145,18 @@ public sealed class SalesProductCandidateHttpAcceptanceTests(GoymenErpApiFactory
             services.AddSingleton<IErpAuthorityRevalidationService>(authority);
             services.RemoveAll<IProductSalesCandidatesV1>();
             services.AddSingleton<IProductSalesCandidatesV1>(owner);
+            if (itemTypes is not null)
+            {
+                services.RemoveAll<IProductItemTypeReaderV1>();
+                services.AddSingleton<IProductItemTypeReaderV1>(itemTypes);
+            }
         }));
+
+    private sealed class StubItemTypes : Dictionary<Guid, ProductItemTypeReadV1>, IProductItemTypeReaderV1
+    {
+        public Task<ProductItemTypeReadV1> GetAsync(Guid productId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(TryGetValue(productId, out var answer) ? answer : new ProductItemTypeReadV1(ProductItemTypeOutcomeV1.NotFound, null, null));
+    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> host)
     {
