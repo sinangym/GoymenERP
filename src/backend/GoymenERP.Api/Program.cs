@@ -348,8 +348,9 @@ builder.Services.AddLogisticsModule(
     (services, options) => options.AddInterceptors(
         services.GetRequiredService<AuditSaveChangesInterceptor>()));
 // PUR-4a: the order's supplier is the Cari owner's answer (the Sales party port's shape, plus the account's stored
-// Supplier role flag). No purchase-eligibility port is registered: Product has not published one (ÜRÜN #288 P3-3),
-// so the service answers 503 product_eligibility_unavailable fail-closed until the owner registers it.
+// Supplier role flag). The purchase-eligibility port adapts Product's published IProductPurchaseEligibilityV1
+// (AddProductPurchaseSelection above); while Product's runtime is off or its answer fails, the service answers
+// 503 product_eligibility_unavailable, fail-closed.
 builder.Services.AddScoped<IPurchasingPartyAccountPortV1, CounterpartyPurchasingPartyAccountPortV1>();
 builder.Services.AddScoped<IProductPurchaseEligibilityPortV1, ProductPurchaseEligibilityPort>();
 builder.Services.AddSingleton(new PurchasingServiceBindings(
@@ -384,7 +385,7 @@ builder.Services.AddSingleton<IShellCapabilityProvider, FinanceShellCapabilityPr
 builder.Services.AddSingleton<IShellCapabilityProvider, ManufacturingShellCapabilityProvider>();
 // LOG-4a: Logistics's (staged) loading-instruction screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, LogisticsShellCapabilityProvider>();
-// PUR-4a: Purchasing's (staged) order screens, before the authority is chosen.
+// PUR-4a: Purchasing's request and order screens (mounted in the shell router), before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, PurchasingShellCapabilityProvider>();
 // ACC-V0b: Accounting's (staged) period, journal and posting-queue screens, before the authority is chosen.
 builder.Services.AddSingleton<IShellCapabilityProvider, AccountingShellCapabilityProvider>();

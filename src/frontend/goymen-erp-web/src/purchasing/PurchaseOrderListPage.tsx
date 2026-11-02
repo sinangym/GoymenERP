@@ -41,35 +41,11 @@ import { DataTable, type DataTableColumn } from '../ui/DataTable'
 import { Field } from '../ui/Field'
 import { StatusIndicator, type StatusTone } from '../ui/StatusIndicator'
 import { createRequestFence } from './requestFence'
+import { ORDER_LIST_TEXT as LIST_TEXT, PURCHASE_ORDER_STATUS_LABEL as STATUS } from './purchasingText'
 import styles from './PurchaseOrderListPage.module.css'
-
-const STATUS: Record<PurchaseOrderStatus, string> = { Draft: 'Taslak', Approved: 'Onaylandı' }
 
 /** The dot's colour only — the status text carries the meaning. */
 const STATUS_TONE: Record<PurchaseOrderStatus, StatusTone> = { Draft: 'neutral', Approved: 'success' }
-
-const LIST_TEXT = {
-  heading: 'Satın alma siparişleri',
-  subject: 'satın alma siparişleri',
-  tableLabel: 'Şirketin satın alma siparişleri',
-  create: 'Yeni',
-  filter: 'Durum',
-  filterAll: 'Tümü',
-  scope: 'Bu görünüm fiyat veya stok göstermez; yalnız satın alma taahhüdünün sunucuda kayıtlı durumunu gösterir.',
-  order: 'Sipariş',
-  status: 'Durum',
-  businessDate: 'İş tarihi',
-  lineCount: 'Satır',
-  updatedAt: 'Güncellendi',
-  loadMore: 'Daha fazla göster',
-  loadingMore: 'Sonraki sayfa yükleniyor…',
-  retrySamePage: 'Aynı sayfayı yeniden dene',
-  nextPageSubject: 'sonraki sipariş sayfası',
-  filterBySupplier: 'Filtrele',
-  supplierFilter: 'Tedarikçi filtresi',
-  clearSupplierFilter: 'Tedarikçi filtresini kaldır',
-  supplierFilterUnnamed: 'Tedarikçi adı bu listeden okunamadı',
-} as const
 
 const HEADING_ID = 'purchase-order-list-heading'
 const SUPPLIER_FILTER_VALUE_ID = 'purchase-order-supplier-filter-value'
@@ -171,8 +147,8 @@ function PurchaseOrderList({ namespace }: { readonly namespace: string | null })
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
-  const canOpen = hasCapability(shell, PURCHASING_CAPABILITY.orderDetail as never)
-  const canCreate = hasCapability(shell, PURCHASING_CAPABILITY.orderCreate as never)
+  const canOpen = hasCapability(shell, PURCHASING_CAPABILITY.orderDetail)
+  const canCreate = hasCapability(shell, PURCHASING_CAPABILITY.orderCreate)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   /** Cards or table is a layout choice only: the same rows, the same order, no new read when it flips. */
   const cards = useSyncExternalStore(subscribeCards, readCards, () => false)

@@ -131,7 +131,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
         // item type adapter, with comments; no OpenAPI-generation, network or hosted-service surface changes.
         // Üretim U1-a maps the Settings Manufacturing parameter / tolerance profile routes; no OpenAPI-generation, network or
         // hosted-service surface changes.
-        "f52999f9a223ffd086025f2663a704be7f32d6197a80b9506f548a9624351b8f";
+        // Purchasing A0 (FZL-03, main) rewrites two Purchasing comments only (eligibility port is registered; order screens
+        // no longer "staged"); merged with U1-a (f52999f9…/f46fcab5… -> 722a6d6d…); no registration, generation, network or
+        // hosted-service change.
+        "722a6d6db067b8ae641b4e0e27e8379f52b937802c906674bde7f4b6fe435d20";
     private const string ReviewedOpenApiGenerationModeFingerprint =
         "74ff9d4e8033732b06b8b6639699ce97781a967b3a3f658da4c8571d7573da50";
     private const string ReviewedProductManufacturingTechnicalRegistrationPath =
