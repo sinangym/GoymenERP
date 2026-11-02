@@ -1,7 +1,7 @@
 # Finans Modülü Hazırlık Planı v1
 
 Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Finans şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) ·
-Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D4)**
+Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D5)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.10, §7.11, §8.1, §8.2, §16 Faz 4, §19.3, §27.11 (F-01…F-17),
 §28.14–28.16, §29.6 (AT-058); `docs/decisions/KARAR_SICILI.md` `DEC-FIN-001…016`, `DEC-SET-001`, `DEC-INT-001`,
@@ -17,7 +17,7 @@ Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.10, §7.11, §8.1, §
 
 Bu plan kodun 2026-11-02 `main` durumuna (`3cae436`) göre yazıldı. Biçim `SATIS_`, `URETIM_` ve
 `ALIS_HAZIRLIK_PLANI_v1.md` ile aynıdır. Hubvogal'in finans bölümü (kasa, banka, çek, kredi, kredi kartı, DBS) bu
-oturumdan erişilemez (VPN'li yerel ağ; ALS-D5 notu); §2.4'te ekran görüntüsü istenmiştir (N-01).
+oturumdan doğrudan erişilemez; 2026-11-02'de Sinan'ın izniyle ofis bilgisayarı üzerinden incelendi (§15).
 
 Şerit kısaltmaları: **CL** Claude, **GP** ChatGPT (spec/kabul/golden), **SN** Sinan (karar). Seviye: K1/K2/K3
 (`GOYMEN_ERP_HIZLI_TESLIM_v4.md`). Bu plandaki `API-`, `MOD-`, `UI-`, `TEK-`, `FZL-`, `N-` numaraları **bu plana
@@ -131,7 +131,7 @@ tahsilatını fiş taslağı kaynağı olarak okuyabilir. Mikro'ya dışa aktar�
 - Nakit planı, nakit bütçesi, Finans genel bakış, kontrol merkezi, raporlar.
 - Finans **outbox/inbox**; platform dağıtıcısı (ERP-000F) yok, Stok ve Work tablolarını da dağıtan yok.
 
-### 2.4 Hubvogal karşılaştırması (eksik — N-01)
+### 2.4 Hubvogal karşılaştırması (ayrıntı §15)
 
 Hubvogal Göymen'in bugün kullandığı sistemdir; finans bölümünde kasa, banka, çek, kredi, kredi kartı ve DBS modülleri
 olduğu Sinan tarafından belirtildi. Bu oturum hubvogal'e erişemez (VPN). Alış incelemesinden (§13.6) bilinenler:
@@ -376,12 +376,12 @@ K6/K7/K8/K14, SAT-D51/D52/D85/D96, ALS-D41/D42/D44.
 
 | No | Soru | Neden | Dalga |
 |---|---|---|---|
-| N-01 | Hubvogal'in finans ekranlarının (kasa, banka, çek/senet, kredi, kredi kartı, DBS, cari ekstre) liste ve kayıt ekranı görüntülerini paylaşabilir misin? | Alan, durum ve numara eşlemesi; göç (MIG-02) | F0 |
+| N-01 | ~~Hubvogal finans ekranları~~ → **§15'te incelendi** (2026-11-02). Eski soru: Hubvogal'in finans ekranlarının (kasa, banka, çek/senet, kredi, kredi kartı, DBS, cari ekstre) liste ve kayıt ekranı görüntülerini paylaşabilir misin? | Alan, durum ve numara eşlemesi; göç (MIG-02) | F0 |
 | N-02 | ~~Şerit~~ → **FNS-D1: hepsi burada** | — | kapandı |
 | N-03 | Bugün içe aktarılmış açık kalemlerin hepsi müşteri alacağı sayılsın mı? (Production'da veri yok; test verisi) | MOD-15 migration | F1 |
 | N-04 | ~~DBS yönü~~ → **FNS-D3: ikisi de** | — | kapandı |
-| N-05 | Kaç kasa var; döviz kasası (USD/EUR nakit) var mı; kasa şirket bazlı mı? | API-30 | F3 |
-| N-06 | Döviz alım-satımı (TL hesaptan USD hesaba) virman mı, ayrı "döviz bozdurma" işlemi mi; kur farkı nasıl görünsün? | API-32 | F3 |
+| N-05 | ~~Kasa~~ → §15: şirket bazlı, TL/USD/EUR kasaları var | API-30 | kapandı |
+| N-06 | ~~Döviz alım-satımı~~ → §15: hubvogal'deki gibi virman içinde "Döviz Alış/Satış" türü (API-34) | API-32/34 | kapandı |
 | N-07 | Banka ekstrelerini hangi bankalardan, hangi dosya biçiminde (Excel/CSV/MT940) alıyorsunuz? | API-41 | F4 |
 | N-08 | Kendi çekinizi (verilen çek) ve senedinizi kullanıyor musunuz; çek defteri takibi istenir mi? | API-64 | F5 |
 | N-09 | ~~Kredi türleri~~ → **FNS-D4: hepsi** (taksitli ticari, rotatif/spot, KMH/BCH, Eximbank/akreditif); akreditif/Eximbank kapatma ayrıntısı F7 başında sorulur | API-80…82 | kapandı |
@@ -475,7 +475,63 @@ Bu bölüm iş takibidir; karar değildir.
 | İş | PR | Durum |
 |---|---|---|
 | Bu plan (v1) | — | taslak PR |
-| F0 karar dosyası FNS-D1…D4 (şerit, öncelik, DBS iki yön, kredi türleri) | #896 | taslak PR; kalan sorular N-01, N-03, N-05…N-08, N-10…N-13 |
+| F0 karar dosyası FNS-D1…D5 (şerit, öncelik, DBS iki yön, kredi türleri, döviz) + hubvogal incelemesi §15 | #896 | taslak PR; kalan sorular N-03, N-07, N-08, N-10…N-18 |
 | F1 MOD-15 borç/alacak | — | sırada |
 
 Sıradaki: N-03 cevaplanınca F1 (borç/alacak yönü, MOD-15) başlar.
+
+---
+
+## 15. Hubvogal finans incelemesi (2026-11-02)
+
+Sinan'ın izniyle hubvogal (iç ağda çalışan web uygulaması; ASP.NET MVC) ofisteki masaüstü bilgisayar üzerinden **yalnız
+okunarak** incelendi; kayıt eklenmedi, değiştirilmedi. Oturum kapatıldı, geçici dosyalar silindi. Giriş bilgisi, hesap
+numarası, IBAN, bakiye ve firma adları bu dosyaya **yazılmaz**. Hubvogal yalnız referanstır; kör kopya yoktur.
+
+### 15.1 Menü
+
+`Finans`: Kasa Yönetimi · Banka Yönetimi · Çek Yönetimi · Kredi/BCH Hesapları · DBS/Teminat/KK Hesapları.
+`Muhasebe`: İrsaliyeler · Fatura Listesi · **Cari Hareketler**. `Raporlar`: **Cari Bakiye Raporu**, fatura raporu.
+`Parametreler`: Ödeme Tipleri, Masraf Tipleri (üst/alt iki seviye), Maliyet Tipleri, İskonto Tipleri.
+Kredi/BCH Hesapları sayfası inceleme sırasında sunucu hatası verdi; kredi yapısı banka ekranındaki kredi
+formlarından çıkarıldı.
+
+### 15.2 Ekran bazında bulgular → Göymen karşılığı
+
+| Hubvogal | Gözlenen | Göymen karşılığı / plan |
+|---|---|---|
+| **Ortak işlem formu** | İşlem tarihi, Ödeme Türü (vade tipi), **Firma** (bizim grup şirketimiz), **Cari Kur Grubu** (carinin TL/USD alt hesabı), Cari, Kur, **Kur Pozisyonu (Yurtiçi/Yurtdışı)**, İkincil Kur, elle kur bilgisi, işlem tutarı, döviz tutarı, hesap, açıklama, döküman | Şirket = `CompanyId`; para birimi + kur her para olayında zorunlu (FNS-D5); kur önerisi TCMB, elle değişiklik yetki+gerekçe (DEC-FIN-010, K14); döküman = Belgeler portu (MOD-10). Cari Kur Grubu → **N-14**; Kur Pozisyonu → **N-15** |
+| **Evrak tipleri (24)** | Satış/Alış Faturası, Ödeme, Gelen/Giden Havale-EFT, Bankalar/Kasalar arası, Kasa↔Banka, Başlangıç Bakiye, Çek Tahsilatı (Banka/Kasa), Kredi Ana Para / Faiz Ödemesi, Kredi BCH Transferi, Masraf Ödeme/İadesi, Çek Ödemesi, DBS/BTM/KK Tahsilatı/Ödemesi, Çek Giriş/Çıkış Bordrosu, **Tahsilat Eşleme / Tediye Eşleme** | Göymen'de bunlar para olayı türleri (kaynak) + ayrı dağıtım (eşleme = DEC-FIN-006 dağıtımı). "Başlangıç Bakiye" = açılış kaydı (MIG-02, gerçek tarihçe gibi gösterilmez) |
+| **Kasa** | Kasa: ad, para birimi (TL/USD/EUR kasaları var), başlangıç bakiyesi, aktif/pasif. Giriş: Tahsilat, Masraf İadesi; çıkış: Tediye, Masraf Ödemesi; virman: kasalar arası, kasadan bankaya, **Döviz Alış/Satış**. Günlük rapor (devir → işlemler → günlük toplam → gün sonu), kasa ekstresi, tarih bazlı bakiye, para birimi bazında toplam | API-30…33. Döviz kasası var (N-05 cevaplandı). Döviz alış/satış ayrı işlem türü (N-06 → hubvogal emsali: virman içinde "döviz alış/satış" türü, iki para birimi + kur) |
+| **Banka** | Banka master (ad, EFT kodu listesi, logo, telefon); hesap: banka, ad, IBAN, para birimi, başlangıç bakiyesi; hesap adında tür: vadesiz, vadeli, POS, factoring. Giriş: Gelen Havale/EFT, Masraf İadesi, Çek Tahsilatı, Kredi Kullan, DBS/BTM/KK; çıkış: Giden Havale/EFT, Masraf Ödemesi, Çek Ödemesi, Kredi Ödemesi, DBS/BTM/KK; virman: bankalar arası, bankadan kasaya, döviz alış/satış; günlük rapor ve ekstre. Bazı döviz hesaplarında **eksi bakiye** görülüyor (kontrol yok) | FS0 banka master'ına hesap türü (vadesiz/vadeli/POS/factoring) eklenir; API-40 defter bakiyesi; eksi bakiye politikası → **N-16** |
+| **Çek** | Tek portföy listesi (sayfalı, ~12 sayfa). Alanlar: işlem ve vade tarihi, keşideci ad/soyad, ülke/şehir, çek no, çek bankası, IBAN/hesap no, çeki alan firma (bizim), çeki veren cari, tahsil edilecek banka, kur grubu, para birimi, tutar, döviz tutar, **kalan**. Durumlar: **Portföyde, Bankada, Tahsil Edildi, İade, Ödendi**. Çek giriş/çıkış bordrosu, bankaya **tevdi bordrosu**, toplu işlem, yazdırma. Tahsilat banka veya kasaya; tedarikçiye verilen müşteri çeki "Çek Ödemesi" ile **Ödendi** (ciro) | Mevcut alınan çek modülü (DEC-FIN-016) + API-60 ciro (= hubvogal "Çek Ödemesi"), API-61 teminat, bordrolar (UI-06). "Kalan" alanı kısmi tahsilat gösteriyor → **N-17**. Kendi çekimizin (verilen çek) hubvogal'de ayrı yeri görülmedi → N-08 |
+| **Kredi** | Kullandırım türleri: **BCH, Spot, Taksitli**; ödeme ekranında ayrıca **Teminatlı, Çek Teminatlı, Kefalet, Gayri Nakdi**. Alanlar: açılış tarihi, limit, risk, limit boşluğu, faiz oranı, taksit sayısı; taksit planı satırı: **anapara, faiz, BSMV, taksit tutarı**; ödeme anapara ve faiz ayrı evrak; BCH transferi | API-80…83 (FNS-D4). Kredi türü listesi genişler: taksitli, spot/rotatif, BCH/KMH, Eximbank/akreditif + teminatlı/çek teminatlı/kefalet/gayri nakdi (limit türü) |
+| **DBS / Teminat / Kredi Kartı** | Tek "limit" ekranı; hesap türü **Teminat / Kredi Kartı / DBS**. **Limit Ver** (Göymen tedarikçiye DBS limiti veya kuruma teminat mektubu verir; limit alan: tedarikçi, vergi dairesi, icra dairesi, OSB…) ve **Limit Al** (müşteriden). Alanlar: banka, banka hesabı, limit alan/veren cari, açılış tarihi, limit, **limit boşluğu**, açık/kapalı; risk satırları (işlem zamanı, doküman no, işlem türü, vade, risk tutarı) | FNS-D3 doğrulandı: tedarikçi DBS'si yoğun. API-70…73 + API-84 (BTM): "limit" modeli DBS ve teminatı ortak taşır, risk satırları vade bazlı. Kredi kartı burada yalnız limit türü; harcama/ekstre takibi görülmedi → N-10 |
+| **Cari Hareketler** | Tahsilat, Ödeme, **Ön Ödeme** (avans), elle Satış/Alış Faturası (ara toplam, KDV oranı), **Tahsilat Eşleştir / Tediye Eşleştir** (kapama), Masraf Öde/Al. İşleme **ilgili satış/alış siparişi** bağlanabiliyor. Hesap türü: Çekler / Kasa & Banka / DBS Limitler. Satır başına toplam, tutar, **kalan tutar** (TL ve kur). Üstte para birimi bazında **Toplam Borç / Toplam Alacak**. Ekstre: Borç, Alacak, Sonuç, Vade, Durum; ödeme bilgisi: toplam borç, ödenen, kalan, vade durumu | §3 yön + API-04 bakiye özeti; eşleme = mevcut dağıtım (API-20 ödeme tarafı); ön ödeme siparişe bağlı = API-21 avans. Hubvogal'de elle fatura girişi var; Göymen'de fatura Alış/Satış'ta (ALS-D7, SAT-D7), Finans'ta elle fatura yok |
+| **Cari Bakiye Raporu** | Bizim şirket × cari; **TL Cari ve USD Cari ayrı**; TL Borç/Alacak/Bakiye, USD Borç/Alacak/Bakiye | API-04 + UI-03; para birimleri netlenmez (AT-011) |
+| **Ödeme Tipleri** | Ad + gün: PEŞİN, 1…120 GÜN, ÇEK (70/75 gün), KREDİ KARTI, ÖN ÖDEME, KREDİLER, "X GÜN DBS" ve "X GÜN DBS VADE" çiftleri | Vade tipi master'ı Satış/Alış'ta (SAT-D86, ALS-D24); Finans yalnız okur. "DBS" / "DBS VADE" farkı → **N-18** |
+| **Kurlar** | TRY, USD, EUR; her biri için alış ve satış kuru tutuluyor | FNS-D5; TCMB önceki iş günü (DEC-FIN-010, SAT-D54/55); kur türü Ayarlar'da |
+
+### 15.3 Plana etkisi
+
+- **Dövizli işlem her yerde** (FNS-D5): kasa, banka, çek, kredi, DBS limiti ve cari hareket para birimi + kur + TL
+  karşılığı taşır. Kur farkı No 34 ile ayrı satır; dövizli bakiyelerin dönem sonu değerlemesi Muhasebe kaynağıdır (MOD-07).
+- **Yeni iş: döviz alış/satış (API-34).** Aynı şirketin iki hesabı arasında, iki para birimi ve işlem kuruyla tek
+  işlem; iki para olayı + kur bilgisi; kâr/zarar muhasebe kaynağı.
+- **Banka hesap türü (API-44):** vadesiz, vadeli, POS, factoring (FS0'a alan; migration K3).
+- **Limit modeli (API-70/84 birleşik tasarım):** DBS ve teminat mektubu "verilen/alınan limit" + vade bazlı risk satırı
+  olarak aynı modelde; kredi kartı limiti ayrı (N-10).
+- **Çek bordroları (API-65):** giriş, çıkış ve bankaya tevdi bordrosu (yazdırılabilir belge).
+- **Kasa/banka günlük raporu (API-45):** devir, işlemler, günlük toplam, gün sonu; tarih bazlı bakiye.
+- **Göç (MIG-02):** hubvogal'de ~860 sayfa cari hareket ve çek portföyü var. Açılışta hubvogal kayıtlarından açık
+  kalem, portföydeki çekler, açık DBS/teminat limitleri, kredi bakiyeleri ve kasa/banka bakiyeleri alınır (N-13).
+
+### 15.4 Hubvogal sonrası yeni sorular
+
+| No | Soru |
+|---|---|
+| N-14 | Cari Kur Grubu: bir firmanın TL carisi ile USD carisi hubvogal'deki gibi **ayrı hesap** mı kalsın, yoksa tek cari altında para birimi bazında bakiye mi? |
+| N-15 | "Kur Pozisyonu: Yurtiçi / Yurtdışı" neyi ayırıyor (ithalat/ihracat, yurtdışı banka, yurtdışı cari)? |
+| N-16 | Banka/kasa hesabı eksiye düşebilsin mi (KMH/BCH dışında)? |
+| N-17 | Bir çek kısmen tahsil edilebiliyor mu ("Kalan" alanı)? |
+| N-18 | Ödeme tiplerindeki "X GÜN DBS" ile "X GÜN DBS VADE" farkı nedir? |

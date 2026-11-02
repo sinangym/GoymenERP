@@ -2,7 +2,7 @@
 
 Kaynak: Sinan Göymen'in 2 Kasım 2026 tarihli Claude cloud oturumunda (Finans konuşması), Finans modülü hazırlık
 incelemesi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md`) sırasında sorulan seçenekli sorulara verdiği **doğrudan
-cevaplar**. Bir tur, dört soru; dört karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
+cevaplar**. Bir seçenekli tur (dört soru) ve bir serbest cevap; beş karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
 cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 
 ## 0. Yetki ve sınır
@@ -26,6 +26,7 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 | FNS-D2 | İlk iş | **Önce borç/alacak.** Seçenek açıklaması: F1 borç/alacak ayrımı + F2 faturanın açık kaleme dönüşmesi; Alış ve Satış'ın fatura aşaması açılır. Sonra kasa/banka | Alış §13 B-1: MOD-15 Alış A5'in ön şartı | Plan §10 F1/F2, MOD-15, MOD-04 |
 | FNS-D3 | DBS yönü | **İkisi de.** Seçenek açıklaması: hem müşteriden DBS ile tahsilat, hem tedarikçiye DBS ile ödeme | DEC-FIN-008 yalnız müşteri riskini tanımlıyordu | Plan API-70…73, N-04 |
 | FNS-D4 | Kullanılan kredi türleri | Seçilen: **Taksitli ticari kredi, Rotatif / spot, KMH / BCH, Eximbank / akreditif**; ek cevap aynen: **"Hepsini"** | Plan N-09 açıktı | Plan API-80…82, N-09 |
+| FNS-D5 | Döviz | Cevap aynen: **"Döviz ve dövizli işlemler olacak"** | Plan F3/F4'te döviz yalnız para birimi alanıydı; OPEN-012 kur saati açık | Plan §15.3, API-32/34, No 34 |
 
 ## 2. Notlar (geri alınabilir)
 
@@ -45,6 +46,13 @@ cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
   Eximbank/akreditif (ihracat taahhüdü ve akreditif belge/teminat bağı). Faiz, BSMV/KKDF ve masraf ayrı satırdır;
   faiz/vergi oranları elle girilir, sistem hesap kuralı icat etmez. Akreditif ve Eximbank taahhüt kapatma kuralları
   ayrıntısı F7 başında ayrıca sorulur.
+
+- **FNS-D5:** kasa, banka, çek/senet, kredi, DBS/teminat limiti ve cari hareketin her biri para birimi, kur ve TL
+  karşılığı taşır; para birimleri tek sayıya netlenmez (AT-011). Kur önerisi TCMB önceki iş günü (DEC-FIN-010,
+  SAT-D54/55); elle kur yetki + gerekçe + audit (K14). Çapraz para dağıtımında kur farkı ayrı satırdır (No 34).
+  Döviz alış/satış (TL hesaptan döviz hesabına) ayrı işlem türüdür (hubvogal emsali, plan §15). Dövizli bakiyelerin
+  dönem sonu değerlemesi Muhasebe kaynağıdır; değerleme kuralı tahminle seçilmez. Hubvogal'in "Cari Kur Grubu" ve
+  "Kur Pozisyonu" alanlarının karşılığı ayrıca sorulur (plan N-14, N-15).
 
 ## 3. Değişmeyenler
 
