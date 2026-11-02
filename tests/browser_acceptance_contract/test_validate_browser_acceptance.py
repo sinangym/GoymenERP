@@ -1079,9 +1079,35 @@ class WorkflowTests(unittest.TestCase):
                 "purchasing.goods-receipts.record",
                 "inventory.labels.read",
                 "inventory.balances.read",
+                "purchasing.requests.approve",
             ),
             validator.SUITE_IDENTITY_PERMISSIONS["pur01"],
         )
+
+    def test_pur01_request_approval_belongs_only_to_the_approver(self):
+        environment = self._pur01_environment()
+
+        validator.validate_suite_extensions("pur01", environment)
+
+        self.assertEqual(
+            ("purchasing.orders.read", "purchasing.orders.approve", "purchasing.requests.approve"),
+            tuple(environment[f"IdentitySeed__Roles__5__Permissions__{index}"] for index in range(3)),
+        )
+        holders = sorted(
+            key for key, value in environment.items()
+            if key.startswith("IdentitySeed__Roles__") and value == "purchasing.requests.approve"
+        )
+        self.assertEqual(["IdentitySeed__Roles__5__Permissions__2"], holders)
+        for role in range(6, 11):
+            self.assertNotIn(
+                "purchasing.requests.approve",
+                [value for key, value in environment.items() if key.startswith(f"IdentitySeed__Roles__{role}__Permissions__")],
+            )
+
+        creator_with_decision = dict(environment)
+        creator_with_decision["IdentitySeed__Roles__7__Permissions__6"] = "purchasing.requests.approve"
+        with self.assertRaises(ValueError):
+            validator.validate_suite_extensions("pur01", creator_with_decision)
 
     def test_pur01_document_permissions_belong_only_to_creator(self):
         environment = self._pur01_environment()

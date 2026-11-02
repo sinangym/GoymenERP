@@ -92,3 +92,48 @@ export const releasePendingPurchaseRequestCreate = (key: string | null, idempote
   release(key, idempotencyKey, recallPendingPurchaseRequestCreate(key))
 export const releasePendingPurchaseRequestSubmission = (key: string | null, idempotencyKey: string) =>
   release(key, idempotencyKey, recallPendingPurchaseRequestSubmission(key))
+
+/** A1-1: the unresolved decision attempt (approval or rejection) kept for an explicit same-payload resend. */
+export interface PendingPurchaseRequestDecision {
+  readonly actorId: string
+  readonly companyId: string
+  readonly requestId: string
+  readonly kind: 'approval' | 'rejection'
+  readonly expectedVersion: string
+  readonly idempotencyKey: string
+  readonly reason: string | null
+}
+
+const MAXIMUM_REASON_LENGTH = 4000
+
+export function pendingPurchaseRequestDecisionKey(
+  sessionEpoch: number,
+  actorId: string | null,
+  companyId: string | null,
+  requestId: string,
+): string | null {
+  return actorId === null || companyId === null || !UUID.test(requestId)
+    ? null
+    : `goymen.purchasing.request-decision.v1:${sessionEpoch}:${actorId}:${companyId}:${requestId}`
+}
+
+function decodeDecision(value: unknown): PendingPurchaseRequestDecision | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const candidate = value as Partial<PendingPurchaseRequestDecision>
+  const reasonValid = candidate.kind === 'approval'
+    ? candidate.reason === null
+    : candidate.kind === 'rejection' && typeof candidate.reason === 'string' && candidate.reason.trim().length > 0 &&
+      candidate.reason.length <= MAXIMUM_REASON_LENGTH
+  return typeof candidate.actorId === 'string' && candidate.actorId.length > 0 &&
+    typeof candidate.companyId === 'string' && UUID.test(candidate.companyId) &&
+    typeof candidate.requestId === 'string' && UUID.test(candidate.requestId) &&
+    typeof candidate.expectedVersion === 'string' && VERSION.test(candidate.expectedVersion) &&
+    typeof candidate.idempotencyKey === 'string' && UUID.test(candidate.idempotencyKey) && reasonValid
+    ? candidate as PendingPurchaseRequestDecision
+    : null
+}
+
+export const recallPendingPurchaseRequestDecision = (key: string | null) => recall(key, decodeDecision)
+export const reservePendingPurchaseRequestDecision = (key: string | null, snapshot: PendingPurchaseRequestDecision) => reserve(key, snapshot)
+export const releasePendingPurchaseRequestDecision = (key: string | null, idempotencyKey: string) =>
+  release(key, idempotencyKey, recallPendingPurchaseRequestDecision(key))

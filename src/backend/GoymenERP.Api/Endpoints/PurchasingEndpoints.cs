@@ -15,7 +15,8 @@ namespace GoymenERP.Api.Endpoints;
 
 /// <summary>
 /// The purchasing routes (PUR-4a; the Sales draft / Logistics routes' shape): purchase requests
-/// (POST create → 201 + Location, GET list, GET detail, POST submission → 200) and purchase orders (POST
+/// (POST create → 201 + Location, GET list, GET detail, POST submission → 200, and A1-1's POST approval / rejection
+/// → 200 under <c>purchasing.requests.approve</c>) and purchase orders (POST
 /// create → 201 + Location, GET list, GET detail, POST approval → 200). The route reads nothing but the
 /// server context and the wire body; <see cref="IPurchasingService"/> decides, with a fresh central
 /// measurement of the Purchasing permission at every fence (#276). The same attempt again answers the same
@@ -128,6 +129,46 @@ public static class PurchasingEndpoints
             .ProducesErpUnprocessableEntity("validation_failed")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/approval", (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadApproveRequest,
+                (body, metadata) => service.ApproveRequestAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("ApprovePurchaseRequestV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<ApprovePurchaseRequestRequest>("application/json")
+            .Produces<PurchaseRequestResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.RequestDecisionState,
+                PurchasingProblemCodesV1.RequestSameActor, PurchasingProblemCodesV1.RequestMakerUnknown,
+                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed")
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
+
+        group.MapPost("/{id:guid}/rejection", (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
+                ICorrelationContext correlation, CancellationToken cancellationToken) =>
+            MutateAsync(httpContext, correlation, PurchasingJson.ReadRejectRequest,
+                (body, metadata) => service.RejectRequestAsync(id, body, metadata, cancellationToken), cancellationToken))
+            .WithName("RejectPurchaseRequestV1")
+            .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)
+            .Accepts<RejectPurchaseRequestRequest>("application/json")
+            .Produces<PurchaseRequestResponse>(PurchasingApiV1.MutationStatus)
+            .ProducesErpBadRequest("validation_failed", PurchasingProblemCodesV1.CommandMetadataInvalid)
+            .AllowsEmptyErpBadRequestBody()
+            .ProducesErpUnsupportedMediaType()
+            .ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.RequestDecisionState,
+                PurchasingProblemCodesV1.RequestSameActor, PurchasingProblemCodesV1.RequestMakerUnknown,
+                PurchasingProblemCodesV1.RequestHasApprovedOrder, PurchasingProblemCodesV1.SameKeyPayloadMismatch,
+                PurchasingProblemCodesV1.ConcurrentChange)
+            .ProducesErpUnprocessableEntity("validation_failed", PurchasingProblemCodesV1.RequestRejectionReasonRequired,
+                PurchasingProblemCodesV1.RequestRejectionReasonTooLong)
+            .ProducesErpServiceUnavailable()
+            .ProducesErpAuthenticatedProblems();
     }
 
     private static void MapOrders(IEndpointRouteBuilder endpoints)
@@ -215,7 +256,8 @@ public static class PurchasingEndpoints
             .ProducesErpUnsupportedMediaType()
             .ProducesErpCodeLessNotFound()
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict, PurchasingProblemCodesV1.OrderState,
-                PurchasingProblemCodesV1.RequestLineOverSourced, PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
+                PurchasingProblemCodesV1.RequestState, PurchasingProblemCodesV1.RequestLineOverSourced,
+                PurchasingProblemCodesV1.SameKeyPayloadMismatch, PurchasingProblemCodesV1.ConcurrentChange)
             .ProducesErpUnprocessableEntity("validation_failed")
             .ProducesErpServiceUnavailable()
             .ProducesErpAuthenticatedProblems();

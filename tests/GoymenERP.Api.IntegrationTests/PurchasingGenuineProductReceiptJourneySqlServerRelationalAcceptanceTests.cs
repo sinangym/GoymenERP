@@ -37,6 +37,8 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
     private static readonly Guid ActorId = Guid.Parse("20000000-0000-0000-0000-000000000003");
     private static readonly Guid ActorExternalId = Guid.Parse("21000000-0000-0000-0000-000000000003");
     private static readonly Guid CompanyBActorId = Guid.Parse("20000000-0000-0000-0000-000000000002");
+    // A1-1 (ALS-D2): the request is approved by a second Company A user, never by its preparer.
+    private static readonly Guid RequestApproverId = Guid.Parse("20000000-0000-0000-0000-000000000001");
     private static readonly Guid SystemRoleId = Guid.Parse("30000000-0000-0000-0000-000000000003");
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
@@ -69,8 +71,10 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
 
             using var companyA = factory.CreateClientFor(TestUsers.GroupAdmin, CompanyA);
             using var companyB = factory.CreateClientFor(TestUsers.CompanyB, CompanyB);
+            using var requestApprover = factory.CreateClientFor(TestUsers.CompanyA, CompanyA);
             companyA.DefaultRequestHeaders.Remove("Idempotency-Key");
             companyB.DefaultRequestHeaders.Remove("Idempotency-Key");
+            requestApprover.DefaultRequestHeaders.Remove("Idempotency-Key");
 
             var (supplierPartyId, supplierAccountId) = await CreateSupplierAsync(companyA);
             var genuine = GenuineSacDraft();
@@ -144,11 +148,19 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
             var submitted = (await submittedRequest.Content.ReadFromJsonAsync<PurchaseRequestResponse>())!;
             Assert.Equal("Submitted", submitted.Detail.Request.Status);
 
+            using var approvedRequest = await SendCommandAsync(requestApprover, HttpMethod.Post,
+                $"/api/v1/purchasing/requests/{submitted.Detail.Request.Id:D}/approval",
+                new ApprovePurchaseRequestRequest(submitted.Detail.Request.Version),
+                "purchase-genuine-request-approve");
+            Assert.Equal(HttpStatusCode.OK, approvedRequest.StatusCode);
+            var approvedPurchaseRequest = (await approvedRequest.Content.ReadFromJsonAsync<PurchaseRequestResponse>())!;
+            Assert.Equal("Approved", approvedPurchaseRequest.Detail.Request.Status);
+
             var orderLineId = Guid.NewGuid();
             using var createdOrder = await SendCommandAsync(companyA, HttpMethod.Post,
                 PurchasingApiV1.OrdersPath,
                 new CreatePurchaseOrderRequest(supplierPartyId, supplierAccountId,
-                    submitted.Detail.Request.Id, effectiveOn,
+                    approvedPurchaseRequest.Detail.Request.Id, effectiveOn,
                     [new(orderLineId, active.Card.Product.Id, active.Card.Product.Version,
                         SettingsUnitIdentitiesV1.Kilogram, "10", requestLineId)]),
                 "purchase-genuine-order-create");
@@ -323,6 +335,17 @@ public sealed class PurchasingGenuineProductReceiptJourneySqlServerRelationalAcc
         foreignReaderAssignment.AddScope(AccessScopeType.Company, CompanyB);
         identity.Roles.Add(foreignReaderRole);
         identity.RoleAssignments.Add(foreignReaderAssignment);
+
+        var approverRoleId = Guid.NewGuid();
+        var approverRole = new RoleDefinition(approverRoleId,
+            $"PURCHASE-GENUINE-REQUEST-APPROVER-{approverRoleId:N}",
+            "Disposable Company A purchase-request approver (A1-1 maker-checker); not a production grant", true);
+        approverRole.AddPermission(PurchasingPermissionManifestV1.RequestsApprove);
+        var approverAssignment = new RoleAssignment(Guid.NewGuid(), RequestApproverId, approverRoleId, CompanyA,
+            DateTimeOffset.UtcNow.AddMinutes(-1), null, approvedByUserId: null);
+        approverAssignment.AddScope(AccessScopeType.Company, CompanyA);
+        identity.Roles.Add(approverRole);
+        identity.RoleAssignments.Add(approverAssignment);
         await identity.SaveChangesAsync();
     }
 

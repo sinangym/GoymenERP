@@ -8,7 +8,8 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 /// "Satın Alma Talepleri / İhtiyaç Havuzu" is the request list/create/detail workspace; P-03 "Satın Alma
 /// Siparişleri" is the list, P-04 "Yeni/Düzenle Satın Alma Siparişi" the new-order workspace, and the detail
 /// is the read view of one P-03 row ("P-03-DETAIL", the F-02-DETAIL precedent; the master has no separate
-/// detail id). Submitting a request and approving an order are server-measured controls on their details.
+/// detail id). Submitting a request, deciding a request (approve / reject, A1-1) and approving an order are
+/// server-measured controls on their details.
 /// The list and detail are published by PUR-4a-FE; creation is published with P-04 after the Product owner
 /// supplied the purchase-eligibility candidate source and the form bound the existing Cari supplier read.
 /// Approval is a child control of the detail, measured with
@@ -19,11 +20,16 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Shell;
 /// <see cref="PurchasingPermissionManifestV1.OrdersRead"/>; the new-order screen needs
 /// <see cref="PurchasingPermissionManifestV1.OrdersCreate"/>. The host registers this provider only after the
 /// central catalogue knows the names, together with its accepted revision.
+/// <para>
+/// 1.5 (A1-1, plan API-01): the request decision control (<see cref="RequestApproveCapabilityId"/>) is a child of the
+/// request detail, measured with its own name <see cref="PurchasingPermissionManifestV1.RequestsApprove"/>; one control
+/// carries both the approval and the rejection, the same manager decision (ALS-D2, No.161 §1).
+/// </para>
 /// </summary>
 public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
-    public const string OwnerContractVersion = "1.4";
+    public const string OwnerContractVersion = "1.5";
 
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
@@ -33,6 +39,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
     public const string RequestCreateScreenId = "P-01-NEW";
     public const string RequestDetailCapabilityId = "purchasing.requests.detail";
     public const string RequestSubmitCapabilityId = "purchasing.requests.submit";
+    public const string RequestApproveCapabilityId = "purchasing.requests.approve";
     public const string RequestDetailRoutePath = "/satinalma/talepler/:requestId";
     public const string RequestDetailScreenId = "P-01-DETAIL";
 
@@ -76,6 +83,12 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
                 CapabilityId = RequestSubmitCapabilityId,
                 ParentCapabilityId = RequestDetailCapabilityId,
                 RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.OrdersCreate],
+            },
+            requestDetail with
+            {
+                CapabilityId = RequestApproveCapabilityId,
+                ParentCapabilityId = RequestDetailCapabilityId,
+                RequiredPermissions = [PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsApprove],
             },
             new ShellCapabilityDeclaration(ListCapabilityId, ListCapabilityId, ListRoutePath, ListScreenId,
                 ShellCapabilityRoutePrecedence.Static, ShellCapabilityContextRequirement.SingleCompany,

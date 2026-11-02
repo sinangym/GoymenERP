@@ -647,6 +647,15 @@ public static class ErpPermissions
     public const string PurchasingGoodsReceiptsRecord = "purchasing.goods-receipts.record";
 
     /// <summary>
+    /// A1-1 (plan API-01; ALS-D2, No.161 §1): the purchase manager approves a submitted purchase request or rejects a
+    /// submitted/approved one — the Purchasing owner's name (PurchasingPermissionManifestV1.RequestsApprove), apart from
+    /// entering and from order approval; neither confers the other. Maker ≠ checker (ALS-D2) is enforced by the Purchasing
+    /// service on the command, not through this catalogue. Registered, not granted: no role, seed or user receives it here.
+    /// Company-wide only. Not Critical.
+    /// </summary>
+    public const string PurchasingRequestsApprove = "purchasing.requests.approve";
+
+    /// <summary>
     /// ACC-V0a: the Accounting owner's names (AccountingPermissionManifestV1), the backend owners' technical mapping
     /// (Business #254 5654539215) recorded and confirmed by the coordinator (#66 5743488059). Each read is its own
     /// narrow name and writing is apart from reading (Sinan #66 5738113623 §4); approving a period opening is for a
@@ -828,6 +837,7 @@ public static class ErpPermissions
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
             PurchasingGoodsReceiptsRecord,
+            PurchasingRequestsApprove,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,
@@ -966,6 +976,7 @@ public static class ErpPermissions
             PurchasingOrdersRead,
             PurchasingOrdersApprove,
             PurchasingGoodsReceiptsRecord,
+            PurchasingRequestsApprove,
             AccountingPeriodsRead,
             AccountingPeriodsPropose,
             AccountingPeriodsApprove,

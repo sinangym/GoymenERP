@@ -26,5 +26,13 @@ public static class PurchasingPermissionManifestV1
     /// <summary>Record one physical goods receipt against an approved purchase-order line.</summary>
     public const string GoodsReceiptsRecord = "purchasing.goods-receipts.record";
 
-    public static readonly IReadOnlyList<string> Names = [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord];
+    /// <summary>
+    /// A1-1 (ALS-D2, plan API-01): approve a Submitted purchase request or reject a Submitted/Approved one (No.161 §1) —
+    /// the purchase manager's decision, apart from entering (<see cref="OrdersCreate"/>) and from order approval
+    /// (<see cref="OrdersApprove"/>); neither confers the other. Company-wide, not critical; maker ≠ checker is the
+    /// service's rule on the command, not this name's. Registered only: the grant is a human gate.
+    /// </summary>
+    public const string RequestsApprove = "purchasing.requests.approve";
+
+    public static readonly IReadOnlyList<string> Names = [OrdersCreate, OrdersRead, OrdersApprove, GoodsReceiptsRecord, RequestsApprove];
 }

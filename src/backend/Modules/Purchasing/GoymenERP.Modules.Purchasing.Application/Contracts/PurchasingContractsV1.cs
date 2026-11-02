@@ -19,10 +19,20 @@ public sealed record PurchaseRequestLineRequest(Guid LineId, Guid ProductId, str
 /// <summary>POST …/requests/{id}/submission: Draft → Submitted at the expected version.</summary>
 public sealed record SubmitPurchaseRequestRequest(string ExpectedVersion);
 
+/// <summary>A1-1 (ALS-D2): POST …/requests/{id}/approval — Submitted → Approved at the expected version, by someone other than its preparer and submitter.</summary>
+public sealed record ApprovePurchaseRequestRequest(string ExpectedVersion);
+
+/// <summary>
+/// A1-1 (No.161 §1): POST …/requests/{id}/rejection — Submitted | Approved → Rejected at the expected version, with the
+/// reason (required, at most 4000 characters, never cut), by someone other than its makers, refused while an APPROVED
+/// order is bound to the request.
+/// </summary>
+public sealed record RejectPurchaseRequestRequest(string ExpectedVersion, string Reason);
+
 /// <summary>
 /// POST /api/v1/purchasing/orders: a commitment towards ONE supplier (the Cari party + its company account
 /// with the Supplier role), a Draft with general lines. With <paramref name="SourceRequestId"/> the order is
-/// opened for one SUBMITTED request of this company and every line MAY bind to one of that request's lines
+/// opened for one APPROVED request of this company (A1-1, ALS-D2/ALS-D16) and every line MAY bind to one of that request's lines
 /// (<see cref="PurchaseOrderLineRequest.SourceRequestLineId"/>) at the share this supplier takes
 /// (multi-sourcing, Sinan #66 5738113623 §1); a bound line keeps the request line's product and unit.
 /// Without a source request no line may bind. No price (T28).
@@ -48,13 +58,25 @@ public sealed record PurchaseRequestSummaryView(
 
 public sealed record PurchaseRequestLineView(Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid UnitId, string Quantity);
 
-public sealed record PurchaseRequestDetailView(PurchaseRequestSummaryView Request, IReadOnlyList<PurchaseRequestLineView> Lines);
+/// <summary>A1-1: one decision on a request — who decided, when, and (a rejection only) why.</summary>
+public sealed record PurchaseRequestDecisionView(string DecidedBy, DateTimeOffset DecidedAtUtc, string? Reason);
+
+/// <summary>
+/// The request with its lines; <see cref="Approval"/> and <see cref="Rejection"/> (A1-1) are the recorded decisions,
+/// null until made. An approval stays visible after a later rejection.
+/// </summary>
+public sealed record PurchaseRequestDetailView(PurchaseRequestSummaryView Request, IReadOnlyList<PurchaseRequestLineView> Lines)
+{
+    public PurchaseRequestDecisionView? Approval { get; init; }
+
+    public PurchaseRequestDecisionView? Rejection { get; init; }
+}
 
 public sealed record PurchaseRequestResponse(PurchaseRequestDetailView Detail, bool IsReplay, string OriginalCorrelationId);
 
 public sealed record PurchaseRequestListResponse(IReadOnlyList<PurchaseRequestSummaryView> Items, string? NextCursor);
 
-/// <param name="Status">An exact status name ("Draft" | "Submitted") to narrow the list to, or null.</param>
+/// <param name="Status">An exact status name ("Draft" | "Submitted" | "Approved" | "Rejected") to narrow the list to, or null.</param>
 public sealed record PurchaseRequestListQuery(int PageSize = 50, string? Cursor = null, string? Status = null);
 
 public sealed record PurchaseOrderSummaryView(
@@ -123,8 +145,30 @@ public static class PurchasingProblemCodesV1
     /// <summary>409: the supplier account is not the party's, not this company's, not active, or has no Supplier role (the Sales/Logistics pattern).</summary>
     public const string AccountState = "account_state";
 
-    /// <summary>409 (fail-closed): the source request is not SUBMITTED, unknown in this company, or a bound line does not match one of its lines; field errors say which.</summary>
+    /// <summary>
+    /// 409 (fail-closed): the source request is not APPROVED (A1-1; field <c>sourceRequestId</c> = <c>not_approved</c>),
+    /// unknown in this company, or a bound line does not match one of its lines; field errors say which. At an order's
+    /// approval it is terminal (§7) when the source request is no longer APPROVED.
+    /// </summary>
     public const string RequestState = "purchasing_request_state";
+
+    /// <summary>409, terminal (§7; A1-1): the request is not in the state the decision needs (approve: Submitted; reject: Submitted or Approved).</summary>
+    public const string RequestDecisionState = "purchasing_request_decision_state";
+
+    /// <summary>409, terminal (§7; ALS-D2): the actor prepared or submitted this request and cannot decide it (hazırlayan ≠ onaylayan).</summary>
+    public const string RequestSameActor = "purchasing_request_same_actor";
+
+    /// <summary>409, terminal (§7; A1-1 fail-closed): the request's preparer or submitter is not recorded, so no one may decide it.</summary>
+    public const string RequestMakerUnknown = "purchasing_request_maker_unknown";
+
+    /// <summary>409, terminal (§7; No.161 §1): an APPROVED order is bound to the request; the order is cancelled first.</summary>
+    public const string RequestHasApprovedOrder = "purchasing_request_has_approved_order";
+
+    /// <summary>422: the rejection reason is missing or blank.</summary>
+    public const string RequestRejectionReasonRequired = "purchasing_request_rejection_reason_required";
+
+    /// <summary>422: the rejection reason is longer than 4000 characters (refused, never cut).</summary>
+    public const string RequestRejectionReasonTooLong = "purchasing_request_rejection_reason_too_long";
 
     /// <summary>409, terminal (§7): the expected version is stale.</summary>
     public const string VersionConflict = "version_conflict";
@@ -176,7 +220,8 @@ public sealed record PurchasingServiceBindings(
     string? CreatePermission = PurchasingPermissionManifestV1.OrdersCreate,
     string? ReadPermission = PurchasingPermissionManifestV1.OrdersRead,
     string? ApprovePermission = PurchasingPermissionManifestV1.OrdersApprove,
-    string? GoodsReceiptPermission = PurchasingPermissionManifestV1.GoodsReceiptsRecord);
+    string? GoodsReceiptPermission = PurchasingPermissionManifestV1.GoodsReceiptsRecord,
+    string? RequestApprovePermission = PurchasingPermissionManifestV1.RequestsApprove);
 
 /// <summary>Constructed by the server, never bound from the request body.</summary>
 public sealed record PurchasingCommandMetadata(string IdempotencyKey, string CorrelationId, string? CausationId, DateTimeOffset RequestedAtUtc);
@@ -186,6 +231,8 @@ public static class PurchasingApiV1
     public const string RequestsPath = "/api/v1/purchasing/requests";
     public const string RequestDetailPath = "/api/v1/purchasing/requests/{id}";
     public const string RequestSubmissionPath = "/api/v1/purchasing/requests/{id}/submission";
+    public const string RequestApprovalPath = "/api/v1/purchasing/requests/{id}/approval";
+    public const string RequestRejectionPath = "/api/v1/purchasing/requests/{id}/rejection";
     public const string OrdersPath = "/api/v1/purchasing/orders";
     public const string OrderDetailPath = "/api/v1/purchasing/orders/{id}";
     public const string OrderApprovalPath = "/api/v1/purchasing/orders/{id}/approval";
@@ -252,6 +299,28 @@ public static class PurchasingJson
         var request = JsonSerializer.Deserialize<SubmitPurchaseRequestRequest>(json, Options)
             ?? throw new JsonException("Request body is required.");
         RequireVersionShape(request.ExpectedVersion);
+        return request;
+    }
+
+    public static ApprovePurchaseRequestRequest ReadApproveRequest(string json)
+    {
+        var request = JsonSerializer.Deserialize<ApprovePurchaseRequestRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        return request;
+    }
+
+    /// <summary>The reason is a required string (shape); whether it is blank or too long is the domain's 422.</summary>
+    public static RejectPurchaseRequestRequest ReadRejectRequest(string json)
+    {
+        var request = JsonSerializer.Deserialize<RejectPurchaseRequestRequest>(json, Options)
+            ?? throw new JsonException("Request body is required.");
+        RequireVersionShape(request.ExpectedVersion);
+        if (request.Reason is null)
+        {
+            throw new JsonException("Invalid reason.");
+        }
+
         return request;
     }
 
