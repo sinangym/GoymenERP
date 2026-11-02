@@ -375,6 +375,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 + "AND (([SourceStrategyId] IS NULL AND [SourceStrategyVersion] IS NULL) OR ([SourceStrategyId] IS NOT NULL AND [SourceStrategyVersion] IS NOT NULL)) AND (([PackageId] IS NULL AND [PackageVersion] IS NULL) OR ([PackageId] IS NOT NULL AND [PackageVersion] IS NOT NULL))");
             // API-04: the sales owner is a real id when present; the due terms are JSON when present.
             table.HasCheckConstraint("CK_Drafts_HeaderRevision", HeaderRevisionConstraint);
+            // MOD-03 → Sales: the buyer tax is JSON when present (the shape is the store's strict reader's).
+            table.HasCheckConstraint("CK_Drafts_BuyerTax", "[BuyerTaxJson] IS NULL OR ISJSON([BuyerTaxJson]) = 1");
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -395,6 +397,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         }
 
         entity.Property(x => x.DueTermsJson).HasColumnType("nvarchar(max)");
+        entity.Property(x => x.BuyerTaxJson).HasColumnType("nvarchar(max)");
         entity.Property(x => x.MoneyOperation).HasMaxLength(128).IsRequired();
         entity.Property(x => x.MoneyProfileVersion).HasMaxLength(128).IsRequired();
         entity.Property(x => x.MoneyEffectiveOn).HasColumnType("date");
@@ -437,6 +440,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
             table.HasCheckConstraint("CK_DraftLines_Price", "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
             // AT-018 / AT-021: the pricing detail exists only beside a price.
             table.HasCheckConstraint("CK_DraftLines_Pricing", "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
+            // MOD-03 → Sales: the tax snapshot is JSON when present; unlike the pricing detail it needs no price (SAT-D93).
+            table.HasCheckConstraint("CK_DraftLines_Tax", "[TaxJson] IS NULL OR ISJSON([TaxJson]) = 1");
             table.HasCheckConstraint("CK_DraftLines_Window",
                 "[OrderUnitEffectiveThrough] IS NULL OR [OrderUnitEffectiveThrough] >= [OrderUnitEffectiveFrom]");
         });
@@ -461,6 +466,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         entity.Property(x => x.UnitPrice).HasMaxLength(128);
         entity.Property(x => x.DiscountPercent).HasMaxLength(128);
         entity.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
+        entity.Property(x => x.TaxJson).HasColumnType("nvarchar(max)");
         entity.HasOne<DraftRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId })
             .HasPrincipalKey(x => new { x.CompanyId, x.Id })
@@ -1026,6 +1032,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "([UnitPrice] IS NULL AND [PriceUnitId] IS NULL) OR ([UnitPrice] IS NOT NULL AND [PriceUnitId] IS NOT NULL)");
             table.HasCheckConstraint("CK_DraftRevisionLines_Pricing",
                 "[PricingJson] IS NULL OR ([UnitPrice] IS NOT NULL AND ISJSON([PricingJson]) = 1)");
+            table.HasCheckConstraint("CK_DraftRevisionLines_Tax", "[TaxJson] IS NULL OR ISJSON([TaxJson]) = 1");
         });
         line.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision, x.LineNo });
         line.HasIndex(x => new { x.CompanyId, x.DraftId, x.Revision, x.LineId }).IsUnique().HasDatabaseName("UX_DraftRevisionLines_LineId");
@@ -1034,6 +1041,7 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
         line.Property(x => x.UnitPrice).HasMaxLength(128);
         line.Property(x => x.DiscountPercent).HasMaxLength(128);
         line.Property(x => x.PricingJson).HasColumnType("nvarchar(max)");
+        line.Property(x => x.TaxJson).HasColumnType("nvarchar(max)");
         line.HasOne<DraftRevisionRow>().WithMany()
             .HasForeignKey(x => new { x.CompanyId, x.DraftId, x.Revision })
             .HasPrincipalKey(x => new { x.CompanyId, x.DraftId, x.Revision })
@@ -1051,11 +1059,13 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                 "(([DeliveryAddressId] IS NULL AND [DeliveryAddressVersion] IS NULL) OR ([DeliveryAddressId] IS NOT NULL AND [DeliveryAddressVersion] IS NOT NULL)) "
                 + "AND (([ContactId] IS NULL AND [ContactVersion] IS NULL) OR ([ContactId] IS NOT NULL AND [ContactVersion] IS NOT NULL))");
             table.HasCheckConstraint("CK_DraftRevisionHeaders_HeaderRevision", HeaderRevisionConstraint);
+            table.HasCheckConstraint("CK_DraftRevisionHeaders_BuyerTax", "[BuyerTaxJson] IS NULL OR ISJSON([BuyerTaxJson]) = 1");
         });
         header.HasKey(x => new { x.CompanyId, x.DraftId, x.Revision });
         header.Property(x => x.DeliveryAddressVersion).HasMaxLength(128);
         header.Property(x => x.ContactVersion).HasMaxLength(128);
         header.Property(x => x.DueTermsJson).HasColumnType("nvarchar(max)");
+        header.Property(x => x.BuyerTaxJson).HasColumnType("nvarchar(max)");
         header.HasOne<DraftRevisionRow>().WithOne()
             .HasForeignKey<DraftRevisionHeaderRow>(x => new { x.CompanyId, x.DraftId, x.Revision })
             .HasPrincipalKey<DraftRevisionRow>(x => new { x.CompanyId, x.DraftId, x.Revision })
@@ -1120,6 +1130,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         nameof(DraftRow.MoneyEffectiveThrough), nameof(DraftRow.MoneyScale),
                         nameof(DraftRow.DeliveryAddressId), nameof(DraftRow.DeliveryAddressVersion), nameof(DraftRow.ContactId),
                         nameof(DraftRow.ContactVersion), nameof(DraftRow.SalesOwnerUserId), nameof(DraftRow.DueTermsJson),
+                        // MOD-03 → Sales (SAT-D140, SAT-D105): the buyer tax situation moves under a header revision.
+                        nameof(DraftRow.BuyerTaxJson),
                     ],
                     // K3 Head B — a DELIBERATE narrowing of "lines never change", declared here and in the PR: ONLY the three
                     // commercial columns may change, under a commercial revision; DEC-SAL-002 widens it by exactly the ordered
@@ -1131,6 +1143,8 @@ public sealed class SalesDbContext(DbContextOptions<SalesDbContext> options, ICo
                         // AT-018 / AT-021: the pricing detail moves with the three commercial columns, under a commercial revision.
                         nameof(DraftLineRow.PricingJson),
                         nameof(DraftLineRow.Quantity), nameof(DraftLineRow.QuantityText),
+                        // MOD-03 → Sales (SAT-D93/D97/D105): the tax snapshot moves under a commercial revision or a buyer tax change.
+                        nameof(DraftLineRow.TaxJson),
                     ],
                     // DEC-SAL-003: the delivery schedule is APPEND-ONLY — a change adds a schedule and its dates and moves
                     // only the header's version (the token) and UpdatedAtUtc, both already admitted above. Nothing of an

@@ -14,7 +14,11 @@
  *    `AmountOutOfRange` line has neither and its tax is `NotComputed`; the document is `Incomplete` (no net) when a line has
  *    no amount or there is no line at all, with the counts of the lines that have none; otherwise `Computed` with its net, or
  *    `AmountOutOfRange` (a sum beyond the decimal range: no net); VAT, withholding, gross and payable exist
- *    exactly when the tax is `Computed`, and `NoSource` (no VAT master) carries none of them — never zero.
+ *    exactly when the tax is `Computed`, and `NoSource` carries none of them — never zero;
+ *  - MOD-03 → Sales: each line's tax comes from its own snapshot of the Settings line tax port; a `NoSource` line names why
+ *    (`taxReason`, present exactly then — e.g. `item_type_default_missing`, `tax_snapshot_missing`), and the document counts the
+ *    lines without a usable tax (`taxUnavailableLineCount`, 0 unless the document's tax is `NoSource`). The order-level
+ *    `taxState` is `NoSource` exactly when some line's is.
  *
  * Decimal text stays text. A decoder returns null for anything it cannot vouch for; the caller fails closed.
  */
@@ -68,6 +72,8 @@ export interface LineTotal {
   readonly vatPercent: string | null
   readonly withholdingShare: string | null
   readonly tax: TaxAmounts | null
+  /** MOD-03 → Sales: why the line's tax is `NoSource` (the server's reason code); null otherwise. */
+  readonly taxReason: string | null
 }
 
 export interface DocumentTotal {
@@ -78,6 +84,8 @@ export interface DocumentTotal {
   readonly netAmount: string | null
   readonly taxState: TaxState
   readonly tax: TaxAmounts | null
+  /** MOD-03 → Sales: the lines without a usable tax when the document's tax is `NoSource` (0 otherwise). */
+  readonly taxUnavailableLineCount: number
 }
 
 export interface OrderTotals {
@@ -132,9 +140,15 @@ function decodeTax(o: Obj, taxState: TaxState, scale: number): TaxAmounts | null
 const LINE_KEYS = ['lineId', 'lineNo', 'orderUnitId', 'quantity', 'state', 'netUnitPrice', 'netAmount', 'taxState', 'vatPercent',
   'vatAmount', 'withholdingShare', 'withheldVatAmount', 'grossAmount', 'payableAmount'] as const
 
+const REASON = /^[a-z][a-z0-9_]{0,127}$/
+
 function decodeLine(value: unknown, scale: number): LineTotal | null {
-  const o = exact(value, LINE_KEYS)
-  if (o === null || !isReferenceId(o.lineId) || typeof o.lineNo !== 'number' || !Number.isInteger(o.lineNo) || o.lineNo < 1
+  // MOD-03 → Sales: `taxReason` is present exactly on a NoSource line (the server omits it otherwise).
+  const record = typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Obj) : null
+  const hasReason = record !== null && Object.hasOwn(record, 'taxReason')
+  const o = exact(value, hasReason ? [...LINE_KEYS, 'taxReason'] : LINE_KEYS)
+  if (o === null || hasReason !== (o.taxState === TOTALS_STATE.noSource)
+    || (hasReason && !(typeof o.taxReason === 'string' && REASON.test(o.taxReason))) || !isReferenceId(o.lineId) || typeof o.lineNo !== 'number' || !Number.isInteger(o.lineNo) || o.lineNo < 1
     || !isReferenceId(o.orderUnitId) || typeof o.quantity !== 'string' || !oneOf(LINE_TOTAL_STATES, o.state)
     || !oneOf(TAX_STATES, o.taxState)) return null
   const computed = o.state === TOTALS_STATE.computed
@@ -152,11 +166,12 @@ function decodeLine(value: unknown, scale: number): LineTotal | null {
     lineId: o.lineId, lineNo: o.lineNo, orderUnitId: o.orderUnitId, quantity: o.quantity, state: o.state,
     netUnitPrice: o.netUnitPrice as string | null, netAmount: o.netAmount as string | null, taxState: o.taxState,
     vatPercent: o.vatPercent as string | null, withholdingShare: o.withholdingShare as string | null, tax,
+    taxReason: hasReason ? (o.taxReason as string) : null,
   }
 }
 
 const DOCUMENT_KEYS = ['state', 'unpricedLineCount', 'priceUnitNotOrderUnitLineCount', 'amountOutOfRangeLineCount', 'netAmount',
-  'taxState', 'vatAmount', 'withheldVatAmount', 'grossAmount', 'payableAmount'] as const
+  'taxState', 'vatAmount', 'withheldVatAmount', 'grossAmount', 'payableAmount', 'taxUnavailableLineCount'] as const
 
 function decodeDocument(value: unknown, scale: number, lines: readonly LineTotal[]): DocumentTotal | null {
   const o = exact(value, DOCUMENT_KEYS)
@@ -180,7 +195,10 @@ function decodeDocument(value: unknown, scale: number, lines: readonly LineTotal
   }
   const tax = decodeTax(o, o.taxState, scale)
   if (tax === undefined) return null
+  const untaxed = o.taxState === TOTALS_STATE.noSource ? lines.filter((line) => line.taxState !== TOTALS_STATE.computed).length : 0
+  if (!isCount(o.taxUnavailableLineCount) || o.taxUnavailableLineCount !== untaxed) return null
   return {
+    taxUnavailableLineCount: o.taxUnavailableLineCount,
     state: o.state, unpricedLineCount: o.unpricedLineCount, priceUnitNotOrderUnitLineCount: o.priceUnitNotOrderUnitLineCount,
     amountOutOfRangeLineCount: o.amountOutOfRangeLineCount, netAmount: o.netAmount as string | null, taxState: o.taxState, tax,
   }
@@ -204,10 +222,10 @@ export function decodeOrderTotals(value: unknown, detail: DraftDetail): OrderTot
   for (const raw of o.lines) {
     const line = decodeLine(raw, scale)
     if (line === null || byId.has(line.lineId.toLowerCase())) return null
-    // Without a VAT master no line can carry a computed tax.
-    if (o.taxState === TOTALS_STATE.noSource && line.taxState === TOTALS_STATE.computed) return null
     byId.set(line.lineId.toLowerCase(), line)
   }
+  // MOD-03 → Sales: the order-level tax is NoSource exactly when some line's is.
+  if ((o.taxState === TOTALS_STATE.noSource) !== [...byId.values()].some((line) => line.taxState === TOTALS_STATE.noSource)) return null
   const lines: LineTotal[] = []
   for (const expected of detail.lines) {
     const line = byId.get(expected.lineId.toLowerCase())

@@ -47,7 +47,7 @@ const totals = (): Body => JSON.parse(totalsResponseRaw) as Body
 function complete(): Body {
   const body = totals()
   body.lines[1] = { ...body.lines[0], lineId: LINE_2, lineNo: 2, quantity: '2', netUnitPrice: '100', netAmount: '200.00' }
-  body.totals = { ...body.totals, state: 'Computed', unpricedLineCount: 0, netAmount: '214.34', taxState: 'NoSource' }
+  body.totals = { ...body.totals, state: 'Computed', unpricedLineCount: 0, netAmount: '214.34', taxState: 'NoSource', taxUnavailableLineCount: 2 }
   return body
 }
 
@@ -89,13 +89,15 @@ describe('S-04 order totals (API-03 / UI-15)', () => {
     }
     expect(within(section).getByTestId('sales-totals-line-2-state').textContent)
       .toBe(`${T.lineState.Unpriced} ${T.vat}: ${T.taxState.NotComputed}`)
+    // MOD-03 → Sales: the priced line names why its tax is not computed (the server's reason in words).
+    expect(within(section).getByTestId('sales-totals-line-1-tax-reason').textContent).toBe(` ${T.taxReason('tax_snapshot_missing')}`)
     // The incomplete document shows no partial sum; the tax has no source.
     for (const id of ['net', 'vat', 'withheld', 'gross', 'payable']) {
       const amount = within(section).getByTestId(`sales-totals-${id}`)
       expect([amount.textContent, amount.getAttribute('data-computed')]).toEqual([T.notAvailable, 'false'])
     }
     expect(within(section).getByTestId('sales-totals-note-incomplete').textContent).toBe(T.incomplete(1, 0, 0))
-    expect(within(section).getByTestId('sales-totals-note-tax-no-source').textContent).toBe(T.taxNoSource)
+    expect(within(section).getByTestId('sales-totals-note-tax-no-source').textContent).toBe(T.taxNoSource(1))
     expect(within(section).getByTestId('sales-totals-revision').textContent).toBe(T.revision('Rev.0', '4'))
 
     const reads = totalsCalls(harness.calls)
@@ -114,7 +116,7 @@ describe('S-04 order totals (API-03 / UI-15)', () => {
     expect(within(section).getByTestId('sales-totals-vat').textContent).toBe(T.notAvailable)
     expect(within(section).getByTestId('sales-totals-payable').textContent).toBe(T.notAvailable)
     expect(within(section).queryByTestId('sales-totals-note-incomplete')).toBeNull()
-    expect(within(section).getByTestId('sales-totals-note-tax-no-source').textContent).toBe(T.taxNoSource)
+    expect(within(section).getByTestId('sales-totals-note-tax-no-source').textContent).toBe(T.taxNoSource(2))
     // Without the currencies reference answering, the currency's identity is shown, never a guessed code.
     expect(within(section).getByTestId('sales-totals-currency').textContent).toBe(CURRENCY)
   })
@@ -237,9 +239,10 @@ describe('OrderTotalsCard outcomes', () => {
   it('shows VAT, withholding, gross and payable exactly as the server computed them once a VAT master answers', () => {
     const body = complete()
     body.taxState = 'Computed'
+    for (const line of body.lines) delete line.taxReason
     Object.assign(body.lines[0], { taxState: 'Computed', vatPercent: '20', vatAmount: '2.87', withheldVatAmount: '0.00', grossAmount: '17.21', payableAmount: '17.21' })
     Object.assign(body.lines[1], { taxState: 'Computed', vatPercent: '20', vatAmount: '40.00', withholdingShare: '0.5', withheldVatAmount: '20.00', grossAmount: '240.00', payableAmount: '220.00' })
-    Object.assign(body.totals, { taxState: 'Computed', vatAmount: '42.87', withheldVatAmount: '20.00', grossAmount: '257.21', payableAmount: '237.21' })
+    Object.assign(body.totals, { taxState: 'Computed', vatAmount: '42.87', withheldVatAmount: '20.00', grossAmount: '257.21', payableAmount: '237.21', taxUnavailableLineCount: 0 })
     const decoded = decodeOrderTotals(body, draftDetail)
     if (decoded === null) throw new Error('the taxed answer does not decode')
     render(<OrderTotalsCard detail={draftDetail} currency="TRY" outcome={{ type: 'ok-single', data: decoded }} onRetry={() => undefined} />)
@@ -287,6 +290,7 @@ describe('OrderTotalsCard outcomes', () => {
     const empty = { ...draftDetail, lines: [] }
     const body = totals()
     body.lines = []
+    body.taxState = 'Computed'
     body.totals = { ...body.totals, unpricedLineCount: 0 }
     const decoded = decodeOrderTotals(body, empty)
     if (decoded === null) throw new Error('the zero-line answer does not decode')
@@ -300,6 +304,8 @@ describe('OrderTotalsCard outcomes', () => {
   it('names a line beyond the decimal range and never shows a truncated amount (review B P2-1)', () => {
     const body = totals()
     Object.assign(body.lines[0], { state: 'AmountOutOfRange', netUnitPrice: null, netAmount: null, taxState: 'NotComputed' })
+    delete body.lines[0].taxReason
+    body.taxState = 'Computed'
     body.totals = { ...body.totals, amountOutOfRangeLineCount: 1 }
     const decoded = decodeOrderTotals(body, draftDetail)
     if (decoded === null) throw new Error('the answer does not decode')
@@ -312,7 +318,7 @@ describe('OrderTotalsCard outcomes', () => {
 
   it('says the document sum is beyond the decimal range while every line amount is still shown', () => {
     const body = complete()
-    body.totals = { ...body.totals, state: 'AmountOutOfRange', netAmount: null, taxState: 'NotComputed' }
+    body.totals = { ...body.totals, state: 'AmountOutOfRange', netAmount: null, taxState: 'NotComputed', taxUnavailableLineCount: 0 }
     const decoded = decodeOrderTotals(body, draftDetail)
     if (decoded === null) throw new Error('the answer does not decode')
     render(<OrderTotalsCard detail={draftDetail} currency="TRY" outcome={{ type: 'ok-single', data: decoded }} onRetry={() => undefined} />)

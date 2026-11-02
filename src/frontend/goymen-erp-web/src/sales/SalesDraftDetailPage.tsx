@@ -120,6 +120,7 @@ import { SalesDraftCustomerReturns } from './SalesDraftCustomerReturns'
 import { SalesOrderStatusAxes } from './SalesOrderStatusAxes'
 import { customerAcceptedFallback, previousRevision } from './orderStatus'
 import { SalesOrderTotalsCard } from './SalesOrderTotalsCard'
+import { SalesOrderTaxCard } from './SalesOrderTaxCard'
 import { SalesOrderRiskCard } from './SalesOrderRiskCard'
 import { SalesOrderHeaderSummary } from './SalesOrderHeaderSummary'
 import { SalesDraftRemainderChangePanel } from './SalesDraftRemainderChangePanel'
@@ -259,10 +260,17 @@ export function SalesDraftDetailPage() {
       }
       totals={
         namespace !== null && companyId !== null && outcome.data.draft.companyId === companyId ? (
-          <SalesOrderTotalsCard
-            key={`totals:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
-            detail={outcome.data}
-          />
+          <>
+            <SalesOrderTotalsCard
+              key={`totals:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+              detail={outcome.data}
+            />
+            {/* MOD-03 → Sales: the buyer tax and the lines' tax snapshots, beside the totals they feed. */}
+            <SalesOrderTaxCard
+              key={`tax:${namespace}:${shell.routeEntryGeneration}:${outcome.data.draft.id}`}
+              detail={outcome.data}
+            />
+          </>
         ) : null
       }
       risk={

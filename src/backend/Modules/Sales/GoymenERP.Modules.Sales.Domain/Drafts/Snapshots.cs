@@ -198,10 +198,14 @@ public sealed record LineCommercialInput(Guid LineId, CommercialDraftFields Comm
 /// </summary>
 public sealed record LineQuantityInput(Guid LineId, string QuantityText, decimal Quantity);
 
-/// <summary>A line as it stood in an approved revision: identity, quantity text and the commercial fields, kept verbatim.</summary>
+/// <summary>
+/// A line as it stood in an approved revision: identity, quantity text and the commercial fields, kept verbatim. MOD-03 → Sales:
+/// <see cref="Tax"/> is the line's tax snapshot as it was approved (null for a line archived before the tax wiring, or without one),
+/// so the accepted-revision fallback (SAT-D115/D165/D166) values the archived lines with the tax they were approved with.
+/// </summary>
 public sealed record RevisionLineSnapshot(
     Guid LineId, int LineNo, Guid ProductId, string ProductVersion, Guid OrderUnitId, string QuantityText,
-    CommercialDraftFields Commercial);
+    CommercialDraftFields Commercial, SalesLineTaxSnapshot? Tax = null);
 
 /// <summary>
 /// K3 (Sinan 5748258299): an APPROVED revision archived the moment its price or discount was changed —
@@ -222,9 +226,11 @@ public sealed record ApprovedRevisionSnapshot(
 /// API-04: the header of an approved revision as it was approved — the customer (party + account), the currency, the delivery
 /// address and contact references, the sales owner and the due terms (DEC-SAL-008). Append-only beside the archived revision.
 /// </summary>
+/// <remarks>MOD-03 → Sales (SAT-D140): <see cref="BuyerTax"/> is the buyer tax situation the revision was approved with (null for an
+/// archive written before the tax wiring).</remarks>
 public sealed record RevisionHeaderSnapshot(
     Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, OwnerReference? DeliveryAddress, OwnerReference? Contact,
-    Guid? SalesOwnerUserId, SalesDueTerms? DueTerms);
+    Guid? SalesOwnerUserId, SalesDueTerms? DueTerms, SalesBuyerTax? BuyerTax = null);
 
 /// <summary>DEC-SAL-003: one slice's new requested delivery date, addressed by the slice id the line already carries.</summary>
 public sealed record SliceScheduleInput(Guid SliceId, DateOnly RequestedDeliveryDate);

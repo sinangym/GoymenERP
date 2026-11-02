@@ -61,7 +61,11 @@ public sealed record SalesDraftHeaderRevisionRequest(
     SalesDraftOwnerReferenceV1? DeliveryAddress,
     SalesDraftOwnerReferenceV1? Contact,
     Guid? SalesOwnerUserId,
-    SalesDueTermsV1? DueTerms);
+    SalesDueTermsV1? DueTerms,
+    // MOD-03 → Sales (SAT-D140/D147, SAT-D105): the order's new buyer tax situation; omitted = unchanged (the only member that may be
+    // omitted: the request predates it). A change re-resolves every line's tax and re-enters approval like a due-terms change.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    SalesDraftBuyerTaxV1? BuyerTax = null);
 
 /// <summary>
 /// API-04: <c>GET /api/v1/sales/drafts/{id}/header</c> under <c>sales.drafts.read</c> — the order's revisable header as it
@@ -119,6 +123,11 @@ public static class SalesDraftHeaderApiV1
         if (request.DueTerms is { } terms)
         {
             RequireDueTermsShape(terms);
+        }
+
+        if (request.BuyerTax is { } buyer)
+        {
+            SalesDraftTaxApiV1.RequireBuyerTaxShape(buyer);
         }
 
         return request;

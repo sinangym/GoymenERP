@@ -16,9 +16,12 @@ import {
   type OrderAttemptState,
 } from './orderAttempt'
 import { SALES_PRICE_WRITE_CAPABILITY } from './capabilities'
-import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT as T, problemCodeText } from './salesText'
+import { LINE_PRICING_TEXT as P, ORDER_DETAIL_TEXT as T, ORDER_TAX_TEXT, problemCodeText } from './salesText'
 import { recallCommercialRevisionAttempt, rememberCommercialRevisionAttempt } from './pendingCommercialRevisions'
 import { useDraftLinePricing } from './useDraftLinePricing'
+import { useTaxOptions } from './useTaxOptions'
+import { LineTaxFields } from './SalesTaxFields'
+import { KEEP_LINE_TAX, readOptions } from './orderTax'
 import { hasCapability, type ShellState } from '../shell/shellState'
 import styles from './SalesPages.module.css'
 import { Button } from '../ui/Button'
@@ -45,6 +48,8 @@ export function SalesDraftCommercialRevisionForm({
   readonly onRecorded: () => void
 }) {
   const pricing = useDraftLinePricing(shell, detail, companyId)
+  // MOD-03 → Sales: the Settings lists a line's tax change chooses from (the order's business date).
+  const taxOptions = readOptions(useTaxOptions(shell, companyId, detail.draft.businessDate).data).options
   const pricingData = pricing.data?.type === 'ok-single' ? pricing.data.data : null
   const freshRows = commercialRowsFromFreshPricing(detail, pricingData)
   const [initial] = useState(() => recallCommercialRevisionAttempt(orderAttemptBinding(shell, scopeOf(detail.draft.id))))
@@ -169,6 +174,7 @@ export function SalesDraftCommercialRevisionForm({
     <div className={styles.actions} data-testid="sales-price-revision-form">
       <h3>{text.heading}</h3>
       <p className={styles.muted}>{detail.draft.approvalState === APPROVAL_STATE.approved ? text.approvedWarning : text.description}</p>
+      <p className={styles.muted} data-testid="sales-price-tax-reresolve">{ORDER_TAX_TEXT.reresolveHint}</p>
       {!stateAllowsRevision ? <p className={styles.muted}>{text.stateUnavailable}</p> : null}
       {freshRows === null ? <p className={styles.notice} data-testid="sales-price-pricing-unavailable">{text.pricingUnavailable}</p> : null}
       {localError === null ? null : <p role="alert" className={styles.notice}>{localError}</p>}
@@ -261,6 +267,12 @@ export function SalesDraftCommercialRevisionForm({
               inputMode="decimal"
               value={row.surchargeValue}
               onChange={(event) => change(row.lineId, { surchargeValue: event.target.value })}
+            />
+            <LineTaxFields
+              idPrefix={`sales-price-${row.lineNo}`}
+              value={row.tax ?? KEEP_LINE_TAX}
+              options={taxOptions}
+              onChange={(tax) => change(row.lineId, { tax })}
             />
           </fieldset>
         )

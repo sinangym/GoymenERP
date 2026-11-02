@@ -28,6 +28,10 @@ import {
 import { SalesContactInformationSourceContext, SalesCurrencySourceContext, SalesReferenceSourceContext } from './referenceSource'
 import { HEADER_REVISION_TEXT as T } from './salesText'
 import { SalesDueTermsEditor } from './SalesDueTermsEditor'
+import { BuyerTaxFields } from './SalesTaxFields'
+import { buyerTaxInputOf, readOptions, situationOf, type BuyerTaxInput } from './orderTax'
+import { useTaxOptions } from './useTaxOptions'
+import { fetchDraftTax } from './api'
 import { contextKey, contextKeyString, hasCapability, type ShellState } from '../shell/shellState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './SalesPages.module.css'
@@ -182,6 +186,19 @@ function HeaderRevisionEditor({
   const useContactInformation = useContext(SalesContactInformationSourceContext)
   const contactInformation = useContactInformation(companyId, values.partyId, values.companyAccountId)
   const owners = useSalesOwners(companyId, ownerSearch)
+  // MOD-03 → Sales (SAT-D140): the order's current buyer tax (the tax read, price-read fenced like the due terms) and the Settings
+  // lists the new one is chosen from. Until the current one is read the field is not offered (nothing is sent blind).
+  const taxOptionsRead = useTaxOptions(shell, companyId, detail.draft.businessDate)
+  const taxOptions = readOptions(taxOptionsRead.data).options
+  const currentTax = useQuery({
+    queryKey: ['sales-header-revision-tax', companyId, detail.draft.id, detail.draft.version],
+    queryFn: ({ signal }) => fetchDraftTax(detail, companyId, signal),
+    retry: false,
+    refetchOnWindowFocus: false,
+  })
+  const currentBuyerTax = currentTax.data?.type === 'ok-single' ? currentTax.data.data.buyerTax : undefined
+  const [buyerTaxInput, setBuyerTaxInput] = useState<BuyerTaxInput | null>(null)
+  if (buyerTaxInput === null && currentBuyerTax !== undefined) setBuyerTaxInput(buyerTaxInputOf(currentBuyerTax))
 
   const frozen = attempt.phase === 'submitting' || isOutcomeStillUnknown(attempt)
   const disabled = frozen || !stateAllowsRevision
@@ -205,7 +222,11 @@ function HeaderRevisionEditor({
 
   function start() {
     setLocalError(null)
-    const built = buildHeaderRevisionRequest(header, values)
+    const built = buildHeaderRevisionRequest(header, values, {
+      input: buyerTaxInput,
+      current: currentBuyerTax ?? null,
+      situation: buyerTaxInput === null ? undefined : situationOf(taxOptions, buyerTaxInput.situation),
+    })
     if (!built.ok) {
       setLocalError(T.localError(built.error))
       return
@@ -336,6 +357,16 @@ function HeaderRevisionEditor({
         disabled={disabled}
         testId="sales-header-due-terms"
       />
+
+      {buyerTaxInput === null ? null : (
+        <BuyerTaxFields
+          idPrefix="sales-header"
+          value={buyerTaxInput}
+          outcome={taxOptionsRead.data}
+          disabled={disabled}
+          onChange={setBuyerTaxInput}
+        />
+      )}
 
       <label htmlFor={reasonId}>{T.reason}</label>
       <textarea id={reasonId} value={values.reason} maxLength={DUE_LIMITS.reason} required aria-describedby={`${reasonId}-hint`}

@@ -78,6 +78,9 @@ internal sealed class DraftRow : ISalesTenantRow
     /// <summary>API-04 (DEC-SAL-008): the order's due terms as JSON (<c>SalesDueTermsJson</c>); null = none. Set or changed only by a header revision.</summary>
     public string? DueTermsJson { get; set; }
 
+    /// <summary>MOD-03 → Sales (SAT-D140/D147): the order's buyer tax situation as JSON (<c>SalesTaxJson</c>); null = written before the tax wiring.</summary>
+    public string? BuyerTaxJson { get; set; }
+
     public string MoneyOperation { get; set; } = string.Empty;
     public Guid MoneyProfileId { get; set; }
     public string MoneyProfileVersion { get; set; } = string.Empty;
@@ -149,6 +152,9 @@ internal sealed class DraftLineRow : ISalesTenantRow
     public string? DiscountPercent { get; set; }
     /// <summary>AT-018 / AT-021: the line's price-list reference and visible adjustments (JSON), null when it has none.</summary>
     public string? PricingJson { get; set; }
+
+    /// <summary>MOD-03 → Sales (SAT-D93/D139): the line's tax snapshot (JSON, <c>SalesTaxJson</c>); null = none ("kaynak yok").</summary>
+    public string? TaxJson { get; set; }
 }
 
 /// <summary>One requested delivery slice of a line. Append-only.</summary>
@@ -232,6 +238,9 @@ internal sealed class DraftRevisionHeaderRow : ISalesTenantRow
     public string? ContactVersion { get; set; }
     public Guid? SalesOwnerUserId { get; set; }
     public string? DueTermsJson { get; set; }
+
+    /// <summary>MOD-03 → Sales: the buyer tax situation the revision was approved with (JSON); null = archived before the tax wiring.</summary>
+    public string? BuyerTaxJson { get; set; }
 }
 
 /// <summary>A line of an archived approved revision: identity, quantity text and the commercial fields exactly as they were. Append-only.</summary>
@@ -251,6 +260,9 @@ internal sealed class DraftRevisionLineRow : ISalesTenantRow
     public string? DiscountPercent { get; set; }
     /// <summary>AT-018 / AT-021: the line's price-list reference and visible adjustments (JSON), null when it has none.</summary>
     public string? PricingJson { get; set; }
+
+    /// <summary>MOD-03 → Sales: the line's tax snapshot as it was approved (JSON); null = none.</summary>
+    public string? TaxJson { get; set; }
 }
 
 /// <summary>
