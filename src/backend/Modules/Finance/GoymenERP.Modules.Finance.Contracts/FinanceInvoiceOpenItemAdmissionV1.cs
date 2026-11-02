@@ -69,3 +69,20 @@ public interface IFinanceInvoiceOpenItemAdmissionPortV1
         FinanceInvoiceOpenItemAdmissionV1 invoice,
         CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// ALS-D62 (Sinan 2 Kasım): the producer's finalisation and Finance's open items commit in ONE database transaction. The
+/// producer's host opens the transaction, enlists this single-use participant on its connection, stages the admission and
+/// commits (or rolls back) itself; Finance never commits, rolls back or closes the host's connection or transaction. The
+/// admission rules, idempotency and answers are those of <see cref="IFinanceInvoiceOpenItemAdmissionPortV1"/>. A result
+/// other than <see cref="CommandOutcome.Succeeded"/> means nothing usable was staged: the host rolls back. After the
+/// platform outbox dispatcher (ERP-000F) the same content is also published as an event.
+/// </summary>
+public interface IFinanceInvoiceOpenItemAdmissionParticipantV1 : IAsyncDisposable
+{
+    Task<FinanceOpenItemAdmissionResult> StageAsync(
+        FinanceContext context,
+        CommandMetadata metadata,
+        FinanceInvoiceOpenItemAdmissionV1 invoice,
+        CancellationToken cancellationToken);
+}

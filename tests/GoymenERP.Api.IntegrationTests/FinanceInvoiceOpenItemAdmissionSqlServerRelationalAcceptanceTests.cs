@@ -154,6 +154,35 @@ public sealed class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptance
             "SELECT FunctionalAmountText FROM finance.OpenItems WHERE Id = @id", ("@id", dollar.Installments[0].OpenItemId)));
     }
 
+    [SqlServerFact]
+    public async Task Enlisted_in_the_producers_transaction_the_open_items_commit_or_roll_back_with_it()
+    {
+        await using var run = await Run.StartAsync();
+        var invoice = Invoice(FinanceInvoiceProducerV1.Purchasing, Lira, null, Installment(1, "250.00"));
+
+        // ALS-D62: the producer rolls back its finalisation → Finance staged nothing that survives.
+        var rolledBack = await run.EnlistedAdmitAsync(CompanyA, "enlisted-1", invoice, commit: false);
+        Assert.Equal(CommandOutcome.Succeeded, rolledBack.Outcome);
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id", ("@id", invoice.InvoiceId)));
+        Assert.Equal(0, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItemSourceBatches WHERE Id = @id", ("@id", invoice.AdmissionId)));
+
+        // The retry with the same key commits with the producer's transaction: one payable, one receipt.
+        var committed = await run.EnlistedAdmitAsync(CompanyA, "enlisted-1", invoice, commit: true);
+        Assert.Equal(CommandOutcome.Succeeded, committed.Outcome);
+        Assert.False(committed.IsReplay);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id AND Direction = 2", ("@id", invoice.InvoiceId)));
+
+        // A later retry of the same admission replays without a second row.
+        var replay = await run.EnlistedAdmitAsync(CompanyA, "enlisted-1", invoice, commit: true);
+        Assert.True(replay.IsReplay);
+        Assert.Equal(committed.OpenItemIds, replay.OpenItemIds);
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM finance.OpenItems WHERE SourceId = @id", ("@id", invoice.InvoiceId)));
+    }
+
     private static FinanceInvoiceOpenItemAdmissionV1 Invoice(FinanceInvoiceProducerV1 producer, Guid currency,
         string? rate, params FinanceInvoiceInstallmentV1[] installments) =>
         new(Guid.NewGuid(), producer, Guid.NewGuid(), "invoice-v1", Party, Account, currency, rate, installments);
@@ -201,6 +230,37 @@ public sealed class FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptance
             return await service.AdmitAsync(
                 new FinanceContext(contextCompany ?? company, Actor, $"f2a-{Guid.NewGuid():N}", null),
                 new CommandMetadata($"f2a-{key}"), invoice, CancellationToken.None);
+        }
+
+        /// <summary>A producer host: opens its own transaction, enlists Finance, stages, then commits or rolls back.</summary>
+        public async Task<FinanceOpenItemAdmissionResult> EnlistedAdmitAsync(Guid company, string key,
+            FinanceInvoiceOpenItemAdmissionV1 invoice, bool commit)
+        {
+            await using var connection = new SqlConnection(Factory.DatabaseConnectionString);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            FinanceOpenItemAdmissionResult result;
+            await using (var finance = await FinanceInvoiceOpenItemAdmissionParticipant.EnlistAsync(connection,
+                transaction, company, new FixedCurrentUser(Actor, company), new SyntheticParty(company),
+                new FinanceAuditEnvelope("synthetic.finance.invoice-open-items.admit", ["SENTETIK-FINANCE"], "Web")))
+            {
+                result = await finance.StageAsync(new FinanceContext(company, Actor, $"f2a-{Guid.NewGuid():N}", null),
+                    new CommandMetadata($"f2a-{key}"), invoice, CancellationToken.None);
+                await Assert.ThrowsAsync<InvalidOperationException>(() => finance.StageAsync(
+                    new FinanceContext(company, Actor, "second", null), new CommandMetadata($"f2a-{key}"), invoice,
+                    CancellationToken.None));
+            }
+
+            if (commit)
+            {
+                await transaction.CommitAsync();
+            }
+            else
+            {
+                await transaction.RollbackAsync();
+            }
+
+            return result;
         }
 
         /// <summary>Moves Finance's schema to <paramref name="target"/> (null: the latest migration).</summary>
