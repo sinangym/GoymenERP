@@ -199,7 +199,7 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-01 | (migration) `OpenItems.Direction` + kaynak türü | §3 | — | MOD-15, No 22 | K3 |
 | API-02 | `GET open-items?direction=` | Yöne göre liste | `finance.open-items.read` | — | K2 |
 | API-03 | `GET open-items/direction-quarantine`, `POST open-items/{id}/direction` | "Yön belirsiz" karantina ve yön atama | yeni `finance.open-items.direction.assign` | No 22 | K3 |
-| API-04 | `GET /finance/party-balance?partyId&companyAccountId` | Toplam alacak / borç / bakiye + açık alacak/borç, para birimi ayrı | `finance.party-ledger.read` | §3 | K2 |
+| API-04 | `GET /api/v1/finance/party-balance?partyId&companyAccountId` | Toplam alacak / borç / bakiye + açık alacak/borç, para birimi ayrı | `finance.party-ledger.read` | §3 | K2 |
 | API-05 | Cari ekstre: yönlü kalemler + devir bakiyesi (No 136) | Ekstre düzeltmesi | mevcut | No 79/136, OPEN-018 | K3 |
 | API-06 | Risk portu düzeltmesi | Yalnız `Receivable` | sistem bağlamı | ALS-D42 | K3 |
 | API-07 | `POST offsets/preview`, `POST offsets` | **Mahsup:** aynı firmanın alacağı ile borcunu kapatma; maker≠checker | yeni `finance.offset.*` | ALS-D42, DEC-FIN-006 | K3 |
@@ -211,7 +211,8 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-10 | Port `IFinanceInvoiceOpenItemAdmissionPortV1` (Alış ve Satış ortak) | Kesinleşen faturadan taksit başına açık kalem | DEC-FIN-005, SAT-D85, ALS-D41 | K3 |
 | API-11 | İptal/iade portu | Kalemin ters kaydı; iade faturası ayrı belge (No 20/21) | SAT-D96 | K3 |
 | API-12 | Finans outbox + inbox tabloları | Olay kaydı ve tekrar engeli | ALS-D44 notu, ERP-000F | K3 |
-| API-13 | Dekont/makbuz numara serisi (Ayarlar'da şirket bazlı) | D-6 | N-12 | K2 |
+| API-14 | Açılış Kaydı (FNS-D12) | Açılış bakiyelerinin **elle** girişi: açık müşteri/tedarikçi kalemi, kasa/banka bakiyesi, portföydeki çek/senet, kredi kalanı, DBS/teminat limiti; "açılış" türüyle işaretli, gerçek tarihçe gibi gösterilmez; maker≠checker; geçici görünürlük (Ayarlar anahtarı) yorumu Sinan teyidi bekliyor | FNS-D12 | K3 |
+| API-13 | Dekont/makbuz numara serisi (Ayarlar'da şirket bazlı) | D-6 | N-12 | K3 |
 
 ### 5.3 Tahsilat ve ödemenin tamamlanması (F-02, F-03)
 
@@ -222,22 +223,22 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-22 | Kur farkı satırı | Çapraz para dağıtımında para olayından türeyen ayrı satır; muhasebe kaynağı | No 34, No 17 | K3 |
 | API-23 | Ödeme ters kaydı | Tahsilattaki FIN-T06 deseninin ödemeye uygulanması | DEC-FIN-006 | K3 |
 | API-24 | Banka masrafı ve kısmi ödeme | Brüt tutar + ayrı masraf para olayı | No 112, No 115 | K3 |
-| API-25 | Masraf ödemesi / iadesi (cariye bağlı olmayan) | Vergi, SGK, maaş, kira, banka masrafı, kredi faizi; kasa/banka hesabı + iki seviyeli masraf türü + belge; açık kaleme dağıtılmaz (hubvogal emsali, R-5) | §17 R-5, MOD-07 | K3 |
+| API-25 | Masraf ödemesi / iadesi (cariye bağlı olmayan) | Vergi, SGK, maaş, kira, banka masrafı, kredi faizi; kasa/banka hesabı + iki seviyeli masraf türü (FNS-D9) + belge; açık kaleme dağıtılmaz (hubvogal emsali, R-5); FNS-D11 eksi bakiye kontrolü; **Sinan teyidi bekliyor** | §17 R-5, MOD-07, FNS-D11 | K3 |
 
 ### 5.4 Kasa ve virman (F-05)
 
 | ID | Uç | Amaç | Karar | Sev. |
 |---|---|---|---|---|
 | API-30 | `cash-accounts` öner/onay/liste | Kasa master (şirket, para birimi, sorumlu) | N-05 (ASSUMPTION-FIN-CASH) | K3 (yeni tablo + yetki) |
-| API-31 | `cash-movements` taslak/kayıt/ters | Kasadan tahsilat ve ödeme; açık kaleme dağıtılabilir | DEC-FIN-006 | K3 |
-| API-32 | `transfers` preview/commit | Virman: kasa↔banka, banka↔banka, aynı para birimi; döviz alım-satım ayrı tür (N-06) | — | K3 |
+| API-31 | `cash-movements` taslak/kayıt/ters | Kasadan tahsilat ve ödeme; açık kaleme dağıtılabilir; eksi bakiye engeli | DEC-FIN-006, FNS-D11 | K3 |
+| API-32 | `transfers` preview/commit | Virman: kasa↔banka, banka↔banka, aynı para birimi; döviz alım-satım ayrı tür (N-06, ASSUMPTION-FIN-FX-TRANSFER); eksi bakiye engeli | FNS-D11 | K3 |
 | API-33 | `cash-counts`, gün sonu | Sayım, sayım farkı (eşik üstü müdür onayı), gün kapanışı | v3 §5 rol matrisi; eşik OPEN-009 | K3 |
 
 ### 5.5 Banka hareketleri, ekstre, mutabakat (F-04, F-16)
 
 | ID | Uç | Amaç | Karar | Sev. |
 |---|---|---|---|---|
-| API-40 | `GET bank-accounts/{id}/book` | ERP defter bakiyesi ve hareketler (para olaylarından hesaplanır, ayrı bakiye tablosu tutulmaz) | — | K2 |
+| API-40 | `GET bank-accounts/{id}/book` | ERP defter bakiyesi ve hareketler (para olaylarından hesaplanır, ayrı bakiye tablosu tutulmaz); FNS-D11 kontrolünün okuma tarafı | FNS-D11 | K2 |
 | API-41 | `POST bank-statements/import` | Bankadan indirilen ekstre dosyası; dosya hash'i; satır değiştirilmez | OPEN-016 (dosya izinli), N-07 | K3 |
 | API-42 | `POST reconciliation/preview`, `/matches`, `/unmatch` | 1:1, 1:n, n:1, n:n eşleştirme; farkı elle kapatma ayrı yetki | master §7.11 | K3 |
 | API-43 | Ekstreden kaynak önerisi | Eşleşmeyen ekstre satırından tahsilat/ödeme **taslak önerisi**; kullanıcı açıp kontrol edip kaydetmedikçe hareket yoktur (FNS-D13: ekstre hareket üretmez, kayıt her zaman kullanıcınındır) | DEC-AI-004, FNS-D13 | K2 |
@@ -276,7 +277,7 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 |---|---|---|---|---|
 | API-74 | POS batch/valör, chargeback/iade | Banka girişi net, valör ayrı; chargeback alacağı yeniden açar | DEC-FIN-014 | K3 |
 | API-75 | Komisyonu müşteri ödesin | Bugün kaydediliyor ama uygulanmıyor; müşteriye ayrı alacak kalemi | DEC-FIN-014 | K3 |
-| API-76 | `company-cards` | Kart master (banka, limit, hesap kesim/son ödeme günü) | DEC-FIN-015 | K2 |
+| API-76 | `company-cards` | Kart master (banka, limit, hesap kesim/son ödeme günü) | DEC-FIN-015 | K3 |
 | API-77 | Kart harcaması | Slip = harcama kaydı; tedarikçi borcunu kart borcuna dönüştürür; belge, harcayan, masraf türü | DEC-FIN-015 | K3 |
 | API-78 | Kart ekstresi ve ödemesi | Ekstre mutabakatı; banka çıkışı ekstre ödemesinde | DEC-FIN-015 | K3 |
 
@@ -295,9 +296,9 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 
 | ID | Uç | Amaç | Sev. |
 |---|---|---|---|
-| API-90 | Vadesi geçmiş liste, yaşlandırma | Müşteri gecikme ölçümü (calculator) | K2 |
-| API-91 | Tahsilat görevi, ödeme sözü | Görev ve söz kaydı; söz bozulursa uyarı | K2 |
-| API-92 | İhtilaf, yapılandırma, hukuki takip | Ayrı kayıt; açık kalemi değiştirmez | K2 |
+| API-90 | Vadesi geçmiş liste, yaşlandırma | Müşteri gecikme ölçümü (calculator) | K3 |
+| API-91 | Tahsilat görevi, ödeme sözü | Görev ve söz kaydı; söz bozulursa uyarı | K3 |
+| API-92 | İhtilaf, yapılandırma, hukuki takip | Ayrı kayıt; açık kalemi değiştirmez | K3 |
 | API-93 | Risk istisnası | Satış'taki iki tür (No 32) Finans okumasında görünür | K2 |
 
 ### 5.12 Nakit planı, bütçe, genel bakış, raporlar (F-01, F-11, F-12, F-17)
@@ -306,7 +307,7 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 |---|---|---|---|---|
 | API-95 | Nakit akışı olay havuzu | Sipariş → fatura → araç → banka aşamaları; çifte sayım engeli | DEC-FIN-013, No 113 | K3 |
 | API-96 | 13 haftalık plan | İlk 30 gün günlük; tampon ve kaynak önceliği OPEN-011 açık → ayarlanabilir, başlangıç kapalı | OPEN-011 | K3 |
-| API-97 | Nakit bütçesi ve sürüm onayı | Basit sürüm; gelişmiş özellikler bayrakla kapalı | v3 §7 | K2 |
+| API-97 | Nakit bütçesi ve sürüm onayı | Basit sürüm; gelişmiş özellikler bayrakla kapalı | v3 §7 | K3 |
 | API-98 | Genel bakış KPI'ları | 6 ana + 3 ikincil (v3 §4.1); hepsi calculator | — | K2 |
 | API-99 | Raporlar | Cari yaşlandırma, banka/kasa hareket, çek portföy vade, kredi borç servisi | — | K2 |
 
@@ -323,8 +324,8 @@ Finans onay matrisi (işlem × rol × tutar × para birimi × 1./2. onay; DEC-FI
 | ID | Modül | Eksik | Kim yapar | Sözleşme | Sev. |
 |---|---|---|---|---|---|
 | MOD-01 | Alış | Kesinleşen gelen faturanın borç kalemi (Alış MOD-04) | Finans tarafı bu şerit; olay üreten Alış | API-10, `purchasing.invoice.finalized.v1` | K3 |
-| MOD-02 | Alış | Sipariş başlığında cari bakiye (Toplam Borç/Alacak) ve limit boşluğu | Finans okuma ucu; ekran Alış | API-04 | K2 |
-| MOD-03 | Alış | "Ödendi / kısmi ödendi" görünümü; tedarikçi avansı | Finans olayı; tüketen Alış | `finance.open-item.settled.v1`, API-21 | K2 |
+| MOD-02 | Alış | Sipariş başlığında cari bakiye (Toplam Borç/Alacak) ve limit boşluğu | Finans okuma ucu; ekran Alış | API-04 | K3 |
+| MOD-03 | Alış | "Ödendi / kısmi ödendi" görünümü; tedarikçi avansı | Finans olayı; tüketen Alış | `finance.open-item.settled.v1`, API-21 | K3 |
 | MOD-04 | Satış | Kesinleşen satış faturasının alacak kalemi (Satış MOD-04) | Finans tarafı bu şerit; olay üreten Satış | API-10, `sales.invoice.finalized.v1` | K3 |
 | MOD-05 | Satış | Risk portu: yönlü kalem, limit ve teminat kaynağı, DBS güvenceli/teminatsız ayrımı | Bu şerit (port Finans'ta) | `ISalesPartyRiskReadPortV1` (sözleşme değişirse Satış notu) | K3 |
 | MOD-06 | Cari | Firmanın hem müşteri hem tedarikçi olması; IBAN (tedarikçi banka hesabı) doğrulaması | Cari'de küçük ekleme | DEC-CAR-001, DEC-AI-007 | K2 |
@@ -391,7 +392,7 @@ API-70…73 DBS, API-77/78 kart, API-80…84 kredi/limit/teminat) bu iki persona
 | N-10 | ~~Kredi kartı~~ → **FNS-D9: tam takip** | API-76…78 | kapandı |
 | N-11 | Ödeme talimatı nasıl gidiyor bugün: internet bankacılığına elle mi, toplu ödeme dosyasıyla mı? | API-51 | F6 |
 | N-12 | Dekont/makbuz numarası istenir mi; hubvogal'deki biçim korunsun mu? | API-13 | F2 |
-| N-13 | ~~Açılış~~ → **FNS-D12:** elle girilir; geçici "Açılış Kaydı" işlemi (açılış dönemi açıkken görünür, maker≠checker) | MIG-02 | kapandı |
+| N-13 | Açılış → **FNS-D12 (karar):** elle girilir. **Yorum (teyit bekliyor):** geçici "Açılış Kaydı" işlemi (açılış dönemi açıkken görünür, maker≠checker) | API-14 | karar kapandı, yorum teyitte |
 
 ### 8.3 Açık kalanlar (insan kapısı; plan bunları seçmez)
 
@@ -420,12 +421,12 @@ fail-closed kalır.
 | **F0** | Bu plan; karar dosyası FNS-D1…; `FINANS_ALIS_DEVIR_v1.md` ve `FINANS_SATIS_DEVIR_v1.md` (MOD-01/04/05 sözleşme taslağı); `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Finans satırları; hubvogal finans incelemesi | N-01, N-02 |
 | **F1 (öncelik, FNS-D2)** | MOD-15: API-01…06 (yön, karantina, bakiye özeti, ekstre yönü, risk portu), TEK-01/02; UI-02/03 güncellemesi | N-03. **Alış A5'in ön şartı** |
 | **F2** | MOD-04: API-10…12 (fatura kabul portu, iptal, Finans outbox/inbox); API-13 numara serisi; MOD-01…05 sözleşmeleri | F1; Alış/Satış fatura dalgaları paralel ilerler (port fail-closed) |
-| **F3** | API-20…24 (ödemenin dağıtımı, avans, kur farkı, ödeme ters kaydı, banka masrafı); API-07 mahsup; API-30…33 kasa ve virman; UI-01, UI-05 | F1; N-05, N-06 |
+| **F3** | API-20…25 (ödemenin dağıtımı, avans, kur farkı, ödeme ters kaydı, banka masrafı, cariye bağlı olmayan masraf ödemesi); API-07 mahsup; API-30…33 kasa ve virman; UI-01, UI-05 | F1; N-05, N-06 |
 | **F4** | API-40…43 banka defter bakiyesi, ekstre içe aktarma, mutabakat; UI-04 | F3; N-07 |
 | **F5** | API-60…64 çek/senet (ciro, teminat, karşılıksız, verilen çek); API-70…73 DBS; API-74…78 POS ve şirket kartı; UI-06, UI-07 | F3; FNS-D3, N-08, N-10 |
 | **F6** | API-50…53 ödeme yönetimi; API-85 müşteri limit/teminat; API-90…93 tahsilat takibi; UI-08, UI-09 | F5; OPEN-009 tablosu (yapılandırılabilir) |
 | **F7** | API-80…84 krediler, limitler, teminatlar; API-95…97 nakit planı ve bütçe; UI-10, UI-11 | F6; FNS-D4 |
-| **F8** | API-98/99, UI-12, UI-13; MIG-02 açılış/göç; kabul taraması (AT-004/010/011/014/022/058/065); production aktivasyonu insan kararıdır | Hepsi; N-13 |
+| **F8** | API-98/99, UI-12, UI-13; açılış kontrolü (API-14 ile elle giriş; MIG-02 dosya göçü isteğe bağlı); kabul taraması (AT-004/010/011/014/022/058/065); production aktivasyonu insan kararıdır | Hepsi; N-13 |
 
 Paralellik: F1 ve F2 tek başına Alış ve Satış'ın fatura dalgalarını açar (FNS-D2: önce borç/alacak, sonra kasa/banka).
 
@@ -466,7 +467,7 @@ geri dönüş planı.
 | Darboğaz 1 | F1 (MOD-15) gecikirse Alış A5 ve Satış fatura dalgası bekler → F1 ilk iş |
 | Darboğaz 2 | Ayarlar para profili (T02-b) ve izin grant'ları gelmeden hiçbir Finans ekranı gerçek kullanıcıyla çalışmaz (D-1, D-2) |
 | Darboğaz 3 | ERP-000F yokken olaylar senkron portla gider (No 55); dağıtıcı gelince geçiş testi gerekir |
-| Risk | Hubvogal finans ekranları görülmeden alan eşlemesi eksik kalır (N-01) |
+| Risk | Hubvogal finans incelemesi salt-okuma ve sınırlıydı (kredi listesi sayfası hata verdi, §15); alan eşlemesi uygulama sırasında Sinan'la teyit edilir |
 | Risk | Onay tutarları (OPEN-009) ve azaltım oranları (OPEN-010) açık; ekranlar çalışır ama eşikler başlangıçta "her işlem onaylı" gibi en sıkı ayarda kalır |
 
 ---
@@ -505,8 +506,8 @@ formlarından çıkarıldı.
 | Hubvogal | Gözlenen | Göymen karşılığı / plan |
 |---|---|---|
 | **Ortak işlem formu** | İşlem tarihi, Ödeme Türü (vade tipi), **Firma** (bizim grup şirketimiz), **Cari Kur Grubu** (carinin TL/USD alt hesabı), Cari, Kur, **Kur Pozisyonu (Yurtiçi/Yurtdışı)**, İkincil Kur, elle kur bilgisi, işlem tutarı, döviz tutarı, hesap, açıklama, döküman | Şirket = `CompanyId`; para birimi + kur her para olayında zorunlu (FNS-D5); kur önerisi TCMB, elle değişiklik yetki+gerekçe (DEC-FIN-010, K14); döküman = Belgeler portu (MOD-10). Cari Kur Grubu → **N-14**; Kur Pozisyonu → **N-15** |
-| **Evrak tipleri (24)** | Satış/Alış Faturası, Ödeme, Gelen/Giden Havale-EFT, Bankalar/Kasalar arası, Kasa↔Banka, Başlangıç Bakiye, Çek Tahsilatı (Banka/Kasa), Kredi Ana Para / Faiz Ödemesi, Kredi BCH Transferi, Masraf Ödeme/İadesi, Çek Ödemesi, DBS/BTM/KK Tahsilatı/Ödemesi, Çek Giriş/Çıkış Bordrosu, **Tahsilat Eşleme / Tediye Eşleme** | Göymen'de bunlar para olayı türleri (kaynak) + ayrı dağıtım (eşleme = DEC-FIN-006 dağıtımı). "Başlangıç Bakiye" = açılış kaydı (MIG-02, gerçek tarihçe gibi gösterilmez) |
-| **Kasa** | Kasa: ad, para birimi (TL/USD/EUR kasaları var), başlangıç bakiyesi, aktif/pasif. Giriş: Tahsilat, Masraf İadesi; çıkış: Tediye, Masraf Ödemesi; virman: kasalar arası, kasadan bankaya, **Döviz Alış/Satış**. Günlük rapor (devir → işlemler → günlük toplam → gün sonu), kasa ekstresi, tarih bazlı bakiye, para birimi bazında toplam | API-30…33. Döviz kasası var (N-05 cevaplandı). Döviz alış/satış ayrı işlem türü (N-06 → hubvogal emsali: virman içinde "döviz alış/satış" türü, iki para birimi + kur) |
+| **Evrak tipleri (24)** | Satış/Alış Faturası, Ödeme, Gelen/Giden Havale-EFT, Bankalar/Kasalar arası, Kasa↔Banka, Başlangıç Bakiye, Çek Tahsilatı (Banka/Kasa), Kredi Ana Para / Faiz Ödemesi, Kredi BCH Transferi, Masraf Ödeme/İadesi, Çek Ödemesi, DBS/BTM/KK Tahsilatı/Ödemesi, Çek Giriş/Çıkış Bordrosu, **Tahsilat Eşleme / Tediye Eşleme** | Göymen'de bunlar para olayı türleri (kaynak) + ayrı dağıtım (eşleme = DEC-FIN-006 dağıtımı). "Başlangıç Bakiye" = açılış kaydı (API-14 elle giriş, FNS-D12; MIG-02 isteğe bağlı; gerçek tarihçe gibi gösterilmez) |
+| **Kasa** | Kasa: ad, para birimi (TL/USD/EUR kasaları var), başlangıç bakiyesi, aktif/pasif. Giriş: Tahsilat, Masraf İadesi; çıkış: Tediye, Masraf Ödemesi; virman: kasalar arası, kasadan bankaya, **Döviz Alış/Satış**. Günlük rapor (devir → işlemler → günlük toplam → gün sonu), kasa ekstresi, tarih bazlı bakiye, para birimi bazında toplam | API-30…33. Gözlem: döviz kasası var → **ASSUMPTION-FIN-CASH** (Sinan kararı değil). Döviz alış/satış ayrı işlem türü → **ASSUMPTION-FIN-FX-TRANSFER** (Sinan kararı değil). İkisi de yapılandırılabilir; Sinan teyidine kadar yürürlüğe girmez (R-2) |
 | **Banka** | Banka master (ad, EFT kodu listesi, logo, telefon); hesap: banka, ad, IBAN, para birimi, başlangıç bakiyesi; hesap adında tür: vadesiz, vadeli, POS, factoring. Giriş: Gelen Havale/EFT, Masraf İadesi, Çek Tahsilatı, Kredi Kullan, DBS/BTM/KK; çıkış: Giden Havale/EFT, Masraf Ödemesi, Çek Ödemesi, Kredi Ödemesi, DBS/BTM/KK; virman: bankalar arası, bankadan kasaya, döviz alış/satış; günlük rapor ve ekstre. Bazı döviz hesaplarında **eksi bakiye** görülüyor (kontrol yok) | FS0 banka master'ına hesap türü (vadesiz/vadeli/POS/factoring) eklenir; API-40 defter bakiyesi; eksi bakiye politikası → **N-16** |
 | **Çek** | Tek portföy listesi (sayfalı, ~12 sayfa). Alanlar: işlem ve vade tarihi, keşideci ad/soyad, ülke/şehir, çek no, çek bankası, IBAN/hesap no, çeki alan firma (bizim), çeki veren cari, tahsil edilecek banka, kur grubu, para birimi, tutar, döviz tutar, **kalan**. Durumlar: **Portföyde, Bankada, Tahsil Edildi, İade, Ödendi**. Çek giriş/çıkış bordrosu, bankaya **tevdi bordrosu**, toplu işlem, yazdırma. Tahsilat banka veya kasaya; tedarikçiye verilen müşteri çeki "Çek Ödemesi" ile **Ödendi** (ciro) | Mevcut alınan çek modülü (DEC-FIN-016) + API-60 ciro (= hubvogal "Çek Ödemesi"), API-61 teminat, bordrolar (UI-06). "Kalan" alanı kısmi tahsilat gösteriyor → **N-17**. Kendi çekimizin (verilen çek) hubvogal'de ayrı yeri görülmedi → N-08 |
 | **Kredi** | Kullandırım türleri: **BCH, Spot, Taksitli**; ödeme ekranında ayrıca **Teminatlı, Çek Teminatlı, Kefalet, Gayri Nakdi**. Alanlar: açılış tarihi, limit, risk, limit boşluğu, faiz oranı, taksit sayısı; taksit planı satırı: **anapara, faiz, BSMV, taksit tutarı**; ödeme anapara ve faiz ayrı evrak; BCH transferi | API-80…83 (FNS-D4). Kredi türü listesi genişler: taksitli, spot/rotatif, BCH/KMH, Eximbank/akreditif + teminatlı/çek teminatlı/kefalet/gayri nakdi (limit türü) |
@@ -582,11 +583,11 @@ VUK 280 satırı genel muhasebe bilgisidir; kaynakla doğrulanamadı, mali müş
 
 | No | Düzeltme |
 |---|---|
-| R-1 | Açılış metni FNS-D12 ile uyumlu: §1 m.11 ve §15.3 artık "elle giriş (API-14), dosya göçü isteğe bağlı" diyor. FNS-D12'deki "geçici Açılış Kaydı düğmesi" yorumu Sinan'ın 2 Kasım teyidiyle uygulanır; ayrıntı uygulama PR'ında |
-| R-2 | N-05 ve N-06 hubvogal gözlemidir, Sinan kararı değildir: **ASSUMPTION-FIN-CASH** ve **ASSUMPTION-FIN-FX-TRANSFER** olarak işaretlendi; yapılandırılabilir kalır, ilgili dalgada (F3) Issue #66'ya `NEEDS-SINAN` olarak teyit sorulur |
+| R-1 | Açılış metni FNS-D12 ile uyumlu: §1 m.11 ve §15.3 artık "elle giriş (API-14), dosya göçü isteğe bağlı" diyor. "Elle giriş" Sinan kararıdır (FNS-D12). "Geçici Açılış Kaydı düğmesi + maker≠checker" Claude'un yorumudur, **Sinan teyidi bekliyor** (Issue #66 `NEEDS-SINAN`); teyide kadar yapılandırılabilir ve fail-closed. API-14 satırı §5.2'ye eklendi |
+| R-2 | N-05 ve N-06 hubvogal gözlemidir, Sinan kararı değildir: **ASSUMPTION-FIN-CASH** ve **ASSUMPTION-FIN-FX-TRANSFER** olarak işaretlendi; yapılandırılabilir kalır ve **teyide kadar yürürlüğe girmez** (kasa master ve döviz alış/satış para davranışına dokunur; AGENTS.md: para politikası tahminle etkinleştirilmez). Issue #66'ya `NEEDS-SINAN` yazıldı; ASSUMPTION hakemliği (ChatGPT) bu ikisi için uygulanmaz, karar Sinan'dadır. §15 Kasa satırı da buna göre düzeltildi |
 | R-3 | API-43: ekstre satırından yalnız **taslak önerisi** üretilir; kullanıcı kaydetmedikçe hareket yoktur (FNS-D13) |
-| R-4 | FNS-D11 eksi bakiye kontrolü: işlemin **`occurredOn` tarihindeki ve sonraki** her günün defter bakiyesi eksiye düşmemelidir (geriye tarihli girişte sonraki günler de korunur). Uygulama: F3/F4 kayıt komutunda, hesap bazında kilitli bakiye kontrolü |
-| R-5 | **Cariye bağlı olmayan ödemeler** (vergi, SGK, maaş, kira, banka masrafı, kredi faizi): hubvogal "Masraf Ödemesi/Masraf İadesi" emsali. F3'e **API-25 Masraf ödemesi/iadesi** eklendi: kasa/banka hesabı + masraf türü (iki seviyeli, Ayarlar'da) + belge; cari açık kalemine dağıtılmaz; muhasebe kaynağıdır (MOD-07) |
-| R-6 | K seviyesi düzeltmesi (v4 tanımı: yeni tablo/migration, para, yetki, modüller arası sözleşme = K3): API-30 (kasa master), API-76 (kart master), API-13 (numara serisi, Ayarlar sözleşmesi) **K3**; API-90…92 ve API-97 yeni tablo içerdiğinden **K3**; API-04 salt okuma, migration ve yeni yetki yok → **K2** kalır (PR #912 review'u K2'yi doğruladı); MOD-02/03 Alış ile sözleşme → **K3** |
+| R-4 | **FNS-D11 yorumu (fail-closed, Sinan teyidi bekliyor):** geriye tarihli girişte işlemin `occurredOn` günü ve sonraki her günün defter bakiyesi eksiye düşmemelidir. Alternatif okuma: yalnız kayıt anındaki güncel bakiye. Kredili hesaplar (KMH/BCH, FNS-D4) tanımlı limit içinde istisnadır (FNS-D11). Teyide kadar sıkı (fail-closed) okuma uygulanır; Issue #66'ya `NEEDS-SINAN` yazıldı. Uygulama: API-25/31/32/40 kayıt komutlarında hesap bazında kilitli bakiye kontrolü |
+| R-5 | **Cariye bağlı olmayan ödemeler** (vergi, SGK, maaş, kira, banka masrafı, kredi faizi): hubvogal "Masraf Ödemesi/Masraf İadesi" emsali. F3'e **API-25 Masraf ödemesi/iadesi** eklendi: kasa/banka hesabı + masraf türü (iki seviyeli, Ayarlar'da) + belge; cari açık kalemine dağıtılmaz; muhasebe kaynağıdır (MOD-07). Masraf türü listesi FNS-D9'daki iki seviyeli yapıyla aynıdır. Kapsam **Sinan teyidi bekliyor** (Issue #66 `NEEDS-SINAN`); teyide kadar uygulanmaz |
+| R-6 | K seviyesi düzeltmesi (v4 tanımı: yeni tablo/migration, para, yetki, modüller arası sözleşme = K3): API-30 (kasa master), API-76 (kart master), API-13 (numara serisi, Ayarlar sözleşmesi) **K3**; API-90…92 ve API-97 yeni tablo içerdiğinden **K3**; API-04 salt okuma, migration ve yeni yetki yok → **K2** kalır; MOD-02/03 Alış ile sözleşme → **K3**. Tablolar (§5, §6) buna göre güncellendi |
 | R-7 | §2.4'teki "hubvogal'e erişilemiyor" ifadesi güncellendi (§15'e atıf) |
-| R-8 | API-04'ün gerçek yolu: `GET /finance/party-balance?partyId&companyAccountId` (PR #912) |
+| R-8 | API-04'ün gerçek yolu: `GET /api/v1/finance/party-balance?partyId&companyAccountId` (PR #912, taslak) |
