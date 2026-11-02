@@ -459,6 +459,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                     b.Property<long>("Version")
                         .HasColumnType("bigint");
 
+                    b.Property<Guid?>("WorkCenterId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("CompanyId", "ProfileId");
 
                     b.HasIndex("CompanyId", "Process", "EffectiveFrom");
@@ -485,6 +488,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Version", "[Version] > 0");
 
                             t.HasCheckConstraint("CK_SettingsMfgTolerance_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
+
+                            t.HasCheckConstraint("CK_SettingsMfgTolerance_WorkCenter", "[WorkCenterId] IS NULL OR [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
@@ -566,6 +571,9 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                         .IsUnicode(false)
                         .HasColumnType("varchar(16)");
 
+                    b.Property<Guid?>("WorkCenterId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("CompanyId", "ProfileId");
 
                     b.HasIndex("CompanyId", "Process", "ProfileVersion")
@@ -588,6 +596,8 @@ namespace GoymenERP.Modules.Settings.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Versions", "[ProfileVersion] > 0 AND [StateVersion] > 0");
 
                             t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_Window", "[EffectiveThrough] IS NULL OR [EffectiveThrough] >= [EffectiveFrom]");
+
+                            t.HasCheckConstraint("CK_SettingsMfgToleranceVersions_WorkCenter", "[WorkCenterId] IS NULL OR [WorkCenterId] <> '00000000-0000-0000-0000-000000000000'");
                         });
 
                     b.HasAnnotation("SqlServer:UseSqlOutputClause", false);
