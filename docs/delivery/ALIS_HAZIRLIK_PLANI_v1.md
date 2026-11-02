@@ -211,7 +211,7 @@ backend'de BuildingBlocks altında ticari belge yardımcıları) **Alış için 
 | TEK-06 | Sabit Türkçe metinler `purchasingText.ts`'e; ham `<button>` → tasarım sistemi `Button` | Kaynak dosyalı metin kuralı | K1 | – |
 | TEK-07 | Büyük dosyaları böl: `PurchasingStore.cs` (902), `PurchasingService.cs` (896) | Çakışma riski | K1 | – |
 | TEK-08 | Detayda GUID yerine tedarikçi, ürün ve birim adı | Okunabilirlik | K2 | – |
-| TEK-09 | Durum makinesi genişletmesi: talep Draft → Submitted → Approved/Rejected; sipariş Draft → Approved → Kısmi → Tamamlandı/Kapatıldı/İptal (eksenler §5.2) | Bugün yalnız iki durum | K3 | N-02, N-03 |
+| TEK-09 | Durum makinesi genişletmesi: talep Draft → Submitted → Approved/Rejected, ayrıca Submitted → Withdrawn (geri çekildi, ALS-D46); sipariş Draft → Approved → Kısmi → Tamamlandı/Kapatıldı/İptal (eksenler §5.2) | Bugün yalnız iki durum | K3 | N-02, N-03 |
 
 ---
 
@@ -226,7 +226,7 @@ eklenir. İzin adları öneridir; sahip modül koyar (No P5).
 | ID | Uç | Amaç | Yetki | Karar | Sev. |
 |---|---|---|---|---|---|
 | API-01 | `POST requests/{id}/approval` · `/rejection` | Talep onayı/reddi; ret yalnız Submitted/Approved iken ve bağlı onaylı sipariş yokken; gerekçe zorunlu | `purchasing.requests.approve` (yeni) | No.161 §1, N-02 | K3 |
-| API-01b | `POST requests/{id}/withdrawal` | Hazırlayan, Gönderildi durumundaki kendi talebini gerekçeyle geri çeker; onaylı talep geri çekilemez | Talebi oluşturan/gönderen (ayrı izin adı sahip modülde) | ALS-D46 | K3 |
+| API-01b | `POST requests/{id}/withdrawal` | Hazırlayan, Submitted (Gönderildi) durumundaki kendi talebini gerekçeyle geri çeker; onaylı talep geri çekilemez; bağlı onaylı sipariş varken geri çekilemez (No.161 §1 ile aynı koruma) | `purchasing.requests.withdraw` (yeni, öneri) — yalnız talebi gönderen | ALS-D46 | K3 |
 | API-02 | `POST requests` genişlemesi | Satır kaynağı (stok / satış / üretim / manuel) + kaynak kimliği, istenen tarih | mevcut | A-2 | K3 |
 | API-03 | `GET requests/pool` | İhtiyaç havuzu: onaylı, siparişe bağlanmamış kalanlar; kaynak ve tarih filtresi | `purchasing.orders.read` | §7.3 | K2 |
 
@@ -433,7 +433,7 @@ kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-00
 | N-27 (kalan) | Tedarikçiye avans; gümrük/ithalat masrafları | A5'ten önce sorulur |
 | N-28 (kalan) | kg ↔ adet ↔ metre çevrimi ürün masterından mı gelir | A3'ten önce (Ürün şeridiyle) |
 
-Bunlar dışındaki N soruları cevaplandı (ALS-D1…D43).
+Bunlar dışındaki N soruları cevaplandı (ALS-D1…D43); uygulama sırasında gelen kararlar EK4 (ALS-D44/D45) ve EK5 (ALS-D46).
 
 ---
 
@@ -460,7 +460,7 @@ dosyaları bu şeritte değiştirilmez, Satış'ın geçişi görev notuyla bır
 | Dalga | İçerik | Ön şart |
 |---|---|---|
 | **A0** | Bu plan ve karar dosyaları; `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Alış satırları; FZL-01…03; TEK-05…08; hubvogal alan eşlemesi (MIG-01 hazırlığı) | – |
-| **A1** | PRS-01 (persona kartı satırları, §13.3); TEK-09 durum makinesi; API-01 (talep onay/ret), API-02 (kaynak alanı, A-2), API-03 + UI-01; API-10 + UI-05 (No.161 iptali); FZL-04 | ALS-D2, ALS-D16, ALS-D17 |
+| **A1** | PRS-01 (persona kartı satırları, §13.3); TEK-09 durum makinesi; API-01 (talep onay/ret), API-01b (hazırlayanın geri çekmesi, ALS-D46), API-02 (kaynak alanı, A-2), API-03 + UI-01; API-10 + UI-05 (No.161 iptali); FZL-04 | ALS-D2, ALS-D16, ALS-D17 |
 | **A2a** | TEK-01…03; API-20…22 + UI-03 (fiyat, fiyatsız onay, vergi, kur, vade + ödeme planı, işlem türü); API-23 (masraf ve iskonto satırı); API-98 (Ayarlar listeleri); API-15 + API-96 (onay eşiği); PRS-02 (depocunun fiyatsız görünümü). Fiyat modeli baştan satır birimine bağlı kurulur (ALS-D19; A3'te migration gerekmesin) | ALS-D3, D5, D6, D18, D20, D21, D23, D24, D27, D28; Ayarlar merge sırası (B-8); ALS-D38 (vade farkı, API-20); ALS-D29 (fason masraf değil) |
 | **A2b** | API-12/13/17/18 + UI-06 (revizyon, kırılım, teyit, Tedarik No); API-14 + UI-04 (sekmeler, eksenler); API-16 (PDF) | A2a; ALS-D9, D13, D20, D34 |
 | **A3** | API-95 + API-40 (kabul toleransı, kantar fiş no), API-41 (hizmet kabulü), API-42…44 + UI-08; API-11 (satır kapatma, tolerans profiline bağlı); API-30…32 + UI-07 (termin, tedarikçide hazır, yolda); MOD-06, MOD-07, MOD-14 (görev notu `ALIS_URETIM_DEVIR_v1.md`: Stok'ta gelecek arz içinde "tedarikçide hazır" satırı), MOD-16 (Satış görev notu); adet/metre birimleri (ALS-D19, Ayarlar onayından sonra) | API-95 Ayarlar kaydı (B-8); ALS-D33, D43, D30, D39 (API-31) |
@@ -499,7 +499,7 @@ Bu bölüm iş takibidir; karar değildir.
 | Kalan sorular (§13.8) + EK3 ALS-D29…D43 | #891 | taslak PR |
 | A0 belgeleri: FZL-01 (Purchasing README kodla eşit), `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Satın Alma satırları | – | taslak PR |
 
-Sıradaki: A0 (belge ve temizlik), ardından A1 (PRS-01, talep onay/ret, kaynak alanı, No.161 iptali). Açık sorular §8
+Sıradaki: A1 — talep onay/ret (A1-1, PR hazırlanıyor), hazırlayanın geri çekmesi (A1-1b, ALS-D46; DURUM_MAKINELERI hedef satırı da o dilimde), talep kaynağı, No.161 iptali, PRS-01. Açık sorular §8
 sonundaki tabloda.
 
 ---
