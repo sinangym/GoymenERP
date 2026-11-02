@@ -1,7 +1,7 @@
 # Finans Modülü Hazırlık Planı v1
 
 Tarih: 2026-11-02 (v1.1) · Hazırlayan: Claude (cloud oturumu, Finans şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) ·
-Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D13)**
+Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D15)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.10, §7.11, §8.1, §8.2, §16 Faz 4, §19.3, §27.11 (F-01…F-17),
 §28.14–28.16, §29.6 (AT-058); `docs/decisions/KARAR_SICILI.md` `DEC-FIN-001…016`, `DEC-SET-001`, `DEC-INT-001`,
@@ -478,7 +478,7 @@ Bu bölüm iş takibidir; karar değildir.
 
 | İş | PR | Durum |
 |---|---|---|
-| Bu plan (v1) + karar dosyası FNS-D1…D13 + hubvogal incelemesi §15 | #896 | taslak PR; kalan sorular N-11, N-12, N-15, N-17, N-18 |
+| Bu plan (v1) + karar dosyası FNS-D1…D15 + hubvogal incelemesi §15 | #896 | taslak PR; kalan sorular N-11, N-12, N-15, N-17, N-18 |
 | F1 MOD-15 borç/alacak | #902 | taslak PR; CI ve iki review bekliyor |
 
 Sıradaki (FNS-D10): F1b (API-04 cari bakiye özeti) ve F2 (API-10…12 fatura kabul portu), F1'in üstüne ayrı PR'lar.

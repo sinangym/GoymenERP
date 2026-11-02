@@ -2,7 +2,7 @@
 
 Kaynak: Sinan Göymen'in 2 Kasım 2026 tarihli Claude cloud oturumunda (Finans konuşması), Finans modülü hazırlık
 incelemesi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md`) sırasında sorulan seçenekli sorulara verdiği **doğrudan
-cevaplar**. Üç seçenekli tur (on iki soru) ve bir serbest cevap; on üç karar. FNS-D14 ve FNS-D15 aynı gün koordinatör oturumu aracılığıyla aktarılmıştır (doğrudan cevap değil, aktarım); toplam on beş karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
+cevaplar**. Üç seçenekli tur (on iki soru) ve bir serbest cevap: on üç doğrudan karar (FNS-D1…D13); FNS-D14 ve FNS-D15 aynı gün koordinatör oturumu aracılığıyla aktarılmıştır (doğrudan cevap değil, aktarım). Toplam on beş karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
 cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
 
 ## 0. Yetki ve sınır
