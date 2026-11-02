@@ -58,9 +58,9 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 # project/build edit or any compiled source byte change must be deliberately re-inventoried;
 # otherwise linked files, generators, global aliases, or symbol-shadow files could evade a
 # lexical inventory while leaving its visible declaration counts unchanged.
-EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1246
+EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1259
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "9e3ef467511e11354ab42ce064e65dcd6f471125c11650674abf2536444ef8ab"
+    "c071c3af0afde7eb051eb6dc269ce078b8ec8bdbe580cf2d7314ea76f9cf6a06"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
