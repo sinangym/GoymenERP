@@ -1,6 +1,6 @@
 # Alış (Satın Alma) Modülü Hazırlık Planı v1
 
-Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir)
+Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Alış şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) · Kararlar: **`SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D11)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.3, §8.2, §10.3, §25.5, §27.3, §28.12, §28.16, §29.3
 (AT-025…028); `docs/decisions/KARAR_SICILI.md` `DEC-PUR-001`, `DEC-CAR-001`, `DEC-STK-002/003/006/008/009`,
@@ -25,9 +25,8 @@ kolaylığı referansıdır (§2.4).
 ## 0. Şerit kaydı
 
 - URT-D20 (2026-11-02): "Alış tarafını başka bir konuşma yapar." Bu oturum o konuşmadır.
-- Satış (`SINAN_KARARLARI_2026-10-25_SATIS.md` §0) ve Üretim (`SINAN_KARARLARI_2026-11-01_URETIM.md` §0)
-  emsallerinde bütün geliştirme Claude'da yapıldı. Alış için aynı şerit kararı N-01 olarak sorulur. Cevap gelene kadar
-  bu plan yalnız öneridir.
+- **ALS-D1 (2026-11-02):** Satış ve Üretim emsaliyle Alış'ın bütün geliştirmesi (backend, migration, OpenAPI,
+  ekranlar) Claude'dadır. Kayıt: `SINAN_KARARLARI_2026-11-02_ALIS.md` §0.
 - Modül sınırları: Satış dosyalarını "proje modülleri" konuşması, Üretim ve Stok dosyalarını Üretim şeridi değiştirir.
   Bu şerit onların dosyalarını değiştirmez; gereken işi görev notuyla bırakır (`docs/handoffs/ALIS_*_DEVIR_v1.md`).
   Alış portları karşı taraf gelene kadar fail-closed çalışır.
@@ -307,34 +306,39 @@ Satın alma müdürü onaylar; Depo kabul kaydeder; Muhasebe gelen faturayı eş
 
 ---
 
-## 8. Kararlar (sorulacak)
+## 8. Kararlar
 
-Sorular Sinan'a seçenekli olarak, StokERP davranışı örnek gösterilerek sorulur; cevaplar
-`SINAN_KARARLARI_<tarih>_ALIS.md` dosyasına **ALS-Dn** kimlikleriyle yazılır, sonraki turlar `_ALIS_EKn.md` olur.
-Zaten karara bağlanmış konular yeniden sorulmaz: tolerans bantları ve onaycılar (No 40, 41, 62, 63), iade faturası
-(No 20), fatura para birimi (No 26), talep reddi ve sipariş iptali (No.161), siparişsiz kabulün istisna olması
-(DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-003), fason yönü (URT-D15/D17).
+2026-11-02'de üç turda on iki soru soruldu; cevaplar `SINAN_KARARLARI_2026-11-02_ALIS.md` (ALS-D1…D11). Sonraki
+turlar `_ALIS_EKn.md` olur. Zaten karara bağlanmış konular yeniden sorulmaz: tolerans bantları ve onaycılar (No 40,
+41, 62, 63), iade faturası (No 20), fatura para birimi (No 26), talep reddi ve sipariş iptali (No.161), siparişsiz
+kabulün istisna olması (DEC-PUR-001), kantar kg'ının elle girilmesi (OPEN-003), fason yönü (URT-D15/D17).
+
+| No | Soru | Cevap |
+|---|---|---|
+| N-01 | Şerit | ALS-D1 (hepsi Claude'da) |
+| N-02 | Talep onayı | ALS-D2 (Satın alma müdürü onaylar) |
+| N-03 | Sipariş onayı ve tutar eşiği | ALS-D3 (tek onay, eşik kapalı) |
+| N-04 | Teklif / tedarikçi karşılaştırma | ALS-D11 (A6 dalgası) |
+| N-05 | Fiyat biçimi | ALS-D5 (elle, iskontolu; StokERP ve hubvogal referans) |
+| N-06 | Alış faturası kuru | ALS-D6 (Satış kuralı, kabul gününe göre) |
+| N-07 | Gelen fatura girişi | ALS-D7 (Mikro'dan içe aktar + eşleştir) |
+| N-08 | Fatura farkı | ALS-D8 (her fark müdür onayı; tolerans 0) |
+| N-10 | Revizyon | ALS-D9 (Rev+1 ve yeniden onay) |
+| N-11 | Eksik teslimde kapanış | ALS-D10 (bant içi otomatik öneri + sor; kapanan satır yeniden açılabilir) |
+| N-13 | Kabul ve kalite | ALS-D4 (hemen kullanılabilir) |
+
+**Açık (sonraki tur):**
 
 | No | Soru |
 |---|---|
-| N-01 | Şerit: Alış'ın bütün geliştirmesi (backend, migration, ekran) Claude'da mı? |
-| N-02 | Talep onayı: talep ayrı bir onay adımından geçsin mi, kim onaylar? |
-| N-03 | Sipariş onayı: tek onay mı, tutar eşiği olsun mu (Satış'ta eşik başlangıçta kapalı, SAT-D6)? |
-| N-04 | Teklif toplama / tedarikçi karşılaştırma ilk sürümde mi? |
-| N-05 | Fiyat biçimi: ton/kg fiyatı, iskonto, tedarikçi fiyat listesi |
-| N-06 | Alış faturası kuru: Satış kuralı (sevk/kabul gününden önceki iş günü TCMB satış) aynen mi? KDVK 26 "alış kuru" notu mali müşavire |
-| N-07 | Gelen fatura ERP'ye nasıl girer: Mikro'dan içe aktarma, elle giriş, entegratör? |
-| N-08 | Fatura fiyat farkı: tolerans ve onaycı |
-| N-09 | Fazla teslimde fazla kısım: siparişe "fazla teslim" olarak bağlanır (No 40); faturalaması nasıl? |
-| N-10 | Onaylı siparişte revizyon: Satış gibi Rev+1 ve yeniden onay mı? |
-| N-11 | Eksik teslimde satır kapatma: kim kapatır, onay gerekir mi? |
+| N-09 | Fazla teslimde fazla kısmın faturalaması (No 40 fazla kısmı siparişe bağlar) |
 | N-12 | Termin dilimleri ve sevk bildirimi ilk sürümde mi? |
-| N-13 | Kabul edilen mal kaliteden geçene kadar bloklu mu (Üretim'de karantina yok, URT-D14)? |
 | N-14 | Sipariş PDF'i tedarikçiye gönderilecek mi, fiyatlı mı? |
 | N-15 | Vade ve ödeme koşulu siparişte mi, Cari'den mi gelir? |
 | N-16 | Siparişsiz kabul istisnasını kim onaylar? |
 | N-17 | Fason dışında hizmet alışı (nakliye, işçilik) bu modülde mi? |
-| N-18 | Tedarikçi performansı ölçütleri ve ilk sürümde olup olmadığı |
+| N-18 | Tedarikçi performansı ölçütleri |
+| N-19 | Hubvogal erişimi: yerel ağdaki uygulamaya hangi bilgisayardan (VPN'li) bakılacak |
 
 ---
 
@@ -391,6 +395,7 @@ Bu bölüm iş takibidir; karar değildir.
 
 | İş | PR | Durum |
 |---|---|---|
-| Bu plan | – | taslak PR |
+| Bu plan + karar dosyası ALS-D1…D11 | #884 | taslak PR; iki docs review bekliyor |
 
-Sıradaki: N-01…N-18 soruları (seçenekli), karar dosyası, A0 belge ve temizlik PR'ları.
+Sıradaki: kalan sorular (N-09, N-12, N-14…N-19), A0 belge ve temizlik PR'ları, ardından A1 (talep onay/ret, kaynak
+alanı, iptal ve satır kapatma).
