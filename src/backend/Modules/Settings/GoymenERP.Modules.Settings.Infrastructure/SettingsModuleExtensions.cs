@@ -44,6 +44,14 @@ public static class SettingsModuleExtensions
         // product-based read answers 503.
         services.AddScoped<ISettingsTaxMasterAdministrationV1, SettingsTaxMasterAdministration>();
         services.AddScoped<ISettingsLineTaxResolverV1, SettingsTaxMasterReader>();
+        // Üretim U1-a (API-01/02, MOD-01; URT-D6/D7/D9/D10): the Manufacturing parameter port over published Settings
+        // versions and the reviewed version-0 catalog, and the parameter / tolerance profile lifecycle administration.
+        services.AddScoped<ISettingsManufacturingParameterProviderV1, SettingsManufacturingParameterProviderV1>();
+        services.AddScoped<SettingsManufacturingProfileAdministration>();
+        services.AddScoped<ISettingsManufacturingParameterProfileAdministrationV1>(provider =>
+            provider.GetRequiredService<SettingsManufacturingProfileAdministration>());
+        services.AddScoped<ISettingsManufacturingToleranceProfileAdministrationV1>(provider =>
+            provider.GetRequiredService<SettingsManufacturingProfileAdministration>());
         return services;
     }
 

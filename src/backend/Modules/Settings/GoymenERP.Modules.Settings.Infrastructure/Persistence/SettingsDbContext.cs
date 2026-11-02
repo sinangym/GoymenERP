@@ -7,10 +7,14 @@ using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Modules.Settings.Infrastructure.Persistence;
 
-public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> options, ICompanyContext companyContext)
+public sealed partial class SettingsDbContext(DbContextOptions<SettingsDbContext> options, ICompanyContext companyContext)
     : DbContext(options)
 {
     public const string Schema = "settings";
+
+    /// <summary>The server-resolved company, read by the query filters configured in the other partial files.</summary>
+    private ICompanyContext CompanyContext => companyContext;
+
     internal DbSet<ManufacturingTolerancePolicyRow> ManufacturingTolerancePolicies =>
         Set<ManufacturingTolerancePolicyRow>();
 
@@ -83,6 +87,7 @@ public sealed class SettingsDbContext(DbContextOptions<SettingsDbContext> option
         policy.HasQueryFilter(x => companyContext.IsResolved && x.CompanyId == companyContext.CompanyId);
 
         ConfigureSalesDiscountLimits(modelBuilder);
+        ConfigureManufacturingProfiles(modelBuilder);
         ConfigureTaxMaster(modelBuilder);
         ConfigureTaxBuyerSituations(modelBuilder);
 

@@ -7,6 +7,7 @@ internal sealed class ManufacturingTolerancePolicyRow
     public string Process { get; set; } = string.Empty;
     public long Version { get; set; }
     public decimal MaximumFirePercent { get; set; }
+    public decimal? MassBalanceDifferenceTolerancePercent { get; set; }
     public bool IsActive { get; set; }
     public DateOnly EffectiveFrom { get; set; }
     public DateOnly? EffectiveThrough { get; set; }

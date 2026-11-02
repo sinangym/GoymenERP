@@ -465,6 +465,7 @@ app.MapGlobalSearchEndpoints();
 app.MapDocumentEndpoints();
 app.MapSettingsEndpoints();
 app.MapSettingsTaxMasterEndpoints();
+app.MapSettingsManufacturingProfileEndpoints();
 app.MapShellEndpoints();
 
 if (!isOpenApiDocumentGeneration

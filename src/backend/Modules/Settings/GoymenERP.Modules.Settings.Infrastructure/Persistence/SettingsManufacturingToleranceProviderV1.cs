@@ -47,7 +47,10 @@ public sealed class SettingsManufacturingToleranceProviderV1(
                 selected.MaximumFirePercent,
                 selected.IsActive,
                 selected.EffectiveFrom,
-                selected.EffectiveThrough);
+                selected.EffectiveThrough)
+            {
+                MassBalanceDifferenceTolerancePercent = selected.MassBalanceDifferenceTolerancePercent,
+            };
         }
         catch (DbException)
         {

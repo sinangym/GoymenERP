@@ -34,4 +34,11 @@ public sealed record ManufacturingToleranceProfileV1(
     decimal MaximumFirePercent,
     bool IsActive,
     DateOnly EffectiveFrom,
-    DateOnly? EffectiveThrough);
+    DateOnly? EffectiveThrough)
+{
+    /// <summary>
+    /// URT-D6: the ± mass-balance difference percent of this profile version accepted without approval. Null for a version
+    /// published before the field existed: unknown, never 0 — a consumer that needs it fails closed.
+    /// </summary>
+    public decimal? MassBalanceDifferenceTolerancePercent { get; init; }
+}
