@@ -141,8 +141,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.4", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(9, declarations.Count);
+        Assert.Equal("1.5", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(10, declarations.Count);
         Assert.All(declarations, declaration => Assert.True(declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestListRoutePath,
@@ -161,6 +161,14 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.RequestSubmitCapabilityId].RequiredPermissions);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestDetailCapabilityId,
             byId[PurchasingShellCapabilityProvider.RequestSubmitCapabilityId].ParentCapabilityId);
+        // A1-1: the request decision control is a child of the request detail, measured with its own name.
+        var requestApprove = byId[PurchasingShellCapabilityProvider.RequestApproveCapabilityId];
+        Assert.Equal("purchasing.requests.approve", requestApprove.CapabilityId);
+        Assert.Equal(
+            (PurchasingShellCapabilityProvider.RequestDetailRoutePath, PurchasingShellCapabilityProvider.RequestDetailScreenId,
+                PurchasingShellCapabilityProvider.RequestDetailCapabilityId),
+            (requestApprove.RoutePath, requestApprove.ScreenId, requestApprove.ParentCapabilityId));
+        Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.RequestsApprove], requestApprove.RequiredPermissions);
         Assert.Equal(PurchasingShellCapabilityProvider.CreateRoutePath, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RoutePath);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersCreate], byId[PurchasingShellCapabilityProvider.CreateCapabilityId].RequiredPermissions);
         Assert.Equal(PurchasingShellCapabilityProvider.DetailRoutePath, byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].RoutePath);
@@ -183,7 +191,8 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.ApproveCapabilityId].ContextRequirement);
         Assert.All(declarations, declaration =>
             Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, declaration.ContextRequirement));
-        Assert.Equal(4, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Equal(5, PurchasingPermissionManifestV1.Names.Count);
+        Assert.Contains("purchasing.requests.approve", PurchasingPermissionManifestV1.Names);
         // Master v3 §27.3: P-03 is the order list, P-04 the new/edit form; the detail is a view of one P-03 row (the F-02-DETAIL precedent).
         Assert.Equal(PurchasingShellCapabilityProvider.ListScreenId, byId[PurchasingShellCapabilityProvider.ListCapabilityId].ScreenId);
         Assert.Equal(PurchasingShellCapabilityProvider.CreateScreenId, byId[PurchasingShellCapabilityProvider.CreateCapabilityId].ScreenId);
@@ -197,6 +206,50 @@ public sealed class PurchasingPersistenceModelTests
             byId[PurchasingShellCapabilityProvider.RequestDetailCapabilityId].ScreenId);
         Assert.Equal(PurchasingShellCapabilityProvider.RequestDetailScreenId,
             byId[PurchasingShellCapabilityProvider.RequestSubmitCapabilityId].ScreenId);
+    }
+
+    [Fact]
+    public void The_A1_1_migration_is_the_last_one_and_the_snapshot_matches_the_model()
+    {
+        using PurchasingDbContext context = Context();
+        Assert.Equal("20261102125710_AddPurchaseRequestDecisions", context.Database.GetMigrations().Last());
+        Assert.False(context.Database.HasPendingModelChanges());
+
+        var requests = context.GetService<IDesignTimeModel>().Model.FindEntityType(typeof(PurchaseRequestRow))!;
+        Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Status" && check.Sql == "[Status] IN (1, 2, 3, 4)");
+        Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_Decision");
+        Assert.Contains(requests.GetCheckConstraints(), check => check.Name == "CK_PurchaseRequests_MakerChecker"
+            && check.Sql.Contains("[ApprovedBy] <> [CreatedBy]", StringComparison.Ordinal)
+            && check.Sql.Contains("[RejectedBy] <> [SubmittedBy]", StringComparison.Ordinal));
+        Assert.Equal((128, 128, 128, 4000), (requests.FindProperty(nameof(PurchaseRequestRow.SubmittedBy))!.GetMaxLength(),
+            requests.FindProperty(nameof(PurchaseRequestRow.ApprovedBy))!.GetMaxLength(), requests.FindProperty(nameof(PurchaseRequestRow.RejectedBy))!.GetMaxLength(),
+            requests.FindProperty(nameof(PurchaseRequestRow.RejectionReason))!.GetMaxLength()));
+
+        // Down refuses while a decided request exists (forward fix) before any drop; Up backfills the submitter from its own attempt.
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseRequestDecisions();
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 51164", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[Status] IN (3, 4)", guard.Sql, StringComparison.Ordinal);
+        var backfill = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Contains("purchasing.purchase-request.submit.v1", backfill.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task The_write_guard_lets_only_the_decision_facts_move_on_a_request()
+    {
+        await using PurchasingDbContext context = Context();
+        var row = new PurchaseRequestRow
+        {
+            Id = Guid.NewGuid(), CompanyId = CompanyA, Status = 2, Version = 3, EffectiveOn = new DateOnly(2026, 11, 2),
+            CreatedAtUtc = DateTimeOffset.UtcNow, UpdatedAtUtc = DateTimeOffset.UtcNow, CreatedBy = "SENTETIK", CorrelationId = "SENTETIK",
+        };
+        context.Requests.Attach(row);
+        row.Status = 3;
+        row.ApprovedBy = "SENTETIK-manager";
+        row.ApprovedAtUtc = DateTimeOffset.UtcNow;
+        row.CreatedBy = "SENTETIK-other"; // not allowed: the preparer never moves
+        var refusal = await Assert.ThrowsAsync<InvalidOperationException>(() => context.SaveChangesAsync());
+        Assert.Contains("izinli alan", refusal.Message, StringComparison.Ordinal);
     }
 
     private static PurchaseOrderRow Order(Guid company) => new PurchaseOrderRow

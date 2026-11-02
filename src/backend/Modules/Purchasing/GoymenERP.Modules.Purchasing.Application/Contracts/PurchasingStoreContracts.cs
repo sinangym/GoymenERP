@@ -33,14 +33,24 @@ public static class PurchasingCommands
 {
     public const string RequestCreateV1 = "purchasing.purchase-request.create.v1";
     public const string RequestSubmitV1 = "purchasing.purchase-request.submit.v1";
+
+    /// <summary>A1-1 (ALS-D2): Submitted → Approved, under <c>purchasing.requests.approve</c>.</summary>
+    public const string RequestApproveV1 = "purchasing.purchase-request.approve.v1";
+
+    /// <summary>A1-1 (No.161 §1): Submitted | Approved → Rejected with a reason, under <c>purchasing.requests.approve</c>.</summary>
+    public const string RequestRejectV1 = "purchasing.purchase-request.reject.v1";
+
     public const string OrderCreateV1 = "purchasing.purchase-order.create.v1";
     public const string OrderApproveV1 = "purchasing.purchase-order.approve.v1";
 
-    public static bool IsRequestCommand(string commandName) => commandName is RequestCreateV1 or RequestSubmitV1;
+    public static bool IsRequestCommand(string commandName) =>
+        commandName is RequestCreateV1 or RequestSubmitV1 or RequestApproveV1 or RequestRejectV1;
 
     public static bool IsOrderCommand(string commandName) => commandName is OrderCreateV1 or OrderApproveV1;
 
-    public static bool IsMutation(string commandName) => commandName is RequestSubmitV1 or OrderApproveV1;
+    public static bool IsRequestMutation(string commandName) => commandName is RequestSubmitV1 or RequestApproveV1 or RequestRejectV1;
+
+    public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || commandName is OrderApproveV1;
 
     public static bool IsKnown(string commandName) => IsRequestCommand(commandName) || IsOrderCommand(commandName);
 }
@@ -61,6 +71,13 @@ public static class PurchasingStoreCodes
     /// <c>PurchasingRuleCodes.RequestLineOverSourced</c> is the same rule's name.
     /// </summary>
     public const string RequestLineOverSourced = "purchasing_request_line_over_sourced";
+
+    /// <summary>
+    /// A1-1 (ALS-D2, fail-closed): an order opened for a request is approved only while that request is APPROVED,
+    /// measured inside the approval's save on the request row the approval also moves; a rejected (or not yet
+    /// approved) request's draft order cannot become a commitment.
+    /// </summary>
+    public const string SourceRequestNotApproved = "purchasing_source_request_not_approved";
 }
 
 public sealed class PurchasingStoreException(string code, string message, Exception? innerException = null,
@@ -96,6 +113,12 @@ public sealed record PurchasingOrderPage(IReadOnlyList<StoredPurchaseOrder> Item
 public sealed record PurchasingMutationAudit(string EventType, string Operation, string Reason);
 
 /// <summary>
+/// A1-1: what the store measured about a request inside the transition's own save, for the domain to decide on —
+/// whether an APPROVED order is bound to it (No.161 §1 refuses a rejection then).
+/// </summary>
+public sealed record PurchaseRequestBindingFacts(bool HasApprovedOrder);
+
+/// <summary>
 /// The persistent purchasing store of the server-resolved company (PUR-4a). One call is one save: the
 /// record, its lines, the attempt record and the audit event commit together or not at all. Replay
 /// identity (ADR-011, R3): (company, command, SHA-256 of the trimmed key); the raw key is never stored; the
@@ -110,13 +133,17 @@ public interface IPurchasingStore
         Func<PurchaseRequest> build, IReadOnlyDictionary<Guid, string> productVersionsByLineId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// One transition (submit) of the company's stored request in ONE save: the domain transition, the attempt
-    /// record and the audit event. The caller answers the domain's refusals (terminal ones through
-    /// <see cref="RecordRefusalAsync"/>); another company's request, or none, is null (never 403); a same-key
-    /// attempt already stored answers Replayed; a lost race is <see cref="PurchasingStoreCodes.ConcurrentChange"/> with nothing stored.
+    /// One transition (submit, approve, reject) of the company's stored request in ONE save: the domain transition,
+    /// the attempt record and the audit event. The store measures the request's <see cref="PurchaseRequestBindingFacts"/>
+    /// inside the same save and hands them to the domain; the request row is this write's concurrency token, and an
+    /// order approval moves the same row, so a rejection and a binding approval cannot both pass unseen. The caller
+    /// answers the domain's refusals (terminal ones through <see cref="RecordRefusalAsync"/>); another company's
+    /// request, or none, is null (never 403); a same-key attempt already stored answers Replayed; a lost race is
+    /// <see cref="PurchasingStoreCodes.ConcurrentChange"/> with nothing stored.
     /// </summary>
     Task<PurchasingRequestStoreResult?> MutateRequestAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
-        Guid requestId, Action<PurchaseRequest, DateTimeOffset> mutate, PurchasingMutationAudit audit, CancellationToken cancellationToken = default);
+        Guid requestId, Action<PurchaseRequest, PurchaseRequestBindingFacts, DateTimeOffset> mutate, PurchasingMutationAudit audit,
+        CancellationToken cancellationToken = default);
 
     Task<StoredPurchaseRequest?> FindRequestAsync(Guid requestId, CancellationToken cancellationToken = default);
 
@@ -130,7 +157,8 @@ public interface IPurchasingStore
 
     /// <summary>
     /// One transition (approve) of the company's stored order in ONE save, as <see cref="MutateRequestAsync"/>.
-    /// For an order opened for a request the Σ-shares rule is measured inside the same save
+    /// For an order opened for a request the source request must be APPROVED
+    /// (<see cref="PurchasingStoreCodes.SourceRequestNotApproved"/>, A1-1) and the Σ-shares rule is measured inside the same save
     /// (<see cref="PurchasingStoreCodes.RequestLineOverSourced"/>, with field errors) and the source request's
     /// sourcing version moves with the approval, so two approvals against the same request cannot both pass the
     /// sum unseen: the loser is <see cref="PurchasingStoreCodes.ConcurrentChange"/> and measures again.

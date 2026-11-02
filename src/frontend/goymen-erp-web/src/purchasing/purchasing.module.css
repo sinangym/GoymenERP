@@ -13,7 +13,8 @@
 .tableWrap th, .tableWrap td { border-top: 1px solid #e4e9e5; padding: .75rem .9rem; text-align: left; white-space: nowrap; }
 .tableWrap thead th { background: #edf4ee; color: #294535; font-size: .8rem; letter-spacing: .02em; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .84rem; }
-.draft, .approved { display: inline-block; border-radius: 999px; padding: .16rem .58rem; font-size: .8rem; font-weight: 700; }
+.draft, .approved, .rejected { display: inline-block; border-radius: 999px; padding: .16rem .58rem; font-size: .8rem; font-weight: 700; }
+.rejected { background: #fde2e1; color: #a51d2d; }
 .draft { background: #fff0cf; color: #77500c; }
 .approved { background: #dff2e4; color: #176336; }
 .secondary, .primaryLink { border: 1px solid #236442; border-radius: .45rem; background: #236442; color: #fff; padding: .55rem .9rem; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none; }
@@ -60,3 +61,10 @@
 .order360Notice { margin: 0; padding: var(--goy-ds-space-2) var(--goy-ds-space-3); border: 1px solid var(--goy-ds-color-border-control); border-radius: var(--goy-ds-radius-sm); background: var(--goy-ds-color-surface-muted); }
 @media (max-width: 767px) { .order360Header { grid-template-columns: minmax(0, 1fr); } .order360Status { justify-self: start; } .order360Header, .order360Section { padding: var(--goy-ds-space-3); } }
 @media (max-width: 359px) { .order360Facts { grid-template-columns: minmax(0, 1fr); } }
+.decisionCard { display: grid; gap: .75rem; max-width: 48rem; border: 1px solid #b8c8bb; border-radius: .8rem; background: linear-gradient(135deg, #f4f8f0, #fff9eb); padding: 1rem; }
+.decisionCard > * { margin: 0; }
+.decisionReason { display: grid; gap: .4rem; justify-items: start; }
+.decisionReason label { font-weight: 600; }
+.decisionReason textarea { box-sizing: border-box; width: 100%; border: 1px solid #9cae9f; border-radius: .45rem; background: #fffdf5; padding: .5rem .65rem; font: inherit; }
+.decisionReason textarea:focus-visible { outline: 3px solid #e19a42; outline-offset: 2px; }
+.hint { margin: 0; color: #607267; font-size: .85rem; }

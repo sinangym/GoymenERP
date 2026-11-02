@@ -43,6 +43,8 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
     private const string ApproveCapability = "purchasing.orders.approve";
     private const string CreateCapability = "purchasing.orders.create";
     private const string GoodsReceiptCapability = "purchasing.goods-receipts.record";
+    // A1-1 (plan API-01, ALS-D2): the request decision control; only the disposable approver holds it (maker != checker).
+    private const string RequestApproveCapability = "purchasing.requests.approve";
     private const string StockLabelCapability = "inventory.stock-positions.list";
     private const string SupplierLegalName =
         "Göymen Endüstriyel Çelik Ürünleri Tedarik ve Lojistik Sanayi ve Ticaret Anonim Şirketi Uzun Ünvan Kabul Tedarikçisi";
@@ -181,25 +183,28 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || !creator.Contains(DetailCapability, StringComparer.Ordinal)
             || !creator.Contains(CreateCapability, StringComparer.Ordinal)
             || creator.Contains(ApproveCapability, StringComparer.Ordinal)
+            || creator.Contains(RequestApproveCapability, StringComparer.Ordinal)
             || creator.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
-            throw new InvalidOperationException("The creator needs list/detail/create and must not receive approve or goods receipt.");
+            throw new InvalidOperationException("The creator needs list/detail/create and must not receive order or request approval or goods receipt.");
         }
 
         string[] approver = await CapabilitiesAsync(context, ApproverActor, cancellationToken);
         if (!approver.Contains(ListCapability, StringComparer.Ordinal)
             || !approver.Contains(DetailCapability, StringComparer.Ordinal)
             || !approver.Contains(ApproveCapability, StringComparer.Ordinal)
+            || !approver.Contains(RequestApproveCapability, StringComparer.Ordinal)
             || approver.Contains(CreateCapability, StringComparer.Ordinal)
             || approver.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
-            throw new InvalidOperationException("The approver needs list/detail/approve and must not receive the staged create screen or goods receipt.");
+            throw new InvalidOperationException("The approver needs list/detail/approve and the request decision, and must not receive the create screen or goods receipt.");
         }
 
         string[] reader = await CapabilitiesAsync(context, ReaderActor, cancellationToken);
         if (!reader.Contains(ListCapability, StringComparer.Ordinal)
             || !reader.Contains(DetailCapability, StringComparer.Ordinal)
             || reader.Contains(ApproveCapability, StringComparer.Ordinal)
+            || reader.Contains(RequestApproveCapability, StringComparer.Ordinal)
             || reader.Contains(CreateCapability, StringComparer.Ordinal)
             || reader.Contains(GoodsReceiptCapability, StringComparer.Ordinal))
         {
@@ -213,6 +218,7 @@ public sealed class Pur01BrowserSeed : IBrowserSuiteFixture
             || !receiver.Contains(DetailCapability, StringComparer.Ordinal)
             || !receiver.Contains(GoodsReceiptCapability, StringComparer.Ordinal)
             || receiver.Contains(ApproveCapability, StringComparer.Ordinal)
+            || receiver.Contains(RequestApproveCapability, StringComparer.Ordinal)
             || receiver.Contains(CreateCapability, StringComparer.Ordinal)
             || receiver.Contains(StockLabelCapability, StringComparer.Ordinal))
         {

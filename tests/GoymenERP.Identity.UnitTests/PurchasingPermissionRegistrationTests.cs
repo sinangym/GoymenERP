@@ -27,6 +27,7 @@ public sealed class PurchasingPermissionRegistrationTests
         ErpPermissions.PurchasingOrdersCreate,
         ErpPermissions.PurchasingOrdersRead,
         ErpPermissions.PurchasingOrdersApprove,
+        ErpPermissions.PurchasingRequestsApprove,
     };
 
     [Fact]
@@ -35,6 +36,7 @@ public sealed class PurchasingPermissionRegistrationTests
         Assert.Equal("purchasing.orders.create", ErpPermissions.PurchasingOrdersCreate);
         Assert.Equal("purchasing.orders.read", ErpPermissions.PurchasingOrdersRead);
         Assert.Equal("purchasing.orders.approve", ErpPermissions.PurchasingOrdersApprove);
+        Assert.Equal("purchasing.requests.approve", ErpPermissions.PurchasingRequestsApprove);
     }
 
     [Theory]

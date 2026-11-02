@@ -335,8 +335,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
 
             // purchasing
             // Purchasing supplier filter: +1 company-scoped cursor-paging SQL fact, kept ordinal-sorted.
+            // A1-1 (plan API-01): +5 request approval/rejection SQL facts (one save + maker/decision checks, bound approved
+            // order + rejected request's draft order, rejection vs binding approval race, company isolation, migration
+            // backfill + Down refusal), kept ordinal-sorted (23decb33… -> 27a9dd4f…).
             ["tools/relational_inventory/purchasing.txt"] =
-                "23decb3344e381ed4ac26013080378c6eb37d5cf97c79962ae75226c0dbfc9b7",
+                "27a9dd4f09206d2aa6f385cf2dbe6013146ab4476c68829e97bad77329c441c9",
 
             // sales
             // DEC-SAL-003: +3 SalesDeliveryScheduleSqlServerRelationalAcceptanceTests facts (16fa5110… -> 00189b7b…).
@@ -506,9 +509,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 "fefc8f5585c59451908d99e31988ed27fa82ec7129fc437e177002fc12fa4db0",
             // PUR-4a: company-scoped like Organization; every tenant row (requests and their lines, orders and their
             // lines, attempts) and AuditEvent carries the CompanyId filter. A standard entry, not an exception.
+            // Re-measured for A1-1: the request's decision columns, the decision and maker-checker checks and the write
+            // guard's decision-fact allow-list; filters and keys unchanged.
             ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
              + "Persistence/PurchasingDbContext.cs"] =
-                "95abb41f658aca490334bfedd7b8829bf9b22007b99d6c59a4feb357ddff1d30",
+                "7a6596f031864fbce3c421a1230cb0c76e00680d233bb3767bf082d5a4a77376",
             // ERP-000G / AT-065: company-scoped like Organization; every tenant row (blobs, documents, versions, links,
             // attempts) and AuditEvent carries the CompanyId filter, and the write guard refuses any update or delete.
             // A standard entry, not an exception.
@@ -1355,10 +1360,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         }),
                 // PUR-4a: the SqlClient namespace only to recognise a unique-key violation (SqlException
                 // 2601/2627) after SaveChanges, as the Sales store does. No connection, command or raw SQL.
+                // Re-fingerprinted for A1-1: request decisions (bound approved-order fact read through the filtered
+                // context, decision facts written, source request state at order approval); same token count.
                 ["src/backend/Modules/Purchasing/"
                  + "GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs"] =
                     new(
-                        "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
+                        "3461d63bb9443bb14e82733246c66db28dbe6442d575de369bf858a98b7d50d9",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1880,6 +1887,17 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1
+                        }),
+                // A1-1 (plan API-01): two reviewed statements. Up records the submitter of every submitted request from its
+                // own stored submit attempt (purchasing.PurchaseAttempts, same schema; nothing guessed); Down refuses
+                // (51164, used by no other migration) while any request is Approved or Rejected, before every drop.
+                ["src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/"
+                 + "Persistence/Migrations/20261102125710_AddPurchaseRequestDecisions.cs"] =
+                    new(
+                        "86686db520f0be62c2fb11e8bc50ca59c4769c45a052f955f25e23f10a29b42f",
+                        new Dictionary<string, int>(StringComparer.Ordinal)
+                        {
+                            ["Sql"] = 2
                         }),
                 // Purchasing acceptance history is durable; Down uses one reviewed statement to refuse
                 // downgrade while any acceptance share exists.
