@@ -310,6 +310,115 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
         await run.AssertRollbackRefusedAsync();
     }
 
+    /// <summary>
+    /// Üretim U1-b (URT-D6, URT-D23): the line-scoped tolerance read — the line's published version, else the process
+    /// version, else the reviewed version-0 catalog — and the supersession of an open-ended published version: publishing a
+    /// later successor of the same scope closes the predecessor's window on the day before, in the same save; any other
+    /// change of a published registry row is still refused by the trigger (51002).
+    /// </summary>
+    [SqlServerFact]
+    public async Task Tolerance_line_scope_catalog_fallback_and_open_ended_supersession_on_real_sql()
+    {
+        await using var run = await HostRun.StartAsync();
+        var maker = await run.GrantAsync(TestUsers.CompanyA, CompanyA, ManufacturingToleranceProfileReadActionV1.Read,
+            ManufacturingToleranceProfileActionsV1.Prepare);
+        var checker = await run.GrantAsync(TestUsers.CompanyAViewer, CompanyA, ManufacturingToleranceProfileReadActionV1.Read,
+            ManufacturingToleranceProfileActionsV1.Approve, ManufacturingToleranceProfileActionsV1.Publish);
+        using var makerClient = run.Client(maker, CompanyA);
+        using var checkerClient = run.Client(checker, CompanyA);
+        var today = run.Today;
+        const string slitting = SettingsManufacturingProcessesV1.Slitting;
+        var line = Guid.NewGuid();
+        var otherLine = Guid.NewGuid();
+
+        // Nothing published: the catalog version 0 answers for any line (URT-D23), the process-only read stays unavailable.
+        await using (var port = run.TolerancePort(CompanyA))
+        {
+            var catalog = await port.Value.GetScopedManufacturingToleranceAsync(slitting, line, today);
+            Assert.Equal((ManufacturingProfileSourcesV1.Catalog, 0L, 5m, (decimal?)2m, (Guid?)null, (DateOnly?)null),
+                (catalog.Source, catalog.Profile.Version, catalog.MaximumFirePercent,
+                    catalog.MassBalanceDifferenceTolerancePercent, catalog.WorkCenterId, catalog.EffectiveThrough));
+            Assert.Equal("settings_provider_unavailable", (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.Value.GetManufacturingToleranceAsync(slitting, today))).Code);
+            Assert.Equal(ManufacturingParameterProfileCodesV1.RequestInvalid, (await Assert.ThrowsAsync<SettingsPrerequisiteException>(
+                () => port.Value.GetScopedManufacturingToleranceAsync(slitting, Guid.Empty, today))).Code);
+        }
+
+        await using (var portB = run.TolerancePort(CompanyB))
+        {
+            var catalogB = await portB.Value.GetScopedManufacturingToleranceAsync(slitting, null, today);
+            Assert.Equal((CompanyB, ManufacturingProfileSourcesV1.Catalog), (catalogB.CompanyId, catalogB.Source));
+        }
+
+        async Task<ManufacturingProfileCommandReceiptV1> PublishAsync(string key, string expected, string fire, string massBalance,
+            DateOnly from, Guid? workCenter)
+        {
+            var prepared = await run.ReceiptAsync(makerClient, Tolerances, $"{key}-prepare",
+                ToleranceBody(expected, slitting, fire, massBalance, from, null) with { WorkCenterId = workCenter });
+            await run.ReceiptAsync(checkerClient, $"{Tolerances}/{prepared.ProfileId}/approval", $"{key}-approve", Step("1"));
+            await run.ReceiptAsync(checkerClient, $"{Tolerances}/{prepared.ProfileId}/publication", $"{key}-publish", Step("2"));
+            return prepared;
+        }
+
+        var process = await PublishAsync("ls-process", "0", "4", "1.5", today, null);
+        var own = await PublishAsync("ls-line", "1", "3", "1", today, line);
+        await using (var port = run.TolerancePort(CompanyA))
+        {
+            var forLine = await port.Value.GetScopedManufacturingToleranceAsync(slitting, line, today);
+            Assert.Equal((own.ProfileId, 2L, line, ManufacturingProfileSourcesV1.Settings),
+                (forLine.Profile.ProfileId, forLine.Profile.Version, forLine.WorkCenterId, forLine.Source));
+            var forOther = await port.Value.GetScopedManufacturingToleranceAsync(slitting, otherLine, today);
+            Assert.Equal((process.ProfileId, (Guid?)null, (decimal?)1.5m),
+                (forOther.Profile.ProfileId, forOther.WorkCenterId, forOther.MassBalanceDifferenceTolerancePercent));
+            // The process-only read ignores line versions.
+            Assert.Equal(process.ProfileId, (await port.Value.GetManufacturingToleranceAsync(slitting, today)).Profile.ProfileId);
+        }
+
+        // A later open-ended successor of the process supersedes the open-ended process version (not the line's).
+        var successor = await PublishAsync("ls-successor", "2", "6", "2.5", today.AddDays(5), null);
+        Assert.Equal(today.AddDays(4), DateOnly.FromDateTime(await run.ScalarAsync<DateTime>(
+            "SELECT [EffectiveThrough] FROM [settings].[ManufacturingTolerancePolicies] WHERE [ProfileId] = @p",
+            ("@p", process.ProfileId))));
+        Assert.Equal(1, await run.ScalarAsync<int>(
+            "SELECT COUNT(*) FROM [settings].[ManufacturingTolerancePolicies] WHERE [ProfileId] = @p AND [EffectiveThrough] IS NULL",
+            ("@p", own.ProfileId)));
+        var listed = (await run.JsonAsync(makerClient, Tolerances)).GetProperty("profiles").EnumerateArray()
+            .Single(profile => profile.GetProperty("profileId").GetGuid() == process.ProfileId);
+        Assert.Equal(today.AddDays(4).ToString("yyyy-MM-dd"), listed.GetProperty("effectiveThrough").GetString());
+        await using (var port = run.TolerancePort(CompanyA))
+        {
+            Assert.Equal(process.ProfileId,
+                (await port.Value.GetScopedManufacturingToleranceAsync(slitting, otherLine, today)).Profile.ProfileId);
+            Assert.Equal(successor.ProfileId,
+                (await port.Value.GetScopedManufacturingToleranceAsync(slitting, otherLine, today.AddDays(5))).Profile.ProfileId);
+            Assert.Equal(own.ProfileId,
+                (await port.Value.GetScopedManufacturingToleranceAsync(slitting, line, today.AddDays(5))).Profile.ProfileId);
+        }
+
+        // An earlier-starting successor still overlaps (nothing is superseded backwards).
+        var backwards = await run.ReceiptAsync(makerClient, Tolerances, "ls-backwards",
+            ToleranceBody("3", slitting, "6", "2", today.AddDays(5), null));
+        await run.ReceiptAsync(checkerClient, $"{Tolerances}/{backwards.ProfileId}/approval", "ls-backwards-approve", Step("1"));
+        await run.ProblemAsync(checkerClient, $"{Tolerances}/{backwards.ProfileId}/publication", "ls-backwards-publish",
+            Step("2"), HttpStatusCode.Conflict, ManufacturingProfileProblemCodesV1.WindowOverlap);
+
+        // The trigger admits only the window close: any other change, a second close or a reversed window is refused.
+        foreach (var sql in new[]
+                 {
+                     "UPDATE [settings].[ManufacturingTolerancePolicies] SET [MaximumFirePercent] = 9 WHERE [ProfileId] = @p",
+                     "UPDATE [settings].[ManufacturingTolerancePolicies] SET [EffectiveThrough] = DATEADD(day, -1, [EffectiveFrom]) WHERE [ProfileId] = @p",
+                 })
+        {
+            Assert.Equal(51002, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(sql,
+                ("@p", successor.ProfileId)))).Number);
+        }
+
+        Assert.Equal(51002, (await Assert.ThrowsAsync<SqlException>(() => run.ExecuteAsync(
+            "UPDATE [settings].[ManufacturingTolerancePolicies] SET [EffectiveThrough] = DATEADD(day, 10, [EffectiveThrough]) WHERE [ProfileId] = @p",
+            ("@p", process.ProfileId)))).Number);
+        await run.AssertRollbackRefusedAsync();
+    }
+
     [SqlServerFact]
     public async Task Empty_profile_migration_rolls_back_and_reapplies_on_real_sql()
     {
@@ -465,7 +574,7 @@ public sealed class SettingsManufacturingProfileSqlServerRelationalAcceptanceTes
             Assert.True(index > 0);
             var rollback = await Assert.ThrowsAsync<SqlException>(() =>
                 context.GetService<IMigrator>().MigrateAsync(applied[index - 1]));
-            Assert.Equal(51183, rollback.Number);
+            Assert.Equal(51185, rollback.Number); // U1-b: the newest profile migration refuses first (forward fix)
             Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
         }
 
