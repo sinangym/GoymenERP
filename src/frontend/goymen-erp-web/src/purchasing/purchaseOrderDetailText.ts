@@ -36,4 +36,13 @@ export const PURCHASE_ORDER_DETAIL_TEXT = {
   quantity: 'Kabul miktarı',
   recordedAtUtc: 'Kayıt zamanı (UTC)',
   lineUnavailable: 'Eşleşen sipariş satırı yok',
+  lineNoColumn: 'No',
+  subject: 'satın alma siparişi',
+  approvalReplayed: 'Önceki onay yanıtı yeniden gösterildi.',
+  approvalApplied: 'Sipariş onaylandı ve yeniden okundu.',
+  approvalFailed: (code: string | number) => `Onay kaydedilmedi (${code}). Kayıt yeniden okundu.`,
+  approvalUnknown: 'Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.',
+  approvalSending: 'Gönderiliyor…',
+  approvalRetry: 'Aynı onayı yeniden gönder',
+  approve: 'Onayla',
 } as const

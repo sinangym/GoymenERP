@@ -9,6 +9,8 @@ import { isDateOnly, parseQuantityInput } from '../sales/wirePrimitives'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { useShellState } from '../shell/shellContext'
 import { contextKey, contextKeyString, hasCapability } from '../shell/shellState'
+import { Button } from '../ui/Button'
+import { CREATE_FORM_TEXT as F, ORDER_CREATE_TEXT as T } from './purchasingText'
 import styles from './purchasing.module.css'
 
 type ReadState<T> =
@@ -33,17 +35,17 @@ function newId(): string {
 }
 
 function readFailure(outcome: Exclude<Awaited<ReturnType<typeof fetchPurchasingSupplierOptions>>, { type: 'ok-single' }>): string {
-  if (outcome.type === 'http') return outcome.status === 403 ? 'Bu şirket için tedarikçi okuma yetkiniz yok.' : `Tedarikçi kaynağı yanıt vermedi (${outcome.status}).`
-  if (outcome.type === 'offline') return 'Çevrimdışısınız.'
-  if (outcome.type === 'fence-stale') return 'Şirket veya oturum değişti; sonuç kullanılmadı.'
-  return outcome.type === 'malformed' ? 'Tedarikçi kaynağı beklenen sözleşmeyle yanıt vermedi.' : 'Tedarikçi kaynağına ulaşılamadı.'
+  if (outcome.type === 'http') return outcome.status === 403 ? T.supplierReadDenied : T.supplierSourceHttp(outcome.status)
+  if (outcome.type === 'offline') return T.offline
+  if (outcome.type === 'fence-stale') return T.fenceStale
+  return outcome.type === 'malformed' ? T.supplierMalformed : T.supplierUnreachable
 }
 
 function commandFailure(outcome: Extract<CreatePurchaseOrderOutcome, { type: 'failed' }>): string {
-  if (outcome.status === 401 || outcome.status === 403) return 'Sipariş oluşturma yetkiniz artık geçerli değil.'
-  if (outcome.status === 409) return `Seçilen kayıtların güncel durumu değişti (${outcome.code ?? 'account_state'}). Kaynakları yenileyin.`
-  if (outcome.status === 422) return `Ürün, alış birimi veya miktar kabul edilmedi (${outcome.code ?? 'validation_failed'}).`
-  return `Sipariş kaydedilmedi (${outcome.code ?? outcome.status}).`
+  if (outcome.status === 401 || outcome.status === 403) return T.createDenied
+  if (outcome.status === 409) return T.stateChanged(outcome.code ?? 'account_state')
+  if (outcome.status === 422) return T.lineRejected(outcome.code ?? 'validation_failed')
+  return T.notSaved(outcome.code ?? outcome.status)
 }
 
 export function PurchaseOrderCreatePage() {
@@ -62,7 +64,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
   const recalled = recallPendingPurchaseOrderCreate(storeKey)
   const [attempt, setAttempt] = useState<Attempt>(() => recalled === null
     ? { phase: 'idle' }
-    : { phase: 'unknown', snapshot: recalled, reason: 'Önceki gönderimin sonucu bilinmiyor.' })
+    : { phase: 'unknown', snapshot: recalled, reason: F.previousUnknown })
   const [supplierSearch, setSupplierSearch] = useState('')
   const [productSearch, setProductSearch] = useState('')
   const [effectiveOn, setEffectiveOn] = useState('')
@@ -96,7 +98,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
 
   const readProducts = useCallback(async () => {
     if (companyId === null || !isDateOnly(effectiveOn)) {
-      setFormError('Ürün aramadan önce geçerli bir iş tarihi seçin.')
+      setFormError(F.dateBeforeProductSearch)
       return
     }
     const token = productFence.current.capture()
@@ -107,7 +109,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
     if (outcome.type === 'http' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, security)
     setProducts(outcome.type === 'ok-single'
         ? { type: 'ready', data: outcome.data }
-        : { type: 'failed', message: outcome.type === 'http' ? `Ürün kaynağı yanıt vermedi (${outcome.status}).` : 'Ürün kaynağına ulaşılamadı veya yanıt doğrulanamadı.' })
+        : { type: 'failed', message: outcome.type === 'http' ? F.productSourceHttp(outcome.status) : F.productSourceFailed })
   }, [boundary, companyId, effectiveOn, productSearch])
 
   useEffect(() => {
@@ -127,7 +129,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
     inFlight.current = false
     if (outcome.type === 'failed' && (outcome.status === 401 || outcome.status === 403)) boundary.report(outcome.status, security)
     if (outcome.type === 'unknown') {
-      setAttempt({ phase: 'unknown', snapshot, reason: unresolvedSince ?? 'Sonuç bilinmiyor. Aynı anahtar ve içerikle yeniden gönderin.' })
+      setAttempt({ phase: 'unknown', snapshot, reason: unresolvedSince ?? F.unknownRetry })
       return
     }
     if (outcome.type === 'failed' && unresolvedSince !== undefined) {
@@ -147,7 +149,7 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
     const product = products.type === 'ready' ? products.data.items.find((item) => item.productId === productId) : undefined
     const parsedQuantity = parseQuantityInput(quantity)
     if (supplier === undefined || product === undefined || !isDateOnly(effectiveOn) || !parsedQuantity.ok) {
-      setFormError('Tedarikçi hesabı, iş tarihi, ürün/alış birimi ve sıfırdan büyük miktar zorunludur.')
+      setFormError(T.fieldsRequired)
       return
     }
     setFormError(null)
@@ -164,21 +166,21 @@ function PurchaseOrderCreate({ namespace }: { readonly namespace: string | null 
     void send({ actorId, companyId, payload, idempotencyKey: newId() })
   }
 
-  if (companyId === null || actorId === null) return <main className={styles.page}><p role="alert">Yetkili tek şirket bağlamı seçilmeden sipariş oluşturulamaz.</p></main>
+  if (companyId === null || actorId === null) return <main className={styles.page}><p role="alert">{T.noContext}</p></main>
   if (attempt.phase === 'completed') {
     const order = attempt.result.response.detail.order
-    return <main className={styles.page}><section className={styles.successCard} role="status"><p className={styles.eyebrow}>P-04</p><h1>Satın alma siparişi kaydedildi</h1><p className={styles.mono}>{order.id} · sürüm {order.version}</p>{attempt.result.replayed ? <p>Önceki kayıtlı sonuç yeniden gösterildi.</p> : null}<div className={styles.actions}>{hasCapability(shell, PURCHASING_CAPABILITY.orderDetail as never) ? <Link className={styles.primaryLink} to={purchaseOrderDetailPath(order.id)}>Aynı kaydı aç</Link> : null}{hasCapability(shell, PURCHASING_CAPABILITY.orderList as never) ? <Link to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>Listeye dön ve formu kapat</Link> : null}</div></section></main>
+    return <main className={styles.page}><section className={styles.successCard} role="status"><p className={styles.eyebrow}>{T.eyebrow}</p><h1>{T.saved}</h1><p className={styles.mono}>{F.version(order.id, order.version)}</p>{attempt.result.replayed ? <p>{F.replayed}</p> : null}<div className={styles.actions}>{hasCapability(shell, PURCHASING_CAPABILITY.orderDetail) ? <Link className={styles.primaryLink} to={purchaseOrderDetailPath(order.id)}>{F.openSame}</Link> : null}{hasCapability(shell, PURCHASING_CAPABILITY.orderList) ? <Link to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>{F.backToList}</Link> : null}</div></section></main>
   }
   const frozen = attempt.phase === 'submitting' || attempt.phase === 'unknown' || (attempt.phase === 'failed' && attempt.unresolvedSince !== undefined)
-  return <main className={styles.page}><header className={styles.header}><div><p className={styles.eyebrow}>P-04</p><h1>Yeni satın alma siparişi</h1></div><Link to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>← Satın alma siparişleri</Link></header>
-    {attempt.phase === 'unknown' ? <section className={styles.warningCard} role="alert"><p>{attempt.reason}</p><div className={styles.actions}><button type="button" onClick={() => void send(attempt.snapshot, attempt.reason)}>Aynı anahtarla yeniden gönder</button><Link className={styles.secondary} to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>Formu kapat</Link></div></section> : null}
-    {attempt.phase === 'failed' && attempt.unresolvedSince !== undefined && attempt.snapshot !== undefined ? <section className={styles.warningCard} role="alert"><p>{attempt.message} Önceki gönderimin sonucu hâlâ bilinmiyor.</p><div className={styles.actions}><button type="button" onClick={() => void send(attempt.snapshot!, attempt.unresolvedSince)}>Aynı anahtarla yeniden gönder</button><Link className={styles.secondary} to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>Formu kapat</Link></div></section> : attempt.phase === 'failed' ? <p role="alert" className={styles.error}>{attempt.message}</p> : null}
+  return <main className={styles.page}><header className={styles.header}><div><p className={styles.eyebrow}>{T.eyebrow}</p><h1>{T.heading}</h1></div><Link to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>{T.back}</Link></header>
+    {attempt.phase === 'unknown' ? <section className={styles.warningCard} role="alert"><p>{attempt.reason}</p><div className={styles.actions}><Button type="button" onClick={() => void send(attempt.snapshot, attempt.reason)}>{F.retrySameKey}</Button><Link className={styles.secondary} to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>{F.closeForm}</Link></div></section> : null}
+    {attempt.phase === 'failed' && attempt.unresolvedSince !== undefined && attempt.snapshot !== undefined ? <section className={styles.warningCard} role="alert"><p>{attempt.message} {F.stillUnknown}</p><div className={styles.actions}><Button type="button" onClick={() => void send(attempt.snapshot!, attempt.unresolvedSince)}>{F.retrySameKey}</Button><Link className={styles.secondary} to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.orderList]}>{F.closeForm}</Link></div></section> : attempt.phase === 'failed' ? <p role="alert" className={styles.error}>{attempt.message}</p> : null}
     {formError === null ? null : <p role="alert" className={styles.error}>{formError}</p>}
     <form className={styles.createForm} onSubmit={submit} noValidate>
-      <fieldset disabled={frozen}><legend>Tedarikçi</legend><div className={styles.searchRow}><label htmlFor="supplier-search">Tedarikçi ara</label><input id="supplier-search" value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} /><button type="button" onClick={() => void readSuppliers()}>Ara</button></div>{suppliers.type === 'loading' ? <p role="status">Tedarikçiler yükleniyor…</p> : suppliers.type === 'failed' ? <p role="alert">{suppliers.message}</p> : <><label htmlFor="supplier">Tedarikçi cari hesabı</label><select id="supplier" value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">Seçiniz</option>{suppliers.type === 'ready' ? suppliers.data.items.map((item) => <option key={`${item.supplierPartyId}|${item.companyAccountId}`} value={`${item.supplierPartyId}|${item.companyAccountId}`}>{item.label}</option>) : null}</select>{suppliers.type === 'ready' && suppliers.data.nextCursor !== null ? <button type="button" className={styles.secondary} onClick={() => void readSuppliers(suppliers.data.nextCursor ?? undefined, true)}>Daha fazla tedarikçi</button> : null}</>}
+      <fieldset disabled={frozen}><legend>{T.supplierLegend}</legend><div className={styles.searchRow}><label htmlFor="supplier-search">{T.supplierSearch}</label><input id="supplier-search" value={supplierSearch} onChange={(event) => setSupplierSearch(event.target.value)} /><Button type="button" onClick={() => void readSuppliers()}>{F.search}</Button></div>{suppliers.type === 'loading' ? <p role="status">{T.suppliersLoading}</p> : suppliers.type === 'failed' ? <p role="alert">{suppliers.message}</p> : <><label htmlFor="supplier">{T.supplierAccount}</label><select id="supplier" value={supplierId} onChange={(event) => setSupplierId(event.target.value)}><option value="">{F.choose}</option>{suppliers.type === 'ready' ? suppliers.data.items.map((item) => <option key={`${item.supplierPartyId}|${item.companyAccountId}`} value={`${item.supplierPartyId}|${item.companyAccountId}`}>{item.label}</option>) : null}</select>{suppliers.type === 'ready' && suppliers.data.nextCursor !== null ? <Button type="button" onClick={() => void readSuppliers(suppliers.data.nextCursor ?? undefined, true)}>{T.moreSuppliers}</Button> : null}</>}
       </fieldset>
-      <fieldset disabled={frozen}><legend>Sipariş satırı</legend><div className={styles.formGrid}><label htmlFor="effective-on">İş tarihi</label><input id="effective-on" type="date" value={effectiveOn} onChange={(event) => { productFence.current.invalidate(); setEffectiveOn(event.target.value); setProductId(''); setProducts({ type: 'idle' }) }} /><label htmlFor="product-search">Ürün ara</label><div className={styles.searchRow}><input id="product-search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} /><button type="button" onClick={() => void readProducts()}>Ara</button></div><label htmlFor="product">Ürün ve alış birimi</label>{products.type === 'loading' ? <p role="status">Ürünler yükleniyor…</p> : products.type === 'failed' ? <p role="alert">{products.message}</p> : <select id="product" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">Seçiniz</option>{products.type === 'ready' ? products.data.items.map((item) => <option key={item.productId} value={item.productId}>{item.code} — {item.name} · {item.unitCode}</option>) : null}</select>} {products.type === 'ready' && products.data.searchWindowFull ? <p className={styles.note}>Arama penceresi doldu; sonucu daraltmak için ürün kodu veya adı yazın.</p> : null}<label htmlFor="quantity">Miktar</label><input id="quantity" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="Örn. 1250 veya 1,5" /></div></fieldset>
-      <div className={styles.actions}><button type="submit" disabled={frozen}>{attempt.phase === 'submitting' ? 'Kaydediliyor…' : 'Taslak siparişi kaydet'}</button></div>
+      <fieldset disabled={frozen}><legend>{T.lineLegend}</legend><div className={styles.formGrid}><label htmlFor="effective-on">{F.businessDate}</label><input id="effective-on" type="date" value={effectiveOn} onChange={(event) => { productFence.current.invalidate(); setEffectiveOn(event.target.value); setProductId(''); setProducts({ type: 'idle' }) }} /><label htmlFor="product-search">{F.productSearch}</label><div className={styles.searchRow}><input id="product-search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} /><Button type="button" onClick={() => void readProducts()}>{F.search}</Button></div><label htmlFor="product">{T.product}</label>{products.type === 'loading' ? <p role="status">{F.productsLoading}</p> : products.type === 'failed' ? <p role="alert">{products.message}</p> : <select id="product" value={productId} onChange={(event) => setProductId(event.target.value)}><option value="">{F.choose}</option>{products.type === 'ready' ? products.data.items.map((item) => <option key={item.productId} value={item.productId}>{F.productOption(item.code, item.name, item.unitCode)}</option>) : null}</select>} {products.type === 'ready' && products.data.searchWindowFull ? <p className={styles.note}>{T.searchWindowFull}</p> : null}<label htmlFor="quantity">{F.quantity}</label><input id="quantity" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder={T.quantityPlaceholder} /></div></fieldset>
+      <div className={styles.actions}><Button type="submit" variant="primary" disabled={frozen}>{attempt.phase === 'submitting' ? F.saving : T.submit}</Button></div>
     </form>
   </main>
 }
