@@ -1196,14 +1196,22 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
             await using (var migrationScope = factory.Services.CreateAsyncScope())
             {
                 var manufacturing = migrationScope.ServiceProvider.GetRequiredService<ManufacturingDbContext>();
-                var applied = (await manufacturing.Database.GetAppliedMigrationsAsync()).ToArray();
-                var lengthMigration = Assert.Single(applied,
+                var appliedAtStart = (await manufacturing.Database.GetAppliedMigrationsAsync()).ToArray();
+                var lengthMigration = Assert.Single(appliedAtStart,
                     migration => migration.EndsWith("_AddManufacturingPlanTechnicalLengthSnapshots",
                         StringComparison.Ordinal));
-                var lengthMigrationIndex = Array.IndexOf(applied, lengthMigration);
-                Assert.Equal(applied.Length - 1, lengthMigrationIndex);
-                var previousMigration = applied[lengthMigrationIndex - 1];
+                var lengthMigrationIndex = Array.IndexOf(appliedAtStart, lengthMigration);
+                var previousMigration = appliedAtStart[lengthMigrationIndex - 1];
                 var migrator = manufacturing.GetService<IMigrator>();
+                // Later Manufacturing migrations (e.g. U1-b's parameter snapshots) carry no data this test writes;
+                // step down to the length migration first so its own downgrade guard is the one exercised.
+                if (lengthMigrationIndex < appliedAtStart.Length - 1)
+                {
+                    await migrator.MigrateAsync(lengthMigration);
+                }
+
+                var applied = (await manufacturing.Database.GetAppliedMigrationsAsync()).ToArray();
+                Assert.Equal(lengthMigration, applied.Last());
 
                 async Task AssertRollbackRefusedAsync(int expectedNonNullRows)
                 {
@@ -1253,7 +1261,7 @@ public sealed class ProductGlobalRuntimeSqlServerRelationalAcceptanceTests
                     .SingleAsync());
 
                 await migrator.MigrateAsync();
-                Assert.Equal(lengthMigration, (await manufacturing.Database.GetAppliedMigrationsAsync()).Last());
+                Assert.Equal(appliedAtStart, await manufacturing.Database.GetAppliedMigrationsAsync());
                 Assert.NotNull(await manufacturing.Database.SqlQueryRaw<short?>(
                         "SELECT COL_LENGTH(N'[manufacturing].[PlanInputs]', N'TechnicalLengthMm') AS [Value]")
                     .SingleAsync());

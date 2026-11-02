@@ -176,6 +176,18 @@ public interface IManufacturingPlanStore
     Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAt,
         ManufacturingCommandMetadata metadata, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Üretim U1-b: approves and, in the same save, persists the Settings parameter profile captured for the plan
+    /// (DEC-PRDCT-008). The slitting gate runs on what the plan captured (Product dimensions per roll) and the profile.
+    /// A store that cannot persist a snapshot refuses one rather than dropping it.
+    /// </summary>
+    Task<ProductionPlan> ApprovePlanAsync(Guid planId, long expectedVersion, Guid approvedByUserId, DateTimeOffset approvedAt,
+        PlanParameterSnapshotV1? parameterSnapshot, ManufacturingCommandMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        parameterSnapshot is null
+            ? ApprovePlanAsync(planId, expectedVersion, approvedByUserId, approvedAt, metadata, cancellationToken)
+            : throw new NotSupportedException("Bu plan deposu parametre snapshot'ı saklamıyor.");
+
     /// <summary>The company's stored plan, or null (another company's plan is null too).</summary>
     Task<ProductionPlan?> FindPlanAsync(Guid planId, CancellationToken cancellationToken = default);
 }

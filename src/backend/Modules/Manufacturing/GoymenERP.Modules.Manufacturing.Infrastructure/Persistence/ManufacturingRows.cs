@@ -113,6 +113,36 @@ internal sealed class PlanSlitLineRow : IManufacturingTenantRow
     public int BandCount { get; set; }
 }
 
+/// <summary>
+/// Üretim U1-b (DEC-PRDCT-008): the Settings parameter profile captured when the plan was approved — one row per approved
+/// plan that had a profile. Written in the approval's save, never changed.
+/// </summary>
+internal sealed class PlanParameterSnapshotRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public Guid ProfileId { get; set; }
+    public string ProfileVersion { get; set; } = string.Empty;
+    public string Source { get; set; } = string.Empty;
+    public int Process { get; set; }
+    public Guid? ProfileWorkCenterId { get; set; }
+    public DateOnly EffectiveFrom { get; set; }
+    public DateOnly? EffectiveThrough { get; set; }
+    public DateOnly SelectedForDate { get; set; }
+    public DateTimeOffset CapturedAtUtc { get; set; }
+}
+
+/// <summary>One captured parameter value of a plan's snapshot: a number or a choice, with its unit. Never changes.</summary>
+internal sealed class PlanParameterSnapshotValueRow : IManufacturingTenantRow
+{
+    public Guid CompanyId { get; set; }
+    public Guid PlanId { get; set; }
+    public string ParameterKey { get; set; } = string.Empty;
+    public string Unit { get; set; } = string.Empty;
+    public decimal? NumericValue { get; set; }
+    public string? ChoiceValue { get; set; }
+}
+
 /// <summary>One ordered coil-to-sheet cut line of the plan as created. Never changes.</summary>
 internal sealed class PlanCutLineRow : IManufacturingTenantRow
 {
@@ -256,6 +286,15 @@ internal sealed class OrderClosureDecisionRow : IManufacturingTenantRow
     public Guid? ApprovalPolicyId { get; set; }
     public long? ApprovalPolicyVersion { get; set; }
     public DateTimeOffset? ApprovedAtUtc { get; set; }
+
+    /// <summary>U1-b (URT-D23): <c>Catalog</c> (version 0) or <c>Settings</c>; null on a decision stored before U1-b.</summary>
+    public string? PolicySource { get; set; }
+
+    /// <summary>U1-b (URT-D6): the line the tolerance version was scoped to; null = process-wide.</summary>
+    public Guid? PolicyWorkCenterId { get; set; }
+
+    /// <summary>U1-b (URT-D6): the ± mass-balance percent of the version, invariant text; null = unknown.</summary>
+    public string? MassBalanceDifferenceTolerancePercent { get; set; }
 }
 
 /// <summary>The kind of a stored realization fact.</summary>
