@@ -1459,8 +1459,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // (DI-only); provider branch and token counts unchanged.
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the draft service also receives the optional Product item type reader and
                     // the subcontract binding hook, and the subcontract service order read port is registered over the same store (DI-only).
+                    // Re-fingerprinted for S-1 / MOD-03: the draft service also receives the supply owners' optional linked-supply
+                    // adapters (GetServices, DI-only; none registered yet); provider branch and token counts unchanged.
                     new(
-                        "5b0ba111a28f9c6a697c83812e58ffa8486d5801a6911956213adc68efd29de9",
+                        "2b317082146f1741ac85f0f4d67d28c2e6b2b9f565c3ff681d71ba9cd7c2edb3",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
