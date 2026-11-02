@@ -1075,6 +1075,8 @@ public sealed partial class OpenApiContractGenerationTests
                 "query:q:false:type:string",
                 "query:effectiveOn:true:type:string;format:date",
                 "query:limit:false:type:integer|string;format:int32;pattern:^-?(?:0|[1-9]\\d*)$",
+                // SAT-D176 (EK25): a subcontract service order's picker narrows to one item type.
+                "query:itemType:false:type:string",
             ]),
         // SAT-D61…D70: the Settings discount limit groups, their limits and the person → group bindings.
         new("get", "/api/v1/settings/sales-discount-limits/groups", "GetSettingsSalesDiscountLimitGroupsV1",
@@ -4778,7 +4780,13 @@ public sealed partial class OpenApiContractGenerationTests
                     ("surchargePercent", "type:null|string"), ("surchargeAmount", "type:null|string"),
                     ("netUnitPrice", "type:null|string"), ("floorException", "oneOf:ref:SalesDraftPriceFloorExceptionV1|type:null"),
                     // SAT-D2 / API-12 (additive, optional): the line's discount-limit check.
-                    ("discountCheck", "oneOf:ref:SalesDraftDiscountLimitCheckV1|type:null")),
+                    ("discountCheck", "oneOf:ref:SalesDraftDiscountLimitCheckV1|type:null"),
+                    // SAT-D178 (EK25, additive, optional): the free price of a subcontract service line.
+                    ("listAbsence", "oneOf:ref:SalesDraftPriceListAbsenceV1|type:null")),
+                ["SalesDraftPriceListAbsenceV1"] = ObjectSchema(
+                    ["currencyCode", "effectiveOn", "unitPrice", "writtenBy", "writtenAtUtc"],
+                    ("currencyCode", "type:string"), ("effectiveOn", "type:string;format:date"), ("unitPrice", "type:string"),
+                    ("writtenBy", "type:string"), ("writtenAtUtc", "type:string;format:date-time")),
                 ["SalesDraftDiscountLimitCheckV1"] = ObjectSchema(
                     ["checkedBy", "checkedAtUtc", "listUnitPrice", "limitPercent", "requiresApproval", "approvedBy", "approvedAtUtc", "reason"],
                     ("checkedBy", "type:string"), ("checkedAtUtc", "type:string;format:date-time"), ("listUnitPrice", "type:null|string"),
@@ -5281,7 +5289,9 @@ public sealed partial class OpenApiContractGenerationTests
                     ("lineCount", "type:integer|string;format:int32"),
                       ("approvalState", "type:string"),
                       ("commercialStage", "oneOf:ref:SalesCommercialStageV1|type:null"),
-                      ("productSnapshots", "type:array|null;items:ref:SalesOrderDraftProductSnapshotViewV1")),
+                      ("productSnapshots", "type:array|null;items:ref:SalesOrderDraftProductSnapshotViewV1"),
+                      // SAT-D175 (EK25, additive, optional): true only for a subcontract service order.
+                      ("subcontractService", "type:boolean|null")),
                 ["SalesOrderDraftReadSummaryViewV1"] = ObjectSchema(
                     ["id", "companyId", "documentNo", "kind", "state", "version", "revision", "partyId", "companyAccountId", "currencyId", "businessDate", "createdAtUtc", "lineCount", "approvalState", "commercialStage", "productSnapshots", "partyDisplay"],
                     ("id", "type:string;format:uuid"),
@@ -7376,7 +7386,9 @@ public sealed partial class OpenApiContractGenerationTests
                     // SAT-D123 / SAT-D127 (EK18): the due terms entered by hand at create (optional, never defaulted).
                     ("dueTerms", "oneOf:ref:SalesDueTermsV1|type:null"),
                     // MOD-03 → Sales (SAT-D140): the buyer tax situation (optional; omitted = "Normal").
-                    ("buyerTax", "oneOf:ref:SalesDraftBuyerTaxV1|type:null")),
+                    ("buyerTax", "oneOf:ref:SalesDraftBuyerTaxV1|type:null"),
+                    // SAT-D175 (EK25): an incoming subcontract service order (optional; omitted = a normal order).
+                    ("subcontractService", "type:boolean|null")),
                 ["SalesDraftLineTaxOverrideV1"] = ObjectSchema(
                     ["buyerSituation", "reason"],
                     ("buyerSituation", "type:string"),
