@@ -306,7 +306,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // cancellation; slitting approval with net width, line speed and label) and +3
                 // ManufacturingSqlServerRelationalAcceptanceTests facts (rejection replay, lifecycle migration, store rules)
                 // (7f38855d… -> f5bf9d89…).
-                "f5bf9d89c3846bad54f7054f58986784703ebccee8eb111b55e8eaf627adac8d",
+                // Üretim U2-b1: +1 ManufacturingApiSqlServerRelationalAcceptanceTests fact (process spec save, revision,
+                // approval capture) and +1 ManufacturingSqlServerRelationalAcceptanceTests fact (process spec migration)
+                // (f5bf9d89… -> e5d404de…).
+                "e5d404deb1e5d3c0b022d61ba773ed35e8123d503dd01703d105b13a350d28f3",
 
             // organization
             // ORG master edit: +2 OrganizationMasterDataSqlServerRelationalAcceptanceTests facts (6b504dac… -> 3bad6ad8…).
