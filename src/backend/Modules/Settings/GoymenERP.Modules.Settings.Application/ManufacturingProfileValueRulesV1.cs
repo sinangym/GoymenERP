@@ -38,7 +38,7 @@ public static class ManufacturingProfileValueRulesV1
         var result = new List<ManufacturingParameterValueDataV1>(input.Count);
         foreach (var item in input)
         {
-            if (item is null || ManufacturingParameterKeysV1.Find(item.Key) is not { } definition)
+            if (item is null || ManufacturingParameterKeysV1.Definition(item.Key) is not { } definition)
             {
                 detail = "Parametre anahtarı tanımsız.";
                 return false;
@@ -99,7 +99,7 @@ public static class ManufacturingProfileValueRulesV1
     public static bool IsWellFormed(string process, ManufacturingParameterValueDataV1 value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        if (ManufacturingParameterKeysV1.Find(value.Key) is not { } definition
+        if (ManufacturingParameterKeysV1.Definition(value.Key) is not { } definition
             || !definition.Processes.Contains(process, StringComparer.Ordinal)
             || !string.Equals(definition.Unit, value.Unit, StringComparison.Ordinal))
         {

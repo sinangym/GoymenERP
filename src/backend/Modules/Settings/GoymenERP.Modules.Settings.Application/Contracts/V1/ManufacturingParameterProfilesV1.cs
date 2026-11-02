@@ -118,7 +118,7 @@ public static class ManufacturingParameterKeysV1
             ValueScale, SettingsManufacturingProcessesV1.Slitting),
     ];
 
-    public static ManufacturingParameterDefinitionV1? Find(string? key) =>
+    public static ManufacturingParameterDefinitionV1? Definition(string? key) =>
         All.SingleOrDefault(definition => string.Equals(definition.Key, key, StringComparison.Ordinal));
 
     private static ManufacturingParameterDefinitionV1 Numeric(string key, string unit, ManufacturingParameterValueKindV1 kind,

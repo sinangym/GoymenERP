@@ -97,7 +97,7 @@ public sealed class ManufacturingProfileCatalogAndRulesTests
             Assert.True(key.Key.All(char.IsAsciiLetterOrDigit));
         });
         Assert.Equal([ManufacturingParameterKeysV1.KerfModePerPiece, ManufacturingParameterKeysV1.KerfModeBetweenPieces],
-            ManufacturingParameterKeysV1.Find(ManufacturingParameterKeysV1.KerfMode)!.Choices);
+            ManufacturingParameterKeysV1.Definition(ManufacturingParameterKeysV1.KerfMode)!.Choices);
     }
 
     [Theory]
@@ -125,7 +125,7 @@ public sealed class ManufacturingProfileCatalogAndRulesTests
     [InlineData("kerfMode", "1", false)]
     public void Values_are_validated_by_the_key_kind_and_scale_and_never_rounded(string key, string text, bool valid)
     {
-        var definition = ManufacturingParameterKeysV1.Find(key)!;
+        var definition = ManufacturingParameterKeysV1.Definition(key)!;
         Assert.Equal(valid, ManufacturingProfileValueRulesV1.TryReadValue(definition, text, out var value));
         if (valid && value.Number is { } number)
         {
