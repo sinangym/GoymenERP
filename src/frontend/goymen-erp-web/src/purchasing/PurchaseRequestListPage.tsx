@@ -10,9 +10,9 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { createRequestFence } from './requestFence'
+import { Button } from '../ui/Button'
+import { PURCHASE_REQUEST_STATUS_LABEL as STATUS, REQUEST_LIST_TEXT as T } from './purchasingText'
 import styles from './purchasing.module.css'
-
-const STATUS: Record<PurchaseRequestStatus, string> = { Draft: 'Taslak', Submitted: 'Gönderildi' }
 
 export function PurchaseRequestListPage() {
   const shell = useShellState()
@@ -25,8 +25,8 @@ function PurchaseRequestList({ namespace }: { readonly namespace: string | null 
   const shell = useShellState()
   const boundary = useAuthBoundary()
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
-  const canOpen = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail as never)
-  const canCreate = hasCapability(shell, PURCHASING_CAPABILITY.requestCreate as never)
+  const canOpen = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail)
+  const canCreate = hasCapability(shell, PURCHASING_CAPABILITY.requestCreate)
   const [status, setStatus] = useState<PurchaseRequestStatus | null>(null)
   const [more, setMore] = useState<readonly PurchaseRequestSummary[]>([])
   const [cursor, setCursor] = useState<string | null | undefined>(undefined)
@@ -63,12 +63,12 @@ function PurchaseRequestList({ namespace }: { readonly namespace: string | null 
     } else setContinuation(classifyOutcome(outcome) as RemoteViewState<unknown>)
   }, [boundary, companyId, nextCursor, page, status])
 
-  const header = <header className={styles.header}><div><p className={styles.eyebrow}>P-01</p><h1>Satın alma talepleri</h1></div><div className={styles.headerActions}>{canCreate ? <Link className={styles.primaryLink} to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.requestCreate]}>Yeni talep</Link> : null}<label>Durum <select value={status ?? ''} onChange={(event) => { pageFence.current.invalidate(); loading.current = false; setStatus(event.target.value === '' ? null : event.target.value as PurchaseRequestStatus); setMore([]); setCursor(undefined); setContinuation('idle') }}><option value="">Tümü</option><option value="Draft">Taslak</option><option value="Submitted">Gönderildi</option></select></label></div></header>
-  if (companyId === null) return <main className={styles.page}>{header}<StateBlock state={{ kind: 'no-authorized-company' }} subject="satın alma talepleri" /></main>
+  const header = <header className={styles.header}><div><p className={styles.eyebrow}>{T.eyebrow}</p><h1>{T.heading}</h1></div><div className={styles.headerActions}>{canCreate ? <Link className={styles.primaryLink} to={PURCHASING_ROUTE[PURCHASING_CAPABILITY.requestCreate]}>{T.create}</Link> : null}<label>{T.filter} <select value={status ?? ''} onChange={(event) => { pageFence.current.invalidate(); loading.current = false; setStatus(event.target.value === '' ? null : event.target.value as PurchaseRequestStatus); setMore([]); setCursor(undefined); setContinuation('idle') }}><option value="">{T.filterAll}</option><option value="Draft">{STATUS.Draft}</option><option value="Submitted">{STATUS.Submitted}</option></select></label></div></header>
+  if (companyId === null) return <main className={styles.page}>{header}<StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} /></main>
   if (page === null) {
     const state = first.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(first.data)
-    return <main className={styles.page}>{header}<StateBlock state={state as RemoteViewState<unknown>} subject="satın alma talepleri" onRetry={() => void first.refetch()} /></main>
+    return <main className={styles.page}>{header}<StateBlock state={state as RemoteViewState<unknown>} subject={T.subject} onRetry={() => void first.refetch()} /></main>
   }
   const rows = [...page.items, ...more]
-  return <main className={styles.page} data-testid="purchase-request-list">{header}<p className={styles.note}>İhtiyaç havuzu yalnız talep miktarını gösterir; fiyat, tedarikçi veya stok hareketi üretmez.</p>{rows.length === 0 ? <StateBlock state={{ kind: status === null ? 'empty-no-data' : 'empty-filtered' }} subject="satın alma talepleri" /> : <div className={styles.tableWrap}><table><caption>Şirketin satın alma talepleri</caption><thead><tr><th>Talep</th><th>Durum</th><th>İş tarihi</th><th>Satır</th><th>Güncellendi</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><th className={styles.mono}>{canOpen ? <Link to={purchaseRequestDetailPath(row.id)}>…{row.id.slice(-8)}</Link> : `…${row.id.slice(-8)}`}</th><td><span className={row.status === 'Submitted' ? styles.approved : styles.draft}>{STATUS[row.status]}</span></td><td>{row.effectiveOn}</td><td>{row.lineCount}</td><td>{new Date(row.updatedAtUtc).toLocaleString('tr-TR')}</td></tr>)}</tbody></table></div>}{nextCursor !== null ? <div>{continuation === 'loading' ? <p role="status">Sonraki sayfa yükleniyor…</p> : continuation === 'idle' ? <button type="button" className={styles.secondary} onClick={() => void loadMore()}>Daha fazla göster</button> : <><StateBlock state={continuation} subject="sonraki talep sayfası" /><button type="button" className={styles.secondary} onClick={() => void loadMore()}>Aynı sayfayı yeniden dene</button></>}</div> : null}</main>
+  return <main className={styles.page} data-testid="purchase-request-list">{header}<p className={styles.note}>{T.scope}</p>{rows.length === 0 ? <StateBlock state={{ kind: status === null ? 'empty-no-data' : 'empty-filtered' }} subject={T.subject} /> : <div className={styles.tableWrap}><table><caption>{T.caption}</caption><thead><tr><th>{T.request}</th><th>{T.status}</th><th>{T.businessDate}</th><th>{T.lineCount}</th><th>{T.updatedAt}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><th className={styles.mono}>{canOpen ? <Link to={purchaseRequestDetailPath(row.id)}>…{row.id.slice(-8)}</Link> : `…${row.id.slice(-8)}`}</th><td><span className={row.status === 'Submitted' ? styles.approved : styles.draft}>{STATUS[row.status]}</span></td><td>{row.effectiveOn}</td><td>{row.lineCount}</td><td>{new Date(row.updatedAtUtc).toLocaleString('tr-TR')}</td></tr>)}</tbody></table></div>}{nextCursor !== null ? <div>{continuation === 'loading' ? <p role="status">{T.loadingMore}</p> : continuation === 'idle' ? <Button type="button" onClick={() => void loadMore()}>{T.loadMore}</Button> : <><StateBlock state={continuation} subject={T.nextPageSubject} /><Button type="button" onClick={() => void loadMore()}>{T.retrySamePage}</Button></>}</div> : null}</main>
 }
