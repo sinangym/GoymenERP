@@ -7,21 +7,28 @@ Bu not bir **durum fotoğrafıdır**; iş kararı değildir (para/stok/üretim/y
 modüler monolit, hiçbir modül başkasının tablosuna yazmaz; modüller arası bağ yalnız sürümlü port (`*PortV1`, `*ReaderV1`,
 `*ResolverV1`) veya outbox olayıyla kurulur.
 
-## v1.1 — Sinan kararı: modül sırası (2 Kasım 2026)
+## v1.1 — Sinan kararları: modül sırası ve satış faturasının alacak kaydı (2 Kasım 2026)
 
-Kaynak: Sinan'ın 2 Kasım 2026 kararı, koordinatör oturumu üzerinden iletildi (karar dosyası bu PR'da değiştirilmez).
+Kaynak: `docs/decisions/SINAN_KARARLARI_2026-11-02_SATIS_EK35.md` — **SAT-D209** (modül sırası) ve **SAT-D208** (1a). Kararlar önce koordinatör oturumu üzerinden
+iletilmiş, Sinan'ın kendi teyidiyle EK35'e yazılmıştır. Bu not karar dosyasını değiştirmez; yalnız uygular.
 
-- **Ürün, Lojistik/Stok, Ayarlar ve Cari** modüllerinin geliştirmesi henüz başlamadı. Önce süren dört modül — **Satış, Alış,
+- **Ürün, Lojistik/Stok, Ayarlar ve Cari** modüllerinin **Claude geliştirmesi henüz başlamadı** (SAT-D209). Önce süren dört modül — **Satış, Alış,
   Finans, Üretim** — bitirilir; diğerleri sonra başlar ve **bağları o zaman yeniden incelenir**.
-- O zamana kadar Ürün, Lojistik/Stok, Ayarlar ve Cari modüllerinde **yeni port, tablo veya ekran açılmaz**. Mevcut portları tüketilir; mevcut olmayan bağlar
-  **fail-closed** kalır (bugünkü `NoSource` / `Unavailable` / 503 davranışı).
+- O zamana kadar Ürün, Lojistik/Stok, Ayarlar ve Cari modüllerinde **yeni port, tablo veya ekran açılmaz** (kaynak: `docs/decisions/SINAN_KARARLARI_2026-11-02_SATIS_EK35.md`
+  SAT-D209). Mevcut portları tüketilir; mevcut olmayan bağlar **fail-closed** kalır (bugünkü `NoSource` / `Unavailable` / 503
+  davranışı). Bu kural **Satış şeridini bağlar**; ALS-D45 ve FNS-D1'in Alış ve Finans şeritlerine o modüllerde küçük ekler için
+  verdiği izinler değişmez. Çelişki olup olmadığı Issue #66'da `NEEDS-SINAN` olarak soruldu:
+  https://github.com/sinangym/GoymenERP/issues/66#issuecomment-6590215022
 - Bu nedenle sahibi bu modüller olan eksikler aşağıda **"ertelendi: <modül> başlayınca"** diye işaretlidir. Satış tarafında
   yalnız mevcut portu tüketen veya test ekleyen işler (yeni port/tablo/ekran açmadan) ertelenmez.
-- **1a kararı (Sinan, 2 Kasım 2026, koordinatör üzerinden):** Satış faturası → Finans alacak açık kalemi **tek kayıttır**; Cari
-  kartına ayrıca hareket yazılmaz. Muhasebe fişi (120 Alıcılar) **aynı kaynak olaydan** Muhasebe'de üretilir. Sözleşme bir
+- **1a kararı (`docs/decisions/SINAN_KARARLARI_2026-11-02_SATIS_EK35.md` SAT-D208):** Satış faturası → Finans alacak açık kalemi **tek kayıttır**; Cari kartına ayrıca hareket
+  yazılmaz. 120 Alıcılar fişi **aynı kaynak olaydan** Muhasebe'de **taslak fiş** olarak üretilir; kullanıcı onaylayınca
+  kesinleşir, resmî defter dış sistemde kalır (DEC-FIN-001/DEC-FIN-004). 120 eşlemesi, mali müşavir teyit edene kadar FNS-D7'deki
+  anlam eşlemesidir. Sözleşme bir
   **outbox olayıdır:** `sales.invoice.finalized.v1`; tüketicileri Finans (API-10, alacak açık kalemi) ve Muhasebe (fiş).
-  Sahipler: **Satış** — olay sözleşmesi + Satış outbox'ı; **Finans** — API-10 tüketicisi (inbox/dedup); **Muhasebe** — fiş
-  tüketicisi (inbox/dedup).
+  Sahipler: **Satış** — olay sözleşmesi + Satış outbox'ı; **Finans** — API-10 tüketicisi (inbox/dedup); **Muhasebe** — taslak
+  fiş tüketicisi (inbox/dedup). İdempotency anahtarı fatura kimliği + sürümü; alan listesi Finans ile fatura dalgasında
+  netleşir. Finans şeridine (FNS-D1) devir notu koordinatör oturumu üzerinden `send_message` ile iletildi.
 
 ## Okuma yöntemi
 
@@ -52,7 +59,7 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 
 | Bağlantı | Üretici | Tüketici | Port/olay | main'de impl + DI | Test | Durum |
 |---|---|---|---|---|---|---|
-| 1a. Satış faturası → Finans alacak açık kalemi + Muhasebe fişi (120) | Satış (fatura çekirdeği) | Finans (API-10), Muhasebe (fiş) | Karar: outbox olayı `sales.invoice.finalized.v1` (tek kayıt; Cari kartına hareket yazılmaz). Finans'ın senkron `IFinanceInvoiceOpenItemAdmissionPortV1` önerisi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §4) bu kararla olay tüketimine döner | **Yok.** Satış'ta fatura varlığı ve outbox yok; Finans açık kalemleri yalnız CSV içe aktarılan `official.invoice-installment.v1` kaynağından doğuyor (`Modules/Finance/.../FinanceOpenItemSourcePolicy.cs`); Muhasebe'de tüketici yok | — | ❌ (yaklaşım kararlı, uygulama yok) |
+| 1a. Satış faturası → Finans alacak açık kalemi + Muhasebe fişi (120) | Satış (fatura çekirdeği) | Finans (API-10), Muhasebe (fiş) | Karar (EK35 SAT-D208): outbox olayı `sales.invoice.finalized.v1` (tek kayıt; Cari kartına hareket yazılmaz; 120 fişi taslak, onayla kesinleşir). Finans'ın senkron `IFinanceInvoiceOpenItemAdmissionPortV1` önerisi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md` §4) bu kararla olay tüketimine döner | **Yok.** Satış'ta fatura varlığı ve outbox yok; Finans açık kalemleri yalnız CSV içe aktarılan `official.invoice-installment.v1` kaynağından doğuyor (`Modules/Finance/.../FinanceOpenItemSourcePolicy.cs`); Muhasebe'de tüketici yok | — | ❌ (yaklaşım kararlı, uygulama yok) |
 | 1b. Finans → Satış risk okuması: açık alacak − dağıtılmamış tahsilat | Finans | Satış (MOD-01 / API-06 risk kontrolü) | `ISalesPartyRiskReadPortV1` (`SC/ISalesPartyRiskReadPortV1.cs`) | `FinanceSalesPartyRiskReadPortV1` (`Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceSalesPartyRiskReadPortV1.cs`), `FinanceModuleExtensions.cs:90` `AddScoped`; Satış `SME` `GetService` (yoksa `Unavailable`, risk asla "Within" değil) | `tests/GoymenERP.Finance.UnitTests/FinanceSalesPartyRiskReadPortV1Tests.cs`, `SUT/SalesDraftServiceTests.RiskCheck.cs`, SQL: `IT/SalesRiskCheckSqlServerRelationalAcceptanceTests.cs`, `IT/FinanceRecordSqlServerRelationalAcceptanceTests.cs` | ✅ |
 | 1c. Finans → Satış: kredi limiti ve teminat | Finans | Satış | Aynı port, `CreditLimit` / `Collateral` figürleri | Port her zaman `NoSource` döner (`finance_credit_limit_owner_missing`); master yok (Finans API-85, OPEN-010) | Birim testte `NoSource` doğrulanıyor | 🟡 |
 | 1d. Finans → Satış: açık kalem kapandı / ödeme kaydedildi olayı (risk tazeleme) | Finans | Satış | Öneri: `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | Finans'ta outbox yok; Satış inbox yok. Risk bugün her okumada port üzerinden taze hesaplandığı için işlevsel boşluk yok | — | ❌ (gerek: dağıtıcı ERP-000F) |
@@ -89,10 +96,10 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 | 4a. Döviz kuru ve kur günü (#906, SAT-D47/D54/D55) | Ayarlar | Satış (risk çevrimi) | `ISettingsExchangeRateResolverV1` | `SettingsExchangeRateResolverV1`, `Modules/Settings/.../SettingsModuleExtensions.cs:55`; TCMB kaynakları yapılandırmayla kapalı (`DisabledExchangeRateBulletinSource`) | `SUT/SalesDraftServiceTests.RiskCheck.cs` (sahte), SQL: `IT/SettingsExchangeRateSqlServerRelationalAcceptanceTests.cs`. Satış+kur birlikte SQL testi yok | 🟡 (bağ ✅; Satış ucunda gerçek-SQL kanıtı eksik) |
 | 4b. Satış iş günü (SAT-D10) | Satış (kendi) | — | `SalesBusinessDay` (Europe/Istanbul) — Ayarlar portu değil | `Modules/Sales/GoymenERP.Modules.Sales.Domain/SalesBusinessDay.cs` | Satış birim testleri | ✅ (modüller arası bağ değil) |
 | 4c. Satır vergisi (MOD-03, SAT-D93/D139/D140) | Ayarlar | Satış | `ISettingsLineTaxResolverV1` | `SettingsTaxMasterReader`, `SettingsModuleExtensions.cs:47` | SQL: `IT/SettingsTaxMasterSqlServerRelationalAcceptanceTests.cs`, `IT/SalesOrderTaxSqlServerRelationalAcceptanceTests.cs` | ✅ |
-| 4d. KDV oranı / tevkifat listeleri (SAT-D181) | Ayarlar | Satış | `ISettingsTaxRateListReaderV1` | `SettingsTaxRateListReader`, `SettingsModuleExtensions.cs:50` (veri girilene kadar boş liste) | `SUT/SalesDraftServiceTests.Tax.cs` (sahte), `tests/GoymenERP.Settings.UnitTests/TaxRateListCatalogTests.cs` (katalog); okuyucunun kendi SQL testi yok | 🟡 — ertelendi: Ayarlar başlayınca |
+| 4d. KDV oranı / tevkifat listeleri (SAT-D181) | Ayarlar | Satış | `ISettingsTaxRateListReaderV1` | `SettingsTaxRateListReader`, `SettingsModuleExtensions.cs:50`; liste boş olduğu sürece satırda KDV/tevkifat seçimi kapalı kalır (fail-closed) | `SUT/SalesDraftServiceTests.Tax.cs` (sahte), `tests/GoymenERP.Settings.UnitTests/TaxRateListCatalogTests.cs` (katalog); okuyucunun kendi SQL testi yok | 🟡 (test eksiği; bakım ekranı ertelendi: Ayarlar başlayınca) |
 | 4e. Satış politika kaydı (tolerans, iskonto limiti; SAT-D2/D5/D61…D64) | Ayarlar | Satış | `ISettingsSalesPolicyProviderV1` | `API/Program.cs:198` onaylı katalog; `SettingsModuleExtensions.cs:36` `Replace` → `SettingsSalesPolicyProviderV1` | `tests/GoymenERP.Settings.UnitTests/ApprovedSalesPolicyProviderTests.cs`, SQL: `IT/SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests.cs` | ✅ |
 | 4f. İskonto limit grubu üyeliği (SAT-D63/D66) | Ayarlar (+ Kimlik) | Satış | `ISalesDiscountLimitGroupSourceV1` ← `ISettingsSalesDiscountLimitGroupMembershipReaderV1` | Host `SalesDiscountLimitGroupHost` (`API/Endpoints/SettingsSalesDiscountLimitHosts.cs`), `Program.cs:329` | `IT/SettingsSalesDiscountLimitPortTests.cs`, SQL: `IT/SettingsSalesDiscountLimitSqlServerRelationalAcceptanceTests.cs` | ✅ |
-| 4g. Teklif politikası (kayıp nedeni, varsayılan geçerlilik; SAT-D25/D39) | Ayarlar | Satış | `ISettingsSalesQuotePolicyProviderV1` | `ApprovedSettingsSalesQuotePolicyProvider`, `Program.cs:204`; katalog **boş** → kayıp 503, geçerlilik önerisi yok | Satış teklif testleri, SQL: `IT/SalesQuoteSqlServerRelationalAcceptanceTests.cs` | 🟡 (kalıcı kayıt/ekran yok; veri Sinan'da) — ertelendi: Ayarlar başlayınca |
+| 4g. Teklif politikası (kayıp nedeni, varsayılan geçerlilik; SAT-D25/D39) | Ayarlar | Satış | `ISettingsSalesQuotePolicyProviderV1` | `ApprovedSettingsSalesQuotePolicyProvider`, `Program.cs:204`; veri statik kod kataloğundan (`ApprovedSalesQuotePolicyCatalog`), katalog **boş** → kayıp 503, geçerlilik önerisi yok | Satış teklif testleri, SQL: `IT/SalesQuoteSqlServerRelationalAcceptanceTests.cs` | 🟡 — veri: `NEEDS-SINAN`; kalıcı kayıt/ekran ertelendi: Ayarlar başlayınca |
 | 4h. Para profilleri / para birimi adayları (SAT-D18) | Ayarlar | Satış | `ISettingsPrerequisiteProvider`, `ISettingsMoneyCandidateReader`, `ISettingsMoneyCandidateReaderV2` | `ApprovedSettingsPrerequisiteProvider`, `Program.cs:191-195` (onaylı statik katalog) | `tests/GoymenERP.Settings.UnitTests/ApprovedMoneyProfileProviderTests.cs`, `SUT/SalesReferenceReadHandlerTests.cs`, `IT/SettingsHostWiringTests.cs` (statik onaylı katalog; veritabanı okumaz) | ✅ |
 
 ### 5. Ürün, Cari, İş onayları, Kimlik, Alış
@@ -102,7 +109,7 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 | 5a. Ürün satış uygunluğu / aday listesi ¹ | Ürün | Satış | `IProductSalesEligibilityV1`, `IProductSalesCandidatesV1` | `API/ProductRuntime/ProductRuntimeExtensions.cs:101`; runtime kapalıyken `UnconfiguredProductEligibility` (503) | `tests/GoymenERP.Product.UnitTests/ProductEligibilityHostCompositionTests.cs`, `IT/SalesProductCandidateHttpAcceptanceTests.cs`, SQL: `IT/ProductSalesEligibilityAuthoritySqlServerRelationalAcceptanceTests.cs` | ✅ |
 | 5b. Fiyat listesi kademe zinciri (SAT-D9, MOD-02) ¹ | Ürün | Satış | `IProductQuantityPriceReferenceReaderV2` | `Modules/Product/.../PriceLists/ProductPriceListRegistration.cs:50` — yalnız Ürün runtime açıkken; kapalıyken kayıt yok → Satış 503 | `SUT/SalesDraftServiceTests.LinePricing.cs`, `IT/ProductPriceListHostCompositionTests.cs`, SQL: `IT/ProductPriceListSqlServerRelationalAcceptanceTests.cs` | ✅ |
 | 5c. Kalem tipi okuması (SAT-D176, fason hizmet satırı) ¹ | Ürün | Satış (+ Ayarlar vergi) | `IProductItemTypeReaderV1` | `ProductPriceListRegistration.cs:55`; runtime kapalıyken `UnavailableProductItemTypeService` (`API/ProductRuntime/ProductPriceListHostComposition.cs:40-45`, fail-closed) | `SUT/SalesDraftServiceTests.Subcontract.cs`, `IT/SettingsHostWiringTests.cs`; SQL: `IT/SettingsTaxMasterSqlServerRelationalAcceptanceTests.cs:850` gerçek `ProductItemTypeService`'i SQL üzerinde `SettingsProductItemTypeHost` ile çalıştırıyor; fason dolaylı: `IT/SalesSubcontractServiceOrderSqlServerRelationalAcceptanceTests.cs` | ✅ |
-| 5d. Müşteri hesabı doğrulama | Cari | Satış | `ISalesPartyAccountPortV1` | Host `CounterpartySalesPartyAccountPortV1` (`API/Endpoints/SalesEndpoints.cs:2052`), `Program.cs:219` (zorunlu) | `IT/SalesReferenceHttpAcceptanceTests.cs`; `IT/SalesDraftApiSqlServerRelationalAcceptanceTests.cs:262-263, 374-375` portu `SyntheticAccounts` ile değiştiriyor — host adaptörünün gerçek-SQL testi yok | 🟡 |
+| 5d. Müşteri hesabı doğrulama | Cari | Satış | `ISalesPartyAccountPortV1` | Host `CounterpartySalesPartyAccountPortV1` (`API/Endpoints/SalesEndpoints.cs:2052`), `Program.cs:219` (zorunlu) | `IT/SalesReferenceHttpAcceptanceTests.cs`; SQL: `IT/SalesDraftApiSqlServerRelationalAcceptanceTests.cs:84-170` gerçek portu SQL üzerinde çalıştırıyor, ama yalnız **olumsuz yol** (bilinmeyen müşteri → 409 `account_state`, taslak yazılmaz). Olumlu yol (`Found`) testlerde `SyntheticAccounts` ile değiştiriliyor (`:262-263`, `:374-375`) | 🟡 (yalnız olumsuz yol kanıtlı) |
 | 5e. Teslim adresi / ilgili kişi (SALES-A2a) | Cari | Satış | `ISalesPartyContactInformationPortV1` | Aynı host adaptörü, `Program.cs:222` | `SUT/SalesReferenceReadHandlerTests.cs` (sahte); `IT/SalesDraftSqlServerRelationalAcceptanceTests.cs` portu çağırmıyor, `IT/SalesDraftApiSqlServerRelationalAcceptanceTests.cs:376-377` `SyntheticContactInformation` ile değiştiriyor. Cari tarafı: `IT/CounterpartyContactInformationSqlServerRelationalAcceptanceTests.cs` (Satış portu üzerinden değil) | 🟡 |
 | 5f. Müşteri seçimi ve kayıt gösterimi | Cari | Satış | `ISalesAccountSelectionSourceV1`, `ISalesPartyDisplaySourceV1` | `CounterpartySalesAccountSelectionSourceV1` (`SalesEndpoints.cs:1989`, `Program.cs:207`); `SalesPartyDisplayHost` (`API/Endpoints/SalesPartyDisplayHost.cs`, `Program.cs:320`) | `IT/SalesDraftHttpAcceptanceTests.cs`, `IT/SalesReferenceHttpAcceptanceTests.cs` (stub kaynaklı; iki adaptörün gerçek-SQL testi yok) | 🟡 |
 | 5g. Alıcı vergi durumu | Ayarlar (liste) | Satış | Sipariş başına Ayarlar alıcı durumu listesinden seçim (SAT-D140/D158); Cari'den okunmuyor | `SalesDraftService.Tax.cs` | `IT/SalesOrderTaxSqlServerRelationalAcceptanceTests.cs` | ✅ (tasarım gereği Cari bağı yok) |
@@ -125,11 +132,11 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 | 6c. Genel arama | Satış | Arama (host) | `SalesOrderGlobalSearchSource` | `Search/SalesGlobalSearchRegistration.cs`, `API/Search/GlobalSearchEndpoints.cs:34` | `SUT/SalesOrderGlobalSearchSourceTests.cs`, SQL: `IT/GlobalSearchSqlServerRelationalAcceptanceTests.cs` | ✅ |
 | 6d. Kabuk yetenekleri (menü) | Satış | Kabuk | `SalesShellCapabilityProvider` | `Program.cs:381` | Kabuk/C01 testleri (veritabanı okumaz) | ✅ |
 | 6e. Sipariş taslağı okuma servisi | Satış | Host uçları (PDF, okuma) | `ISalesDraftReadServiceV1` | `Program.cs:334` | `IT/SalesDraftHttpAcceptanceTests.cs`, `IT/SalesOrderPdfHttpAcceptanceTests.cs`, SQL: `IT/SalesOrderPdfSqlServerRelationalAcceptanceTests.cs` | ✅ |
-| 6f. Satış olayları (outbox) | Satış | Finans, Üretim, Lojistik | Öneri: `sales.order.approved.v1`, `sales.order.cancelled.v1`, `sales.invoice.finalized.v1` | Satış'ta outbox yok | — | ❌ (ERP-000F dağıtıcısı yok; bugün senkron port yeterli) |
+| 6f. Satış olayları (outbox) | Satış | Finans, Muhasebe (fatura); Üretim, Lojistik (öneri) | **Kararlı:** `sales.invoice.finalized.v1` (EK35 SAT-D208). Öneri: `sales.order.approved.v1`, `sales.order.cancelled.v1` | Satış'ta outbox yok | — | ❌ (ERP-000F dağıtıcısına bağlı) |
 
 Bakış açısı farkı: Üretim planı §11a (`docs/delivery/URETIM_HAZIRLIK_PLANI_v1.md`, #918) aynı bağları **tüketici (Üretim) ucundan** işaretler — ör. sipariş satırı bağı orada ❌ (Üretim okumuyor), burada 🟡 (Satış portu hazır); S-1 orada 🟡 (`NoSource` davranışı var), burada ❌ (iki port da yok). Bu not **Satış ucundan** bakar; iki tablo birlikte okunur.
 
-## Bağımsız analizle karşılaştırma (koordinatör oturumu, main `1db70046`)
+## Bağımsız analizle karşılaştırma (koordinatör oturumu; v1 main `1db70046`, v1.1 taban `6949e64c`)
 
 | Bağımsız bulgu | Bu not | Fark / kanıt |
 |---|---|---|
@@ -144,7 +151,7 @@ Bakış açısı farkı: Üretim planı §11a (`docs/delivery/URETIM_HAZIRLIK_PL
 |---|---|---|---|---|
 | 1a | Satış faturası → alacak açık kalemi + 120 fişi | ❌ | Satış fatura çekirdeği + `sales.invoice.finalized.v1` olay sözleşmesi + Satış outbox'ı | **Satış/Claude şeridi** (ALS-D44: fatura çekirdeği Satış'ta) |
 | 1a | — | ❌ | API-10 olay tüketicisi (inbox/dedup), taksit başına `Receivable` açık kalem (MOD-15/MOD-04) | **Finans** |
-| 1a | — | ❌ | Aynı olaydan 120 Alıcılar fişi üreten tüketici (inbox/dedup) | **Muhasebe** |
+| 1a | — | ❌ | Aynı olaydan 120 Alıcılar **taslak** fişi üreten tüketici (inbox/dedup; onayla kesinleşir, resmî defter dış sistemde; 120 eşlemesi müşavir teyidine kadar FNS-D7 anlam eşlemesi) | **Muhasebe** |
 | 1c | Kredi limiti / teminat | 🟡 | Limit ve teminat master'ı (API-85; OPEN-010 açık) | **Finans** |
 | 1d | Finans olayları → Satış | ❌ | Finans outbox + Satış inbox (dağıtıcı ERP-000F) | **Finans** (üretici), Satış (tüketici; dağıtıcı sonrası) |
 | 1e | Eşleşmemiş avans (iptal etkisi) | ❌ | Siparişe bağlı avans kaydı ve okuma portu (Finans API-21) | **Finans**; Satış tarafı `NoSource` dalını porta bağlar |
@@ -158,10 +165,10 @@ Bakış açısı farkı: Üretim planı §11a (`docs/delivery/URETIM_HAZIRLIK_PL
 | 3f | Faturalanmamış irsaliye | 🟡 | Fatura tüketimi sahibi | **Satış/Claude şeridi** (fatura dalgası) |
 | 3h | Miktar bazlı rezervasyon | ❌ | Kapsam kararı + port | **Lojistik/Stok** — **ertelendi: Lojistik/Stok başlayınca** |
 | 4a | Kur çözümleyici — Satış ucunda gerçek-SQL | 🟡 | Satış risk + kur birlikte `[SqlServerFact]` testi | **Satış/Claude şeridi** |
-| 4d | KDV/tevkifat listesi okuyucusu | 🟡 | Okuyucunun gerçek-SQL testi; bakım ekranı (SAT-D146) | **Ayarlar** — **ertelendi: Ayarlar başlayınca** |
-| 4g | Teklif politikası | 🟡 | Kalıcı kayıt + bakım ekranı; veri girişi | **Ayarlar**; veri **Sinan** — **ertelendi: Ayarlar başlayınca** |
+| 4d | KDV/tevkifat listesi okuyucusu | 🟡 | (a) Okuyucunun gerçek-SQL testi — yalnız test, yeni port/tablo/ekran açmaz, **ertelenmez**; (b) bakım ekranı (SAT-D146). Liste boş kaldıkça KDV/tevkifat seçimi kapalıdır | (a) **Satış/Claude şeridi**; (b) **Ayarlar** — **ertelendi: Ayarlar başlayınca** |
+| 4g | Teklif politikası | 🟡 | (a) Veri: kayıp nedeni listesi ve varsayılan geçerlilik süresi statik kataloğa (`ApprovedSalesQuotePolicyCatalog`) girilir; (b) kalıcı kayıt + bakım ekranı | (a) **Satış/Claude + Sinan** — `NEEDS-SINAN` (kayıp nedenleri, varsayılan geçerlilik); (b) **Ayarlar** — **ertelendi: Ayarlar başlayınca** |
 | 5h | Cari e-belge profili | 🟡 | Cari portu (`ICounterpartyAccountEDocumentProfileSourceV1`, #860) hazır; Satış fatura dalgasında tüketici | **Satış/Claude şeridi** |
-| 5d | Müşteri hesabı doğrulama adaptörü | 🟡 | `CounterpartySalesPartyAccountPortV1`'in gerçek-SQL testi (yeni Cari portu/tablosu gerekmez) | **Satış/Claude şeridi** (host adaptörü Satış'ın); Cari bağının yeniden incelenmesi — **ertelendi: Cari başlayınca** |
+| 5d | Müşteri hesabı doğrulama adaptörü | 🟡 | `CounterpartySalesPartyAccountPortV1`'in **olumlu yol** gerçek-SQL testi (olumsuz yol `:84-170`'te var; yeni Cari portu/tablosu gerekmez) | **Satış/Claude şeridi** (host adaptörü Satış'ın); Cari bağının yeniden incelenmesi — **ertelendi: Cari başlayınca** |
 | 5e | Teslim adresi / ilgili kişi adaptörü | 🟡 | Aynı adaptörün iletişim bilgisi yolunun gerçek-SQL testi | **Satış/Claude şeridi**; Cari bağının yeniden incelenmesi — **ertelendi: Cari başlayınca** |
 | 5f | Müşteri seçimi / kayıt gösterimi adaptörleri | 🟡 | Host adaptörlerinin gerçek-SQL testi | **Satış/Claude şeridi** (host adaptörleri Satış'ın); Cari bağının yeniden incelenmesi — **ertelendi: Cari başlayınca** |
 | 5k2 | Aktif rol kodu okuması | 🟡 | Gerçek `IActiveRoleCodeReader` ile Satış SQL testi | **Satış/Claude şeridi** |
@@ -169,7 +176,7 @@ Bakış açısı farkı: Üretim planı §11a (`docs/delivery/URETIM_HAZIRLIK_PL
 | 5j | Teklif onaylarının İş kutusu | 🟡 | Teklif onayları için `INativeApprovalReadAdapterV1` | **Satış/Claude şeridi** |
 | 5l | Bağlı satın alma (iptal etkisi, Alış MOD-03) | ❌ | Veri sağlayan Alış portu (Satış'ın `ISalesOrderLinkedSupplyReadPortV1` sözleşmesine uyar) | **Alış** (üretici); sözleşme sahibi ve tüketici **Satış/Claude** (`docs/delivery/ALIS_HAZIRLIK_PLANI_v1.md:339`) |
 | 5m | "Tedarikçide hazır" dahil alış gelecek arzı (Alış MOD-16) | ❌ | `IPurchaseSupplyReferencePortV1` v2 (MOD-14 ile aynı port) | **Alış** (üretici); kaynak planı/sipariş ekranı tüketicisi **Satış/Claude** (`ALIS_HAZIRLIK_PLANI_v1.md:351`) |
-| 6f | Satış outbox olayları | ❌ | Satış outbox tablosu + olay sözleşmeleri | **Satış/Claude şeridi** (dağıtıcı ERP-000F geldikten sonra) |
+| 6f | Satış outbox olayları | ❌ | Satış outbox tablosu + `sales.invoice.finalized.v1` (SAT-D208, kararlı) ve önerilen sipariş olayları | **Satış/Claude şeridi**; yayın ERP-000F dağıtıcısına bağlı |
 
 ### Üretim şeridinin teyidi (2026-11-02, koordinatör üzerinden)
 
