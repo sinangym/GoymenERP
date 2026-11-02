@@ -372,6 +372,11 @@ tam ekran workspace (adım göstergesi, sağda etki önizlemesi ve kontrol liste
 DEC-FIN-001…016, DEC-INT-001 (ilk sürümde banka/Mikro entegrasyonu yok), DEC-SET-001, No 22/34/108/109/112–115,
 K6/K7/K8/K14, SAT-D51/D52/D85/D96, ALS-D41/D42/D44.
 
+**Roller (EK30, SAT-D196/D197, 2026-11-02):** finans işlemini **Finans Uzmanı oluşturur**, **Finans Müdürü onaylar**
+(hazırlayan ≠ onaylayan); **Genel Müdür** finans işlemlerini onaylayabilir ama oluşturamaz. Bütün maker≠checker adımları
+(API-07 mahsup, API-23 ödeme ters kaydı, API-31/33 kasa ve sayım farkı, API-50…53 ödeme önerisi/talimat, API-60…64 çek,
+API-70…73 DBS, API-77/78 kart, API-80…84 kredi/limit/teminat) bu iki personaya göre izin adı alır; grant insan kapısıdır.
+
 ### 8.2 Sinan'a sorular
 
 | No | Soru | Neden | Dalga |
