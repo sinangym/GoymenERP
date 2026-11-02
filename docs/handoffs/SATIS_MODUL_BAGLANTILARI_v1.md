@@ -30,8 +30,15 @@ iletilmiş, Sinan'ın kendi teyidiyle EK35'e yazılmıştır. Bu not karar dosya
   fiş tüketicisi (inbox/dedup). İdempotency anahtarı fatura kimliği + sürümü; alan listesi Finans ile fatura dalgasında
   netleşir. Finans şeridine (FNS-D1) devir notu: Satış şeridi koordinatörü Finans oturumuna doğrudan `send_message` ile iletti
   (2 Kasım; olay sözleşmesi önerisi, yük taslağı, fatura kimliği + sürümü idempotency'si, ERP-000F soruları); cevap bekleniyor.
-- **1a ara dönem (Finans cevabı, koordinatör üzerinden):** ERP-000F dağıtıcısı yokken Satış, fatura kesinleştirme
-  transaction'ı içinde Finans'ın **`IFinanceInvoiceOpenItemAdmissionPortV1`** portunu **senkron** çağırır (SINAN 10-21 No 55).
+- **1a ara dönem (Finans cevabı, koordinatör üzerinden):** ERP-000F dağıtıcısı yokken Satış, Finans'ın
+  **`IFinanceInvoiceOpenItemAdmissionPortV1`** portunu **senkron** çağırır (SINAN 10-21 No 55). Port Satış'ın DB transaction'ına
+  **katılmaz**; Finans kendi transaction'ında yazar (`FinanceDbContext`, tek `SaveChanges`). Akış:
+  1. Satış kesinleştirmeyi **kendi transaction'ında** "Finans kabulü bekliyor" durumuyla commit eder.
+  2. Ardından portu `sales-invoice:{invoiceId}:{invoiceVersion}` anahtarıyla çağırır; hata veya zaman aşımında **aynı
+     anahtarla yeniden dener** (tekrar/yeniden kullanım güvenli).
+  3. ERP-000F gelince bu adım outbox olur.
+
+  Sonuç türü: `Succeeded` | `ValidationFailed(Issues)` | `Denied` | `Unavailable` | `IdempotencyConflict` | `VersionConflict`.
   Port Finans'ta yazıldı (F2a, dal `claude/finans-f2-fatura-kabul`, PR bekliyor; **main'de henüz yok**). Dağıtıcı gelince aynı
   yük `sales.invoice.finalized.v1` olayı olur ve Finans aynı servisi inbox/dedup ile çağırır. Bu SAT-D208 ile tutarlıdır:
   **hedef olay, senkron port ara çözümdür.**
@@ -70,7 +77,7 @@ Kısaltmalar: `SME` = `src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrast
 
 | Bağlantı | Üretici | Tüketici | Port/olay | main'de impl + DI | Test | Durum |
 |---|---|---|---|---|---|---|
-| 1a. Satış faturası → Finans alacak açık kalemi + Muhasebe fişi (120) | Satış (fatura çekirdeği) | Finans (API-10), Muhasebe (fiş) | Hedef (EK35 SAT-D208): outbox olayı `sales.invoice.finalized.v1` (tek kayıt; Cari kartına hareket yazılmaz; 120 fişi taslak, onayla kesinleşir). **Ara çözüm** (ERP-000F yokken, SINAN 10-21 No 55): fatura kesinleştirme transaction'ında senkron `IFinanceInvoiceOpenItemAdmissionPortV1`, anahtar `sales-invoice:{invoiceId}:{invoiceVersion}` | **Yok.** Satış'ta fatura varlığı ve outbox yok; Finans portu F2a dalında (`claude/finans-f2-fatura-kabul`, PR bekliyor), main'de değil — bugün açık kalemler yalnız CSV `official.invoice-installment.v1` kaynağından (`Modules/Finance/.../FinanceOpenItemSourcePolicy.cs`); Muhasebe'de tüketici yok | — | ❌ (yaklaşım kararlı; Finans PR'ı merge olunca Finans ucu 🟡) |
+| 1a. Satış faturası → Finans alacak açık kalemi + Muhasebe fişi (120) | Satış (fatura çekirdeği) | Finans (API-10), Muhasebe (fiş) | Hedef (EK35 SAT-D208): outbox olayı `sales.invoice.finalized.v1` (tek kayıt; Cari kartına hareket yazılmaz; 120 fişi taslak, onayla kesinleşir). **Ara çözüm** (ERP-000F yokken, SINAN 10-21 No 55): Satış kesinleştirmeyi kendi transaction'ında "Finans kabulü bekliyor" ile commit eder, sonra senkron `IFinanceInvoiceOpenItemAdmissionPortV1` çağırır (Finans kendi transaction'ında yazar); anahtar `sales-invoice:{invoiceId}:{invoiceVersion}`, hata/zaman aşımında aynı anahtarla yeniden dener | **Yok.** Satış'ta fatura varlığı ve outbox yok; Finans portu F2a dalında (`claude/finans-f2-fatura-kabul`, PR bekliyor), main'de değil — bugün açık kalemler yalnız CSV `official.invoice-installment.v1` kaynağından (`Modules/Finance/.../FinanceOpenItemSourcePolicy.cs`); Muhasebe'de tüketici yok | — | ❌ (yaklaşım kararlı; Finans PR'ı merge olunca Finans ucu 🟡) |
 | 1b. Finans → Satış risk okuması: açık alacak − dağıtılmamış tahsilat | Finans | Satış (MOD-01 / API-06 risk kontrolü) | `ISalesPartyRiskReadPortV1` (`SC/ISalesPartyRiskReadPortV1.cs`) | `FinanceSalesPartyRiskReadPortV1` (`Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceSalesPartyRiskReadPortV1.cs`), `FinanceModuleExtensions.cs:90` `AddScoped`; Satış `SME` `GetService` (yoksa `Unavailable`, risk asla "Within" değil) | `tests/GoymenERP.Finance.UnitTests/FinanceSalesPartyRiskReadPortV1Tests.cs`, `SUT/SalesDraftServiceTests.RiskCheck.cs`, SQL: `IT/SalesRiskCheckSqlServerRelationalAcceptanceTests.cs`, `IT/FinanceRecordSqlServerRelationalAcceptanceTests.cs` | ✅ |
 | 1c. Finans → Satış: kredi limiti ve teminat | Finans | Satış | Aynı port, `CreditLimit` / `Collateral` figürleri | Port her zaman `NoSource` döner (`finance_credit_limit_owner_missing`); master yok (Finans API-85, OPEN-010) | Birim testte `NoSource` doğrulanıyor | 🟡 |
 | 1d. Finans → Satış: açık kalem kapandı / ödeme kaydedildi olayı (risk tazeleme) | Finans | Satış | Öneri: `finance.open-item.settled.v1`, `finance.payment.recorded.v1` | Finans'ta outbox yok; Satış inbox yok. Risk bugün her okumada port üzerinden taze hesaplandığı için işlevsel boşluk yok | — | ❌ (gerek: dağıtıcı ERP-000F) |
@@ -160,7 +167,7 @@ Bakış açısı farkı: Üretim planı §11a (`docs/delivery/URETIM_HAZIRLIK_PL
 
 | # | Bağlantı | Durum | Eksik taraf | Sahibi |
 |---|---|---|---|---|
-| 1a | Satış faturası → alacak açık kalemi + 120 fişi | ❌ | Satış fatura çekirdeği; ara dönemde kesinleştirme transaction'ında `IFinanceInvoiceOpenItemAdmissionPortV1` senkron çağrısı; dağıtıcı gelince aynı yükle `sales.invoice.finalized.v1` + Satış outbox'ı | **Satış/Claude şeridi** (ALS-D44: fatura çekirdeği Satış'ta) |
+| 1a | Satış faturası → alacak açık kalemi + 120 fişi | ❌ | Satış fatura çekirdeği; ara dönemde kesinleştirmenin kendi transaction'ında "Finans kabulü bekliyor" durumu ve commit sonrası `IFinanceInvoiceOpenItemAdmissionPortV1` senkron çağrısı (aynı anahtarla yeniden deneme); dağıtıcı gelince aynı yükle `sales.invoice.finalized.v1` + Satış outbox'ı | **Satış/Claude şeridi** (ALS-D44: fatura çekirdeği Satış'ta) |
 | 1a | — | ❌ → 🟡 (PR merge olunca) | `IFinanceInvoiceOpenItemAdmissionPortV1` (API-10) yazıldı — F2a, `claude/finans-f2-fatura-kabul`, PR bekliyor; main'de yok. Dağıtıcı sonrası aynı servis inbox/dedup ile olaydan çağrılır | **Finans** |
 | 1a | — | ❌ | Aynı olaydan 120 Alıcılar **taslak** fişi üreten tüketici (inbox/dedup; onayla kesinleşir, resmî defter dış sistemde; 120 eşlemesi müşavir teyidine kadar FNS-D7 anlam eşlemesi). Alanları olay yükünde; olay ERP-000F'ye bağlı | **Muhasebe** |
 | 1c | Kredi limiti / teminat | 🟡 | Limit ve teminat master'ı (API-85; OPEN-010 açık) | **Finans** |
