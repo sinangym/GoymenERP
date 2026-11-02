@@ -451,7 +451,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for Üretim U1-a: the class becomes partial (the Manufacturing profile sets live in
                 // SettingsDbContext.ManufacturingProfiles.cs) and the write fence admits a tolerance registry row only as the
                 // insert of its lifecycle publication (same save, Approved → Published); the new rows join the company check.
-                "992f5504cc1ed013693ffec43fb7d9f75c0f98825408262ca4d3718365af7f8e",
+                // Re-fingerprinted for Üretim U1-b: the write fence also admits the one supersession update of a published
+                // tolerance registry row (its open-ended window closed beside the successor's publication in the same save).
+                "8ece5e3cc5a0eaed79dd44455fbca347eff9e9c82084c215e160da0cfc06e9a7",
             // SALES-P2 (#315): company-scoped like Organization; every tenant row and AuditEvent carries the
             // CompanyId filter. A standard entry, not an exception.
             // Re-fingerprinted for DEC-SAL-003: the two delivery-schedule tables (DraftDeliverySchedules,
@@ -521,9 +523,11 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // same CompanyId query filter and a company-leading key and FK to the plan.
             // Re-measured for immutable Product/Settings technical snapshots on creation and revision inputs.
             // M01.2: plan and immutable revision cut lines carry the same CompanyId filter and company-leading keys.
+            // Üretim U1-b: the append-only PlanParameterSnapshots / PlanParameterSnapshotValues carry the same CompanyId
+            // filter and company-leading keys and FKs; the closure decision gains source, line and mass-balance columns.
             ["src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/"
              + "Persistence/ManufacturingDbContext.cs"] =
-                "e44d5a702167c5a73a67dd0c299da60d829526cdc0224cc1c876597ba17b9123",
+                "c5a93f576c5a302fadeb104c0bc31b3ffd2ef3aed0f9ff92b5f9d44d4ea4622b",
             // FIN-T04a (#305): company-scoped like Organization; every tenant row and AuditEvent
             // carries the CompanyId filter. A standard entry, not an exception.
             // Re-measured for DEC-FIN-014: nullable POS fact columns on ReceiptDrafts and MoneyEvents; no new table,
@@ -1176,10 +1180,12 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 // Re-fingerprinted for technical snapshot persistence and stored-plan restoration; SqlClient count
                 // remains recognition-only and unchanged (1). M01.2 adds lossless cut-line plan/revision persistence
                 // through the same filtered context; the reviewed SqlClient API count remains unchanged.
+                // Üretim U1-b: the approval persists the captured parameter snapshot and the close decision its source, line
+                // and mass-balance percent, through the same filtered context; SqlClient count unchanged (1).
                 ["src/backend/Modules/Manufacturing/"
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/ManufacturingStore.cs"] =
                     new(
-                        "39b3481ad59125465d1b94d3bb2219372e907e5a5fe1128d66eb1bac8bce908f",
+                        "86c0ba7f5c2af054804af9945bc5974cc7d09976c93b9a36d567b0d536467d35",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Microsoft.Data.SqlClient"] = 1
@@ -1497,7 +1503,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     new(
                         // Re-fingerprinted for Üretim U1-a: the snapshot also carries the URT-D6 mass-balance tolerance
                         // (an init property); the DbException branch and its token count are unchanged.
-                        "54181fa6f3818ad0a825bb778144fa604c57e8ca1787d401018dad2f6becbd59",
+                        // Re-fingerprinted for Üretim U1-b: the line-scoped read (line → process → version-0 catalog) with
+                        // its own DbException branch over the same filtered context; the token count is unchanged.
+                        "e142ec460e3bf76f447358872f9d1653f7efdaa772be86b242b47206471bdb9f",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["System.Data.Common"] = 1
@@ -1524,7 +1532,9 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                         // Re-fingerprinted for MOD-03: the tax master administration and the one tax master reader behind its two ports (DI-only); the database surface and its counts are unchanged.
                         // Re-fingerprinted for Üretim U1-a (+ SAT-D181 tax rate list port, merged): the Manufacturing parameter port and the profile administration
                         // behind its two ports (DI-only); the database surface and its counts are unchanged.
-                        "7b19a9a1258072c262a5ee8083c6a967374f797aa01cd915ac457295067d5aa6",
+                        // Re-fingerprinted after merging main into U1-a/U1-b: both the Manufacturing parameter port (U1-a) and the
+                        // SAT-D181 VAT rate / withholding ratio list port (EK26) are registered (DI-only); counts unchanged.
+                        "983a856dd56e364fa22969b6b4f03d476be7de12dca86649048d5b6027964e25",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["EnsureCreatedAsync"] = 1,
@@ -1732,7 +1742,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                 ["src/backend/Modules/Settings/GoymenERP.Modules.Settings.Infrastructure/Persistence/"
                  + "Migrations/20261102121332_AddManufacturingToleranceLineScope.cs"] =
                     new(
-                        "0000000000000000000000000000000000000000000000000000000000000000",
+                        "5799d4fe228cc08b4afacbfb87b4bec724390bc29855bb7ad51afe3cb0492070",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 5
@@ -1743,7 +1753,7 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                  + "GoymenERP.Modules.Manufacturing.Infrastructure/Persistence/Migrations/"
                  + "20261102121844_AddManufacturingPlanParameterSnapshots.cs"] =
                     new(
-                        "0000000000000000000000000000000000000000000000000000000000000000",
+                        "0de4af1d0690280a2e7ec8fd8fe9817c642aa6fa3c05d8f426a0fdd138bd7b7d",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                         {
                             ["Sql"] = 1

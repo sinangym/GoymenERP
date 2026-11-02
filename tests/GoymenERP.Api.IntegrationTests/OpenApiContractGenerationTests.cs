@@ -5970,7 +5970,25 @@ public sealed partial class OpenApiContractGenerationTests
                     ("approvedAtUtc", "type:null|string;format:date-time"),
                     ("calculation", "oneOf:ref:PlanPreviewViewV1|type:null"),
                     ("slittingSpec", "oneOf:ref:SlittingSpecViewV1|type:null"),
-                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecViewV1|type:null")),
+                    ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecViewV1|type:null"),
+                    ("parameterSnapshot", "oneOf:ref:PlanParameterSnapshotViewV1|type:null")),
+                // Üretim U1-b: the parameter profile captured at plan approval (additive, optional on PlanViewV1).
+                ["PlanParameterSnapshotViewV1"] = ObjectSchema(
+                    ["profileId", "profileVersion", "source", "workCenterId", "effectiveFrom", "effectiveThrough", "selectedForDate", "values"],
+                    ("profileId", "type:string;format:uuid"),
+                    ("profileVersion", "type:string"),
+                    ("source", "type:string"),
+                    ("workCenterId", "type:null|string;format:uuid"),
+                    ("effectiveFrom", "type:string;format:date"),
+                    ("effectiveThrough", "type:null|string;format:date"),
+                    ("selectedForDate", "type:string;format:date"),
+                    ("values", "type:array;items:ref:PlanParameterValueViewV1")),
+                ["PlanParameterValueViewV1"] = ObjectSchema(
+                    ["key", "unit", "number", "choice"],
+                    ("key", "type:string"),
+                    ("unit", "type:string"),
+                    ("number", "type:null|string"),
+                    ("choice", "type:null|string")),
                 ["SlitLineViewV1"] = ObjectSchema(
                     ["bandWidthMm", "count"],
                     ("bandWidthMm", "type:string"),
@@ -7264,7 +7282,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("approvalReason", "type:null|string"),
                     ("publishedBy", "type:null|string"),
                     ("publishedAtUtc", "type:null|string;format:date-time"),
-                    ("publicationReason", "type:null|string")),
+                    ("publicationReason", "type:null|string"),
+                    ("workCenterId", "type:null|string;format:uuid")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
@@ -8259,7 +8278,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("massBalanceDifferenceTolerancePercent", "type:null|string"),
                     ("reason", "type:null|string"),
                     ("effectiveFrom", "type:null|string;format:date"),
-                    ("effectiveThrough", "type:null|string;format:date")),
+                    ("effectiveThrough", "type:null|string;format:date"),
+                    ("workCenterId", "type:null|string;format:uuid")),
             };
 
     private static readonly IReadOnlyDictionary<string, ComponentSchemaExpectation>
