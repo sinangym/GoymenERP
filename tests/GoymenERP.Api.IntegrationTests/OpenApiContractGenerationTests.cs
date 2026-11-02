@@ -3746,7 +3746,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("reason", "type:null|string"),
                     ("revisedBy", "type:null|string"),
                     ("recordedAtUtc", "type:string;format:date-time"),
-                    ("lineSpeedMetresPerMinute", "type:null|string")),
+                    ("lineSpeedMetresPerMinute", "type:null|string"),
+                    ("processSpec", "oneOf:ref:PlanProcessSpecViewV1|type:null")),
                 ["PlanRevisionInputViewV1"] = ObjectSchema(
                     ["parentRollId", "plannedKg", "expectedLabelVersion"],
                     ("parentRollId", "type:string;format:uuid"),
@@ -6091,7 +6092,20 @@ public sealed partial class OpenApiContractGenerationTests
                     ("lineSpeedMetresPerMinute", "type:null|string"),
                     ("orderId", "type:null|string;format:uuid"),
                     ("rejections", "type:array|null;items:ref:PlanRejectionViewV1"),
-                    ("cancellation", "oneOf:ref:PlanCancellationViewV1|type:null")),
+                    ("cancellation", "oneOf:ref:PlanCancellationViewV1|type:null"),
+                    ("processSpec", "oneOf:ref:PlanProcessSpecViewV1|type:null")),
+                // Üretim U2-b1 (API-12): the plan-entered Tube / Profile, Paint and Cold Rolling values (all members emitted).
+                ["PlanProcessSpecViewV1"] = ObjectSchema(
+                    ["packageCount", "piecesPerPackage", "pieceLengthMm", "unitKg", "perimeterMm", "targetThicknessMm",
+                        "paintDescription", "paintColorCode"],
+                    ("packageCount", "type:integer|null|string;format:int32"),
+                    ("piecesPerPackage", "type:integer|null|string;format:int32"),
+                    ("pieceLengthMm", "type:null|string"),
+                    ("unitKg", "type:null|string"),
+                    ("perimeterMm", "type:null|string"),
+                    ("targetThicknessMm", "type:null|string"),
+                    ("paintDescription", "type:null|string"),
+                    ("paintColorCode", "type:null|string")),
                 // Üretim U2-a: the plan's recorded rejections and its cancellation (additive, optional on PlanViewV1).
                 ["PlanRejectionViewV1"] = ObjectSchema(
                     ["number", "reason", "rejectedByUserId", "rejectedAtUtc", "planVersion"],
@@ -8225,7 +8239,19 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
                     ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null"),
                     ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null"),
-                    ("lineSpeedMetresPerMinute", "type:null|string")),
+                    ("lineSpeedMetresPerMinute", "type:null|string"),
+                    ("processSpec", "oneOf:ref:PlanProcessSpecRequestV1|type:null")),
+                // Üretim U2-b1 (API-12): every member optional; the process decides which may be given.
+                ["PlanProcessSpecRequestV1"] = ObjectSchema(
+                    [],
+                    ("packageCount", "type:integer|null|string;format:int32"),
+                    ("piecesPerPackage", "type:integer|null|string;format:int32"),
+                    ("pieceLengthMm", "type:null|string"),
+                    ("unitKg", "type:null|string"),
+                    ("perimeterMm", "type:null|string"),
+                    ("targetThicknessMm", "type:null|string"),
+                    ("paintDescription", "type:null|string"),
+                    ("paintColorCode", "type:null|string")),
                 // AT-061: the preview takes the save's grammar without the plan id (nothing is created).
                 ["PlanPreviewRequestV1"] = ObjectSchema(
                     ["workCenterId", "inputs", "target"],
@@ -8234,7 +8260,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
                     ("slittingSpec", "oneOf:ref:SlittingSpecRequestV1|type:null"),
                     ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null"),
-                    ("lineSpeedMetresPerMinute", "type:null|string")),
+                    ("lineSpeedMetresPerMinute", "type:null|string"),
+                    ("processSpec", "oneOf:ref:PlanProcessSpecRequestV1|type:null")),
                 // MFG-PLAN-EDIT: a Draft plan's revision names the version read and a reason; the process stays fixed.
                 ["RevisePlanRequestV1"] = ObjectSchema(
                     ["expectedVersion", "workCenterId", "inputs", "target", "reason"],
@@ -8244,7 +8271,8 @@ public sealed partial class OpenApiContractGenerationTests
                     ("target", "oneOf:ref:TargetRequestV1|type:null"),
                     ("cutToLengthSpec", "oneOf:ref:CutToLengthSpecRequestV1|type:null"),
                     ("reason", "type:null|string"),
-                    ("lineSpeedMetresPerMinute", "type:null|string")),
+                    ("lineSpeedMetresPerMinute", "type:null|string"),
+                    ("processSpec", "oneOf:ref:PlanProcessSpecRequestV1|type:null")),
                 ["TargetRequestV1"] = ObjectSchema(
                     ["basis", "kg"],
                     ("basis", "type:null|string"),
