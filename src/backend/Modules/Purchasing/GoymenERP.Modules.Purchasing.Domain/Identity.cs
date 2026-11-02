@@ -30,6 +30,27 @@ public static class PurchasingRuleCodes
     public const string RequestNotDraft = "purchasing_request_not_draft";
     public const string RequestNotSubmitted = "purchasing_request_not_submitted";
     public const string RequestWithoutLines = "purchasing_request_without_lines";
+
+    /// <summary>A1-1 (ALS-D2, ALS-D16): an order is opened only for an APPROVED request.</summary>
+    public const string RequestNotApproved = "purchasing_request_not_approved";
+
+    /// <summary>A1-1 (No.161 §1): only a Submitted or Approved request is rejected.</summary>
+    public const string RequestNotRejectable = "purchasing_request_not_rejectable";
+
+    /// <summary>A1-1 (ALS-D2): the preparer or the submitter cannot approve or reject the same request (hazırlayan ≠ onaylayan).</summary>
+    public const string RequestSameActor = "purchasing_request_same_actor";
+
+    /// <summary>A1-1 (fail-closed): the request's preparer or submitter is not recorded, so maker ≠ checker cannot be measured.</summary>
+    public const string RequestMakerUnknown = "purchasing_request_maker_unknown";
+
+    /// <summary>A1-1 (No.161 §1): a rejection needs a reason.</summary>
+    public const string RequestRejectionReasonRequired = "purchasing_request_rejection_reason_required";
+
+    /// <summary>A1-1: a rejection reason longer than the stored bound is refused, never cut.</summary>
+    public const string RequestRejectionReasonTooLong = "purchasing_request_rejection_reason_too_long";
+
+    /// <summary>A1-1 (No.161 §1): a request with an APPROVED bound order cannot be rejected; the order is cancelled first.</summary>
+    public const string RequestHasApprovedOrder = "purchasing_request_has_approved_order";
     public const string OrderNotDraft = "purchasing_order_not_draft";
     public const string OrderNotApproved = "purchasing_order_not_approved";
     public const string OrderWithoutLines = "purchasing_order_without_lines";

@@ -10,7 +10,10 @@ This suite proves the normal Purchasing user path against the disposable real st
 - Playwright withholds only the first HTTP response after the API commits;
 - the user closes the detail, reopens the same order from the list, and resends the same stored command;
 - the API returns the idempotent replay and the screen reports it;
-- a reader can list/read but cannot create or approve, and the other-company context cannot create or expose records/screens.
+- a reader can list/read but cannot create or approve, and the other-company context cannot create or expose records/screens;
+- A1-1: the creator's submitted request cannot source an order until it is approved (409 `purchasing_request_state`);
+  the creator (its maker) has no `purchasing.requests.approve` (403) and the disposable approver approves it before
+  the linked order is created and approved.
 
 The goods-receipt journey (`pur01-goods-receipt-journey.spec.ts`, #478 PUR-HOST) proves the receiver path on the
 same stack:

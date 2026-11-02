@@ -27,6 +27,27 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
     internal static readonly string RequestCreateAttemptFilter =
         "[RequestId] IS NOT NULL AND [CommandName] = N'" + PurchasingCommands.RequestCreateV1 + "'";
 
+    /// <summary>
+    /// A1-1: Draft has no decision fact; Submitted may lack its submitter only for a submission recorded before A1-1 (the
+    /// domain then refuses every decision, fail-closed); Approved has its submitter and approval and no rejection; Rejected
+    /// has its submitter, rejection and reason, and keeps an earlier approval if there was one.
+    /// </summary>
+    internal const string RequestDecisionCheck =
+        "([Status] = 1 AND [SubmittedBy] IS NULL AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) "
+        + "OR ([Status] = 2 AND ([SubmittedBy] IS NULL OR LEN([SubmittedBy]) > 0) AND [ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL "
+        + "AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) "
+        + "OR ([Status] = 3 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 "
+        + "AND [ApprovedAtUtc] IS NOT NULL AND [RejectedBy] IS NULL AND [RejectedAtUtc] IS NULL AND [RejectionReason] IS NULL) "
+        + "OR ([Status] = 4 AND [SubmittedBy] IS NOT NULL AND LEN([SubmittedBy]) > 0 AND [RejectedBy] IS NOT NULL AND LEN([RejectedBy]) > 0 "
+        + "AND [RejectedAtUtc] IS NOT NULL AND [RejectionReason] IS NOT NULL AND LEN([RejectionReason]) > 0 "
+        + "AND (([ApprovedBy] IS NULL AND [ApprovedAtUtc] IS NULL) OR ([ApprovedBy] IS NOT NULL AND LEN([ApprovedBy]) > 0 AND [ApprovedAtUtc] IS NOT NULL)))";
+
+    /// <summary>A1-1 (ALS-D2): neither the approver nor the rejecter is the preparer (CreatedBy) or the submitter.</summary>
+    internal const string RequestMakerCheckerCheck =
+        "([ApprovedBy] IS NULL OR ([ApprovedBy] <> [CreatedBy] AND [SubmittedBy] IS NOT NULL AND [ApprovedBy] <> [SubmittedBy])) "
+        + "AND ([RejectedBy] IS NULL OR ([RejectedBy] <> [CreatedBy] AND [SubmittedBy] IS NOT NULL AND [RejectedBy] <> [SubmittedBy]))";
+
     /// <summary>One create attempt per stored order; the approve command's attempts share the order id.</summary>
     internal static readonly string OrderCreateAttemptFilter =
         "[OrderId] IS NOT NULL AND [CommandName] = N'" + PurchasingCommands.OrderCreateV1 + "'";
@@ -80,9 +101,13 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.ToTable("PurchaseRequests", Schema, table =>
         {
             table.HasCheckConstraint("CK_PurchaseRequests_Identity", $"[Id] <> {EmptyGuid} AND [CompanyId] <> {EmptyGuid}");
-            table.HasCheckConstraint("CK_PurchaseRequests_Status", "[Status] IN (1, 2)");
+            table.HasCheckConstraint("CK_PurchaseRequests_Status", "[Status] IN (1, 2, 3, 4)");
             table.HasCheckConstraint("CK_PurchaseRequests_Version", "[Version] >= 1 AND [SourcingVersion] >= 0");
             table.HasCheckConstraint("CK_PurchaseRequests_Text", "LEN([CreatedBy]) > 0 AND LEN([CorrelationId]) > 0");
+            // A1-1: the decision facts match the status (a CHECK passes on UNKNOWN, so every fact is tested with IS [NOT] NULL).
+            table.HasCheckConstraint("CK_PurchaseRequests_Decision", RequestDecisionCheck);
+            // ALS-D2 (defence in depth beside the domain): a decision never comes from the preparer or the submitter.
+            table.HasCheckConstraint("CK_PurchaseRequests_MakerChecker", RequestMakerCheckerCheck);
         });
         entity.HasKey(x => x.Id);
         entity.HasAlternateKey(x => new { x.CompanyId, x.Id });
@@ -92,6 +117,10 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
         entity.Property(x => x.EffectiveOn).HasColumnType("date");
         entity.Property(x => x.CreatedBy).HasMaxLength(128).IsRequired();
         entity.Property(x => x.CorrelationId).HasMaxLength(128).IsRequired();
+        entity.Property(x => x.SubmittedBy).HasMaxLength(128);
+        entity.Property(x => x.ApprovedBy).HasMaxLength(128);
+        entity.Property(x => x.RejectedBy).HasMaxLength(128);
+        entity.Property(x => x.RejectionReason).HasMaxLength(4000);
         entity.HasIndex(x => new { x.CompanyId, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseRequests_CompanyId_CreatedAtUtc_Id");
         entity.HasIndex(x => new { x.CompanyId, x.Status, x.CreatedAtUtc, x.Id }).HasDatabaseName("IX_PurchaseRequests_CompanyId_Status_CreatedAtUtc_Id");
         entity.HasOne<OrganizationCompanyReference>().WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.Restrict);
@@ -293,6 +322,8 @@ public sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> op
                     PurchaseRequestRow =>
                     [
                         nameof(PurchaseRequestRow.Status), nameof(PurchaseRequestRow.UpdatedAtUtc), nameof(PurchaseRequestRow.SourcingVersion),
+                        nameof(PurchaseRequestRow.SubmittedBy), nameof(PurchaseRequestRow.ApprovedBy), nameof(PurchaseRequestRow.ApprovedAtUtc),
+                        nameof(PurchaseRequestRow.RejectedBy), nameof(PurchaseRequestRow.RejectedAtUtc), nameof(PurchaseRequestRow.RejectionReason),
                     ],
                     PurchaseOrderRow => [nameof(PurchaseOrderRow.Status), nameof(PurchaseOrderRow.UpdatedAtUtc)],
                     PurchaseOrderLineRow => [nameof(PurchaseOrderLineRow.Technical), nameof(PurchaseOrderLineRow.Accepted)],

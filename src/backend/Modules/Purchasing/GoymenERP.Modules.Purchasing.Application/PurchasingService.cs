@@ -20,7 +20,7 @@ namespace GoymenERP.Modules.Purchasing.Application;
 /// commit (S03).</item>
 /// <item><b>Replay</b> (§2–§4, §7): the attempt of (company, command, key hash) answers first.</item>
 /// <item><b>Owners, in order</b> (an order): the Cari supplier account (party + account, active, this
-/// company, Supplier role) → the SUBMITTED source request of this company, whose lines a bound line must
+/// company, Supplier role) → the APPROVED source request of this company (A1-1, ALS-D2/ALS-D16), whose lines a bound line must
 /// match (product, unit) → per line the Product owner's purchase eligibility (fail-closed 503 until the
 /// Product owner publishes it, ÜRÜN #288 P3-3) → the Settings kilogram profile through
 /// <see cref="PurchaseUnitVerifier"/> (Ö2 scale, never rounded). This is the first command handler, so the
@@ -98,7 +98,8 @@ public sealed partial class PurchasingService(
         {
             stored = await store.StoreRequestAsync(envelope, requestHash, request.EffectiveOn, () =>
             {
-                var purchaseRequest = PurchaseRequest.Create(Guid.NewGuid(), scope.CompanyId, now);
+                // A1-1: the creator is the request's preparer, the first maker of hazırlayan ≠ onaylayan (ALS-D2).
+                var purchaseRequest = PurchaseRequest.Create(Guid.NewGuid(), scope.CompanyId, scope.ActorId.Trim(), now);
                 foreach (var (line, _, quantity) in lines)
                 {
                     purchaseRequest.AddLine(purchaseRequest.Version, line.LineId, line.ProductId, line.UnitId, quantity, now);
@@ -150,11 +151,13 @@ public sealed partial class PurchasingService(
         }
 
         await RequireStillAsync(scope, bindings.CreatePermission, cancellationToken);
+        var submitter = scope.ActorId.Trim();
         PurchasingRequestStoreResult? result;
         try
         {
+            // A1-1: the submitter is the second maker of hazırlayan ≠ onaylayan (ALS-D2).
             result = await store.MutateRequestAsync(envelope, requestHash, PurchasingCommands.RequestSubmitV1, requestId,
-                (purchaseRequest, now) => purchaseRequest.Submit(expectedVersion, now),
+                (purchaseRequest, _, now) => purchaseRequest.Submit(expectedVersion, submitter, now),
                 new PurchasingMutationAudit("purchasing.purchase-request.submitted.v1", "Submit", "Satınalma talebi gönderildi"), cancellationToken);
         }
         catch (PurchasingVersionConflictException)
@@ -360,6 +363,13 @@ public sealed partial class PurchasingService(
         {
             throw new PurchasingServiceException(400, "validation_failed");
         }
+        catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.SourceRequestNotApproved)
+        {
+            // A1-1 (ALS-D2, fail-closed): the source request is no longer (or not yet) APPROVED; terminal for this key (§7).
+            return await TerminalAsync(scope, bindings.ApprovePermission, envelope, requestHash, PurchasingCommands.OrderApproveV1,
+                new PurchasingTerminalRefusal(409, PurchasingProblemCodesV1.RequestState,
+                    exception.Errors.Count > 0 ? exception.Errors : [new("sourceRequestId", "not_approved")]), ReplayedOrder, cancellationToken);
+        }
         catch (PurchasingStoreException exception) when (exception.Code == PurchasingStoreCodes.RequestLineOverSourced)
         {
             // Sinan 5738113623 §1: the shares of a request line never exceed its need; terminal for this key (§7).
@@ -470,7 +480,10 @@ public sealed partial class PurchasingService(
         }
     }
 
-    /// <summary>Only a SUBMITTED request of this company is a need to source; a bound line keeps the request line's product and unit (multi-sourcing splits quantity, nothing else).</summary>
+    /// <summary>
+    /// Only an APPROVED request of this company is a need to source (A1-1: ALS-D2 "sipariş yalnız onaylı talepten açılır",
+    /// ALS-D16); a bound line keeps the request line's product and unit (multi-sourcing splits quantity, nothing else).
+    /// </summary>
     private async Task<StoredPurchaseRequest> ReadSourceRequestAsync(Scope scope, CreatePurchaseOrderRequest request, Guid sourceRequestId,
         CancellationToken cancellationToken)
     {
@@ -494,10 +507,10 @@ public sealed partial class PurchasingService(
             throw new PurchasingServiceException(503, PurchasingProblemCodesV1.ReferenceProviderInvalid);
         }
 
-        if (stored.Request.Status != PurchaseRequestStatus.Submitted)
+        if (stored.Request.Status != PurchaseRequestStatus.Approved)
         {
             throw new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestState,
-                [new("sourceRequestId", "not_submitted"), new("sourceRequestStatus", stored.Request.Status.ToString())]);
+                [new("sourceRequestId", "not_approved"), new("sourceRequestStatus", stored.Request.Status.ToString())]);
         }
 
         var errors = new List<PurchasingFieldError>();
@@ -736,6 +749,7 @@ public sealed partial class PurchasingService(
         PurchasingStoreCodes.SameKeyPayloadMismatch => new PurchasingServiceException(409, PurchasingProblemCodesV1.SameKeyPayloadMismatch),
         PurchasingStoreCodes.ConcurrentChange => new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange),
         PurchasingStoreCodes.RequestLineOverSourced => new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestLineOverSourced, exception.Errors),
+        PurchasingStoreCodes.SourceRequestNotApproved => new PurchasingServiceException(409, PurchasingProblemCodesV1.RequestState, exception.Errors),
         PurchasingStoreCodes.InvalidCursor => new PurchasingServiceException(400, PurchasingProblemCodesV1.InvalidCursor),
         PurchasingStoreCodes.CompanyContextMismatch => new PurchasingServiceException(403, "forbidden"),
         PurchasingStoreCodes.ValueDoesNotFit => new PurchasingServiceException(422, "validation_failed", [new("record", exception.Code)]),
@@ -872,7 +886,14 @@ public sealed partial class PurchasingService(
     private static PurchaseRequestDetailView RequestDetail(StoredPurchaseRequest stored) =>
         new(RequestSummary(stored),
             [.. stored.Request.Lines.Select((line, index) => new PurchaseRequestLineView(line.Id, index + 1, line.ProductId,
-                VersionOf(stored.ProductVersionsByLineId, line.Id), line.UnitId, Text(line.Quantity)))]);
+                VersionOf(stored.ProductVersionsByLineId, line.Id), line.UnitId, Text(line.Quantity)))])
+        {
+            Approval = Decision(stored.Request.Approval),
+            Rejection = Decision(stored.Request.Rejection),
+        };
+
+    private static PurchaseRequestDecisionView? Decision(PurchaseRequestDecision? decision) =>
+        decision is null ? null : new PurchaseRequestDecisionView(decision.DecidedBy, decision.DecidedAtUtc, decision.Reason);
 
     private static PurchaseOrderResponse OrderResponse(StoredPurchaseOrder stored, bool isReplay, string originalCorrelationId) =>
         new(OrderDetail(stored), isReplay, originalCorrelationId);

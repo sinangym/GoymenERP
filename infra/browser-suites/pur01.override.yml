@@ -15,6 +15,9 @@
 # The receipt-detail reader combines only the existing order-read and Inventory label-read fences so the browser can
 # follow one immutable receipt to its native label and back. It deliberately has no receipt-record permission.
 # No real user, production role or seeded role receives purchasing.goods-receipts.record.
+# A1-1 (plan API-01, ALS-D2): the disposable approver also holds purchasing.requests.approve so the browser journey
+# can approve the request the creator prepared and submitted (maker != checker: the creator never holds it) before
+# an order is opened for it. No real user, production role or seeded role receives purchasing.requests.approve.
 services:
   api:
     environment:
@@ -73,6 +76,7 @@ services:
       IdentitySeed__Roles__5__IsSystem: "false"
       IdentitySeed__Roles__5__Permissions__0: purchasing.orders.read
       IdentitySeed__Roles__5__Permissions__1: purchasing.orders.approve
+      IdentitySeed__Roles__5__Permissions__2: purchasing.requests.approve
       IdentitySeed__Roles__6__Id: b3000000-0000-4000-8000-000000000602
       IdentitySeed__Roles__6__Code: BROWSER_PUR01_READER
       IdentitySeed__Roles__6__Name: SENTETIK browser-suite:pur01 Purchasing reader
