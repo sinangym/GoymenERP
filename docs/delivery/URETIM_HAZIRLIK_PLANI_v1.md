@@ -35,6 +35,10 @@ Değişmeyenler:
 - İnsan kapıları değişmez: grant ve rol ataması, `production.execution.enabled` bayrağının açılması, deployment,
   secret ve `OPEN-*` kapatma.
 - Kayıt: `SINAN_KARARLARI_2026-11-01_URETIM.md` §0.
+- **Modül sınırları (2026-11-02, URT-D19/D20):** Üretim ve Stok tarafını bu şerit yapar. Satış tarafını
+  "proje modülleri" konuşması, Alış tarafını başka bir konuşma yapar; bu şerit o modüllerin dosyalarını
+  değiştirmez, görev notu bırakır: `docs/handoffs/URETIM_SATIS_DEVIR_v1.md`, `docs/handoffs/URETIM_ALIS_DEVIR_v1.md`.
+  Üretim tarafındaki portlar karşı taraf gelene kadar fail-closed çalışır.
 
 ---
 
@@ -231,11 +235,11 @@ ve sözleşme testine eklenir. Satış'taki komut iskeleti (`SalesDraftService.C
 |---|---|---|---|---|
 | MOD-01 | Ayarlar | Parametre ve tolerans profili yazma yolu (API-01/02) | `ISettingsManufacturingParameterProviderV1` (yeni), mevcut tolerans provider | K3 |
 | MOD-02 | Ürün | Reçete–ürün bağı, birim kg/profil ağırlığı önceliği (manuel doğrulanmış → ürün/paket → geometrik; §28.2) | `IProductManufacturingTechnicalSnapshotV1` v2 | K3 |
-| MOD-03 | Stok | Üretim girdi tahsisi, soy ağacı kenarı, çıktı etiket durumu, düzeltme karşı hareketi | `IInventoryManufacturingRealizationParticipantV1` v2 + tahsis motoru | K3 |
-| MOD-04 | Satış | Kaynak planı (sipariş satırı → üretim planı) ve iptal/zorla kapatma için bağlı üretim okuması (bugün "kaynak yok") | Satış API-11, `ISalesOrderLinkedSupplyReadPortV1` (Üretim tarafı) | K3 |
+| MOD-03 | Stok (**bu şerit**, URT-D20) | Üretim girdi tahsisi (`manufacturing.plan-input` talep türü; plan onayında, URT-D21; müşteri malı yalnız kendi fason siparişine, URT-D22), soy ağacı kenarı, çıktı etiket sınıfı (2. kalite/hurda), düzeltme karşı hareketi. Satış tahsisi ve mevcut testler korunur | `IInventoryManufacturingRealizationParticipantV1` v2 + tahsis motoru | K3 |
+| MOD-04 | Satış (**Satış şeridi**, URT-D19) | Kaynak planı ve iptal/zorla kapatma için bağlı üretim okuması (bugün "kaynak yok"). Üretim tarafı: `IManufacturingSalesOrderLinkReadPortV1` + plan satırı ↔ sipariş satırı bağı. Görev notu S-1, S-2 | Satış API-11, MOD-05 | K3 |
 | MOD-05 | Work | Plan onayı, tolerans dışı kapanış, kısmi başlatma onayı için onay kutusu adaptörleri | Work native approval sözleşmesi | K2 |
 | MOD-06 | Organizasyon | Hat/kalıp/vardiya/kapasite (API-30) | `IOrganizationWorkCenterPlanningReferenceV1` v2 | K3 |
-| MOD-07 | Satış / Satın Alma / Stok | İki yönlü fason, her ikisi hizmet siparişine bağlı: gelen fason Satış hizmet siparişi + müşteri malı; giden fason Satın Alma hizmet siparişi + iki bacaklı transfer, fason lokasyondan doğrudan satış sevki | DEC-STK-008, No 71/73, URT-D15…D17 | K3 |
+| MOD-07 | Satış / Alış (**diğer şeritler**) + Stok/Üretim (**bu şerit**) | İki yönlü fason, her ikisi hizmet siparişine bağlı. Satış: fason hizmet siparişi + okuma portu (görev notu S-3). Alış: fason hizmet alış siparişi + okuma portu (görev notu A-1). Bu şerit: müşteri malıyla plan, iki bacaklı transferin fason siparişine bağlanması, dönüş dengesi | DEC-STK-008, No 71/73, URT-D15…D17, URT-D22 | K3 |
 | MOD-08 | Platform | Outbox: `manufacturing.output.declared.v1`, `manufacturing.order.closed.v1`, `manufacturing.plan.approved.v1` | ERP-000F | K3 |
 | MOD-09 | Kalite | **Kapsam dışı (URT-D14):** üretimde karantina yok; yalnız ikinci kalite ayrımı (API-27) | – | – |
 | MOD-10 | Belgeler | Emir/plan için belge sekmesi, iş emri PDF'i (Satış sipariş PDF'i deseni) | mevcut Documents owner-link | K2 |

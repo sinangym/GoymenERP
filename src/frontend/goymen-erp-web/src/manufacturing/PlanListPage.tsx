@@ -35,6 +35,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './PlanListPage.module.css'
+import { Button } from '../ui/Button'
 
 /** Presentation only: an unreadable instant is shown as it came, never rewritten. */
 function formatInstant(value: string): string {
@@ -273,7 +274,7 @@ function PlanList({ namespace }: { readonly namespace: string | null }) {
         ) : nextCursor === null ? (
           <p className={styles.muted}>{PLAN_LIST_TEXT.end}</p>
         ) : (
-          <button
+          <Button
             type="button"
             className={styles.secondaryButton}
             onClick={() => void loadMore()}
@@ -281,7 +282,7 @@ function PlanList({ namespace }: { readonly namespace: string | null }) {
             aria-busy={continuation === 'loading'}
           >
             {continuation === 'loading' ? PLAN_LIST_TEXT.loadingMore : PLAN_LIST_TEXT.loadMore}
-          </button>
+          </Button>
         )}
       </div>
     </section>
