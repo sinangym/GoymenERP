@@ -1,8 +1,7 @@
 # Finans Modülü Hazırlık Planı v1
 
 Tarih: 2026-11-02 · Hazırlayan: Claude (cloud oturumu, Finans şeridi) · Durum: **ÖNERİ** (plan; iş kararı değildir) ·
-Kararlar: henüz Finans konuşmasına özel karar dosyası yok; ilk cevaplar `SINAN_KARARLARI_2026-11-02_FINANS.md`
-(**FNS-D1…**) olarak yazılacak.
+Kararlar: **`SINAN_KARARLARI_2026-11-02_FINANS.md` (FNS-D1…D4)**
 
 Kaynaklar: `docs/master/GOYMEN_ERP_MASTER_RAPOR_V3.md` §7.10, §7.11, §8.1, §8.2, §16 Faz 4, §19.3, §27.11 (F-01…F-17),
 §28.14–28.16, §29.6 (AT-058); `docs/decisions/KARAR_SICILI.md` `DEC-FIN-001…016`, `DEC-SET-001`, `DEC-INT-001`,
@@ -32,14 +31,13 @@ oturumdan erişilemez (VPN'li yerel ağ; ALS-D5 notu); §2.4'te ekran görüntü
   Bu oturum o Finans konuşmasıdır. ALS-D44 notu gereği burada yazılacak iki zorunlu iş: **MOD-15 (açık kalemde
   borç/alacak yönü)** ve **MOD-04 (kesinleşen gelen faturanın borç açık kalemine dönüşmesi)**. Alış'ın A5 dalgası
   (gelen fatura kesinleştirme, Alış API-54) bu ikisi gelene kadar fail-closed kalır.
-- **Önerilen şerit (FNS-D1 ile teyit edilecek, N-02):** Satış/Üretim/Alış emsaliyle Finans'ın bütün geliştirmesi
+- **FNS-D1 (2026-11-02):** Satış/Üretim/Alış emsaliyle Finans'ın bütün geliştirmesi
   (backend, migration, OpenAPI, ekranlar) Claude'dadır. Eski Codex Finans kartları (FIN-T04…T06, FS0, FI04, FIN-F03)
   merge edilmiş kod olarak devralınır.
 - **Modül sınırı:** Satış, Alış ve Üretim dosyalarına bu şerit dokunmaz; onların tarafı görev notuyla istenir
   (`FINANS_SATIS_DEVIR_v1.md`, `FINANS_ALIS_DEVIR_v1.md`). Alış'ın Finans'a bırakacağı `ALIS_FINANS_DEVIR_v1.md`
   henüz yazılmadı; bu plan §3 ve §4'te Finans tarafındaki sözleşmeyi önden tanımlar, not gelince uzlaştırılır.
-  Ayarlar, Cari ve Muhasebe'de Finans'ın ihtiyacı olan küçük eklemeler (iki review ile) bu şeritte yapılır (ALS-D45
-  emsali; N-02'de teyit).
+  Ayarlar, Cari ve Muhasebe'de Finans'ın ihtiyacı olan küçük eklemeler (iki review ile) bu şeritte yapılır (FNS-D1).
 - **Ortak altyapı (ALS-D44 notu):** Finans kendi olay kaydını (outbox) ve gelen olaylar için tekrar-engel kaydını
   (inbox) kendi şemasında yazar. Platform dağıtıcısı (ERP-000F) ortak iştir: Alış onu yazma yetkisini aldı; Finans
   yazmaz, yalnız tüketir. ERP-000F gelene kadar No 55 kuralı geçerlidir: **senkron sözleşme + okuma portu**.
@@ -272,7 +270,7 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 | API-70 | `dbs-agreements` | Banka × firma DBS anlaşması ve limiti | DEC-FIN-008, OPEN-010 | K3 |
 | API-71 | DBS talimatı | Fatura/taksit DBS'ye yansıtılır; teminatsız riski ve kullanılabilir DBS limitini azaltır; nakit sayılmaz | DEC-FIN-008, SAT-D52 | K3 |
 | API-72 | Banka kabul / red / vade günü tahsilat | Kabulde kapsam, gerçek tahsilatta kesin kapama | v3 §6 | K3 |
-| API-73 | Tedarikçi DBS'si (Göymen alıcı) | Tedarikçinin bankası Göymen'in hesabından tahsil eder; borç kalemi kapanır | **N-04** | K3 |
+| API-73 | Tedarikçi DBS'si (Göymen alıcı) | Banka bazlı DBS limiti, yansıyan faturalar; vade günü bankadan çıkışla borç kalemi kapanır | **FNS-D3** (ikisi de) | K3 |
 
 ### 5.9 POS ve şirket kredi kartı (F-07)
 
@@ -288,9 +286,9 @@ olanlar `preview` + `commit` ayrı (v3 geliştirme notları §4).
 
 | ID | Uç | Amaç | Karar | Sev. |
 |---|---|---|---|---|
-| API-80 | `credit-facilities` | Kredi tesisi: banka, tür, para birimi, tutar, faiz, vade | **N-09** (kredi türleri) | K3 |
+| API-80 | `credit-facilities` | Kredi tesisi: banka, tür (taksitli ticari, rotatif/spot, KMH/BCH, Eximbank/akreditif), para birimi, tutar, faiz, vade | **FNS-D4** | K3 |
 | API-81 | `credit-drawdowns` preview/commit | Kullandırım: bankaya giriş para olayı + borç planı | — | K3 |
-| API-82 | Ödeme planı ve taksit ödemesi | Anapara, faiz, BSMV/KKDF ayrı satır; taksit ödemesi para olayı | N-09 | K3 |
+| API-82 | Ödeme planı ve taksit ödemesi | Anapara, faiz, BSMV/KKDF ayrı satır; taksit ödemesi para olayı; KMH dönem sonu faiz; akreditif/Eximbank taahhüt bağı | FNS-D4; ayrıntı F7 başında | K3 |
 | API-83 | `bank-limits` | Nakdi/gayrinakdi limit, kullanım, boş limit | — | K3 |
 | API-84 | `collaterals` | BTM ve diğer teminatlar; verilen/alınan; tahsis ve çözüm | DEC-FIN-011 | K3 |
 | API-85 | Müşteri kredi limiti ve teminat master | Satış risk portundaki `NoSource`'u kaldırır; azaltım oranı kapsamları K6, yüzde K7 | SAT-D51, OPEN-010 | K3 |
@@ -379,14 +377,14 @@ K6/K7/K8/K14, SAT-D51/D52/D85/D96, ALS-D41/D42/D44.
 | No | Soru | Neden | Dalga |
 |---|---|---|---|
 | N-01 | Hubvogal'in finans ekranlarının (kasa, banka, çek/senet, kredi, kredi kartı, DBS, cari ekstre) liste ve kayıt ekranı görüntülerini paylaşabilir misin? | Alan, durum ve numara eşlemesi; göç (MIG-02) | F0 |
-| N-02 | Finans'ın tamamı (backend + ekran) bu konuşmada Claude ile mi yazılsın; Ayarlar/Cari/Muhasebe'deki küçük eklemeler de bu konuşmada mı? | Şerit (ALS-D1/D45 emsali) | F0 |
+| N-02 | ~~Şerit~~ → **FNS-D1: hepsi burada** | — | kapandı |
 | N-03 | Bugün içe aktarılmış açık kalemlerin hepsi müşteri alacağı sayılsın mı? (Production'da veri yok; test verisi) | MOD-15 migration | F1 |
-| N-04 | DBS'yi hangi yönde kullanıyorsunuz: müşteriden DBS ile tahsilat, tedarikçiye DBS ile ödeme, ikisi de? | API-70…73 kapsamı | F5 |
+| N-04 | ~~DBS yönü~~ → **FNS-D3: ikisi de** | — | kapandı |
 | N-05 | Kaç kasa var; döviz kasası (USD/EUR nakit) var mı; kasa şirket bazlı mı? | API-30 | F3 |
 | N-06 | Döviz alım-satımı (TL hesaptan USD hesaba) virman mı, ayrı "döviz bozdurma" işlemi mi; kur farkı nasıl görünsün? | API-32 | F3 |
 | N-07 | Banka ekstrelerini hangi bankalardan, hangi dosya biçiminde (Excel/CSV/MT940) alıyorsunuz? | API-41 | F4 |
 | N-08 | Kendi çekinizi (verilen çek) ve senedinizi kullanıyor musunuz; çek defteri takibi istenir mi? | API-64 | F5 |
-| N-09 | Hangi kredi türleri kullanılıyor (taksitli ticari, rotatif, spot, KMH/BCH, eximbank, akreditif)? | API-80…82 | F7 |
+| N-09 | ~~Kredi türleri~~ → **FNS-D4: hepsi** (taksitli ticari, rotatif/spot, KMH/BCH, Eximbank/akreditif); akreditif/Eximbank kapatma ayrıntısı F7 başında sorulur | API-80…82 | kapandı |
 | N-10 | Şirket kredi kartları: kaç kart, kart borcu hangi hesaptan ödenir, harcama hangi masraf türleriyle girilir? | API-76…78 | F5 |
 | N-11 | Ödeme talimatı nasıl gidiyor bugün: internet bankacılığına elle mi, toplu ödeme dosyasıyla mı? | API-51 | F6 |
 | N-12 | Dekont/makbuz numarası istenir mi; hubvogal'deki biçim korunsun mu? | API-13 | F2 |
@@ -417,17 +415,16 @@ fail-closed kalır.
 | Dalga | İçerik | Ön şart |
 |---|---|---|
 | **F0** | Bu plan; karar dosyası FNS-D1…; `FINANS_ALIS_DEVIR_v1.md` ve `FINANS_SATIS_DEVIR_v1.md` (MOD-01/04/05 sözleşme taslağı); `SISTEM_OF_RECORD_MATRISI.md` ve `DURUM_MAKINELERI.md` Finans satırları; hubvogal finans incelemesi | N-01, N-02 |
-| **F1 (öncelik)** | MOD-15: API-01…06 (yön, karantina, bakiye özeti, ekstre yönü, risk portu), TEK-01/02; UI-02/03 güncellemesi | N-03. **Alış A5'in ön şartı** |
+| **F1 (öncelik, FNS-D2)** | MOD-15: API-01…06 (yön, karantina, bakiye özeti, ekstre yönü, risk portu), TEK-01/02; UI-02/03 güncellemesi | N-03. **Alış A5'in ön şartı** |
 | **F2** | MOD-04: API-10…12 (fatura kabul portu, iptal, Finans outbox/inbox); API-13 numara serisi; MOD-01…05 sözleşmeleri | F1; Alış/Satış fatura dalgaları paralel ilerler (port fail-closed) |
 | **F3** | API-20…24 (ödemenin dağıtımı, avans, kur farkı, ödeme ters kaydı, banka masrafı); API-07 mahsup; API-30…33 kasa ve virman; UI-01, UI-05 | F1; N-05, N-06 |
 | **F4** | API-40…43 banka defter bakiyesi, ekstre içe aktarma, mutabakat; UI-04 | F3; N-07 |
-| **F5** | API-60…64 çek/senet (ciro, teminat, karşılıksız, verilen çek); API-70…73 DBS; API-74…78 POS ve şirket kartı; UI-06, UI-07 | F3; N-04, N-08, N-10 |
+| **F5** | API-60…64 çek/senet (ciro, teminat, karşılıksız, verilen çek); API-70…73 DBS; API-74…78 POS ve şirket kartı; UI-06, UI-07 | F3; FNS-D3, N-08, N-10 |
 | **F6** | API-50…53 ödeme yönetimi; API-85 müşteri limit/teminat; API-90…93 tahsilat takibi; UI-08, UI-09 | F5; OPEN-009 tablosu (yapılandırılabilir) |
-| **F7** | API-80…84 krediler, limitler, teminatlar; API-95…97 nakit planı ve bütçe; UI-10, UI-11 | F6; N-09 |
+| **F7** | API-80…84 krediler, limitler, teminatlar; API-95…97 nakit planı ve bütçe; UI-10, UI-11 | F6; FNS-D4 |
 | **F8** | API-98/99, UI-12, UI-13; MIG-02 açılış/göç; kabul taraması (AT-004/010/011/014/022/058/065); production aktivasyonu insan kararıdır | Hepsi; N-13 |
 
-Paralellik: F1 ve F2 tek başına Alış ve Satış'ın fatura dalgalarını açar; F3–F5 sırası iş önceliğine göre
-değişebilir (N-02 cevabında Sinan başka sıra isterse tablo güncellenir).
+Paralellik: F1 ve F2 tek başına Alış ve Satış'ın fatura dalgalarını açar (FNS-D2: önce borç/alacak, sonra kasa/banka).
 
 ---
 
@@ -478,7 +475,7 @@ Bu bölüm iş takibidir; karar değildir.
 | İş | PR | Durum |
 |---|---|---|
 | Bu plan (v1) | — | taslak PR |
-| F0 karar dosyası FNS-D1… | — | Sinan'ın cevapları bekleniyor (N-01…N-13) |
+| F0 karar dosyası FNS-D1…D4 (şerit, öncelik, DBS iki yön, kredi türleri) | #896 | taslak PR; kalan sorular N-01, N-03, N-05…N-08, N-10…N-13 |
 | F1 MOD-15 borç/alacak | — | sırada |
 
-Sıradaki: N-02 ve N-03 cevaplanınca F1 (borç/alacak yönü) başlar.
+Sıradaki: N-03 cevaplanınca F1 (borç/alacak yönü, MOD-15) başlar.

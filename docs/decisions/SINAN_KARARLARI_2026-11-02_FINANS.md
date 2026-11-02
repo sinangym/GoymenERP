@@ -1,0 +1,52 @@
+# Sinan Kararları — 2026-11-02 (Finans modülü hazırlık soruları)
+
+Kaynak: Sinan Göymen'in 2 Kasım 2026 tarihli Claude cloud oturumunda (Finans konuşması), Finans modülü hazırlık
+incelemesi (`docs/delivery/FINANS_HAZIRLIK_PLANI_v1.md`) sırasında sorulan seçenekli sorulara verdiği **doğrudan
+cevaplar**. Bir tur, dört soru; dört karar. "Seçilen" sütunu kullanıcının işaretlediği seçeneğin ya da kendi yazdığı
+cevabın kendisidir; Claude yalnız soruyu ve seçenekleri hazırlamıştır.
+
+## 0. Yetki ve sınır
+
+- Seçilen seçenekler doğrudan kullanıcı cevabıdır. AGENTS.md "Çelişkide daha yeni kullanıcı kararı geçerlidir"
+  kuralı uyarınca bu belge, Finans kapsamında `KARAR_SICILI.md`'den ve master rapordan daha yeni olduğu için onlara
+  göre **üstündür**; `DEC-FIN-001…016` ile çelişen bir karar içermez.
+- **Şerit (FNS-D1):** Finans modülünün bütün geliştirmesi Claude'dadır (Satış, Üretim ve Alış emsali). Review ve
+  merge kapıları değişmez; yazar kendi PR'ını review etmez; K3'te iki bağımsız exact-head review gerekir. Satış, Alış
+  ve Üretim dosyaları bu şeritte değiştirilmez; gereken iş görev notuyla bırakılır.
+- **Makbuz:** bu PR'ın merge'ü veya Sinan'ın Issue #66'ya yazacağı tek satırlık onay. Makbuz gelene kadar uygulama
+  PR'ları bu kararları yapılandırılabilir ve fail-closed uygular.
+- Bu belge hiçbir `OPEN-*` kimliğini **KAPANDI** yapmaz (OPEN-009/010/011/012/016/018 açık kalır). Grant ve rol
+  ataması insan kapısındadır. Sayısal değerler kod sabiti olmaz (`DEC-SET-001`).
+
+## 1. Kararlar
+
+| No | Konu | Seçilen | Önceki durum | Bağlı kimlik |
+|---|---|---|---|---|
+| FNS-D1 | Şerit ve komşu modüllerdeki küçük eklemeler | **Evet, hepsi burada.** Seçenek açıklaması: Finans backend + ekranlar burada; Ayarlar/Cari/Muhasebe'deki küçük eklemeler de burada, iki inceleme ile. Satış/Alış/Üretim dosyalarına dokunulmaz, not bırakılır | ALS-D44: "finans tarafını … finans konuşmasında yazsın"; eski Finans kartları Codex şeridindeydi | Plan §0, N-02, ALS-D45 emsali |
+| FNS-D2 | İlk iş | **Önce borç/alacak.** Seçenek açıklaması: F1 borç/alacak ayrımı + F2 faturanın açık kaleme dönüşmesi; Alış ve Satış'ın fatura aşaması açılır. Sonra kasa/banka | Alış §13 B-1: MOD-15 Alış A5'in ön şartı | Plan §10 F1/F2, MOD-15, MOD-04 |
+| FNS-D3 | DBS yönü | **İkisi de.** Seçenek açıklaması: hem müşteriden DBS ile tahsilat, hem tedarikçiye DBS ile ödeme | DEC-FIN-008 yalnız müşteri riskini tanımlıyordu | Plan API-70…73, N-04 |
+| FNS-D4 | Kullanılan kredi türleri | Seçilen: **Taksitli ticari kredi, Rotatif / spot, KMH / BCH, Eximbank / akreditif**; ek cevap aynen: **"Hepsini"** | Plan N-09 açıktı | Plan API-80…82, N-09 |
+
+## 2. Notlar (geri alınabilir)
+
+- **FNS-D1:** komşu modüldeki "küçük ekleme" Finans'ın ihtiyacı olan politika kaydı, okuma portu veya alan eklemesidir
+  (ör. Ayarlar'da Finans onay matrisi kaydı, Cari'de tedarikçi IBAN doğrulaması, Muhasebe'de fiş taslağı kaynağı).
+  Satış risk portunun sözleşmesi değişirse (`ISalesPartyRiskReadPortV1`) Satış şeridine görev notu bırakılır.
+- **FNS-D2:** dalga sırası F1 → F2 → F3 (ödeme dağıtımı, avans, mahsup, kasa, virman) → F4 (banka, ekstre) olarak
+  kalır. MOD-15 K3'tür (migration + para + modüller arası sözleşme).
+- **FNS-D3:** DBS iki ayrı akıştır. **Müşteri DBS'si** (Göymen alacaklı): fatura bankaya yansıtılır; kabulde teminatsız
+  risk ve kullanılabilir DBS limiti azalır, nakit sayılmaz; vade günü banka ödemesi gelince alacak kesin kapanır
+  (DEC-FIN-008, SAT-D52). **Tedarikçi DBS'si** (Göymen borçlu): tedarikçinin bankası vade günü Göymen'in hesabından
+  tahsil eder; Göymen tarafında banka bazlı DBS limiti, yansıyan faturalar ve vade günü çıkışı izlenir, borç kalemi
+  bankadan çıkışla kapanır. İki akış aynı DBS kaynağı/dağıtım motorunu kullanır (DEC-FIN-006); limit, kabul/red
+  durumları ve azaltım oranları Ayarlar'dadır (OPEN-010 açık, başlangıç 0).
+- **FNS-D4:** dört kredi ailesi tek "kredi tesisi" modeli altında tür olarak tutulur: taksitli ticari (ödeme planı),
+  rotatif/spot (kullandırım–kapama döngüsü, tek vade), KMH/BCH (limitli eksi bakiye; faiz dönem sonu tahakkuk),
+  Eximbank/akreditif (ihracat taahhüdü ve akreditif belge/teminat bağı). Faiz, BSMV/KKDF ve masraf ayrı satırdır;
+  faiz/vergi oranları elle girilir, sistem hesap kuralı icat etmez. Akreditif ve Eximbank taahhüt kapatma kuralları
+  ayrıntısı F7 başında ayrıca sorulur.
+
+## 3. Değişmeyenler
+
+`DEC-FIN-001…016`, `DEC-INT-001` (ilk sürümde banka/Mikro entegrasyonu yok; dosya ile içe aktarma serbest), No 22, 34,
+108, 109, 112–115, K6–K8, K14, SAT-D51/D52/D85/D96, ALS-D41/D42/D44/D45 aynen geçerlidir.
