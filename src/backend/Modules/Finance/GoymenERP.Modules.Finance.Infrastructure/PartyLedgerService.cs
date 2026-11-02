@@ -88,7 +88,7 @@ public sealed class PartyLedgerService(
             .OrderBy(row => row.CreatedAtUtc).ThenBy(row => row.Id)
             .Take(take)
             .Select(row => new OpenItemFact(row.Id, row.SourceId, row.CurrencyId, row.OriginalAmountText, row.DueOn,
-                row.CreatedAtUtc))
+                row.CreatedAtUtc, row.Direction))
             .ToListAsync(cancellationToken);
         if (moneyEvents.Count + payments.Count + openItems.Count > PartyLedgerRules.MaximumEntries)
         {
@@ -136,7 +136,7 @@ public sealed class PartyLedgerService(
 
         facts.AddRange(payments.Select(row => new PartyLedgerFact(PartyLedgerEntryKind.ManualBankPayment, row.Id,
             row.OccurredOn, row.RecordedAtUtc, row.CurrencyId, row.AmountText, row.PaymentId, null, null, null, null)));
-        facts.AddRange(openItems.Select(row => new PartyLedgerFact(PartyLedgerEntryKind.OpenItem, row.Id,
+        facts.AddRange(openItems.Select(row => new PartyLedgerFact(OpenItemKind(row.Direction), row.Id,
             DateOnly.FromDateTime(row.CreatedAtUtc.UtcDateTime), row.CreatedAtUtc, row.CurrencyId, row.AmountText, row.Id,
             null, null, row.DocumentId, row.DueOn)));
 
@@ -184,5 +184,13 @@ public sealed class PartyLedgerService(
         DateTimeOffset RecordedAtUtc);
 
     private sealed record OpenItemFact(Guid Id, Guid DocumentId, Guid CurrencyId, string AmountText, DateOnly? DueOn,
-        DateTimeOffset CreatedAtUtc);
+        DateTimeOffset CreatedAtUtc, int Direction);
+
+    /// <summary>MOD-15: a receivable is the party's debt (debit), a payable the company's debt to it (credit).</summary>
+    private static PartyLedgerEntryKind OpenItemKind(int direction) => direction switch
+    {
+        FinanceOpenItemDirectionCodes.Receivable => PartyLedgerEntryKind.OpenItem,
+        FinanceOpenItemDirectionCodes.Payable => PartyLedgerEntryKind.PayableOpenItem,
+        _ => throw new InvalidOperationException("Açık kalemin yönü okunamadı; ekstre hesaplanmaz."),
+    };
 }

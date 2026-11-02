@@ -6,11 +6,18 @@
  */
 const SOURCE_KIND_LABEL: Readonly<Record<string, string>> = {
   'official.invoice-installment.v1': 'Onaylı resmî fatura taksiti',
+  'official.incoming-invoice-installment.v1': 'Onaylı resmî alış faturası taksiti',
 }
 
 export const sourceKindLabel = (sourceKind: string) => SOURCE_KIND_LABEL[sourceKind] ?? sourceKind
 
 /** The end of a record id, as the other lists show a record that has no document number. */
+/** MOD-15: the side of the open item from the company's view (alacak: the party owes; borç: we owe the party). */
+export const DIRECTION_LABEL: Readonly<Record<'Receivable' | 'Payable', string>> = {
+  Receivable: 'Alacak — cari bize borçlu (satış)',
+  Payable: 'Borç — biz cariye borçluyuz (alış)',
+}
+
 export const shortReference = (id: string) => `…${id.slice(-8)}`
 
 export const OPEN_ITEM_TEXT = {
@@ -22,6 +29,7 @@ export const OPEN_ITEM_TEXT = {
   amountsHidden: 'Tutar ve durum bu yetkiyle gösterilmiyor.',
   record: 'Kayıt',
   sourceKind: 'Kaynak türü',
+  direction: 'Yön',
   dueOn: 'Vade',
   noDueOn: 'Vade yok',
   status: 'Durum',

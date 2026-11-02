@@ -143,6 +143,10 @@ public sealed class FinanceOpenItemSourceAdmissionService(
                     Id = row.OpenItemId,
                     CompanyId = context.CompanyId,
                     SourceKind = FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment,
+                    // MOD-15: the direction is the source kind's (a sales installment → receivable), never caller-chosen.
+                    Direction = FinanceOpenItemDirectionCodes.ForSourceKind(
+                            FinanceOpenItemSourceKinds.ApprovedOfficialInvoiceInstallment)
+                        ?? throw new InvalidOperationException("Açık kalem kaynak türünün yönü tanımlı değil."),
                     SourceId = row.SourceDocumentId,
                     SourceLineId = row.SourceInstallmentId,
                     SourceVersion = row.SourceVersion,

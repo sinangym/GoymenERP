@@ -189,7 +189,8 @@ public sealed class FinanceOpenItemReadService(
             || !FinanceExactDecimalText.TryParsePositive(row.OriginalAmountText, out var initial)
             || !FinanceExactDecimalText.TryParseNonNegative(row.OutstandingAmountText, out var outstanding)
             || outstanding.CompareTo(initial) > 0
-            || !TryStatus(row.Status, out var status))
+            || !TryStatus(row.Status, out var status)
+            || !TryDirection(row.Direction, out var direction))
         {
             return false;
         }
@@ -209,8 +210,15 @@ public sealed class FinanceOpenItemReadService(
             disclosure == AmountDisclosure.Visible ? status : null,
             row.CreatedAtUtc,
             Amount(disclosure, row.OriginalAmountText, row.CurrencyId),
-            Amount(disclosure, row.OutstandingAmountText, row.CurrencyId));
+            Amount(disclosure, row.OutstandingAmountText, row.CurrencyId),
+            direction);
         return true;
+    }
+
+    private static bool TryDirection(int value, out FinanceOpenItemDirectionV1 direction)
+    {
+        direction = (FinanceOpenItemDirectionV1)value;
+        return value is FinanceOpenItemDirectionCodes.Receivable or FinanceOpenItemDirectionCodes.Payable;
     }
 
     private static bool TryStatus(int stored, out FinanceOpenItemStatusV1 status)
