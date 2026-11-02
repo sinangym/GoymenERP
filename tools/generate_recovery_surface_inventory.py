@@ -60,7 +60,7 @@ EXPECTED_DURABLE_STORE_COUNT = 24
 # lexical inventory while leaving its visible declaration counts unchanged.
 EXPECTED_SOURCE_SURFACE_FILE_COUNT = 1263
 EXPECTED_SOURCE_SURFACE_FINGERPRINT = (
-    "676d46a9d891b73354e6ee0016b46b4717c4946b2271c97836f23fae99e25dcc"
+    "bcacd47d3c5eaba6931167823f4e85c556de867693f6b9eedd46df8503023e42"
 )
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
@@ -792,7 +792,7 @@ REVIEWED_LIVE_SOURCE_SHA256 = {
     "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/PriceLists/ProductItemTypeService.cs": "3f7ba4e6a381dfc4d6c94655c866e027153f6a7e669a4ffc20bde33d7829d6bd",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseAcceptanceParticipant.cs": "c1932860818df6628368bee24a17a3e48d892c6f513313d953e94adf0e39358d",
     "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchasingStore.cs": "72c1ab9720210ec278472130d7600650f941fe300a2e7bc2fa182d85b8acaef3",
-    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "8022ea18063d45ad370fd43797de932b97ca7ac9306ac0c325285ee1f43e0334",
+    "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.cs": "29791a98164c7adad3561f6fec4d733dcb6fa9a9ed7e4809cb12d71bedd12372",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Quotes.cs": "b250ecebc925f96e25389d8d9adb17f43825974325a2d4130459785ec9ad4112",
     "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/Persistence/SalesStore.Requests.cs": "de60ec41c77f850799aa125e2a61c8e24b5c7de26068851e474790df86a38d91",
     "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Persistence/WorkDesiredStateStoreV2.cs": "c8b78e13e5a6b5d2075730346a718dbf48672ca47356de212271240a7f76b472",

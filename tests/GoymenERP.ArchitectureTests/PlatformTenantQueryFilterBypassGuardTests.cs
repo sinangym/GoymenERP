@@ -384,8 +384,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D175…D178 (EK25): +2 SalesSubcontractServiceOrder facts (the flag, item type and free price persisted and the read
             // port answered for its company only; the write guard, CK_DraftLines_ItemType and the 51141 rollback refusal), kept
             // ordinal-sorted (4fa6ad29… -> 0886d9ff…).
+            // K3 review A/B P2-1: +1 SalesSubcontractServiceOrder fact (a quantity revision drops the free price and stores the line
+            // back on the approval path), kept ordinal-sorted (0886d9ff… -> d1c5bb55…).
             ["tools/relational_inventory/sales.txt"] =
-                "0886d9fff3ca880cc062c786675c8a1a2dc20c6e12809ee005758ba0c7806060",
+                "d1c5bb558b2464ad958072b7a328f309983c5297b38ba62ef5b88ed44ff73be6",
 
             // work
             // JV03: the five ordinal desired-state storage SQL facts are mandatory and skip-free.
@@ -1469,8 +1471,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
                     // and restored through the same filtered context (SalesTaxJson); SqlClient count unchanged.
                     // Re-fingerprinted for SAT-D175/D176 (EK25): the header, archive header and line rows carry the subcontract flag and
                     // the line item type, written and restored through the same filtered context; SqlClient count unchanged.
+                    // Re-fingerprinted for K3 review A/B P2-1: a quantity revision writes the line's PricingJson when it dropped a
+                    // free subcontract price (the only commercial change it admits); SqlClient count unchanged.
                     new(
-                        "8022ea18063d45ad370fd43797de932b97ca7ac9306ac0c325285ee1f43e0334",
+                        "29791a98164c7adad3561f6fec4d733dcb6fa9a9ed7e4809cb12d71bedd12372",
                         new Dictionary<string, int>(StringComparer.Ordinal)
                          {
                              ["Microsoft.Data.SqlClient"] = 1
