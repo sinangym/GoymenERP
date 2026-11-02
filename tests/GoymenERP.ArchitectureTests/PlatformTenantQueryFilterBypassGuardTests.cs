@@ -246,8 +246,10 @@ public sealed partial class PlatformTenantQueryFilterBypassGuardTests
             // SAT-D18: +1 Sales-only GSP/GIN TRY profile keeps the bank-account path closed, kept ordinal-sorted.
             // MOD-01 / SAT-D52: +2 Sales risk-port facts (unallocated payments deducted, reversed ones never; a refunded advance
             // no longer deducted — review A P2-1), ordinal-sorted (cb46a836… -> 7dc420a3…).
+            // MOD-15 / FNS-D7: +1 party-ledger direction fact (payable credit row, CK_OpenItems_Direction, receivable-only
+            // risk), ordinal-sorted (7dc420a3… -> cf9cecf6…).
             ["tools/relational_inventory/finance.txt"] =
-                "7dc420a35ef402dcddf4461a5818301cfffcacb923b354db076a158789bbd156",
+                "cf9cecf6724f3c9023a8276710a089854f4562de7f229e678f16d4e1fb3c8d99",
 
             // identity
             // SY-01/SY-02: +2 IdentityAccessViewSqlServerRelationalAcceptanceTests facts (b159330c… -> a521143a…).
