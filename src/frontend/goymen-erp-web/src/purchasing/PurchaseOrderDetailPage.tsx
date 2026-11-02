@@ -71,7 +71,7 @@ function newId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
-const LINE_NO = 'No'
+const LINE_NO = T.lineNoColumn
 const LINE_COLUMNS = [
   { name: LINE_NO }, { name: T.productId }, { name: T.unitId },
   { name: T.ordered, numeric: true }, { name: T.technical, numeric: true }, { name: T.committed, numeric: true },
@@ -95,8 +95,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
   const { orderId } = useParams()
   const companyId = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
   const actorId = shell.activeContext?.userId ?? null
-  const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove as never)
-  const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail as never)
+  const canApprove = hasCapability(shell, PURCHASING_CAPABILITY.orderApprove)
+  const canReadSourceRequest = hasCapability(shell, PURCHASING_CAPABILITY.requestDetail)
   const canOpenParty = hasCapability(shell, CAPABILITY.cariPartiesDetail)
   const storeKey = pendingApprovalKey(shell.sessionEpoch, actorId, companyId, orderId ?? '')
   // BLG-01: the receipt attempt's identity, NOT the query namespace — see goodsReceiptAttempt.ts.
@@ -169,16 +169,16 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
     </header>
     {child}
   </section>
-  if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject="satın alma siparişi" />)
-  if (state.kind !== 'ready') return frame(<StateBlock state={state} subject="satın alma siparişi" onRetry={() => void query.refetch()} />)
+  if (companyId === null) return frame(<StateBlock state={{ kind: 'no-authorized-company' }} subject={T.subject} />)
+  if (state.kind !== 'ready') return frame(<StateBlock state={state} subject={T.subject} onRetry={() => void query.refetch()} />)
   const { order, lines, acceptances } = state.data
   const isCurrentDetail = order.id === orderId && order.companyId === companyId
   const lineNoById = new Map(lines.map((line) => [line.lineId, line.lineNo] as const))
   const unresolved = attempt.phase === 'unknown' || attempt.phase === 'submitting'
   const outcomeNotice = attempt.phase === 'applied'
-    ? <p role="status" className={styles.success}>{attempt.replayed ? 'Önceki onay yanıtı yeniden gösterildi.' : 'Sipariş onaylandı ve yeniden okundu.'}</p>
+    ? <p role="status" className={styles.success}>{attempt.replayed ? T.approvalReplayed : T.approvalApplied}</p>
     : attempt.phase === 'failed'
-      ? <p role="alert" className={styles.error}>Onay kaydedilmedi ({attempt.code ?? attempt.status}). Kayıt yeniden okundu.</p>
+      ? <p role="alert" className={styles.error}>{T.approvalFailed(attempt.code ?? attempt.status)}</p>
       : null
   return frame(<>
     <section className={styles.section} aria-labelledby="purchase-order-summary-heading" data-testid="purchase-order-summary">
@@ -239,8 +239,8 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       entryGeneration={shell.routeEntryGeneration}
     /> : null}
     {canApprove ? outcomeNotice : null}
-    {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>Sonuç bilinmiyor. Yeni işlem başlatmadan aynı anahtar ve sürümle yeniden gönderin.</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? 'Gönderiliyor…' : attempt.phase === 'unknown' ? 'Aynı onayı yeniden gönder' : 'Onayla'}</Button></section> : null}
-    {namespace !== null && receiptAttempt !== null && hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY as never)
+    {canApprove && (order.status === 'Draft' || unresolved) ? <section className={styles.section}><h2>{T.approvalHeading}</h2><p>{T.approvalNote}</p>{attempt.phase === 'unknown' ? <p role="alert" className={styles.warning}>{T.approvalUnknown}</p> : null}<Button type="button" variant="primary" disabled={attempt.phase === 'submitting'} onClick={() => void sendApproval(attempt.phase === 'unknown' ? attempt.snapshot : undefined)}>{attempt.phase === 'submitting' ? T.approvalSending : attempt.phase === 'unknown' ? T.approvalRetry : T.approve}</Button></section> : null}
+    {namespace !== null && receiptAttempt !== null && hasCapability(shell, PURCHASE_GOODS_RECEIPT_CAPABILITY)
       ? <div className={styles.section} data-testid="purchase-order-receipt-action"><GoodsReceiptPanel enabled
           binding={namespace} attemptBinding={receiptAttempt} detail={state.data} onRecorded={() => void query.refetch()} /></div>
       : null}

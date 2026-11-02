@@ -9,6 +9,7 @@ import type { PurchaseOrderDetail, PurchaseOrderLine } from './contract'
 import { StateBlock } from '../shell/StateBlock'
 import { classifyOutcome } from '../shell/uiState'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
+import { Button } from '../ui/Button'
 import styles from './purchasing.module.css'
 
 interface Props {
@@ -159,7 +160,7 @@ function ReceiptLine({ binding, attemptBinding, detail, line, onRecorded }: Prop
     <h3 id={`${id}-heading`}>{T.line} {line.lineNo}</h3>
     {phase === 'sending' ? <p role="status">{T.sending}</p> : null}
     {phase === 'unknown' && pending !== null ? <div className={styles.warningCard}><p role="alert">{T.unknown}</p>
-      <button type="button" onClick={() => void send(pending)}>{T.retry}</button></div> : null}
+      <Button type="button" onClick={() => void send(pending)}>{T.retry}</Button></div> : null}
     {phase === 'failed' ? <p role="alert" className={styles.error}>{T.failed}</p> : null}
     {phase === 'done' && answer !== null ? <p role="status" className={styles.success}>
       {answer.isReplay ? T.replayed : T.saved} {answer.receipt.labelCode}: {answer.receipt.initialBlock === 'Free' ? T.initialFree : T.initialBlocked}
@@ -183,7 +184,7 @@ function ReceiptLine({ binding, attemptBinding, detail, line, onRecorded }: Prop
           <label htmlFor={`${id}-coil`}>{T.coil}</label><input id={`${id}-coil`} value={coil} maxLength={64} onChange={(event) => setCoil(event.target.value)} />
         </div>
         {invalid ? <p role="alert">{T.invalid}</p> : null}
-        <button type="submit" disabled={!locations.some((location) => location.locationId === locationId)}>{T.save}</button>
+        <Button type="submit" variant="primary" disabled={!locations.some((location) => location.locationId === locationId)}>{T.save}</Button>
       </fieldset>
     </form>
   </section>

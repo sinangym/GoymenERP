@@ -10,8 +10,9 @@ import { PurchaseRequestCreatePage } from './PurchaseRequestCreatePage'
 import { PurchaseRequestDetailPage } from './PurchaseRequestDetailPage'
 import { PurchaseRequestListPage } from './PurchaseRequestListPage'
 
-function gate(capability: PurchasingCapabilityId, children: ReactNode) {
-  return <CapabilityRoute capability={capability as CapabilityId}>{children}</CapabilityRoute>
+/** The six routed ids are declared in the shell's `CAPABILITY` table, so no cast is needed. */
+function gate(capability: CapabilityId & PurchasingCapabilityId, children: ReactNode) {
+  return <CapabilityRoute capability={capability}>{children}</CapabilityRoute>
 }
 
 export const purchasingRoutes: RouteObject[] = [
