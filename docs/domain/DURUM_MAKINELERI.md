@@ -38,9 +38,10 @@ Kaynak: kod (`src/backend/Modules/Purchasing/**`), `SINAN_KARARLARI_2026-11-02_A
   inilmez (ALS-D9). Sipariş onayında hazırlayan ≠ onaylayan, tutar eşiği Ayarlar'da başlangıçta kapalı (ALS-D3).
 - Tedarikçi teyidi (ayrı eksen): Teyit bekliyor / Teyit edildi; isteğe bağlı, teyitsiz sipariş yine işler (ALS-D13).
   Ayrı "Rezerve" durumu açılmaz (ALS-D17).
-- Tedarik ilerlemesi (satır): termin dilimi → tedarikçide hazır → yolda (sevk bildirimi) → kabul. Tedarikçide hazır
-  ve yolda miktar gelecek arzdır, fiziksel stok değildir; kabul tamamlanana kadar gerekçe + audit ile düzeltilir
-  (ALS-D22, ALS-D25, ALS-D33).
+- Tedarik ilerlemesi (satır): termin dilimleri (ALS-D33); isteğe bağlı ara adımlar "tedarikçide hazır" ve "yolda"
+  (sevk bildirimi); sonra kabul. Tedarikçide hazır ve yolda miktar gelecek arzdır, fiziksel stok değildir (ALS-D25).
+  Tedarikçide hazır miktar ve tarihi kabul tamamlanana kadar gerekçe + audit ile düzeltilebilir (ALS-D22, EK2 §2
+  yorumu). Yolda miktarın düzeltme kuralı karara bağlanmadı (plan API-31).
 
 ## Diğer yaşam döngüleri
 
