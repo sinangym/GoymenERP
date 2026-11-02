@@ -425,6 +425,8 @@ public sealed partial class ManufacturingCommandService(
         var canonical = CanonicalSavePlan(request.PlanId, request.WorkCenterId, inputs, request.Target, targetKg,
             content.SlittingSpec, content.CutToLengthSpec);
 
+        // U1-b: the draft's answer (returned AND recorded for replay) uses the profile in force today, read once below.
+        PlanParameterSnapshotV1? saveParameters = null;
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.SavePlan, canonical,
             ManufacturingApiStatus.Created, async (metadata, actorId, companyId) =>
             {
@@ -467,6 +469,7 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(parameters.Refusal);
                 }
 
+                saveParameters = parameters.Snapshot;
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
@@ -484,7 +487,7 @@ public sealed partial class ManufacturingCommandService(
                     ? NotFoundResult<PlanViewV1>()
                     : new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Created,
                         PlanView(stored, parameters.Snapshot), outcome == ManufacturingWriteOutcome.Replayed, null);
-            }, stored => PlanView((ProductionPlan)stored), cancellationToken);
+            }, stored => PlanView((ProductionPlan)stored, saveParameters), cancellationToken);
     }
 
     /// <summary>
@@ -555,6 +558,8 @@ public sealed partial class ManufacturingCommandService(
                 cutToLengthSpec = CanonicalCutToLengthSpec(content.CutToLengthSpec),
             };
 
+        // U1-b: the draft's answer (returned AND recorded for replay) uses the profile in force today, read once below.
+        PlanParameterSnapshotV1? reviseParameters = null;
         return RunAsync<PlanViewV1>(permission, idempotencyKey, ManufacturingCommandNames.RevisePlan, canonical,
             ManufacturingApiStatus.Ok, async (metadata, actorId, companyId) =>
             {
@@ -592,6 +597,14 @@ public sealed partial class ManufacturingCommandService(
                     return Refusal<PlanViewV1>(verified.Refusal);
                 }
 
+                var parameters = await ReadParameterProfileAsync(process.Value, request.WorkCenterId, approval: false,
+                    cancellationToken);
+                if (parameters.Refusal is not null)
+                {
+                    return Refusal<PlanViewV1>(parameters.Refusal);
+                }
+
+                reviseParameters = parameters.Snapshot;
                 if (await FenceCapturedAsync<PlanViewV1>(permission, companyId, actorId, cancellationToken) is { } fenced)
                 {
                     return fenced;
@@ -600,11 +613,9 @@ public sealed partial class ManufacturingCommandService(
                 var revised = await planRevisions.RevisePlanWithCutLinesAsync(planId, request.ExpectedVersion, request.WorkCenterId,
                     process.Value, [.. PlannedInputs(verified.Inputs)], Target(request.Target, verified.TargetMass),
                     BuildCutToLengthSpec(content.CutToLengthSpec), reason, metadata, cancellationToken);
-                // U1-b: a draft's answer uses the profile in force today, exactly as the plan read does.
-                var live = await ReadLiveParameterProfileAsync(revised, cancellationToken);
-                return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok, PlanView(revised, live), false,
-                    null);
-            }, stored => PlanView((ProductionPlan)stored), cancellationToken);
+                return new ManufacturingApiResult<PlanViewV1>(ManufacturingApiStatus.Ok,
+                    PlanView(revised, reviseParameters), false, null);
+            }, stored => PlanView((ProductionPlan)stored, reviseParameters), cancellationToken);
     }
 
     /// <summary>
