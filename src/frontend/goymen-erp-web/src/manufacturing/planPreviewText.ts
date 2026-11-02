@@ -92,6 +92,30 @@ export const PLAN_PREVIEW_TEXT = {
   missingNote:
     'Bu değerlerin kararı (OPEN-007) veya kaynağı (Ayarlar / Politika Kaydı, ürün ve etiket okuması) henüz yok. Önizleme varsayılan değer kullanmaz; eksik parametreyle hesap yapılmaz.',
   saveNote: 'Önizleme kaydı engellemez; kayıt, girdileri sunucuda yeniden doğrular.',
+  refused: (reason: string) => `Önizleme hesaplanmadı: ${reason}`,
+  currentLabel: 'Güncel önizleme',
+  staleLabel: 'Önceki girdilere ait önizleme',
+  answeredHeading: 'Yanıtlanan girdiler',
+  answeredWorkCenter: (workCenter: string) => `İş merkezi: ${workCenter}`,
+  answeredInput: (label: string, plannedKg: string, labelVersion: string) =>
+    `${label}: ${plannedKg} kg (etiket sürümü ${labelVersion})`,
+  answeredTarget: (target: string) => `Hedef: ${target}`,
+  answeredTargetNone: 'yok',
+  process: 'Süreç',
+  plannedRollCount: 'Planlanan rulo',
+  plannedInput: 'Toplam planlanan girdi',
+  targetComparison: 'Hedef karşılaştırması',
+  targetNone: 'Hedef yok',
+  targetMinusPlanned: (kg: string) => `Hedef − planlanan girdi: ${kg} kg`,
+  calculator: 'Hesaplayıcı',
+  missingList: 'Eksik parametreler',
+  missing: (names: string) => `Eksik: ${names}`,
+  refusalNote: 'Bir hesap girdiyi reddetti; ayrıntı aşağıdadır.',
+  formula: 'Formül',
+  scope: 'Kapsam',
+  status: 'Durum',
+  result: 'Sonuç',
+  planScope: 'Plan',
 } as const
 
 export function previewFailure(reason: 'offline' | 'network-error' | 'service-unavailable' | 'malformed'): string {

@@ -1138,13 +1138,23 @@ public sealed partial class ManufacturingCommandService(
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
     }
 
-    public Task<ManufacturingApiResult<OrderViewV1>> IssueInputAsync(Guid orderId, RecordFactRequestV1? request,
+    /// <summary>
+    /// Records the fact without any Inventory movement. No HTTP route calls this path: the host routes facts through
+    /// the Inventory-staged commands above, so a fact and its stock movement commit together. It stays for the
+    /// domain/persistence tests only (FZL-01); production code cannot reach it.
+    /// </summary>
+    internal Task<ManufacturingApiResult<OrderViewV1>> IssueInputAsync(Guid orderId, RecordFactRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken) =>
         RecordAsync(orderId, request, outputClass: null, idempotencyKey, permission, ManufacturingCommandNames.IssueInput,
             (fact, mass, at, metadata) => orders.IssueInputAsync(orderId, fact.ExpectedVersion, fact.FactId,
                 fact.ParentRollId, mass, at, metadata, cancellationToken), cancellationToken);
 
-    public Task<ManufacturingApiResult<OrderViewV1>> ReturnUnusedInputAsync(Guid orderId, RecordFactRequestV1? request,
+    /// <summary>
+    /// Records the fact without any Inventory movement. No HTTP route calls this path: the host routes facts through
+    /// the Inventory-staged commands above, so a fact and its stock movement commit together. It stays for the
+    /// domain/persistence tests only (FZL-01); production code cannot reach it.
+    /// </summary>
+    internal Task<ManufacturingApiResult<OrderViewV1>> ReturnUnusedInputAsync(Guid orderId, RecordFactRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken) =>
         RecordAsync(orderId, request, outputClass: null, idempotencyKey, permission, ManufacturingCommandNames.ReturnInput,
             (fact, mass, at, metadata) => orders.ReturnUnusedInputAsync(orderId, fact.ExpectedVersion, fact.FactId,
@@ -1295,7 +1305,12 @@ public sealed partial class ManufacturingCommandService(
             }, stored => OrderView((ProductionOrder)stored), cancellationToken);
     }
 
-    public Task<ManufacturingApiResult<OrderViewV1>> DeclareOutputAsync(Guid orderId, DeclareOutputRequestV1? request,
+    /// <summary>
+    /// Records the fact without any Inventory movement. No HTTP route calls this path: the host routes facts through
+    /// the Inventory-staged commands above, so a fact and its stock movement commit together. It stays for the
+    /// domain/persistence tests only (FZL-01); production code cannot reach it.
+    /// </summary>
+    internal Task<ManufacturingApiResult<OrderViewV1>> DeclareOutputAsync(Guid orderId, DeclareOutputRequestV1? request,
         string idempotencyKey, string permission, CancellationToken cancellationToken)
     {
         if (request is null || !Enum.TryParse<OutputClass>(request.OutputClass, ignoreCase: false, out var outputClass)

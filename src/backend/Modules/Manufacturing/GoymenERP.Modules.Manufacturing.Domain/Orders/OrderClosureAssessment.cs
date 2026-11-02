@@ -7,8 +7,8 @@ namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 
 /// <summary>
 /// The immutable identity, version and value of the per-process closure tolerance supplied by its owner.
-/// Manufacturing never supplies a default percentage. The runtime adapter that reads Settings and persists this
-/// snapshot is deliberately outside this domain-only slice.
+/// Manufacturing never supplies a default percentage. <c>ManufacturingCommandService.CloseOrderAsync</c> reads it from
+/// Settings (<c>ISettingsManufacturingToleranceProviderV1</c>) and persists it with the close decision.
 /// </summary>
 public sealed record ClosureTolerancePolicySnapshotV1(
     Guid CompanyId,

@@ -28,6 +28,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { StateBlock } from '../shell/StateBlock'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './OrderListPage.module.css'
+import { Button } from '../ui/Button'
 
 const ORDER_STATUSES: readonly OrderStatus[] = ['Open', 'Closed']
 
@@ -141,12 +142,12 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
         </label>
         {canOpenPlanList ? (
           <Link className={styles.secondaryLink} to={planListPath()}>
-            Üretim planları
+            {ORDER_LIST_TEXT.plans}
           </Link>
         ) : null}
         {canCreatePlan ? (
           <Link className={styles.primaryLink} to={planCreatePath()}>
-            Yeni üretim planı
+            {ORDER_LIST_TEXT.newPlan}
           </Link>
         ) : null}
       </div>
@@ -157,7 +158,7 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="mfg-order-list-heading">
         {header}
-        <StateBlock state={{ kind: 'no-authorized-company' }} subject="üretim emirleri için tek şirket bağlamı" />
+        <StateBlock state={{ kind: 'no-authorized-company' }} subject={ORDER_LIST_TEXT.contextSubject} />
       </section>
     )
   }
@@ -170,7 +171,7 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="mfg-order-list-heading">
         {header}
-        <StateBlock state={state} subject="üretim emirleri" onRetry={() => void first.refetch()} />
+        <StateBlock state={state} subject={ORDER_LIST_TEXT.subject} onRetry={() => void first.refetch()} />
       </section>
     )
   }
@@ -180,7 +181,7 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
     return (
       <section className={styles.page} aria-labelledby="mfg-order-list-heading">
         {header}
-        <StateBlock state={{ kind: 'empty-no-data' }} subject="üretim emirleri" />
+        <StateBlock state={{ kind: 'empty-no-data' }} subject={ORDER_LIST_TEXT.subject} />
       </section>
     )
   }
@@ -250,12 +251,12 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
         {typeof continuation === 'object' ? (
           <div className={styles.inlineError}>
             <p>{ORDER_LIST_TEXT.nextPageFailed}</p>
-            <StateBlock state={continuation} subject="sonraki sayfa" onRetry={() => void loadMore()} />
+            <StateBlock state={continuation} subject={ORDER_LIST_TEXT.nextPageSubject} onRetry={() => void loadMore()} />
           </div>
         ) : nextCursor === null ? (
           <p className={styles.muted}>{ORDER_LIST_TEXT.end}</p>
         ) : (
-          <button
+          <Button
             type="button"
             className={styles.secondaryButton}
             onClick={() => void loadMore()}
@@ -263,7 +264,7 @@ function OrderList({ namespace }: { readonly namespace: string | null }) {
             aria-busy={continuation === 'loading'}
           >
             {continuation === 'loading' ? ORDER_LIST_TEXT.loadingMore : ORDER_LIST_TEXT.loadMore}
-          </button>
+          </Button>
         )}
       </div>
     </section>

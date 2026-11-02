@@ -76,6 +76,7 @@ import {
   COST_STATUS_TEXT,
   ENGINE_REFUSED,
   ENGINE_UNAVAILABLE,
+  FACT_FORM_TEXT,
   FACT_KIND_HELP,
   FACT_KIND_LABEL,
   KG_FORMAT_ERROR,
@@ -83,6 +84,8 @@ import {
   INPUT_INVENTORY_TEXT,
   MASS_BALANCE_HEADING,
   MASS_BALANCE_HELP,
+  MASS_BALANCE_TEXT,
+  ORDER_DETAIL_TEXT,
   ORDER_STATUS_LABEL,
   OUTPUT_INVENTORY_TEXT,
   OUTPUT_CLASS_LABEL,
@@ -105,6 +108,7 @@ import { contextKey, contextKeyString, hasCapability } from '../shell/shellState
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { StateBlock } from '../shell/StateBlock'
 import styles from './OrderDetailPage.module.css'
+import { Button } from '../ui/Button'
 
 /** Registered with the shell so a company switch with an unsent fact warns first. */
 const DIRTY_SCOPE = 'manufacturing.order.fact'
@@ -179,7 +183,7 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   if (!singleCompanyContext) {
     return (
       <Frame>
-        <StateBlock state={{ kind: 'no-authorized-company' }} subject="üretim emri için tek şirket bağlamı" />
+        <StateBlock state={{ kind: 'no-authorized-company' }} subject={ORDER_DETAIL_TEXT.contextSubject} />
       </Frame>
     )
   }
@@ -187,14 +191,11 @@ function OrderDetail({ namespace }: { readonly namespace: string | null }) {
   if (state.kind !== 'ready') {
     return (
       <Frame>
-        <StateBlock state={state} subject="üretim emri" onRetry={() => void query.refetch()} />
+        <StateBlock state={state} subject={ORDER_DETAIL_TEXT.subject} onRetry={() => void query.refetch()} />
         {recallPendingFact(storeKey) !== null ? (
           <div className={styles.noticeWarn} role="alert" data-outcome="outstanding">
-            <p className={styles.noticeTitle}>Sonucu bilinmeyen bir olgunuz var</p>
-            <p>
-              Gönderdiğiniz olgunun sonucu hâlâ belirsiz ve emir şu an okunamıyor. Olgu kendiliğinden
-              tekrarlanmadı. Emir yeniden okunduğunda aynı işlem anahtarıyla devam edebilirsiniz.
-            </p>
+            <p className={styles.noticeTitle}>{ORDER_DETAIL_TEXT.outstandingTitle}</p>
+            <p>{ORDER_DETAIL_TEXT.outstandingDetail}</p>
           </div>
         ) : null}
       </Frame>
@@ -277,7 +278,7 @@ function MassBalancePanel({
       <h2 id="mfg-balance-heading">{MASS_BALANCE_HEADING}</h2>
       <p className={styles.help}>{MASS_BALANCE_HELP}</p>
       {state.kind !== 'ready' ? (
-        <StateBlock state={state} subject="kütle dengesi" onRetry={() => void query.refetch()} />
+        <StateBlock state={state} subject={MASS_BALANCE_TEXT.subject} onRetry={() => void query.refetch()} />
       ) : (
         <>
           <p className={styles.help} data-testid="mass-balance-formula">
@@ -287,13 +288,13 @@ function MassBalancePanel({
             <table className={styles.table}>
               <thead>
                 <tr>
-                  <th scope="col">Ana rulo</th>
-                  <th scope="col">Fiilî girdi (kg)</th>
-                  <th scope="col">Hesaplanan (kg)</th>
-                  <th scope="col">Kütle farkı (kg)</th>
-                  <th scope="col">Mutabakat</th>
-                  <th scope="col">Fire %</th>
-                  <th scope="col">Fiilî birim kg</th>
+                  <th scope="col">{MASS_BALANCE_TEXT.parentRoll}</th>
+                  <th scope="col">{MASS_BALANCE_TEXT.actualInput}</th>
+                  <th scope="col">{MASS_BALANCE_TEXT.accounted}</th>
+                  <th scope="col">{MASS_BALANCE_TEXT.difference}</th>
+                  <th scope="col">{MASS_BALANCE_TEXT.reconciliation}</th>
+                  <th scope="col">{MASS_BALANCE_TEXT.scrapPercent}</th>
+                  <th scope="col">{MASS_BALANCE_TEXT.actualUnitKg}</th>
                 </tr>
               </thead>
               <tbody>
@@ -310,7 +311,7 @@ function MassBalancePanel({
                         className={roll.difference.isFullyAccounted ? styles.badgeBalanced : styles.badgeDifference}
                         data-accounted={roll.difference.isFullyAccounted ? 'yes' : 'no'}
                       >
-                        {roll.difference.isFullyAccounted ? 'Mutabık' : 'Fark var'}
+                        {roll.difference.isFullyAccounted ? ORDER_DETAIL_TEXT.balanced : ORDER_DETAIL_TEXT.different}
                       </span>
                     </td>
                     <td data-testid="scrap-percent">
@@ -411,15 +412,15 @@ function CloseSection({
       ) : attempt.phase === 'confirming' ? (
         <div className={styles.actions}>
           <p role="alert">{CLOSE_TEXT.confirmQuestion}</p>
-          <button
+          <Button
             type="button"
             onClick={() => void send({ idempotencyKey: newId(), expectedVersion: order.version })}
           >
             {CLOSE_TEXT.confirm}
-          </button>
-          <button type="button" onClick={() => setAttempt({ phase: 'idle' })}>
+          </Button>
+          <Button type="button" onClick={() => setAttempt({ phase: 'idle' })}>
             {CLOSE_TEXT.cancel}
-          </button>
+          </Button>
         </div>
       ) : attempt.phase === 'approval-required' ? (
         <div className={styles.section} data-testid="close-exception-approval">
@@ -442,26 +443,26 @@ function CloseSection({
           </div>
           {exceptionError === null ? null : <p role="alert">{exceptionError}</p>}
           <div className={styles.actions}>
-            <button type="button" onClick={approveException}>{CLOSE_TEXT.exceptionConfirm}</button>
-            <button type="button" onClick={() => setAttempt({ phase: 'idle' })}>{CLOSE_TEXT.cancel}</button>
+            <Button type="button" onClick={approveException}>{CLOSE_TEXT.exceptionConfirm}</Button>
+            <Button type="button" onClick={() => setAttempt({ phase: 'idle' })}>{CLOSE_TEXT.cancel}</Button>
           </div>
         </div>
       ) : attempt.phase === 'unknown' ? (
         <div className={styles.actions}>
-          <button type="button" onClick={() => void send(attempt.snapshot)}>
+          <Button type="button" onClick={() => void send(attempt.snapshot)}>
             {CLOSE_TEXT.resend}
-          </button>
+          </Button>
         </div>
       ) : (
         <div className={styles.actions}>
-          <button
+          <Button
             type="button"
             onClick={() => setAttempt({ phase: 'confirming' })}
             disabled={attempt.phase === 'sending'}
             aria-busy={attempt.phase === 'sending'}
           >
             {attempt.phase === 'sending' ? CLOSE_TEXT.sending : CLOSE_TEXT.action}
-          </button>
+          </Button>
         </div>
       )}
       {attempt.phase === 'applied' ? (
@@ -519,7 +520,7 @@ function EngineAnswerCell({ answer }: { readonly answer: EngineAnswer }) {
 function Frame({ children }: { readonly children: React.ReactNode }) {
   return (
     <section aria-labelledby="mfg-order-heading" className={styles.page}>
-      <h1 id="mfg-order-heading">Üretim emri</h1>
+      <h1 id="mfg-order-heading">{ORDER_DETAIL_TEXT.heading}</h1>
       {children}
     </section>
   )
@@ -528,13 +529,13 @@ function Frame({ children }: { readonly children: React.ReactNode }) {
 function OrderSummary({ order }: { readonly order: ProductionOrderView }) {
   const remaining = order.remainingTarget
   return (
-    <dl className={styles.card} aria-label="Emir özeti">
+    <dl className={styles.card} aria-label={ORDER_DETAIL_TEXT.summary}>
       <div className={styles.field}>
-        <dt>Emir</dt>
+        <dt>{ORDER_DETAIL_TEXT.order}</dt>
         <dd className={styles.mono}>{order.orderId}</dd>
       </div>
       <div className={styles.field}>
-        <dt>Durum</dt>
+        <dt>{ORDER_DETAIL_TEXT.status}</dt>
         <dd>
           <span
             className={order.status === 'Open' ? styles.badgeOpen : styles.badgeClosed}
@@ -545,35 +546,35 @@ function OrderSummary({ order }: { readonly order: ProductionOrderView }) {
         </dd>
       </div>
       <div className={styles.field}>
-        <dt>Plan</dt>
+        <dt>{ORDER_DETAIL_TEXT.plan}</dt>
         <dd className={styles.mono}>{order.planId}</dd>
       </div>
       <div className={styles.field}>
-        <dt>İş merkezi</dt>
+        <dt>{ORDER_DETAIL_TEXT.workCenter}</dt>
         <dd className={styles.mono}>{order.workCenterId}</dd>
       </div>
       <div className={styles.field}>
-        <dt>Proses</dt>
+        <dt>{ORDER_DETAIL_TEXT.process}</dt>
         <dd>{order.process}</dd>
       </div>
       <div className={styles.field}>
-        <dt>Hedef</dt>
+        <dt>{ORDER_DETAIL_TEXT.target}</dt>
         <dd>
           {order.target === null
-            ? 'Beyan edilmedi'
+            ? ORDER_DETAIL_TEXT.targetUndeclared
             : `${TARGET_BASIS_LABEL[order.target.basis] ?? order.target.basis}: ${order.target.kg} kg`}
         </dd>
       </div>
       <div className={styles.field}>
-        <dt>Kalan hedef</dt>
+        <dt>{ORDER_DETAIL_TEXT.remainingTarget}</dt>
         <dd data-testid="remaining-target">
           {remaining.basis === null
             ? REMAINING_UNAVAILABLE
-            : `${remaining.remainingKg} kg (gerçekleşen ${remaining.achievedKg} / ${remaining.targetKg} kg)`}
+            : ORDER_DETAIL_TEXT.remaining(remaining.remainingKg, remaining.achievedKg, remaining.targetKg)}
         </dd>
       </div>
       <div className={styles.field}>
-        <dt>Maliyet</dt>
+        <dt>{ORDER_DETAIL_TEXT.cost}</dt>
         <dd data-testid="cost-status">{COST_STATUS_TEXT}</dd>
       </div>
     </dl>
@@ -583,27 +584,27 @@ function OrderSummary({ order }: { readonly order: ProductionOrderView }) {
 function RollTable({ rolls }: { readonly rolls: readonly RollBalance[] }) {
   return (
     <section aria-labelledby="mfg-rolls-heading" className={styles.section}>
-      <h2 id="mfg-rolls-heading">Ana rulo dengesi (kg)</h2>
+      <h2 id="mfg-rolls-heading">{ORDER_DETAIL_TEXT.rollsHeading}</h2>
       <p className={styles.help}>
-        Her rulo kendi başına mutabık olur: çıkan − iade = çıktılar + WIP + açıklanamayan fark.
+        {ORDER_DETAIL_TEXT.rollsHelp}
       </p>
       <div className={styles.tableWrap}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th scope="col">Ana rulo</th>
-              <th scope="col">Planlanan</th>
-              <th scope="col">Çıkan</th>
-              <th scope="col">İade</th>
-              <th scope="col">Net çıkan</th>
+              <th scope="col">{ORDER_DETAIL_TEXT.parentRoll}</th>
+              <th scope="col">{ORDER_DETAIL_TEXT.planned}</th>
+              <th scope="col">{ORDER_DETAIL_TEXT.issued}</th>
+              <th scope="col">{ORDER_DETAIL_TEXT.returned}</th>
+              <th scope="col">{ORDER_DETAIL_TEXT.netIssued}</th>
               {OUTPUT_CLASSES.map((outputClass) => (
                 <th scope="col" key={outputClass}>
                   {OUTPUT_CLASS_LABEL[outputClass]}
                 </th>
               ))}
-              <th scope="col">WIP</th>
-              <th scope="col">Açıklanamayan fark</th>
-              <th scope="col">Mutabakat</th>
+              <th scope="col">{ORDER_DETAIL_TEXT.workInProgress}</th>
+              <th scope="col">{ORDER_DETAIL_TEXT.unexplained}</th>
+              <th scope="col">{ORDER_DETAIL_TEXT.reconciliation}</th>
             </tr>
           </thead>
           <tbody>
@@ -626,7 +627,7 @@ function RollTable({ rolls }: { readonly rolls: readonly RollBalance[] }) {
                     className={roll.isFullyAccounted ? styles.badgeBalanced : styles.badgeDifference}
                     data-accounted={roll.isFullyAccounted ? 'yes' : 'no'}
                   >
-                    {roll.isFullyAccounted ? 'Mutabık' : 'Fark var'}
+                    {roll.isFullyAccounted ? ORDER_DETAIL_TEXT.balanced : ORDER_DETAIL_TEXT.different}
                   </span>
                 </td>
               </tr>
@@ -1042,7 +1043,7 @@ function FactSection({
 
   return (
     <section aria-labelledby="mfg-facts-heading" className={styles.section}>
-      <h2 id="mfg-facts-heading">Gerçekleşme kaydı</h2>
+      <h2 id="mfg-facts-heading">{FACT_FORM_TEXT.heading}</h2>
       {closed ? <p className={styles.help}>{CLOSED_ORDER_TEXT}</p> : null}
 
       <AttemptNotice
@@ -1053,7 +1054,7 @@ function FactSection({
 
       <form className={styles.section} onSubmit={submit} noValidate aria-describedby="mfg-fact-help">
         <fieldset className={styles.kinds} disabled={frozen}>
-          <legend className={styles.help}>Olgu türü</legend>
+          <legend className={styles.help}>{FACT_FORM_TEXT.kind}</legend>
           {FACT_KINDS.filter((kind) =>
             (kind !== 'input-returns' && kind !== 'outputs') || canReadInventoryLabel).map((kind) => (
             <label key={kind}>
@@ -1075,14 +1076,14 @@ function FactSection({
           {/* Each label names only its control (htmlFor): a wrapping label would fold the options and
               the help text into the accessible name. */}
           <div className={styles.control}>
-            <label htmlFor="mfg-fact-roll">Ana rulo</label>
+            <label htmlFor="mfg-fact-roll">{FACT_FORM_TEXT.parentRoll}</label>
             <select
               id="mfg-fact-roll"
               value={form.parentRollId}
               disabled={frozen}
               onChange={(event) => update({ parentRollId: event.target.value })}
             >
-              <option value="">Seçin</option>
+              <option value="">{FACT_FORM_TEXT.choose}</option>
               {order.rolls.map((roll) => (
                 <option key={roll.parentRollId} value={roll.parentRollId}>
                   {roll.parentRollId}
@@ -1091,7 +1092,7 @@ function FactSection({
             </select>
           </div>
           <div className={styles.control}>
-            <label htmlFor="mfg-fact-kg">Kütle (kg)</label>
+            <label htmlFor="mfg-fact-kg">{FACT_FORM_TEXT.kg}</label>
             <input
               id="mfg-fact-kg"
               type="text"
@@ -1107,7 +1108,7 @@ function FactSection({
             </span>
           </div>
           <div className={styles.control}>
-            <label htmlFor="mfg-fact-occurred-at">Zaman</label>
+            <label htmlFor="mfg-fact-occurred-at">{FACT_FORM_TEXT.time}</label>
             <input
               id="mfg-fact-occurred-at"
               type="datetime-local"
@@ -1119,14 +1120,14 @@ function FactSection({
         </div>
         {outputSelected ? (
           <section aria-labelledby="mfg-output-heading" className={styles.section} data-testid="output-form">
-            <h3 id="mfg-output-heading">Üretim çıktısı etiketi</h3>
+            <h3 id="mfg-output-heading">{OUTPUT_INVENTORY_TEXT.heading}</h3>
             <p className={styles.help}>{OUTPUT_INVENTORY_TEXT.issuedOwnershipHelp}</p>
             {outputOwnership !== null
               ? <IssuedOwnershipFacts snapshot={outputOwnership} companyId={companyId} testId="output-issued-ownership" />
               : null}
             <div className={styles.form}>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-class">Çıktı sınıfı</label>
+                <label htmlFor="mfg-output-class">{OUTPUT_INVENTORY_TEXT.outputClass}</label>
                 <select
                   id="mfg-output-class"
                   value={form.outputClass}
@@ -1135,14 +1136,14 @@ function FactSection({
                     outputClass: event.target.value as FormValues['outputClass'],
                   })}
                 >
-                  <option value="">Seçin</option>
+                  <option value="">{FACT_FORM_TEXT.choose}</option>
                   {INVENTORY_OUTPUT_CLASSES.map((outputClass) => (
                     <option key={outputClass} value={outputClass}>{OUTPUT_CLASS_LABEL[outputClass]}</option>
                   ))}
                 </select>
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-product-search">Ürün ara</label>
+                <label htmlFor="mfg-output-product-search">{OUTPUT_INVENTORY_TEXT.productSearch}</label>
                 <input
                   id="mfg-output-product-search"
                   value={form.productSearch}
@@ -1151,28 +1152,28 @@ function FactSection({
                 />
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-product">Ürün</label>
+                <label htmlFor="mfg-output-product">{OUTPUT_INVENTORY_TEXT.product}</label>
                 <select
                   id="mfg-output-product"
                   value={form.productId}
                   disabled={frozen || products === null}
                   onChange={(event) => update({ productId: event.target.value })}
                 >
-                  <option value="">Seçin</option>
+                  <option value="">{FACT_FORM_TEXT.choose}</option>
                   {products?.items.map((product) => (
                     <option key={product.productId} value={product.productId}>
                       {product.code} — {product.name} · {product.stockUnitCode}
                     </option>
                   ))}
                 </select>
-                {effectiveOn === null ? <span className={styles.help}>Önce geçerli çıktı zamanını girin.</span> : null}
+                {effectiveOn === null ? <span className={styles.help}>{OUTPUT_INVENTORY_TEXT.effectiveOnRequired}</span> : null}
                 {productQuery.isFetching ? <span role="status">{OUTPUT_INVENTORY_TEXT.productLoading}</span> : null}
                 {productQuery.data !== undefined && productQuery.data.type !== 'ok-single'
                   ? <span role="alert">{OUTPUT_INVENTORY_TEXT.productUnavailable}</span> : null}
-                {products?.searchWindowFull ? <span className={styles.help}>Daha fazla eşleşme var; aramayı daraltın.</span> : null}
+                {products?.searchWindowFull ? <span className={styles.help}>{OUTPUT_INVENTORY_TEXT.moreMatches}</span> : null}
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-location-search">Lokasyon ara</label>
+                <label htmlFor="mfg-output-location-search">{OUTPUT_INVENTORY_TEXT.locationSearch}</label>
                 <input
                   id="mfg-output-location-search"
                   value={form.locationSearch}
@@ -1181,14 +1182,14 @@ function FactSection({
                 />
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-location">Lokasyon</label>
+                <label htmlFor="mfg-output-location">{OUTPUT_INVENTORY_TEXT.location}</label>
                 <select
                   id="mfg-output-location"
                   value={form.locationId}
                   disabled={frozen || locations === null}
                   onChange={(event) => update({ locationId: event.target.value })}
                 >
-                  <option value="">Seçin</option>
+                  <option value="">{FACT_FORM_TEXT.choose}</option>
                   {locations?.items.map((location) => (
                     <option key={location.locationId} value={location.locationId}>
                       {location.siteCode} / {location.locationCode} — {location.locationName}
@@ -1198,10 +1199,10 @@ function FactSection({
                 {locationQuery.isFetching ? <span role="status">{OUTPUT_INVENTORY_TEXT.locationLoading}</span> : null}
                 {locationQuery.data !== undefined && locationQuery.data.type !== 'ok-single'
                   ? <span role="alert">{OUTPUT_INVENTORY_TEXT.locationUnavailable}</span> : null}
-                {locations?.searchWindowFull ? <span className={styles.help}>Daha fazla eşleşme var; aramayı daraltın.</span> : null}
+                {locations?.searchWindowFull ? <span className={styles.help}>{OUTPUT_INVENTORY_TEXT.moreMatches}</span> : null}
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-label-code">Yeni etiket kodu</label>
+                <label htmlFor="mfg-output-label-code">{OUTPUT_INVENTORY_TEXT.labelCode}</label>
                 <input
                   id="mfg-output-label-code"
                   value={form.labelCode}
@@ -1210,7 +1211,7 @@ function FactSection({
                 />
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-heat">Döküm no (opsiyonel)</label>
+                <label htmlFor="mfg-output-heat">{OUTPUT_INVENTORY_TEXT.heatNumber}</label>
                 <input
                   id="mfg-output-heat"
                   value={form.heatNumber}
@@ -1219,7 +1220,7 @@ function FactSection({
                 />
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-coil">Rulo no (opsiyonel)</label>
+                <label htmlFor="mfg-output-coil">{OUTPUT_INVENTORY_TEXT.coilNumber}</label>
                 <input
                   id="mfg-output-coil"
                   value={form.coilNumber}
@@ -1228,7 +1229,7 @@ function FactSection({
                 />
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-documents">Belge referansları (satır başına)</label>
+                <label htmlFor="mfg-output-documents">{OUTPUT_INVENTORY_TEXT.documents}</label>
                 <textarea
                   id="mfg-output-documents"
                   value={form.requiredDocuments}
@@ -1237,16 +1238,16 @@ function FactSection({
                 />
               </div>
               <div className={styles.control}>
-                <label htmlFor="mfg-output-block">İlk stok durumu</label>
+                <label htmlFor="mfg-output-block">{OUTPUT_INVENTORY_TEXT.initialBlock}</label>
                 <select
                   id="mfg-output-block"
                   value={form.initialBlock}
                   disabled={frozen}
                   onChange={(event) => update({ initialBlock: event.target.value as FormValues['initialBlock'] })}
                 >
-                  <option value="">Seçin</option>
-                  <option value="Free">Serbest</option>
-                  <option value="Blocked">Blokeli</option>
+                  <option value="">{FACT_FORM_TEXT.choose}</option>
+                  <option value="Free">{OUTPUT_INVENTORY_TEXT.blockFree}</option>
+                  <option value="Blocked">{OUTPUT_INVENTORY_TEXT.blockBlocked}</option>
                 </select>
               </div>
             </div>
@@ -1268,17 +1269,17 @@ function FactSection({
         ) : null}
         <div className={styles.actions}>
           {attempt.phase === 'unknown' ? (
-            <button type="button" onClick={resend}>
-              Aynı olguyu yeniden gönder
-            </button>
+            <Button type="button" onClick={resend}>
+              {FACT_FORM_TEXT.resend}
+            </Button>
           ) : (
-            <button
+            <Button variant="primary"
               type="submit"
               disabled={frozen || (needsInventoryState && labelState?.kind !== 'ready') ||
                 (outputSelected && outputOwnership === null)}
             >
-              {busy ? 'Gönderiliyor…' : 'Kaydet'}
-            </button>
+              {busy ? FACT_FORM_TEXT.sending : FACT_FORM_TEXT.save}
+            </Button>
           )}
         </div>
       </form>
@@ -1303,7 +1304,7 @@ function ParentLabelState({
     return (
       <section aria-labelledby="mfg-parent-label-heading" className={styles.section}>
         <h3 id="mfg-parent-label-heading">{INPUT_INVENTORY_TEXT.heading}</h3>
-        <StateBlock state={state} subject="ana rulo Inventory durumu" onRetry={onRetry} />
+        <StateBlock state={state} subject={INPUT_INVENTORY_TEXT.subject} onRetry={onRetry} />
       </section>
     )
   }
@@ -1312,7 +1313,7 @@ function ParentLabelState({
     <section aria-labelledby="mfg-parent-label-heading" className={styles.section} data-testid="parent-label-state">
       <h3 id="mfg-parent-label-heading">{INPUT_INVENTORY_TEXT.heading}</h3>
       <dl>
-        <div><dt>Etiket</dt><dd className={styles.mono}>{detail.identity.code}</dd></div>
+        <div><dt>{INPUT_INVENTORY_TEXT.label}</dt><dd className={styles.mono}>{detail.identity.code}</dd></div>
         <div><dt>{INPUT_INVENTORY_TEXT.version}</dt><dd>{detail.labelVersion}</dd></div>
         <div><dt>{INPUT_INVENTORY_TEXT.physical}</dt><dd>{detail.balances.physicalKg} kg</dd></div>
         <div><dt>{INPUT_INVENTORY_TEXT.free}</dt><dd>{detail.balances.freeKg} kg</dd></div>
@@ -1346,14 +1347,14 @@ function AttemptNotice({
       <div ref={noticeRef} tabIndex={-1} className={styles.noticeOk} role="status" data-outcome={attempt.replayed ? 'replayed' : 'applied'}>
         <p className={styles.noticeTitle}>{attempt.replayed ? REPLAYED_TITLE : APPLIED_TITLE}</p>
         <p>{attempt.replayed ? REPLAYED_DETAIL : APPLIED_DETAIL}</p>
-        {refreshing ? <p>Emir yeniden okunuyor…</p> : null}
+        {refreshing ? <p>{FACT_FORM_TEXT.refreshing}</p> : null}
       </div>
     )
   }
   if (attempt.phase === 'failed') {
     return (
       <div ref={noticeRef} tabIndex={-1} className={styles.noticeError} role="alert" data-outcome="failed" data-failure={attempt.failure.kind}>
-        <p className={styles.noticeTitle}>Kaydedilmedi</p>
+        <p className={styles.noticeTitle}>{FACT_FORM_TEXT.failedTitle}</p>
         <p>{failureText(attempt.failure)}</p>
       </div>
     )
@@ -1361,9 +1362,9 @@ function AttemptNotice({
   if (attempt.phase === 'unknown') {
     return (
       <div ref={noticeRef} tabIndex={-1} className={styles.noticeWarn} role="alert" data-outcome="unknown">
-        <p className={styles.noticeTitle}>Sonuç bilinmiyor</p>
+        <p className={styles.noticeTitle}>{FACT_FORM_TEXT.unknownTitle}</p>
         <p>{unknownText(attempt.unknown)}</p>
-        {attempt.lastRefusal !== null ? <p>Son yeniden gönderim reddedildi: {failureText(attempt.lastRefusal)}</p> : null}
+        {attempt.lastRefusal !== null ? <p>{FACT_FORM_TEXT.lastRefusal(failureText(attempt.lastRefusal))}</p> : null}
         <p>{UNKNOWN_ACTION_HELP}</p>
       </div>
     )

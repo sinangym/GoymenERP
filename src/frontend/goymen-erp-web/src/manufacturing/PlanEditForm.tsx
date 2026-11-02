@@ -21,11 +21,12 @@ import { fetchWorkCenters } from '../organization/api'
 import type { WorkCenterSummary } from '../organization/contract'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import { isKilogramText, type ProductionPlanView } from './contract'
-import { PLAN_EDIT_TEXT } from './planEditText'
+import { CUT_LINE_TEXT, PLAN_EDIT_TEXT } from './planEditText'
+import { TARGET_BASIS_LABEL } from './manufacturingText'
+import { PLAN_FORM_TEXT, readFailureText } from './planText'
 import type { CapturedPlanCommercialContext, PlanRevision } from './planRevisionContract'
 import type { PlanTargetBasis, RevisePlanRequest } from './planCommandApi'
 import { CutToLengthLinesEditor } from './CutToLengthLinesEditor'
-import { CUT_LINE_TEXT } from './planEditText'
 import { fetchParentRollCandidates, type ParentRollCandidate, type ParentRollCandidates } from './planReferences'
 import { PlanPreviewPanel } from './PlanPreviewPanel'
 import {
@@ -37,6 +38,7 @@ import {
   type CutToLengthLineDraft,
 } from './usePlanPreview'
 import styles from './PlanPage.module.css'
+import { Button } from '../ui/Button'
 
 type ReadState<T> =
   | { readonly type: 'idle' | 'loading' }
@@ -83,18 +85,6 @@ function sameCommercialContext(
     current.partyVersion === sent.partyVersion &&
     current.accountVersion === sent.accountVersion
   )
-}
-
-function readFailure(subject: string, outcome: { readonly type: string; readonly status?: number }): string {
-  if (outcome.type === 'http') {
-    if (outcome.status === 401 || outcome.status === 403) return `${subject} için yetkiniz artık geçerli değil.`
-    return `${subject} kaynağı yanıt vermedi (${outcome.status}).`
-  }
-  if (outcome.type === 'offline') return 'Çevrimdışısınız.'
-  if (outcome.type === 'fence-stale') return 'Şirket veya oturum değişti; eski sonuç kullanılmadı.'
-  return outcome.type === 'malformed'
-    ? `${subject} kaynağı beklenen sözleşmeyle yanıt vermedi.`
-    : `${subject} kaynağına ulaşılamadı.`
 }
 
 /** Exact cut-line equality against the current revision: list order, ids, signed sequences, lengths and counts. */
@@ -180,7 +170,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       setWorkCenters(
         outcome.type === 'ok-single'
           ? { type: 'ready', data: outcome.data }
-          : { type: 'failed', message: readFailure('İş merkezi', outcome) },
+          : { type: 'failed', message: readFailureText(PLAN_FORM_TEXT.workCenter, outcome) },
       )
     }
     void read()
@@ -202,7 +192,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
     setCandidates(
       outcome.type === 'ok-single'
         ? { type: 'ready', data: outcome.data }
-        : { type: 'failed', message: readFailure('Ana rulo', outcome) },
+        : { type: 'failed', message: readFailureText(PLAN_FORM_TEXT.parentRoll, outcome) },
     )
   }, [captureSecurity, companyId, reportSecurity, search])
 
@@ -256,7 +246,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
     event.preventDefault()
     if (busy) return
     if (workCenterId === '' || rows.length === 0 || rows.some((row) => !positiveKilograms(row.plannedKg))) {
-      setFormError(PLAN_EDIT_TEXT.formRequired)
+      setFormError(PLAN_FORM_TEXT.formRequired)
       return
     }
     if (rows.some((row) => row.labelVersion === null)) {
@@ -264,7 +254,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       return
     }
     if ((targetBasis === '') !== (targetKg === '') || (targetKg !== '' && !positiveKilograms(targetKg))) {
-      setFormError(PLAN_EDIT_TEXT.targetPair)
+      setFormError(PLAN_FORM_TEXT.targetPair)
       return
     }
     const cutReasons: string[] = []
@@ -308,17 +298,17 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
       {formError === null ? null : <p className={styles.error} role="alert">{formError}</p>}
       <form className={styles.form} onSubmit={submit} noValidate>
         <fieldset disabled={busy}>
-          <legend>İş merkezi</legend>
+          <legend>{PLAN_FORM_TEXT.workCenter}</legend>
           <p className={styles.note}>{PLAN_EDIT_TEXT.processNote(plan.process)}</p>
-          {workCenters.type === 'loading' ? <p role="status">İş merkezleri yükleniyor…</p> : null}
+          {workCenters.type === 'loading' ? <p role="status">{PLAN_FORM_TEXT.workCentersLoading}</p> : null}
           {workCenters.type === 'failed' ? <p role="alert">{workCenters.message}</p> : null}
-          <select aria-label="İş merkezi" value={workCenterId} onChange={(event) => setWorkCenterId(event.target.value)}>
-            {knownWorkCenter ? null : <option value={current.workCenterId}>{current.workCenterId} (mevcut)</option>}
+          <select aria-label={PLAN_FORM_TEXT.workCenter} value={workCenterId} onChange={(event) => setWorkCenterId(event.target.value)}>
+            {knownWorkCenter ? null : <option value={current.workCenterId}>{current.workCenterId}{PLAN_EDIT_TEXT.currentSuffix}</option>}
             {workCenters.type === 'ready'
               ? workCenters.data.map((workCenter) => (
                   <option key={workCenter.id} value={workCenter.id}>
-                    {workCenter.code} — {workCenter.name}{workCenter.isActive ? '' : ' (pasif)'}
-                    {workCenter.id === current.workCenterId ? ' (mevcut)' : ''}
+                    {workCenter.code} — {workCenter.name}{workCenter.isActive ? '' : PLAN_FORM_TEXT.inactiveSuffix}
+                    {workCenter.id === current.workCenterId ? PLAN_EDIT_TEXT.currentSuffix : ''}
                   </option>
                 ))
               : null}
@@ -326,17 +316,17 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
         </fieldset>
 
         <fieldset disabled={busy}>
-          <legend>Planlanan girdiler</legend>
+          <legend>{PLAN_FORM_TEXT.plannedInputs}</legend>
           <p className={styles.note}>{PLAN_EDIT_TEXT.inputsNote}</p>
-          {rows.length === 0 ? <p>Ana rulo kalmadı; en az bir ana rulo ekleyin.</p> : (
+          {rows.length === 0 ? <p>{PLAN_EDIT_TEXT.noInputs}</p> : (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead>
                   <tr>
-                    <th scope="col">Ana rulo</th>
-                    <th scope="col">Etiket sürümü</th>
-                    <th scope="col">Planlanan kg</th>
-                    <th scope="col">İşlem</th>
+                    <th scope="col">{PLAN_FORM_TEXT.parentRoll}</th>
+                    <th scope="col">{PLAN_FORM_TEXT.labelVersion}</th>
+                    <th scope="col">{PLAN_FORM_TEXT.plannedKg}</th>
+                    <th scope="col">{PLAN_FORM_TEXT.action}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -351,7 +341,7 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
                         <td>{row.labelVersion ?? <span className={styles.error}>{PLAN_EDIT_TEXT.legacyLabel}</span>}</td>
                         <td>
                           <input
-                            aria-label={`${name} planlanan kg`}
+                            aria-label={PLAN_FORM_TEXT.plannedKgFor(name)}
                             inputMode="decimal"
                             value={row.plannedKg}
                             onChange={(event) => {
@@ -362,14 +352,14 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
                           />
                         </td>
                         <td>
-                          <button
+                          <Button
                             type="button"
-                            aria-label={`${name} kaldır`}
+                            aria-label={PLAN_EDIT_TEXT.removeFor(name)}
                             onClick={() => setRows((existing) =>
                               existing.filter((candidate) => candidate.parentRollId !== row.parentRollId))}
                           >
-                            Kaldır
-                          </button>
+                            {PLAN_FORM_TEXT.remove}
+                          </Button>
                         </td>
                       </tr>
                     )
@@ -379,42 +369,42 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
             </div>
           )}
           <div className={styles.searchRow}>
-            <label htmlFor="plan-edit-roll-search">Eklenecek etiket, ürün veya lot ara</label>
+            <label htmlFor="plan-edit-roll-search">{PLAN_EDIT_TEXT.search}</label>
             <input id="plan-edit-roll-search" maxLength={64} value={search} onChange={(event) => setSearch(event.target.value)} />
-            <button type="button" onClick={() => void readCandidates()}>Ana rulo ara</button>
+            <Button type="button" onClick={() => void readCandidates()}>{PLAN_EDIT_TEXT.searchAction}</Button>
           </div>
-          {candidates.type === 'loading' ? <p role="status">Ana rulolar yükleniyor…</p> : null}
+          {candidates.type === 'loading' ? <p role="status">{PLAN_FORM_TEXT.rollsLoading}</p> : null}
           {candidates.type === 'failed' ? <p role="alert">{candidates.message}</p> : null}
           {candidates.type === 'ready' ? (
             <div className={styles.tableWrap}>
               <table className={styles.table}>
                 <thead>
-                  <tr><th scope="col">Etiket</th><th scope="col">Sürüm</th><th scope="col">Fiziksel kg</th><th scope="col">Seçim</th></tr>
+                  <tr><th scope="col">{PLAN_FORM_TEXT.label}</th><th scope="col">{PLAN_EDIT_TEXT.version}</th><th scope="col">{PLAN_FORM_TEXT.physicalKg}</th><th scope="col">{PLAN_FORM_TEXT.choice}</th></tr>
                 </thead>
                 <tbody>
                   {candidates.data.items.map((candidate) => {
                     const row = rows.find((existing) => existing.parentRollId === candidate.labelId)
                     const label = !candidate.draftSelectable
-                      ? 'Seçilemez'
+                      ? PLAN_FORM_TEXT.unselectable
                       : row === undefined
-                        ? 'Ekle'
+                        ? PLAN_FORM_TEXT.add
                         : row.labelVersion === candidate.labelVersion
-                          ? 'Planda'
-                          : 'Sürümü güncelle'
+                          ? PLAN_EDIT_TEXT.inPlan
+                          : PLAN_EDIT_TEXT.updateVersion
                     return (
                       <tr key={candidate.labelId}>
                         <th scope="row">{candidate.labelCode}<div className={styles.mono}>{candidate.labelId}</div></th>
                         <td>{candidate.labelVersion}</td>
                         <td>{candidate.physicalKg} kg</td>
                         <td>
-                          <button
+                          <Button
                             type="button"
-                            disabled={label === 'Seçilemez' || label === 'Planda'}
+                            disabled={label === PLAN_FORM_TEXT.unselectable || label === PLAN_EDIT_TEXT.inPlan}
                             aria-label={`${candidate.labelCode} ${label}`}
                             onClick={() => addCandidate(candidate)}
                           >
                             {label}
-                          </button>
+                          </Button>
                           {!candidate.draftSelectable ? <div className={styles.muted}>{candidate.draftRefusalCode}</div> : null}
                         </td>
                       </tr>
@@ -427,19 +417,19 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
         </fieldset>
 
         <fieldset disabled={busy}>
-          <legend>İsteğe bağlı hedef</legend>
+          <legend>{PLAN_FORM_TEXT.optionalTarget}</legend>
           <div className={styles.formGrid}>
-            <label htmlFor="plan-edit-target-basis">Hedef türü</label>
+            <label htmlFor="plan-edit-target-basis">{PLAN_FORM_TEXT.targetBasis}</label>
             <select
               id="plan-edit-target-basis"
               value={targetBasis}
               onChange={(event) => setTargetBasis(event.target.value as '' | PlanTargetBasis)}
             >
-              <option value="">Hedef yok</option>
-              <option value="InputMass">Girdi kütlesi</option>
-              <option value="GoodOutputMass">İyi ürün kütlesi</option>
+              <option value="">{PLAN_FORM_TEXT.targetNone}</option>
+              <option value="InputMass">{TARGET_BASIS_LABEL.InputMass}</option>
+              <option value="GoodOutputMass">{TARGET_BASIS_LABEL.GoodOutputMass}</option>
             </select>
-            <label htmlFor="plan-edit-target-kg">Hedef kg</label>
+            <label htmlFor="plan-edit-target-kg">{PLAN_FORM_TEXT.targetKg}</label>
             <input id="plan-edit-target-kg" inputMode="decimal" value={targetKg} onChange={(event) => setTargetKg(event.target.value)} />
           </div>
         </fieldset>
@@ -466,10 +456,10 @@ export function PlanEditForm({ companyId, plan, current, busy, onSubmit, onCance
         </fieldset>
 
         <div className={styles.actions}>
-          <button type="submit" disabled={busy} aria-busy={busy}>
+          <Button variant="primary" type="submit" disabled={busy} aria-busy={busy}>
             {busy ? PLAN_EDIT_TEXT.saving : PLAN_EDIT_TEXT.save}
-          </button>
-          <button type="button" disabled={busy} onClick={onCancel}>{PLAN_EDIT_TEXT.cancel}</button>
+          </Button>
+          <Button type="button" disabled={busy} onClick={onCancel}>{PLAN_EDIT_TEXT.cancel}</Button>
         </div>
       </form>
     </section>
