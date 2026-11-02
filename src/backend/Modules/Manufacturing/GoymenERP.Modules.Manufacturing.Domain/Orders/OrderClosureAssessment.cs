@@ -6,9 +6,18 @@ using GoymenERP.Modules.Manufacturing.Domain.Plans;
 namespace GoymenERP.Modules.Manufacturing.Domain.Orders;
 
 /// <summary>
-/// The immutable identity, version and value of the per-process closure tolerance supplied by its owner.
-/// Manufacturing never supplies a default percentage. <c>ManufacturingCommandService.CloseOrderAsync</c> reads it from
-/// Settings (<c>ISettingsManufacturingToleranceProviderV1</c>) and persists it with the close decision.
+/// The immutable identity, version and value of the closure tolerance supplied by its owner. Manufacturing never
+/// supplies a default percentage. <c>ManufacturingCommandService.CloseOrderAsync</c> reads it from Settings
+/// (<c>ISettingsManufacturingToleranceProviderV1.GetScopedManufacturingToleranceAsync</c>, the order's work center) and
+/// persists it with the close decision.
+/// <list type="bullet">
+/// <item><see cref="Source"/> (URT-D23): <see cref="CatalogSource"/> for the reviewed version-0 starting value
+/// (<see cref="PolicyVersion"/> 0), <see cref="SettingsSource"/> for a published version (≥ 1).</item>
+/// <item><see cref="MassBalanceDifferenceTolerancePercent"/> (URT-D6): the ± percent of a roll's unexplained difference
+/// accepted without approval; null = unknown (a version published before the field existed): a non-zero difference
+/// then keeps the earlier fail-closed answers (declare a fact / review).</item>
+/// <item><see cref="WorkCenterId"/>: the line the version is scoped to; null for a process-wide version.</item>
+/// </list>
 /// </summary>
 public sealed record ClosureTolerancePolicySnapshotV1(
     Guid CompanyId,
@@ -19,7 +28,14 @@ public sealed record ClosureTolerancePolicySnapshotV1(
     bool IsActive,
     DateOnly EffectiveFrom,
     DateOnly? EffectiveThrough,
-    DateOnly SelectedForDate);
+    DateOnly SelectedForDate,
+    decimal? MassBalanceDifferenceTolerancePercent = null,
+    string Source = ClosureTolerancePolicySnapshotV1.SettingsSource,
+    Guid? WorkCenterId = null)
+{
+    public const string CatalogSource = "Catalog";
+    public const string SettingsSource = "Settings";
+}
 
 /// <summary>
 /// The immutable business evidence for one out-of-tolerance close approval. It carries no authority by itself: the
@@ -60,7 +76,7 @@ public sealed record ClosureExceptionApprovalV1
         if (companyId == Guid.Empty || orderId == Guid.Empty || approvedByUserId == Guid.Empty
             || string.IsNullOrEmpty(normalized)
             || normalized.Length > ReasonMaximumLength || normalized.Any(char.IsControl)
-            || orderVersion <= 0 || policyId == Guid.Empty || policyVersion <= 0 || approvedAtUtc == default)
+            || orderVersion <= 0 || policyId == Guid.Empty || policyVersion < 0 || approvedAtUtc == default)
             throw new ArgumentException("Geçerli onaylayan, gerekçe, emir sürümü, politika sürümü ve zaman zorunludur.");
 
         return new(companyId, orderId, approvedByUserId, normalized, orderVersion, policyId, policyVersion,
@@ -104,6 +120,12 @@ public static class ClosureAssessmentCodesV1
     public const string FireMassMismatch = "manufacturing_closure_fire_mass_mismatch";
     public const string NetIssuedMassMismatch = "manufacturing_closure_net_issued_mass_mismatch";
     public const string NegativeDifferenceReview = "manufacturing_closure_negative_difference_review";
+
+    /// <summary>URT-D5/D6: the roll's unexplained difference is outside the ± mass-balance tolerance (approval required).</summary>
+    public const string MassDifferenceOutsideTolerance = "manufacturing_closure_mass_difference_outside_tolerance";
+
+    /// <summary>URT-D7: the roll's fire percent is above the profile maximum (approval required).</summary>
+    public const string FireAboveMaximum = "manufacturing_closure_fire_above_maximum";
 }
 
 /// <summary>One roll's read-only closure decision. No result here records a fact, approval or close.</summary>
@@ -114,7 +136,8 @@ public sealed record RollClosureAssessmentV1(
     decimal? FirePercent,
     string? Code,
     string? RefusedParameter,
-    IReadOnlyList<string> MissingParameters);
+    IReadOnlyList<string> MissingParameters,
+    decimal? DifferencePercent = null);
 
 /// <summary>
 /// The read-only assessment at one policy snapshot. <see cref="ClosureDispositionV1.FireDeclarationRequired"/> says
@@ -157,9 +180,29 @@ public static class OrderClosureAssessmentCalculatorV1
             return Whole(ClosureDispositionV1.Refused, policy, ClosureAssessmentCodesV1.PolicyInvalid, "policyId");
         }
 
-        if (policy.PolicyVersion <= 0)
+        if (policy.Source is not (ClosureTolerancePolicySnapshotV1.CatalogSource
+            or ClosureTolerancePolicySnapshotV1.SettingsSource))
+        {
+            return Whole(ClosureDispositionV1.Refused, policy, ClosureAssessmentCodesV1.PolicyInvalid, "source");
+        }
+
+        // URT-D23: the reviewed catalog is version 0; a published Settings version is 1 or above.
+        if (policy.Source == ClosureTolerancePolicySnapshotV1.CatalogSource
+                ? policy.PolicyVersion != 0
+                : policy.PolicyVersion <= 0)
         {
             return Whole(ClosureDispositionV1.Refused, policy, ClosureAssessmentCodesV1.PolicyInvalid, "policyVersion");
+        }
+
+        if (policy.WorkCenterId == Guid.Empty)
+        {
+            return Whole(ClosureDispositionV1.Refused, policy, ClosureAssessmentCodesV1.PolicyInvalid, "workCenterId");
+        }
+
+        if (policy.MassBalanceDifferenceTolerancePercent is { } massBalance && (massBalance < 0m || massBalance > 100m))
+        {
+            return Whole(ClosureDispositionV1.Refused, policy, ClosureAssessmentCodesV1.PolicyInvalid,
+                "massBalanceDifferenceTolerancePercent");
         }
 
         if (!Enum.IsDefined(policy.Process))
@@ -186,10 +229,13 @@ public static class OrderClosureAssessmentCalculatorV1
                 "selectedForDate");
         }
 
-        if (order.CompanyId != policy.CompanyId || order.Process != policy.Process)
+        if (order.CompanyId != policy.CompanyId || order.Process != policy.Process
+            || policy.WorkCenterId is { } line && line != order.WorkCenterId)
         {
             return Whole(ClosureDispositionV1.Unavailable, policy, ClosureAssessmentCodesV1.PolicyScopeMismatch,
-                order.CompanyId != policy.CompanyId ? "companyId" : "process");
+                order.CompanyId != policy.CompanyId ? "companyId"
+                : order.Process != policy.Process ? "process"
+                : "workCenterId");
         }
 
         if (order.Status != OrderStatus.Open)
@@ -214,7 +260,7 @@ public static class OrderClosureAssessmentCalculatorV1
         var supplied = inputs.ToDictionary(input => input.ParentRollId);
         var rolls = order.PlannedInputs
             .Select(input => AssessRoll(order.BalanceOf(input.ParentRollId), supplied.GetValueOrDefault(input.ParentRollId),
-                policy.MaximumFirePercent))
+                policy.MaximumFirePercent, policy.MassBalanceDifferenceTolerancePercent))
             .ToArray();
 
         var disposition = rolls.Select(roll => roll.Disposition).OrderByDescending(Priority).First();
@@ -227,20 +273,45 @@ public static class OrderClosureAssessmentCalculatorV1
     private static RollClosureAssessmentV1 AssessRoll(
         MassBalance balance,
         RollScrapPercentInputV1? supplied,
-        decimal maximumFirePercent)
+        decimal maximumFirePercent,
+        decimal? massBalanceTolerancePercent)
     {
         var difference = balance.Unexplained;
-        if (difference < 0m)
+        decimal? differencePercent = null;
+        var massOutside = false;
+        if (difference != 0m && massBalanceTolerancePercent is { } tolerance)
+        {
+            // URT-D5/D6: the unexplained difference is measured against the roll's net issued mass and compared with the
+            // ± tolerance. It stays its own category either way — within tolerance it is accepted as it is (never
+            // reclassified as fire or any output), outside it the close needs the exception approval.
+            var percent = MassBalanceEngineV1.DifferencePercent(
+                new MassDifferencePercentInputV1(difference, balance.NetIssued.Value));
+            if (percent.Outcome == EngineOutcome.Unavailable)
+            {
+                return Roll(balance.ParentRollId, ClosureDispositionV1.Unavailable, difference,
+                    missing: percent.MissingParameters);
+            }
+
+            if (percent.Outcome == EngineOutcome.Refused)
+            {
+                return Roll(balance.ParentRollId, ClosureDispositionV1.Refused, difference,
+                    code: percent.RefusalCode, refusedParameter: percent.RefusedParameter);
+            }
+
+            differencePercent = percent.Value!.DifferencePercent;
+            massOutside = Math.Abs(differencePercent.Value) > tolerance;
+        }
+        else if (difference < 0m)
         {
             return Roll(balance.ParentRollId, ClosureDispositionV1.ReviewRequired, difference,
                 code: ClosureAssessmentCodesV1.NegativeDifferenceReview);
         }
-
-        // #66/5917438293 (3A): fire is exactly the declared scrap plus the declared process loss that was recovered
-        // as neither scrap nor stock. Unexplained is intentionally not one of those declarations and can never be
-        // promoted to fire here; SecondQuality and the other output classes never enter this numerator either.
-        if (difference > 0m)
+        else if (difference > 0m)
         {
+            // #66/5917438293 (3A): fire is exactly the declared scrap plus the declared process loss that was recovered
+            // as neither scrap nor stock. Unexplained is intentionally not one of those declarations and can never be
+            // promoted to fire here; SecondQuality and the other output classes never enter this numerator either.
+            // Without a known mass-balance tolerance a positive difference still needs an explicit fact.
             return Roll(balance.ParentRollId, ClosureDispositionV1.FireDeclarationRequired, difference,
                 code: ClosureAssessmentCodesV1.FireDeclarationRequired,
                 missing: ["scrapOrProcessLossDeclaration"]);
@@ -286,11 +357,16 @@ public static class OrderClosureAssessmentCalculatorV1
         }
 
         var firePercent = calculated.Value!.FirePercent;
+        var fireAbove = firePercent > maximumFirePercent;
         return Roll(balance.ParentRollId,
-            firePercent > maximumFirePercent
+            fireAbove || massOutside
                 ? ClosureDispositionV1.ApprovalRequired
                 : ClosureDispositionV1.Balanced,
-            difference, firePercent);
+            difference, firePercent,
+            code: massOutside ? ClosureAssessmentCodesV1.MassDifferenceOutsideTolerance
+                : fireAbove ? ClosureAssessmentCodesV1.FireAboveMaximum
+                : null,
+            differencePercent: differencePercent);
     }
 
     private static int Priority(ClosureDispositionV1 disposition) => disposition switch
@@ -311,8 +387,9 @@ public static class OrderClosureAssessmentCalculatorV1
         decimal? firePercent = null,
         string? code = null,
         string? refusedParameter = null,
-        IReadOnlyList<string>? missing = null) =>
-        new(parentRollId, disposition, difference, firePercent, code, refusedParameter, missing ?? []);
+        IReadOnlyList<string>? missing = null,
+        decimal? differencePercent = null) =>
+        new(parentRollId, disposition, difference, firePercent, code, refusedParameter, missing ?? [], differencePercent);
 
     private static OrderClosureAssessmentV1 Whole(
         ClosureDispositionV1 disposition,

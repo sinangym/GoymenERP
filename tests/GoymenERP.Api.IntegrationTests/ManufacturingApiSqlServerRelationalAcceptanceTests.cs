@@ -846,13 +846,13 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
 
         var (orderId, balanced) = await run.BalancedOrderAsync(client, closer, ManufacturingProcess.Slitting);
 
-        // No company-A Settings row means no source. A row for another process makes the source reachable,
-        // but does not manufacture a Slitting answer.
+        // No company-A Settings row and a date before the reviewed version-0 catalog starts (2026-11-01, URT-D23): the
+        // line-scoped read has nothing covering the date. A row for another process does not manufacture a Slitting answer.
         using (var noSource = await client.PostWithKeyAsync($"{Base}/orders/{orderId}/close",
                    new CloseOrderRequestV1(balanced.Version), "sql-settings-no-source"))
         {
-            Assert.Equal(HttpStatusCode.ServiceUnavailable, noSource.StatusCode);
-            Assert.Equal("service_unavailable", (await Problem(noSource)).Code);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, noSource.StatusCode);
+            Assert.Equal(SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound, (await Problem(noSource)).Code);
         }
 
         await run.InsertToleranceAsync(CompanyA, Guid.NewGuid(), ManufacturingProcess.ColdRolling, 1, 9.5m, true,
@@ -920,8 +920,9 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         using (var future = await client.PostWithKeyAsync($"{Base}/orders/{futureOrder}/close",
                    new CloseOrderRequestV1(futureBalanced.Version), "sql-settings-future"))
         {
-            Assert.Equal(HttpStatusCode.ServiceUnavailable, future.StatusCode);
-            Assert.Equal("service_unavailable", (await Problem(future)).Code);
+            // U1-b: the line-scoped read serves only a window covering the date; a future version is not one.
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, future.StatusCode);
+            Assert.Equal(SettingsPrerequisiteCodesV1.ManufacturingToleranceProfileNotFound, (await Problem(future)).Code);
         }
 
         // Published Settings history is immutable, and an overlapping successor cannot replace the captured source.
@@ -1224,7 +1225,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
         public SqlServerRelationalApiFactory Factory { get; }
         public DateOnly UtcToday => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
 
-        public static async Task<Run> StartAsync(bool useSqlSettings = false)
+        public static async Task<Run> StartAsync(bool useSqlSettings = false, DateTimeOffset? clockAt = null)
         {
             var baseConnectionString = Environment.GetEnvironmentVariable(
                 SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
@@ -1235,7 +1236,7 @@ public sealed partial class ManufacturingApiSqlServerRelationalAcceptanceTests
             }.ConnectionString;
             // Output admission exercises Product's real stock eligibility against this same isolated database.
             var technicalSnapshotFixture = new SyntheticManufacturingTechnicalSnapshotFixture();
-            TimeProvider clock = useSqlSettings ? new FixedTimeProvider(At) : TimeProvider.System;
+            TimeProvider clock = useSqlSettings ? new FixedTimeProvider(clockAt ?? At) : TimeProvider.System;
             var factory = new SqlServerRelationalApiFactory(baseConnectionString, services =>
             {
                 services.RemoveAll<ProductRuntimeOptions>();

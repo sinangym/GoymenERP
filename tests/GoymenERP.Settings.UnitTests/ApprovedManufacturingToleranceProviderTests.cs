@@ -160,8 +160,12 @@ public sealed class ApprovedManufacturingToleranceProviderTests
     [Fact]
     public void Public_contract_and_provider_surface_are_narrow()
     {
-        var method = Assert.Single(typeof(ISettingsManufacturingToleranceProviderV1).GetMethods());
-        Assert.Equal(nameof(ISettingsManufacturingToleranceProviderV1.GetManufacturingToleranceAsync), method.Name);
+        // U1-b adds the line-scoped read (a default interface member over the process-only read) and nothing else.
+        Assert.Equal(
+            [nameof(ISettingsManufacturingToleranceProviderV1.GetManufacturingToleranceAsync),
+                nameof(ISettingsManufacturingToleranceProviderV1.GetScopedManufacturingToleranceAsync)],
+            typeof(ISettingsManufacturingToleranceProviderV1).GetMethods().Select(method => method.Name)
+                .Order(StringComparer.Ordinal));
         Assert.Single(typeof(ApprovedSettingsPrerequisiteProvider).GetConstructors());
         Assert.Contains(typeof(ISettingsManufacturingToleranceProviderV1),
             typeof(ApprovedSettingsPrerequisiteProvider).GetInterfaces());
